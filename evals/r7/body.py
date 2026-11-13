@@ -210,8 +210,13 @@ async def sealed_no_value() -> list[str]:
     rig = Rig()
     with captured() as cap:
         await rig.door.call("health", _health([DAY]))
-    seen = json.dumps(rig.docs._data, default=str) + "\n".join(cap.rows)
-    return [f"{v} in clear" for v in ("8123", "131", "com.noisefit") if v in seen]
+    # plain fields and log lines are scanned for the short values; the random ciphertext only for
+    # a long one (a 3-character needle is in a random blob by chance, about 0.3% of the runs)
+    plain = {p: {k: v for k, v in d.items() if k != "blob"} for p, d in rig.docs._data.items()}
+    blobs = " ".join(str(d.get("blob", "")) for d in rig.docs._data.values())
+    seen = json.dumps(plain, default=str) + "\n".join(cap.rows)
+    found = [f"{v} in clear" for v in ("8123", "131", "com.noisefit") if v in seen]
+    return found + (["com.noisefit in a blob"] if "com.noisefit" in blobs else [])
 
 
 async def join_once() -> list[str]:

@@ -21,7 +21,14 @@ from zoneinfo import ZoneInfo
 
 from jarvis.config import Settings
 from jarvis.logging import get_logger
-from jarvis.watch.models import TYPED_WRITER, Session, StoredDay, parse_health, source_of
+from jarvis.watch.models import (
+    TYPED_WRITER,
+    IntakeRefused,
+    Session,
+    StoredDay,
+    parse_health,
+    source_of,
+)
 from jarvis.watch.sleep import LATEST_END, Night, Week, last_night, week
 from jarvis.watch.store import WatchState, WatchStore
 
@@ -83,7 +90,12 @@ class WatchService:
 
     # ---- the door ---------------------------------------------------------------------------
     async def intake(self, uid: str, body: bytes) -> int:
-        parsed = parse_health(body, self.today())
+        try:
+            parsed = parse_health(body, self.today())
+        except IntakeRefused:
+            if self.sealed:
+                await self._store.note_refused(uid)  # a phone whose syncs are all refused is told
+            raise
         return await self._store.put(uid, parsed.days)
 
     # ---- reading ----------------------------------------------------------------------------
@@ -134,7 +146,8 @@ class WatchService:
         await self._store.set_typed(uid, day, typed)
         log.info("a typed night was kept")
         night = last_night(day, [], typed)
-        assert night is not None  # it ends on `day` by 14:00, checked above
+        if night is None:  # it ends on `day` by 14:00, checked above: never in practice
+            raise NoteRefused()
         return night
 
     # ---- the Watch tab ----------------------------------------------------------------------

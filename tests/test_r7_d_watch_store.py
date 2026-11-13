@@ -62,9 +62,12 @@ async def test_a_day_is_sealed_and_keeps_its_writer(caplog: pytest.LogCaptureFix
     doc = docs._data[path]
     assert path.endswith(f"watch_days/{UID}_2026-11-12")
     assert set(doc) == {"uid", "date", "v", "kid", "blob", "updated_at"}
-    clear = json.dumps(doc) + caplog.text
+    # the plain fields and the log: short values are checked here (never in the random ciphertext,
+    # where a 3-character needle matches by chance); the blob only for a long, unmistakable one
+    clear = json.dumps({k: v for k, v in doc.items() if k != "blob"}) + caplog.text
     for value in ("8123", "131", "com.noisefit", "210"):
-        assert value not in clear, value  # sealed, and never in a log line
+        assert value not in clear, value  # never in a log line, never beside the blob
+    assert "com.noisefit" not in doc["blob"] and "noisefit" not in doc["blob"]
     day = await store.day(UID, date(2026, 11, 12))
     assert day is not None and day.steps is not None and day.steps.writer == "com.noisefit"
     assert day.heart is not None and day.heart.max == 131
@@ -99,7 +102,9 @@ async def test_a_refused_body_writes_nothing() -> None:
     bad = {**DAY12, "steps": {"count": -5, "writer": "com.noisefit"}}
     with pytest.raises(IntakeRefused):
         await svc.intake(UID, _body([DAY12, bad]))
-    assert docs._data == {}
+    assert not [p for p in docs._data if "watch_days" in p]  # no day written
+    (state,) = docs._data.values()  # only the count of a refused sync, never what it held
+    assert set(state) == {"uid", "first_refused", "refused"} and state["refused"] == 1
 
 
 async def test_the_sync_is_recorded_by_kind_never_by_value() -> None:

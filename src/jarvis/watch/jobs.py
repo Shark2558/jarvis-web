@@ -2,9 +2,15 @@
 """Part D's background jobs (docs/plans/r7-mobile.md D17, D25; I0 seam 20). No model, no value in
 a log line: counts only.
 
-- `WatchStale` (the helpers' 5-minute clock, `watch_stale`): when a phone that once synced has
-  been silent for `STALE_AFTER` (26 hours: the app syncs every 6 hours and when opened), the owner
-  is told ONCE (an `info` alert, silent), until the next sync. Never for a phone that never synced.
+- `WatchStale` (the helpers' 5-minute clock, `watch_stale`): the owner is told ONCE (an `info`
+  alert, silent) per silence, until it ends, when (a) a phone that synced has been silent for
+  `STALE_AFTER` (26 hours: the app syncs every 6 hours and when opened), (b) a phone whose syncs
+  are ALL refused has tried for that long, or (c) the phone syncs but no watch data (an empty or
+  old day) has arrived for `DATA_STALE_DAYS` days. A phone that never tried at all is not known
+  to this part, so it is never told about. "Told" is only a real delivery (ring or silent, to a
+  channel): a held or dropped notice is tried again after an hour, and a notice that went out but
+  could not be noted is never sent again by this process. No notifier is logged and counted
+  (`no_notifier`).
 - `BodySweep` (the morning tick, `body_sweep`): watch days older than `watch_keep_days` (400),
   SOS log entries older than 400 days and join words that ran out.
 Each owner is served on his own: one owner's failure is counted (`failed`) and stops no one.
@@ -13,16 +19,19 @@ Each owner is served on his own: one owner's failure is counted (`failed`) and s
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Notifier, Signal
+from jarvis.notify.ports import Delivery, Notifier, Signal
 from jarvis.sos.store import SosStore
 from jarvis.ticks import FAILED_COUNT
 from jarvis.watch.service import WatchService
+from jarvis.watch.store import WatchState
 
 log = get_logger(__name__)
 STALE_AFTER = timedelta(hours=26)
+DATA_STALE_DAYS = 3  # a phone that syncs but sends no data for this many days
+RETRY_AFTER = timedelta(hours=1)  # a held or dropped notice is tried again this much later
 SOS_LOG_DAYS = 400
 STALE_JOB, SWEEP_JOB = "watch_stale", "body_sweep"
 
@@ -32,6 +41,24 @@ def stale_words(local: datetime) -> str:
         f"Your phone hasn't sent your watch data since {local.day} {local.strftime('%b')}, "
         f"{local.strftime('%H:%M')}, Sir. Open the JARVIS app on your phone to sync."
     )
+
+
+def refused_words(local: datetime) -> str:
+    return (
+        f"Your phone has tried to send your watch data since {local.day} {local.strftime('%b')}, "
+        "Sir, but JARVIS refused it each time. Please update the JARVIS app on your phone."
+    )
+
+
+def no_data_words(day: date) -> str:
+    return (
+        f"Your phone is syncing, Sir, but no watch data has arrived since {day.day} "
+        f"{day.strftime('%b')}. Check that your watch is connected to Health Connect."
+    )
+
+
+def _utc(at: datetime) -> datetime:
+    return at if at.tzinfo is not None else at.replace(tzinfo=UTC)
 
 
 class WatchStale:
@@ -48,34 +75,73 @@ class WatchStale:
         self._watch = watch
         self._notifier = notifier
         self._now = now
+        # per owner: (the silence's moment, when it was tried, delivered). In this process only.
+        self._tried: dict[str, tuple[datetime, datetime, bool]] = {}
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
-        told = failed = 0
+        told = failed = silent = 0
         if not self._watch.enabled or not self._watch.sealed:
-            return {"told": 0}
-        now = self._now()
+            return {"told": 0, "no_notifier": 0, FAILED_COUNT: 0}
+        now = _utc(self._now())
         for uid in owners:
             try:
-                told += await self._one(uid, now)
+                got = await self._one(uid, now)
             except Exception as exc:  # noqa: BLE001 - one owner never stops another
                 log.warning("watch_stale failed for an owner", extra={"error": type(exc).__name__})
                 failed += 1
-        return {"told": told, FAILED_COUNT: failed}
+                continue
+            told += got in ("told", "told_unnoted")
+            failed += got == "told_unnoted"
+            silent += got == "no_notifier"
+        return {"told": told, "no_notifier": silent, FAILED_COUNT: failed}
 
-    async def _one(self, uid: str, now: datetime) -> int:
+    def _silence(self, state: WatchState, now: datetime) -> tuple[datetime, str] | None:
+        """The moment the silence counts from, and its kind; None when all is well."""
+        last, zone = state.last_sync, self._watch.zone()
+        if last is not None and now - last >= STALE_AFTER:
+            return last, "sync"
+        if last is None and state.first_refused and now - state.first_refused >= STALE_AFTER:
+            return state.first_refused, "refused"
+        if last is not None:
+            base = state.last_data_day or (state.first_sync or last).astimezone(zone).date()
+            if (now.astimezone(zone).date() - base).days >= DATA_STALE_DAYS:
+                return datetime.combine(base, time.min, tzinfo=UTC), "data"
+        return None
+
+    async def _one(self, uid: str, now: datetime) -> str:
         state = await self._watch.state(uid)
-        last = state.last_sync
-        if last is None or now - last < STALE_AFTER:
-            return 0
-        if state.stale_told is not None and state.stale_told >= last:
-            return 0  # told already for this silence
+        found = self._silence(state, now)
+        if found is None:
+            return ""
+        ref, kind = found
+        if state.stale_told is not None and state.stale_told == ref:
+            return ""  # told already for this silence
+        tried = self._tried.get(uid)
+        if tried is not None and tried[0] == ref and (tried[2] or now - tried[1] < RETRY_AFTER):
+            return ""  # delivered but not noted, or held a moment ago
         notifier = self._notifier() if self._notifier is not None else None
         if notifier is None:
-            return 0
-        local = last.astimezone(self._watch.zone())
-        await notifier.notify(uid, Signal(source="system", kind="watch_stale"), stale_words(local))
-        await self._watch.store.mark_told(uid, now)
-        return 1
+            log.warning("no notifier: the watch alert was not sent")
+            return "no_notifier"
+        local = ref.astimezone(self._watch.zone())
+        words = {"sync": stale_words, "refused": refused_words}.get(kind)
+        said = words(local) if words else no_data_words(local.date())
+        got = await notifier.notify(uid, Signal(source="system", kind="watch_stale"), said)
+        real = (
+            isinstance(got, Delivery)
+            and got.action in ("ring", "silent")
+            and (got.telegram or got.push > 0)
+        )
+        self._tried[uid] = (ref, now, bool(real))
+        if not real:
+            log.warning("the watch alert was held or reached no device: tried again later")
+            return "held"
+        try:
+            await self._watch.store.mark_told(uid, ref)
+        except Exception as exc:  # noqa: BLE001 - told; the failure to note it is counted
+            log.error("the watch alert was sent but not noted", extra={"error": type(exc).__name__})
+            return "told_unnoted"  # `_tried` stops this process telling again every 5 minutes
+        return "told"
 
 
 class BodySweep:

@@ -222,7 +222,11 @@ async def test_no_night_and_off_give_no_sleep_line() -> None:
 async def test_the_stale_watch_is_told_once_and_never_for_a_phone_that_never_synced() -> None:
     rig = Rig()
     (job,) = rig.part.clock_jobs
-    assert await job.run([UID]) == {"told": 0, "failed": 0}  # never synced: nothing
+    assert await job.run([UID]) == {
+        "told": 0,
+        "no_notifier": 0,
+        "failed": 0,
+    }  # never synced: nothing
     await rig.door.call("health", json.dumps(HEALTH).encode())
     rig.clock.move(hours=STALE_AFTER.total_seconds() / 3600 + 1)
     assert (await job.run([UID]))["told"] == 1

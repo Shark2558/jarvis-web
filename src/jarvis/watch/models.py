@@ -167,6 +167,13 @@ class DayIn(_Frozen):
     def _list(cls, v: object) -> object:
         return tuple(v) if isinstance(v, list) else v
 
+    @field_validator("sleep")
+    @classmethod
+    def _not_typed(cls, v: tuple[Session, ...]) -> tuple[Session, ...]:
+        if any(x.writer == TYPED_WRITER for x in v):
+            raise ValueError("only he types a night; a phone cannot")
+        return v
+
 
 class HealthBody(_Frozen):
     v: StrictInt = Field(ge=1, le=1)  # a StrictInt: `true` is not 1

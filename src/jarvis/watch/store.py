@@ -4,22 +4,26 @@
     {prefix}watch_days/{uid}_{date}   uid, date, v, kid, blob = AES-GCM(JSON StoredDay) under the
                                       keyring's `watch` key, AAD "watch_days/{uid}_{date}/v1" (a
                                       blob moved to another day does not open); updated_at
-    {prefix}watch_state/{uid}         last_sync, kinds {steps, heart, sleep}: which arrive (yes /
-                                      no, never a value), stale_told: when he was told it stopped
-                                      (a sync clears it)
+    {prefix}watch_state/{uid}         last_sync, first_sync, last_data_day (newest DATE with data),
+                                      kinds {steps, heart, sleep}: which arrive (yes / no, never a
+                                      value), first_refused / refused (a run of refused syncs),
+                                      stale_told: the silence he was told about (the moment it
+                                      counted from; a good sync clears it)
 
 No keyring: `WatchOff`, nothing is written (never in clear). A document that cannot be read or
-opened raises `WatchUnavailable` and is never overwritten by a guess. Logs carry class names and
+opened raises `WatchUnavailable`; a stored day that will not open is replaced only by the
+phone's own sync of that day (logged), never by a guess. Logs carry class names and
 counts only, never a value. A night he typed is kept inside the sealed day (so it is sealed too,
 and a sync of that day never drops it). Days are kept `watch_keep_days` (400) and then swept.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -27,7 +31,7 @@ from pydantic import ValidationError
 from jarvis.integrations.vault import VaultError
 from jarvis.keyring import KEY_ID, Keyring
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Doc, Docs, Query, Set
+from jarvis.storage.docs import Delete, Doc, Docs, DocTx, Query, Set
 from jarvis.storage.sessions import safe_id
 from jarvis.watch.models import DayIn, Session, StoredDay
 
@@ -57,6 +61,10 @@ class WatchState:
     last_sync: datetime | None = None
     kinds: Mapping[str, bool] = field(default_factory=lambda: dict.fromkeys(KINDS, False))
     stale_told: datetime | None = None
+    first_sync: datetime | None = None
+    last_data_day: date | None = None
+    first_refused: datetime | None = None
+    refused: int = 0
 
 
 def _uid(uid: str) -> str:
@@ -69,7 +77,15 @@ def _when(v: object) -> datetime | None:
     if not isinstance(v, str):
         return None
     try:
-        return datetime.fromisoformat(v)
+        at = datetime.fromisoformat(v)
+    except ValueError:
+        return None
+    return at if at.tzinfo is not None else at.replace(tzinfo=UTC)
+
+
+def _day_of(v: object) -> date | None:
+    try:
+        return date.fromisoformat(v) if isinstance(v, str) else None
     except ValueError:
         return None
 
@@ -151,66 +167,128 @@ class WatchStore:
         return None if doc is None else self._open(uid, d, doc)
 
     async def days(self, uid: str, dates: Sequence[date]) -> dict[date, StoredDay]:
-        out: dict[date, StoredDay] = {}
-        for d in dates:
-            got = await self.day(uid, d)
-            if got is not None:
-                out[d] = got
-        return out
+        self._ringed()
+        got = await asyncio.gather(*(self.day(uid, d) for d in dates))
+        return {d: g for d, g in zip(dates, got, strict=True) if g is not None}
+
+    async def _tx(self, fn: Callable[[DocTx], Awaitable[Any]]) -> Any:
+        try:
+            return await self._docs.transaction(fn)
+        except (WatchOff, WatchUnavailable, ValueError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - the store: plain words
+            log.warning("watch store transaction failed", extra={"error": type(exc).__name__})
+            raise WatchUnavailable() from None
 
     async def put(self, uid: str, days: Sequence[DayIn]) -> int:
-        """The phone's days replace what was kept for those days; a typed night stays."""
+        """The phone's days replace what was kept for those days; a typed night stays. All in ONE
+        transaction (a typed night saved at the same moment, or another sync, is never lost). A
+        stored day that will not open is replaced by the phone's (and logged), so one bad day never
+        blocks every later sync."""
         self._ringed()
-        kept = await self.days(uid, [d.date for d in days])
-        ops: list[Set | Delete] = []
-        for d in days:
-            typed = kept[d.date].typed if d.date in kept else None
-            stored = StoredDay(steps=d.steps, heart=d.heart, sleep=d.sleep, typed=typed)
-            ops.append(Set(self._day_path(uid, d.date), self._seal(uid, d.date, stored)))
+        state_path = self._state_path(uid)
+        now = self._now()
         seen = {
             "steps": any(d.steps is not None for d in days),
             "heart": any(d.heart is not None for d in days),
             "sleep": any(bool(d.sleep) for d in days),
         }
-        ops.append(Set(self._state_path(uid), await self._state_doc(uid, seen)))
-        await self._write(ops)
+        dated = [d.date for d in days if d.steps is not None or d.heart is not None or d.sleep]
+
+        async def fn(tx: DocTx) -> None:
+            old = [(d, await tx.get(self._day_path(uid, d.date))) for d in days]
+            state = await tx.get(state_path) or {}
+            for d, doc in old:
+                typed = None
+                if doc is not None:
+                    try:
+                        typed = self._open(uid, d.date, doc).typed
+                    except WatchUnavailable:
+                        log.error("a stored watch day will not open: replaced by the phone's")
+                stored = StoredDay(steps=d.steps, heart=d.heart, sleep=d.sleep, typed=typed)
+                tx.set(self._day_path(uid, d.date), self._seal(uid, d.date, stored))
+            tx.set(state_path, self._synced(uid, state, seen, dated, now))
+
+        await self._tx(fn)
         log.info("watch days kept", extra={"days": len(days)})
         return len(days)
 
-    async def set_typed(self, uid: str, d: date, night: Session) -> None:
-        old = await self.day(uid, d)
-        base = old or StoredDay()
-        stored = base.model_copy(update={"typed": night})
-        await self._write([Set(self._day_path(uid, d), self._seal(uid, d, stored))])
-
-    # ---- state ------------------------------------------------------------------------------
-    async def _state_doc(self, uid: str, seen: Mapping[str, bool]) -> Doc:
-        old = await self.state(uid)
-        kinds = {k: bool(old.kinds.get(k)) or bool(seen.get(k)) for k in KINDS}
+    @staticmethod
+    def _synced(
+        uid: str, old: Doc, seen: Mapping[str, bool], dated: Sequence[date], at: datetime
+    ) -> Doc:
+        raw = old.get("kinds")
+        was: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        kinds = {k: was.get(k) is True or bool(seen.get(k)) for k in KINDS}
+        newest = max(
+            [*dated, *([d] if (d := _day_of(old.get("last_data_day"))) else [])], default=None
+        )
         return {
             "uid": uid,
-            "last_sync": self._now().isoformat(),
+            "last_sync": at.isoformat(),
+            "first_sync": old.get("first_sync") or at.isoformat(),
+            "last_data_day": newest.isoformat() if newest else None,
             "kinds": kinds,
+            "first_refused": None,  # a good sync ends a run of refused ones
+            "refused": 0,
             "stale_told": None,  # a sync ends the silence: the next one is told again
         }
 
+    async def set_typed(self, uid: str, d: date, night: Session) -> None:
+        self._ringed()
+        path = self._day_path(uid, d)
+
+        async def fn(tx: DocTx) -> None:
+            doc = await tx.get(path)
+            base = self._open(uid, d, doc) if doc is not None else StoredDay()
+            tx.set(path, self._seal(uid, d, base.model_copy(update={"typed": night})))
+
+        await self._tx(fn)
+
+    # ---- state ------------------------------------------------------------------------------
     async def state(self, uid: str) -> WatchState:
         doc = await self._get(self._state_path(uid))
         if doc is None:
             return WatchState()
         raw = doc.get("kinds")
         kinds: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        count = doc.get("refused")
         return WatchState(
             last_sync=_when(doc.get("last_sync")),
             kinds={k: kinds.get(k) is True for k in KINDS},
             stale_told=_when(doc.get("stale_told")),
+            first_sync=_when(doc.get("first_sync")),
+            last_data_day=_day_of(doc.get("last_data_day")),
+            first_refused=_when(doc.get("first_refused")),
+            refused=count if isinstance(count, int) and not isinstance(count, bool) else 0,
         )
 
-    async def mark_told(self, uid: str, at: datetime) -> None:
-        doc = await self._get(self._state_path(uid))
-        if doc is None:
-            return
-        await self._write([Set(self._state_path(uid), {**doc, "stale_told": at.isoformat()})])
+    async def note_refused(self, uid: str) -> None:
+        """A sync that was refused is counted (never what it held); it never raises."""
+        path, now = self._state_path(uid), self._now()
+
+        async def fn(tx: DocTx) -> None:
+            doc = await tx.get(path) or {"uid": uid}
+            count = doc.get("refused")
+            n = count if isinstance(count, int) and not isinstance(count, bool) else 0
+            first = doc.get("first_refused") or now.isoformat()
+            tx.set(path, {**doc, "first_refused": first, "refused": n + 1})
+
+        try:
+            await self._tx(fn)
+        except (WatchUnavailable, ValueError) as exc:
+            log.warning("a refused sync was not counted", extra={"error": type(exc).__name__})
+
+    async def mark_told(self, uid: str, silence: datetime) -> None:
+        """He was told about the silence that counts from `silence`; only that field changes."""
+        path = self._state_path(uid)
+
+        async def fn(tx: DocTx) -> None:
+            doc = await tx.get(path)
+            if doc is not None:
+                tx.set(path, {**doc, "stale_told": silence.isoformat()})
+
+        await self._tx(fn)
 
     # ---- housekeeping and privacy ----------------------------------------------------------------
     async def _ids(self, uid: str) -> list[tuple[str, str]]:

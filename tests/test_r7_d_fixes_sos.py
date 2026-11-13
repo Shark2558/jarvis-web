@@ -27,8 +27,10 @@ class Held(Notes):
     def __init__(self, action: str) -> None:
         super().__init__()
         self.action = action
+        self.calls = 0
 
     async def notify(self, uid: str, signal: Signal, message: str, **kw: Any) -> Delivery:
+        self.calls += 1
         return Delivery(action=self.action, reason="quiet")  # type: ignore[arg-type]
 
 

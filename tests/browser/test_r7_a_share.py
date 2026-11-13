@@ -503,3 +503,39 @@ def test_the_tray_passes_the_visual_gate(
         assert t.errors == [] and t.csp_violations() == []
     finally:
         t.close()
+
+
+def test_ask_sends_through_the_one_door_when_the_brain_sees_pictures(
+    browser: Any, server_url: str, token: str
+) -> None:
+    t = Tray(browser, server_url, token, DESKTOP)
+    chats: list[dict[str, Any]] = []
+
+    def brains(route: Any) -> None:
+        got = route.fetch().json()
+        body = [{**b, "sees_pictures": True} for b in got]
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+
+    def chat(route: Any) -> None:  # the picture is a stand-in upload: send the words on alone
+        body = json.loads(route.request.post_data)
+        chats.append(dict(body))
+        body.pop("attachments", None)
+        route.continue_(post_data=json.dumps(body))
+
+    try:
+        t.pretend_uploads()
+        t.page.route("**/v1/brains", brains)
+        t.page.route("**/v1/chat", chat)
+        _tray_open(t, {"files": [_two_pictures()["files"][0]]})
+        assert t.sent() == []
+        t.page.get_by_role("button", name="Ask the AI about it (about ₹0.30)").click()
+        t.page.locator(".row.jarvis .bubble:not(.typing)").first.wait_for(timeout=20_000)
+        assert [u.rsplit("/", 1)[1] for _, u in t.sent()] == ["attachments", "chat"]
+        assert chats[0]["message"] == "What can you tell me about this picture?"
+        assert chats[0]["attachments"] == ["doc_" + "0" * 20]
+        assert t.tray()["items"] == []
+        sent = t.page.evaluate("JSON.parse(localStorage.getItem('jarvis_r7_sent_v1')).n")
+        assert sent == 1  # the one "Pictures sent from this device today" count
+        assert t.errors == [] and t.csp_violations() == []
+    finally:
+        t.close()

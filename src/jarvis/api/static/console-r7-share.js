@@ -32,8 +32,8 @@ const WORDS = {
   noLook: 'The Camera screen can\u2019t look at a shared picture yet.',
   notReady: 'JARVIS is still starting. Try again in a moment.',
   notSent: 'It wasn\u2019t sent. Try again in a moment.',
+  held: 'It wasn\u2019t sent yet. If it is attached to your message, finish there.',
   gone: 'That item is no longer on this phone.',
-  vaulted: 'Added to your vault for you to check.',
 };
 const KIND_WORD = { 'image/jpeg': 'Photo', 'image/png': 'Photo', 'image/webp': 'Photo', 'application/pdf': 'PDF' };
 
@@ -166,14 +166,13 @@ async function look(it) {
 }
 async function ask(it) {
   const d = need(), file = await fileOf(it);
-  if (!(await d.ask(file, ASK_TEXT))) throw new Error(WORDS.notSent);
+  if (!(await d.ask(file, ASK_TEXT))) throw new Error(WORDS.held); // busy, or the cost line asks first
   await done(it);
 }
 async function vault(it) {
   const d = need(), file = await fileOf(it);
   await d.vault(file); // the usual proposal for him to confirm; the door opens the Vault panel
   await done(it);
-  tell([WORDS.vaulted], false);
 }
 async function attach(it) {
   const d = need(), file = await fileOf(it);
@@ -230,6 +229,7 @@ async function ready() {
 
 document.addEventListener('jarvis:ready', () => { ready(); });
 document.addEventListener('jarvis:pictures-sent', countLine);
+document.addEventListener('jarvis:brain', () => { if (sheet && sheet.open) render(); }); // can it see pictures now?
 if (signedIn()) ready();
 
 if (M) M.part('share', Object.freeze({ open, items: async () => (await items()).map(({ name, type, size, text }) => ({ name, type, size, text })) }));

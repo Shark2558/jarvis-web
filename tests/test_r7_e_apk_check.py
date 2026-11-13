@@ -528,11 +528,14 @@ def test_control_an_unknown_host_in_the_code_fails(tmp_path: Path) -> None:
     assert any("telemetry.example.net" in p for p in _problems(tmp_path, dex=dex))
 
 
-def test_the_font_licences_may_name_their_own_hosts_and_nothing_else_may(tmp_path: Path) -> None:
-    licence = b"Copyright (https://github.com/x) see http://scripts.sil.org/OFL"
-    assert _problems(tmp_path, extra={"assets/fonts/OFL-orbitron.txt": licence}) == []
-    problems = _problems(tmp_path, extra={"assets/notes.txt": licence})
-    assert any("github.com" in p for p in problems)
+def test_every_reviewed_host_says_where_it_comes_from(tmp_path: Path) -> None:
+    assert all(reason.strip() for reason in ac.REVIEWED_HOSTS.values())
+    licence = (
+        b"Copyright (https://github.com/x) see http://scripts.sil.org/OFL https://www.apache.org/"
+    )
+    assert _problems(tmp_path, extra={"META-INF/LICENSE.txt": licence}) == []
+    for private in ("jarvis.web" + ".app", "x.cloudfunctions" + ".net"):
+        assert ac.scan_entry("classes.dex", b"https://" + private.encode()), private
 
 
 def test_control_a_launch_address_with_another_host_fails(tmp_path: Path) -> None:

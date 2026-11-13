@@ -27,7 +27,7 @@ tasks.named<Test>("test") {
     enabled = false // the tests run through jvmTests: no test framework (D24)
 }
 
-val jvmTests by tasks.registering(JavaExec::class) {
+val jvmTests = tasks.register<JavaExec>("jvmTests") {
     description = "Runs core's JVM tests against the shared vectors (R7 D24)."
     group = "verification"
     dependsOn(tasks.named("testClasses"))

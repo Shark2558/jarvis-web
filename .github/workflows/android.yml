@@ -67,7 +67,7 @@ jobs:
           done
       - name: Resolve every dependency first (all of them on Google's Maven or Maven Central)
         working-directory: android
-        run: ./gradlew --no-daemon --no-configuration-cache resolveDependencies -Pjarvis.host=jarvis.invalid
+        run: ./gradlew --no-daemon --no-configuration-cache --warning-mode all resolveDependencies -Pjarvis.host=jarvis.invalid
       - name: core's JVM tests against the shared vectors (D24)
         if: ${{ !cancelled() }}
         working-directory: android
@@ -96,7 +96,11 @@ jobs:
       - name: Lint the `personal` build
         if: ${{ !cancelled() }}
         working-directory: android
-        run: ${GRADLE} :app:lintPersonal
+        run: |
+          status=0
+          ${GRADLE} :app:lintPersonal || status=$?
+          cat app/build/reports/lint-results-personal.txt 2>/dev/null || echo "no lint text report"
+          exit ${status}
       - name: Keep the result for 7 days, not for installing
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

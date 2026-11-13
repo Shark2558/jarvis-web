@@ -150,18 +150,24 @@ REACHABLE: dict[str, Reach] = {
     ),
 }
 
-# Hosts written inside the app: the placeholder, our own fixed link and XML namespaces. CI's
-# report lists every host it finds; a library's host joins this list only after review.
-ALLOWED_HOSTS: frozenset[str] = frozenset(
-    {
-        PLACEHOLDER,
-        "maps.google.com",  # the SOS text's map link (D19)
-        "schemas.android.com",  # XML namespaces
-    }
-)
-# The fonts' licence texts (SIL OFL 1.1, copied with the fonts) name these, and only there.
-LICENCE_HOSTS: frozenset[str] = frozenset({"scripts.sil.org", "github.com"})
-_LICENCE_ENTRY = re.compile(r"^assets/fonts/OFL-[a-z-]+\.txt$")
+# Hosts written inside the app, each reviewed (CI's first report, run 43439904145): the placeholder,
+# the app's own map link, XML namespaces, and the public pages the libraries' own texts link to.
+# None can be a JARVIS address. CI prints every host it finds on every run; a new one fails the
+# check until it is reviewed and added here with its reason.
+REVIEWED_HOSTS: dict[str, str] = {
+    PLACEHOLDER: "the address CI builds against (D23)",
+    "maps.google.com": "the SOS text's map link (D19)",
+    "schemas.android.com": "XML namespaces",
+    "developer.android.com": "AndroidX error messages link Android's documentation",
+    "issuetracker.google.com": "AndroidX error messages link Google's issue tracker",
+    "github.com": "android-browser-helper's message links its README; a font names its makers",
+    "youtrack.jetbrains.com": "the Kotlin standard library links its issue tracker",
+    "www.apache.org": "the libraries' Apache-2.0 licence texts (META-INF)",
+    "scripts.sil.org": "the fonts' SIL Open Font Licence link, inside the fonts and their licences",
+    "example.com": "a sample address in a library's text (RFC 2606: never real)",
+    "www.example.com": "a sample address in a library's text (RFC 2606: never real)",
+}
+ALLOWED_HOSTS: frozenset[str] = frozenset(REVIEWED_HOSTS)
 # Any host of these services is a real address and always fails (the build book's own list).
 PRIVATE_SUFFIXES = (
     ".run.app",
@@ -470,7 +476,7 @@ def hosts_in(data: bytes) -> set[str]:
 
 def scan_entry(name: str, data: bytes, host: str = PLACEHOLDER) -> list[str]:
     out = []
-    allowed = ALLOWED_HOSTS | {host} | (LICENCE_HOSTS if _LICENCE_ENTRY.match(name) else set())
+    allowed = ALLOWED_HOSTS | {host}
     for h in sorted(hosts_in(data)):
         private = h.endswith(PRIVATE_SUFFIXES) and h != host
         if private or h not in allowed:

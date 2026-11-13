@@ -12,8 +12,10 @@ allprojects {
     tasks.register("resolveDependencies") {
         notCompatibleWithConfigurationCache("resolves this project's classpaths on purpose")
         doLast {
+            // An app's AndroidTest classpaths resolve the app itself (no on-device tests here).
             val wanted = owner.configurations.filter {
                 it.isCanBeResolved &&
+                    !it.name.contains("AndroidTest") &&
                     (it.name.endsWith("CompileClasspath") || it.name.endsWith("RuntimeClasspath"))
             }
             wanted.forEach { it.resolve() }

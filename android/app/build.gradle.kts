@@ -86,7 +86,6 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         textReport = true
-        textOutput = file("stdout")
     }
 }
 

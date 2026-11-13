@@ -11,7 +11,7 @@ kotlin = "2.4.10"
 androidbrowserhelper = "2.7.4"
 androidx-browser = "1.10.0"
 androidx-core = "1.17.0"
-androidx-work = "2.10.1"
+androidx-work = "2.10.5"
 health-connect = "1.1.0"
 
 [libraries]

@@ -40,8 +40,15 @@ contacts: [{label, phone}]}` for Part C's `hello` reply). Its `ready` word is `r
    which kinds arrive (yes / no) and when he was told the watch went quiet.
 2. **A typed night wins** over the watch's and the phone's for that night (he typed it because the device was
    wrong or not worn).
-3. **Writer → source:** `com.noisefit` (`models.WATCH_WRITERS`) is "watch"; every other writer, the phone itself
-   and any other app, is "phone", because the brief's line has only those two words (D18). The list can grow.
+3. **Writer → source** (the Workshop's question from Part E, 13 Nov): `com.noisefit` (`models.WATCH_WRITERS`)
+   is "watch" ("from your watch"); Health Connect's own `android` (`models.PHONE_WRITERS`) is "phone" ("from
+   your phone"); ANY other writer (another maker's health app, Google Fit) is "app", said neutrally: "from
+   another health app" and "these are that app's own estimates" in the tools, the No-AI answers and the Watch
+   tab. It is never claimed as the watch's or the phone's. One night keeps one writer: the watch, then the
+   phone, then any other app (D17), then the longest session. **The brief's pinned `SleepLine` knows only
+   watch / phone / typed**, so an "app" night is written there as "phone" (an app on his phone; the console's
+   one brief line would read "from your phone"); a fourth source would be a contract change, I1's to make
+   (§4.10). Tests: `test_r7_d_watch_intake.py`, `test_r7_d_sleep.py`, `test_r7_d_watch_tools.py`.
 4. **The clock where he slept:** a night's start and end are read in each time's own UTC offset (what the phone
    wrote), and its minutes from the absolute times, so a night across a time-zone change sums right. "Ends
    between 00:00 and 14:00" uses that same local clock (14:00 itself counts).
@@ -72,26 +79,33 @@ contacts: [{label, phone}]}` for Part C's `hello` reply). Its `ready` word is `r
 
 | Check | Result |
 |---|---|
-| `pytest tests/test_r7_d_*.py tests/test_telegram_client.py` (Python 3.12) | 174 passed |
-| Guard tests (`test_r7_seams.py`, `test_r7_telegram_hook.py`, `test_r11_1_seams.py`, `test_arch_coverage.py`, `test_telegram_tool_guard.py`, every `test_telegram_*`) | all pass except the one I0 pin of §4.1 |
+| `pytest tests/test_r7_d_*.py` / `tests/test_telegram_client.py` (Python 3.12) | 178 passed / 16 passed |
+| Coverage of `jarvis.watch` and `jarvis.sos` (by those tests) | 92 % |
+| Guard tests (every `test_r7_*`, `test_r11_1_seams.py`, `test_arch_coverage.py`, every `test_telegram_*` with the tool guard, `test_r51_console_assets_linked.py`) | 867 passed, 2 failed: the two I0 pins of §4.1 |
 | `ruff check` / `ruff format --check` on every file Part D touched | clean |
 | `mypy` on `watch`, `sos`, `api/watch.py`, `api/sos.py`, `telegram/client.py` | clean (only the 9 pre-existing errors elsewhere) |
-| `evals/r7/run.py --mock --part body` | 11/11; each of the four controls fails its case |
-| Browser `tests/browser/test_r7_d_body.py` | see the final report (run under the shared lock) |
-| Sizes | `console-r7-sos.js` 343 lines, `console-helpers-watch.js` 151, `console-r7-sos.css` 38 (≤ 150) |
+| `evals/r7/run.py --mock --part body` / the whole runner | 11/11, each of the four controls fails its own case / 25/25, exit 0 |
+| `scripts/arch_coverage.py`, `scripts/check_doc_versions.py` | OK (95 collections) / 27 documents pass |
+| Browser `test_r7_d_body.py` with `test_ui_audit.py`, `test_dock_fit.py`, `test_r7_i0_sheet.py` | 166 passed (the card, the sheet and the Watch tab through the visual gate at both sizes, Night and Day) |
+| Sizes | `console-r7-sos.js` 345 lines, `console-helpers-watch.js` 149, `console-r7-sos.css` 37 (≤ 150) |
 
 ## 4. Needs I1
 
-1. `tests/test_r7_seams.py::test_the_app_starts_with_four_stub_parts_and_their_status_routes` pins
-   `wiring.door_handlers(app) == {}` ("no part has built its handlers yet"). With Part D built it is
-   `{"health", "sos"}` (and Part C's `hello`, `inbox`). Move the pin; Part D may not edit that file.
+1. Two I0 pins in `tests/test_r7_seams.py` (Part D may not edit it) hold every part as a stub and turn red
+   once a part is built: `test_the_app_starts_with_four_stub_parts_and_their_status_routes` pins
+   `wiring.door_handlers(app) == {}` (with Part D it is `{"health", "sos"}`, and Part C's `hello`, `inbox`), and
+   `test_the_r7_runner_passes_with_its_contract_built_and_the_rest_stubs` expects `body:not_built_yet` and
+   `body` in `parts_not_built` (the runner itself passes, 25/25 with Part D's controls failing). Move both.
 2. **The brief's sleep line (acceptance check 8).** `BriefService` must ask the body part's
    `services["brief"].sleep(uid, tz, day)` and put the `SleepLine` (or None) into `BriefData.sleep`;
    `render_text` stays as it is (the e-mailed copy and Telegram carry no sleep). `console-brief-sections.js` must
    draw `d.sleep` as one line: `Sleep: {h} h {m} min, {start} to {end} · from your watch | from your phone |
    typed by you` (`jarvis.watch.sleep.brief_text` is the server's copy of the words). `lines()` is always empty.
-3. **Part C's `hello` reply** should read `app.state.r7_parts["body"].services["sos_sms"](uid)` for the phone's
-   SMS screen (`{label, contacts: [{label, phone}]}`); a `SosOff` / `SosUnavailable` there means no contacts.
+3. **Part C's `hello` reply** reads `app.state.r7_parts["body"].services["sos_sms"](uid)`
+   (`SosService.sms_view`) for the phone's offline SMS screen and puts it under `sos`, as phone-contract §4
+   says: `{"label": his name for the message, "contacts": [{"label", "phone"}]}`, only the contacts that have
+   a number (an SMS needs one). It raises `SosOff` (no token key) or `SosUnavailable` (the store failed):
+   C answers `hello` without `sos` then, and the phone keeps the list it had.
 4. **Part A's `do=sos`** opens the sheet with `window.JarvisMobile.parts.sos.open()`.
 5. **The persona at `p7.0`:** JARVIS can never send an SOS and says how he does (the hold, the phone, 112); sleep
    and heart numbers are the watch's or the phone's estimates, never a diagnosis.
@@ -106,15 +120,21 @@ contacts: [{label, phone}]}` for Part C's `hello` reply). Its `ready` word is `r
    document, log record, audit line, Activity row, alert and address must stay clean (Part D's eval checks
    these for its own paths).
 9. **The whole suite:** Part D ran only its own files and the guard tests; nothing else of the suite was run.
+10. **Optional, a contract change:** if the brief's line should also say "from another health app", add
+    `"app"` to `brief.models.SleepLine.source` and to the console's brief words; Part D's `sleep_line` then
+    passes it through instead of writing "phone" (§2.3).
 
 ## 5. For Part C and Part E
 
 - **C:** the door hands `health` and `sos` to Part D's handlers exactly as `FakeDoor` does; Part D trusts every
   check of D6 to have run. Both handlers answer JSON only; `sos` answers 200 with the honest view for every
   outcome (refused and failed included), 422 for a bad body, 500 `{error: failed}` only for the unforeseen.
-- **E:** the `sos` reply's `results[].status` is one of `sent`, `sent_no_pin`, `failed`, `not_joined`;
-  `sent` is true only when at least one contact's message was taken by Telegram; `sms.text` is the message the
-  server used (with the map link when a place came). Open the SMS screen and the 112 button whatever it says.
+- **E:** the `sos` reply always carries `reached` (how many contacts' messages Telegram really took; a
+  message Telegram refused, or that did not answer within 12 seconds, is never counted), `joined` (contacts
+  on Telegram), `total`, `outcome` (`sent`, `partial`, `failed`, `none_joined`, `refused`, `unavailable`),
+  `results[].status` (`sent`, `sent_no_pin`, `failed`, `not_joined`) and `words` (plain words). `sent` is true
+  only when `reached` is at least 1. `sms.text` is the message the server used (with the map link when a
+  place came). Open the SMS screen and the 112 button whatever it says.
   `health` answers 422 `{error: invalid}` for any value outside the contract and never says which (fix the day
   builder, never the server).
 
@@ -133,4 +153,4 @@ contacts: [{label, phone}]}` for Part C's `hello` reply). Its `ready` word is `r
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v7.0.1 | 13 Nov 2026, 19:40 IST | R7 | First edition: what Part D built (watch intake, sealed days, sleep, tools, phrases, the brief slot, watch_stale and the sweep; SOS contacts, join words, the send and its limits, the hook, send_location; the routes, the console sheet, card and Watch tab; privacy rows; the eval), the 15 decisions and deviations, the checks, the nine needs for I1, notes for C and E, what was not verified | 🛠 Mark XVII |
+| v7.0.1 | 13 Nov 2026, 19:40 IST | R7 | First edition: what Part D built (watch intake, sealed days, sleep, tools, phrases, the brief slot, watch_stale and the sweep; SOS contacts, join words, the send and its limits, the hook, send_location; the routes, the console sheet, card and Watch tab; privacy rows; the eval), the 15 decisions and deviations (with how a writer that is neither the watch nor the phone is named), the checks, the ten needs for I1, notes for C and E, what was not verified | 🛠 Mark XVII |

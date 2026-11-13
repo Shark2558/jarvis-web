@@ -5,8 +5,8 @@
   session that ended on `day` between 00:00 and 14:00 by the clock where he slept (each time keeps
   its own UTC offset, so a night across a time-zone change is summed by the clock, and its start
   and end read as the phone showed them), among the sessions of ONE writer: a watch app before
-  the phone, and among other writers the one with the longest session (D17's day builder already
-  keeps one writer a night; this holds if two days' lists overlap).
+  the phone, any other app after both (D17), and among equals the writer with the longest session
+  (the phone's day builder already keeps one writer a night; this holds if two days' lists overlap).
 - `week(nights)`: the average and the spread of bedtimes (earliest to latest, across midnight).
 - `sleep_line(night)` is the brief's pinned shape (`brief.models.SleepLine`) and `brief_text`
   its one console line: "Sleep: 6 h 40 min, 23:50 to 06:30 · from your watch".
@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
+from typing import Literal
 
 from jarvis.brief.models import SleepLine
 from jarvis.watch.models import TYPED_WRITER, Session, Source, Stages, source_of
@@ -27,6 +28,7 @@ DAY_MINUTES = 24 * 60
 FROM: dict[str, str] = {
     "watch": "from your watch",
     "phone": "from your phone",
+    "app": "from another health app",
     "typed": "typed by you",
 }
 DOT = "·"
@@ -77,7 +79,7 @@ def _night(session: Session, source: Source) -> Night:
 
 def _writer_rank(writer: str, sessions: Sequence[Session]) -> tuple[int, int]:
     longest = max(x.minutes for x in sessions if x.writer == writer)
-    return (0 if source_of(writer) == "watch" else 1, -longest)
+    return ({"watch": 0, "phone": 1}.get(source_of(writer), 2), -longest)
 
 
 def last_night(
@@ -108,11 +110,15 @@ def week(nights: Sequence[Night]) -> Week | None:
 
 
 def sleep_line(night: Night) -> SleepLine:
+    """The brief's pinned shape: its source is watch / phone / typed only, so a night from another
+    health app on his phone is written "phone" there (the tools and the Watch tab say "another
+    health app")."""
+    source: Literal["watch", "phone", "typed"] = "phone" if night.source == "app" else night.source
     return SleepLine(
         minutes=min(night.minutes, DAY_MINUTES),
         start=night.start,
         end=night.end,
-        source=night.source,
+        source=source,
     )
 
 

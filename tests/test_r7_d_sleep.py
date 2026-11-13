@@ -124,3 +124,15 @@ def test_the_briefs_line_names_the_source() -> None:
     typed = SleepLine(minutes=60, start="05:00", end="06:00", source="typed")
     assert brief_text(phone).endswith("· from your phone")
     assert brief_text(typed).endswith("· typed by you")
+
+
+def test_another_app_comes_after_the_phone_and_is_named_neutrally() -> None:
+    other = "com.example.makerhealth"
+    app_night = s(at("11", "22:00"), at("12", "07:30"), other)  # the longest, but neither
+    phone = s(at("11", "23:00"), at("12", "06:00"), PHONE)
+    n = last_night(DAY, [app_night, phone])
+    assert n is not None and n.source == "phone"
+    alone = last_night(DAY, [app_night])
+    assert alone is not None and alone.source == "app"
+    # the brief's pinned shape knows watch / phone / typed only: an app on his phone is "phone"
+    assert sleep_line(alone).source == "phone"

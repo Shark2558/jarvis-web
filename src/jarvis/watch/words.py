@@ -14,6 +14,7 @@ from jarvis.watch.store import WatchState
 ESTIMATE: dict[str, str] = {
     "watch": "These are your watch's own estimates, Sir, never a diagnosis.",
     "phone": "These are your phone's own estimates, Sir, never a diagnosis.",
+    "app": "These are that app's own estimates, Sir, never a diagnosis.",
     "typed": "That is the time you typed, Sir.",
 }
 WEEK_NOTE = "These are estimates, Sir, never a diagnosis."

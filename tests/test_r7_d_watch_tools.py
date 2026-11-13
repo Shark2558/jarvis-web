@@ -232,3 +232,16 @@ async def test_no_ai_answers_how_did_i_sleep_with_no_model_at_all() -> None:
     out = await run_no_ai(_gw(svc), "how did I sleep?", NOW, scope=SCOPE, extra=(watch_phrases,))
     assert out.reply.startswith("Last night you slept 6 h 40 min")  # no provider exists here
     assert route_no_ai("how did I sleep?", NOW).calls == ()  # only our phrasebook takes it
+
+
+async def test_a_night_from_another_app_is_said_neutrally() -> None:
+    svc = _service()
+    body = json.loads(json.dumps(NIGHT))
+    body["days"][0]["sleep"][0]["writer"] = "com.example.makerhealth"
+    body["days"][0]["steps"]["writer"] = "com.example.makerhealth"
+    await svc.intake(UID, json.dumps(body).encode())
+    gw = _gw(svc)
+    said = _said(await _call(gw, "sleep_last_night"))
+    assert "from another health app" in said and "that app's own estimates" in said
+    assert "from your watch" not in said and "from your phone" not in said
+    assert "from another health app" in _said(await _call(gw, "watch_today"))

@@ -142,7 +142,8 @@ def test_no_sleep_and_no_stages_are_fine() -> None:
     assert day.steps is None and day.heart is None and day.sleep[0].stages is None
 
 
-def test_the_writer_names_the_source_watch_or_phone() -> None:
+def test_the_writer_names_the_source_watch_phone_or_another_app() -> None:
     assert source_of("com.noisefit") == "watch"
-    assert source_of("android") == "phone"
-    assert source_of("com.google.android.apps.fitness") == "phone"  # any other app: the phone
+    assert source_of("android") == "phone"  # Health Connect's own name for the phone itself
+    for other in ("com.google.android.apps.fitness", "com.example.makerhealth"):
+        assert source_of(other) == "app"  # never claimed as the watch's or the phone's

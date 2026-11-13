@@ -166,6 +166,7 @@ async def test_the_sos_door_sends_and_keeps_no_place(caplog: pytest.LogCaptureFi
     with caplog.at_level(logging.DEBUG):
         reply = await rig.door.call("sos", json.dumps(body).encode())
     assert reply.status == 200 and reply.body["outcome"] == "sent" and reply.body["sent"] is True
+    assert reply.body["reached"] == 1  # how many contacts Telegram really took it for
     assert reply.body["call"]["emergency"] == "112" and reply.body["sms"]["numbers"] == [ASHA[1]]
     written = json.dumps(rig.docs._data, default=str) + caplog.text
     written += "".join(e.detail for e in rig.audit._entries)
@@ -267,3 +268,24 @@ async def test_the_wiring_hands_the_hook_to_telegram_and_the_door_its_handlers()
     assert set(r7_wiring.door_handlers(app)) == {"health", "sos"}
     assert r7_wiring.mobile_phrases(app) == (part_mod.watch_phrases,)
     assert len(r7_wiring.mobile_brief(app)) == 1
+
+
+async def test_the_hello_reply_can_read_the_sms_list() -> None:
+    rig = Rig()
+    await rig.sos.set_label(UID, "Kiran Example")
+    await rig.sos.add_contact(UID, *ASHA[:2])
+    await rig.sos.add_contact(UID, "No Number Example", None)
+    got = await rig.part.services["sos_sms"](UID)
+    assert got == {"label": "Kiran Example", "contacts": [{"label": ASHA[0], "phone": ASHA[1]}]}
+
+
+async def test_a_door_reply_never_counts_an_undelivered_message_as_reached() -> None:
+    rig = Rig()
+    c = await rig.sos.add_contact(UID, *ASHA[:2])
+    word = (await rig.sos.join_link(UID, c.id))["link"].split("start=", 1)[1]
+    await rig.part.services["sos_hook"].join(word, tg_user_id=ASHA[2], chat_id=ASHA[2])
+    rig.bot.refuse_text.add(ASHA[2])
+    body = {"v": 1, "kind": "real", "at": int(rig.clock().timestamp()), "location": None}
+    reply = await rig.door.call("sos", json.dumps(body).encode())
+    assert reply.body["reached"] == 0 and reply.body["sent"] is False
+    assert reply.body["results"][0]["status"] == "failed"

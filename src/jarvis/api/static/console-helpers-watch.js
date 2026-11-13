@@ -10,7 +10,7 @@
 //   week: {nights, avg_minutes, bed_from, bed_to} | null}; POST /v1/watch/sleep {start, end} -> {message, night}.
 const H = window.JarvisHelpers;
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
-const FROM = { watch: 'from your watch', phone: 'from your phone', typed: 'typed by you' };
+const FROM = { watch: 'from your watch', phone: 'from your phone', app: 'from another health app', typed: 'typed by you' };
 const NOTE = 'Daily sums from your watch or phone through Health Connect, kept encrypted. Estimates, never a diagnosis.';
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const UI = { host: null, body: null, note: null, busy: false, loaded: false, loading: null };

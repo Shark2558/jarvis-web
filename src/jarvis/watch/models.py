@@ -16,8 +16,11 @@ docs/plans/r7-integration/phone-contract.md section 4), and the day the server k
 - Anything else refuses the WHOLE body with `IntakeRefused.WORDS`: fixed words that never echo a
   value (the phone's day builder is ours: a bad value is a bug to see, never data to guess).
 
-`source_of(writer)` names the source the brief and the Watch tab say: a known watch app is "watch",
-every other writer (the phone itself, Google Fit, any other app) is "phone" (D17, D18).
+`source_of(writer)` names the source the tools and the Watch tab say: a known watch app is "watch",
+Health Connect's own `android` (the phone itself) is "phone", and any other app (another maker's
+health app, Google Fit) is "app", said neutrally ("from another health app"), never claimed as the
+watch's or the phone's (D17, D18). The brief's pinned `SleepLine` has only watch / phone / typed, so
+`sleep.sleep_line` writes "app" there as "phone" (an app on his phone); INTEGRATION-D says so.
 """
 
 from __future__ import annotations
@@ -38,7 +41,8 @@ from pydantic import (
     model_validator,
 )
 
-Source = Literal["watch", "phone", "typed"]
+Source = Literal["watch", "phone", "app", "typed"]
+Device = Literal["watch", "phone", "app"]
 MAX_DAYS = 35
 MAX_STEPS = 200_000
 HEART_LOW, HEART_HIGH = 20, 250
@@ -48,6 +52,8 @@ WRITER_MAX = 128
 _WRITER = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*$")
 # The watch apps whose sessions and sums are the watch's own (D17: NoiseFit first; owner question 3)
 WATCH_WRITERS: frozenset[str] = frozenset({"com.noisefit"})
+# Health Connect's own writer name for what the phone itself measured
+PHONE_WRITERS: frozenset[str] = frozenset({"android"})
 TYPED_WRITER = "typed"  # a sleep time he typed (never a writer the phone sends: it is refused)
 
 
@@ -211,8 +217,10 @@ def parse_health(body: bytes, today: date) -> HealthBody:
     return parsed
 
 
-def source_of(writer: str) -> Literal["watch", "phone"]:
-    return "watch" if writer in WATCH_WRITERS else "phone"
+def source_of(writer: str) -> Device:
+    if writer in WATCH_WRITERS:
+        return "watch"
+    return "phone" if writer in PHONE_WRITERS else "app"
 
 
 __all__ = [
@@ -224,7 +232,9 @@ __all__ = [
     "MAX_STEPS",
     "TYPED_WRITER",
     "WATCH_WRITERS",
+    "PHONE_WRITERS",
     "DayIn",
+    "Device",
     "HealthBody",
     "Heart",
     "IntakeRefused",

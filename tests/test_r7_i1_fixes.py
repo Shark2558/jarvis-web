@@ -20,7 +20,7 @@ async def app(settings: Settings) -> AsyncIterator[Any]:
         yield a
 
 
-# ---- security L3: a link from another site cannot mark this browser as the app -------------------
+# ---- security L3: a link from another site cannot mark this browser as the app ----
 async def test_a_cross_site_visit_to_source_app_marks_nothing(app: Any) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as c:
         await sign_in_again(app, c)
@@ -45,7 +45,7 @@ async def test_a_typed_or_app_launch_still_marks_the_app(app: Any, site: str | N
         assert (await c.get("/v1/session/lock")).json()["app"] is True
 
 
-# ---- security L4: a flood or a rate limit is a bare 429, never the "unknown phone" 401 -------------
+# ---- security L4: a flood or a rate limit is a bare 429, never the "unknown phone" 401 ----
 async def test_the_door_answers_a_flood_with_a_bare_429_and_keeps_401_for_authentication(
     app: Any,
 ) -> None:
@@ -68,7 +68,7 @@ async def test_the_door_answers_a_flood_with_a_bare_429_and_keeps_401_for_authen
         assert other.status_code == 404
 
 
-# ---- security L5: the needles eval reads every shape of a heart rate, a number and a name ----------
+# ---- security L5: the needles eval reads every shape of a heart rate, a number and a name ----
 def _needles() -> Any:
     import importlib.util
     from pathlib import Path
@@ -103,7 +103,9 @@ def test_the_heart_needle_leaves_other_numbers_alone(quiet: str) -> None:
     assert not _needles().HEART_RE.search(quiet), quiet
 
 
-@pytest.mark.parametrize("written", ["0000000001", "000 000 0001", "(000) 000-0001", "+1 000-000-0001"])
+@pytest.mark.parametrize(
+    "written", ["0000000001", "000 000 0001", "(000) 000-0001", "+1 000-000-0001"]
+)
 def test_the_number_needle_reads_national_and_spaced_forms_and_the_name_needle_the_label(
     written: str,
 ) -> None:
@@ -112,3 +114,55 @@ def test_the_number_needle_reads_national_and_spaced_forms_and_the_name_needle_t
     seen.add("logs", f"sent to {written} for Asha Example")
     found = mod._found(seen)  # noqa: SLF001
     assert found["numbers"] and found["names"] == ["Asha Example"]
+
+
+# ---- security L6, code M4, code L6: the SOS service ----
+def _sos_world(**kw: Any) -> Any:
+    from test_r7_d_sos_send import World
+
+    return World(**kw)
+
+
+async def test_a_failed_press_is_not_remembered_so_a_retry_of_the_same_press_tries_again() -> None:
+    from test_r7_d_sos_send import HERE
+    from test_r7_d_sos_send import UID as OWNER_UID
+
+    w = _sos_world()
+    await w.three()
+    press = "p" + "0123456789abcdef" * 2
+    w.bot.refuse_text = {7_000_000_001, 7_000_000_002, 7_000_000_003}  # Telegram takes nothing
+    first = await w.svc.send(OWNER_UID, "real", HERE, via="web", press_id=press)
+    assert first.reached == 0 and first.outcome == "failed"
+    w.bot.refuse_text = set()  # a moment later Telegram answers
+    again = await w.svc.send(OWNER_UID, "real", HERE, via="web", press_id=press)
+    assert again.reached == 3 and again.outcome == "sent"
+    # a press that did reach someone is still answered from memory and sends nothing twice
+    sent_before = len(w.bot.of("sendMessage"))
+    third = await w.svc.send(OWNER_UID, "real", HERE, via="web", press_id=press)
+    assert third.reached == 3 and len(w.bot.of("sendMessage")) == sent_before
+
+
+async def test_the_hourly_cap_is_a_constructor_argument_and_no_module_switch_exists() -> None:
+    import jarvis.sos.limits as limits
+    import jarvis.sos.service as service
+
+    assert not hasattr(service, "HOURLY_CAP") and not hasattr(service, "OWN_TEST_BUDGET")
+    assert not hasattr(limits, "HOURLY_CAP") and not hasattr(limits, "OWN_TEST_BUDGET")
+    from test_r7_d_sos_send import HERE
+    from test_r7_d_sos_send import UID as OWNER_UID
+
+    w = _sos_world()
+    await w.three()
+    assert w.svc.hourly_cap is True and w.svc.own_test_budget is True
+    for _ in range(3):
+        assert (await w.svc.send(OWNER_UID, "real", HERE, via="web")).reached == 3
+    refused = await w.svc.send(OWNER_UID, "real", HERE, via="web")
+    assert refused.outcome == "refused" and refused.reason == "hour"
+
+
+@pytest.mark.parametrize("name", ["sos/service.py", "sos/limits.py", "sos/after.py"])
+def test_every_sos_file_is_under_800_lines(name: str) -> None:
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "src" / "jarvis" / name
+    assert len(path.read_text(encoding="utf-8").splitlines()) < 800, name

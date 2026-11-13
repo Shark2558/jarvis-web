@@ -17,7 +17,7 @@ handlers, its SOS service and the Telegram front door with Part D's hook) on in-
 Negative controls (each must make its case fail, or the suite proves nothing):
   model_text      the message is built from a model's words (`jarvis.sos.message.message_for`)
   location_logged the send's log line carries the coordinates (`jarvis.sos.service._log_extra`)
-  hourly_cap_off  `jarvis.sos.service.HOURLY_CAP = False`
+  hourly_cap_off  an SosService built with `hourly_cap=False`
   tests_in_real   `jarvis.sos.service.OWN_TEST_BUDGET = False` (tests count in the real budget)
 """
 
@@ -366,11 +366,32 @@ def _logged_place(kind: str, outcome: str, reached: int, joined: int, located: b
     return {"kind": kind, "lat": HERE.lat_e6, "lon": HERE.lon_e6, "reached": reached}
 
 
+def _built_with(**flags: bool) -> Callable[..., None]:
+    """`SosService.__init__` with a limit switched off: the limits are constructor arguments (no
+    module switch exists), so a control builds the service its own way."""
+    real = sos_service.SosService.__init__
+
+    def init(self: Any, *args: Any, **kwargs: Any) -> None:
+        real(self, *args, **{**kwargs, **flags})
+
+    return init
+
+
 CONTROLS: dict[str, tuple[Any, str, Any, str]] = {
     "model_text": (sos_message, "message_for", _model_text, f"{PART}:send_template_pin"),
     "location_logged": (sos_service, "_log_extra", _logged_place, f"{PART}:no_coordinates"),
-    "hourly_cap_off": (sos_service, "HOURLY_CAP", False, f"{PART}:hourly_cap"),
-    "tests_in_real": (sos_service, "OWN_TEST_BUDGET", False, f"{PART}:real_after_tests"),
+    "hourly_cap_off": (
+        sos_service.SosService,
+        "__init__",
+        _built_with(hourly_cap=False),
+        f"{PART}:hourly_cap",
+    ),
+    "tests_in_real": (
+        sos_service.SosService,
+        "__init__",
+        _built_with(own_test_budget=False),
+        f"{PART}:real_after_tests",
+    ),
 }
 
 

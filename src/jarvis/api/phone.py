@@ -256,8 +256,9 @@ def _csrf(request: Request) -> None:
 
 @session_router.post("/app", dependencies=[Depends(require_auth)])
 async def mark_app(request: Request) -> JSONResponse:
-    # I1 fixer (security L3): only the page's own call (same-origin) or a browser-started one (none; the app's
-    # first launch) marks the app; a header that says "cross-site" or "same-site" marks nothing, sets no cookie.
+    # I1 fixer (security L3): only the page's own call (same-origin) or a browser-started one
+    # (none: the app's first launch) marks the app; "cross-site" or "same-site" marks nothing
+    # and sets no cookie.
     if request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
         return _json(200, {"app": False})
     svc = _svc(request)

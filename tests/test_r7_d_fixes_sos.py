@@ -15,6 +15,8 @@ import pytest
 from r7_fakes_d import ASHA, MEERA, RAVI, UID, BrokenDocs, Notes
 from test_r7_d_sos_send import HERE, World
 
+import jarvis.sos.after as after_mod
+import jarvis.sos.limits as limits_mod
 import jarvis.sos.service as service_mod
 from jarvis.notify.ports import Delivery, Signal
 from jarvis.sos.store import WRONG_GLOBAL_PER_HOUR, WRONG_PER_CHAT, Budget, SosStore
@@ -76,7 +78,7 @@ async def test_a_missing_notifier_is_logged_and_the_answer_says_not_told(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     w = World()
-    w.svc._notifier = lambda: None  # noqa: SLF001
+    w.svc._after._notifier = lambda: None  # noqa: SLF001
     await w.contact(ASHA)
     with caplog.at_level(logging.WARNING):
         res = await w.svc.send(UID, "real", None, via="web")
@@ -296,7 +298,7 @@ async def test_the_locked_sheet_has_the_numbers_for_the_sms_link_and_nothing_els
 
 # ---- the side channels never hold the answer ----
 async def test_a_hanging_notice_does_not_hold_the_answer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(service_mod, "AFTER_S", 0.05)
+    monkeypatch.setattr(after_mod, "AFTER_S", 0.05)
     w = World(notes=Hangs())
     await w.contact(ASHA)
     res = await asyncio.wait_for(w.svc.send(UID, "real", None, via="web"), 2)
@@ -306,7 +308,7 @@ async def test_a_hanging_notice_does_not_hold_the_answer(monkeypatch: pytest.Mon
 async def test_a_hanging_log_and_audit_do_not_hold_the_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(service_mod, "AFTER_S", 0.05)
+    monkeypatch.setattr(after_mod, "AFTER_S", 0.05)
     w = World()
     await w.contact(ASHA)
 
@@ -314,7 +316,7 @@ async def test_a_hanging_log_and_audit_do_not_hold_the_answer(
         await asyncio.Event().wait()
 
     w.store.log = hang  # type: ignore[method-assign]
-    w.svc._audit.append = hang  # type: ignore[union-attr,method-assign]  # noqa: SLF001
+    w.svc._after._audit.append = hang  # type: ignore[union-attr,method-assign]  # noqa: SLF001
     res = await asyncio.wait_for(w.svc.send(UID, "real", None, via="web"), 2)
     assert res.outcome == "sent" and res.view()["logged"] is False
 
@@ -332,7 +334,7 @@ async def test_a_book_that_hangs_gives_the_sms_fallback(monkeypatch: pytest.Monk
 
 
 async def test_a_budget_that_hangs_lets_a_real_sos_go(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(service_mod, "STORE_S", 0.05)
+    monkeypatch.setattr(limits_mod, "STORE_S", 0.05)
     docs = MemoryDocs()
     w = World(docs=docs)
     await w.contact(ASHA)

@@ -110,6 +110,7 @@ def test_nothing_the_brain_runs_can_reach_the_send() -> None:
     only callers are Part D's routes, the door's handler and the part's join."""
     allowed = {"api/sos.py", "watch/part.py", "watch/door.py", "watch/jobs.py", "watch/privacy.py"}
     allowed |= {"sos/contacts_hook.py", "sos/tools.py", "sos/service.py"}
+    allowed |= {"sos/limits.py", "sos/after.py"}  # the limits and the post-send tasks, split out
     offenders = []
     for path in SRC.rglob("*.py"):
         rel = path.relative_to(SRC).as_posix()

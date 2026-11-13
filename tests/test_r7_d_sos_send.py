@@ -27,7 +27,6 @@ from r7_fakes_d import (
     settings,
 )
 
-import jarvis.sos.service as service_mod
 from jarvis.keyring import Keyring
 from jarvis.sos.message import maps_link, message_for
 from jarvis.sos.models import Location
@@ -262,9 +261,9 @@ async def test_every_send_is_audited_and_logged_without_a_place() -> None:
     assert last["last"]["kind"] == "real" and last["last"]["reached"] == 3
 
 
-@pytest.mark.parametrize("flag", ["HOURLY_CAP", "OWN_TEST_BUDGET"])
-async def test_the_eval_switches_exist_and_are_on(flag: str) -> None:
-    assert getattr(service_mod, flag) is True  # read at call time; only the eval flips them
+async def test_the_eval_switches_are_constructor_arguments_and_on() -> None:
+    w = World()
+    assert (w.svc.hourly_cap, w.svc.own_test_budget) == (True, True)  # only the eval builds one off
 
 
 async def test_the_reply_carries_no_word_of_a_model() -> None:

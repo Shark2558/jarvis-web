@@ -129,7 +129,7 @@ def test_the_one_doors_vault_path_sends_the_redrawn_bytes(console: Page) -> None
     assert body.startswith(b"\xff\xd8\xff") and b"Exif" not in body and MARK not in body
 
 
-# ---- Workshop decision (I1 fixer, security M1): a picture that cannot be redrawn is never sent ----------------
+# ---- Workshop decision (I1 fixer, security M1): an undrawable picture is never sent ----
 UNPREPARED = "That picture could not be prepared on this device, so it was not sent, Sir."
 # A JPEG the canvas cannot decode, with a GPS APP1 in front: the original bytes must never leave.
 BAD_JPEG = """(b64) => {
@@ -163,7 +163,8 @@ def test_the_one_door_refuses_an_undecodable_picture_and_nothing_is_posted(conso
     got = console.page.evaluate(
         "async () => { const r = {};"
         " for (const k of ['vault', 'attach']) {"
-        "   try { await JarvisMobile.parts.send[k](k === 'attach' ? [window.__badJpeg] : window.__badJpeg); r[k] = 'sent'; }"
+        "   const arg = k === 'attach' ? [window.__badJpeg] : window.__badJpeg;"
+        "   try { await JarvisMobile.parts.send[k](arg); r[k] = 'sent'; }"
         "   catch (e) { r[k] = e.message; } }"
         " return r; }"
     )
@@ -184,12 +185,14 @@ def test_the_composer_clip_refuses_an_undecodable_picture_in_plain_words(console
 def test_a_folder_leaves_out_a_picture_it_cannot_redraw(console: Page) -> None:
     _bad_jpeg(console)
     got = console.page.evaluate(
-        "async () => { const f = window.__badJpeg; Object.defineProperty(f, 'webkitRelativePath', { value: 'trip/IMG_0002.jpg' });"
+        "async () => { const f = window.__badJpeg;"
+        " Object.defineProperty(f, 'webkitRelativePath', { value: 'trip/IMG_0002.jpg' });"
         " const t = new File(['hello'], 'note.txt', { type: 'text/plain' });"
         " Object.defineProperty(t, 'webkitRelativePath', { value: 'trip/note.txt' });"
         " const r = await window.JarvisFixes.parts.files.folder([f, t]);"
         " const s = new TextDecoder('latin1').decode(new Uint8Array(await r.blob.arrayBuffer()));"
-        " return { count: r.count, left: r.left, hasJpg: s.includes('IMG_0002'), hasGps: s.includes('GPS-LAT') }; }"
+        " return { count: r.count, left: r.left, hasJpg: s.includes('IMG_0002'),"
+        " hasGps: s.includes('GPS-LAT') }; }"
     )
     assert got["count"] == 1 and not got["hasJpg"] and not got["hasGps"]
     assert any("IMG_0002.jpg" in x for x in got["left"])

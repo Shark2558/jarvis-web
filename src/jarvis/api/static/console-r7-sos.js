@@ -51,10 +51,22 @@ function link(label, href, cls) {
   a.href = href;
   return a;
 }
+// Only the server's own plain sentences reach the owner (they end with "Call 112"); a status text such as "Bad
+// Gateway" or a code-like word never does.
+const WORDED = ['sos_off', 'invalid', 'busy', 'device_locked', 'failed'];
+const NOT_SENT = 'NOT sent through JARVIS. Use the SMS screen or call 112.';
+const worded = (e) => {
+  const m = e && WORDED.includes(e.code) ? txt(e.message, 300) : '';
+  return m && m.indexOf('[object') < 0 ? m : '';
+};
 const errWords = (e, fallback) => {
   if (e && e.name === 'TypeError') return OFFLINE;
-  const m = txt(e && e.message, 200);
-  return m && m.indexOf('[object') < 0 ? m : fallback;
+  return worded(e) || fallback;
+};
+/** The failed press, in words: the server's own sentence alone, or the fixed line (no sentence twice). */
+const notSent = (e) => {
+  if (e && e.name === 'TypeError') return 'NOT sent through JARVIS: ' + OFFLINE + ' Use the SMS screen or call 112.';
+  return worded(e) || NOT_SENT;
 };
 function newPress() {
   const a = new Uint8Array(18);
@@ -229,7 +241,7 @@ function shown(kind, res, err) {
   if (err && err.timeout === true) {
     rows.push(mk('p', 'strong', 'UNKNOWN: ' + errWords(err, 'JARVIS did not answer.') + ' Use the SMS screen and call 112 now.'));
   } else if (err || !res || typeof res !== 'object') {
-    rows.push(mk('p', 'strong', 'NOT sent through JARVIS: ' + errWords(err, 'the server did not answer.') + ' Use the SMS screen or call 112.'));
+    rows.push(mk('p', 'strong', notSent(err)));
   } else {
     rows.push(mk('p', 'strong', txt(res.words, 300) || (res.sent === true ? 'Sent.' : 'NOT sent. Use the SMS screen or call 112.')));
     (Array.isArray(res.results) ? res.results : []).slice(0, 5).forEach((r) => {

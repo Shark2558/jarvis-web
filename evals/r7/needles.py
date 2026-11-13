@@ -25,9 +25,10 @@ The request BODIES sent to any outside service (Telegram, Google, ...) are scann
 but the SOS to a contact (Telegram's `sendLocation` pin and the `sendMessage` text with its map
 link, both to a contact's chat: their whole job is the place).
 
-Allowed, by design, and not scanned: the SOS sent to the contacts on Telegram, the reply to the owner's own requests (his SOS's SMS text, the phone's hello
-with the numbers for its offline SMS screen, his kept results) and `watch_today`'s own answer of
-his heart rate to him (its job; never on Telegram without his switch). The `day` case proves each
+Allowed, by design, and not scanned: the SOS sent to the contacts on Telegram, the reply to the
+owner's own requests (his SOS's SMS text, the phone's hello with the numbers for its offline SMS
+screen, his kept results) and `watch_today`'s own answer of his heart rate to him (its job; never
+on Telegram without his switch). The `day` case proves each
 step really happened (a scan of nothing proves nothing).
 
 Negative controls (each must make the suite fail):
@@ -85,19 +86,22 @@ CONTROLS = ("seal_off", "fence_off", "coordinate_in_address", "name_in_log")
 KINDS = ("coordinates", "heart", "numbers", "names", "read_text", "pixels")
 KEY = SecretStr(base64.urlsafe_b64encode(bytes(range(201, 233))).decode())  # for this eval only
 HEART = {"min": 43, "avg": 87, "max": 179}
-_HEART_VALUE = r'(?:43|87|179)(?:\.0+)?'
-_HEART_NAME = r'(?:heart|bpm|pulse|resting|\bhr\b|min|avg|max|average|lowest|highest)'
+_HEART_VALUE = r"(?:43|87|179)(?:\.0+)?"
+_HEART_NAME = r"(?:heart|bpm|pulse|resting|\bhr\b|min|avg|max|average|lowest|highest)"
 HEART_RE = re.compile(
-    # a name that says heart, or min / avg / max, in any key shape, then the value: "min": 43, heart_min=43, resting_bpm: 87
+    # a name that says heart (or min / avg / max), in any key shape, then the value:
+    # "min": 43, heart_min=43, resting_bpm: 87
     rf'[A-Za-z_ ]*{_HEART_NAME}[A-Za-z_ ]*["\']?\s*[:=]\s*["\']?{_HEART_VALUE}\b'
     # the value then its unit: 179 bpm, 87 average, 43 lowest
-    rf'|\b{_HEART_VALUE}\s*(?:bpm|beats|lowest|average|highest|avg|min|max)\b'
+    rf"|\b{_HEART_VALUE}\s*(?:bpm|beats|lowest|average|highest|avg|min|max)\b"
     # the unit or name then the value: bpm 87, heart rate of 43, pulse: 179
-    rf'|\b(?:bpm|heart rate|heart-rate|pulse|resting)(?:\W{{0,12}}|\s+(?:of|is|was|at|around)\s+){_HEART_VALUE}\b',
+    rf"|\b(?:bpm|heart rate|heart-rate|pulse|resting)"
+    rf"(?:\W{{0,12}}|\s+(?:of|is|was|at|around)\s+){_HEART_VALUE}\b",
     re.I,
 )
 NUMBERS = [D.ASHA[1], D.RAVI[1], D.ASHA[1].lstrip("+"), D.RAVI[1].lstrip("+")]
-NATIONAL = [D.ASHA[1][-10:], D.RAVI[1][-10:]]  # the ten digits a person types without the country code
+# the ten digits a person types without the country code
+NATIONAL = [D.ASHA[1][-10:], D.RAVI[1][-10:]]
 NAMES = [D.ASHA[0], D.RAVI[0]]
 _SEPARATORS = re.compile(r"[\s().\-]+")
 READ = ["NET WT 500 g", "BEST BEFORE 12 2027", "MRP Rs 125.00"]
@@ -105,12 +109,13 @@ PIXELS = b"PIXEL-PATTERN-R7-NEEDLE-\x13\x37\xc0\xff\xee"
 PIXEL_NEEDLES = ["PIXEL-PATTERN-R7-NEEDLE", base64.b64encode(PIXELS).decode()[:24]]
 FENCED = re.compile(re.escape(FENCE_PREFIX) + r".*?<<END [0-9a-f]+>>", re.S)
 IST = "+05:30"
-APP_HOST = httpx.URL(ORIGIN).host  # the app itself: the owner's and the phone's own calls are not "outside"
+# the app itself: the owner's and the phone's own calls are not "outside"
+APP_HOST = httpx.URL(ORIGIN).host
 _STD = set(vars(logging.LogRecord("x", 0, "", 0, "", None, None)))
 
 
 def _to_a_contact(path: str, body: str) -> bool:
-    """The SOS itself, as the contact gets it on Telegram: the pin, and the text with its map link."""
+    """The SOS as the contact gets it on Telegram: the pin, and the text with its map link."""
     if not path.endswith(("/sendLocation", "/sendMessage")):
         return False
     try:
@@ -157,7 +162,7 @@ def _recording(seen: Seen) -> Iterator[_Logs]:
         seen.add("addresses", str(request.url))
         if request.url.host != APP_HOST:
             body = request.read().decode("utf-8", "replace")
-            if not _to_a_contact(request.url.path, body):  # the pin and its words are the contact's SOS
+            if not _to_a_contact(request.url.path, body):  # the contact's own SOS: allowed
                 seen.add("bodies", str(request.url), body)
         return await real(self, request, **kw)
 
@@ -322,8 +327,8 @@ def _documents(app: Any, seen: Seen) -> None:
 
 
 def _fresh_limits() -> None:
-    """The SOS routes' per-minute limiters are module-level (one app per process in production): every
-    simulated day starts with empty buckets, so the fifth day in a process is not refused as a burst."""
+    """The SOS routes' per-minute limiters are module-level (one app per process in production):
+    every simulated day starts with empty buckets, so a fifth day is not refused as a burst."""
     import jarvis.api.sos as sos_api
 
     for limiter in (sos_api._changes, sos_api._sends):  # noqa: SLF001
@@ -362,7 +367,7 @@ async def day(active: frozenset[str] = frozenset()) -> Seen:
 def _found(seen: Seen) -> dict[str, list[str]]:
     everything = seen.text(skip=("documents_plain", "watch_today"))
     no_blobs = seen.text(skip=("documents", "watch_today"))
-    compact = _SEPARATORS.sub("", everything)  # "+1 (000) 000-0001" and "000 000 0001" read as digits
+    compact = _SEPARATORS.sub("", everything)  # "+1 (000) 000-0001" reads as digits
     found = {
         "coordinates": [n for n in D.needles() if n in everything],
         "heart": sorted({m.group(0).strip() for m in HEART_RE.finditer(no_blobs)}),

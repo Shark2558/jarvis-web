@@ -1,4 +1,4 @@
-# tests/browser/test_r7_i1_fixes.py -- R7 I1 fixer (the Workshop's decisions on the integrated reviews):
+# tests/browser/test_r7_i1_fixes.py -- R7 I1 fixer (the Workshop's decisions on the reviews):
 # the share tray while the app lock's cover is up (security L2), and dates in one shape (code M1).
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from test_r7_a_share_review import ONE_TEXT
 _pw = pytest.importorskip("playwright.sync_api")
 sync_playwright = _pw.sync_playwright
 pytestmark = pytest.mark.browser
+
 
 @pytest.fixture(scope="module")
 def browser() -> Iterator[Any]:
@@ -37,7 +38,9 @@ def test_the_share_tray_never_opens_over_the_cover_and_a_do_shared_launch_waits_
         t.page.wait_for_function("() => window.JarvisConsole && window.JarvisConsole.ready()")
         t.page.wait_for_function("() => window.JarvisMobile && window.JarvisMobile.parts.share")
         t.page.wait_for_timeout(1500)
-        t.page.evaluate("() => { const s = document.getElementById('shareTray'); if (s && s.open) s.close(); }")
+        t.page.evaluate(
+            "() => { const s = document.getElementById('shareTray'); if (s && s.open) s.close(); }"
+        )
         # the cover goes up (the same attribute console.js sets on a 423 device_locked)
         t.page.evaluate("() => { document.documentElement.dataset.locked = 'device'; }")
         # a tapped alert asks for the tray, and so does a hand on the tray's own door

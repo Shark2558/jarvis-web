@@ -460,11 +460,18 @@ def _r7_routes(c: Console, d: Any) -> None:
             else d.VIEW
         )
         if body is None:
-            route.fulfill(
-                status=503,
-                content_type="application/json",
-                body='{"error":"unavailable","detail":"Down."}',
-            )
+            # what the real server answers when it cannot even try (api/sos.py `_not_sent`)
+            words = "The SOS could not be sent from the server. Use the SMS screen or call 112."
+            failed = {
+                "sent": False,
+                "error": "failed",
+                "outcome": "unavailable",
+                "words": words,
+                "detail": words,
+                "sms": {"numbers": [], "text": ""},
+                "call": {"first": None, "emergency": "112"},
+            }
+            route.fulfill(status=500, content_type="application/json", body=json.dumps(failed))
             return
         route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
 

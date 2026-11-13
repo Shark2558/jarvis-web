@@ -325,7 +325,8 @@ async def test_the_door_reads_no_body_before_header_flood_device_and_time(app: A
 
 
 async def test_the_flood_limit_comes_before_any_body_is_read(app: Any) -> None:
-    head = contract.header_value("ph_000000000000", int(app.state.phone_clock()), "ab" * 16, b"s" * 9)
+    now = int(app.state.phone_clock())
+    head = contract.header_value("ph_000000000000", now, "ab" * 16, b"s" * 9)
     async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as anon:
         for _ in range(61):
             r = await anon.post("/phone/v1/hello", content=b"", headers={"X-Jarvis-Phone": head})

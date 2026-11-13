@@ -324,7 +324,8 @@ def test_a_failed_request_never_says_sent_and_offers_112(rig: Rig) -> None:
         _hold(c, "#sosSheet .sos-hold")
         c.page.locator("#sosSheet .sos-result p").first.wait_for(timeout=9000)
         words = c.page.locator("#sosSheet .sos-result").text_content() or ""
-        assert words.startswith("NOT sent through JARVIS") and "112" in words
+        # I1 fixer (code M2): a code the server does not word never shows its raw text ("Down.")
+        assert words == "NOT sent through JARVIS. Use the SMS screen or call 112."
         hrefs = c.page.locator("#sosSheet .sos-links a").evaluate_all(
             "(a) => a.map((x) => x.getAttribute('href'))"
         )
@@ -332,6 +333,41 @@ def test_a_failed_request_never_says_sent_and_offers_112(rig: Rig) -> None:
     finally:
         c.page.unroute("**/v1/sos/send")
         _close(c)
+
+
+def _fail_send(c: Console, status: int, body: str) -> None:
+    c.page.route(
+        "**/v1/sos/send",
+        lambda r: r.fulfill(status=status, content_type="application/json", body=body),
+    )
+
+
+def _failed_words(c: Console) -> str:
+    _sheet(c)
+    try:
+        _hold(c, "#sosSheet .sos-hold")
+        c.page.locator("#sosSheet .sos-result p").first.wait_for(timeout=9000)
+        return str(c.page.locator("#sosSheet .sos-result").text_content() or "")
+    finally:
+        c.page.unroute("**/v1/sos/send")
+        _close(c)
+
+
+def test_a_server_worded_refusal_is_shown_alone_and_once(rig: Rig) -> None:
+    c = rig.page("desktop", "night")
+    words = "Emergency SOS isn't set up on this server, Sir. Call 112."
+    _fail_send(c, 503, json.dumps({"error": "sos_off", "detail": words, "words": words}))
+    got = _failed_words(c)
+    assert got == words and "Use the SMS screen" not in got  # the server's sentence, no echo
+
+
+def test_a_proxy_page_or_a_bare_status_never_reaches_the_owner_as_a_reason(rig: Rig) -> None:
+    for status, body in ((502, "<html>Bad Gateway</html>"), (500, ""), (503, "{}")):
+        c = rig.page("desktop", "night")
+        _fail_send(c, status, body)
+        got = _failed_words(c)
+        assert got == "NOT sent through JARVIS. Use the SMS screen or call 112.", status
+        assert "Gateway" not in got and "Unavailable" not in got
 
 
 def test_open_sos_by_voice_only_opens_the_sheet(rig: Rig) -> None:

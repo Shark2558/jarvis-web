@@ -60,12 +60,29 @@ for (const href of ['/static/console-r7-share.css', '/static/console-camera.css'
   css.href = href;
   document.head.append(css);
 }
-import('./console-r7-send.js').catch(() => {});
-import('./console-vision.js').catch(() => {});
-import('./console-r7-links.js').catch(() => {});
-import('./console-r7-share.js').catch(() => {});
-import('./console-camera.js').catch(() => {});
-import('./console-camera-panel.js').catch(() => {});
-import('./console-r7-phone.js').catch(() => {});
-import('./console-r7-lock.js').catch(() => {});
-import('./console-r7-sos.js').catch(() => {});
+// A part whose file cannot load is said so, plainly: a console line, and a card (or a note) where the part would
+// have been ("... could not load"); the other parts still start. Existing classes only (D0).
+const MODULES = [
+  ['console-r7-send.js', 'The picture door', '', () => import('./console-r7-send.js')], ['console-vision.js', 'The vision engine', '', () => import('./console-vision.js')],
+  ['console-r7-links.js', 'Launch addresses', '', () => import('./console-r7-links.js')], ['console-r7-share.js', 'The share tray', '', () => import('./console-r7-share.js')],
+  ['console-camera.js', 'The camera', 'camera', () => import('./console-camera.js')], ['console-camera-panel.js', 'Camera', 'camera', () => import('./console-camera-panel.js')],
+  ['console-r7-phone.js', 'Phone app', 'integrations', () => import('./console-r7-phone.js')], ['console-r7-lock.js', 'The unlock cover', '', () => import('./console-r7-lock.js')],
+  ['console-r7-sos.js', 'Emergency SOS', 'integrations', () => import('./console-r7-sos.js')],
+];
+function noLoad(file, label, where, err) {
+  console.warn('JARVIS: ' + file + ' could not load (' + (err && err.message ? err.message : 'unknown') + ').');
+  const words = label + ' could not load, Sir. Reload the page to try again.';
+  if (where === 'camera') {
+    const body = document.getElementById('cameraBody');
+    if (body && !body.querySelector('.r7-noload')) body.append(mk('p', 'bnote r7-noload', words));
+  } else if (where === 'integrations') {
+    const host = document.getElementById('integrations');
+    if (!host || !host.parentNode) return;
+    const head = mk('div', 'ihead');
+    head.append(mk('b', '', label), mk('span', 'istate', 'Could not load'));
+    const card = mk('section', 'integ r7-noload');
+    card.append(head, mk('div', 'inote', words));
+    host.parentNode.insertBefore(card, host.nextSibling);
+  }
+}
+for (const [file, label, where, load] of MODULES) load().catch((err) => noLoad(file, label, where, err));

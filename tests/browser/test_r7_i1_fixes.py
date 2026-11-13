@@ -125,3 +125,37 @@ def test_no_r7_console_file_formats_a_date_on_its_own() -> None:
         assert "toLocaleDateString" not in src and "toLocaleTimeString" not in src, name
         assert "DateTimeFormat" not in src, name
         assert "JarvisMobile.when" in src or "M.when" in src, name
+
+
+# ---- code L7: a part whose file cannot load says so, plainly ----------------------------------
+def test_a_module_that_cannot_load_is_reported_in_the_console_and_on_its_card(
+    browser: Any, server_url: str, token: str
+) -> None:
+    from test_console import DESKTOP, Console
+
+    c = Console(browser, server_url, token, DESKTOP)
+    warned: list[str] = []
+    c.page.on("console", lambda m: warned.append(m.text) if m.type == "warning" else None)
+    for name in ("console-r7-sos.js", "console-r7-phone.js", "console-camera-panel.js"):
+        c.page.route(
+            f"**/static/{name}",
+            lambda r: r.fulfill(
+                status=200,
+                content_type="text/javascript",
+                body="export const x = {{{ not javascript",
+            ),
+        )
+    try:
+        c.open()
+        c.page.wait_for_function("() => !!document.querySelector('.r7-noload')", timeout=15_000)
+        c.page.wait_for_function("() => document.querySelectorAll('.r7-noload').length >= 3")
+        cards = c.page.locator(".r7-noload").all_inner_texts()
+        for part in ("Emergency SOS", "Phone app", "Camera"):
+            assert any(part in t and "could not load" in t for t in cards), (part, cards)
+        assert c.page.locator("#integrations ~ .r7-noload, #cameraBody .r7-noload").count() >= 3
+        for name in ("console-r7-sos.js", "console-r7-phone.js", "console-camera-panel.js"):
+            assert any(name in w and "could not load" in w for w in warned), (name, warned)
+        # the parts that did load still work: the share tray's module registered
+        assert c.page.evaluate("() => !!window.JarvisMobile.parts.send")
+    finally:
+        c.close()

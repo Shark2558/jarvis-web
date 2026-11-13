@@ -238,7 +238,7 @@ async def test_sos_sent_rings_through_quiet_hours_the_storm_and_the_telegram_cap
     assert held.action == "hold"  # it is quiet hours: an ordinary alert waits for the morning
     before = len(nw.tg.bot.texts)
 
-    w = World(notes=nw.service)  # type: ignore[arg-type]  # the real notifier, not a recorder
+    w = World(notes=nw.service)  # the real notifier, not a recorder
     await w.three()
     result = await w.svc.send(UID_D, "real", HERE, via="web")
     assert result.outcome == "sent" and result.told is True

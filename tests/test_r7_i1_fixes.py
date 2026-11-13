@@ -166,3 +166,42 @@ def test_every_sos_file_is_under_800_lines(name: str) -> None:
 
     path = Path(__file__).resolve().parents[1] / "src" / "jarvis" / name
     assert len(path.read_text(encoding="utf-8").splitlines()) < 800, name
+
+
+# ---- code M3: watch_stale says nothing once the phone has been unlinked --------------------------
+def _stale_job(rig: Any, seam: Any) -> Any:
+    from jarvis.watch.jobs import WatchStale
+
+    return WatchStale(
+        rig.part.services["watch"],
+        notifier=lambda: rig.notes,
+        now=rig.clock,
+        linked=None if seam is None else (lambda: seam),
+    )
+
+
+async def test_watch_stale_stays_silent_when_no_phone_is_linked_any_more() -> None:
+    import json
+
+    from r7_fakes_d import UID as D_UID
+    from test_r7_d_part import HEALTH
+    from test_r7_d_part import Rig as BodyRig
+
+    async def linked(uid: str) -> float | None:
+        return 1.0  # a phone is linked
+
+    async def unlinked(uid: str) -> float | None:
+        return None  # the owner pressed "Unlink this phone"
+
+    for kind, move in (("sync", {"hours": 27}), ("data", {"days": 5})):
+        for seam, expected in (
+            (linked, 1),
+            (unlinked, 0),
+            (None, 1),
+        ):  # no seam: unknown, as before
+            rig = BodyRig()
+            await rig.door.call("health", json.dumps(HEALTH).encode())
+            rig.clock.move(**move)
+            got = await _stale_job(rig, seam).run([D_UID])
+            assert got["told"] == expected, (kind, getattr(seam, "__name__", seam))
+            assert len(rig.notes.sent) == expected

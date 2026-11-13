@@ -110,19 +110,21 @@ class WatchStale:
             silent += got == "no_notifier"
         return {"told": told, "no_notifier": silent, FAILED_COUNT: failed}
 
-    async def _linked_at(self, uid: str) -> datetime | None:
-        """When his first phone was linked (Part C's seam); None: no seam, no phone, unreadable."""
+    async def _link_state(self, uid: str) -> tuple[bool, datetime | None]:
+        """(known, when his first phone was linked) from Part C's seam. `known` is False when the
+        seam is missing or unreadable (nobody can say); known with no time means NO phone is
+        linked (the owner unlinked it on purpose, or never linked one)."""
         read = self._linked() if self._linked is not None else None
         if not callable(read):
-            return None
+            return False, None
         try:
             at = await read(uid)
         except Exception as exc:  # noqa: BLE001 - an unknown link time is "not known", never told
             log.warning("the phone's link time unreadable", extra={"error": type(exc).__name__})
-            return None
+            return False, None
         if isinstance(at, bool) or not isinstance(at, int | float):
-            return None
-        return datetime.fromtimestamp(at, UTC)
+            return True, None
+        return True, datetime.fromtimestamp(at, UTC)
 
     def _silence(
         self, state: WatchState, now: datetime, linked: datetime | None = None
@@ -142,9 +144,12 @@ class WatchStale:
         return None
 
     async def _one(self, uid: str, now: datetime) -> str:
+        known, linked = await self._link_state(uid)
+        if known and linked is None:
+            return ""  # no phone is linked (unlinked on purpose): nothing to be silent about
         state = await self._watch.state(uid)
         never = state.last_sync is None and state.first_refused is None
-        found = self._silence(state, now, await self._linked_at(uid) if never else None)
+        found = self._silence(state, now, linked if never else None)
         if found is None:
             return ""
         ref, kind = found

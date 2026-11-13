@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/values/colors.xml - R7 D0: the console's Night tokens (console.css,
+     console-fx.js with its default Workshop accent), copied and nothing else. Every text colour
+     below reaches 4.5:1 on jarvis_bg; white on jarvis_accent is 4.7:1. -->
+<resources>
+    <color name="jarvis_bg">#04070D</color>
+    <color name="jarvis_bg_2">#08101A</color>
+    <color name="jarvis_panel">#0A111B</color>
+    <color name="jarvis_well">#0B131E</color>
+    <color name="jarvis_line">#103C6C</color>
+    <color name="jarvis_ink">#E6EDF6</color>
+    <color name="jarvis_ink_2">#AEBACB</color>
+    <color name="jarvis_accent">#0071E3</color>
+    <color name="jarvis_accent_2">#00C2E0</color>
+    <color name="jarvis_accent_ink">#2190FF</color>
+    <color name="jarvis_on_accent">#FFFFFF</color>
+    <color name="jarvis_bad">#F2555A</color>
+    <color name="jarvis_bad_ink">#FF8F8F</color>
+    <color name="jarvis_on_bad">#0A1220</color>
+    <color name="jarvis_ok_ink">#4ADE9F</color>
+</resources>

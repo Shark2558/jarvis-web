@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/values/strings.xml - R7 Part E: every word the native screens show.
+     Plain, short and polite; the console itself says everything else. -->
+<resources>
+    <string name="app_name">JARVIS</string>
+
+    <!-- tiles and shortcuts (D9, D19) -->
+    <string name="tile_talk">Talk to JARVIS</string>
+    <string name="tile_sos">JARVIS SOS</string>
+    <string name="shortcut_talk">Talk</string>
+    <string name="shortcut_talk_long">Talk to JARVIS</string>
+    <string name="shortcut_look">Camera</string>
+    <string name="shortcut_look_long">Open the JARVIS camera</string>
+    <string name="shortcut_sos">SOS</string>
+    <string name="shortcut_sos_long">Emergency SOS to your family</string>
+    <string name="shortcut_setup">Set-up</string>
+    <string name="shortcut_setup_long">JARVIS on this phone</string>
+    <string name="shortcut_disabled">Open JARVIS once first, Sir.</string>
+
+    <!-- notification channels (D10) -->
+    <string name="channel_urgent">Urgent</string>
+    <string name="channel_urgent_about">A burglar, a hazard, a disaster warning, an SOS, a new phone linked.</string>
+    <string name="channel_alerts">Alerts</string>
+    <string name="channel_alerts_about">Everything JARVIS tells you that is not urgent.</string>
+    <string name="channel_nudges">Nudges</string>
+    <string name="channel_nudges_about">Gentle reminders: water, a stretch, a focus break.</string>
+
+    <!-- no browser (D1) -->
+    <string name="nobrowser_title">Install or update Chrome</string>
+    <string name="nobrowser_body">JARVIS opens inside Chrome, Sir. Please install or update Chrome from the Play Store, then open JARVIS again.</string>
+    <string name="nobrowser_button">Open the Play Store</string>
+    <string name="nobrowser_no_store">The Play Store did not open. Please install Chrome another way.</string>
+
+    <!-- set-up (D5, D16, D17, D19) -->
+    <string name="setup_title">JARVIS on this phone</string>
+    <string name="setup_intro">Link this phone to your JARVIS once, Sir. Then each line below is a choice you can make now or later.</string>
+    <string name="setup_link_how">On your laptop open JARVIS, then Integrations, Phone app, Link a phone. Confirm with your passkey and type the 8 characters it shows here.</string>
+    <string name="setup_code_hint">8-character code</string>
+    <string name="setup_link">Link this phone</string>
+    <string name="setup_linking">Linking…</string>
+    <string name="setup_code_bad">Please type the 8 characters shown on your laptop, Sir.</string>
+    <string name="setup_link_refused">JARVIS did not accept that code. Codes last 10 minutes and work once: please make a new one on your laptop.</string>
+    <string name="setup_link_offline">JARVIS could not be reached. Please check the internet and try again.</string>
+    <string name="setup_link_failed">Linking did not work. Please try again in a minute.</string>
+    <string name="setup_linked">This phone is linked to JARVIS.</string>
+    <string name="setup_open">Open JARVIS</string>
+
+    <string name="row_notifications">Notifications</string>
+    <string name="row_notifications_why">Alerts while the app is closed.</string>
+    <string name="row_watch">Watch data</string>
+    <string name="row_watch_why">Steps, heart rate and sleep from Health Connect. Only daily sums leave the phone.</string>
+    <string name="row_location">SOS location</string>
+    <string name="row_location_why">Your place in an SOS, only while the SOS screen is open.</string>
+    <string name="row_folder">DigiLocker folder</string>
+    <string name="row_folder_why">New PDF, JPEG or PNG files in one folder you pick go to your vault to confirm. Android does not let apps watch the Download folder itself: share those documents to JARVIS instead.</string>
+    <string name="row_tile">Quick Settings tiles</string>
+    <string name="row_tile_why">Talk to JARVIS, and SOS, from the pull-down shade.</string>
+
+    <string name="action_allow">Allow</string>
+    <string name="action_choose">Choose</string>
+    <string name="action_pick">Pick a folder</string>
+    <string name="action_add_talk">Add Talk</string>
+    <string name="action_add_sos">Add SOS</string>
+    <string name="action_install_hc">Get Health Connect</string>
+
+    <string name="state_on">On</string>
+    <string name="state_off">Not yet</string>
+    <string name="state_partly">Partly: open Health Connect to allow the rest</string>
+    <string name="state_no_hc">Health Connect is not on this phone</string>
+    <string name="state_hc_update">Health Connect needs an update</string>
+    <string name="state_folder_on">One folder is watched</string>
+    <string name="state_tile_added">Added</string>
+    <string name="state_tile_how">Pull down the shade, tap the pencil and drag the JARVIS tiles in.</string>
+    <string name="state_blocked">Switched off in Android\'s settings. Tap to open them.</string>
+
+    <string name="sync_never">Last synced: not yet</string>
+    <string name="sync_at">Last synced: %1$s</string>
+    <string name="sync_now">Sync now</string>
+    <string name="sync_running">Reading Health Connect…</string>
+    <string name="sync_sent">Sent to JARVIS.</string>
+    <string name="sync_nothing">Nothing to send yet.</string>
+    <string name="sync_no_permission">Please allow Watch data first, Sir.</string>
+    <string name="sync_failed">JARVIS could not be reached. It will try again later.</string>
+    <string name="sync_background">Without the background switch, the watch is read only while this screen is open.</string>
+    <string name="setup_test_sos">Test SOS</string>
+    <string name="setup_secure">This screen cannot be captured.</string>
+
+    <!-- Health Connect's privacy page (D17): four plain lines -->
+    <string name="privacy_title">JARVIS and your health data</string>
+    <string name="privacy_read">What is read: steps, heart rate and sleep from Health Connect, and nothing else.</string>
+    <string name="privacy_leaves">What leaves the phone: only daily sums, the day\'s steps, the lowest, average and highest heart rate, and each night\'s sleep. No single heart-rate reading is sent.</string>
+    <string name="privacy_kept">Where it is kept: sealed on your own JARVIS server, for 400 days.</string>
+    <string name="privacy_delete">How to delete it: in JARVIS open Privacy, then Watch days, then Delete (it asks for your passkey). To stop the reading, switch JARVIS off in Health Connect.</string>
+    <string name="privacy_close">Close</string>
+
+    <!-- SOS (D19) -->
+    <string name="sos_title">Emergency SOS</string>
+    <string name="sos_title_test">Test SOS</string>
+    <string name="sos_counting">Sending to your family in %1$d seconds. Tap Cancel to stop.</string>
+    <string name="sos_counting_test">Sending a TEST to your family in %1$d seconds. Tap Cancel to stop.</string>
+    <string name="sos_cancel">Cancel</string>
+    <string name="sos_close">Close</string>
+    <string name="sos_cancelled">Cancelled. Nothing was sent.</string>
+    <string name="sos_sending">Sending…</string>
+    <string name="sos_sent">Sent to %1$d people on Telegram.</string>
+    <string name="sos_sent_plain">Sent on Telegram.</string>
+    <string name="sos_failed">The Telegram message could not be sent. Please text your family or call 112.</string>
+    <string name="sos_not_linked">This phone is not linked to JARVIS, so no Telegram message can go. Please text your family or call 112.</string>
+    <string name="sos_locating">Finding your location…</string>
+    <string name="sos_located">Location found, within about %1$d m.</string>
+    <string name="sos_no_location">Location not available.</string>
+    <string name="sos_text">Open the text message</string>
+    <string name="sos_no_numbers">No numbers are saved for the text message yet.</string>
+    <string name="sos_call_first">Call %1$s</string>
+    <string name="sos_call_first_locked">Call your first contact</string>
+    <string name="sos_call_112">Call 112</string>
+    <string name="sos_safe">I\'m safe</string>
+    <string name="sos_safe_ask">Tell the same people you are safe, Sir?</string>
+    <string name="sos_safe_send">Send</string>
+    <string name="sos_safe_not_now">Not now</string>
+    <string name="sos_safe_sent">They have been told you are safe.</string>
+    <string name="sos_not_a_service">This is a message to your family, not an emergency service. In danger, call 112. Set up Android\'s own Emergency SOS too: press the power button five times.</string>
+</resources>

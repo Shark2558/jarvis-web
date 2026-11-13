@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/layout/activity_sos.xml - R7 D19: the SOS screen. It draws edge to
+     edge (Android enforces it for an app that targets 36), so the whole screen is padded inside
+     the system bars' insets (SystemBars.pad) and the full-width Cancel sits inside them. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sos_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/jarvis_bg"
+    android:orientation="vertical"
+    android:padding="@dimen/screen_padding">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/sos_title"
+                style="@style/Jarvis.Title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:tag="title"
+                android:text="@string/sos_title"
+                android:textColor="@color/jarvis_bad_ink" />
+            <TextView
+                android:id="@+id/sos_count"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:tag="mono"
+                android:textColor="@color/jarvis_ink"
+                android:textSize="96sp" />
+            <TextView
+                android:id="@+id/sos_status"
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:accessibilityLiveRegion="polite" />
+            <TextView
+                android:id="@+id/sos_location"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" />
+
+            <LinearLayout
+                android:id="@+id/sos_after"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:orientation="vertical"
+                android:visibility="gone">
+                <Button
+                    android:id="@+id/sos_text"
+                    style="@style/Jarvis.Button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sos_text" />
+                <Button
+                    android:id="@+id/sos_call_first"
+                    style="@style/Jarvis.Button.Quiet"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/sos_call_first_locked" />
+                <Button
+                    android:id="@+id/sos_call_112"
+                    style="@style/Jarvis.Button.Quiet"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/sos_call_112" />
+                <Button
+                    android:id="@+id/sos_safe"
+                    style="@style/Jarvis.Button.Quiet"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/sos_safe" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:text="@string/sos_not_a_service" />
+        </LinearLayout>
+    </ScrollView>
+
+    <Button
+        android:id="@+id/sos_cancel"
+        style="@style/Jarvis.Button"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/sos_button_height"
+        android:layout_marginTop="12dp"
+        android:text="@string/sos_cancel"
+        android:textSize="22sp" />
+</LinearLayout>

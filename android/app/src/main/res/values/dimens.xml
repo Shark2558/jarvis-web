@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/values/dimens.xml - R7 D0, D19: targets of at least 48 dp (the
+     console's 44 px, by Android's own measure) and the SOS screen's tall Cancel. -->
+<resources>
+    <dimen name="touch_target">48dp</dimen>
+    <dimen name="sos_button_height">72dp</dimen>
+    <dimen name="screen_padding">20dp</dimen>
+    <dimen name="row_gap">16dp</dimen>
+    <dimen name="corner">12dp</dimen>
+</resources>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/layout/activity_privacy.xml - R7 D17: the page Health Connect opens
+     from its "privacy policy" link: four plain lines. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/privacy_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/jarvis_bg"
+    android:fillViewport="true"
+    android:padding="@dimen/screen_padding">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <TextView
+            style="@style/Jarvis.Title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:tag="title"
+            android:text="@string/privacy_title" />
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:text="@string/privacy_read" />
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:text="@string/privacy_leaves" />
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:text="@string/privacy_kept" />
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:text="@string/privacy_delete" />
+        <Button
+            android:id="@+id/privacy_close"
+            style="@style/Jarvis.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/privacy_close" />
+    </LinearLayout>
+</ScrollView>

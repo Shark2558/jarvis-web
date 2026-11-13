@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/layout/activity_setup.xml - R7 D5, D16, D17, D19, D21: the set-up
+     screen. Link the phone once; then one line per choice. It draws edge to edge and pads itself
+     inside the system bars (SystemBars.pad); screenshots of it are blocked (FLAG_SECURE). -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/setup_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/jarvis_bg"
+    android:fillViewport="true"
+    android:padding="@dimen/screen_padding">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            style="@style/Jarvis.Title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:tag="title"
+            android:text="@string/setup_title" />
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/setup_intro" />
+
+        <LinearLayout
+            android:id="@+id/link_section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:orientation="vertical">
+            <TextView
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_link_how" />
+            <EditText
+                android:id="@+id/link_code"
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/setup_code_hint"
+                android:importantForAutofill="no"
+                android:inputType="textCapCharacters|textNoSuggestions|textVisiblePassword"
+                android:maxLength="11"
+                android:minHeight="@dimen/touch_target"
+                android:maxLines="1"
+                android:tag="mono" />
+            <Button
+                android:id="@+id/link_button"
+                style="@style/Jarvis.Button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/setup_link" />
+            <TextView
+                android:id="@+id/link_status"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/steps_section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:orientation="vertical"
+            android:visibility="gone">
+            <TextView
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/jarvis_ok_ink"
+                android:text="@string/setup_linked" />
+            <TextView
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:tag="strong"
+                android:text="@string/row_notifications" />
+            <TextView
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/row_notifications_why" />
+            <TextView
+                android:id="@+id/state_notifications"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/jarvis_accent_ink" />
+            <Button
+                android:id="@+id/do_notifications"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/action_allow" />
+            <TextView
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:tag="strong"
+                android:text="@string/row_watch" />
+            <TextView
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/row_watch_why" />
+            <TextView
+                android:id="@+id/state_watch"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/jarvis_accent_ink" />
+            <Button
+                android:id="@+id/do_watch"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/action_allow" />
+            <TextView
+                android:id="@+id/sync_line"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/sync_never" />
+            <Button
+                android:id="@+id/do_sync"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/sync_now" />
+            <TextView
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:tag="strong"
+                android:text="@string/row_location" />
+            <TextView
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/row_location_why" />
+            <TextView
+                android:id="@+id/state_location"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/jarvis_accent_ink" />
+            <Button
+                android:id="@+id/do_location"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/action_allow" />
+            <TextView
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:tag="strong"
+                android:text="@string/row_folder" />
+            <TextView
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/row_folder_why" />
+            <TextView
+                android:id="@+id/state_folder"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/jarvis_accent_ink" />
+            <Button
+                android:id="@+id/do_folder"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/action_pick" />
+            <TextView
+                style="@style/Jarvis.Body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/row_gap"
+                android:tag="strong"
+                android:text="@string/row_tile" />
+            <TextView
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/row_tile_why" />
+            <TextView
+                android:id="@+id/state_tiles"
+                style="@style/Jarvis.Small"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/jarvis_accent_ink" />
+            <Button
+                android:id="@+id/do_tiles"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/action_add_talk" />
+            <Button
+                android:id="@+id/do_tile_sos"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/action_add_sos" />
+            <Button
+                android:id="@+id/open_jarvis"
+                style="@style/Jarvis.Button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="@string/setup_open" />
+            <Button
+                android:id="@+id/test_sos"
+                style="@style/Jarvis.Button.Quiet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/setup_test_sos" />
+        </LinearLayout>
+
+        <TextView
+            style="@style/Jarvis.Small"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/setup_secure" />
+    </LinearLayout>
+</ScrollView>

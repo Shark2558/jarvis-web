@@ -1,4 +1,4 @@
-Version v7.0.2 · 13 Nov 2026, 23:30 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v7.0.3 · 13 Nov 2026, 23:40 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
 
 # R7 — Part B integration notes (camera and the vision engine)
 
@@ -151,9 +151,9 @@ storage.googleapis.com is refused here, so `pose` and `objects` say "not install
    `BSD-2-Clause`, `BSD-3-Clause`); anything else is refused; without the option only pose comes,
    and a later run keeps the object model's licence line.
 3. `python scripts/vision_assets.py check` must print `r7-1: OK`; commit the model files,
-   `MANIFEST.json` and `LICENSE-mediapipe-models.txt`. **Restart the server after the models are
-   deployed**: the route's `vision_files` is read once per process (`lru_cache` in I0's
-   `api/console.py`), so until then `GET /v1/vision` still says "not installed" (Needs I1, item 12).
+   `MANIFEST.json` and `LICENSE-mediapipe-models.txt`. No restart is needed: since I1 the route's
+   `vision_files` is checked again whenever the release folder changes on disk (Needs I1, item 12,
+   done), so `GET /v1/vision` says the models are installed as soon as they are deployed.
    The models are pinned on first fetch (trust on first use): check each one's SHA-256 against the
    hash the vendor published before committing (the licence file says so too). From then on every fetch must match the
    pinned sums. (Their sizes, about 5.5 MB and 4.4 MB, are *unverified* here.)
@@ -315,5 +315,6 @@ engine and guard, `dc7aba6` eval and Part B tests, `976853a` browser tests.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v7.0.3 | 13 Nov 2026, 23:40 IST | R7 | I1: section 5's restart line dropped, since `vision_files` is now checked again whenever the folder changes (Needs I1 item 12, done at I1) | 🛠 Mark XVII |
 | v7.0.2 | 13 Nov 2026, 23:30 IST | R7 | Review follow-ups: package-data for a non-editable install, a day under Firestore's limit, pagination, a bad day blocks nothing, atomic `vision_assets.py`, the engine sealed and `stream` reporting (two contract lines in the port core), the camera stopping unconditionally, newest look wins, plain errors, a real tap on the camera's own buttons, a fail-closed use-case guard, eval with seven controls, section 7a for R8, Needs I1 items 11 to 14 | 🛠 Mark XVII |
 | v7.0.1 | 13 Nov 2026, 20:50 IST | R7 | First edition: what Part B built (the camera's one door, the five tasks, the Camera panel, kept results, `vision_results`, the vendored tools at 22.3 MB), the contract facts later parts build on, the model steps for CI or the laptop, the checks, ten Needs-I1 items, eight deviations and what could not be verified here | 🛠 Mark XVII |

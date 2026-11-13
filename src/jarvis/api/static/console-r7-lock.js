@@ -63,7 +63,13 @@ function ring() {
   if (svg) r.append(svg.cloneNode(true));
   return r;
 }
+// A modal <dialog> sits in the top layer, above the cover, and keeps the cover inert: close every open one
+// (the link code, Brief, Memory, Drive, More...) when the lock comes; their close handlers stop their own polls.
+function closeDialogs() {
+  document.querySelectorAll('dialog[open]').forEach((d) => { try { d.close(); } catch (_) {} });
+}
 function showCover() {
+  closeDialogs();
   if (S.cover && S.cover.isConnected) { S.cover.hidden = false; return; }
   const wrap = mk('div', 'gate show r7lock'); wrap.id = 'r7Lock';
   const box = mk('div', 'gate-card card hud'); box.id = 'r7LockBox';

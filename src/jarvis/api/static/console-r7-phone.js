@@ -127,6 +127,7 @@ function buildDialog() {
   actions.append(no, yes);
   dlg.append(h, body, actions);
   document.body.append(dlg);
+  dlg.addEventListener('close', () => { if (settle) settle(false); });  // closed from outside (the lock cover): stop the poll
   yes.addEventListener('click', () => { if (settle) settle(true); });
   no.addEventListener('click', () => { if (settle) settle(false); });
   dlg.addEventListener('cancel', (e) => { e.preventDefault(); if (settle) settle(false); });
@@ -180,7 +181,7 @@ async function withPasskey(r) {
 }
 function showCode(r, trigger) {
   const left = Number.isInteger(r.expires_in_s) && r.expires_in_s > 0 ? r.expires_in_s : 600;
-  const before = S.data ? S.data.phones.length : 0;
+  const before = new Set(S.data ? S.data.phones.map((p) => p.id) : []);
   const code = mk('p', 'pcode', r.code.slice(0, 4) + ' ' + r.code.slice(4)); code.id = 'phoneCode';
   const status = mk('p', 'fine'); status.id = 'phoneWaiting'; status.setAttribute('role', 'status');
   const stamp = Date.now(); S.link = stamp;
@@ -195,7 +196,7 @@ function showCode(r, trigger) {
     show();
     try {
       const d = normal(await api('/v1/phone'));
-      if (d.phones.length > before) { S.data = d; S.loadedAt = Date.now(); if (settle) settle(true); render(); note('ok', 'Linked. A notice went to all your alerts, Sir.'); return; }
+      if (d.phones.some((p) => !before.has(p.id))) { S.data = d; S.loadedAt = Date.now(); if (settle) settle(true); render(); note('ok', 'Linked. A notice went to all your alerts, Sir.'); return; }
     } catch (e) { if (e && (e.status === 401 || e.status === 423)) return; }
     S.timer = setTimeout(tick, POLL_MS);
   };

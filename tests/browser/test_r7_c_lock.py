@@ -96,6 +96,33 @@ def test_api_device_locked_shows_the_cover_and_never_the_show(
         c.close()
 
 
+def test_a_modal_dialog_never_stays_above_the_cover(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c = Console(browser, server_url, token, DESKTOP)
+    try:
+        c.open()
+        opened = c.page.evaluate(
+            "() => { const ds = [...document.querySelectorAll('dialog')].slice(0, 2);"
+            " ds.forEach((d) => d.showModal());"
+            " return document.querySelectorAll('dialog[open]').length; }"
+        )
+        assert opened >= 1
+        c.page.route("**/v1/locked-probe", lambda r: j(r, 423, DEVICE_LOCKED))
+        c.page.evaluate("() => window.JarvisConsole.api('/v1/locked-probe').catch(() => null)")
+        c.page.locator("#r7Lock").wait_for()
+        assert c.page.evaluate("() => document.querySelectorAll('dialog[open]').length") == 0
+        # nothing above the cover keeps it inert: its button is the element under its own centre
+        assert c.page.evaluate(
+            "() => { const b = document.getElementById('r7Unlock');"
+            " const r = b.getBoundingClientRect();"
+            " const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);"
+            " return b.contains(at); }"
+        )
+    finally:
+        c.close()
+
+
 def test_raw_device_locked_shows_the_cover_too(browser: Any, server_url: str, token: str) -> None:
     c = Console(browser, server_url, token, DESKTOP)
     try:

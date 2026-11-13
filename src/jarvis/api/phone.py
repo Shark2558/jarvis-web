@@ -433,6 +433,7 @@ async def phone_door(request: Request, route: str) -> Response:
     if handler is None:
         return _bare(refuse("not_built", name, 404).status)
     try:
+        await svc.handlers.seen(got)
         reply = await handler(got)
     except Exception as exc:  # noqa: BLE001 - a handler that fails answers plainly, logged by kind
         log.error("phone door handler failed", extra={"route": name, "error": type(exc).__name__})

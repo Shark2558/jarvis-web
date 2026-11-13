@@ -123,24 +123,68 @@ async def test_hello_answers_with_the_settings_and_records_what_the_app_may_do(
     body = r.json()
     assert body["v"] == 1 and body["device_id"] == device
     assert body["settings"]["app_lock_minutes"] == 5 and body["settings"]["sos_countdown_s"] == 10
-    assert body["sos"] == {"enabled": True, "contacts": []}  # Part D is not built here
+    assert body["sos"] == {"enabled": True, "label": "", "contacts": []}  # no Part D here
     assert r.headers["cache-control"] == "no-store" and "set-cookie" not in r.headers
     async with browser(app) as c:
         (p,) = (await c.get("/v1/phone")).json()["phones"]
     assert p["can"] == HELLO["can"] and p["android"] == 36 and p["last_seen"] is not None
 
 
-async def test_hello_carries_the_sos_contacts_part_d_offers(
+async def test_any_admitted_request_marks_the_phone_seen(app: Any, phone: tuple[str, Any]) -> None:
+    seen = Seen()
+    body_part(app, seen)
+    device, key = phone
+    async with browser(app) as c:
+        assert (await c.get("/v1/phone")).json()["phones"][0]["last_seen"] is None
+        assert (await door(app, key, device, "health", {"v": 1, "days": []})).status_code == 200
+        assert (await c.get("/v1/phone")).json()["phones"][0]["last_seen"] is not None
+    assert [r.route for r in seen.got] == ["health"]
+
+
+async def test_hello_carries_the_sos_label_and_contacts_part_d_offers(
     app: Any, phone: tuple[str, Any]
 ) -> None:
-    async def contacts(uid: str) -> list[dict[str, str]]:
+    async def sos(uid: str) -> dict[str, Any]:
         assert uid == owner_uid()
+        return {
+            "label": "Ravi\u202e K",
+            "contacts": [
+                {"label": "Asha", "phone": "+91 00000-00001"},
+                {"label": "Telegram only", "phone": ""},  # no number: not on the SMS screen
+                {"label": "x" * 60, "phone": "0000 0000 02"},
+                "not a contact",
+            ],
+        }
+
+    body_part(app, Seen(), sos_contacts=sos)
+    device, key = phone
+    got = (await door(app, key, device, "hello", HELLO)).json()["sos"]
+    assert got == {
+        "enabled": True,
+        "label": "Ravi K",
+        "contacts": [
+            {"label": "Asha", "phone": "+910000000001"},
+            {"label": "x" * 40, "phone": "0000000002"},
+        ],
+    }
+
+
+async def test_hello_reads_a_bare_list_of_contacts_and_survives_a_failing_seam(
+    app: Any, phone: tuple[str, Any]
+) -> None:
+    async def bare(uid: str) -> list[dict[str, str]]:
         return [{"label": "Asha", "phone": "+910000000001"}]
 
-    body_part(app, Seen(), sos_contacts=contacts)
+    async def broken(uid: str) -> Any:
+        raise RuntimeError("sos store down")
+
     device, key = phone
+    body_part(app, Seen(), sos_contacts=bare)
+    got = (await door(app, key, device, "hello", HELLO)).json()["sos"]
+    assert got["label"] == "" and got["contacts"] == [{"label": "Asha", "phone": "+910000000001"}]
+    body_part(app, Seen(), sos_contacts=broken)
     r = await door(app, key, device, "hello", HELLO)
-    assert r.json()["sos"]["contacts"] == [{"label": "Asha", "phone": "+910000000001"}]
+    assert r.status_code == 200 and r.json()["sos"]["contacts"] == []
 
 
 async def test_a_hello_that_is_not_the_one_json_form_is_refused_after_the_door(

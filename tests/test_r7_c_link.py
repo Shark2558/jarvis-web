@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 import pytest
@@ -56,7 +57,7 @@ async def test_a_fresh_sign_in_shows_an_eight_character_code_stored_only_as_a_ha
         assert r.status_code == 200, r.text
         body = r.json()
         code = body["code"]
-        assert len(code) == 8 and code.isalnum() and code.upper() == code
+        assert len(code) == 8 and re.fullmatch(r"[A-Z0-9]{8}", code)  # what the app types
         assert body["expires_in_s"] == 600
         assert r.headers["cache-control"] == "no-store"
         doc = await phone_service(app).store.docs.get(f"jarvis_phone_link/{owner_uid()}")
@@ -124,12 +125,15 @@ async def test_the_code_lasts_ten_minutes(app: Any) -> None:
     assert r.status_code == 403 and r.json()["error"] == "bad_code"
 
 
-async def test_a_code_typed_with_spaces_lower_case_or_look_alikes_still_links(app: Any) -> None:
+@pytest.mark.parametrize("form", ["{a} {b}", "{a}-{b}", "{a}{b}"])
+async def test_a_code_typed_with_spaces_a_hyphen_or_lower_case_still_links(
+    app: Any, form: str
+) -> None:
     async with browser(app) as c:
         code = await link_code(c)
-    typed = (code[:4] + " " + code[4:]).lower()
+    typed = form.format(a=code[:4], b=code[4:]).lower()
     r, _ = await link(app, typed)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 200 and r.json()["device_id"].startswith("ph_"), r.text
 
 
 async def test_five_wrong_tries_void_the_code(app: Any) -> None:

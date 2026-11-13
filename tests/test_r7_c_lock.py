@@ -244,6 +244,38 @@ async def test_switching_the_lock_off_takes_the_passkey_on_takes_nothing(app: An
         assert await locked(phone)
 
 
+async def test_two_passkeys_appearing_at_once_never_arm_the_lock(app: Any) -> None:
+    async with browser(app) as laptop:
+        laptop_key = await add_passkey(laptop)
+    async with browser(app, from_app=True) as phone, browser(app) as laptop:
+        # the app's registration and the laptop's land in the same moment: whose is whose is unknown
+        perms = app.state.permissions
+        before = len(await perms.passkeys.owned(owner_uid()))
+        opts = (
+            await phone.post(
+                "/v1/passkeys/register/options",
+                json={"proof": await proof(phone, laptop_key, "add")},
+                headers=CSRF,
+            )
+        ).json()
+        phone_key = SoftAuthenticator(origin=ORIGIN)
+        r = await phone.post(
+            "/v1/passkeys/register",
+            json={
+                "challenge_id": opts["challenge_id"],
+                "credential": phone_key.create(opts["public_key"]),
+                "label": "Phone",
+            },
+            headers=CSRF,
+        )
+        assert r.status_code == 200, r.text
+        await add_passkey(laptop, held=laptop_key, label="Laptop 2")  # before the phone asks again
+        assert len(await perms.passkeys.owned(owner_uid())) == before + 2
+        assert (await phone.get("/v1/session/lock")).json()["armed"] is False
+        app.state.phone_clock.advance(IDLE + 60)
+        assert not await locked(phone)
+
+
 async def test_removing_the_phones_passkey_switches_the_lock_off(app: Any) -> None:
     async with browser(app) as laptop:
         laptop_key = await add_passkey(laptop)

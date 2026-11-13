@@ -212,6 +212,9 @@ class AppLock:
         if not new:
             return  # not yet (the registration is still running), or it failed: wait
         self._pending.pop(ss, None)
+        if len(new) != 1:  # another device registered one meanwhile: whose is whose is unknown,
+            log.warning("app lock: two passkeys appeared at once; neither counts as the app's")
+            return  # so neither arms the lock (it must never lock him out)
         await self._store.add_lock_keys(uid, new)
         self.forget(uid)
         log.info("app lock: a passkey was registered from the app", extra={"count": len(new)})

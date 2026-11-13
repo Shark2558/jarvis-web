@@ -7,8 +7,9 @@ signed bytes, the phone and its owner). Its body must ALSO be the one JSON form
 payload (spaces, a repeated key) is refused, never guessed at.
 
 - `hello` {v, app_version, version_code, model, android, can{...}}: records what the app said it
-  may do and answers with its settings and, for the SMS screen, the SOS contacts that Part D offers
-  (`services["sos_contacts"]` of the body part: `(uid) -> [{label, phone}]`; none: an empty list).
+  may do and answers with its settings and, for the SMS screen, `sos: {enabled, label, contacts:
+  [{label, phone}]}` from what Part D offers (`services["sos_contacts"]` of the body part; none: an
+  empty label and no contacts).
 - `inbox`: the first line {v, name, mime, sha256, bytes}, one `\\n`, then the file. The file must be
   what its first line says (size and SHA-256, compared in constant time; PDF, JPEG or PNG, at most
   10 MB). It goes to `VaultIntake.intake(source="digilocker")`: an item in "Check details", exactly
@@ -21,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Literal
 
@@ -38,6 +40,8 @@ log = get_logger(__name__)
 FIRST_LINE_MAX = 1024
 RETRY_CODES = frozenset({"unavailable", "vault_full", "busy"})  # about now, not about the file
 CONTACTS_MAX = 5
+SOS_SEAM = "sos_contacts"  # Part D's service on the body part (INTEGRATION-C.md, Needs I1)
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]")
 TOUCH_EVERY_S = 60.0
 VAULT_OFF = "The vault isn't available on this server, so the file was not added."
 REJECTED = {"error": "input_rejected"}
@@ -71,6 +75,19 @@ class InboxHead(_Strict):
     mime: str = Field(max_length=40)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     bytes: int = Field(ge=1, le=MAX_FILE_BYTES)
+
+
+def _label(value: Any) -> str:
+    return " ".join(_CONTROL.sub("", value).split())[:40] if isinstance(value, str) else ""
+
+
+def _number(value: Any) -> str:
+    """A phone number as the SMS screen dials it: `+` and digits only, at most 16."""
+    if not isinstance(value, str):
+        return ""
+    digits = "".join(c for c in value if c.isascii() and c.isdigit())
+    plus = "+" if value.strip().startswith("+") else ""
+    return (plus + digits)[:16] if digits else ""
 
 
 def canonical(raw: bytes, model: type[_Strict]) -> _Strict | None:
@@ -120,7 +137,7 @@ class DoorHandlers:
                 "v": 1,
                 "device_id": req.device_id,
                 "settings": self._settings(),
-                "sos": {"enabled": self._s.sos_enabled, "contacts": await self._contacts(req.uid)},
+                "sos": {"enabled": self._s.sos_enabled, **await self._sos(req.uid)},
             },
         )
 
@@ -136,24 +153,30 @@ class DoorHandlers:
             "inbox_max_bytes": MAX_FILE_BYTES,
         }
 
-    async def _contacts(self, uid: str) -> list[dict[str, str]]:
-        """Part D's contacts for the SMS screen, when it offers them; plain strings only."""
+    async def _sos(self, uid: str) -> dict[str, Any]:
+        """{label, contacts} for the SMS screen (phone-contract section 4): what Part D offers as
+        `services["sos_contacts"]`, an `async (uid) -> {label, contacts: [{label, phone}]}` (a bare
+        list of contacts is read too). Labels are plain text of at most 40 characters; a number
+        keeps only `+` and digits; a contact with no number is left out (Telegram only)."""
         parts: Mapping[str, Any] = self._state("r7_parts") or {}
         body = parts.get("body")
-        read = body.services.get("sos_contacts") if body is not None else None
+        read = body.services.get(SOS_SEAM) if body is not None else None
         if not callable(read):
-            return []
+            return {"label": "", "contacts": []}
         try:
             got = await read(uid)
         except Exception as exc:  # noqa: BLE001 - the hello still answers; the SMS screen waits
             log.warning("sos contacts unreadable", extra={"error": type(exc).__name__})
-            return []
+            return {"label": "", "contacts": []}
+        whole = got if isinstance(got, Mapping) else {"contacts": got}
         out = []
-        for c in list(got or [])[:CONTACTS_MAX]:
-            label, phone = (c.get("label"), c.get("phone")) if isinstance(c, Mapping) else ("", "")
-            if isinstance(label, str) and isinstance(phone, str) and label and len(label) <= 40:
-                out.append({"label": label, "phone": phone[:20]})
-        return out
+        for c in list(whole.get("contacts") or [])[:CONTACTS_MAX]:
+            if not isinstance(c, Mapping):
+                continue
+            label, number = _label(c.get("label")), _number(c.get("phone"))
+            if label and number:
+                out.append({"label": label, "phone": number})
+        return {"label": _label(whole.get("label")), "contacts": out}
 
     # ---- inbox (D16) --------------------------------------------------------------------------
     async def inbox(self, req: PhoneRequest) -> PhoneReply:
@@ -166,7 +189,6 @@ class DoorHandlers:
         digest = hashlib.sha256(data).hexdigest()
         if len(data) != head.bytes or not hmac.compare_digest(digest, head.sha256):
             return PhoneReply(422, REJECTED)
-        await self._touch(req)
         vault = self._state("vault")
         if vault is None:
             return PhoneReply(503, {"error": "vault_off", "detail": VAULT_OFF})
@@ -178,9 +200,9 @@ class DoorHandlers:
             return PhoneReply(503, {"status": "skipped", "code": result.code})
         return PhoneReply(422, {"status": "skipped", "code": result.code or "skipped"})
 
-    async def _touch(self, req: PhoneRequest) -> None:
-        """Last seen, at most once a minute (the hello writes it anyway)."""
-        if req.at - self._touched.get(req.device_id, 0.0) < TOUCH_EVERY_S:
+    async def seen(self, req: PhoneRequest) -> None:
+        """Last seen, for every admitted request, at most once a minute (hello writes it too)."""
+        if req.route == "hello" or req.at - self._touched.get(req.device_id, 0.0) < TOUCH_EVERY_S:
             return
         self._touched[req.device_id] = req.at
         if len(self._touched) > 64:

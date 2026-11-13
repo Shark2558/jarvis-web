@@ -123,7 +123,9 @@ async def test_hello_answers_with_the_settings_and_records_what_the_app_may_do(
     body = r.json()
     assert body["v"] == 1 and body["device_id"] == device
     assert body["settings"]["app_lock_minutes"] == 5 and body["settings"]["sos_countdown_s"] == 10
-    assert body["sos"] == {"enabled": True, "label": "", "contacts": []}  # no Part D here
+    # no token key here, so Part D cannot say who the contacts are: `sos` is left out and the
+    # phone keeps the numbers it holds (I1; tests/test_r7_i1_join.py has the real join)
+    assert "sos" not in body
     assert r.headers["cache-control"] == "no-store" and "set-cookie" not in r.headers
     async with browser(app) as c:
         (p,) = (await c.get("/v1/phone")).json()["phones"]
@@ -184,7 +186,7 @@ async def test_hello_reads_a_bare_list_of_contacts_and_survives_a_failing_seam(
     assert got["label"] == "" and got["contacts"] == [{"label": "Asha", "phone": "+910000000001"}]
     body_part(app, Seen(), sos_contacts=broken)
     r = await door(app, key, device, "hello", HELLO)
-    assert r.status_code == 200 and r.json()["sos"]["contacts"] == []
+    assert r.status_code == 200 and "sos" not in r.json()  # I1: unknown is not "none"
 
 
 async def test_a_hello_that_is_not_the_one_json_form_is_refused_after_the_door(

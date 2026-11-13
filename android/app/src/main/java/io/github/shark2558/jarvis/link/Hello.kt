@@ -37,7 +37,8 @@ object Hello {
         val answer = DoorClient(context).signed("hello", body)
         if (!answer.ok) return false
         val book = parseBook(answer.body)
-        // an answer with no contacts (or no "sos" part) means there are none: old numbers go
+        // an "sos" part with no contacts means there are none: old numbers go. An answer with no
+        // "sos" part (the server could not say) or that is not JSON keeps the numbers it had.
         if (book != null) {
             if (book.contacts.isEmpty()) ContactsVault.clear(context) else ContactsVault.save(context, book)
         }
@@ -60,10 +61,11 @@ object Hello {
 
     /** The answer's SOS part: {"sos": {"label": "...", "contacts": [{"label": "...", "phone":
      *  "..."}]}}. Anything else is ignored; at most five contacts; numbers are cleaned. A JSON
-     *  answer without an "sos" part is an empty book; a body that is not JSON is null. */
+     *  answer without an "sos" part is null (the server could not say who they are), as is a
+     *  body that is not JSON: both keep the numbers the phone holds. */
     fun parseBook(text: String): SosBook? {
         try {
-            val sos = JSONObject(text).optJSONObject("sos") ?: return SosBook("", emptyList())
+            val sos = JSONObject(text).optJSONObject("sos") ?: return null
             val list = sos.optJSONArray("contacts")
             val contacts = ArrayList<SosContact>()
             if (list != null) {

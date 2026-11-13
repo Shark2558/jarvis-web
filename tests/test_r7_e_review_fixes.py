@@ -234,9 +234,13 @@ def test_a_pasted_code_may_carry_any_white_space() -> None:
 
 
 # ---- security L6: the sealed contacts go when the server has none, or the link goes --------
-def test_the_sealed_contacts_are_cleared_without_an_sos_part_and_on_forgetting() -> None:
+# I1: "none" is an `sos` part with no contacts; an answer WITHOUT an `sos` part means the server
+# could not say (no token key, the store unreadable), so the phone keeps the numbers it holds.
+def test_the_sealed_contacts_are_cleared_when_the_server_has_none_and_on_forgetting() -> None:
     hello = code(read(SRC / "link" / "Hello.kt"))
-    assert "ContactsVault.clear(context)" in hello and 'SosBook("", emptyList())' in hello
+    assert "if (book.contacts.isEmpty()) ContactsVault.clear(context)" in hello
+    assert 'optJSONObject("sos") ?: return null' in hello  # unknown: the phone's list stays
+    assert 'SosBook("", emptyList())' not in hello
     state = code(read(SRC / "link" / "AppState.kt"))
     forget = state[state.index("fun forgetLink()") :][:300]
     assert "ContactsVault.clear(appContext)" in forget

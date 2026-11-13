@@ -8,8 +8,9 @@ payload (spaces, a repeated key) is refused, never guessed at.
 
 - `hello` {v, app_version, version_code, model, android, can{...}}: records what the app said it
   may do and answers with its settings and, for the SMS screen, `sos: {enabled, label, contacts:
-  [{label, phone}]}` from what Part D offers (`services["sos_contacts"]` of the body part; none: an
-  empty label and no contacts).
+  [{label, phone}]}` from what Part D offers (`services["sos_contacts"]` of the body part). When
+  Part D cannot say who they are (no token key, the store unreadable, the part left out) `sos` is
+  left OUT of the answer, so the phone keeps the numbers it holds (I1; phone-contract section 2).
 - `inbox`: the first line {v, name, mime, sha256, bytes}, one `\\n`, then the file. The file must be
   what its first line says (size and SHA-256, compared in constant time; PDF, JPEG or PNG, at most
   10 MB). It goes to `VaultIntake.intake(source="digilocker")`: an item in "Check details", exactly
@@ -131,15 +132,15 @@ class DoorHandlers:
         }
         await self._store.update_phone(req.uid, req.device_id, changes)
         self._touched[req.device_id] = req.at
-        return PhoneReply(
-            200,
-            {
-                "v": 1,
-                "device_id": req.device_id,
-                "settings": self._settings(),
-                "sos": {"enabled": self._s.sos_enabled, **await self._sos(req.uid)},
-            },
-        )
+        answer: dict[str, Any] = {
+            "v": 1,
+            "device_id": req.device_id,
+            "settings": self._settings(),
+        }
+        sos = await self._sos(req.uid)
+        if sos is not None:  # unknown: left out, so the phone keeps the numbers it has
+            answer["sos"] = {"enabled": self._s.sos_enabled, **sos}
+        return PhoneReply(200, answer)
 
     def _settings(self) -> dict[str, Any]:
         s = self._s
@@ -153,21 +154,23 @@ class DoorHandlers:
             "inbox_max_bytes": MAX_FILE_BYTES,
         }
 
-    async def _sos(self, uid: str) -> dict[str, Any]:
+    async def _sos(self, uid: str) -> dict[str, Any] | None:
         """{label, contacts} for the SMS screen (phone-contract section 4): what Part D offers as
         `services["sos_contacts"]`, an `async (uid) -> {label, contacts: [{label, phone}]}` (a bare
         list of contacts is read too). Labels are plain text of at most 40 characters; a number
-        keeps only `+` and digits; a contact with no number is left out (Telegram only)."""
+        keeps only `+` and digits; a contact with no number is left out (Telegram only). None when
+        Part D cannot say (no seam, or it raised: SosOff, SosUnavailable): not "no contacts"."""
         parts: Mapping[str, Any] = self._state("r7_parts") or {}
         body = parts.get("body")
         read = body.services.get(SOS_SEAM) if body is not None else None
         if not callable(read):
-            return {"label": "", "contacts": []}
+            log.warning("sos contacts seam missing", extra={"seam": SOS_SEAM})
+            return None
         try:
             got = await read(uid)
-        except Exception as exc:  # noqa: BLE001 - the hello still answers; the SMS screen waits
+        except Exception as exc:  # noqa: BLE001 - the hello still answers; the phone keeps its list
             log.warning("sos contacts unreadable", extra={"error": type(exc).__name__})
-            return {"label": "", "contacts": []}
+            return None
         whole = got if isinstance(got, Mapping) else {"contacts": got}
         out = []
         for c in list(whole.get("contacts") or [])[:CONTACTS_MAX]:

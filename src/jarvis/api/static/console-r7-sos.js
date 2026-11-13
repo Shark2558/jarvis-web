@@ -66,7 +66,8 @@ const errWords = (e, fallback) => {
 /** The failed press, in words: the server's own sentence alone, or the fixed line (no sentence twice). */
 const notSent = (e) => {
   if (e && e.name === 'TypeError') return 'NOT sent through JARVIS: ' + OFFLINE + ' Use the SMS screen or call 112.';
-  return worded(e) || NOT_SENT;
+  const w = worded(e);
+  return !w ? NOT_SENT : w.indexOf('112') < 0 ? w + ' Use the SMS screen or call 112.' : w;
 };
 function newPress() {
   const a = new Uint8Array(18);
@@ -239,7 +240,7 @@ function shown(kind, res, err) {
   S.phase = 'done';
   const rows = [];
   if (err && err.timeout === true) {
-    rows.push(mk('p', 'strong', 'UNKNOWN: ' + errWords(err, 'JARVIS did not answer.') + ' Use the SMS screen and call 112 now.'));
+    rows.push(mk('p', 'strong', 'UNKNOWN: ' + (txt(err.message, 200) || 'JARVIS did not answer.') + ' Use the SMS screen and call 112 now.'));
   } else if (err || !res || typeof res !== 'object') {
     rows.push(mk('p', 'strong', notSent(err)));
   } else {

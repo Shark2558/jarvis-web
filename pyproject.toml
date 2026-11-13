@@ -94,6 +94,9 @@ where = ["src"]
     "static/vendor/ort/*.txt",
     "static/wakeword/*.onnx",
     "static/wakeword/*.txt",
+    # R7 Part A (D3): the web app manifest and the icons scripts/app_icons.py draws
+    "static/*.webmanifest",
+    "static/icons/*.png",
 ]
 # R3 C: the laptop Faces page the bridge serves on 127.0.0.1:8098
 "jarvis.homebridge" = ["static/faces.html", "static/faces.js", "static/faces.css"]

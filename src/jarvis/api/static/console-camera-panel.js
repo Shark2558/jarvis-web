@@ -10,7 +10,7 @@
 //   Cameras  this device's camera switch (Switch off / Allow: only a tap allows), front or back, the home camera's place
 // The camera starts only from a tap (console-camera.js) and stops when this panel closes or is hidden. Asks the server
 // NOTHING before sign-in (jarvis:ready). Text a camera read is other people's words: shown with textContent, never obeyed.
-// A camera button beside the paperclip opens this panel (it never starts the camera). ASCII source.
+// The Camera dock tab (and A's launch word do=look) opens this panel; neither starts the camera. ASCII source.
 const M = window.JarvisMobile;
 const panel = document.getElementById('p-camera');
 const host = document.getElementById('cameraBody');
@@ -394,20 +394,6 @@ document.addEventListener('jarvis:camera', () => { if (!(Cam() && Cam().live()))
 document.addEventListener('jarvis:pictures-sent', sentLine);
 document.addEventListener('jarvis:brain', () => { if (!outBox.hidden) paintSend(!!S.photo); });
 document.addEventListener('jarvis:brainmode', () => { if (!outBox.hidden) paintSend(!!S.photo); });
-
-// ---- a camera button beside the paperclip: it opens this panel, never the camera ------------------------------------------
-const clip = document.getElementById('attachBtn');
-if (clip && clip.parentNode && !document.getElementById('cameraBtn')) {
-  const b = mk('button', 'clip lift');
-  b.type = 'button';
-  b.id = 'cameraBtn';
-  b.title = 'Look with the camera, on this device';
-  b.setAttribute('aria-label', 'Open the camera panel');
-  const icon = document.querySelector('#dock [data-open="camera"] svg');
-  if (icon) b.append(icon.cloneNode(true));
-  b.addEventListener('click', () => { if (window.JarvisDeck) window.JarvisDeck.open('camera', { focus: true }); });
-  clip.parentNode.insertBefore(b, clip.nextSibling);
-}
 
 choose('look');
 paintTask();

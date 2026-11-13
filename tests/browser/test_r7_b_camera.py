@@ -213,6 +213,8 @@ def test_a_live_run_sends_no_picture_and_the_chip_shows_while_live(
         assert [(m, p) for m, p, _ in posts] == [("POST", "/v1/vision/results")]
         assert json.loads(posts[0][2])["task"] == "quality" and len(posts[0][2]) < 2000
         assert spy.pictures(before) == []
+        hosts = {u.split("/", 3)[2] for _, u, _ in spy.reqs if u.startswith(("http:", "https:"))}
+        assert hosts == {server_url.split("/", 2)[2]}, hosts  # a live run contacts this origin only
         button(c, "Stop").click()
         until(c.page, lambda: not chip.is_visible(), "the chip to go")
         assert c.page.evaluate("window.JarvisCamera.live()") is False
@@ -309,6 +311,21 @@ def test_locked_there_is_no_track_and_script_cannot_unlock(
         )
         button(c, "Allow the camera").click()  # a real tap
         assert c.page.evaluate("window.JarvisCamera.locked()") is False
+    finally:
+        c.close()
+
+
+def test_a_tap_somewhere_else_does_not_let_a_script_start_the_camera(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, _ = camera(browser, server_url, token)
+    try:
+        c.page.locator("#p-camera .pbody").first.click(position={"x": 4, "y": 4})  # not a button
+        c.page.locator("body").click(position={"x": 2, "y": 2})  # a real tap, but not the camera's
+        code = c.page.evaluate("window.JarvisCamera.start({}).then(() => 'started', (e) => e.code)")
+        assert code == "needs_tap" and c.page.evaluate("window.JarvisCamera.live()") is False
+        button(c, "Start the camera").click()  # the camera's own button works
+        until(c.page, lambda: c.page.evaluate("window.JarvisCamera.live()"), "the camera")
     finally:
         c.close()
 

@@ -418,15 +418,15 @@ def _wire_brain(app: FastAPI, s: Settings, built: Storage | None, docs: Docs) ->
 
 
 def _tick_jobs(app: FastAPI) -> tuple[Any, ...]:
-    """R2's feature jobs, the alert policy's when the home watchdog doesn't run them, R4's vitals
-    poll and health check, R6's book seal and sweep, R11's helpers clock and daily jobs (on the
-    existing tick, no new Scheduler job)."""
+    """R2's jobs, the alert policy's, R4's vitals and health check, R6's book jobs, R7's own two
+    (not the helpers'), R11's helpers clock and daily jobs (the existing tick, no new job)."""
     jobs = (
         *personal_tick_jobs(app),
         *notify_tick_jobs(app),
         *r4_tick_jobs(app),
         *r6_tick_jobs(app),
         *r11_tick_jobs(app),
+        *r7.mobile_tick_jobs(app),
     )
     check_job_names(jobs)
     return jobs

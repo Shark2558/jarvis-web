@@ -77,17 +77,18 @@ async def test_the_helpers_start_with_four_empty_parts_and_both_composites(
         assert isinstance(st.helpers_clock, Composite)
         jobs = st.helpers_clock.job_names
         fixes = {j.name for j in fix_clock_jobs(a)}  # R11.1: the parts' jobs ride the same clock
-        mobile = {j.name for j in mobile_clock_jobs(a)}  # R7 (I1): Part D's watch_stale too
-        assert mobile == {"watch_stale"} and mobile <= set(jobs)
-        own = set(jobs) - fixes - mobile
+        mobile = {j.name for j in mobile_clock_jobs(a)}  # R7: Part D's watch_stale ...
+        assert mobile == {"watch_stale"} and not mobile & set(jobs)  # ... on R7's own tick job
+        own = set(jobs) - fixes
         assert sorted(own) == sorted(j for p in PARTS for j in CLOCK_JOBS[p]), jobs
         assert fixes == {"series_checkin", "photos_import", "face_groups_poll"}  # R11.1 A, C
         assert fixes <= set(jobs)
-        r7_daily = tuple(j.name for j in mobile_daily_jobs(a))  # R7 (I1): the parts' sweeps
+        r7_daily = tuple(j.name for j in mobile_daily_jobs(a))  # R7: the parts' sweeps ...
         assert "body_sweep" in r7_daily
-        assert st.helpers_daily.job_names == ("breach_watch", *r7_daily, "helpers_sweep")
+        assert st.helpers_daily.job_names == ("breach_watch", "helpers_sweep")  # ... not here
         names = [j.name for j in st.tick_jobs]
-        assert names[-2:] == ["helpers_clock", "helpers_daily"]
+        # R11's two composites, then R7's own two (never inside the helpers': code M5)
+        assert names[-4:] == ["helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily"]
         assert st.brief._helpers is not None  # noqa: SLF001 - the brief's Helpers source
         assert "helpers_nudge" in st.privacy.registry.ids()
 
@@ -166,8 +167,7 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
         assert st.r11_parts["nudges"].ready == "not built yet"
         r111 = tuple(j.name for j in fix_clock_jobs(a))  # R11.1 A and C: on the same clock
         assert r111 == ("series_checkin", "photos_import", "face_groups_poll")
-        r7 = tuple(j.name for j in mobile_clock_jobs(a))  # R7 (I1): Part D's watch_stale
-        assert st.helpers_clock.job_names == ("bills_due", *r111, *r7)
+        assert st.helpers_clock.job_names == ("bills_due", *r111)  # R7's watch_stale is not here
         gw = st.gateway
         assert {"bill_list", "bill_pay_prepare"} <= {s.name for s in gw.registry.specs()}
         res = await gw.execute(ToolCall(id="t1", name="bill_list", arguments={}), scope="u:s")
@@ -181,7 +181,7 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
         assert job.seen == [r11.owners_of(settings)]  # the configured owners, never a list passed
         status = await st.helpers_status.read()
         assert status is not None and status["jobs"]["bills_due"] == "ok"
-        assert set(status["jobs"]) == {"bills_due", *r111, *r7}  # every job ran and said how
+        assert set(status["jobs"]) == {"bills_due", *r111}  # every job ran and said how
 
 
 async def test_with_home_on_the_clock_is_added_to_the_watchdog_once(settings: Settings) -> None:
@@ -292,6 +292,7 @@ def test_app_py_has_the_six_r11_slots_and_stays_under_its_guard() -> None:
     assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 3
     assert _at(lines, "install_r11_routes(app)") == _at(lines, "install_r6_routes(app)") + 1
     assert _at(lines, "*r11_tick_jobs(app),") == _at(lines, "*r6_tick_jobs(app),") + 1
+    assert _at(lines, "*r7.mobile_tick_jobs(app),") == _at(lines, "*r11_tick_jobs(app),") + 1
     assert _at(lines, "r11=app.state.r11_parts,") == _at(lines, "r4=app.state.r4_parts,") + 1
     assert _at(lines, "helpers=helpers_brief(app),") == _at(lines, "vitals=vitals_brief(app),") + 1
     assert "def _log_up" not in "\n".join(lines) and "log_up(app, s)" in "\n".join(lines)

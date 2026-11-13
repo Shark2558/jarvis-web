@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from r7_fakes_c import CSRF, ORIGIN, phone_app, sign_in_again
+from r7_fakes_c import CSRF, ORIGIN, owner_uid, phone_app, sign_in_again
 
 from jarvis.config import Settings
 from jarvis.phone import applock
@@ -205,3 +205,54 @@ async def test_watch_stale_stays_silent_when_no_phone_is_linked_any_more() -> No
             got = await _stale_job(rig, seam).run([D_UID])
             assert got["told"] == expected, (kind, getattr(seam, "__name__", seam))
             assert len(rig.notes.sent) == expected
+
+
+# ---- code M5: R7's clock and daily jobs do not depend on the R11 helpers ------------------
+def _key() -> Any:
+    import base64
+
+    from pydantic import SecretStr
+
+    return SecretStr(base64.urlsafe_b64encode(bytes(range(201, 233))).decode())
+
+
+@pytest.mark.parametrize("how", ["switched_off", "setup_failed"])
+async def test_r7_jobs_run_on_the_tick_with_the_helpers_off_or_failed(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    from datetime import timedelta
+
+    import jarvis.api.r11_wiring as r11
+    from jarvis.ticks import MAX_BUDGET_S, TICK_TOTAL_BUDGET_S, run_jobs
+    from jarvis.watch.models import Session
+
+    extra: dict[str, Any] = {
+        "token_key": _key(),
+    }
+    if how == "switched_off":
+        extra["helpers_enabled"] = False
+    else:
+
+        def boom(*a: Any, **k: Any) -> Any:
+            raise RuntimeError("R11 setup broke")
+
+        monkeypatch.setattr(r11, "GateStore", boom)
+    async with phone_app(settings, **extra) as app:
+        assert app.state.helpers_clock is None and app.state.helpers_daily is None
+        assert app.state.helpers_off == how
+        jobs = {j.name: j for j in app.state.tick_jobs}
+        assert {"mobile_clock", "mobile_daily"} <= set(jobs)
+        assert all(0 < jobs[n].budget_s <= MAX_BUDGET_S for n in ("mobile_clock", "mobile_daily"))
+        assert jobs["mobile_clock"].budget_s + jobs["mobile_daily"].budget_s < TICK_TOTAL_BUDGET_S
+        watch = app.state.r7_parts["body"].services["watch"]
+        night = Session(
+            start="2026-01-01T23:00:00+05:30", end="2026-01-02T06:00:00+05:30", writer="typed"
+        )
+        uid, today = owner_uid(), watch.today()
+        await watch.store.set_typed(uid, today, night)
+        await watch.store.set_typed(uid, today - timedelta(days=401), night)  # 400-day window
+        assert await watch.store.count(uid) == 2
+        # what the Scheduler's tick does with `app.state.tick_jobs` (api/brief.py)
+        ran = await run_jobs(app.state.tick_jobs, app.state.brief.owners)
+        assert ran["mobile_daily"] == "ok" and ran["mobile_clock"] == "ok"
+        assert await watch.store.count(uid) == 1  # the old day is gone, today's stays

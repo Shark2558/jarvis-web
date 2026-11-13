@@ -44,8 +44,6 @@ from jarvis.api.r4_wiring import _notifier
 from jarvis.api.r7_wiring import (
     install_mobile_phrases,
     mobile_brief,
-    mobile_clock_jobs,
-    mobile_daily_jobs,
 )
 from jarvis.api.r11_1_wiring import fix_brief, fix_clock_jobs, fix_daily_jobs, install_fix_phrases
 from jarvis.config import Settings
@@ -223,7 +221,6 @@ def _wire(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
         [
             *(j for p in parts.values() for j in p.clock_jobs),
             *fix_clock_jobs(app),  # + R11.1
-            *mobile_clock_jobs(app),  # + R7 (watch_stale)
         ],
         owners,
         budget_s=s.helpers_clock_budget_s,
@@ -231,7 +228,6 @@ def _wire(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> None:
         status=status,
     )
     daily = [*(j for p in parts.values() for j in p.daily_jobs), *fix_daily_jobs(app)]
-    daily += mobile_daily_jobs(app)  # + R7: the 400-day and 90-day sweeps
     sweep = SweepJob(store, tz=s.user_timezone, now=st.helpers_now)
     st.helpers_daily = daily_composite([*daily, sweep], owners, now=st.helpers_now)
     mode = getattr(st, "brain_mode", None)

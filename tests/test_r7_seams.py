@@ -430,8 +430,10 @@ def test_the_wiring_files_have_their_slots() -> None:
     assert "r7: Sequence[Tool] = ()" in setup
     assert "mobile_privacy_sources(app)" in _text(SRC / "api" / "personal.py")
     r11 = _text(SRC / "api" / "r11_wiring.py")
-    for needle in ("mobile_clock_jobs(app)", "mobile_daily_jobs(app)", "mobile_brief(app)"):
-        assert needle in r11, needle
+    assert "mobile_brief(app)" in r11
+    # I1 fixer (code M5): R7's clock and daily jobs ride their OWN tick jobs, never the helpers'
+    assert "mobile_clock_jobs" not in r11 and "mobile_daily_jobs" not in r11
+    assert "r7.mobile_tick_jobs(app)" in app_py
     assert "install_mobile_phrases(app)" in r11
 
 

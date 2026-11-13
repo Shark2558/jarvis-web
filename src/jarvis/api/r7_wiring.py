@@ -2,11 +2,14 @@
 """R7 on the app (docs/plans/r7-mobile.md "The I0 seams" 8, 14, 20): the four parts' one join.
 
 - `wire_r7(app, s, docs, audit)`: builds each part (`jarvis.mobile.ports`) into
-  `app.state.r7_parts`, BEFORE the R11 helpers are wired, so the parts' clock and daily jobs ride
-  the helpers' two composites (read by `r11_wiring._wire`, as R11.1's are). A part whose build
+  `app.state.r7_parts`, BEFORE the R11 helpers are wired. A part whose build
   raises, or that names itself, a tool, a door route or a service it doesn't own, is left empty
   ("setup failed") and the others still run. It also hands Part D's `sos_hook` to the Telegram
   front door (`TelegramService.sos`), when both exist.
+- `mobile_tick_jobs(app)`: the parts' clock and daily jobs as TWO tick jobs of their own,
+  `mobile_clock` (also on the home watchdog's 5 minutes) and `mobile_daily`, built once and
+  independent of the R11 helpers (switched off or failed at set-up: the 400-day sweeps and
+  `watch_stale` still run), inside the tick's own deadline (I1 fixer, code M5).
 - `mobile_tools(parts)`: every part's tools, for `tools.setup.build_gateway(r7=...)`.
 - `install_r7_routes(app)`: the parts' routers (`api/app_shell.py`, `vision.py`, `phone.py`,
   `watch.py`, `sos.py`; each part owns its own).
@@ -28,7 +31,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, MutableMapping
-from datetime import date, tzinfo
+from datetime import UTC, date, datetime, tzinfo
 from importlib import import_module
 from typing import Any
 
@@ -135,6 +138,9 @@ async def wire_r7(app: FastAPI, s: Settings, docs: Docs | None, audit: AuditTrai
 
     ctx = MobileContext(s=s, docs=docs, audit=audit, state=late, notifier=lambda: _notifier(app))
     st.r7_parts = build_parts(ctx)
+    from jarvis.api.r11_wiring import owners_of  # late: r11_wiring imports this module
+
+    st.r7_owners = owners_of(s)  # the configured owners, as the helpers' composites serve them
     hook = st.r7_parts["body"].services.get("sos_hook")
     telegram = getattr(st, "telegram", None)
     if hook is not None and telegram is not None:
@@ -147,6 +153,34 @@ def _parts(app: FastAPI) -> Mapping[PartName, MobilePart]:
 
 def mobile_tools(parts: Mapping[PartName, MobilePart] | None) -> tuple[Tool, ...]:
     return tuple(t for p in (parts or {}).values() for t in p.tools)
+
+
+MOBILE_CLOCK, MOBILE_DAILY = "mobile_clock", "mobile_daily"
+CLOCK_BUDGET_S, DAILY_BUDGET_S = 20.0, 60.0  # each inside MAX_BUDGET_S and the tick's 150 s
+
+
+def mobile_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
+    """R7's own two tick jobs (never the R11 helpers' composites), built once. The clock one also
+    rides the home watchdog's 5 minutes when Home is on, as R11's does."""
+    from jarvis.helpers.clock import Composite  # a plain runner of jobs: it needs no R11 wiring
+
+    st = app.state
+    built: tuple[TickJob, ...] | None = getattr(st, "r7_jobs", None)
+    if built is not None:
+        return built
+    owners = tuple(getattr(st, "r7_owners", ()) or ())
+    now = lambda: datetime.now(UTC)  # noqa: E731 - only the composite's own bookkeeping
+    clock, daily = mobile_clock_jobs(app), mobile_daily_jobs(app)
+    jobs: list[TickJob] = []
+    if clock:
+        jobs.append(Composite(MOBILE_CLOCK, clock, owners, budget_s=CLOCK_BUDGET_S, now=now))
+    if daily:
+        jobs.append(Composite(MOBILE_DAILY, daily, owners, budget_s=DAILY_BUDGET_S, now=now))
+    watchdog = getattr(st, "home_watchdog", None)
+    if watchdog is not None and clock:
+        watchdog.extend(jobs[0])  # around the clock, every 5 minutes
+    st.r7_jobs = built = tuple(jobs)
+    return built
 
 
 def mobile_clock_jobs(app: FastAPI) -> tuple[TickJob, ...]:
@@ -301,8 +335,11 @@ __all__ = [
     "install_mobile_phrases",
     "install_r7_routes",
     "mobile_brief",
+    "MOBILE_CLOCK",
+    "MOBILE_DAILY",
     "mobile_clock_jobs",
     "mobile_daily_jobs",
+    "mobile_tick_jobs",
     "mobile_phrases",
     "mobile_privacy_sources",
     "mobile_tools",

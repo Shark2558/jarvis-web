@@ -22,9 +22,9 @@ every other writer (the phone itself, Google Fit, any other app) is "phone" (D17
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
-import datetime as dt
 from datetime import date, datetime, timedelta
 from typing import Literal, Self
 

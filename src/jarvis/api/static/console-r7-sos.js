@@ -6,6 +6,11 @@
 //   POST body. The answer is shown per contact, honestly ("sent", "sent, the map pin failed", "NOT sent", "SMS
 //   only"), and the SMS screen (every number, the message filled in) and the 112 button are ALWAYS offered, after a
 //   refusal or a failure too, and with no internet (from the numbers the sheet read when it opened).
+// * A failed SOS always leaves the SMS screen and 112: the numbers the sheet loaded are kept and used when an answer
+//   has none; a send that gets no answer in 20 seconds says so ("it may have gone") and offers both; every error
+//   answer's plain words are shown (never "[object Object]"). One press id per hold: a repeated request is one send.
+// * While the app is locked only a real SOS is offered (no test, no "I'm safe"), the answer names no contact and the
+//   numbers live only inside the SMS link.
 // * The card: his name for the message, up to 5 contacts (label, phone for the SMS screen), a one-time join link per
 //   contact (he sends it himself; it works once, 24 hours), Remove, the last SOS, what is left this hour.
 // * Voice: "open SOS" (sos.open, R7_PHRASES) only OPENS the sheet; it never holds, counts down or sends.
@@ -19,10 +24,14 @@ const NOT_A_SERVICE = 'This is not an emergency service: in danger, call 112. Se
 const VOICE = ['open sos', 'emergency sos', 'open emergency sos', 'open the sos screen', 'show the sos screen'];
 const STATUS = { sent: 'sent on Telegram', sent_no_pin: 'sent on Telegram, but the map pin failed', failed: 'NOT sent: Telegram did not take it', not_joined: 'not on Telegram: use the SMS screen' };
 const TITLE = { real: 'SOS', test: 'Test SOS', safe: '\u201cI\u2019m safe\u201d' };
+const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+const SEND_MS = 20000;
+const LINK_MS = 10 * 60 * 1000;
+const WARN = 'Your contacts couldn\u2019t be loaded just now, Sir. If you need help, call 112 or use your phone\u2019s own SMS.';
 const CID = /^c_[0-9a-f]{10}$/;
 const PHONE = /^\+?[0-9]{6,15}$/;
 const LINK = /^https:\/\/t\.me\/[A-Za-z0-9_]{4,64}\?start=sos-[A-Za-z0-9_-]{22,60}$/;
-const S = { sheet: null, phase: 'idle', kind: 'real', hold: 0, tick: 0, left: 0, place: null, card: null, view: null, busy: false };
+const S = { sheet: null, phase: 'idle', kind: 'real', hold: 0, tick: 0, left: 0, place: null, card: null, view: null, busy: false, pointer: null, key: false, press: '', linkTimer: 0, lastLink: null };
 const UI = {};
 
 const mk = (tag, cls, text) => (M ? M.mk(tag, cls, text) : document.createElement(tag));
@@ -42,7 +51,18 @@ function link(label, href, cls) {
   a.href = href;
   return a;
 }
-const errWords = (e, fallback) => (e && e.name === 'TypeError' ? OFFLINE : txt(e && e.message, 200) || fallback);
+const errWords = (e, fallback) => {
+  if (e && e.name === 'TypeError') return OFFLINE;
+  const m = txt(e && e.message, 200);
+  return m && m.indexOf('[object') < 0 ? m : fallback;
+};
+function newPress() {
+  const a = new Uint8Array(18);
+  if (window.crypto && typeof window.crypto.getRandomValues === 'function') window.crypto.getRandomValues(a);
+  else for (let i = 0; i < a.length; i += 1) a[i] = Math.floor(Math.random() * 256);
+  return Array.from(a, (b) => ALPHA[b & 63]).join('');
+}
+const lockedNow = () => !!(S.sheet && S.sheet.locked === true);
 
 // ---- the sheet --------------------------------------------------------------------------------------------------
 function buildSheet() {
@@ -52,6 +72,7 @@ function buildSheet() {
   d.setAttribute('aria-labelledby', 'sosTitle');
   const h = mk('h2', '', 'Emergency SOS'); h.id = 'sosTitle';
   UI.say = mk('p', 'strong sos-say'); UI.say.setAttribute('role', 'status'); UI.say.setAttribute('aria-live', 'assertive');
+  UI.warn = mk('p', 'strong sos-warn'); UI.warn.setAttribute('role', 'alert'); UI.warn.hidden = true;
   UI.place = mk('p', 'sos-place');
   UI.hold = button('Hold for SOS', 'btn danger sos-hold');
   UI.test = button('Hold to send a test', 'btn sos-test');
@@ -64,7 +85,7 @@ function buildSheet() {
   const note = mk('p', 'fine', NOT_A_SERVICE);
   const acts = mk('div', 'sacts sos-acts');
   acts.append(UI.hold, UI.test, UI.safe);
-  d.append(h, UI.say, UI.place, acts, UI.cancel, UI.result, UI.links, note, close);
+  d.append(h, UI.say, UI.warn, UI.place, acts, UI.cancel, UI.result, UI.links, note, close);
   holdable(UI.hold, 'real');
   holdable(UI.test, 'test');
   holdable(UI.safe, 'safe');
@@ -74,33 +95,47 @@ function buildSheet() {
   return d;
 }
 function holdable(btn, kind) {
-  const start = (e) => { if (e) e.preventDefault(); begin(kind); };
   btn.addEventListener('pointerdown', (e) => {
+    // only the primary button of one pointer starts a hold (left click, one finger); a right click, a second finger or
+    // a key held at the same time never does
+    if (e.button !== 0 || e.isPrimary === false || S.pointer !== null || S.key) return;
+    e.preventDefault();
+    if (!begin(kind)) return;
+    S.pointer = e.pointerId;
     // the finger or the mouse stays this button's until it lets go (a line of text changing above it must not
     // count as letting go)
     try { btn.setPointerCapture(e.pointerId); } catch (_) { /* an old browser: the plain hold */ }
-    start(e);
   });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach((n) => btn.addEventListener(n, () => letGo()));
-  btn.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) start(e); });
-  btn.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') letGo(); });
+  const up = (e) => { if (e.pointerId !== S.pointer) return; S.pointer = null; letGo(); };
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((n) => btn.addEventListener(n, up));
+  btn.addEventListener('keydown', (e) => {
+    if ((e.key !== ' ' && e.key !== 'Enter') || e.repeat) return;
+    e.preventDefault();
+    if (S.pointer === null && begin(kind)) S.key = true;
+  });
+  btn.addEventListener('keyup', (e) => { if ((e.key === ' ' || e.key === 'Enter') && S.key) { S.key = false; letGo(); } });
   btn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
+// a window that loses focus or goes to the background ends a hold (the finger may be gone: nothing is then sent)
+window.addEventListener('blur', () => letGo());
+document.addEventListener('visibilitychange', () => { if (document.hidden) letGo(); });
 const holdS = () => int(S.sheet && S.sheet.hold_s, 1, 10) || 2;
 const countS = () => int(S.sheet && S.sheet.countdown_s, 3, 30) || 5;
 function say(text) { if (UI.say) UI.say.textContent = text; }
 function idle(text) {
-  S.phase = 'idle';
+  S.phase = 'idle'; S.pointer = null; S.key = false;
   const can = signedIn();
   [UI.hold, UI.test, UI.safe].forEach((b) => { b.hidden = false; b.disabled = !can; });
+  if (lockedNow()) { UI.test.hidden = true; UI.safe.hidden = true; } // locked: a real SOS only
   UI.cancel.hidden = true;
   say(text || (can ? 'Hold the red button for ' + holdS() + ' seconds. You can still cancel after that.' : 'Sign in to send an SOS through JARVIS. In danger, call 112 now.'));
 }
 function begin(kind) {
-  if (S.phase !== 'idle' || !signedIn()) return;
-  S.phase = 'holding'; S.kind = kind;
+  if (S.phase !== 'idle' || !signedIn()) return false;
+  S.phase = 'holding'; S.kind = kind; S.press = newPress(); // one id for this hold: a repeat is one send
   say('Keep holding\u2026');
   S.hold = setTimeout(() => countdown(kind), holdS() * 1000);
+  return true;
 }
 function letGo() {
   if (S.phase !== 'holding') return;
@@ -113,6 +148,7 @@ function countdown(kind) {
   [UI.hold, UI.test, UI.safe].forEach((b) => { b.hidden = true; });
   UI.cancel.hidden = false;
   UI.cancel.focus({ preventScroll: true });
+  if (!S.sheet || S.sheet.unreadable === true) loadSheet(false); // read the contacts again before the press goes
   const show = () => say('Sending ' + TITLE[kind] + ' in ' + S.left + '\u2026 Press Cancel to stop.');
   show();
   S.tick = setInterval(() => {
@@ -126,6 +162,7 @@ function cancel() {
   if (S.phase !== 'counting' && S.phase !== 'holding') return;
   clearTimeout(S.hold); clearInterval(S.tick);
   idle('Cancelled. Nothing was sent.');
+  UI.hold.focus({ preventScroll: true }); // the Cancel button that had focus is hidden now
 }
 function where() {
   S.place = null;
@@ -148,18 +185,31 @@ function placeBody() {
   const age = Math.min(86400, Math.max(0, Math.round((Date.now() - p.taken) / 1000)));
   return { lat_e6: p.lat_e6, lon_e6: p.lon_e6, accuracy_m: p.accuracy_m, age_s: age };
 }
+const sendMs = () => int(M && M.sosTimeoutMs, 200, 60000) || SEND_MS;
+function late() {
+  const e = new Error('JARVIS did not answer in time, so it is not known whether the SOS went. It may have.');
+  e.timeout = true;
+  return e;
+}
 async function send(kind) {
   S.phase = 'sending';
   UI.cancel.hidden = true;
   say('Sending\u2026');
-  const body = { kind, location: kind === 'safe' ? null : placeBody() };
-  let res = null, err = null;
-  try { res = await api('/v1/sos/send', { method: 'POST', body }); } catch (e) { err = e; }
+  const body = { kind, press_id: S.press, location: kind === 'safe' ? null : placeBody() };
+  let res = null, err = null, timer = 0;
+  try {
+    res = await Promise.race([
+      api('/v1/sos/send', { method: 'POST', body }),
+      new Promise((_, no) => { timer = setTimeout(() => no(late()), sendMs()); }),
+    ]);
+  } catch (e) { err = e; } finally { clearTimeout(timer); }
   shown(kind, res, err);
 }
 function numbers(res) {
-  const raw = res && res.sms && Array.isArray(res.sms.numbers) ? res.sms.numbers : (S.sheet && Array.isArray(S.sheet.numbers) ? S.sheet.numbers : []);
-  return raw.filter((n) => typeof n === 'string' && PHONE.test(n)).slice(0, 5);
+  const own = res && res.sms && Array.isArray(res.sms.numbers) ? res.sms.numbers : [];
+  const kept = S.sheet && Array.isArray(S.sheet.numbers) ? S.sheet.numbers : [];
+  // an answer with no numbers (the store was down) never wins over the numbers the sheet loaded
+  return (own.length ? own : kept).filter((n) => typeof n === 'string' && PHONE.test(n)).slice(0, 5);
 }
 function smsText(res) {
   const t = res && res.sms ? txt(res.sms.text, 600) : '';
@@ -169,14 +219,16 @@ function offer(res) {
   const nums = numbers(res);
   const acts = [];
   if (nums.length) acts.push(link('Open SMS to ' + (nums.length === 1 ? '1 contact' : nums.length + ' contacts'), 'sms:' + nums.join(',') + '?body=' + encodeURIComponent(smsText(res)), 'btn primary sos-link'));
-  if (nums.length) acts.push(link('Call your first contact', 'tel:' + nums[0]));
+  if (nums.length && !lockedNow()) acts.push(link('Call your first contact', 'tel:' + nums[0]));
   acts.push(link('Call 112', 'tel:112', 'btn danger sos-link'));
   UI.links.replaceChildren(...acts);
 }
 function shown(kind, res, err) {
   S.phase = 'done';
   const rows = [];
-  if (err || !res || typeof res !== 'object') {
+  if (err && err.timeout === true) {
+    rows.push(mk('p', 'strong', 'UNKNOWN: ' + errWords(err, 'JARVIS did not answer.') + ' Use the SMS screen and call 112 now.'));
+  } else if (err || !res || typeof res !== 'object') {
     rows.push(mk('p', 'strong', 'NOT sent through JARVIS: ' + errWords(err, 'the server did not answer.') + ' Use the SMS screen or call 112.'));
   } else {
     rows.push(mk('p', 'strong', txt(res.words, 300) || (res.sent === true ? 'Sent.' : 'NOT sent. Use the SMS screen or call 112.')));
@@ -184,29 +236,40 @@ function shown(kind, res, err) {
       const label = txt(r && r.label, 40), st = STATUS[r && r.status];
       if (label && st) rows.push(mk('p', 'sos-row', label + ': ' + st));
     });
+    if (res.told === false) rows.push(mk('p', 'sos-row', 'I couldn\u2019t confirm that your other devices were alerted, Sir.'));
   }
   UI.result.replaceChildren(...rows);
   offer(res);
   idle(kind === 'real' && res && res.sent === true ? 'When you are safe, press \u201cI\u2019m safe\u201d to tell the same people.' : '');
   if (S.card) refreshCard();
 }
+async function loadSheet(first) {
+  try { S.sheet = await api('/v1/sos/sheet'); } catch (e) {
+    if (first && S.phase === 'idle') say(errWords(e, 'Couldn\u2019t load your SOS set-up.') + ' You can still hold the button, or call 112.');
+    return; // the numbers an earlier read kept stay
+  }
+  const sh = S.sheet || {};
+  UI.warn.textContent = sh.unreadable === true ? (txt(sh.warning, 300) || WARN) : '';
+  UI.warn.hidden = !UI.warn.textContent;
+  if (sh.enabled === false) say('Emergency SOS is switched off on this server. In danger, call 112 now.');
+  if (S.phase !== 'done') offer(null);
+  if (S.phase === 'idle' && sh.enabled !== false) idle();
+}
 async function openSheet() {
   const d = buildSheet();
   clearTimeout(S.hold); clearInterval(S.tick);
+  forgetLink();
   UI.result.replaceChildren(); UI.links.replaceChildren(link('Call 112', 'tel:112', 'btn danger sos-link'));
+  UI.warn.hidden = true;
   idle();
   if (typeof d.showModal === 'function' && !d.open) d.showModal(); else d.setAttribute('open', '');
   if (!signedIn()) { UI.place.textContent = ''; return; }
   where();
-  try {
-    S.sheet = await api('/v1/sos/sheet');
-    if (S.sheet && S.sheet.enabled === false) say('Emergency SOS is switched off on this server. In danger, call 112 now.');
-    offer(null);
-    if (S.phase === 'idle' && S.sheet && S.sheet.enabled !== false) idle();
-  } catch (e) { if (S.phase === 'idle') say(errWords(e, 'Couldn\u2019t load your SOS set-up.') + ' You can still hold the button, or call 112.'); }
+  await loadSheet(true);
 }
 function closeSheet() {
   clearTimeout(S.hold); clearInterval(S.tick);
+  forgetLink();
   if (S.phase === 'counting' || S.phase === 'holding') S.phase = 'idle';
   S.place = null;
   if (UI.dlg && UI.dlg.open) UI.dlg.close();
@@ -257,7 +320,9 @@ function contactRow(c, telegram) {
   const id = CID.test(c.id) ? c.id : '';
   const label = txt(c.label, 40);
   if (!id || !label) return null;
-  const how = c.joined === true ? 'Joined on Telegram' : c.pending === true ? 'Join link sent: waiting for them to press Start' : 'Not on Telegram yet';
+  const when = c.joined === true && typeof c.joined_at === 'string' && !isNaN(new Date(c.joined_at)) ? ' on ' + new Date(c.joined_at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '';
+  const who = c.joined === true && typeof c.tg_hint === 'string' && c.tg_hint ? ' (Telegram account ' + txt(c.tg_hint, 8) + ')' : '';
+  const how = c.joined === true ? 'Joined on Telegram' + when + who : c.pending === true ? 'Join link sent: waiting for them to press Start' : 'Not on Telegram yet';
   const phone = typeof c.phone_hint === 'string' && c.phone_hint ? ' \u00b7 SMS ' + txt(c.phone_hint, 8) : '';
   const row = mk('div', 'sos-contact');
   const words = mk('div', 'btxt'); words.append(mk('b', '', label), mk('small', '', how + phone));
@@ -272,15 +337,22 @@ function makeLink(id, label) {
     const url = r && typeof r.link === 'string' && LINK.test(r.link) ? r.link : '';
     if (!url) return 'The link could not be made.';
     S.lastLink = { label, url };
+    clearTimeout(S.linkTimer);
+    S.linkTimer = setTimeout(forgetLink, LINK_MS); // the one-time link does not stay on the page
     return 'Send this link to ' + label + ' yourself. It works once, for 24 hours.';
   });
+}
+function forgetLink() {
+  S.lastLink = null; clearTimeout(S.linkTimer);
+  const box = document.querySelector('.sos-linkbox');
+  if (box) box.remove();
 }
 function linkBox() {
   if (!S.lastLink) return null;
   const box = mk('div', 'sos-linkbox');
   const shown = input(S.lastLink.url, 120); shown.readOnly = true; shown.setAttribute('aria-label', 'Join link for ' + S.lastLink.label);
   const copy = button('Copy link', 'btn sos-small', async () => {
-    try { await navigator.clipboard.writeText(S.lastLink.url); cardNote('ok', 'Copied. Send it to ' + S.lastLink.label + ' yourself.'); } catch (_) { shown.select(); }
+    try { const who = S.lastLink.label; await navigator.clipboard.writeText(S.lastLink.url); forgetLink(); cardNote('ok', 'Copied. Send it to ' + who + ' yourself.'); } catch (_) { shown.select(); }
   });
   box.append(shown, copy);
   return box;
@@ -330,7 +402,7 @@ async function refreshCard() {
 const integOpen = () => !!(window.JarvisDeck && typeof window.JarvisDeck.isOpen === 'function' && window.JarvisDeck.isOpen('integrations'));
 
 // ---- joins: the panel, sign-in, voice, the launch word -------------------------------------------------------------
-document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'integrations' && d.open) refreshCard(); });
+document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id !== 'integrations') return; if (d.open) refreshCard(); else forgetLink(); });
 document.addEventListener('jarvis:ready', () => { if (integOpen()) refreshCard(); });
 if (signedIn() && integOpen()) refreshCard();
 function voice() {

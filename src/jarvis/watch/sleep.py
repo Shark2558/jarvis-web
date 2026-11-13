@@ -90,6 +90,9 @@ def last_night(
     found = [x for x in sessions if x.writer != TYPED_WRITER and _ends_on(x, day)]
     if not found:
         return None
+    # One writer a night (D17): the writer is chosen first (the watch, then the phone, then any other
+    # app), then its longest session. A short watch nap inside the window therefore beats a phone
+    # night; the phone's day builder keeps ONE writer per day, so the two lists do not overlap.
     writer = min({x.writer for x in found}, key=lambda w: _writer_rank(w, found))
     best = max((x for x in found if x.writer == writer), key=lambda x: x.minutes)
     return _night(best, source_of(writer))

@@ -92,6 +92,7 @@ function typedForm() {
 function draw(v) {
   if (!UI.body) return;
   const d = v && typeof v === 'object' ? v : {};
+  const kept = ['wtStart', 'wtEnd'].map((id) => { const i = document.getElementById(id); return i ? i.value : ''; }); // his times stay
   const parts = [];
   if (d.enabled === false) parts.push(H.empty('Watch data is switched off on this server.'));
   else if (d.sealed === false) parts.push(H.empty(H.txt(d.note, 200) || 'Watch data is off: JARVIS has no token key to keep it sealed.'));
@@ -102,6 +103,7 @@ function draw(v) {
   }
   parts.push(H.mk('p', 'sfine', NOTE));
   UI.body.replaceChildren(...parts);
+  ['wtStart', 'wtEnd'].forEach((id, n) => { const i = document.getElementById(id); if (i && kept[n]) i.value = kept[n]; });
 }
 
 async function load() {

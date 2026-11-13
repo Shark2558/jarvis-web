@@ -1,4 +1,4 @@
-Version v7.0.1 · 13 Nov 2026, 19:35 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v7.0.2 · 13 Nov 2026, 20:50 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
 
 # R7 Part A — the app on the web side (integration notes for I1)
 
@@ -47,15 +47,15 @@ edited (one shared file outside the row was, see "Deviations" 1).
 
 | Check | Result |
 |---|---|
-| Part A unit tests `tests/test_r7_a_*.py` | 92 passed (shell 23, push 48, static 11, icons 10) |
+| Part A unit tests `tests/test_r7_a_*.py` | 95 passed (v7.0.2 added four: reload route off, deep copy, read-only table, help line; 163 with the webpush tests) |
 | `tests/test_webpush_service.py`, `test_webpush_ece.py` | passed (the payload pins moved to `/?open=…`) |
 | Related unit tests (console assets, assets linked, R2/R3/R5 seams, console integrations, media console, wake-word assets) | 928 passed together with the above |
 | Guard set (`test_r7_seams`, `test_r7_telegram_hook`, `test_r11_1_seams`, `test_arch_coverage`, `test_telegram_tool_guard`) | 229 passed, 1 failed by design: Needs I1 item 1 |
 | Coverage (`coverage` in a private folder, not the shared venv) | `api/app_shell.py` 100 %, `webpush/service.py` 93 % (the misses are R3 lines) |
 | `evals/r7/run.py --mock --part shell` | 8/8; the control fails each targeted case on its own |
 | `evals/r7/run.py --mock` (all parts) | 22/22; control failed the suite |
-| Browser: `test_r7_a_share.py` 16, `test_r7_a_links.py` 24, `test_r7_a_manifest.py` 2, `test_alerts.py` 12 | all passed |
-| Browser: `-k "r7 or ui_audit or dock_fit"` | 194 passed |
+| Browser: `test_r7_a_share.py` 16, `test_r7_a_share_review.py` 25, `test_r7_a_links.py` 24, `test_r7_a_manifest.py` 2, `test_alerts.py` 12 | all passed (v7.0.2) |
+| Browser: Part A's files, `test_alerts.py`, `test_ui_audit.py`, `test_dock_fit.py` (v7.0.2) | 232 run: 229 passed, 3 failed (2 were new tests' own races, 1 the CSP-eval poll above, all fixed); re-run of the review and links files: 49 passed |
 | Browser controls, run by hand and reverted | the worker uploading at once fails 2 share tests; do=talk clicking the mic fails the talk test; the allow-list off fails the `constructor` and `__proto__` cases; `navigate()` put back fails both hand-over tests |
 | `ruff check` / `ruff format --check` (src tests evals scripts) | clean |
 | `mypy src` | the 9 old errors only; `scripts/app_icons.py` and `evals/r7/shell.py` clean |
@@ -77,9 +77,11 @@ edited (one shared file outside the row was, see "Deviations" 1).
    and is refused for a brain that can't see); text gets "Put it in my message" (into the composer,
    nothing sent until Send) instead of Ask, Vault and Attach. Ask sends the fixed question "What can
    you tell me about this picture?".
-5. **The tray opens by itself after sign-in when items are waiting**, not only on `do=shared`:
-   Google's sign-in round trip drops the address's words, and the items must not wait unseen.
-   Launch words read while signed out wait in sessionStorage for 10 minutes for the same reason.
+5. **The tray opens by itself after sign-in for something new**, not only on `do=shared`: Google's
+   sign-in round trip drops the address's words, and a fresh share must not wait unseen. (v7.0.2:
+   only for an item or a refusal notice newer than the last time the tray was shown, and never over
+   a launch; see the review follow-ups.) Launch words read while signed out wait in sessionStorage
+   for 10 minutes for the same reason.
 6. **`do` wins over `open`**, and a key given twice is ignored (one screen per launch).
 7. **Every alert offers "Talk"** (D9 names the action, not which alerts carry it).
 8. **`/app/status` answers `share`** beside `part` and `ready`, so the tray knows whether to
@@ -111,12 +113,49 @@ edited (one shared file outside the row was, see "Deviations" 1).
 7. The guide's card C62 ("Phone app and the phone's door"): name `scripts/app_icons.py`,
    `static/app-share-sw.js`, the routes `/static/icons/<name>`, `/app/share/sw.js`, `/app/share/in`,
    and the browser-only store (Cache Storage `jarvis-share-v1`, 24 hours) under "Data it keeps".
-8. The whole unit and browser suites: Part A ran only its own files, the related tests and the
+8. LIVE CHECK (v7.0.2): a real Android share still lands in the tray. The origin rule accepts
+   `Sec-Fetch-Site: none` (and a missing header), which is what a browser-initiated launch from
+   the share sheet should send; this could not be checked without a device. If a real share is
+   refused with "That did not come from your phone's share sheet", the TWA/WebAPK launch sends
+   `same-site` or an Origin: loosen `foreign()` in `app-share-sw.js` for that one case only.
+9. The whole unit and browser suites: Part A ran only its own files, the related tests and the
    `r7 or ui_audit or dock_fit` subset.
+
+## 5a. Review follow-ups (v7.0.2)
+
+Three fresh-context reviews of `ec370a2` (security WARN, code APPROVE, python APPROVE). Each fix was
+test-first (`tests/browser/test_r7_a_share_review.py`, 25 tests, 20 of them red on the old JS), in
+commit `d712869` (worker, tray, eval note, browser tests) or `3621bdb` (Python side).
+
+| Finding | Outcome |
+|---|---|
+| Security MEDIUM-1 (cross-site posts to `/app/share/in`) | Fixed in d712869. The worker refuses (nothing stored, the plain-words notice "That did not come from your phone's share sheet, so JARVIS kept nothing.", 303 to `/`) when `Sec-Fetch-Site` is `cross-site` or `same-site`, or `Origin` is present and is neither this origin nor `null`; `none`, `same-origin` and no header pass. Browser tests: a form on a second site (`evil.example`) plants nothing; the header table; the same-origin console post still lands. |
+| Security LOW-1 (24 h lazy, sign-out) | Fixed in d712869. The sweep runs on every tray read, when the console loads (signed out too: a local cache job, asks no server) and when a new worker activates; the Sign out button clears the tray and the "last shown" mark. |
+| Security LOW-2 (unbounded body) | Fixed in d712869. Over 60 MB by `Content-Length` is refused before `formData()`; with no length the body is counted from a clone and stopped at the cap; at most 10 files are looked at ("Too many files at once" for the rest). |
+| Security LOW-3 (type is a claim) | Fixed in d712869. The first bytes must match JPEG, PNG, WebP or PDF; otherwise "The file is not what its name says it is." (GIF is not allowed, so not sniffed.) |
+| Security LOW-4 (eval controls are greps) | Fixed in d712869 in the way the reviewer suggested: a header note in `evals/r7/shell.py` calling those cases tripwires, plus the behavioural cross-site browser test. The eval also pins `foreign(req)`, `MAX_BODY` and `SNIFF`. The "share worker uploads at once" control now targets the worker's origin-check line; each control still fails exactly its own case. |
+| Code M1 (Cache Storage errors) | Fixed in d712869. Every Cache Storage call is in try/catch; a failed put is "No room left on this phone for that item, Sir."; a failed `caches.open` refuses everything the same way; the answer is always the notice (when it can be put) and the redirect. Tests stub a full put and a broken `caches.open`. |
+| Code M2 (tray auto-opens on every load) | Fixed in d712869. It opens by itself only for `do=shared` (through the launch reader) or when the worker left a notice, or an item newer than the "last shown" mark (localStorage, this browser) exists, and never when the address asked for any screen (`links.asked()`). Tests: an old item with `?do=talk` keeps the mic button focused and no modal; an old item on a plain load stays closed; a new item opens it once and not again. |
+| Code L1 (second `show()` wipes the note) | Fixed in d712869 (the note is left alone when the sheet is open and nothing was refused). |
+| Code L2 (two windows, double Ask) | Fixed in d712869 with a Web Lock per item (`jarvis-share-<id>`, `ifAvailable`): the second window's press says "Another window is already on that item." and sends nothing. Where Web Locks are missing the press runs as before. |
+| Code L3 (`look()` closes first) | Fixed in d712869: the sheet comes back with the reason if `panel.look` fails. |
+| Code L4 (two shares at once pass the cap) | Partly fixed in d712869: the held count is taken again before each put. Declined: a true cross-share lock, because a worker would need Web Locks across two simultaneous share-sheet launches, which one phone cannot produce; the worst case is a sixth item for 24 h. |
+| Code L5 (dead `SHARE_EXTENSIONS`, wrong test comment) | Fixed in 3621bdb. |
+| Code L6 (raw error text in the tray) | Fixed in d712869: only a plain `Error` (ours or the picture door's own words) is shown; a `TypeError` such as "Failed to fetch" gets "It wasn't sent. Try again in a moment." |
+| Python LOW-1 (`GET /app/share/in` ignores `mobile_enabled`) | Fixed in 3621bdb (404 when off, in the test). |
+| Python LOW-2 (manifest shallow copy) | Fixed in 3621bdb (`deepcopy`, with a test). |
+| Python LOW-3 (`TARGETS` mutable) | Fixed in 3621bdb (`MappingProxyType`, with a test; it had also exposed that the mutation test polluted the next one). |
+| Python LOW-4 (icon script help line) | Fixed in 3621bdb (`splitlines()[0]`, with a test of `--help`). |
+| Python LOW-5 (mypy on `Settings(_env_file=None)`, redundant f-string) | Fixed in d712869 (`# type: ignore[call-arg]`, f-string removed). |
+| Security informational (label the tray "Shared from another app or site") | Declined: it would change the tray's words and look; the lead line stays. The tray no longer opens over a launch and a foreign post is refused, which removes the scenario. |
+
+Also: `test_do_sos_asks_the_sos_part_to_open_its_sheet_and_nothing_else` used `wait_for_function`,
+which the console's CSP can refuse (it evaluates a string) when the first check finds the condition
+false; it now polls with `evaluate` (flaky under load, found in the full run).
 
 ## 6. Not verified here
 
-- A real Android share sheet into the installed app (Trusted Web Activity or Chrome's WebAPK), the
+- A real Android share sheet into the installed app (Trusted Web Activity or Chrome's WebAPK; and which `Sec-Fetch-Site` it sends, Needs I1 item 8), the
   long-press shortcuts and the WebAPK minting itself: no Android device. Chromium's own manifest
   parser and installability check pass (desktop Chromium, headless).
 - A real notification tap: Playwright cannot click a system notification; the worker's handlers
@@ -132,3 +171,4 @@ edited (one shared file outside the row was, see "Deviations" 1).
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v7.0.1 | 13 Nov 2026, 19:35 IST | R7 | First edition: what Part A built (the manifest and icons, the share routes, worker and tray, the launch reader, real push targets and the hand-over to an open window, the eval), how it plugs into I0 and Parts B–E, the checks, ten deviations, eight needs for I1 and what could not be verified here | 🛠 Mark XVII |
+| v7.0.2 | 13 Nov 2026, 20:50 IST | R7 | Review follow-ups: foreign posts refused, body cap, byte sniff, Cache Storage errors, the tray opens only for something new, 24 h sweep and sign-out clear, Web Lock per item, the Python lows; one new live check (a real Android share) | 🛠 Mark XVII |

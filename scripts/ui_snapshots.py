@@ -8,7 +8,11 @@ and capture, for DESKTOP 1440x900 and PHONE 390x844 on the night and day surface
   * every panel (`#p-<id>`), plus extra shots when its body scrolls;
   * extra states: Vitals with the "Track something JARVIS can't see" form open, the systems-check
     pop-up (`#sysCheck`, from the Systems card's Run) with every result in, and, night only,
-    Vitals answering 503 and Vitals whose own records can't be read (`manual_unavailable`).
+    Vitals answering 503 and Vitals whose own records can't be read (`manual_unavailable`);
+  * R7 (I1, `<tag>-r7-*`): the Camera panel's Look, Results and Cameras tabs, the brief with a
+    sleep line, Integrations -> Phone app and Emergency SOS, Helpers -> Watch, the SOS sheet ready,
+    counting down, sent and failed, the share tray with two pictures and the unlock cover (the SOS
+    and watch answers are Part D's browser fixtures; the tray is filled by Part A's worker harness).
 
 R4 panels get realistic data from `page.route` fulfilments (tests/browser/ui_checks.py: built
 with the server's own models, so the shapes match the routes). Each panel also gets DOM
@@ -431,6 +435,146 @@ def capture_vitals_manual_unavailable(browser: Browser, url: str, vp: str, run: 
         c.close()
 
 
+def _r7_brief(route: Any) -> None:
+    from test_brief import brief_record, today_state
+
+    record = brief_record()
+    sleep = {"minutes": 400, "start": "23:50", "end": "06:30", "source": "watch"}
+    record["data"] = {**record["data"], "sleep": sleep}
+    route.fulfill(
+        status=200, content_type="application/json", body=json.dumps(today_state(brief=record))
+    )
+
+
+def _r7_routes(c: Console, d: Any) -> None:
+    """Part D's SOS and watch answers (tests/browser/test_r7_d_body.py), the brief's sleep line."""
+    state = {"send": d.SENT}
+
+    def sos(route: Any) -> None:
+        path = route.request.url.split("/v1/sos", 1)[1]
+        body = (
+            state["send"]
+            if path.startswith("/send")
+            else d.SHEET
+            if path.startswith("/sheet")
+            else d.VIEW
+        )
+        if body is None:
+            route.fulfill(
+                status=503,
+                content_type="application/json",
+                body='{"error":"unavailable","detail":"Down."}',
+            )
+            return
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+
+    c.page.route("**/v1/sos", sos)
+    c.page.route("**/v1/sos/**", sos)
+    c.page.route(
+        "**/v1/watch",
+        lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(d.WATCH)),
+    )
+    c.page.route("**/v1/brief/today", _r7_brief)
+    c.r7_state = state  # type: ignore[attr-defined]
+
+
+def _r7_step(c: Console, name: str, job: Any) -> None:
+    try:
+        job()
+    except Exception as exc:  # noqa: BLE001 - one missing view must not stop the run
+        c.run.failures.append(f"[{c.tag}] r7 {name}: {exc}")
+
+
+def capture_r7(browser: Browser, url: str, vp: str, surface: str, run: Run) -> None:
+    """R7's screens (I1): each a named shot, each also measured by the DOM checks."""
+    import test_r7_a_share as a
+    import test_r7_d_body as d
+
+    c = Console(browser, url, vp, surface, run)
+    tag = c.tag
+    try:
+        c.ctx.grant_permissions(["geolocation"])
+        c.ctx.set_geolocation({"latitude": d.LAT, "longitude": d.LON, "accuracy": 20})
+        install_mocks(c.page)
+        _r7_routes(c, d)
+        c.open()
+
+        def camera() -> None:
+            c.open_panel("camera")
+            for tab in ("look", "results", "cameras"):
+                c.page.evaluate("(t) => window.JarvisMobile.parts.panel.choose(t)", tab)
+                c.page.wait_for_timeout(400)
+                shoot(c, "#p-camera", f"{tag}-r7-camera-{tab}", tag)
+                check(c, "#p-camera", f"{tag}-r7-camera-{tab}")
+            c.close_panel("camera")
+
+        def brief() -> None:
+            c.open_panel("brief")
+            c.page.locator("#bsec-sleep").wait_for(timeout=WAIT_MS)
+            c.page.locator("#bsec-sleep").evaluate("h => h.scrollIntoView({block: 'center'})")
+            shoot(c, "#p-brief", f"{tag}-r7-brief-sleep", tag)
+            check(c, "#p-brief", f"{tag}-r7-brief-sleep")
+            c.close_panel("brief")
+
+        def cards() -> None:
+            c.open_panel("integrations")
+            for sel, name in (("#phoneSet", "phone-card"), ("#sosCard", "sos-card")):
+                c.page.locator(sel).wait_for(timeout=WAIT_MS)
+                c.page.locator(sel).evaluate("n => n.scrollIntoView({block: 'start'})")
+                c.page.wait_for_timeout(300)
+                shoot(c, sel, f"{tag}-r7-{name}", tag)
+                check(c, sel, f"{tag}-r7-{name}")
+            c.close_panel("integrations")
+
+        def watch() -> None:
+            c.open_panel("helpers")
+            c.page.locator("#hpt-watch").click()
+            c.page.locator("#hpp-watch .hp-row").first.wait_for(timeout=WAIT_MS)
+            shoot(c, "#p-helpers", f"{tag}-r7-helpers-watch", tag)
+            check(c, "#p-helpers", f"{tag}-r7-helpers-watch")
+            c.close_panel("helpers")
+
+        def sheet(name: str, answer: Any) -> None:
+            c.r7_state["send"] = answer  # type: ignore[attr-defined]
+            d._sheet(c)
+            if name == "ready":
+                shoot(c, "#sosSheet", f"{tag}-r7-sos-ready", tag)
+                check(c, "#sosSheet", f"{tag}-r7-sos-ready")
+                d._close(c)
+                return
+            d._hold(c, "#sosSheet .sos-hold")
+            if name == "sent":
+                shoot(c, "#sosSheet", f"{tag}-r7-sos-countdown", tag)
+                c.page.locator("#sosSheet .sos-row").first.wait_for(timeout=12000)
+            else:
+                c.page.locator("#sosSheet .sos-result p").first.wait_for(timeout=12000)
+            shoot(c, "#sosSheet", f"{tag}-r7-sos-{name}", tag)
+            check(c, "#sosSheet", f"{tag}-r7-sos-{name}")
+            d._close(c)
+
+        def tray() -> None:  # filled last: a tray with items opens by itself and covers the rest
+            c.page.evaluate(a.HARNESS, [a.SW_SRC, a._two_pictures()])  # two pictures, by the worker
+            c.page.evaluate("() => window.JarvisMobile.parts.share.open()")
+            c.page.locator("#shareTray[open] .r7s-item").first.wait_for(timeout=WAIT_MS)
+            shoot(c, "#shareTray", f"{tag}-r7-share-tray", tag)
+            check(c, "#shareTray", f"{tag}-r7-share-tray")
+            c.page.keyboard.press("Escape")
+
+        def cover() -> None:
+            c.page.evaluate("() => window.JarvisMobile.parts.lock.cover()")
+            c.page.wait_for_timeout(600)
+            shoot(c, None, f"{tag}-r7-unlock-cover", tag)
+
+        for name, job in (("camera", camera), ("brief", brief), ("cards", cards), ("watch", watch),
+                          ("sheet ready", lambda: sheet("ready", d.SENT)),
+                          ("sheet sent", lambda: sheet("sent", d.SENT)),
+                          ("sheet failed", lambda: sheet("failed", None)),
+                          ("tray", tray), ("cover", cover)):  # fmt: skip
+            _r7_step(c, name, job)
+    finally:
+        c.close()
+
+
 def write_index(run: Run) -> None:
     lines = [
         "# UI snapshots",
@@ -496,6 +640,7 @@ def main(argv: list[str] | None = None) -> int:
             for vp in vps:
                 for surface in surfaces:
                     capture_combo(browser, url, vp, surface, run)
+                    capture_r7(browser, url, vp, surface, run)
                 if "night" in surfaces:
                     capture_vitals_503(browser, url, vp, run)
                     capture_vitals_manual_unavailable(browser, url, vp, run)

@@ -1,20 +1,25 @@
-# .github/workflows/android.yml -- R7 D23 (I0 seam 16, its first version; Part E owns it from here on and
-# changes it during the blind CI rounds). CI PROVES the Android app; the app the owner installs is built
-# on his laptop. No secret is used, so it is safe for any pull request. Every run signs with a throwaway
-# key and builds against the placeholder address jarvis.invalid: the result is kept 7 days, named "not for
-# installing" (it could never update his app and his site does not vouch for it).
-# Order: validate the wrapper; resolve EVERY dependency first (android-browser-helper and AndroidX live on
-# Google's Maven, and a GitHub tag does not prove an artifact exists there); then, once Part E's modules
-# exist: lint, the JVM tests, the `personal` build and scripts/apk_check.py. JDK 17 runs Gradle (AGP 9.5's
-# minimum and default; the image also carries 21). The `wrapper-pin` job checks gradle-wrapper.properties'
-# distributionSha256Sum against the official sum on services.gradle.org (it printed the sum on its first run,
-# because the workspace that wrote this could not reach that host, and I0 pinned it from there).
+# .github/workflows/android.yml -- R7 D23 (I0 wrote its first version; Part E owns it from there). CI PROVES the
+# Android app; the app the owner installs is built on his laptop. No secret is used, so it is safe for any pull
+# request. Every run signs with a throwaway key and builds against the placeholder address jarvis.invalid: the
+# result is kept 7 days, named "not for installing" (it could never update his app and his site does not vouch
+# for it).
+# Order: validate the wrapper; print the newest library versions (information only); resolve EVERY dependency
+# (android-browser-helper and AndroidX live on Google's Maven, and a GitHub tag does not prove an artifact exists
+# there); `core`'s JVM tests against the server's shared vectors; build `personal`; show its merged manifest and
+# run scripts/apk_check.py on the built app (permissions, outside-reachable parts, package, no host or secret);
+# lint. Each step after the first runs even when an earlier one failed, so one run reports every problem; the job
+# still fails. The `controls` job breaks `core` on purpose (the dedupe off, a cancel ignored, the JSON form
+# changed, the launch-word allow-list opened) and requires its tests to FAIL each time. JDK 17 runs Gradle
+# (AGP 9.5's minimum and default; the image also carries 21). The `wrapper-pin` job checks the wrapper's
+# distributionSha256Sum against the official sum on services.gradle.org.
 name: android
 on:
   push:
-    paths: ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py"]
+    paths:
+      ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py", "tests/fixtures/r7/phone_vectors.json"]
   pull_request:
-    paths: ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py"]
+    paths:
+      ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py", "tests/fixtures/r7/phone_vectors.json"]
 permissions:
   contents: read
 concurrency:
@@ -44,31 +49,101 @@ jobs:
     timeout-minutes: 45
     env:
       JARVIS_HOST: jarvis.invalid # the placeholder address; never a real host in CI
+      GRADLE: ./gradlew --no-daemon -Pjarvis.host=jarvis.invalid
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: The newest stable versions on Google's Maven (information only, never fails)
+        continue-on-error: true
+        run: |
+          for m in com/google/androidbrowserhelper/androidbrowserhelper androidx/browser/browser androidx/core/core \
+                   androidx/work/work-runtime androidx/health/connect/connect-client; do
+            v=$(curl -fsSL "https://dl.google.com/android/maven2/${m}/maven-metadata.xml" \
+                | grep -oE '<version>[^<]+</version>' | sed -E 's#</?version>##g' | grep -viE 'alpha|beta|rc' | tail -5 | tr '\n' ' ')
+            echo "${m}: ${v}"
+          done
       - name: Resolve every dependency first (all of them on Google's Maven or Maven Central)
         working-directory: android
-        run: ./gradlew --no-daemon --no-configuration-cache resolveDependencies
-      - name: Lint and the JVM tests (once Part E's modules exist)
-        if: hashFiles('android/app/build.gradle.kts') != ''
+        run: ./gradlew --no-daemon --no-configuration-cache --warning-mode all resolveDependencies -Pjarvis.host=jarvis.invalid
+      - name: core's JVM tests against the shared vectors (D24)
+        if: ${{ !cancelled() }}
         working-directory: android
-        run: ./gradlew --no-daemon lint :core:test testDebugUnitTest -Pjarvis.host=jarvis.invalid
+        run: ${GRADLE} :core:jvmTests
       - name: Build `personal` against the placeholder address (CI's debug key is a throwaway)
-        if: hashFiles('android/app/build.gradle.kts') != ''
+        if: ${{ !cancelled() }}
         working-directory: android
-        run: ./gradlew --no-daemon :app:assemblePersonal -Pjarvis.host=jarvis.invalid
+        run: ${GRADLE} :app:assemblePersonal
+      - name: Show the merged manifest (the reviewed lists of scripts/apk_check.py are built from it)
+        if: ${{ !cancelled() }}
+        id: merged
+        run: |
+          merged=$(find android/app/build/intermediates -path '*merged_manifests*personal*' -name AndroidManifest.xml | head -1)
+          [ -n "${merged}" ] || merged=$(find android/app/build/intermediates -path '*merged_manifest*personal*' -name AndroidManifest.xml | head -1)
+          echo "path=${merged}" >> "${GITHUB_OUTPUT}"
+          echo "merged manifest: ${merged}"
+          [ -n "${merged}" ] && cat "${merged}" || echo "::warning::no merged manifest found"
       - name: Check the built app (permissions, exported parts, package, no host or secret)
-        if: hashFiles('android/app/build.gradle.kts') != '' && hashFiles('scripts/apk_check.py') != ''
-        run: python3 scripts/apk_check.py android/app/build/outputs/apk/personal
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -n "${{ steps.merged.outputs.path }}" ]; then
+            python3 scripts/apk_check.py android/app/build/outputs/apk/personal --merged "${{ steps.merged.outputs.path }}"
+          else
+            python3 scripts/apk_check.py android/app/build/outputs/apk/personal
+          fi
+      - name: Lint the `personal` build
+        if: ${{ !cancelled() }}
+        working-directory: android
+        run: |
+          status=0
+          ${GRADLE} :app:lintPersonal || status=$?
+          cat app/build/reports/lint-results-personal.txt 2>/dev/null || echo "no lint text report"
+          exit ${status}
       - name: Keep the result for 7 days, not for installing
-        if: hashFiles('android/app/build.gradle.kts') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jarvis-android-ci-not-for-installing
           path: android/app/build/outputs/apk/personal/
           retention-days: 7
           if-no-files-found: error
+
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: core's tests pass as they are
+        working-directory: android
+        run: ./gradlew --no-daemon -Pjarvis.host=jarvis.invalid :core:jvmTests
+      - name: Each negative control makes core's tests fail
+        run: |
+          set -u
+          src=core/src/main/kotlin/io/github/shark2558/jarvis/core
+          control() { # name file needle replacement
+            dir="${RUNNER_TEMP}/control-$1"
+            mkdir -p "${dir}/tests/fixtures"
+            cp -r android "${dir}/android"
+            cp -r tests/fixtures/r7 "${dir}/tests/fixtures/r7"
+            python3 - "${dir}/android/${src}/$2" "$3" "$4" <<'PY'
+          import sys
+          path, needle, replacement = sys.argv[1:4]
+          text = open(path, encoding="utf-8").read()
+          if text.count(needle) != 1:
+              sys.exit(f"control needle not found exactly once in {path}: {needle!r}")
+          open(path, "w", encoding="utf-8").write(text.replace(needle, replacement))
+          PY
+            if (cd "${dir}/android" && ./gradlew --no-daemon -Pjarvis.host=jarvis.invalid :core:jvmTests) > "${dir}/out.txt" 2>&1; then
+              echo "::error::control $1 did not make core's tests fail"; cat "${dir}/out.txt"; exit 1
+            fi
+            grep -q '^FAIL ' "${dir}/out.txt" || { echo "::error::control $1 failed without a FAIL line"; cat "${dir}/out.txt"; exit 1; }
+            echo "control $1: core's tests fail as they must"; grep '^FAIL ' "${dir}/out.txt"
+          }
+          control dedupe_off DayBuilder.kt 'return night.filter { it.writer == writer }' 'return night'
+          control cancel_ignored SosMachine.kt 'state = SosState.Cancelled' 'Unit'
+          control json_form Json.kt "out.append(':')" 'out.append(": ")'
+          control launch_words_open Rules.kt 'if (word != null && word in WORDS)' 'if (word != null)'

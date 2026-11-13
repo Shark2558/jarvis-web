@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  android/app/src/main/AndroidManifest.xml - R7 D1, D4, D8-D10, D15-D17, D19, D22. The app asks for
+  little: the internet, notifications, location while in use (precise and approximate together,
+  for SOS), Health Connect's steps, heart rate and sleep (and the background read), and vibrate.
+  Reachable from outside: the icon (which ignores any address an intent carries) with the share
+  entry, the notification service Chrome calls, the two tiles, and Health Connect's two
+  privacy-page entries; everything else is the app's own. No App Links, no backups, no plain
+  HTTP. scripts/apk_check.py holds the built app to the same lists in CI.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+    <!-- WorkManager brings this one; JARVIS starts no foreground service (D9, D22). -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE"
+        tools:node="remove" />
+
+    <queries>
+        <!-- Health Connect as an app (Android 9 to 13) -->
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Jarvis"
+        android:usesCleartextTraffic="false">
+
+        <meta-data
+            android:name="asset_statements"
+            android:resource="@string/asset_statements" />
+
+        <!-- The icon and the share entry (D1, D8, D15). It always opens /?source=app. -->
+        <activity
+            android:name=".shell.IconLauncherActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Jarvis.Launch">
+            <meta-data
+                android:name="android.support.customtabs.trusted.DEFAULT_URL"
+                android:value="https://${jarvisHost}/?source=app" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/jarvis_bg" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/jarvis_bg" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.METADATA_SHARE_TARGET"
+                android:resource="@string/share_target" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/png" />
+                <data android:mimeType="image/webp" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/png" />
+                <data android:mimeType="image/webp" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+        </activity>
+
+        <!-- The tile's and the shortcuts' launcher (D8, D9): other apps cannot start it. -->
+        <activity
+            android:name=".shell.ScreenLauncherActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Jarvis.Launch">
+            <meta-data
+                android:name="android.support.customtabs.trusted.DEFAULT_URL"
+                android:value="https://${jarvisHost}/?source=app" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/jarvis_bg" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/jarvis_bg" />
+        </activity>
+
+        <!-- The library's own shortcut trampolines open any JARVIS address another app sends
+             them (D8): removed. The app's shortcuts go to ScreenLauncherActivity instead. -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.ShortcutTrampolineActivity"
+            tools:node="remove" />
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.ColdShortcutActivity"
+            tools:node="remove" />
+
+        <!-- The library switches this screen on and off for Chrome's "Site settings" shortcut. -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Jarvis.Launch">
+            <meta-data
+                android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
+                android:value="https://${jarvisHost}/" />
+        </activity>
+
+        <activity
+            android:name=".shell.NoBrowserActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".link.SetupActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- SOS (D19): a countdown on the lock screen too, and nothing else there. singleTop is
+             safe because SosActivity.onNewIntent restarts a finished screen; the wide
+             configChanges list keeps a dark-mode switch or a font change from recreating it. -->
+        <activity
+            android:name=".sos.SosActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+
+        <!-- Health Connect's privacy page (D17): Android 13 and older -->
+        <activity
+            android:name=".health.PrivacyActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <!-- Android 14 and newer: only the system may open it -->
+        <activity-alias
+            android:name=".health.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity=".health.PrivacyActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Chrome hands each web notification to this service (D10); the library checks that
+             the caller is the browser this app linked with. -->
+        <service
+            android:name=".shell.JarvisDelegationService"
+            android:enabled="true"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <meta-data
+                android:name="android.support.customtabs.trusted.SMALL_ICON"
+                android:resource="@drawable/ic_notification" />
+            <intent-filter>
+                <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".shell.TalkTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_talk"
+            android:label="@string/tile_talk"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".shell.SosTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_sos"
+            android:label="@string/tile_sos"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

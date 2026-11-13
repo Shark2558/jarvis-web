@@ -1,6 +1,7 @@
-// android/settings.gradle.kts -- R7 D23, D24 (I0): the Android project's settings. Part E adds
-// include(":core", ":app") with the two modules; until then CI proves the wrapper and that every
-// pinned plugin resolves from Google's Maven and the Gradle Plugin Portal.
+// android/settings.gradle.kts -- R7 D23, D24: the Android project's settings (I0's first version;
+// Part E's from here on). Two modules: `core` (plain Kotlin, tested on the JVM against the
+// server's vectors) and `app` (the Trusted Web Activity and its few native parts). Libraries come
+// only from Google's Maven and Maven Central, at the exact versions in gradle/libs.versions.toml.
 pluginManagement {
     repositories {
         google()
@@ -16,3 +17,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "jarvis-android"
+include(":core", ":app")

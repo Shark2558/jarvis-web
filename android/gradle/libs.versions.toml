@@ -1,12 +1,25 @@
 # android/gradle/libs.versions.toml -- R7 D23: every Android build pin, once. Confirmed 13 Nov 2026 on Google's
 # pages: Android Studio Rabbit 2 | 2026.2.2 opens AGP 7.1-9.5; AGP 9.5.1 needs Gradle 9.6.0 and JDK 17, and
-# builds up to API 37. AGP 9 compiles Kotlin itself (built-in Kotlin, KGP >= 2.2.10): `app` applies no
-# org.jetbrains.kotlin.android plugin and has no kotlinOptions {} block. The plain-Kotlin `core` module uses the
-# Kotlin JVM plugin below, the version Google's AGP page uses in its own example; on the classpath it also lifts
-# AGP's built-in Kotlin. Part E adds the libraries (android-browser-helper, AndroidX, Health Connect) here.
+# builds up to API 37. AGP 9 compiles Kotlin itself (built-in Kotlin, KGP >= 2.2.10): `app` applies no Kotlin
+# plugin of its own. The plain-Kotlin `core` module uses the Kotlin JVM plugin below, the version Google's AGP
+# page uses in its own example; on the classpath it also lifts AGP's built-in Kotlin.
+# Libraries (Part E): all Apache-2.0, exact versions only (no ranges, no "+"). CI's resolveDependencies proves
+# each exists; its information step prints the newest versions Google's Maven holds.
 [versions]
 agp = "9.5.1"
 kotlin = "2.4.10"
+androidbrowserhelper = "2.7.4"
+androidx-browser = "1.10.0"
+androidx-core = "1.17.0"
+androidx-work = "2.10.5"
+health-connect = "1.1.0"
+
+[libraries]
+androidbrowserhelper = { module = "com.google.androidbrowserhelper:androidbrowserhelper", version.ref = "androidbrowserhelper" }
+androidx-browser = { module = "androidx.browser:browser", version.ref = "androidx-browser" }
+androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidx-work" }
+health-connect-client = { module = "androidx.health.connect:connect-client", version.ref = "health-connect" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

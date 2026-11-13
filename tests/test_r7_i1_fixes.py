@@ -277,3 +277,66 @@ def test_transcribes_and_the_vault_forget_on_hide_never_count_as_the_owner_being
     assert not applock.counts_as_activity("DELETE", "/v1/vault/unlock", headers)
     assert applock.counts_as_activity("POST", "/v1/vault/unlock", headers)
     assert applock.counts_as_activity("PUT", "/v1/vault/unlock", headers)
+
+
+# ---- code L1, security L8: the public vision route's cache and its stamp -------------------------
+def _release(root: Any, name: str, text: str = "export const x = 1;\n") -> Any:
+    import hashlib
+    import json
+
+    rel = root / name
+    rel.mkdir()
+    (rel / "engine.js").write_text(text, encoding="utf-8")
+    sums = {
+        "engine.js": {
+            "sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "type": "application/javascript",
+        }
+    }
+    (rel / "MANIFEST.json").write_text(json.dumps({"files": sums}), encoding="utf-8")
+    return rel
+
+
+def test_junk_release_names_never_evict_a_real_release_and_are_never_hashed(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import jarvis.api.console as console
+
+    _release(tmp_path, "r7-1")
+    monkeypatch.setattr(console, "_VISION", tmp_path)
+    checks: list[str] = []
+    real = console._check_vision  # noqa: SLF001
+
+    def counting(folder: Any, release: str) -> Any:
+        checks.append(release)
+        return real(folder, release)
+
+    monkeypatch.setattr(console, "_check_vision", counting)
+    files = console._VisionFiles()  # noqa: SLF001
+    assert files("r7-1") == {"engine.js": "application/javascript"}
+    for i in range(20):  # more than the cache holds, every one a name nobody released
+        assert files(f"junk-{i}") == {}
+    assert files("r7-1") == {"engine.js": "application/javascript"}
+    assert checks == ["r7-1"]  # the junk was never hashed, and the real one never again
+    assert list(files._seen) == ["r7-1"]  # noqa: SLF001 - only known releases are remembered
+
+
+def test_the_vision_stamp_sees_a_swapped_file_even_with_its_name_size_and_time_restored(
+    tmp_path: Any,
+) -> None:
+    import os
+
+    import jarvis.api.console as console
+
+    rel = _release(tmp_path, "r7-1", "AAAA")
+    before = console._vision_stamp(rel)  # noqa: SLF001
+    assert all(len(entry) == 5 for entry in before)  # name, mtime, size, inode, ctime
+    target = rel / "engine.js"
+    stat = target.stat()
+    swap = rel / "engine.new"
+    swap.write_text("BBBB", encoding="utf-8")  # the same size, a different file
+    os.utime(swap, ns=(stat.st_atime_ns, stat.st_mtime_ns))  # the time put back
+    swap.replace(target)
+    os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    after = console._vision_stamp(rel)  # noqa: SLF001
+    assert after != before

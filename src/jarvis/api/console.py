@@ -332,18 +332,20 @@ _VISION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 VISION_TYPES = frozenset({_JS, "application/wasm", "application/octet-stream", "application/json"})
 
 
-_Stamp = tuple[tuple[str, int, int], ...]
+_Stamp = tuple[tuple[str, int, int, int, int], ...]
 _VISION_KEEP = 8  # releases remembered at once
 
 
 def _vision_stamp(folder: Path) -> _Stamp:
-    """Every entry of the folder as (name, mtime_ns, size): any change (a model pinned, a file
-    swapped) makes a new stamp, so the folder is checked again (I1; INTEGRATION-B 12)."""
+    """Every entry of the folder as (name, mtime_ns, size, inode, ctime_ns): any change (a model
+    pinned, a file swapped, even one with its name, size and time put back: its inode and change
+    time differ) makes a new stamp, so the folder is checked again (I1; INTEGRATION-B 12)."""
     try:
         with os.scandir(folder) as found:
-            return tuple(sorted((e.name, e.stat().st_mtime_ns, e.stat().st_size) for e in found))
+            stats = [(e.name, e.stat()) for e in found]
     except OSError:
         return ()
+    return tuple(sorted((n, s.st_mtime_ns, s.st_size, s.st_ino, s.st_ctime_ns) for n, s in stats))
 
 
 class _VisionFiles:
@@ -353,6 +355,8 @@ class _VisionFiles:
         self._seen: dict[str, tuple[_Stamp, Mapping[str, str]]] = {}
 
     def __call__(self, release: str) -> Mapping[str, str]:
+        if not (_VISION / release / "MANIFEST.json").is_file():
+            return {}  # not a release: answered at once, never hashed, never remembered
         stamp = _vision_stamp(_VISION / release)
         kept = self._seen.get(release)
         if kept is not None and kept[0] == stamp:

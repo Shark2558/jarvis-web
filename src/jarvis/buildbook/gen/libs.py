@@ -238,12 +238,20 @@ def _releases(repo: Repo) -> dict[str, str]:
     return found
 
 
+def _release_order(path: str) -> tuple[tuple[int, ...], str]:
+    """The release folder's name by its numbers (`r7-10` is newer than `r7-2`), then as text."""
+    folder = path.rsplit("/", 2)[-2]
+    return tuple(int(n) for n in re.findall(r"\d+", folder)), folder
+
+
 def _manifest_versions(repo: Repo) -> dict[str, str]:
     """{"manifest:<package>": version} from the newest vision release's MANIFEST.json: each file's
     `source` is `npm:<package>@<version>/...` or a raw.githubusercontent.com address whose
     repository and tag stand for the package and its version (I1)."""
     prefix = STATIC + VISION_DIR
-    manifests = sorted(f for f in repo.under(prefix) if f.endswith("/MANIFEST.json"))
+    manifests = sorted(
+        (f for f in repo.under(prefix) if f.endswith("/MANIFEST.json")), key=_release_order
+    )
     if not manifests:
         return {}
     try:

@@ -51,3 +51,16 @@ def test_third_party_names_each_vision_files_licence_from_its_manifest() -> None
         assert snapshot._licence(repo, rel) == want, name
     assert snapshot._licence(repo, f"{VISION}r7-1/zxing_reader.wasm") == "Apache-2.0"
     assert snapshot._licence(repo, f"{VISION}r7-1/zxing-reader.iife.js") == "MIT"
+
+
+def test_the_newest_release_is_chosen_by_number_not_by_text(tmp_path: Path) -> None:
+    """I1 fixer (code L3): r7-10 is newer than r7-2 (sorted as text it is older)."""
+    from jarvis.buildbook.gen.libs import _manifest_versions
+
+    for release, version in (("r7-2", "2.0.0"), ("r7-10", "10.0.0"), ("r7-9", "9.0.0")):
+        folder = tmp_path / VISION / release
+        folder.mkdir(parents=True)
+        entry = {"source": f"npm:somelib@{version}/dist/x.js"}
+        (folder / "MANIFEST.json").write_text(json.dumps({"files": {"x.js": entry}}), "utf-8")
+    repo = Repo.from_dir(tmp_path, sha="a" * 40, committed_at="2026-11-14T00:00:00+00:00")
+    assert _manifest_versions(repo) == {"manifest:somelib": "10.0.0"}

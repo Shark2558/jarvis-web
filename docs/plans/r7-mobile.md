@@ -1,4 +1,4 @@
-Version v7.0.4 · 13 Nov 2026, 16:40 IST · Release R7 · Status: Ready · Owner: 🛠 Mark XVI
+Version v7.0.5 · 13 Nov 2026, 23:20 IST · Release R7 · Status: Ready · Owner: 🛠 Mark XVII
 
 # Release R7 — Mobile, watch & phone camera (`v7.0.0`)
 
@@ -1274,6 +1274,65 @@ Not part of R7 and not costed here: a phone stand, a USB webcam for the desk (R8
 - The vision plug-in on the home laptop's bridge and every fixed-camera use case: R8–R10, after cameras exist.
 - Starting the console with no internet at all: needs an offline copy, which R3 deliberately avoided.
 
+## I1 · what the integrator changed (13 Nov 2026, 🛠 Mark XVII)
+
+I1 merged the five reviewed and fixed parts into `r7-i1` (E, C, D, A, B, each by a merge commit; the
+only shared file, `pyproject.toml`, merged by itself with Part A's two globs and Part B's vision globs
+side by side), then closed every "Needs I1" item. The commits from here carry `JARVIS-Mark: XVII`. The
+notes, with each item's commit and every check, are `docs/plans/r7-integration/I1-NOTES.md`.
+
+What I1 changed (each behaviour change test first):
+
+1. **The seams' pins** (`tests/test_r7_seams.py`): every part is built (runner: shell, vision, phone,
+   body, needles, contract, each failed by its own control); `door_handlers(app)` gives C's `hello`
+   and `inbox` and D's `health` and `sos`; the seam name `services["sos_contacts"]` is pinned (one
+   owner, Part D; read by Part C's hello); the guide's cards are built; the persona is `p7.0`.
+2. **Hello and the phone's SMS list**: when Part D cannot say who the contacts are (no token key, the
+   store unreadable, the part left out) the hello answer leaves `sos` out and the app keeps its numbers;
+   an `sos` part with no contacts still empties them (a defect at the join: one store hiccup emptied the
+   phone's offline SMS screen).
+3. **The brief's sleep line**: `BriefService` fills `BriefData.sleep` from Part D through
+   `r7_wiring.mobile_sleep`; the console draws "Sleep: … · from your watch | from your phone | from
+   another health app | typed by you"; never in the e-mailed copy, the AI input or Telegram.
+4. **`watch_stale` for a phone linked a day ago that never sent anything**: Part C offers
+   `services["linked_since"]`; Part D's job tells him once.
+5. **The console's joins**: `do=look` opens the Camera panel on its Look tab and never a camera;
+   `do=sos` opens Part D's real sheet; the tray's "Look at it here" reaches Part B's `panel.look(file)`.
+6. **The app lock's background writes**: five more console POSTs sent on a timer, on viewing or by a show
+   ending itself never count as the owner being there.
+7. **EXIF**: every picture is redrawn before it leaves the browser (a small PNG stays a lossless PNG).
+8. **The vision files** are checked again whenever their folder changes on disk (no restart for models).
+9. **The build book** names zxing-cpp and the vision libraries' versions and licences from their
+   `MANIFEST.json`.
+10. **The persona `p7.0`** (`MOBILE_RULE`).
+11. **The needles eval** (`evals/r7/needles.py`): a day of every part on fakes, scanned; three controls.
+12. **`sos_sent`** rings through the real `NotifyService` at night, past the storm and the Telegram cap.
+13. **A static test** that the app's share target, launch addresses and notification action equal the
+    web manifest's and the push worker's.
+14. **Documents**: `phone-contract.md` v7.0.2, the guide v7.0.2 (cards C62 to C65 built),
+    `OWNER-STEPS.md` v7.0.3 (C12; a test SOS reaches the contacts, as built).
+
+**The contract changes** (each in `phone-contract.md` and here): the door's `register` for vision tasks
+is sealed after five tasks and `stream(..., {onError})` reports a failing stream (Part B's port core);
+the SOS payload's optional `press_id` (16 to 64 of `A–Z a–z 0–9 _ -`; a repeat within an hour gets the
+first result); `SleepLine.source` gains `"app"`; the seam `services["sos_contacts"]` (Part D) and the new
+`services["linked_since"]` (Part C); a hello without `sos` means "unknown, keep your list".
+
+**Owner decisions the Workshop took, with their safe defaults** (each can be changed by the owner):
+
+a. The camera button beside the paperclip is not built: the composer's look would change (D0).
+b. Leaving the phone's SOS screen for good during the countdown cancels it ("Cancelled. Nothing was
+   sent."); Home alone does not.
+c. A locked phone can send only a real SOS; the contacts' names are hidden in the answer; their numbers
+   travel only inside the SMS link.
+d. The app lock is bound to the phone by a signed `r7_dev` cookie; only clearing all of Chrome's site data
+   escapes it; the laptop can always switch it off or unlink the phone.
+e. A real press that reached nobody gives its hourly slot back.
+f. `render.yaml`'s old host (lines 5 and 19) is left as it is until the owner says.
+
+Versions stay: `src/jarvis/__init__.py` 7.0.0; `android/version.properties` versionCode 1, versionName
+7.0.0 (the first install).
+
 ## Not verified live (no Android device, no Google or Telegram reach from this workspace)
 
 Each line ends with the exact check you do.
@@ -1510,3 +1569,4 @@ the place for both.
 | v7.0.2 | 12 Nov 2026, 08:05 IST | R7 | The owner's first answers (phone on Android 16 with Chrome; Android Studio Rabbit 2, 2026.2.2 Patch 1; a Noise watch; DigiLocker has Share) and what the research found about the watch and Health Connect (the maker names only Google Fit; Fit's APIs end with 2026; unverified bridge); sources S48, S49 | 🛠 Mark XV |
 | v7.0.3 | 12 Nov 2026, 16:15 IST | R7 | Review 1 written in (A1–A10, every B line re-read on `r11-1-i1` @ `bbe056d`, the C seams 20–27, gaps, owner steps and split, D's 24 hand-held vision rows, E's answers): Health Connect read without double-counting and NoiseFit's own connection, the app lock's five 423 readers and its default, SOS's own test budget and its recorded exception, launch addresses that never start the mic, the package `io.github.shark2558.jarvis`, one AGP pin, ₹ only, G0 on `main` | 🛠 Mark XV |
 | v7.0.4 | 13 Nov 2026, 16:40 IST | R7 | Ready for the parts: G0 met (`main` @ `5519e2d`, v11.1.1, merged into `r7-i0`); every file:line re-read on `5519e2d` (the moved lines corrected: `app.py:558–569`, `pictures.py:50`, `console-r111-files.js:184`/`:310`, `console.js:745`, `r11_1_wiring.py:100–148`, `brief/service.py:691–697`; sizes; `test_r11_1_seams.py:73` also pins the version; the guide's L1874); D23's pins confirmed on Google's pages (Rabbit 2 → AGP 7.1–9.5; AGP 9.5.1, Gradle 9.6.0, JDK 17, API 37; Kotlin 2.4.10 for `core`; JDK 25 not stated, so CI on 17 and Studio's Gradle JDK as the fallback; `distributionSha256Sum` pinned from CI's first run, which also resolved both plugins on JDK 17), sources S36 and S50; Health Connect: NoiseFit writes steps and calories (13 Nov 15:19 IST), sleep and heart rate still to be seen; the workspace re-measured; Appendix A's 24 hand-held rows settled; the owner's defaults (package, version) stand; the I0 seams built (I0-NOTES.md) | 🛠 Mark XVI |
+| v7.0.5 | 13 Nov 2026, 23:20 IST | R7 | I1: a new section "I1 · what the integrator changed" (the merges, the fourteen kinds of change with the defects found at the join, the contract changes: `register` sealed, `stream` onError, `press_id`, `SleepLine.source` "app", `sos_contacts`, `linked_since`, a hello without `sos`; the Workshop's owner decisions a–f with their safe defaults; the versions that stay); the owner is now 🛠 Mark XVII | 🛠 Mark XVII |

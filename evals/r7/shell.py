@@ -206,7 +206,7 @@ async def launch_words(src: Src) -> list[str]:
 
 async def talk(src: Src) -> list[str]:
     code = _code(src["console-r7-links.js"])
-    body = _between(code, "function talk()", "async function partOpen")
+    body = _between(code, "function talk()", "async function partCall")
     if not body:
         return ["no talk screen"]
     banned = ("press(", ".click(", "dispatchEvent(", "unlock(", "getUserMedia", "listen(")

@@ -29,7 +29,7 @@ Public, cookie-less (D4-D6; never a cookie read or set by the door):
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
@@ -59,7 +59,13 @@ from jarvis.permissions.errors import (
 )
 from jarvis.permissions.groups import PermissionRejected
 from jarvis.permissions.models import PasskeyProof
-from jarvis.phone.applock import APP_KEY, ensure_session_id
+from jarvis.phone.applock import (
+    APP_KEY,
+    DEVICE_KEY,
+    DEVICE_MAX_AGE_S,
+    KEEP_ACROSS_RESTAMP,
+    ensure_session_id,
+)
 from jarvis.phone.door import Refusal, refuse, route_of
 from jarvis.phone.service import LinkBody, PhoneService, check_link
 from jarvis.phone.store import OFFER_ID
@@ -84,6 +90,8 @@ LINK_WORDS = {
     "bad_fingerprint": "The app's signature couldn't be read. Reinstall the app and try again.",
 }
 _PROOF_ERRORS = (PasskeyRequired, PasskeyRejected, ProofRequired, PermissionRejected)
+
+_M = TypeVar("_M", bound=BaseModel)
 
 router = APIRouter()
 console = APIRouter(prefix="/v1/phone", dependencies=[Depends(require_auth)])
@@ -131,9 +139,9 @@ class LockBody(BaseModel):
     proof: PasskeyProof | None = None
 
 
-async def _body(request: Request, model: type[Any], limit: int = JSON_MAX) -> Any:
-    raw = await request.body()
-    if len(raw) > limit:
+async def _body(request: Request, model: type[_M], limit: int = JSON_MAX) -> _M | JSONResponse:
+    raw = await _capped(request, limit)  # read no further than the cap, then parse
+    if raw is None:
         return _err(413, "too_large", "That request is too large.")
     try:
         return model.model_validate_json(raw or b"{}")
@@ -249,10 +257,22 @@ def _csrf(request: Request) -> None:
 @session_router.post("/app", dependencies=[Depends(require_auth)])
 async def mark_app(request: Request) -> JSONResponse:
     svc = _svc(request)
-    if svc is None or "session" not in request.scope or _cookie_owner(request) is None:
+    uid = _cookie_owner(request) if "session" in request.scope else None
+    if svc is None or uid is None:
         return _json(200, {"app": False})
-    svc.lock.mark_app(request.session)
-    return _json(200, {"app": True})
+    await svc.lock.mark_app(request.session, uid)
+    reply = _json(200, {"app": True})
+    # the lock follows the DEVICE (security review H1): sign-out and expiry never clear this cookie
+    reply.set_cookie(
+        DEVICE_KEY,
+        svc.lock.device_cookie_value(uid),
+        max_age=DEVICE_MAX_AGE_S,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=_settings(request).cookie_secure,
+    )
+    return reply
 
 
 @session_router.post("/here", dependencies=[Depends(require_auth)])
@@ -285,7 +305,11 @@ async def lock_switch(request: Request) -> JSONResponse:
     body = await _body(request, LockBody)
     if isinstance(body, JSONResponse):
         return body
-    if not body.on and await _in_force(request, uid):
+    try:
+        needs_proof = not body.on and await _in_force(request, uid)
+    except PasskeyDataUnreadable:
+        return _err(503, "passkeys_unreadable", "Your passkey data can't be read.")
+    if needs_proof:
         if "session" not in request.scope or _cookie_owner(request) is None:
             return _err(403, "console_only", CONSOLE_ONLY)
         if (r := _limited(svc, f"switch:{uid}")) is not None:
@@ -302,6 +326,8 @@ async def lock_switch(request: Request) -> JSONResponse:
             )
         except _PROOF_ERRORS as exc:
             return _proof_refused(exc, target=target)
+        except PasskeyDataUnreadable:
+            return _err(503, "passkeys_unreadable", "Your passkey data can't be read.")
         await svc.audit("app_lock_off", {"how": str(how)})
     await svc.store.set_lock(uid, body.on)
     svc.lock.forget(uid)
@@ -310,7 +336,7 @@ async def lock_switch(request: Request) -> JSONResponse:
 
 @session_router.post("/unlock")
 async def unlock(request: Request) -> JSONResponse:
-    s, svc = _settings(request), _svc(request)
+    svc = _svc(request)
     if svc is None:
         return _err(404, "mobile_off", OFF)
     uid = _cookie_owner(request) if "session" in request.scope else None
@@ -341,7 +367,6 @@ async def unlock(request: Request) -> JSONResponse:
         return _err(503, "passkeys_unreadable", "Your passkey data can't be read.")
     await svc.audit("device_unlock", {"how": str(how) if how else "no passkey in force"})
     svc.lock.touch(request.session, svc.clock())
-    del s
     return _json(200, {"unlocked": True})
 
 
@@ -360,7 +385,9 @@ async def end_all(request: Request) -> JSONResponse:
         return _err(503, "unavailable", "JARVIS can't sign out everywhere right now.")
     mark = cookie_now()
     await end(uid, before=mark)
+    kept = {k: request.session[k] for k in KEEP_ACROSS_RESTAMP if k in request.session}
     restamp(request.session, s, uid, mark)  # every older cookie dies; this browser goes on
+    request.session.update(kept)  # ...and stays the app's, with its id and its last "I'm here"
     if svc is not None:
         await svc.audit("sessions_end_all", {"at": int(mark)})
     return _json(200, {"ended": True, "detail": ENDED})
@@ -392,10 +419,15 @@ async def phone_link(request: Request) -> JSONResponse:
     return _json(200, {"device_id": out.phone.id})
 
 
+def _ascii_number(text: str) -> bool:
+    """Only 0-9 (`str.isdigit` also says yes to "\u00b2", which `int` then refuses)."""
+    return 0 < len(text) <= 12 and all("0" <= c <= "9" for c in text)
+
+
 async def _capped(request: Request, cap: int) -> bytes | None:
     """The body, or None past the cap (read no further than the cap)."""
     length = request.headers.get("content-length")
-    if length is not None and (not length.isdigit() or int(length) > cap):
+    if length is not None and (not _ascii_number(length) or int(length) > cap):
         return None
     chunks, size = [], 0
     async for chunk in request.stream():
@@ -416,15 +448,18 @@ async def phone_door(request: Request, route: str) -> Response:
         return _bare(refuse("query", name).status)
     if "cookie" in request.headers:
         return _bare(refuse("cookie", name).status)
-    body = await _capped(request, DOOR_CAPS[name])
-    if body is None:
-        return _bare(refuse("cap", name).status)
     try:
-        got = await svc.gate.admit(name, request.headers.getlist("x-jarvis-phone"), body,
-                                   client_key(request))  # fmt: skip
+        pre = await svc.gate.precheck(name, request.headers.getlist("x-jarvis-phone"),
+                                      client_key(request))  # fmt: skip
     except Exception as exc:  # noqa: BLE001 - the phone store can't be read: never "admitted"
         log.error("phone door unreadable", extra={"route": name, "error": type(exc).__name__})
         return _bare(503)
+    if isinstance(pre, Refusal):
+        return _bare(pre.status)
+    body = await _capped(request, DOOR_CAPS[name])  # only now is a body byte read
+    if body is None:
+        return _bare(refuse("cap", name).status)
+    got = svc.gate.finish(pre, name, body)
     if isinstance(got, Refusal):
         return _bare(got.status)
     from jarvis.api.r7_wiring import door_handlers  # late: r7_wiring imports this module
@@ -432,8 +467,8 @@ async def phone_door(request: Request, route: str) -> Response:
     handler = door_handlers(request.app).get(name)
     if handler is None:
         return _bare(refuse("not_built", name, 404).status)
+    await svc.handlers.seen(got)  # best-effort: it never refuses an admitted request (SOS too)
     try:
-        await svc.handlers.seen(got)
         reply = await handler(got)
     except Exception as exc:  # noqa: BLE001 - a handler that fails answers plainly, logged by kind
         log.error("phone door handler failed", extra={"route": name, "error": type(exc).__name__})

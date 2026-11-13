@@ -8,6 +8,7 @@
 #   browser(app, ...)            a signed-in browser (a fresh sign-in by default)
 #   add_passkey(c, auth, ...)    the first passkey (fresh sign-in) or another (proof of one held)
 #   proof(c, auth, purpose, t)   a passkey check made in this browser
+#   sign_in_again(app, c)        one-tap sign-in again; jar_with(app, cookie): a signed-out jar
 #   link_code(c, auth)           Integrations -> Phone app -> Link a phone: the 8 characters
 #   link(app, code, key, ...)    POST /phone/link as the app sends it
 #   door(app, key, device, ...)  a signed door request (tests/r7_fakes.py `sign_request`)
@@ -142,6 +143,25 @@ async def browser(
             r = await c.post("/v1/session/app", headers=CSRF)
             assert r.status_code == 200, r.text
         yield c
+
+
+async def sign_in_again(app: FastAPI, c: AsyncClient, email: str = OWNER) -> None:
+    """One-tap Google sign-in in this browser (Google's half faked), as after "Sign out"."""
+
+    async def fake(request: Any) -> dict[str, Any]:
+        return {"userinfo": {"email": email, "email_verified": True, "sub": email}}
+
+    app.state.oauth.google.authorize_access_token = fake
+    r = await c.get("/auth/callback?code=abc&state=s", follow_redirects=False)
+    assert r.status_code == 302, r.text
+
+
+async def jar_with(app: FastAPI, value: str | None = None) -> AsyncClient:
+    """A browser (Chrome's jar on the phone) holding only a device cookie, signed out."""
+    c = AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN)
+    if value is not None:
+        c.cookies.set("r7_dev", value)
+    return c
 
 
 async def proof(

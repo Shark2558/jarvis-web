@@ -136,11 +136,14 @@ class PhoneStore:
 
         return await self.docs.transaction(work)
 
-    async def put_phone(self, uid: str, phone: Phone) -> None:
-        """Save one phone (replacing the one with its id)."""
+    async def put_phone(self, uid: str, phone: Phone, *, max_phones: int = 3) -> None:
+        """Save one phone (replacing the one with its id), never past the cap. Linking goes
+        through `link`; this is for the tests' and the evals' fixtures."""
 
         def put(o: Owner) -> Owner:
             rest = tuple(p for p in o.phones if p.id != phone.id)
+            if len(rest) >= max_phones:
+                raise ValueError("too many phones")
             return Owner((*rest, phone), o.lock)
 
         await self._change(uid, put)
@@ -171,13 +174,17 @@ class PhoneStore:
         return await self._change(uid, upd) is not None
 
     async def unlink(self, uid: str, device_id: str) -> Phone | None:
+        """Drop one phone. With none left the app lock is disarmed (its keys cleared): the owner
+        can always get a locked phone open again from another signed-in device."""
         gone: list[Phone] = []
 
         def drop(o: Owner) -> Owner | None:
+            gone.clear()  # the transaction may run again: only the committed attempt counts
             gone.extend(p for p in o.phones if p.id == device_id)
             if not gone:
                 return None
-            return Owner(tuple(p for p in o.phones if p.id != device_id), o.lock)
+            left = tuple(p for p in o.phones if p.id != device_id)
+            return Owner(left, o.lock if left else LockPrefs(on=o.lock.on))
 
         await self._change(uid, drop)
         return gone[0] if gone else None
@@ -186,8 +193,9 @@ class PhoneStore:
         count: list[int] = []
 
         def drop(o: Owner) -> Owner | None:
+            count.clear()
             count.append(len(o.phones))
-            return Owner((), o.lock) if o.phones else None
+            return Owner((), LockPrefs(on=o.lock.on)) if o.phones else None
 
         await self._change(uid, drop)
         return count[0] if count else 0
@@ -197,7 +205,8 @@ class PhoneStore:
             return Owner(o.phones, LockPrefs(on=on, keys=o.lock.keys))
 
         new = await self._change(uid, upd)
-        assert new is not None
+        if new is None:
+            raise PhoneStoreUnreadable("the lock preferences were not saved")
         return new
 
     async def add_lock_keys(self, uid: str, refs: Sequence[str]) -> Owner:
@@ -206,7 +215,8 @@ class PhoneStore:
             return Owner(o.phones, LockPrefs(on=o.lock.on, keys=keys))
 
         new = await self._change(uid, upd)
-        assert new is not None
+        if new is None:
+            raise PhoneStoreUnreadable("the lock preferences were not saved")
         return new
 
     # ---- the link code ------------------------------------------------------------------------
@@ -240,9 +250,8 @@ class PhoneStore:
 
     async def code_left(self, uid: str, now: float) -> int | None:
         doc = await self.docs.get(self._code_path(uid))
-        if not _live_code(doc, now):
+        if doc is None or not _live_code(doc, now):
             return None
-        assert doc is not None
         return max(0, int(float(doc["expires_at"]) - now))
 
     async def link(
@@ -280,9 +289,8 @@ class PhoneStore:
         async def work(tx: DocTx) -> None:
             docs = {u: await tx.get(self._code_path(u)) for u in self.owners}
             for u, doc in docs.items():
-                if not _live_code(doc, now):
+                if doc is None or not _live_code(doc, now):
                     continue
-                assert doc is not None
                 tries = int(doc.get("tries") or 0) + 1
                 if tries >= MAX_TRIES:
                     tx.delete(self._code_path(u))

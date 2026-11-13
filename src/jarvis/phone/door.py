@@ -1,18 +1,19 @@
 # src/jarvis/phone/door.py
 """The phone's door (R7 D6): every check a signed request passes before a handler sees it.
 
-In this order, before anything is parsed (`api/phone.py` runs the first four, which need the raw
-request, then `DoorGate.admit`):
+In this order. NO body byte is read until the checks that need none have passed (security review
+M1: an unauthenticated caller must not cost memory): `api/phone.py` runs the first three, then
+`DoorGate.precheck` (header .. time), then reads the body under its cap, then `DoorGate.finish`:
 
     route   one of the four door routes, POST            else a bare 404
     query   no query string at all (the signature covers only the path)
     cookie  no Cookie header (the door never reads one)
-    cap     the body under its route's cap (`DOOR_CAPS`), read no further than the cap
-    header  exactly one `X-Jarvis-Phone`, exactly the v1 shape
+    header  exactly one `X-Jarvis-Phone`, exactly the v1 shape (so the nonce's shape too)
     flood   at most 60 requests a minute from one client before any store is read
     device  a linked phone (read fresh: an unlink closes the door at once)
     time    |now - t| <= phone_clock_skew_s
-    nonce   not seen for this phone in the last 10 minutes
+    cap     the body under its route's cap (`DOOR_CAPS`), read no further than the cap
+    nonce   not seen for this phone for 2 x skew + a minute (a replay is possible for 2 x skew)
     signature  ECDSA P-256 / SHA-256 over `contract.signing_string(...)`, the stored public key
     rate    at most 30 requests a minute per phone (after the signature: only the phone's own)
 
@@ -40,12 +41,22 @@ from jarvis.phone.store import Phone, PhoneStore
 
 log = get_logger(__name__)
 
-NONCE_TTL_S = 600
+NONCE_MARGIN_S = 60
 NONCE_MAX = 4096  # 3 phones x 30 a minute x 10 minutes = 900, with room to spare
 PER_PHONE_MINUTE = 30
 PER_CLIENT_MINUTE = 60
 CLIENTS_MAX = 1024
 WINDOW_S = 60.0
+
+
+@dataclass(frozen=True)
+class Pre:
+    """A request that passed the checks which need no body (what `finish` continues from)."""
+
+    auth: contract.PhoneAuth
+    uid: str
+    phone: Phone
+    now: float
 
 
 @dataclass(frozen=True)
@@ -62,8 +73,8 @@ def refuse(check: str, route: str = "", status: int = 401) -> Refusal:
 class NonceStore:
     """Nonces seen in the last `ttl_s`, at most `max_entries` (in process: one instance)."""
 
-    def __init__(self, *, max_entries: int = NONCE_MAX, ttl_s: float = NONCE_TTL_S) -> None:
-        self._max, self._ttl = max_entries, ttl_s
+    def __init__(self, *, ttl_s: float, max_entries: int = NONCE_MAX) -> None:
+        self._max, self.ttl_s = max_entries, ttl_s
         self._seen: OrderedDict[str, float] = OrderedDict()
 
     def __len__(self) -> int:
@@ -72,7 +83,7 @@ class NonceStore:
     def _purge(self, now: float) -> None:
         while self._seen:
             key, at = next(iter(self._seen.items()))
-            if now - at < self._ttl:
+            if now - at < self.ttl_s:
                 break
             del self._seen[key]
 
@@ -144,14 +155,12 @@ class DoorGate:
         self.store = store
         self._skew = skew_s
         self._clock = clock
-        self.nonces = NonceStore()
+        self.nonces = NonceStore(ttl_s=2 * skew_s + NONCE_MARGIN_S)
         self.rate = PerPhoneRate()
         self.clients = PerPhoneRate(per_minute=PER_CLIENT_MINUTE, max_phones=CLIENTS_MAX)
 
-    async def admit(
-        self, route: str, headers: list[str], body: bytes, client: str
-    ) -> PhoneRequest | Refusal:
-        """The checks after the body was read under its cap (header -> rate)."""
+    async def precheck(self, route: str, headers: list[str], client: str) -> Pre | Refusal:
+        """header -> flood -> device -> time: nothing here needs the body."""
         auth = contract.parse_header(headers[0]) if len(headers) == 1 else None
         if auth is None:
             return refuse("header", route)
@@ -164,6 +173,11 @@ class DoorGate:
         uid, phone = found
         if abs(now - auth.t) > self._skew:
             return refuse("time", route)
+        return Pre(auth, uid, phone, now)
+
+    def finish(self, pre: Pre, route: str, body: bytes) -> PhoneRequest | Refusal:
+        """nonce -> signature -> rate, once the body was read under its cap."""
+        auth, phone, now = pre.auth, pre.phone, pre.now
         key = f"{phone.id}:{auth.nonce}"
         if self.nonces.seen(key, now):
             return refuse("nonce", route)
@@ -176,16 +190,24 @@ class DoorGate:
             return refuse("nonce_full", route)
         if not self.rate.allow(phone.id, now):
             return refuse("rate", route)
-        return PhoneRequest(route=route, device_id=phone.id, uid=uid, body=body, at=now)
+        return PhoneRequest(route=route, device_id=phone.id, uid=pre.uid, body=body, at=now)
+
+    async def admit(
+        self, route: str, headers: list[str], body: bytes, client: str
+    ) -> PhoneRequest | Refusal:
+        """Both halves in one call (the body already read under its cap)."""
+        pre = await self.precheck(route, headers, client)
+        return pre if isinstance(pre, Refusal) else self.finish(pre, route, body)
 
 
 __all__ = [
     "NONCE_MAX",
-    "NONCE_TTL_S",
+    "NONCE_MARGIN_S",
     "PER_PHONE_MINUTE",
     "DoorGate",
     "NonceStore",
     "PerPhoneRate",
+    "Pre",
     "Refusal",
     "refuse",
     "route_of",

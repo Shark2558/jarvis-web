@@ -85,7 +85,7 @@ def test_only_the_app_mark_turns_the_lock_on_and_nothing_turns_it_off() -> None:
         for line in _text(path).splitlines():
             if "APP_KEY" in line and ("] =" in line or "pop(" in line or "del " in line):
                 writes.append(line.strip())
-    assert writes == ["session[APP_KEY] = self._clock()"]
+    assert writes == ["session[APP_KEY] = now"]
 
 
 def test_nothing_of_a_key_reaches_a_log_line() -> None:

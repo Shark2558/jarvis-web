@@ -13,6 +13,18 @@ passkey that lives only on the laptop (Windows Hello) can never lock him out of 
 the app": a `POST /v1/passkeys/register` made in an app session, and the passkey that appeared
 because of it (read on the session's next request, within 2 minutes).
 
+The device (security review H1): a lock bound only to the session is escaped by signing out and in
+again, so the FIRST time a session is marked as the app's a signed `r7_dev` cookie is also set
+(HttpOnly, about 400 days, an HMAC of the owner's id under the session-signing secret: no new
+secret). Signing out, "Sign out everywhere" and session expiry do not clear it. Any later session
+of that owner that carries a valid one is marked as the app's too (this includes a plain Chrome tab
+on the same phone: one cookie jar, intended) and, while the lock is armed, STARTS LOCKED: a mark
+never starts the idle clock of an armed lock. A cookie signed for another owner, or forged, is
+ignored. Only clearing all of Chrome's site data escapes it. The owner is never locked out: unlock
+stays the passkey made in the app, and from any other signed-in device he can switch the lock off
+(`PUT /v1/session/lock`, his laptop passkey) or unlink the phone (a fresh sign-in), which
+disarms it.
+
 Idle: no request HE made for `app_lock_minutes`. A write with the CSRF header counts (except the
 known heartbeats), and so does the page's "I'm here" call (sent at most once a minute after a real
 tap or key press). Background reads never count: the Home panel's poll, the /auth/me recheck on
@@ -24,6 +36,8 @@ The last activity is kept in the signed cookie and, per session, in a small boun
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
 import secrets
 import time
@@ -43,6 +57,9 @@ from jarvis.phone.store import PhoneStore
 log = get_logger(__name__)
 
 APP_KEY, SS_KEY, SEEN_KEY = "r7_app", "r7_ss", "r7_seen"  # in the signed session cookie
+DEVICE_KEY = "r7_dev"  # the long-lived device cookie (not part of the session)
+DEVICE_MAX_AGE_S = 400 * 24 * 3600
+KEEP_ACROSS_RESTAMP = (APP_KEY, SS_KEY, SEEN_KEY)
 SS = re.compile(r"^ss_[A-Za-z0-9_-]{24}$")
 REGISTER = ("POST", "/v1/passkeys/register")
 REGISTER_WINDOW_S = 120.0
@@ -69,6 +86,32 @@ def counts_as_activity(method: str, path: str, headers: Iterable[tuple[bytes, by
 
 def exempt(method: str, path: str) -> bool:
     return (method.upper(), path) in EXEMPT
+
+
+def device_value(secret: str, uid: str) -> str:
+    """`<owner id>.<hex HMAC-SHA256>`: signed for this owner only (domain-separated)."""
+    mac = hmac.new(secret.encode(), b"r7-device-v1:" + uid.encode(), hashlib.sha256)
+    return f"{uid}.{mac.hexdigest()}"
+
+
+def device_valid(secret: str, value: str | None, uid: str) -> bool:
+    """True only for a cookie this server signed for exactly this owner."""
+    if not value or len(value) > 200:
+        return False
+    return hmac.compare_digest(value.encode(), device_value(secret, uid).encode())
+
+
+def cookie_of(headers: Iterable[tuple[bytes, bytes]], name: str) -> str | None:
+    """One cookie's value from the raw Cookie header(s); the last one wins, as in browsers."""
+    found = None
+    for k, v in headers:
+        if k.lower() != b"cookie":
+            continue
+        for part in v.decode("latin-1").split(";"):
+            key, sep, val = part.strip().partition("=")
+            if sep and key == name:
+                found = val
+    return found
 
 
 def new_session_id() -> str:
@@ -105,9 +148,14 @@ class AppLock:
     # ---- the slot's check ---------------------------------------------------------------------
     async def __call__(self, scope: Scope) -> bool:
         session = scope.get("session")
-        if not isinstance(session, dict) or not session.get(APP_KEY):
-            return False  # not the app's session: never locked
-        ss, uid = session_id(session), self._owner(scope)
+        if not isinstance(session, dict):
+            return False
+        uid = self._owner(scope)
+        if not session.get(APP_KEY):
+            if uid is None or not self.device_ok(scope, uid):
+                return False  # not the app's session or device: never locked
+            await self.mark_app(session, uid)  # this phone's: marked, and born locked if armed
+        ss = session_id(session)
         method = str(scope.get("method") or "GET").upper()
         path = str(scope.get("path") or "")
         if ss is None or uid is None or exempt(method, path):
@@ -121,6 +169,19 @@ class AppLock:
         if (method, path) == REGISTER:
             await self._note_registration(uid, ss, now)
         return False
+
+    def _secret(self) -> str:
+        secret = self._s.session_secret
+        return secret.get_secret_value() if secret is not None else ""
+
+    def device_cookie_value(self, uid: str) -> str:
+        return device_value(self._secret(), uid)
+
+    def device_ok(self, scope: Scope, uid: str) -> bool:
+        secret = self._secret()
+        return bool(secret) and device_valid(
+            secret, cookie_of(scope.get("headers") or (), DEVICE_KEY), uid
+        )
 
     def _owner(self, scope: Scope) -> str | None:
         view = scope if scope.get("type") == "http" else {**scope, "type": "http"}
@@ -142,12 +203,15 @@ class AppLock:
         while len(self._seen) > SESSIONS_MAX:
             self._seen.popitem(last=False)
 
-    def mark_app(self, session: dict[str, Any]) -> str:
-        """The installed app's session (only ever ON). A new mark starts the idle clock."""
+    async def mark_app(self, session: dict[str, Any], uid: str) -> str:
+        """The installed app's session (only ever ON). While the owner's lock is armed a new mark
+        never starts the idle clock: the session is born locked (one passkey touch)."""
         ss = ensure_session_id(session)
         if not session.get(APP_KEY):
-            session[APP_KEY] = self._clock()
-            self.touch(session, self._clock())
+            now = self._clock()
+            session[APP_KEY] = now
+            if not await self.armed(uid):
+                self.touch(session, now)
         return ss
 
     async def locked(self, session: dict[str, Any], uid: str) -> bool:
@@ -161,7 +225,7 @@ class AppLock:
 
     async def armed(self, uid: str) -> bool:
         hit = self._armed.get(uid)
-        now = time.monotonic()
+        now = self._clock()
         if hit is not None and now - hit[1] < ARMED_CACHE_S:
             return hit[0]
         value = await self._read_armed(uid)
@@ -223,10 +287,16 @@ class AppLock:
 __all__ = [
     "APP_KEY",
     "BACKGROUND_WRITES",
+    "DEVICE_KEY",
+    "DEVICE_MAX_AGE_S",
+    "KEEP_ACROSS_RESTAMP",
     "SEEN_KEY",
     "SS_KEY",
     "AppLock",
+    "cookie_of",
     "counts_as_activity",
+    "device_valid",
+    "device_value",
     "ensure_session_id",
     "exempt",
     "new_session_id",

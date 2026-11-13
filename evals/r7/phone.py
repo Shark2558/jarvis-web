@@ -21,10 +21,21 @@ tests/r7_fakes_c.py):
     unlock_bound     another session's device_unlock proof is refused; its own opens only it
     polls            with the Home panel polling and the /auth/me recheck, the lock still comes
     lock_waits       a passkey made only on the laptop never locks the phone
+    device_lock      signing out and in again in the app, and a plain tab with the device cookie,
+                     start locked; the laptop never is; a forged or foreign cookie is ignored
+    recovery         never locked out: the laptop passkey switches the lock off, a fresh sign-in
+                     unlinks the phone and disarms it
+    skew             the clock window is exact (120 s in, 121 s out)
+    body_cap         the link body is cut at its cap
+    phone_rate       a phone's 31st request in a minute is refused
+    end_all keeps    "Sign out everywhere" keeps the pressing browser's app mark
 
-Negative controls (each must make its case fail, so this part cannot pass whatever it is given):
-the nonce store off, the signature check off, the lock exempting every route, background polls
-counted as activity.
+Negative controls (each must make EVERY case it names fail, so this part cannot pass whatever
+it is given): the nonce store off, the signature check off, the lock exempting every route,
+background polls counted as activity, the device cookie not checked / any cookie accepted / a mark
+that starts the clock, the clock skew not checked, the link body cap off, the 3-phone cap off, the
+code reusable, wrong tries never voiding, a point off the curve accepted, the unlock not bound to
+the session, the per-phone rate off.
 """
 
 from __future__ import annotations
@@ -52,6 +63,7 @@ from r7_fakes_c import (  # noqa: E402
     audit_entries,
     browser,
     door,
+    jar_with,
     link,
     link_code,
     linked_phone,
@@ -59,10 +71,12 @@ from r7_fakes_c import (  # noqa: E402
     phone_app,
     phone_service,
     proof,
+    sign_in_again,
 )
 
 from jarvis.config import LLMBackend, SessionBackend, Settings  # noqa: E402
 from jarvis.mobile.ports import PACKAGE, MobilePart, PhoneReply, PhoneRequest  # noqa: E402
+from jarvis.phone.applock import DEVICE_KEY  # noqa: E402
 from jarvis.phone.store import Phone  # noqa: E402
 
 PART = "phone"
@@ -300,6 +314,11 @@ async def end_all() -> list[str]:
             await laptop.post("/v1/session/end-all", headers=CSRF)
             _check(f, (await phone.get("/auth/me")).status_code == 401, "the older cookie dies")
             _check(f, (await laptop.get("/auth/me")).status_code == 200, "this browser stays")
+        async with browser(app, from_app=True) as phone2:
+            await _armed(app, phone2)
+            await phone2.post("/v1/session/end-all", headers=CSRF)
+            state = (await phone2.get("/v1/session/lock")).json()
+            _check(f, state.get("app") is True, "end-all keeps the pressing browser's app mark")
 
     class Tick:
         t = 0.0
@@ -401,6 +420,92 @@ async def lock_waits() -> list[str]:
     return f
 
 
+async def device_lock() -> list[str]:
+    f: list[str] = []
+    async with phone_app(_settings()) as app:
+        async with browser(app, from_app=True) as phone:
+            await _armed(app, phone)
+            value = phone.cookies.get(DEVICE_KEY) or ""
+            app.state.phone_clock.advance(IDLE + 1)
+            await phone.post("/auth/logout", headers=CSRF)  # the cover's "Sign out instead"
+            await sign_in_again(app, phone)  # one tap
+            _check(f, await _status(phone) == 423, "sign out and in again in the app is locked")
+        tab = await jar_with(app, value)  # Chrome on the same phone: the same jar
+        async with tab:
+            await sign_in_again(app, tab)
+            _check(f, await _status(tab) == 423, "a plain tab with the device cookie is locked")
+        async with browser(app) as laptop:
+            app.state.phone_clock.advance(IDLE + 60)
+            _check(f, await _status(laptop) == 200, "the laptop without it is never locked")
+        uid, _, mac = value.partition(".")
+        for bad in (f"{uid}.{'0' * len(mac)}", f"u_other.{mac}", uid, ""):
+            fake = await jar_with(app, bad)
+            async with fake:
+                await sign_in_again(app, fake)
+                _check(f, await _status(fake) == 200, "a forged or foreign cookie is ignored")
+    return f
+
+
+async def recovery() -> list[str]:
+    f: list[str] = []
+    async with phone_app(_settings()) as app:
+        async with browser(app, from_app=True) as phone:
+            phone_auth = await _armed(app, phone)
+            async with browser(app) as laptop:
+                laptop_auth = await add_passkey(laptop, held=phone_auth, label="Laptop")
+                r = await laptop.put("/v1/session/lock", json={"on": False}, headers=CSRF)
+                target = r.json().get("target", "")
+                body = {
+                    "on": False,
+                    "proof": await proof(laptop, laptop_auth, "device_unlock", target),
+                }
+                r = await laptop.put("/v1/session/lock", json=body, headers=CSRF)
+                _check(f, r.status_code == 200, "the laptop passkey switches the lock off")
+            app.state.phone_clock.advance(IDLE + 60)
+            phone_service(app).lock.forget(owner_uid())
+            _check(f, await _status(phone) == 200, "the phone is open again")
+    async with phone_app(_settings()) as app:
+        async with browser(app, from_app=True) as phone:
+            auth = await _armed(app, phone)
+            device, _ = await linked_phone(app, phone, auth)
+            async with browser(app) as laptop:
+                await laptop.post(f"/v1/phone/{device}/unlink", headers=CSRF)
+            app.state.phone_clock.advance(IDLE + 60)
+            _check(f, await _status(phone) == 200, "a fresh sign-in unlinks and disarms")
+    return f
+
+
+async def skew() -> list[str]:
+    f: list[str] = []
+    async with phone_app(_settings()) as app:
+        async with browser(app) as c:
+            device, key = await linked_phone(app, c)
+        now = int(app.state.phone_clock())
+        for offset, want in ((120, 200), (-120, 200), (121, 401), (-121, 401)):
+            r = await door(app, key, device, "hello", HELLO, t=now - offset)
+            _check(f, r.status_code == want, f"{offset} s of skew answers {want}")
+    return f
+
+
+async def body_cap() -> list[str]:
+    f: list[str] = []
+    async with phone_app(_settings()) as app:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as anon:
+            r = await anon.post("/phone/link", content=b"x" * 8192)
+            _check(f, r.status_code == 413, "the link body is cut at 4 KB")
+    return f
+
+
+async def phone_rate() -> list[str]:
+    f: list[str] = []
+    async with phone_app(_settings()) as app:
+        async with browser(app) as c:
+            device, key = await linked_phone(app, c)
+        codes = [(await door(app, key, device, "hello", HELLO)).status_code for _ in range(31)]
+        _check(f, codes[:30] == [200] * 30 and codes[30] == 401, "the 31st request a minute")
+    return f
+
+
 CASES: dict[str, Case] = {
     "link_code": link_code_rules,
     "link_proof": link_proof,
@@ -417,6 +522,11 @@ CASES: dict[str, Case] = {
     "unlock_bound": unlock_bound,
     "polls": polls,
     "lock_waits": lock_waits,
+    "device_lock": device_lock,
+    "recovery": recovery,
+    "skew": skew,
+    "body_cap": body_cap,
+    "phone_rate": phone_rate,
 }
 
 
@@ -452,6 +562,75 @@ def _nonce_off() -> Iterator[None]:
         yield
 
 
+def _no_cap_on_the_link() -> Any:
+    return mock.patch("jarvis.api.phone.LINK_MAX", 10**9)
+
+
+def _skew_ignored() -> Any:
+    # `abs` shadowed inside the door module: |now - t| is always 0
+    return mock.patch("jarvis.phone.door.abs", lambda value: 0, create=True)
+
+
+@contextmanager
+def _no_phone_cap() -> Iterator[None]:
+    from jarvis.phone.store import PhoneStore
+
+    real = PhoneStore.link
+
+    async def uncapped(self: Any, code_hash: Any, make: Any, now: Any, *, max_phones: int) -> Any:
+        return await real(self, code_hash, make, now, max_phones=99)
+
+    with mock.patch.object(PhoneStore, "link", uncapped):
+        yield
+
+
+@contextmanager
+def _code_reusable() -> Iterator[None]:
+    from jarvis.phone.store import PhoneStore
+    from jarvis.storage.docs import Set
+
+    real = PhoneStore.link
+
+    async def reuse(self: Any, code_hash: Any, make: Any, now: Any, *, max_phones: int) -> Any:
+        before = {u: await self.docs.get(self._code_path(u)) for u in self.owners}
+        out = await real(self, code_hash, make, now, max_phones=max_phones)
+        if out.result == "linked":  # the code is not spent
+            await self.docs.write([Set(self._code_path(u), d) for u, d in before.items() if d])
+        return out
+
+    with mock.patch.object(PhoneStore, "link", reuse):
+        yield
+
+
+@contextmanager
+def _mark_starts_the_clock() -> Iterator[None]:
+    from jarvis.phone.applock import AppLock
+
+    real = AppLock.mark_app
+
+    async def touching(self: Any, session: Any, uid: str) -> str:
+        fresh = not session.get("r7_app")
+        out = await real(self, session, uid)
+        if fresh:
+            self.touch(session, self._clock())
+        return out
+
+    with mock.patch.object(AppLock, "mark_app", touching):
+        yield
+
+
+def _unlock_unbound() -> Any:
+    return mock.patch("jarvis.api.phone.ensure_session_id", lambda session: "ss_" + "A" * 24)
+
+
+def _rate_off() -> Any:
+    return mock.patch("jarvis.phone.door.PerPhoneRate.allow", lambda self, key, now: True)
+
+
+def _off_the_curve_accepted() -> Any:
+    return mock.patch("jarvis.phone.service.ec", mock.MagicMock())
+
+
 CONTROLS: dict[str, tuple[Callable[[], Any], tuple[str, ...]]] = {
     "the nonce store off": (_nonce_off, ("bare_401",)),
     "the signature check off": (
@@ -468,17 +647,39 @@ CONTROLS: dict[str, tuple[Callable[[], Any], tuple[str, ...]]] = {
         ),
         ("polls",),
     ),
+    "the device cookie never checked": (
+        lambda: mock.patch(
+            "jarvis.phone.applock.AppLock.device_ok", lambda self, scope, uid: False
+        ),
+        ("device_lock",),
+    ),
+    "any device cookie accepted": (
+        lambda: mock.patch("jarvis.phone.applock.device_valid", lambda secret, value, uid: True),
+        ("device_lock",),
+    ),
+    "a mark that starts the idle clock": (_mark_starts_the_clock, ("device_lock",)),
+    "the clock skew not checked": (_skew_ignored, ("skew", "bare_401")),
+    "the link body cap off": (_no_cap_on_the_link, ("body_cap",)),
+    "the 3-phone cap off": (_no_phone_cap, ("fourth_phone",)),
+    "the code reusable": (_code_reusable, ("link_code",)),
+    "wrong tries never voiding": (
+        lambda: mock.patch("jarvis.phone.store.MAX_TRIES", 10**9),
+        ("link_code",),
+    ),
+    "a point off the curve accepted": (_off_the_curve_accepted, ("link_shape",)),
+    "the unlock not bound to the session": (_unlock_unbound, ("unlock_bound",)),
+    "the per-phone rate off": (_rate_off, ("phone_rate",)),
 }
 
 
 async def control() -> dict[str, Any]:
-    """Each control re-runs the cases it breaks; every one of them must fail it."""
+    """Each control re-runs the cases it names; EVERY one of them must fail under it."""
     failed: list[str] = []
     every = True
     for what, (make, names) in CONTROLS.items():
         with make():
             got = await _run(names)
-        broke = [r["id"] for r in got if not r["passed"]]
-        failed.extend(f"{what} -> {i}" for i in broke)
-        every = every and bool(broke)
+        broke = {r["id"] for r in got if not r["passed"]}
+        failed.extend(f"{what} -> {i}" for i in sorted(broke))
+        every = every and {f"{PART}:{n}" for n in names} <= broke
     return {"name": "phone: " + "; ".join(CONTROLS), "suite_failed": every, "failed_cases": failed}

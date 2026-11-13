@@ -6,7 +6,6 @@
 # without a key. The asset links list linked phones only: the one package, the one relation.
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from typing import Any
@@ -62,7 +61,7 @@ async def test_a_fresh_sign_in_shows_an_eight_character_code_stored_only_as_a_ha
         assert r.headers["cache-control"] == "no-store"
         doc = await phone_service(app).store.docs.get(f"jarvis_phone_link/{owner_uid()}")
         assert doc is not None and code not in json.dumps(doc)
-        assert doc["code_hash"] == hashlib.sha256(code.encode()).hexdigest()
+        assert doc["code_hash"] == phone_service(app).code_digest(code)
 
 
 async def test_without_a_passkey_an_old_sign_in_is_not_enough(app: Any) -> None:

@@ -13,6 +13,7 @@ code. Then the code (`store.link`: one transaction). A link rings `phone_linked`
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 import time
 from collections.abc import Callable
@@ -93,7 +94,7 @@ class PhoneService:
         self.s = ctx.s
         self._ctx = ctx
         self.owners = owner_ids(list(ctx.s.owner_emails))
-        self.clock: Callable[[], float] = self._now
+        self.clock: Callable[[], float] = self._now  # the tests' seam, else the real clock
         self.store = PhoneStore(docs, prefix=ctx.prefix, owners=self.owners)
         self.gate = DoorGate(self.store, skew_s=ctx.s.phone_clock_skew_s, clock=self.clock)
         self.handlers = DoorHandlers(ctx.s, self.store, state=ctx.state, clock=self.clock)
@@ -134,13 +135,20 @@ class PhoneService:
             "can": dict(p.can),
         }
 
+    def code_digest(self, code: str) -> str:
+        """The code as stored: an HMAC under the session-signing secret (a leaked document can't
+        be brute-forced offline: the code has only 40 bits)."""
+        secret = self.s.session_secret
+        key = secret.get_secret_value().encode() if secret is not None else b""
+        return hmac.new(key, b"r7-link-code-v1:" + code.encode(), hashlib.sha256).hexdigest()
+
     # ---- the code -----------------------------------------------------------------------------
     async def offer(self, uid: str) -> str:
         return await self.store.offer(uid, self.clock())
 
     async def issue(self, uid: str, offer_id: str) -> dict[str, Any] | str:
         code = new_code()
-        digest = hashlib.sha256(code.encode()).hexdigest()
+        digest = self.code_digest(code)
         got = await self.store.issue(uid, offer_id, digest, self.clock())
         if got != "issued":
             return got
@@ -153,7 +161,7 @@ class PhoneService:
         if code is None:
             await self.store.wrong_try(now)
             return LinkOutcome("bad_code")
-        digest = hashlib.sha256(code.encode()).hexdigest()
+        digest = self.code_digest(code)
 
         def make() -> Phone:
             return Phone(
@@ -186,6 +194,7 @@ class PhoneService:
         if gone is None:
             return False
         self._links = None
+        self.lock.forget(uid)  # the last phone gone disarms the lock at once
         await self.audit("phone_unlink", {"device": device_id})
         when = self._hhmm(self.clock())
         await self.alert(uid, "phone_unlinked", f"A phone was unlinked from JARVIS at {when}.")
@@ -195,6 +204,7 @@ class PhoneService:
         count = await self.store.unlink_all(uid)
         if count:
             self._links = None
+            self.lock.forget(uid)
             await self.audit("phone_unlink", {"device": "all", "count": count})
         return count
 
@@ -203,7 +213,7 @@ class PhoneService:
         """One statement for the one package with every linked phone's signing fingerprint (read
         at most once a minute: the route is public)."""
         hit = self._links
-        if hit is not None and time.monotonic() - hit[1] < LINKS_CACHE_S:
+        if hit is not None and self.clock() - hit[1] < LINKS_CACHE_S:
             return hit[0]
         prints = await self.store.fingerprints()
         out: list[dict[str, Any]] = []
@@ -218,7 +228,7 @@ class PhoneService:
                     },
                 }
             )
-        self._links = (out, time.monotonic())
+        self._links = (out, self.clock())
         return out
 
     # ---- the audit and the alerts -------------------------------------------------------------

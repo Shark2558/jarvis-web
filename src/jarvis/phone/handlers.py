@@ -96,7 +96,7 @@ def canonical(raw: bytes, model: type[_Strict]) -> _Strict | None:
         data = json.loads(raw.decode("utf-8"))
         parsed = model.model_validate(data)
         same = contract.canonical_json(data) == raw
-    except (UnicodeDecodeError, ValueError, TypeError, ValidationError):
+    except (UnicodeDecodeError, ValueError, TypeError, RecursionError, ValidationError):
         return None
     return parsed if same else None
 
@@ -204,10 +204,14 @@ class DoorHandlers:
         """Last seen, for every admitted request, at most once a minute (hello writes it too)."""
         if req.route == "hello" or req.at - self._touched.get(req.device_id, 0.0) < TOUCH_EVERY_S:
             return
+        try:
+            await self._store.update_phone(req.uid, req.device_id, {"last_seen": req.at})
+        except Exception as exc:  # noqa: BLE001 - a cosmetic "last seen" never refuses a request
+            log.warning("phone last-seen write failed", extra={"error": type(exc).__name__})
+            return  # not marked as written: the next request tries again
         self._touched[req.device_id] = req.at
         if len(self._touched) > 64:
             self._touched.pop(next(iter(self._touched)))
-        await self._store.update_phone(req.uid, req.device_id, {"last_seen": req.at})
 
 
 __all__ = ["FIRST_LINE_MAX", "Can", "DoorHandlers", "Hello", "InboxHead", "canonical"]

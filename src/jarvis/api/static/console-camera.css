@@ -1,2 +1,31 @@
-/* src/jarvis/api/static/console-camera.css -- R7 Part B (docs/plans/r7-mobile.md D0): placement only for the Camera panel and the camera-on chip.
-   Existing tokens and classes; no new colours, fonts, radii or shadows. I0 stub: Part B fills it (at most 150 lines). */
+/* src/jarvis/api/static/console-camera.css -- R7 Part B (docs/plans/r7-mobile.md D0): placement only for the Camera panel
+   and the camera-on chip. The panel reuses the Helpers frame (.hp-tabs, .hp-pane, .hp-row, label.hp-field), .btn.sact in
+   .sacts, .minput, .snote and .sfine; the chip is the status pill's amber look (.status.alert). Existing tokens only: no
+   new colours, fonts, radii or shadows. Loaded by console-r7.js. */
+#p-camera .hp-tabs{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
+#p-camera label.hp-field{display:block;margin:10px 0 0}
+#p-camera label.hp-field > .snote{display:block;margin:0 0 4px}
+#p-camera .minput{height:44px}
+#p-camera select.minput{padding:0 8px;cursor:pointer}
+#p-camera select.minput option{background:var(--well);color:var(--ink)}
+#p-camera .hp-sec{margin:12px 0 0}
+#p-camera .hp-sec .sacts{margin-top:8px}
+.cam-acts .btn.sact{height:44px}
+.cam-stage:empty{display:none}
+.cam-stage{margin:10px 0 0}
+.cam-view{display:block;width:100%;height:auto;max-height:46vh;object-fit:contain;border-radius:var(--r-md);background:var(--well-2)}
+.cam-result{margin:10px 0 0}
+.cam-result[hidden]{display:none}
+.cam-out{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.45;color:var(--ink)}
+.cam-send .btn.sact{flex:1 1 100%;height:auto;min-height:44px;padding:8px 12px;line-height:1.25}
+.cam-result .sacts .btn.sact[hidden]{display:none}
+.cam-result label.hp-field[hidden]{display:none}
+/* the chip: always on screen while a track is live, under the top bar, centred */
+button.status.cam-chip{position:fixed;z-index:85;top:calc(var(--top-h, 56px) + 8px);left:50%;transform:translateX(-50%);
+  height:44px;margin:0;padding:0 16px;box-sizing:border-box;appearance:none;-webkit-appearance:none;cursor:pointer}
+button.status.cam-chip[hidden]{display:none}
+button.status.cam-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:899px){
+  .cam-acts .btn.sact{flex:1 1 calc(50% - 8px)}
+  #p-camera .hp-row .btn.sact{min-height:44px}
+}

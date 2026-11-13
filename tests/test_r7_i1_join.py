@@ -198,6 +198,7 @@ BACKGROUND = {
     "/v1/book/close": ("console-book-show.js", "'/v1/book/close'"),  # the show's own ending
     "/v1/facegroups/import/step": ("console-r111-photos.js", "setTimeout(() => stepJob(false)"),
     "/v1/session/app": ("console-r7-lock.js", "'/v1/session/app'"),  # marked at page load
+    "/v1/voice/transcribe": ("console-voice-mic.js", "'/v1/voice/transcribe'"),  # the mic's audio
 }
 
 

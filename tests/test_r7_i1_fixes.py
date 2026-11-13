@@ -256,3 +256,24 @@ async def test_r7_jobs_run_on_the_tick_with_the_helpers_off_or_failed(
         ran = await run_jobs(app.state.tick_jobs, app.state.brief.owners)
         assert ran["mobile_daily"] == "ok" and ran["mobile_clock"] == "ok"
         assert await watch.store.count(uid) == 1  # the old day is gone, today's stays
+
+
+# ---- security L7, code L5: the mic's transcribe and the vault's lock-on-hide are not presence ----
+def test_transcribes_and_the_vault_forget_on_hide_never_count_as_the_owner_being_there() -> None:
+    from pathlib import Path
+
+    from jarvis.phone import applock
+
+    static = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
+    headers = [(b"x-requested-with", b"JARVIS")]
+    # the ambient "Hey Jarvis" and the barge-in listener post audio on their own
+    assert "/v1/voice/transcribe" in (static / "console-voice-mic.js").read_text(encoding="utf-8")
+    assert "/v1/voice/transcribe" in (static / "console-voice-barge.js").read_text(encoding="utf-8")
+    assert not applock.counts_as_activity("POST", "/v1/voice/transcribe", headers)
+    # the vault locks itself when the tab hides: DELETE only; his own unlock (POST) still counts
+    assert "'/v1/vault/unlock', { method: 'DELETE' }" in (static / "console-vault.js").read_text(
+        encoding="utf-8"
+    )
+    assert not applock.counts_as_activity("DELETE", "/v1/vault/unlock", headers)
+    assert applock.counts_as_activity("POST", "/v1/vault/unlock", headers)
+    assert applock.counts_as_activity("PUT", "/v1/vault/unlock", headers)

@@ -77,8 +77,13 @@ BACKGROUND_WRITES = frozenset(
         "/v1/book/close",  # the show closing at its own end (and by End)
         "/v1/facegroups/import/step",  # the photo import's next step, on a timer
         "/v1/session/app",  # this session marked as the app's, at page load
+        # the microphone's own audio ("Hey Jarvis" heard from a TV, the barge-in listener): his
+        # real presses still count through /v1/session/here (I1 fixer, security L7)
+        "/v1/voice/transcribe",
     }
 )
+# the same, keyed by method too (his own POST of the same path is a real press)
+BACKGROUND_CALLS = frozenset({("DELETE", "/v1/vault/unlock")})  # the vault locks itself on hide
 # answered by Part C itself while locked (beyond the slot's own list, which already covers them)
 EXEMPT = frozenset({("POST", "/v1/session/unlock")})
 
@@ -92,6 +97,8 @@ def _header(headers: Iterable[tuple[bytes, bytes]], name: bytes) -> bytes | None
 def counts_as_activity(method: str, path: str, headers: Iterable[tuple[bytes, bytes]]) -> bool:
     """A request the owner made: a write with the CSRF header that is not a heartbeat."""
     if method.upper() in SAFE_METHODS or path in BACKGROUND_WRITES:
+        return False
+    if (method.upper(), path) in BACKGROUND_CALLS:
         return False
     return _header(headers, CSRF_HEADER.encode()) == CSRF_VALUE.encode()
 

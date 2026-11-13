@@ -1,5 +1,6 @@
 # tests/test_webpush_service.py -- R3 D11: endpoint rule, VAPID, owner-bound encrypted store,
-# validated subscribe, contained failures, content-free audit.
+# validated subscribe, contained failures, content-free audit. R7 D8: the click target is a real
+# panel per kind (`/?open=<panel>`), never the unread `/#home`.
 from __future__ import annotations
 
 import base64
@@ -284,14 +285,15 @@ async def test_the_browser_can_read_what_was_sent() -> None:
     assert got == {
         "kind": "home_package",
         "text": "A package was left at the Gate, 14:05.",
-        "url": "/#home",
+        "url": "/?open=home",
     }
 
 
 def test_the_payload_is_small_template_only_and_never_a_picture() -> None:
     raw = payload_for("approval_waiting", "x" * 5000)
     assert len(raw) <= 1024 and set(json.loads(raw)) == {"kind", "text", "url"}
-    assert json.loads(raw)["url"] == "/"
+    assert json.loads(raw)["url"] == "/?open=approvals"
+    assert json.loads(payload_for("test", "x"))["url"] == "/"
     big = payload_for("home_intruder", "\u0d15" * 5000)
     assert len(big) <= 1024
     assert "\n" not in json.loads(payload_for("test", "a\n\nb"))["text"]

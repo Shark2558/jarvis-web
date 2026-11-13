@@ -6,6 +6,9 @@ secret, a cleaned name, at most 5 devices) before anything is stored. `send` is 
 channel: one encrypted message per device, in parallel, each failure contained (a failing push
 never blocks the other channels). A 404 or 410 removes the device. The payload is the fixed
 template text, the kind and the click target (<= 1 KB), never a picture and never other text.
+R7 D8 (Part A): the click target is the panel the alert is about, `/?open=<panel>` (`TARGETS`; a
+test alert and an unknown kind open the console, `/`); the push worker hands it to the JARVIS
+window already open (console-sw.js).
 Each send is audited with counts only (agent "alerts", tool `webpush_send`).
 """
 
@@ -15,7 +18,7 @@ import asyncio
 import base64
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 import httpx
@@ -40,7 +43,58 @@ TTL_DEFAULT_S = 86_400
 GONE = frozenset({404, 410})
 OK = frozenset({200, 201, 202})
 _B64 = re.compile(r"^[A-Za-z0-9_-]+={0,2}$")
-HOME_KINDS_PREFIX = "home_"
+_HELPERS = (
+    "disaster_alert",
+    "bill_due",
+    "birthday",
+    "chore_due",
+    "maintenance_due",
+    "weather_warning",
+    "breach_notice",
+    "nudge_standup",
+    "nudge_hydrate",
+    "nudge_activity",
+    "nudge_free_time",
+    "nudge_focus",
+    "weather_note",
+    "watch_stale",  # Helpers -> Watch
+)
+_HOME = (
+    "home_intruder",
+    "home_hazard",
+    "home_package",
+    "home_greeting",
+    "home_offline",
+    "home_online",
+    "home_arm_failed",
+    "home_summary",
+    "home_offline_idle",
+)
+# R7 D8: the panel each alert opens (console-r7-links.js allows exactly the dock's panels). The
+# systems check, Offline mode, the phone app and Emergency SOS are cards in Integrations.
+TARGETS: Mapping[str, str] = {
+    "approval_waiting": "approvals",
+    "series_checkin": "approvals",  # the check-ins sit above the Approvals list (R11.1)
+    "offline_on": "integrations",
+    "offline_off": "integrations",
+    "brief_ready": "brief",
+    "vault_expiry": "vault",
+    "vitals_warn": "vitals",
+    "vitals_critical": "vitals",
+    "health_fault": "integrations",
+    "health_recovered": "integrations",
+    "health_degraded": "integrations",
+    "book_sealed": "book",
+    "book_seal_failed": "book",
+    "book_session_closed": "book",
+    "faces_to_name": "faces",
+    "sos_sent": "integrations",
+    "sos_contact_left": "integrations",
+    "phone_linked": "integrations",
+    "phone_unlinked": "integrations",
+    **{kind: "helpers" for kind in _HELPERS},
+    **{kind: "home" for kind in _HOME},
+}
 
 
 class BadSubscription(ValueError):
@@ -70,7 +124,7 @@ def payload_for(kind: str, text: str) -> bytes:
     body = {
         "kind": kind,
         "text": re.sub(r"\s+", " ", text).strip()[:MAX_TEXT_CHARS],
-        "url": "/#home" if kind.startswith(HOME_KINDS_PREFIX) else "/",
+        "url": f"/?open={TARGETS[kind]}" if kind in TARGETS else "/",
     }
     raw = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
     while len(raw) > MAX_PAYLOAD_BYTES:  # multi-byte text: trim until it fits
@@ -197,4 +251,4 @@ class PushService:
             log.error("AUDIT WRITE FAILED for a push", extra={"error": type(exc).__name__})
 
 
-__all__ = ["BadSubscription", "PushService", "clean_name", "payload_for"]
+__all__ = ["TARGETS", "BadSubscription", "PushService", "clean_name", "payload_for"]

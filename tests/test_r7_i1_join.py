@@ -213,3 +213,48 @@ def test_every_background_write_of_the_console_is_never_activity() -> None:
     for path in ("/v1/notes", "/v1/session/here", "/v1/vision/results", "/v1/watch/sleep"):
         assert applock.counts_as_activity("POST", path, headers), path
         assert path not in applock.BACKGROUND_WRITES
+
+
+# ---- sos_sent through the REAL NotifyService: it always rings (D needs I1 7; D19, D25) ----------
+# At half past midnight (quiet hours), after the urgent Telegram cap and the storm window have been
+# used up by burglar alerts, Part D's own send still tells the owner on Telegram and his browser.
+async def test_sos_sent_rings_through_quiet_hours_the_storm_and_the_telegram_cap() -> None:
+    from notify_fakes import MIDNIGHT, build
+    from test_r7_d_sos_send import HERE, World
+
+    from jarvis.notify.ports import Signal
+    from jarvis.notify.storm import MAX_URGENT_IN_WINDOW
+    from jarvis.notify.telegram_out import URGENT_PER_HOUR
+
+    nw = await build(MIDNIGHT)
+    for _ in range(URGENT_PER_HOUR + 2):  # the urgent hourly Telegram cap, used up
+        await nw.alerts.send(UID_D, "Someone at the gate.", kind="home_intruder")
+    assert not (await nw.alerts.send(UID_D, "x", kind="home_intruder")).sent
+    intruder = Signal(source="home", kind="home_intruder", camera="gate")
+    for _ in range(MAX_URGENT_IN_WINDOW + 2):  # the storm window, used up
+        nw.clock.advance(seconds=61)
+        await nw.service.notify(UID_D, intruder, "Someone at the gate.")
+    held = await nw.service.notify(UID_D, Signal(source="home", kind="home_package"), "A parcel.")
+    assert held.action == "hold"  # it is quiet hours: an ordinary alert waits for the morning
+    before = len(nw.tg.bot.texts)
+
+    w = World(notes=nw.service)  # type: ignore[arg-type]  # the real notifier, not a recorder
+    await w.three()
+    result = await w.svc.send(UID_D, "real", HERE, via="web")
+    assert result.outcome == "sent" and result.told is True
+    texts = nw.tg.bot.texts[before:]
+    assert any(t.startswith("SOS sent at") for t in texts), texts
+    again = await w.svc.send(UID_D, "test", HERE, via="web")  # a second notice soon after
+    assert again.told is True
+
+
+async def test_the_sos_ring_test_fails_when_the_telegram_cap_could_drop_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The control: with sos_sent taken out of NO_CAP_KINDS the used-up cap drops its Telegram
+    copy, so the test above is not passing by accident."""
+    import jarvis.notify.telegram_out as out
+
+    monkeypatch.setattr(out, "NO_CAP_KINDS", frozenset({"home_hazard"}))
+    with pytest.raises(AssertionError):
+        await test_sos_sent_rings_through_quiet_hours_the_storm_and_the_telegram_cap()

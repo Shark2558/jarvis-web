@@ -176,8 +176,7 @@ def build_brief_service(
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
         billing=getattr(app.state, "billing", None),
-        # R11.1 D20 / I1 M1: the inbox and deliveries reads obey the "Search and read email" row
-        reads=reads,
+        reads=reads,  # R11.1 D20 / I1 M1: these reads obey the "Search and read email" row
         mail_max_reads=s.mail_summary_max_reads,
         # R1 D: Deliveries and Family today (only with the Google link they read through)
         deliveries=DeliveriesBrief(PackageScanner(app.state.google), reads=reads)
@@ -192,6 +191,7 @@ def build_brief_service(
         else None,
         vitals=vitals_brief(app),  # R4 I1 W10: red / amber lines + AI spend; never in the AI input
         helpers=helpers_brief(app),  # R11: the helpers' fixed lines; never in the AI input
+        sleep=r7.mobile_sleep(app),  # R7 D18 (I1): the console's sleep line; never e-mailed
     )
 
 

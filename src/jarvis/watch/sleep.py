@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
-from typing import Literal
 
 from jarvis.brief.models import SleepLine
 from jarvis.watch.models import TYPED_WRITER, Session, Source, Stages, source_of
@@ -113,15 +112,14 @@ def week(nights: Sequence[Night]) -> Week | None:
 
 
 def sleep_line(night: Night) -> SleepLine:
-    """The brief's pinned shape: its source is watch / phone / typed only, so a night from another
-    health app on his phone is written "phone" there (the tools and the Watch tab say "another
-    health app")."""
-    source: Literal["watch", "phone", "typed"] = "phone" if night.source == "app" else night.source
+    """The brief's pinned shape: the night's own source (watch / phone / app / typed; I1 added
+    "app", so a night from another health app is named as itself, as in the tools and the Watch
+    tab)."""
     return SleepLine(
         minutes=min(night.minutes, DAY_MINUTES),
         start=night.start,
         end=night.end,
-        source=source,
+        source=night.source,
     )
 
 

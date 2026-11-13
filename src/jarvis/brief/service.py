@@ -46,6 +46,7 @@ from jarvis.brief.models import (
     SectionState,
     SettingsPatch,
     SettingsView,
+    SleepLine,
     TickResult,
     TodayView,
     Trigger,
@@ -132,6 +133,13 @@ class HelpersSource(Protocol):
     """R11: the Helpers section's maker (`helpers.brief.HelpersBrief`); None = nothing to say."""
 
     async def section(self, uid: str, tz: tzinfo, day: date) -> HelpersSection | None: ...
+
+
+class SleepSource(Protocol):
+    """R7 D18 (I1): last night for the console's brief (`r7_wiring.mobile_sleep`, Part D's
+    `services["brief"].sleep`); None = no night. Never in the e-mailed copy or the AI input."""
+
+    async def sleep(self, uid: str, tz: tzinfo, day: date) -> SleepLine | None: ...
 
 
 async def _own_section(work: Awaitable[T], failed: Callable[[SectionState], T]) -> T | None:
@@ -286,6 +294,7 @@ class BriefService:
         helpers: HelpersSource | None = None,
         reads: BackgroundReads | None = None,
         mail_max_reads: int = 30,
+        sleep: SleepSource | None = None,
     ) -> None:
         self._store = store
         self._google = google
@@ -310,6 +319,7 @@ class BriefService:
         self._home = home_overnight  # R3: Home overnight section (None: not wired)
         self._vitals = vitals  # R4 I1: Vitals section (None: not wired); omitted when empty
         self._helpers = helpers  # R11: Helpers section (None: not wired); omitted when empty
+        self._sleep = sleep  # R7 D18: the console's sleep line (None: not wired)
 
     # ---- views --------------------------------------------------------------------------------
 
@@ -518,13 +528,30 @@ class BriefService:
             "vitals": await self._vitals_section(uid, tz, day),
             "helpers": await self._helpers_section(uid, tz, day),
         }
+        sleep = await self._sleep_line(uid, tz, day)
         if all(v is None for v in extras.values()):
-            return got
+            if sleep is None:
+                return got
+            return Collected(
+                data=got.data.model_copy(update={"sleep": sleep}), snippets=got.snippets
+            )
         status = got.data.sections_status.model_copy(
             update={k: (v.state if v is not None else "ok") for k, v in extras.items()}
         )
-        data = got.data.model_copy(update={**extras, "sections_status": status})
+        data = got.data.model_copy(update={**extras, "sections_status": status, "sleep": sleep})
         return Collected(data=data, snippets=got.snippets)
+
+    async def _sleep_line(self, uid: str, tz: ZoneInfo, day: date) -> SleepLine | None:
+        """R7 D18: last night's one line, or None (no source, no night, slow, failed, wrong shape).
+        It has no section state: a night that can't be read is simply not shown."""
+        if self._sleep is None:
+            return None
+        try:
+            got = await asyncio.wait_for(self._sleep.sleep(uid, tz, day), EXTRA_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - one line never fails the brief
+            log.warning("brief: no sleep line", extra={"reason": type(exc).__name__})
+            return None
+        return got if isinstance(got, SleepLine) else None
 
     async def _vitals_section(self, uid: str, tz: ZoneInfo, day: date) -> VitalsSection | None:
         """R4 I1 (W10): the Vitals board's warnings; no setting, omitted when there is nothing."""

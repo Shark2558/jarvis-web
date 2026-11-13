@@ -14,6 +14,7 @@
 - `mobile_phrases(app)` / `install_mobile_phrases(app)`: the parts' No-AI phrase routers
   (`services["phrases"]`), put into `BrainMode` once, after the helpers' and R11.1's own.
 - `mobile_brief(app)`: the parts' morning-brief contributors (`services["brief"]`).
+- `mobile_sleep(app)`: the brief's sleep line (`BriefData.sleep`) from Part D's contributor (I1).
 - `door_handlers(app)`: {door route: handler} from the parts that own each route (`DOOR_OWNER`),
   for Part C's door (`/phone/v1/<route>`).
 - `install_app_lock(app)`: the app lock's slot (D21). Added BEFORE R6's show lock, so it runs
@@ -27,6 +28,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, MutableMapping
+from datetime import date, tzinfo
 from importlib import import_module
 from typing import Any
 
@@ -39,6 +41,7 @@ from jarvis.api.r4_wiring import _notifier
 from jarvis.api.sos import router as sos_router
 from jarvis.api.vision import router as vision_router
 from jarvis.api.watch import router as watch_router
+from jarvis.brief.models import SleepLine
 from jarvis.config import Settings
 from jarvis.logging import get_logger
 from jarvis.mobile.ports import (
@@ -187,6 +190,28 @@ def install_mobile_phrases(app: FastAPI) -> None:
 def mobile_brief(app: FastAPI) -> tuple[Any, ...]:
     """The parts' brief contributors (`helpers.ports.BriefContributor`)."""
     return tuple(c for p in _parts(app).values() if (c := p.services.get("brief")) is not None)
+
+
+class MobileSleep:
+    """R7 D18 (I1): the brief's sleep line from the part that offers it (`services["brief"]`
+    with a `sleep(uid, tz, day)`: Part D's `SleepBrief`), read late. Not a Helpers contributor:
+    that section is e-mailed and sent to Telegram, and this line never is."""
+
+    def __init__(self, app: FastAPI) -> None:
+        self._app = app
+
+    async def sleep(self, uid: str, tz: tzinfo, day: date) -> SleepLine | None:
+        for part in _parts(self._app).values():
+            read = getattr(part.services.get("brief"), "sleep", None)
+            if callable(read):
+                got = await read(uid, tz, day)
+                return got if isinstance(got, SleepLine) else None
+        return None
+
+
+def mobile_sleep(app: FastAPI) -> MobileSleep:
+    """The source `BriefService(sleep=...)` reads (`api/app.py` `build_brief_service`)."""
+    return MobileSleep(app)
 
 
 def door_handlers(app: FastAPI) -> dict[str, PhoneHandler]:

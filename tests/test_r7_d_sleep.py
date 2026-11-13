@@ -134,5 +134,6 @@ def test_another_app_comes_after_the_phone_and_is_named_neutrally() -> None:
     assert n is not None and n.source == "phone"
     alone = last_night(DAY, [app_night])
     assert alone is not None and alone.source == "app"
-    # the brief's pinned shape knows watch / phone / typed only: an app on his phone is "phone"
-    assert sleep_line(alone).source == "phone"
+    # I1: the brief's pinned shape knows "app" too, so another health app is named as itself
+    assert sleep_line(alone).source == "app"
+    assert brief_text(sleep_line(alone)).endswith("· from another health app")

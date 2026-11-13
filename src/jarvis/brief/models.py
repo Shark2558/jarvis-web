@@ -256,12 +256,13 @@ class SleepLine(Frozen):
     """R7 D18, I0 seam 23 (the pinned API shape): last night's sleep, as Part D's day builder kept
     it, for ONE fixed line in the console's brief ("Sleep: 6 h 40 min, 23:50 to 06:30 · from your
     watch"). `start` and `end` are his local times. Never in the e-mailed inbox copy or on
-    Telegram (owner question 19, default no): `render.render_text` does not read it."""
+    Telegram (owner question 19, default no): `render.render_text` does not read it. `source`
+    "app" (I1) is a night another health app on his phone wrote ("from another health app")."""
 
     minutes: int = Field(ge=0, le=24 * 60)
     start: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     end: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
-    source: Literal["watch", "phone", "typed"]
+    source: Literal["watch", "phone", "app", "typed"]
 
 
 class SectionsStatus(Frozen):

@@ -889,6 +889,13 @@ def test_the_brief_carries_one_pinned_sleep_line() -> None:
         "end": "06:30",
         "source": "watch",
     }
+    # I1 (Workshop decision): "app" names a night from another health app honestly
+    assert set(get_args(SleepLine.model_fields["source"].annotation)) == {
+        "watch",
+        "phone",
+        "app",
+        "typed",
+    }
     for bad in (
         {"minutes": -1},
         {"minutes": 24 * 60 + 1},

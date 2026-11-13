@@ -229,9 +229,11 @@ async function put(it) {
 }
 
 // ---- opening, and the worker -------------------------------------------------------------------------------------
+const locked = () => document.documentElement.dataset.locked === 'device';
 let opening = null;
 /** Opens the tray (one opening at a time: the launch word and "items are waiting" may both ask). */
 function open() {
+  if (locked()) return Promise.resolve(0); // the app lock's cover is up: the tray (names, sizes, Discard) never shows over it
   if (!signedIn()) { wanted = true; return Promise.resolve(0); } // signed out: nothing shown, nothing asked
   wanted = false;
   if (!opening) opening = show().finally(() => { opening = null; });

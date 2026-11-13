@@ -92,8 +92,10 @@ async function partCall(name, method, arg) {
   }
 }
 const partOpen = (name) => partCall(name, 'open', { via: 'launch' });
+const locked = () => document.documentElement.dataset.locked === 'device';
 function act(l) {
   const D = window.JarvisDeck;
+  if (locked()) { keep(l); return; } // the app lock's cover is up: the launch waits (the unlock reloads the page)
   if (l.do === 'talk') talk();
   else if (l.do === 'look') { if (D) D.open('camera', { focus: true }); partCall('panel', 'choose', 'look'); } // never a camera
   else if (l.do === 'sos') partOpen('sos');

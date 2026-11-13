@@ -1,2 +1,37 @@
-/* src/jarvis/api/static/console-r7-phone.css -- R7 Part C (docs/plans/r7-mobile.md D0): placement only for the Phone app card and the unlock cover.
-   Existing tokens and classes; no new colours, fonts, radii or shadows. I0 stub: Part C fills it (at most 150 lines). */
+/* src/jarvis/api/static/console-r7-phone.css -- R7 Part C (docs/plans/r7-mobile.md D0): placement only for
+   Integrations -> Phone app (console-r7-phone.js), the app lock's unlock cover and Privacy -> This device
+   (console-r7-lock.js). Reuses the Integrations card (.integ / .ihead / .ibody / .inote), the confirm dialog
+   (.bdialog), the sign-in gate (.gate / .gate-card / .cta / .core) and the Privacy rows (.pv-*). Existing tokens
+   only: no new colour, font, radius or shadow. Touch targets >= 44 px on phones; no horizontal scroll. */
+
+/* ---- Integrations -> Phone app ---- */
+.integ.phonelink{margin-top:10px}
+.integ.phonelink .phones{list-style:none;margin:8px 0 0;padding:0}
+.integ.phonelink .phone{padding:8px 0;border-top:1px solid var(--line-2)}
+.integ.phonelink .phone:first-child{border-top:0;padding-top:2px}
+.integ.phonelink .phone b{overflow-wrap:anywhere}
+.integ.phonelink .phone .fine{margin:4px 0 0;overflow-wrap:anywhere}
+.integ.phonelink .phone .btn.bact{margin-top:8px}
+.integ.phonelink .pactions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.integ.phonelink .pactions .btn.bact{margin-top:0}
+.integ.phonelink .fine{font-size:12.5px;color:var(--ink-3);overflow-wrap:anywhere}
+.integ.phonelink[data-state="unlinked"] .istate{color:var(--ink-3)}
+#phoneNote .btn{margin:8px 0 0;display:inline-flex;align-items:center;text-decoration:none}
+
+/* the code (the same type as the Telegram and Home link codes) */
+#phoneDialog .pcode{margin:10px 0 0;font:600 22px/1.2 var(--tech);letter-spacing:.2em;color:var(--ink);overflow-wrap:anywhere}
+#phoneDialog .fine{font-size:12.5px;color:var(--ink-3)}
+
+/* ---- the unlock cover: the sign-in gate's own card, above the console's gate ---- */
+.gate.r7lock{z-index:95}
+.gate.r7lock[hidden]{display:none}
+.r7lock .gate-card .btn{width:100%;min-height:44px;margin-top:12px}
+.r7lock .gate-card .fine{min-height:1.4em;margin:12px auto 0;max-width:32ch}
+html[data-locked="device"] #app{visibility:hidden}
+
+/* ---- Privacy -> This device ---- */
+#r7LockSet .pv-acts .btn{margin-top:0}
+
+@media (max-width:760px){
+  .integ.phonelink .btn.bact,#phoneDialog .btn,#r7LockSet .btn{min-height:44px}
+}

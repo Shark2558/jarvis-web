@@ -74,7 +74,7 @@ async def test_with_a_passkey_the_code_needs_a_proof_bound_to_its_id(app: Any) -
     async with browser(app) as c:
         auth = await add_passkey(c)
         r = await c.post("/v1/phone/link-code", json={}, headers=CSRF)
-        assert r.status_code == 403 and r.json()["error"] == "passkey_required"
+        assert r.status_code == 200 and r.json()["needs"] == "passkey" and "code" not in r.json()
         target = r.json()["target"]
         assert target.startswith("pl_") and len(target) == 15
         # a proof made for another offer is refused, and the code is not shown

@@ -60,7 +60,7 @@ async def locked(c: AsyncClient) -> bool:
 
 async def unlock(c: AsyncClient, auth: SoftAuthenticator) -> Any:
     r = await c.post("/v1/session/unlock", json={}, headers=CSRF)
-    assert r.status_code == 403 and r.json()["error"] == "passkey_required", r.text
+    assert r.status_code == 200 and r.json()["unlocked"] is False, r.text
     target = r.json()["target"]
     body = {"proof": await proof(c, auth, "device_unlock", target)}
     return await c.post("/v1/session/unlock", json=body, headers=CSRF)
@@ -121,7 +121,7 @@ async def test_a_write_or_the_im_here_call_counts(app: Any) -> None:
         app.state.phone_clock.advance(4 * 60)
         assert not await locked(phone)
         r = await phone.post("/v1/phone/link-code", json={}, headers=CSRF)
-        assert r.status_code == 403  # a write (it needs a passkey here), and it counted
+        assert r.json()["needs"] == "passkey"  # a write (it asks for the passkey), and it counted
         app.state.phone_clock.advance(4 * 60)
         assert not await locked(phone)
         app.state.phone_clock.advance(IDLE + 1)
@@ -162,7 +162,7 @@ async def test_every_never_locked_route_works_and_nothing_else_does(app: Any) ->
         )
         assert r.status_code != 423
         r = await phone.post("/v1/session/unlock", json={}, headers=CSRF)
-        assert r.status_code == 403  # the unlock route answers (it wants the passkey)
+        assert r.status_code == 200 and r.json()["unlocked"] is False  # it wants the passkey
         open_ = []
         tried = 0
         for path, methods in http_routes(app):
@@ -213,7 +213,7 @@ async def test_the_unlock_route_is_cookie_only_and_rate_limited(app: Any) -> Non
             (await phone.post("/v1/session/unlock", json={}, headers=CSRF)).status_code
             for _ in range(6)
         ]
-        assert codes[:5] == [403] * 5 and codes[5] == 429
+        assert codes[:5] == [200] * 5 and codes[5] == 429
 
 
 async def test_the_page_can_only_switch_the_app_mark_on(app: Any) -> None:
@@ -231,7 +231,7 @@ async def test_switching_the_lock_off_takes_the_passkey_on_takes_nothing(app: An
     async with browser(app, from_app=True) as phone:
         auth = await armed_phone(app, phone)
         r = await phone.put("/v1/session/lock", json={"on": False}, headers=CSRF)
-        assert r.status_code == 403 and r.json()["error"] == "passkey_required"
+        assert r.status_code == 200 and r.json()["needs"] == "passkey" and r.json()["on"] is True
         target = r.json()["target"]
         body = {"on": False, "proof": await proof(phone, auth, "device_unlock", target)}
         r = await phone.put("/v1/session/lock", json=body, headers=CSRF)

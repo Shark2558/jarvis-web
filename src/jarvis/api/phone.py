@@ -3,18 +3,21 @@
 
 Owner-only console routes (`require_auth`; writes need the CSRF header):
     GET  /v1/phone                       the card: linked phones, a waiting code, the limit
-    POST /v1/phone/link-code {id?, proof?}   D5: with passkeys in force, 403 passkey_required
-                                         {target: "pl_<12 hex>"} until a `phone_link` check bound
-                                         to that offer; with none, a Google sign-in < 5 minutes
-                                         old. Then {code, expires_in_s: 600}.
+    POST /v1/phone/link-code {id?, proof?}   D5: with passkeys in force, first {needs: passkey,
+                                         target: "pl_<12 hex>"}, then the code only for a
+                                         `phone_link` check bound to that offer; with none, a
+                                         Google sign-in < 5 minutes old. {code, expires_in_s: 600}
     POST /v1/phone/{device}/unlink       the door closes at once (`phone_unlinked`, info)
 The session routes (D21; the app lock's own and "Sign out everywhere"):
     POST /v1/session/app                 this cookie session is the installed app's (only ON)
     POST /v1/session/here                "I'm here" (counted by the lock's check, as a write)
     GET  /v1/session/lock                {app, on, armed, waiting, minutes}
     PUT  /v1/session/lock {on, proof?}   ON takes nothing; OFF takes a device_unlock passkey check
-    POST /v1/session/unlock {proof?}     never locked; 403 passkey_required {target: "ss_<24>"}
+                                         ({needs: passkey, target} first)
+    POST /v1/session/unlock {proof?}     never locked; locked: {unlocked: false, target: "ss_<24>"}
                                          until a device_unlock check bound to THIS session
+(A "first" answer is a 200 carrying the target, because the console's transport keeps only the
+error code of a refusal; a proof that fails is a 403.)
     POST /v1/session/end-all             R6's "sessions valid after" mark: every older cookie of
                                          the owner dies within 3 s; this browser is stamped again
 Public, cookie-less (D4-D6; never a cookie read or set by the door):
@@ -212,7 +215,7 @@ async def _code_proof(
     if in_force:
         if body.id is None or body.proof is None:
             target = await svc.offer(uid)
-            return _err(403, "passkey_required", NEEDS_PASSKEY, target=target), ""
+            return _json(200, {"needs": "passkey", "target": target, "detail": NEEDS_PASSKEY}), ""
         perms = request.app.state.permissions
         try:
             how = await perms.check_purpose(uid, "phone_link", body.id, body.proof)
@@ -289,7 +292,10 @@ async def lock_switch(request: Request) -> JSONResponse:
             return r
         target = ensure_session_id(request.session)
         if body.proof is None:
-            return _err(403, "passkey_required", OFF_PASSKEY, target=target)
+            state = await _lock_state(request, svc, uid)
+            return _json(
+                200, {**state, "needs": "passkey", "target": target, "detail": OFF_PASSKEY}
+            )
         try:
             how = await request.app.state.permissions.check_purpose(
                 uid, "device_unlock", target, body.proof
@@ -324,7 +330,7 @@ async def unlock(request: Request) -> JSONResponse:
         svc.lock.touch(request.session, now)
         return _json(200, {"unlocked": True})
     if body.proof is None:
-        return _err(403, "passkey_required", LOCK_PASSKEY, target=target)
+        return _json(200, {"unlocked": False, "target": target, "detail": LOCK_PASSKEY})
     try:
         how = await request.app.state.permissions.check_purpose(
             uid, "device_unlock", target, body.proof
@@ -413,8 +419,12 @@ async def phone_door(request: Request, route: str) -> Response:
     body = await _capped(request, DOOR_CAPS[name])
     if body is None:
         return _bare(refuse("cap", name).status)
-    got = await svc.gate.admit(name, request.headers.getlist("x-jarvis-phone"), body,
-                               client_key(request))  # fmt: skip
+    try:
+        got = await svc.gate.admit(name, request.headers.getlist("x-jarvis-phone"), body,
+                                   client_key(request))  # fmt: skip
+    except Exception as exc:  # noqa: BLE001 - the phone store can't be read: never "admitted"
+        log.error("phone door unreadable", extra={"route": name, "error": type(exc).__name__})
+        return _bare(503)
     if isinstance(got, Refusal):
         return _bare(got.status)
     from jarvis.api.r7_wiring import door_handlers  # late: r7_wiring imports this module

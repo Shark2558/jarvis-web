@@ -185,9 +185,10 @@ async def add_passkey(
 async def link_code(c: AsyncClient, auth: SoftAuthenticator | None = None) -> str:
     """Integrations -> Phone app -> Link a phone, with the passkey (or the fresh sign-in)."""
     r = await c.post("/v1/phone/link-code", json={}, headers=CSRF)
-    if r.status_code == 200:
+    assert r.status_code == 200, r.text
+    if "code" in r.json():
         return str(r.json()["code"])
-    assert r.status_code == 403 and r.json()["error"] == "passkey_required", r.text
+    assert r.json()["needs"] == "passkey", r.text
     target = r.json()["target"]
     assert auth is not None, "a passkey is in force: pass the authenticator"
     body = {"id": target, "proof": await proof(c, auth, "phone_link", target)}

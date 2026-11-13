@@ -272,6 +272,17 @@ async def test_a_body_over_its_route_cap_is_refused_before_it_is_read(
     assert r.status_code == 401 and r.content == b""
 
 
+async def test_a_store_that_cannot_be_read_admits_nothing(app: Any, phone: tuple[str, Any]) -> None:
+    device, key = phone
+
+    async def broken(device_id: str) -> Any:
+        raise RuntimeError("store down")
+
+    phone_service(app).store.find = broken
+    r = await door(app, key, device, "hello", HELLO)
+    assert r.status_code == 503 and r.content == b""
+
+
 async def test_without_mobile_the_door_is_not_there(settings: Settings) -> None:
     async with phone_app(settings, mobile_enabled=False) as off:
         r = await raw(off, "/phone/v1/hello", b"{}", "x")

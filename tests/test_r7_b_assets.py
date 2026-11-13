@@ -188,3 +188,40 @@ def test_the_object_model_is_refused_until_its_licence_is_read() -> None:
     picked = va.plan_models(object_licence="Apache-2.0")
     assert [m.name for m in picked] == [assets.POSE_MODEL, assets.OBJECT_MODEL]
     assert [m.name for m in va.plan_models(object_licence=None)] == [assets.POSE_MODEL]
+
+
+def test_the_models_fetched_later_are_pinned_and_then_held_to_their_sum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # CI or the owner's laptop (storage.googleapis.com is refused here): a fake download stands in
+    va = _script()
+    copy = tmp_path / "vision"
+    shutil.copytree(VISION, copy)
+    bytes_of = {assets.POSE_MODEL: b"pose model v1", assets.OBJECT_MODEL: b"object model v1"}
+    monkeypatch.setattr(va, "download", lambda url: bytes_of[url.rsplit("/", 1)[-1]])
+    files = dict(json.loads((copy / assets.RELEASE / "MANIFEST.json").read_text())["files"])
+    files.update(va.fetch_models(copy, assets.RELEASE, "Apache-2.0"))
+    va.write_manifest(copy, assets.RELEASE, files)
+    assert va.check(copy, assets.RELEASE) == []
+    doc = json.loads((copy / assets.RELEASE / "MANIFEST.json").read_text())
+    assert doc["models"] == {}  # nothing left "not installed"
+    pinned = doc["files"][assets.POSE_MODEL]
+    assert pinned["sha256"] == hashlib.sha256(b"pose model v1").hexdigest()
+    assert pinned["type"] == "application/octet-stream" and pinned["licence"] == va.MODELS_LICENCE
+    words = (copy / va.MODELS_LICENCE).read_text(encoding="utf-8")
+    assert f"{assets.OBJECT_MODEL}: Apache-2.0" in words
+    assert licence_from_text(words) == "Apache-2.0"
+    monkeypatch.setattr(console, "_VISION", copy)
+    console.vision_files.cache_clear()
+    try:
+        assert assets.installed(console.vision_files(assets.RELEASE))["pose"] is True
+    finally:
+        console.vision_files.cache_clear()
+    bytes_of[assets.POSE_MODEL] = b"a changed pose model"
+    with pytest.raises(SystemExit, match="pinned before"):
+        va.fetch_models(copy, assets.RELEASE, "Apache-2.0")
+
+
+def test_the_script_says_ok_with_its_size(capsys: pytest.CaptureFixture[str]) -> None:
+    assert _script().main(["check"]) == 0
+    assert f"{assets.RELEASE}: OK (22." in capsys.readouterr().out

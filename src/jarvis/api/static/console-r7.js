@@ -16,7 +16,8 @@
 // NOTHING before sign-in (BRIEF-COMMON.md): it waits for jarvis:ready.
 //   window.JarvisMobile  { mk(tag, cls, text) -> element, api(path, opts) -> Promise<json>,
 //                          part(name, obj) -> obj   a part publishes what others may call,
-//                          parts                    {send, vision, links, share, camera, panel, phone, lock, sos} }
+//                          parts                    {send, vision, links, share, camera, panel, phone, lock, sos},
+//                          when(iso, withTime)      "12 Nov, 14:05" (or "12 Nov"), '' for anything that is not a date }
 const PARTS = ['send', 'vision', 'links', 'share', 'camera', 'panel', 'phone', 'lock', 'sos'];
 const parts = {};
 
@@ -39,7 +40,18 @@ function part(name, obj) {
   return obj;
 }
 
-window.JarvisMobile = { mk, api, part, parts };
+// ONE date shape for every R7 screen ("12 Nov, 14:05"), whatever the browser's own locale (a US one would say
+// "Nov 12, 02:05 PM"); the same words as the brief and the server. Anything that is not a date reads as ''.
+const WHEN_TIME = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+const WHEN_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+function when(iso, withTime) {
+  if (!(typeof iso === 'string' && iso && iso.length <= 40) && !(iso instanceof Date)) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return (withTime ? WHEN_TIME : WHEN_DATE).format(d);
+}
+
+window.JarvisMobile = { mk, api, part, parts, when };
 
 for (const href of ['/static/console-r7-share.css', '/static/console-camera.css',
   '/static/console-r7-phone.css', '/static/console-r7-sos.css']) {

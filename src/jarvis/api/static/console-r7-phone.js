@@ -32,19 +32,12 @@ function detailOf(e) {
   const m = e && typeof e.message === 'string' ? txt(e.message, 300) : '';
   return m && !m.startsWith('[object') && !/^[a-z0-9_.-]+$/i.test(m) ? m : '';
 }
-function when(iso, withTime) {
-  const d = new Date(txt(iso, 40) || NaN);
-  if (isNaN(d)) return '';
-  const o = withTime ? { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' } : { day: 'numeric', month: 'short', year: 'numeric' };
-  try { return new Intl.DateTimeFormat([], o).format(d); } catch (_) { return ''; }
-}
-
 /** GET /v1/phone, checked field by field. */
 function normal(raw) {
   const d = obj(raw);
   if (!d || d.enabled !== true) return { enabled: false, phones: [], max: 3, code: null };
   const phones = arr(d.phones).map(obj).filter((p) => p && typeof p.id === 'string' && DEVICE.test(p.id)).map((p) => ({
-    id: p.id, model: txt(p.model, 40) || 'Phone', linked: when(p.linked_at, false), seen: when(p.last_seen, true),
+    id: p.id, model: txt(p.model, 40) || 'Phone', linked: M.when(txt(p.linked_at, 40), false), seen: M.when(txt(p.last_seen, 40), true),
     version: txt(p.app_version, 20), can: CAN.filter(([k]) => obj(p.can) && p.can[k] === true).map(([, w]) => w),
   }));
   const code = obj(d.code), left = code && Number.isInteger(code.seconds_left) ? code.seconds_left : 0;

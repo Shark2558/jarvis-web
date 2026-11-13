@@ -414,8 +414,8 @@ async function loadResults() {
   try { v = await M.api(P + '/results?days=90'); } catch (e) { say(listState, failed(e), 'bad'); return; }
   const rows = (v && Array.isArray(v.results) ? v.results : []).map((k) => {
     const r = mk('div', 'hp-row'), t = mk('div', 'hp-txt'), a = mk('div', 'hp-acts');
-    const at = new Date(String(k.kept_at || ''));
-    t.append(mk('b', '', (TASK_WORD[k.task] || 'Result') + (isNaN(at) ? '' : ' \u00b7 ' + at.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))),
+    const at = M.when(k.kept_at, true);
+    t.append(mk('b', '', (TASK_WORD[k.task] || 'Result') + (at ? ' \u00b7 ' + at : '')),
       mk('small', '', words(k).slice(0, 300)));
     const del = button('Delete', '', () => forget(k.id));
     del.setAttribute('aria-label', 'Delete this kept result');

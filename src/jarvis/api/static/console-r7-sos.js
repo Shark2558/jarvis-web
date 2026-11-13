@@ -332,7 +332,8 @@ function contactRow(c, telegram) {
   const id = CID.test(c.id) ? c.id : '';
   const label = txt(c.label, 40);
   if (!id || !label) return null;
-  const when = c.joined === true && typeof c.joined_at === 'string' && !isNaN(new Date(c.joined_at)) ? ' on ' + new Date(c.joined_at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '';
+  const day = c.joined === true ? M.when(c.joined_at, false) : '';
+  const when = day ? ' on ' + day : '';
   const who = c.joined === true && typeof c.tg_hint === 'string' && c.tg_hint ? ' (Telegram account ' + txt(c.tg_hint, 8) + ')' : '';
   const how = c.joined === true ? 'Joined on Telegram' + when + who : c.pending === true ? 'Join link sent: waiting for them to press Start' : 'Not on Telegram yet';
   const phone = typeof c.phone_hint === 'string' && c.phone_hint ? ' \u00b7 SMS ' + txt(c.phone_hint, 8) : '';
@@ -372,8 +373,7 @@ function linkBox() {
 function lastLine(v) {
   const l = v.last;
   if (!l || typeof l.at !== 'string') return 'No SOS has been sent.';
-  const at = new Date(l.at);
-  const when = isNaN(at) ? '' : at.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const when = M.when(l.at, true);
   const n = int(l.reached, 0, 5) || 0;
   return 'Last: ' + (TITLE[l.kind] || 'SOS') + (when ? ' at ' + when : '') + (l.outcome === 'refused' ? ', over the limit, not sent.' : ', reached ' + n + '.');
 }

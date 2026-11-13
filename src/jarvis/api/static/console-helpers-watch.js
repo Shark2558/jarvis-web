@@ -26,11 +26,11 @@ function hm(minutes) {
   if (h && r) return h + ' h ' + r + ' min';
   return h ? h + ' h' : r + ' min';
 }
+const when = (iso, withTime) => (window.JarvisMobile && window.JarvisMobile.when ? window.JarvisMobile.when(iso, withTime) : ''); // console-r7.js
 function synced(iso) {
   const at = typeof iso === 'string' ? new Date(iso) : null;
   if (!at || isNaN(at)) return 'Your phone hasn\u2019t synced yet. Link the JARVIS app in Integrations \u2192 Phone app and open it once.';
-  return 'Last synced: ' + at.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ', '
-    + at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.';
+  return 'Last synced: ' + when(iso, true) + '.';
 }
 
 function todayRows(t) {

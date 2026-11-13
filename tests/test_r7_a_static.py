@@ -76,7 +76,7 @@ def test_the_launch_reader_never_starts_or_unlocks_the_microphone() -> None:
         "KeyboardEvent",
     ):
         assert banned not in code, banned
-    talk = code[code.index("function talk()") : code.index("async function partOpen")]
+    talk = code[code.index("function talk()") : code.index("async function partCall")]  # I1
     assert "mic.focus()" in talk and "loop.say(TALK_LINE)" in talk
     assert "const TALK_LINE = 'Tap to talk';" in code
 

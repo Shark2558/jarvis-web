@@ -20,6 +20,7 @@ from httpx import ASGITransport, AsyncClient
 import jarvis.api.r11_wiring as r11
 from jarvis.api import create_app
 from jarvis.api.console import APP_ASSETS
+from jarvis.api.r7_wiring import mobile_clock_jobs, mobile_daily_jobs
 from jarvis.api.r11_1_wiring import fix_clock_jobs
 from jarvis.api.scheduler_auth import WATCHDOG_PATH, require_scheduler
 from jarvis.config import Settings
@@ -76,10 +77,15 @@ async def test_the_helpers_start_with_four_empty_parts_and_both_composites(
         assert isinstance(st.helpers_clock, Composite)
         jobs = st.helpers_clock.job_names
         fixes = {j.name for j in fix_clock_jobs(a)}  # R11.1: the parts' jobs ride the same clock
-        assert sorted(set(jobs) - fixes) == sorted(j for p in PARTS for j in CLOCK_JOBS[p]), jobs
+        mobile = {j.name for j in mobile_clock_jobs(a)}  # R7 (I1): Part D's watch_stale too
+        assert mobile == {"watch_stale"} and mobile <= set(jobs)
+        own = set(jobs) - fixes - mobile
+        assert sorted(own) == sorted(j for p in PARTS for j in CLOCK_JOBS[p]), jobs
         assert fixes == {"series_checkin", "photos_import", "face_groups_poll"}  # R11.1 A, C
         assert fixes <= set(jobs)
-        assert st.helpers_daily.job_names == ("breach_watch", "helpers_sweep")
+        r7_daily = tuple(j.name for j in mobile_daily_jobs(a))  # R7 (I1): the parts' sweeps
+        assert "body_sweep" in r7_daily
+        assert st.helpers_daily.job_names == ("breach_watch", *r7_daily, "helpers_sweep")
         names = [j.name for j in st.tick_jobs]
         assert names[-2:] == ["helpers_clock", "helpers_daily"]
         assert st.brief._helpers is not None  # noqa: SLF001 - the brief's Helpers source
@@ -160,7 +166,8 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
         assert st.r11_parts["nudges"].ready == "not built yet"
         r111 = tuple(j.name for j in fix_clock_jobs(a))  # R11.1 A and C: on the same clock
         assert r111 == ("series_checkin", "photos_import", "face_groups_poll")
-        assert st.helpers_clock.job_names == ("bills_due", *r111)
+        r7 = tuple(j.name for j in mobile_clock_jobs(a))  # R7 (I1): Part D's watch_stale
+        assert st.helpers_clock.job_names == ("bills_due", *r111, *r7)
         gw = st.gateway
         assert {"bill_list", "bill_pay_prepare"} <= {s.name for s in gw.registry.specs()}
         res = await gw.execute(ToolCall(id="t1", name="bill_list", arguments={}), scope="u:s")
@@ -174,7 +181,7 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
         assert job.seen == [r11.owners_of(settings)]  # the configured owners, never a list passed
         status = await st.helpers_status.read()
         assert status is not None and status["jobs"]["bills_due"] == "ok"
-        assert set(status["jobs"]) == {"bills_due", *r111}  # every job ran and said how it went
+        assert set(status["jobs"]) == {"bills_due", *r111, *r7}  # every job ran and said how
 
 
 async def test_with_home_on_the_clock_is_added_to_the_watchdog_once(settings: Settings) -> None:

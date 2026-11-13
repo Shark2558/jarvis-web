@@ -27,7 +27,7 @@ tests/r7_fakes_c.py):
                      unlinks the phone and disarms it
     skew             the clock window is exact (120 s in, 121 s out)
     body_cap         the link body is cut at its cap
-    phone_rate       a phone's 31st request in a minute is refused
+    phone_rate       a phone's 31st request in a minute is refused with a bare 429
     end_all keeps    "Sign out everywhere" keeps the pressing browser's app mark
 
 Negative controls (each must make EVERY case it names fail, so this part cannot pass whatever
@@ -502,7 +502,7 @@ async def phone_rate() -> list[str]:
         async with browser(app) as c:
             device, key = await linked_phone(app, c)
         codes = [(await door(app, key, device, "hello", HELLO)).status_code for _ in range(31)]
-        _check(f, codes[:30] == [200] * 30 and codes[30] == 401, "the 31st request a minute")
+        _check(f, codes[:30] == [200] * 30 and codes[30] == 429, "the 31st request a minute")
     return f
 
 

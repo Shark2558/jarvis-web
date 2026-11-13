@@ -6,6 +6,7 @@ Telegram description): `from None`, so no chained httpx error carries the addres
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 import httpx
@@ -18,6 +19,7 @@ API = "https://api.telegram.org"
 MAX_RESPONSE_BYTES = 1_000_000
 TIMEOUT_S = 15.0
 CAPTION_MAX = 1024  # Telegram's limit for a photo caption
+PIN_ACCURACY_MAX_M = 1500  # Telegram's limit for a location's `horizontal_accuracy`
 
 
 class TelegramError(Exception):
@@ -118,6 +120,24 @@ class TelegramClient:
             },
             files={"photo": ("alert.jpg", jpeg, "image/jpeg")},
         )
+
+    async def send_location(
+        self, chat_id: int, latitude: float, longitude: float, *, accuracy_m: int | None = None
+    ) -> None:
+        """R7 D19 (Part D): an SOS map pin. The place travels only in this POST body, never in
+        the address, and is never logged: errors and logs name the method only. A place that is
+        not on Earth is refused before any call."""
+        if not (
+            math.isfinite(latitude)
+            and math.isfinite(longitude)
+            and -90.0 <= latitude <= 90.0
+            and -180.0 <= longitude <= 180.0
+        ):
+            raise TelegramError("sendLocation", "not a place on Earth")
+        payload: dict[str, Any] = {"chat_id": chat_id, "latitude": latitude, "longitude": longitude}
+        if isinstance(accuracy_m, int) and not isinstance(accuracy_m, bool) and accuracy_m >= 0:
+            payload["horizontal_accuracy"] = min(accuracy_m, PIN_ACCURACY_MAX_M)
+        await self.call("sendLocation", payload)
 
     async def answer_callback(self, callback_id: str, text: str = "") -> None:
         payload: dict[str, Any] = {"callback_query_id": callback_id}

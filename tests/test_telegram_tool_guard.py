@@ -101,6 +101,9 @@ TELEGRAM_SAFE = frozenset(
         "weather_now",
         "disaster_status",  # SACHET's public warnings for his district (fenced as outside text)
         "nudge_status",
+        # R7 D19 (Part D): the brain's one SOS tool: counts and times only, never a name or a
+        # number, and how he sends an SOS himself (it can never send one)
+        "sos_status",
         "freetime_list",
         "freetime_suggest",
         "pantry_list",

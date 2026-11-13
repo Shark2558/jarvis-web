@@ -19,8 +19,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---- a DOM ----------------------------------------------------------------------------------------------------------------
 class Ev { constructor(type, init) { this.type = type; this.detail = init && init.detail; this.defaultPrevented = false; this.isTrusted = !!(init && init.trusted); this.key = init && init.key; this.storageArea = init && init.storageArea; } preventDefault() { this.defaultPrevented = true; } }
 class Target {
-  constructor() { this.listeners = {}; }
-  addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); }
+  constructor() { this.listeners = {}; this.caught = {}; }
+  addEventListener(t, fn, opts) { const cap = opts === true || !!(opts && opts.capture); ((cap ? this.caught : this.listeners)[t] = (cap ? this.caught : this.listeners)[t] || []).push(fn); }
   removeEventListener(t, fn) { this.listeners[t] = (this.listeners[t] || []).filter((f) => f !== fn); }
   dispatchEvent(ev) { (this.listeners[ev.type] || []).slice().forEach((fn) => fn(ev)); return !ev.defaultPrevented; }
 }
@@ -44,20 +44,33 @@ class El extends Target {
   setAttribute(k, v) { this.attrs[k] = String(v); if (k === 'id') this.id = String(v); }
   getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; }
   removeAttribute(k) { delete this.attrs[k]; }
-  click() { if (this.disabled) return; const ev = new Ev('click'); ev.target = this; withTap(() => this.dispatchEvent(ev)); if (this.tagName === 'INPUT' && this.type === 'file') pickers.push(this); }
+  dispatchEvent(ev) { // a click bubbles to the document, as a browser's does
+    const ok = super.dispatchEvent(ev);
+    if (ev.type === 'click' && this.parentNode) this.parentNode.dispatchEvent(ev);
+    return ok;
+  }
+  click() { // a real tap: trusted, capture listeners first (document down to the target), then the target and its parents
+    if (this.disabled) return;
+    const ev = new Ev('click', { trusted: true }); ev.target = this;
+    const chain = []; for (let n = this.parentNode; n; n = n.parentNode) chain.unshift(n);
+    withTap(() => { chain.forEach((n) => (n.caught.click || []).slice().forEach((fn) => fn(ev))); this.focus(); this.dispatchEvent(ev); });
+    if (this.tagName === 'INPUT' && this.type === 'file') pickers.push(this);
+  }
+  contains(n) { for (let x = n; x; x = x.parentNode) if (x === this) return true; return false; }
+  closest(sel) { for (let n = this; n && n.tagName !== '#DOCUMENT'; n = n.parentNode) if (n.matches(sel)) return n; return null; }
   focus() { doc.activeElement = this; }
   cloneNode() { return new El(this.tagName); }
   getClientRects() { for (let n = this; n; n = n.parentNode) if (n.hidden) return []; return [{}]; }
   all() { return this.children.flatMap((c) => [c, ...c.all()]); }
-  matches(sel) { if (sel.startsWith('#')) return this.id === sel.slice(1); if (sel.startsWith('.')) return String(this.className).split(/\s+/).includes(sel.slice(1)); return this.tagName === sel.toUpperCase(); }
+  matches(sel) { if (sel.includes(',')) return sel.split(',').some((x) => this.matches(x.trim())); if (sel.startsWith('#')) return this.id === sel.slice(1); if (sel.startsWith('.')) return String(this.className).split(/\s+/).includes(sel.slice(1)); return this.tagName === sel.toUpperCase(); }
   querySelectorAll(sel) { return this.all().filter((n) => n.matches(sel)); }
   querySelector(sel) { return sel.includes(' ') ? null : this.querySelectorAll(sel)[0] || null; }
   getContext() { return this.tagName === 'CANVAS' ? ctx2d(this) : null; }
   toBlob(cb, type) { setTimeout(() => cb(new Blob([Buffer.from(this.px || [])], { type: type || 'image/png' })), 0); }
-  play() { return Promise.resolve(); }
+  play() { return cam.playHang ? new Promise(() => {}) : Promise.resolve(); }
   pause() {}
-  get videoWidth() { return this.srcObject ? W : 0; }
-  get videoHeight() { return this.srcObject ? H : 0; }
+  get videoWidth() { if (cam.blank > 0) { cam.blank -= 1; cam.zero = true; return 0; } cam.zero = false; return this.srcObject ? W : 0; }
+  get videoHeight() { return this.srcObject && !cam.zero ? H : 0; }
 }
 const text = (t) => { const n = new El('#text'); n._text = String(t); return n; };
 function pattern(w, h) { const d = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < d.length; i += 1) d[i] = PLANT[i % PLANT.length]; return d; }
@@ -85,7 +98,7 @@ const store = new Map();
 const localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
 let tap = false;
 function withTap(fn) { const was = tap; tap = true; try { return fn(); } finally { setTimeout(() => { tap = was; }, 0); } }
-const cam = { asked: 0, tracks: [] };
+const cam = { asked: 0, tracks: [], blank: 0, zero: false, playHang: false, held: [], wake: [] };
 const net = [];
 const door = [];
 function body(b) {
@@ -112,7 +125,12 @@ function sandbox(input) {
       objects: { installed: false, why: 'not installed' }, pose: { installed: false, why: 'not installed' } } },
   '/v1/vision/results': { kept: { id: 'vr_000000000001' } }, '/v1/vision/results?days=90': { sealed: true, results: [] } }, input.answers || {});
   const signed = { on: input.signed !== false };
-  const api = (p, opts) => { spy('api', p, opts); return Promise.resolve(answers[p] || {}); };
+  cam.playHang = input.play === 'hang'; cam.blank = input.blank || 0;
+  const api = (p, opts) => {
+    spy('api', p, opts); const a = answers[p];
+    if (a && a.__fail) { const e = new Error(a.__fail.message); e.status = a.__fail.status; return Promise.reject(e); }
+    return Promise.resolve(a || {});
+  };
   const sendDoor = {
     canAsk: () => (input.sees ? { ok: true, why: '' } : { ok: false, why: 'The brain answering now can’t see pictures.' }),
     ask: (f, t) => { door.push({ how: 'ask', name: f && f.name, text: t }); return Promise.resolve(true); },
@@ -129,10 +147,16 @@ function sandbox(input) {
     navigator: {
       userAgent: 'Mozilla/5.0 (Linux; Android 16)',
       get userActivation() { return { isActive: tap }; },
-      mediaDevices: { getUserMedia: (c) => { cam.asked += 1; cam.constraints = c; return Promise.resolve(stream()); } },
+      mediaDevices: { getUserMedia: (c) => {
+        cam.asked += 1; cam.constraints = c;
+        if (input.gum && input.gum.error) { const e = new Error('raw browser text: ' + input.gum.error); e.name = input.gum.error; return Promise.reject(e); }
+        if (input.gum && input.gum.hold) return new Promise((res) => cam.held.push(() => res(stream())));
+        return Promise.resolve(stream());
+      } },
+      wakeLock: input.wake ? { request: () => new Promise((res) => cam.wake.push(() => { const w = { released: false, release() { this.released = true; return Promise.resolve(); } }; cam.sentinels = (cam.sentinels || []).concat(w); res(w); })) } : undefined,
       sendBeacon: (p, b) => { spy('beacon', p, { body: b, method: 'POST' }); return true; },
     },
-    fetch: (p, o) => { spy('fetch', p, o); return Promise.resolve({ ok: false, status: 404, arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) }); },
+    fetch: (p, o) => { spy('fetch', p, o); return Promise.resolve({ ok: false, status: input.fetchStatus || 404, arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) }); },
     XMLHttpRequest: function XHR() { this.open = (m, p) => { this.m = m; this.p = p; }; this.send = (b) => spy('xhr', this.p, { body: b, method: this.m }); },
     WebSocket: function WS(p) { spy('websocket', p, {}); this.send = (b) => spy('websocket', p, { body: b, method: 'SEND' }); },
     createImageBitmap: (src) => Promise.resolve({ width: W, height: H, px: pattern(W, H), close() {} }),
@@ -157,29 +181,49 @@ function boot(input, names) {
 function camState(s) {
   const C = s.JarvisCamera, chip = doc.all().find((n) => String(n.className).includes('cam-chip'));
   return { live: C.live(), locked: C.locked(), chip: !!(chip && !chip.hidden && chip.parentNode), asked: cam.asked,
-    liveTracks: cam.tracks.filter((t) => t.readyState === 'live').length, stored: localStorage.getItem('jarvis_cam_off_v1') };
+    liveTracks: cam.tracks.filter((t) => t.readyState === 'live').length, stored: localStorage.getItem('jarvis_cam_off_v1'),
+    wakeHeld: (cam.sentinels || []).filter((w) => !w.released).length };
 }
 
 // ---- scenarios -------------------------------------------------------------------------------------------------------------
 async function camera(input) { // steps: [{op, ...}] -> the state after each
   const { s, win } = boot(input, ['console-camera.js']);
   const C = s.JarvisCamera, out = [];
+  // the camera's own button (inside #p-camera) and one elsewhere: a tap counts only on the first
+  const panel = doc.body.appendChild(new El('section')); panel.id = 'p-camera';
+  const own = panel.appendChild(new El('button')), elsewhere = doc.body.appendChild(new El('button'));
+  let job = null;
+  [own, elsewhere].forEach((b) => b.addEventListener('click', () => { if (job) { const j = job; job = null; j(); } }));
+  const tapped = (st, fn) => { // tap: true = on the camera's button, 'elsewhere' = a real tap on another part of the page
+    if (!st.tap) return fn();
+    let r; job = () => { r = fn(); }; (st.tap === 'elsewhere' ? elsewhere : own).click(); return r;
+  };
   for (const st of input.steps || []) {
     let ok = null, code = '';
     try {
       if (st.op === 'lock') C.lock(st.by || 'button');
-      else if (st.op === 'unlock') ok = st.tap ? withTap(() => C.unlock('panel')) : C.unlock('panel');
-      else if (st.op === 'start') { const p = st.tap ? withTap(() => C.start({})) : C.start({}); await p; ok = true; }
+      else if (st.op === 'unlock') ok = tapped(st, () => C.unlock('panel'));
+      else if (st.op === 'start') { const p = tapped(st, () => C.start({})); if (st.nowait) { p.catch(() => {}); ok = null; } else { await p; ok = true; } }
+      else if (st.op === 'release') { cam.held.splice(0).forEach((f) => f()); }
+      else if (st.op === 'wake') { cam.wake.splice(0).forEach((f) => f()); }
+      else if (st.op === 'stop') C.stop('panel');
       else if (st.op === 'hide') { doc.hidden = true; doc.dispatchEvent(new Ev('visibilitychange')); doc.hidden = false; }
       else if (st.op === 'chipStop') doc.all().find((n) => String(n.className).includes('cam-chip')).click();
       else if (st.op === 'voice') { const r = await s.JarvisVoiceCommands.handle(st.text, { source: 'voice', state: 'listening' }); ok = r.handled; code = (r.result && r.result.say) || r.id || ''; }
       else if (st.op === 'storage') { store.set('jarvis_cam_off_v1', st.value); if (st.value === null) store.delete('jarvis_cam_off_v1'); win.dispatchEvent(new Ev('storage', { trusted: st.trusted, key: 'jarvis_cam_off_v1', storageArea: localStorage })); }
       else if (st.op === 'frame') ok = !!C.frame();
-    } catch (e) { ok = false; code = e.code || String(e.message); }
+    } catch (e) { ok = false; code = e.code || e.name || String(e.message); }
     await settle();
     out.push(Object.assign({ op: st.op, ok, code }, camState(s)));
   }
   return { steps: out };
+}
+
+async function sealed(input) { // the engine as shipped: the five tasks, then the registry is closed
+  const { s } = boot(input, ['console-vision.js']);
+  const V = s.JarvisVision, before = V.tasks().map((t) => t.id);
+  const added = V.register({ id: 'mine', v: 1, input: 'both', run: () => ({ data: {} }), check: () => true });
+  return { before, added, after: V.tasks().map((t) => t.id) };
 }
 
 function kinds(v, seen) { // every value's kind in what a use case received, deeply
@@ -189,6 +233,8 @@ function kinds(v, seen) { // every value's kind in what a use case received, dee
   return here.concat(...Object.keys(v).map((k) => kinds(v[k], seen)));
 }
 async function engine(input) {
+  // the probe task below is registered by this scenario, so the shipped file's closing call is left out
+  input.files['console-vision.js'] = input.files['console-vision.js'].replace(/\nsealRegistry\(\);\n?/, '\n');
   const { s } = boot(input, ['console-vision.js']);
   const V = s.JarvisVision, got = [];
   V.register({ id: 'probe', v: 1, input: 'both', run: () => ({ data: input.probe, quality: { light: 0.5, sharp: 0.5 } }), check: (d) => !!d && d.n === 1 });
@@ -206,6 +252,13 @@ async function look(input) { // the Camera panel end to end, with the spy
   const metaEl = panel.appendChild(new El('span')); metaEl.id = 'cameraMeta';
   const form = doc.body.appendChild(new El('form')); const clip = form.appendChild(new El('button')); clip.id = 'attachBtn';
   const { s, signed } = boot(input, files);
+  if (input.runDelays) { // the i-th run answers after runDelays[i] ms, with light = (i+1)/10 so a stale answer shows
+    const orig = s.JarvisVision; let i = 0;
+    s.JarvisVision = Object.freeze(Object.assign({}, orig, { run: async (id, src, o) => {
+      const n = i; i += 1; const r = await orig.run(id, src, o); await wait(input.runDelays[n] || 0);
+      return id === 'quality' ? Object.freeze(Object.assign({}, r, { data: { light: (n + 1) / 10, sharp: 0.5 } })) : r;
+    } }));
+  }
   const fire = (name, detail) => doc.dispatchEvent(new Ev(name, { detail }));
   const press = (label) => { const b = doc.all().find((n) => n.tagName === 'BUTTON' && n.textContent === label && !n.hidden && n.getClientRects().length); if (!b) throw new Error('no button ' + label); b.click(); return b; };
   const marks = {};
@@ -218,6 +271,9 @@ async function look(input) { // the Camera panel end to end, with the spy
     else if (st.op === 'pick') { const p = pickers.pop(); p.files = [new File([Buffer.from(pattern(W, H))], 'label.png', { type: 'image/png' })]; p.dispatchEvent(new Ev('change')); }
     else if (st.op === 'wait') await wait(st.ms || 50);
     else if (st.op === 'mark') mark(st.name);
+    else if (st.op === 'release') cam.held.splice(0).forEach((f) => f());
+    else if (st.op === 'lock') s.JarvisCamera.lock('voice');
+    else if (st.op === 'wake') cam.wake.splice(0).forEach((f) => f());
     else if (st.op === 'close') { panel.hidden = true; fire('jarvis:panel', { id: 'camera', open: false }); }
     for (let i = 0; i < 6; i += 1) await settle();
   }
@@ -226,14 +282,20 @@ async function look(input) { // the Camera panel end to end, with the spy
   const sel = doc.getElementById('camTask');
   const disabled = doc.all().filter((n) => n.tagName === 'BUTTON' && n.disabled).map((b) => b.textContent);
   const notes = doc.all().filter((n) => n.className === 'sfine' && n.textContent).map((n) => n.textContent);
-  return { net, door, marks, cam: camState(s), out: out ? out.textContent : '', buttons, disabled, notes, meta: metaEl.textContent,
+  const stateEl = doc.all().find((n) => n.attrs.role === 'status');
+  const act = doc.activeElement;
+  const box = doc.all().find((n) => n.className === 'cam-result');
+  const stage = doc.all().find((n) => n.className === 'cam-stage');
+  return { net, door, marks, cam: camState(s), out: out ? out.textContent : '', state: stateEl ? stateEl.textContent : '',
+    boxHidden: !!(box && box.hidden), stageKids: stage ? stage.children.length : -1,
+    focus: act && act.tagName === 'BUTTON' && act.getClientRects().length ? act.textContent : '', buttons, disabled, notes, meta: metaEl.textContent,
     options: sel ? sel.options.map((o) => o.textContent) : [],
     sent: (doc.all().find((n) => String(n.textContent).startsWith('Pictures sent')) || { textContent: '' }).textContent };
 }
 
 async function main() {
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-  const run = { camera, engine, look }[input.script];
+  const run = { camera, engine, look, sealed }[input.script];
   if (!run) throw new Error('unknown scenario ' + input.script);
   const res = await run(input);
   res.plant = { ascii: 'R7PLANT', base64: Buffer.from(PLANT.concat(PLANT)).toString('base64').slice(0, 10), numbers: PLANT.slice(0, 7).join(',') };

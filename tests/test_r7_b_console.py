@@ -16,7 +16,14 @@ import hashlib
 import re
 
 import pytest
-from r7_fakes_b import CLEAN_USE_CASE, D13_APIS, STATIC, use_case_modules, use_case_problems
+from r7_fakes_b import (
+    CLEAN_USE_CASE,
+    D13_APIS,
+    STATIC,
+    run_dom,
+    use_case_modules,
+    use_case_problems,
+)
 
 from jarvis.vision import assets
 from jarvis.vision.results import CODE_FORMATS, OBJECT_LABELS
@@ -28,7 +35,9 @@ CAMERA, VISION, PANEL, CSS = (
     "console-camera-panel.js",
     "console-camera.css",
 )
-I0_CORE_SHA256 = "9e5ae773787d1121ae76568ed4995e31a68b0e13735902045b8e1f02b68c82c6"
+# I0's core was 9e5ae773...82c6; v7.0.2 changed two functions (register is sealed, stream
+# reports its errors): INTEGRATION-B.md, "Review follow-ups"
+I0_CORE_SHA256 = "f26e439a9c76db84e074bfdec5a4b3f8c95f46376ddf0f0d3f2d6f5b99910860"
 PART_B = "\n// ==== R7 Part B"
 
 
@@ -116,6 +125,93 @@ def test_the_guard_catches_the_ways_around_it(sneak: str) -> None:
     assert use_case_problems(CLEAN_USE_CASE + "\n" + sneak), sneak
 
 
+BYPASSES = [
+    # the security review's own bypasses (M2)
+    "const w=window; w['fet'+'ch']('/x')",
+    "Reflect.get(window,'fe'+'tch')('/x')",
+    "this['fe'+'tch']('/x')",
+    "const k='draw'+'Image'; ctx[k](v,0,0)",
+    "new SharedWorker('/x.js')",
+    "new VideoFrame(document.querySelector('video'))",
+    "new MediaStreamTrackProcessor({track: t})",
+    "new OffscreenCanvas(10, 10)",
+    "new Image().src='/x?'+d",
+    "import {x} from './console-camera.js'",
+    "top.fetch('/x')",
+    # more ways to a name or to the global object
+    "parent['fetch']('/x')",
+    "frames[0].x",
+    "opener.postMessage(1)",
+    "document.defaultView.x",
+    "const g = (() => {}).constructor('return 1')();",
+    "const p = x.__proto__;",
+    "setTimeout('1', 5)",
+    "w.\\u0066etch('/x')",
+    "w['\\x66etch']('/x')",
+    "const {['fe'+'tch']: f} = w;",
+    "const o = { [k]() {} };",
+    "a[`fetch`]",
+    "a[b]",
+    "a[0 + 1]",
+    "a?.[k]",
+    "f()[k]",
+    "const t = `${window}`;",
+    "const t = `${`${self}`}`;",
+    "new Proxy({}, {})",
+    "new Audio('/x')",
+    "new Request('/x')",
+    "new BroadcastChannel('x')",
+    "new MessageChannel()",
+    "new WebTransport('x')",
+    "export * from './x.js'",
+    "import('./x.js')",
+    "import.meta.url",
+    "x.innerHTML = 'a'",
+    "navigator.mediaDevices.getUserMedia({video: true})",
+    # the engine and the camera are not a use case's to call (M1)
+    "JarvisVision.register({id: 'mine', input: 'both'})",
+    "JarvisVision.run('text', v)",
+    "JarvisVision.stream('pose', {}, f)",
+    "JarvisVision.tasks()",
+    "const V = JarvisVision; V.use({})",
+    *[
+        f"cam.{m}()"
+        for m in (
+            "start stop frame photo lock unlock live locked onChange facing useFacing phrases"
+        ).split()
+    ],
+    # text that cannot be read is refused, never passed
+    "const s = 'never closed",
+    "const t = `${a",
+    "/* never closed",
+    "const \u00e9 = 1;",
+    "caf\u00e9 = 1;",
+]
+GOOD = [
+    "const a = [1, 2, 3]; const [x, y] = a; a[0]; a['name']; a?.[1];",
+    "const o = { k: [1], ['x']: 2, j: [a] }; foo(a, [b]);",
+    "const msg = `seen ${n} things`; const r = /a\\/b[/]/.test(msg); const q = a / b / c;",
+    "const pick = ok ? [1] : [2]; // fetch window eval: words in a comment\n/* drawImage */",
+    "import { use } from './console-vision.js';",
+]
+
+
+@pytest.mark.parametrize("sneak", BYPASSES)
+def test_the_guard_rejects_each_bypass_and_unreadable_text(sneak: str) -> None:
+    assert use_case_problems(CLEAN_USE_CASE + "\n" + sneak), sneak
+
+
+@pytest.mark.parametrize("fine", GOOD)
+def test_the_guard_passes_ordinary_use_case_code(fine: str) -> None:
+    assert use_case_problems(CLEAN_USE_CASE + "\n" + fine) == [], fine
+
+
+def test_the_engine_is_sealed_after_its_five_tasks() -> None:
+    out = run_dom("sealed")
+    assert out["before"] == ["text", "code", "objects", "pose", "quality"]
+    assert out["added"] is False and out["after"] == out["before"]
+
+
 def test_no_use_case_module_breaks_the_rule() -> None:
     # R7 builds the engine, not a use case (Appendix A); R8-R10's modules land in this check
     for path in use_case_modules():
@@ -123,7 +219,7 @@ def test_no_use_case_module_breaks_the_rule() -> None:
 
 
 # ---- the engine -----------------------------------------------------------------------------
-def test_the_port_core_is_i0s_byte_for_byte() -> None:
+def test_the_port_core_is_the_agreed_one_byte_for_byte() -> None:
     raw = (STATIC / VISION).read_bytes()
     core = raw[: raw.index(PART_B.encode())]
     assert hashlib.sha256(core).hexdigest() == I0_CORE_SHA256  # a contract: INTEGRATION-B.md
@@ -211,3 +307,46 @@ def test_the_stylesheet_only_places_things() -> None:
         assert radius.startswith("var(--r-"), radius
     for colour in re.findall(r"(?<![-\w])(?:color|background):([^;}]+)", rules):
         assert colour.startswith("var(--"), colour
+
+
+# ---- review follow-ups: the CSP, the camera's own taps, teardown, plain errors ------------------
+def test_the_console_csp_blocks_mediapipes_telemetry_and_every_other_host() -> None:
+    from jarvis.api.console import CONSOLE_CSP
+
+    directives = {d.split()[0]: d.split()[1:] for d in CONSOLE_CSP.split(";") if d.strip()}
+    for name in ("connect-src", "worker-src"):
+        assert directives[name] == ["'self'"], name  # nothing leaves for another host
+    bundle = (STATIC / "vendor" / "vision" / assets.RELEASE / "vision_bundle.mjs").read_text(
+        encoding="utf-8"
+    )
+    assert "odml.pa.googleapis.com" in bundle  # its logger is in the bundle: only the CSP holds it
+    for name in (CAMERA, VISION, PANEL):  # and our own files name no other site at all
+        assert not re.search(r"https?://", read(name)), name
+
+
+def test_start_and_unlock_count_only_a_real_tap_on_the_cameras_own_buttons() -> None:
+    cam = read(CAMERA)
+    assert "e.isTrusted" in cam and "closest(OWN)" in cam and "'#p-camera, .cam-chip'" in cam
+    assert "Date.now() - S.tapAt < TAP_MS" in cam
+
+
+def test_a_failed_media_import_is_not_kept_and_a_failed_script_is_removed() -> None:
+    js = read(VISION)
+    mp = js[js.index("const mp = () =>") : js.index("// ---- the tasks ----")]
+    assert ".catch(() => { mediapipe = null;" in mp
+    assert "removeChild(s)" in js and "scripts.delete(src)" in js  # no second <script> on a retry
+    assert js.count("load: guard(") == 4  # a load says only "not installed" or "could not load"
+    assert "window.addEventListener('pagehide', unload)" in js and "terminate()" in js
+
+
+def test_the_panel_sends_the_redrawn_picture_never_the_picked_file() -> None:
+    js = read(PANEL)
+    body = js[js.index("async function pictureFile()") : js.index("async function send(")]
+    assert "S.file" not in js and "toBlob" in body and "image/jpeg" in body
+
+
+def test_the_panel_never_shows_raw_exception_text() -> None:
+    js = read(PANEL)
+    assert "return (e && e.message) ||" not in js  # the old catch-all
+    assert "t.why : ''" not in js
+    assert "NO_LOAD" in js and "navigator.onLine" in js

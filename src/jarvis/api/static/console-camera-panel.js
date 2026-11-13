@@ -27,10 +27,15 @@ const POSE_LIMITS = 'One person, within about 4 metres, head visible. Never for 
 const NOT_HERE = 'Not installed on this server yet: its model file has not arrived.';
 const NO_AI_LINE = 'No-AI mode is on, so no AI looks at pictures now.';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
-const ASK_WORDS = 'Ask the AI about this photo (about \u20b90.30)';
+const NO_LOAD = 'The vision tools could not load. Check the connection and try again.'; // console-vision.js's own words
+const DIDNT = 'That didn\u2019t work. Please try again.';
+const JARVIS_WORDS = [NO_LOAD, 'There is no picture to look at.', 'The camera is switched off on this device. Tap Allow in Camera, Cameras, to switch it on.',
+  'The camera starts only from a tap.', 'This browser has no camera JARVIS can use.', 'The camera was stopped.']; // the only error texts shown as they are
+const ASK_COST = '\u20b90.30'; // the plan's figure (D12); I0's door gives no cost to read
+const ASK_WORDS = 'Ask the AI about this photo (about ' + ASK_COST + ')';
 const ASK_DEFAULT = 'What can you see in this photo?';
 const PHOTO_SIDE = 2000;
-const S = { tab: 'look', task: 'text', status: null, view: null, stream: null, photo: null, file: null, result: null, busy: false,
+const S = { tab: 'look', task: 'text', status: null, view: null, stream: null, photo: null, result: null, seq: 0, start: 0,
   sendFor: null, asking: false };
 const mk = (tag, cls, text) => (M ? M.mk(tag, cls, text) : document.createElement(tag));
 const signedIn = () => !!(window.JarvisConsole && typeof window.JarvisConsole.ready === 'function' && window.JarvisConsole.ready());
@@ -54,13 +59,20 @@ function say(el, text, kind) {
   el.className = 'snote' + (kind ? ' ' + kind : '');
   el.textContent = text || '';
 }
-function failed(e) {
-  if (e && e.name === 'TypeError') return OFFLINE;
-  const n = e && e.name;
+function isNetwork(e) { // only a real failure to reach the server (fetch's own TypeError), or the browser saying it is offline
+  if (navigator.onLine === false) return true;
+  return !!e && e.name === 'TypeError' && typeof e.status !== 'number' && /fetch|network|load failed/i.test(String(e.message || ''));
+}
+function failed(e) { // plain words for whatever went wrong; the browser's or server's raw text is never shown
+  const n = e && e.name, m = String((e && e.message) || '');
   if (n === 'NotAllowedError' || n === 'SecurityError') return 'The camera wasn\u2019t allowed. Allow it for this site in the browser\u2019s settings, then tap Start again.';
   if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No camera was found on this device.';
   if (n === 'NotReadableError') return 'The camera is busy in another app.';
-  return (e && e.message) || 'That didn\u2019t work.';
+  if (n === 'AbortError') return 'The camera didn\u2019t start. Try again.';
+  if (m === 'not installed') return NOT_HERE;
+  if (JARVIS_WORDS.includes(m)) return m;
+  if (e && typeof e.status === 'number') return e.status >= 500 || !m ? 'JARVIS couldn\u2019t do that just now. Try again in a moment.' : m; // the server's own plain words
+  return isNetwork(e) ? OFFLINE : DIDNT;
 }
 
 // ---- the frame: intro, tab strip, three panes -------------------------------------------------------------------------
@@ -97,7 +109,7 @@ tabsEl.addEventListener('keydown', (e) => {
 const taskSel = mk('select', 'minput');
 taskSel.id = 'camTask';
 TASKS.forEach(([v, t]) => { const o = mk('option', '', t); o.value = v; taskSel.append(o); });
-taskSel.addEventListener('change', () => { S.task = taskSel.value; stopLive(); paintTask(); if (S.photo) lookAt(S.photo); });
+taskSel.addEventListener('change', () => { S.task = taskSel.value; S.seq += 1; hideResult(); stopLive(); paintTask(); if (S.photo) lookAt(S.photo); });
 const whyEl = mk('p', 'sfine');
 const actsEl = mk('div', 'sacts cam-acts');
 const stage = mk('div', 'cam-stage');
@@ -163,7 +175,7 @@ function whyNot(task) {
   const st = S.status && S.status.tasks && S.status.tasks[task];
   if (st && st.installed === false) return NOT_HERE;
   const t = Vis() ? Vis().tasks().find((x) => x.id === task) : null;
-  return t && t.why ? (t.why === 'not installed' ? NOT_HERE : t.why) : '';
+  return t && t.why ? (t.why === 'not installed' ? NOT_HERE : NO_LOAD) : '';
 }
 function paintTask() {
   TASKS.forEach(([v, t], i) => {
@@ -186,7 +198,12 @@ function paintActs() {
     acts.push(c && c.locked() ? button('Allow the camera', '', allow) : looks(button('Start the camera', 'primary', startLive)));
     if (S.photo) acts.push(button('Clear', '', clear));
   }
+  const had = actsEl.contains(document.activeElement), label = had ? document.activeElement.textContent : '';
   actsEl.replaceChildren(...acts);
+  if (had) { // a repaint never drops the place of someone using the keyboard or a screen reader
+    const next = acts.find((b) => b.textContent === label && !b.disabled) || acts.find((b) => !b.disabled);
+    if (next) next.focus();
+  }
   paintMeta();
 }
 function paintMeta() {
@@ -204,11 +221,13 @@ function allow() {
 }
 
 // ---- looking: a photo, or the live picture ----------------------------------------------------------------------------
+function hideResult() { S.result = null; outBox.hidden = true; outEl.textContent = ''; }
 function clear() {
+  S.seq += 1; // a look still running is let go: its answer is never shown
   if (S.photo) { S.photo.width = 0; S.photo.height = 0; }
-  S.photo = null; S.file = null; S.result = null; S.sendFor = null;
+  S.photo = null; S.sendFor = null;
+  hideResult();
   stage.replaceChildren();
-  outBox.hidden = true;
   paintActs();
 }
 async function choosePhoto() {
@@ -227,39 +246,59 @@ async function choosePhoto() {
   cv.height = Math.max(1, Math.round(bmp.height * k));
   cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
   bmp.close();
-  showPhoto(cv, file);
+  showPhoto(cv);
 }
-function showPhoto(cv, file) {
+function showPhoto(cv) {
   if (S.photo && S.photo !== cv) { S.photo.width = 0; S.photo.height = 0; }
-  S.photo = cv; S.file = file || null;
+  S.photo = cv;
   cv.setAttribute('role', 'img');
   cv.setAttribute('aria-label', 'The photo, on this device only');
   stage.replaceChildren(cv);
   lookAt(cv);
 }
-async function lookAt(source) {
+async function lookAt(source) { // the newest look wins: an older one's answer is dropped, never shown under a new picture
   const V = Vis();
-  if (!V || S.busy) return;
-  S.busy = true;
+  if (!V) return;
+  S.seq += 1;
+  const mine = S.seq, task = S.task, photo = !!S.photo;
+  hideResult();
   say(stateEl, 'Looking on this device\u2026');
-  try { show(await V.run(S.task, source), !!S.photo); say(stateEl, ''); } catch (e) { say(stateEl, failed(e), 'bad'); paintTask(); } finally { S.busy = false; }
+  try {
+    const r = await V.run(task, source);
+    if (mine !== S.seq) return;
+    show(r, photo);
+    say(stateEl, '');
+  } catch (e) {
+    if (mine !== S.seq) return;
+    say(stateEl, failed(e), 'bad');
+    paintTask();
+  }
 }
 async function startLive() {
   const c = Cam();
   if (!c) return;
   clear();
-  try { S.view = await c.start({ facing: facingSel.value }); } catch (e) { say(stateEl, failed(e), 'bad'); paintActs(); return; }
+  S.start += 1;
+  const mine = S.start;
+  let view = null;
+  try { view = await c.start({ facing: facingSel.value }); } catch (e) { if (mine === S.start) { say(stateEl, failed(e), 'bad'); paintActs(); } return; }
+  if (mine !== S.start || hidden()) { c.stop('panel'); return; } // the panel was closed (or another start began) while the browser asked
+  S.view = view;
   S.view.video.className = 'cam-view';
   stage.replaceChildren(S.view.video);
   say(stateEl, 'The camera is on. Nothing leaves this device while you look.');
-  if (STREAMED.includes(S.task) && Vis()) S.stream = Vis().stream(S.task, { frame: () => S.view && S.view.frame() }, (r) => show(r, false));
+  if (STREAMED.includes(S.task) && Vis()) {
+    S.stream = Vis().stream(S.task, { frame: () => S.view && S.view.frame(), onError: (e) => { S.stream = null; say(stateEl, failed(e), 'bad'); } }, (r) => show(r, false));
+  }
   paintActs();
 }
 function stopLive() {
+  S.start += 1; // a start still waiting for the browser is dropped, and its stream stopped when it arrives
   if (S.stream) { S.stream.stop(); S.stream = null; }
+  S.view = null;
   const c = Cam();
-  if (c && c.live()) c.stop('panel');
-  if (S.view) { S.view = null; if (!S.photo) stage.replaceChildren(); }
+  if (c) c.stop('panel'); // always: the camera may be live, or still being asked for
+  if (!S.photo) stage.replaceChildren();
   paintActs();
 }
 async function readNow() {
@@ -273,7 +312,7 @@ function takePhoto() {
   cv.width = f.width; cv.height = f.height;
   cv.getContext('2d').drawImage(f, 0, 0);
   stopLive();
-  showPhoto(cv, null);
+  showPhoto(cv);
 }
 
 // ---- the result, Keep, and the three buttons that send a picture ----------------------------------------------------------
@@ -323,8 +362,7 @@ async function keep() {
     say(stateEl, 'Kept. You will find it in Results.', 'ok');
   } catch (e) { say(stateEl, failed(e), 'bad'); }
 }
-async function pictureFile() {
-  if (S.file) return S.file;
+async function pictureFile() { // always the picture redrawn here (no EXIF, no location), never the file he picked
   const cv = S.photo;
   const blob = cv ? await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.9)) : null;
   return blob ? new File([blob], 'camera-photo.jpg', { type: 'image/jpeg' }) : null;
@@ -373,7 +411,9 @@ async function loadResults() {
 }
 async function forget(id) {
   try { await M.api(P + '/results/' + encodeURIComponent(id), { method: 'DELETE' }); } catch (e) { say(listState, failed(e), 'bad'); return; }
-  loadResults();
+  await loadResults();
+  const next = listEl.querySelector('button');
+  if (next) next.focus(); else tabBtns.results.focus();
 }
 
 // ---- the server's word on what can run (after sign-in, when the panel opens) ------------------------------------------------
@@ -390,7 +430,16 @@ document.addEventListener('jarvis:panel', (e) => {
   setTimeout(() => { if (hidden()) { stopLive(); clear(); } }, 0); // closed, or hidden behind another tab on a phone
 });
 document.addEventListener('jarvis:ready', () => { if (!hidden()) loadStatus(); });
-document.addEventListener('jarvis:camera', () => { if (!(Cam() && Cam().live())) { S.stream = null; S.view = null; } paintActs(); });
+document.addEventListener('jarvis:camera', () => {
+  const on = !!(Cam() && Cam().live());
+  if (!on && S.view) { // switched off from outside (the lock, the chip, idle, a hidden page): the words and the stage follow
+    if (S.stream) S.stream.stop();
+    S.stream = null; S.view = null;
+    if (!S.photo) stage.replaceChildren();
+    say(stateEl, 'The camera was switched off.');
+  }
+  paintActs();
+});
 document.addEventListener('jarvis:pictures-sent', sentLine);
 document.addEventListener('jarvis:brain', () => { if (!outBox.hidden) paintSend(!!S.photo); });
 document.addEventListener('jarvis:brainmode', () => { if (!outBox.hidden) paintSend(!!S.photo); });

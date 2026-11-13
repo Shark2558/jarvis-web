@@ -234,3 +234,146 @@ def test_body_points_carry_the_model_cards_limits_once_installed() -> None:
                   steps=[{"op": "open"}, {"op": "task", "task": "pose"}])  # fmt: skip
     assert "Body points" in out["options"] and not out["disabled"]
     assert any("never to recognise who someone is" in n for n in out["notes"])
+
+
+# ---- review follow-ups (code M1-M4, security LOW-1/2, wake lock, focus, stale words) --------
+INSTALLED = {
+    "/v1/vision": {
+        "tasks": {
+            t: {"installed": True, "why": ""}
+            for t in ("text", "code", "quality", "objects", "pose")
+        }
+    }
+}
+CAN_NOT_LOAD = "The vision tools could not load. Check the connection and try again."
+
+
+def test_a_tap_elsewhere_on_the_page_cannot_start_or_unlock_the_camera() -> None:
+    out = run_dom("camera", steps=[
+        {"op": "start", "tap": "elsewhere"}, {"op": "lock"}, {"op": "unlock", "tap": "elsewhere"},
+        {"op": "unlock", "tap": True}, {"op": "start", "tap": True},
+    ])  # fmt: skip
+    elsewhere, _, no_unlock, unlocked, started = _steps(out)
+    assert elsewhere["ok"] is False and elsewhere["code"] == "needs_tap" and elsewhere["asked"] == 0
+    assert no_unlock["ok"] is False and no_unlock["locked"] is True
+    assert unlocked["ok"] is True and unlocked["locked"] is False
+    assert started["live"] and started["asked"] == 1
+
+
+def test_the_chip_shows_from_the_moment_a_track_exists() -> None:
+    out = run_dom("camera", play="hang", steps=[
+        {"op": "start", "tap": True, "nowait": True}, {"op": "chipStop"},
+    ])  # fmt: skip
+    started, stopped = _steps(out)
+    assert started["liveTracks"] == 1 and started["chip"] is True  # play() has not resolved
+    assert not stopped["live"] and not stopped["chip"]
+
+
+def test_a_stop_while_the_browser_still_asks_leaves_no_track_live() -> None:
+    out = run_dom("camera", gum={"hold": True}, steps=[
+        {"op": "start", "tap": True, "nowait": True}, {"op": "stop"}, {"op": "release"},
+    ])  # fmt: skip
+    asked, _, released = _steps(out)
+    assert asked["asked"] == 1 and not asked["live"]
+    assert not released["live"] and released["liveTracks"] == 0 and not released["chip"]
+
+
+def test_two_starts_while_a_wake_lock_is_pending_hold_only_one_lock() -> None:
+    out = run_dom("camera", wake=True, steps=[
+        {"op": "start", "tap": True}, {"op": "start", "tap": True}, {"op": "wake"},
+        {"op": "stop"}, {"op": "wake"},
+    ])  # fmt: skip
+    *_, live_after_wake, stopped, after_stop = _steps(out)
+    assert live_after_wake["wakeHeld"] <= 1
+    assert stopped["wakeHeld"] == 0 and after_stop["wakeHeld"] == 0
+
+
+def test_closing_the_panel_while_the_camera_is_still_being_asked_leaves_it_off() -> None:
+    out = run_dom("look", gum={"hold": True}, steps=[
+        *LOOK, press("Start the camera"), {"op": "close"}, {"op": "release"},
+    ])  # fmt: skip
+    assert out["cam"]["asked"] == 1
+    assert not out["cam"]["live"] and out["cam"]["liveTracks"] == 0 and not out["cam"]["chip"]
+
+
+def test_a_second_photo_replaces_a_look_still_running_and_the_old_answer_never_shows() -> None:
+    out = run_dom("look", runDelays=[400, 0], steps=[
+        *LOOK, press("Choose a photo"), {"op": "pick"}, press("Choose a photo"), {"op": "pick"},
+        {"op": "wait", "ms": 700},
+    ])  # fmt: skip
+    assert out["out"] == "Light 20 %, sharpness 50 %." and out["state"] == ""
+
+
+def test_changing_the_task_during_a_look_drops_the_old_answer() -> None:
+    out = run_dom("look", runDelays=[400], answers=INSTALLED, steps=[
+        *LOOK, press("Choose a photo"), {"op": "pick"}, {"op": "task", "task": "objects"},
+        {"op": "wait", "ms": 700},
+    ])  # fmt: skip
+    assert out["boxHidden"] is True and not out["out"].startswith("Light")
+    assert "not installed" in out["state"].lower()
+
+
+def test_a_look_that_cannot_load_says_so_and_does_not_keep_the_old_result() -> None:
+    out = run_dom("look", answers=INSTALLED, fetchStatus=500, steps=[
+        *LOOK, {"op": "task", "task": "pose"}, press("Choose a photo"), {"op": "pick"},
+    ])  # fmt: skip
+    assert out["state"] == CAN_NOT_LOAD and out["boxHidden"] is True
+
+
+def test_a_live_look_that_cannot_load_says_so_instead_of_staying_silent() -> None:
+    out = run_dom("look", answers=INSTALLED, fetchStatus=500, steps=[
+        *LOOK, {"op": "task", "task": "objects"}, press("Start the camera"),
+        {"op": "wait", "ms": 200},
+    ])  # fmt: skip
+    assert out["state"] == CAN_NOT_LOAD
+    assert "Nothing leaves this device" not in out["state"]
+
+
+def test_a_live_look_whose_model_has_not_arrived_says_that() -> None:
+    out = run_dom("look", answers=INSTALLED, fetchStatus=404, steps=[
+        *LOOK, {"op": "task", "task": "pose"}, press("Start the camera"), {"op": "wait", "ms": 200},
+    ])  # fmt: skip
+    assert out["state"] == "Not installed on this server yet: its model file has not arrived."
+
+
+def test_a_dropped_frame_does_not_end_a_live_look() -> None:
+    out = run_dom("look", blank=2, steps=[
+        *LOOK, press("Start the camera"), {"op": "wait", "ms": 2600},
+    ])  # fmt: skip
+    assert out["out"].startswith("Light ") and out["cam"]["live"]
+
+
+@pytest.mark.parametrize(
+    ("error", "words"),
+    [
+        ("NotAllowedError", "wasn\u2019t allowed"),
+        ("NotFoundError", "No camera was found"),
+        ("OverconstrainedError", "No camera was found"),
+        ("NotReadableError", "busy in another app"),
+        ("TypeError", "That didn\u2019t work"),
+        ("SomethingNewError", "That didn\u2019t work"),
+    ],
+)
+def test_a_camera_that_will_not_start_is_told_in_plain_words(error: str, words: str) -> None:
+    out = run_dom("look", gum={"error": error}, steps=[*LOOK, press("Start the camera")])
+    assert words in out["state"] and "raw browser text" not in out["state"], error
+    assert not out["cam"]["live"] and out["cam"]["liveTracks"] == 0
+
+
+def test_a_server_failure_is_plain_words_and_never_the_raw_text() -> None:
+    fail = {"__fail": {"status": 500, "message": "Traceback (most recent call last)"}}
+    out = run_dom("look", answers={"/v1/vision/results": fail}, steps=[
+        *LOOK, press("Choose a photo"), {"op": "pick"}, press("Keep"),
+    ])  # fmt: skip
+    assert out["state"] and "Traceback" not in out["state"] and "most recent" not in out["state"]
+
+
+def test_a_lock_or_idle_stop_updates_the_words_and_the_stage() -> None:
+    out = run_dom("look", steps=[*LOOK, press("Start the camera"), {"op": "lock"}])
+    assert out["state"] == "The camera was switched off." and out["stageKids"] == 0
+    assert out["meta"] == "Switched off"
+
+
+def test_the_keyboard_focus_stays_on_a_button_when_the_buttons_are_repainted() -> None:
+    out = run_dom("look", steps=[*LOOK, press("Start the camera")])
+    assert out["focus"] in ("Take a photo", "Stop", "Read now")

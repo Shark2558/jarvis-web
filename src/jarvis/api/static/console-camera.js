@@ -36,7 +36,7 @@ function writeLock(on) {
   try { if (on) localStorage.setItem(KEY, '1'); else localStorage.removeItem(KEY); } catch (_) { /* read back below */ }
   return readLock() === on;
 }
-const S = { locked: readLock(), streams: new Set(), facing: 'environment', used: 0, idle: 0, wake: null, gen: 0 };
+const S = { locked: readLock(), streams: new Set(), facing: 'environment', used: 0, idle: 0, wake: null, waking: false, gen: 0, tapAt: 0 };
 const subs = new Set();
 const video = document.createElement('video');
 video.muted = true;
@@ -45,7 +45,18 @@ video.setAttribute('playsinline', '');
 video.setAttribute('aria-label', 'The live picture, on this device only');
 const canvas = document.createElement('canvas');
 
-const activated = () => { const ua = navigator.userActivation; return !!(ua && ua.isActive); };
+// A tap counts only when it was a real click (or the key press a browser turns into one) on the camera's own buttons: the
+// Camera panel or the chip. A script that runs just after some other tap has no activation of its own to use.
+const OWN = '#p-camera, .cam-chip';
+const TAP_MS = 5000;
+document.addEventListener('click', (e) => {
+  const t = e && e.target;
+  S.tapAt = e && e.isTrusted && t && typeof t.closest === 'function' && t.closest(OWN) ? Date.now() : 0;
+}, true);
+const activated = () => {
+  const ua = navigator.userActivation;
+  return !!(ua && ua.isActive) && S.tapAt > 0 && Date.now() - S.tapAt < TAP_MS;
+};
 const who = (by) => (LOCK_BY.includes(by) ? by : 'button');
 function tracks() { return [...S.streams].flatMap((s) => s.getTracks()); }
 function live() { return tracks().some((t) => t.readyState === 'live'); }
@@ -77,8 +88,10 @@ function release() {
 }
 function keepAwake() { // the screen stays on while a live look runs (D13)
   const wl = navigator.wakeLock;
-  if (!wl || typeof wl.request !== 'function' || S.wake) return;
-  wl.request('screen').then((w) => { if (live()) S.wake = w; else w.release().catch(() => {}); }, () => {});
+  if (!wl || typeof wl.request !== 'function' || S.wake || S.waking) return;
+  S.waking = true;
+  const held = (w) => { S.waking = false; if (live() && !S.wake) S.wake = w; else w.release().catch(() => {}); };
+  wl.request('screen').then(held, () => { S.waking = false; });
 }
 
 /** Stop every track and throw the last picture away. */
@@ -136,11 +149,12 @@ async function start(opts) {
   S.streams.add(stream);
   stream.getTracks().forEach((t) => t.addEventListener('ended', () => { if (!live()) stop('ended'); }));
   video.srcObject = stream;
-  try { await video.play(); } catch (_) { /* a muted inline video plays; the frames still arrive */ }
   touch();
   watchIdle();
   keepAwake();
-  emit('start');
+  emit('start'); // the chip shows from the moment a track exists, before play() answers
+  try { await video.play(); } catch (_) { /* a muted inline video plays; the frames still arrive */ }
+  if (my !== S.gen) throw err('stopped', 'The camera was stopped.'); // stopped while play() was starting
   return Object.freeze({ video, frame, stop: () => stop('panel') });
 }
 

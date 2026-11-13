@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from r7_jsguard import AROUND, D13_APIS, use_case_problems
+
 from jarvis.keyring import Keyring
 from jarvis.storage.docs import MemoryDocs
 from jarvis.vision.store import VisionStore
@@ -110,44 +112,7 @@ def run_dom(script: str, **payload: Any) -> dict[str, Any]:
 
 
 # ---- D13: what a use case's module may never use (static; for R8-R10's modules) ---------------
-# The plan's list first (reading pixels, sending bytes, the console's transport and chat, a dynamic
-# import, the storage APIs); then the ways around it (another name for the same API, a string key,
-# the camera's or the door's own globals).
-D13_APIS: tuple[str, ...] = (
-    *("drawImage", "getImageData", "toBlob", "createImageBitmap", "captureStream"),
-    *("fetch", "XMLHttpRequest", "sendBeacon", "WebSocket", "JarvisConsole.api", "JarvisChat"),
-    *("import(", "localStorage", "sessionStorage", "indexedDB", "caches"),
-)
-AROUND: tuple[str, ...] = (
-    *("toDataURL", "convertToBlob", "transferToImageBitmap", "readPixels", "ImageCapture"),
-    *("srcObject", "JarvisCamera", "JarvisAttach", "JarvisMobile", "parts.send", "postMessage"),
-    *("Worker", "EventSource", "eval", "Function", "globalThis[", "window[", "self["),
-    *("document.cookie", "navigator.", "open("),
-)
-
-
-def _pattern(api: str) -> str:
-    if api.endswith("("):
-        return re.escape(api[:-1]) + r"\s*\("
-    if api.endswith("["):
-        return re.escape(api[:-1]) + r"\s*\["
-    if "." in api:
-        head, tail = api.split(".", 1)
-        return re.escape(head) + r"\s*(?:\.|\?\.)\s*" + re.escape(tail)
-    return r"(?<![A-Za-z0-9_$])" + re.escape(api) + r"(?![A-Za-z0-9_$])"
-
-
-def use_case_problems(source: str) -> list[str]:
-    """The D13 APIs (and the ways around them) a use case's source uses, also as a string key."""
-    found = []
-    for api in (*D13_APIS, *AROUND):
-        bare = api.rstrip("([").split(".")[-1]
-        key = r"""\[\s*['"`]""" + re.escape(bare) + r"""['"`]\s*\]"""
-        if re.search(_pattern(api), source) or re.search(key, source):
-            found.append(api)
-    return found
-
-
+# The lexer-based guard lives in tests/r7_jsguard.py (it fails closed); these names are its API.
 def use_case_modules() -> list[Path]:
     """Every console script that hands a use case to the engine (`JarvisVision.use`)."""
     use = re.compile(r"(?:JarvisVision|parts\s*\.\s*vision)\s*\.\s*use\s*\(")
@@ -160,8 +125,16 @@ def use_case_modules() -> list[Path]:
 
 CLEAN_USE_CASE = """
 // a use case receives results only: R9's label scanner might look like this
-const V = window.JarvisVision;
-V.use({ id: 'label-scan', tasks: ['text', 'code'],
+JarvisVision.use({ id: 'label-scan', tasks: ['text', 'code'],
   onResult: (r, state) => ({ seen: ((state && state.seen) || 0) + 1, last: r.ok ? r.task : null }),
   summary: (state) => ({ seen: (state && state.seen) || 0 }) });
 """
+
+
+__all__ = [
+    "AROUND",
+    "CLEAN_USE_CASE",
+    "D13_APIS",
+    "use_case_modules",
+    "use_case_problems",
+]

@@ -844,16 +844,19 @@ def test_the_r7_runner_passes_with_every_server_and_app_part_built() -> None:
     assert run.returncode == 0, run.stdout[-4000:] + run.stderr[-4000:]
     report = json.loads((ROOT / "evals" / "r7" / "report.json").read_text(encoding="utf-8"))
     ids = {r["id"] for r in report["results"]}
-    built = ("shell", "vision", "phone", "body", "contract")  # I1: every part built
+    built = ("shell", "vision", "phone", "body", "needles", "contract")  # I1: every part built
     for part in built:
         assert f"{part}:not_built_yet" not in ids, part
         assert any(i.startswith(f"{part}:") for i in ids), part
-    assert "needles:not_built_yet" in ids  # I1 builds it next
     control = report["negative_control"]
     assert control["suite_failed"] is True
     for part in built:
         assert control["failed_cases"][part], part  # each part's own control fails it
-    assert set(control["parts_not_built"]) == {"needles"}
+    assert control["parts_not_built"] == []
+    needles = control["failed_cases"]["needles"]  # I1's three controls, each failing its scan
+    assert needles["coordinate_in_address"] == ["needles:coordinates"]
+    assert "needles:read_text" in needles["seal_off"] and "needles:heart" in needles["seal_off"]
+    assert needles["fence_off"] == ["needles:read_text"]
 
 
 def test_the_r7_suite_is_gated_in_run_all_mock() -> None:

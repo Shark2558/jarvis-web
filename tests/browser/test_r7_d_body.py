@@ -201,12 +201,17 @@ def _close(c: Console) -> None:
     c.page.evaluate("() => window.JarvisMobile.parts.sos.close()")
 
 
-def _hold(c: Console, selector: str, ms: int = 2300) -> None:
+def _hold(c: Console, selector: str, ms: int | None = None) -> None:
+    """Press and hold. With `ms`, let go after that long; else hold until the countdown shows (a
+    loaded machine may run the 2-second timer late), then let go, as a finger would."""
     box = c.page.locator(selector).bounding_box()
     assert box is not None
     c.page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     c.page.mouse.down()
-    c.page.wait_for_timeout(ms)
+    if ms is None:
+        c.page.locator("#sosSheet .sos-cancel").wait_for(state="visible", timeout=15000)
+    else:
+        c.page.wait_for_timeout(ms)
     c.page.mouse.up()
 
 
@@ -242,7 +247,6 @@ def test_a_cancelled_countdown_makes_no_request(rig: Rig) -> None:
     _sheet(c)
     rig.calls.clear()
     _hold(c, "#sosSheet .sos-hold")
-    c.page.locator("#sosSheet .sos-cancel").wait_for(state="visible")
     assert "Sending SOS in" in (c.page.locator("#sosSheet .sos-say").text_content() or "")
     c.page.locator("#sosSheet .sos-cancel").click()
     c.page.wait_for_timeout(6000)  # past the countdown
@@ -350,6 +354,10 @@ def test_before_sign_in_the_block_asks_the_server_nothing(rig: Rig) -> None:
     anything (a call made then would answer 401 and throw him back to the gate); once he is in, the
     card asks when Integrations opens."""
     c = Console(rig.browser, rig.url, rig.token, DESKTOP)
+    install_mocks(c.page)
+    c.page.route("**/v1/sos", rig._sos)
+    c.page.route("**/v1/sos/**", rig._sos)
+    c.page.route("**/v1/watch", lambda r: rig._json(r, WATCH))
     asked: list[str] = []
     c.page.on(
         "request",

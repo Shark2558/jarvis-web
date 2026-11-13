@@ -12,6 +12,7 @@
 .sos-links .sos-link{flex:1 1 100%}
 .sos-close{display:block;width:100%;margin-top:14px}
 .sos-place{margin-top:6px}
+.sos-say{min-height:3em}
 .sos-row{margin:6px 0 0;overflow-wrap:anywhere}
 .sos-result:empty,.sos-links:empty{display:none}
 

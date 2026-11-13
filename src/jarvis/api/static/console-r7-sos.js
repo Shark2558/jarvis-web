@@ -75,7 +75,12 @@ function buildSheet() {
 }
 function holdable(btn, kind) {
   const start = (e) => { if (e) e.preventDefault(); begin(kind); };
-  btn.addEventListener('pointerdown', start);
+  btn.addEventListener('pointerdown', (e) => {
+    // the finger or the mouse stays this button's until it lets go (a line of text changing above it must not
+    // count as letting go)
+    try { btn.setPointerCapture(e.pointerId); } catch (_) { /* an old browser: the plain hold */ }
+    start(e);
+  });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((n) => btn.addEventListener(n, () => letGo()));
   btn.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) start(e); });
   btn.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') letGo(); });

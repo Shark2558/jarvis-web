@@ -14,7 +14,7 @@ def _flat(rule: str) -> str:
 
 
 def test_persona_is_p11_0() -> None:
-    assert p.PERSONA_VERSION == "p11.1"
+    assert p.PERSONA_VERSION == "p7.0"
 
 
 def test_the_book_rule_points_to_the_panel_and_never_recites() -> None:

@@ -14,7 +14,7 @@ def _flat(rule: str) -> str:
 
 
 def test_persona_is_p11_0() -> None:
-    assert p.PERSONA_VERSION == "p11.1"
+    assert p.PERSONA_VERSION == "p7.0"
 
 
 def test_the_helpers_rule_says_jarvis_never_pays_and_respects_nudges() -> None:

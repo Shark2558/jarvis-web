@@ -862,9 +862,9 @@ def test_the_r7_suite_is_gated_in_run_all_mock() -> None:
     assert 'HERE / "r7" / "run.py"' in line and line.rstrip().endswith("True),")
 
 
-# ---- 19 · the persona stays until I1 ------------------------------------------------------------
-def test_the_persona_version_stays_until_i1() -> None:
-    assert PERSONA_VERSION == "p11.1"  # I1 makes it p7.0 (D26); nothing compares it
+# ---- 19 · the persona: I1 made it p7.0 (D26; tests/test_r7_i1_persona.py) ----------------------
+def test_the_persona_version_is_r7s_after_i1() -> None:
+    assert PERSONA_VERSION == "p7.0"  # I1 (D26); nothing compares it
 
 
 # ---- 21 · Telegram's private patterns -----------------------------------------------------------

@@ -66,3 +66,49 @@ async def test_the_door_answers_a_flood_with_a_bare_429_and_keeps_401_for_authen
         assert bare.status_code == 401 and bare.content == b""
         other = await anon.get("/phone/v1/hello")
         assert other.status_code == 404
+
+
+# ---- security L5: the needles eval reads every shape of a heart rate, a number and a name ----------
+def _needles() -> Any:
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "evals" / "r7" / "needles.py"
+    spec = importlib.util.spec_from_file_location("r7_needles_under_test", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        '"min": 43',
+        '{"heart_min": 43}',
+        "resting_bpm: 87",
+        "heart_max=179",
+        "179 bpm",
+        "87 average",
+        "the heart rate of 43",
+        "pulse: 87.0",
+    ],
+)
+def test_the_heart_needle_reads_every_key_shape(written: str) -> None:
+    assert _needles().HEART_RE.search(written), written
+
+
+@pytest.mark.parametrize("quiet", ['"steps": {"count": 6012}', "at 14:05 on 2026-11-13", "id 4387"])
+def test_the_heart_needle_leaves_other_numbers_alone(quiet: str) -> None:
+    assert not _needles().HEART_RE.search(quiet), quiet
+
+
+@pytest.mark.parametrize("written", ["0000000001", "000 000 0001", "(000) 000-0001", "+1 000-000-0001"])
+def test_the_number_needle_reads_national_and_spaced_forms_and_the_name_needle_the_label(
+    written: str,
+) -> None:
+    mod = _needles()
+    seen = mod.Seen()
+    seen.add("logs", f"sent to {written} for Asha Example")
+    found = mod._found(seen)  # noqa: SLF001
+    assert found["numbers"] and found["names"] == ["Asha Example"]

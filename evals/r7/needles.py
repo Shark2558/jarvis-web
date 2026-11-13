@@ -14,13 +14,18 @@ Cloud Run request log, and every Telegram call's address), audit entry, Activity
 fence is scanned for:
 
     coordinates   the SOS place in every form a pair is written (micro-degrees, degrees, a link)
-    heart         a heart-rate value beside its name ("min": 43, 87 average, ...)
-    numbers       an SOS contact's phone number
+    heart         a heart-rate value beside any heart-ish name or unit (`"min": 43`, `heart_min=43`,
+                  `resting_bpm: 87`, `179 bpm`, `87 average`, ...)
+    numbers       an SOS contact's phone number: international, national (10 digits), spaced
+    names         an SOS contact's name (the label the owner gave)
     read_text     the words read off the label
     pixels        the shared picture's planted pixel pattern
 
-Allowed, by design, and not scanned: the request BODIES sent to Telegram for the contacts (the map
-link and the pin), the reply to the owner's own requests (his SOS's SMS text, the phone's hello
+The request BODIES sent to any outside service (Telegram, Google, ...) are scanned too, every one
+but the SOS to a contact (Telegram's `sendLocation` pin and the `sendMessage` text with its map
+link, both to a contact's chat: their whole job is the place).
+
+Allowed, by design, and not scanned: the SOS sent to the contacts on Telegram, the reply to the owner's own requests (his SOS's SMS text, the phone's hello
 with the numbers for its offline SMS screen, his kept results) and `watch_today`'s own answer of
 his heart rate to him (its job; never on Telegram without his switch). The `day` case proves each
 step really happened (a scan of nothing proves nothing).
@@ -30,6 +35,7 @@ Negative controls (each must make the suite fail):
                            (`VisionStore._seal`, `WatchStore._seal`)
   fence_off                `vision_results` hands read text to the model unfenced
   coordinate_in_address    the console's SOS also carries its place in the request's address
+  name_in_log              a contact's name is written to a log line
 """
 
 from __future__ import annotations
@@ -54,7 +60,16 @@ import httpx  # noqa: E402
 import r7_fakes_d as D  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 from r7_fakes_b import LABEL_TEXT, text_result  # noqa: E402
-from r7_fakes_c import CSRF, HELLO, browser, door, linked_phone, owner_uid, phone_app  # noqa: E402
+from r7_fakes_c import (  # noqa: E402
+    CSRF,
+    HELLO,
+    ORIGIN,
+    browser,
+    door,
+    linked_phone,
+    owner_uid,
+    phone_app,
+)
 
 import jarvis.vision.tools as vision_tools  # noqa: E402
 import jarvis.watch.store as watch_store  # noqa: E402
@@ -66,21 +81,43 @@ from jarvis.watch.store import StoredDay, WatchStore  # noqa: E402
 
 PART = "needles"
 BUILT = True
-CONTROLS = ("seal_off", "fence_off", "coordinate_in_address")
-KINDS = ("coordinates", "heart", "numbers", "read_text", "pixels")
+CONTROLS = ("seal_off", "fence_off", "coordinate_in_address", "name_in_log")
+KINDS = ("coordinates", "heart", "numbers", "names", "read_text", "pixels")
 KEY = SecretStr(base64.urlsafe_b64encode(bytes(range(201, 233))).decode())  # for this eval only
 HEART = {"min": 43, "avg": 87, "max": 179}
+_HEART_VALUE = r'(?:43|87|179)(?:\.0+)?'
+_HEART_NAME = r'(?:heart|bpm|pulse|resting|\bhr\b|min|avg|max|average|lowest|highest)'
 HEART_RE = re.compile(
-    r'"(?:min|avg|max)"\s*:\s*(?:43|87|179)\b|\b(?:43|87|179)\s*(?:bpm|lowest|average|highest)\b',
+    # a name that says heart, or min / avg / max, in any key shape, then the value: "min": 43, heart_min=43, resting_bpm: 87
+    rf'[A-Za-z_ ]*{_HEART_NAME}[A-Za-z_ ]*["\']?\s*[:=]\s*["\']?{_HEART_VALUE}\b'
+    # the value then its unit: 179 bpm, 87 average, 43 lowest
+    rf'|\b{_HEART_VALUE}\s*(?:bpm|beats|lowest|average|highest|avg|min|max)\b'
+    # the unit or name then the value: bpm 87, heart rate of 43, pulse: 179
+    rf'|\b(?:bpm|heart rate|heart-rate|pulse|resting)(?:\W{{0,12}}|\s+(?:of|is|was|at|around)\s+){_HEART_VALUE}\b',
     re.I,
 )
 NUMBERS = [D.ASHA[1], D.RAVI[1], D.ASHA[1].lstrip("+"), D.RAVI[1].lstrip("+")]
+NATIONAL = [D.ASHA[1][-10:], D.RAVI[1][-10:]]  # the ten digits a person types without the country code
+NAMES = [D.ASHA[0], D.RAVI[0]]
+_SEPARATORS = re.compile(r"[\s().\-]+")
 READ = ["NET WT 500 g", "BEST BEFORE 12 2027", "MRP Rs 125.00"]
 PIXELS = b"PIXEL-PATTERN-R7-NEEDLE-\x13\x37\xc0\xff\xee"
 PIXEL_NEEDLES = ["PIXEL-PATTERN-R7-NEEDLE", base64.b64encode(PIXELS).decode()[:24]]
 FENCED = re.compile(re.escape(FENCE_PREFIX) + r".*?<<END [0-9a-f]+>>", re.S)
 IST = "+05:30"
+APP_HOST = httpx.URL(ORIGIN).host  # the app itself: the owner's and the phone's own calls are not "outside"
 _STD = set(vars(logging.LogRecord("x", 0, "", 0, "", None, None)))
+
+
+def _to_a_contact(path: str, body: str) -> bool:
+    """The SOS itself, as the contact gets it on Telegram: the pin, and the text with its map link."""
+    if not path.endswith(("/sendLocation", "/sendMessage")):
+        return False
+    try:
+        chat = json.loads(body).get("chat_id")
+    except (ValueError, AttributeError):
+        return False
+    return chat in {D.ASHA[2], D.RAVI[2]}
 
 
 class Seen:
@@ -118,6 +155,10 @@ def _recording(seen: Seen) -> Iterator[_Logs]:
 
     async def send(self: httpx.AsyncClient, request: httpx.Request, **kw: Any) -> httpx.Response:
         seen.add("addresses", str(request.url))
+        if request.url.host != APP_HOST:
+            body = request.read().decode("utf-8", "replace")
+            if not _to_a_contact(request.url.path, body):  # the pin and its words are the contact's SOS
+                seen.add("bodies", str(request.url), body)
         return await real(self, request, **kw)
 
     root.addHandler(logs)
@@ -206,12 +247,16 @@ def _controls(active: frozenset[str]) -> Iterator[None]:
             setattr(owner, name, value)
 
 
-async def _contacts(app: Any, c: httpx.AsyncClient, bot: D.PinBot, seen: Seen) -> None:
+async def _contacts(
+    app: Any, c: httpx.AsyncClient, bot: D.PinBot, seen: Seen, active: frozenset[str]
+) -> None:
     sos = app.state.r7_parts["body"].services["sos"]
     sos._telegram = lambda: bot.client()  # noqa: SLF001 - the contacts' Telegram, faked
     r = await c.put("/v1/sos/label", json={"label": "Kiran Example"}, headers=CSRF)
     joined = r.status_code == 200
     for label, phone, tg in (D.ASHA, D.RAVI):
+        if "name_in_log" in active:  # the control: a contact's name written to a log line
+            logging.getLogger("jarvis.sos").info("contact added", extra={"who": label})
         r = await c.post("/v1/sos/contacts", json={"label": label, "phone": phone}, headers=CSRF)
         cid = r.json()["contact"]["id"]
         link = (await c.post(f"/v1/sos/contacts/{cid}/link", json={}, headers=CSRF)).json()
@@ -276,14 +321,24 @@ def _documents(app: Any, seen: Seen) -> None:
         seen.add("documents_plain", {k: v for k, v in doc.items() if k != "blob"})
 
 
+def _fresh_limits() -> None:
+    """The SOS routes' per-minute limiters are module-level (one app per process in production): every
+    simulated day starts with empty buckets, so the fifth day in a process is not refused as a burst."""
+    import jarvis.api.sos as sos_api
+
+    for limiter in (sos_api._changes, sos_api._sends):  # noqa: SLF001
+        limiter._buckets.clear()  # noqa: SLF001
+
+
 async def day(active: frozenset[str] = frozenset()) -> Seen:
+    _fresh_limits()
     seen = Seen()
     bot = D.PinBot()
     with _controls(active), _recording(seen) as logs:
         async with phone_app(_settings(), token_key=KEY) as app:
             logging.getLogger().addHandler(logs)  # the app's start set the root handlers afresh
             async with browser(app) as c:
-                await _contacts(app, c, bot, seen)
+                await _contacts(app, c, bot, seen, active)
                 await _phone(app, c, seen)
                 await _console(app, c, active, seen)
                 await _tools(app, seen)
@@ -307,10 +362,12 @@ async def day(active: frozenset[str] = frozenset()) -> Seen:
 def _found(seen: Seen) -> dict[str, list[str]]:
     everything = seen.text(skip=("documents_plain", "watch_today"))
     no_blobs = seen.text(skip=("documents", "watch_today"))
+    compact = _SEPARATORS.sub("", everything)  # "+1 (000) 000-0001" and "000 000 0001" read as digits
     found = {
         "coordinates": [n for n in D.needles() if n in everything],
-        "heart": sorted(set(HEART_RE.findall(no_blobs))),
-        "numbers": [n for n in NUMBERS if n in everything],
+        "heart": sorted({m.group(0).strip() for m in HEART_RE.finditer(no_blobs)}),
+        "numbers": [n for n in NUMBERS if n in everything] + [n for n in NATIONAL if n in compact],
+        "names": [n for n in NAMES if n.lower() in everything.lower()],
         "read_text": [n for n in READ if n in everything],
         "pixels": [n for n in PIXEL_NEEDLES if n in everything],
     }

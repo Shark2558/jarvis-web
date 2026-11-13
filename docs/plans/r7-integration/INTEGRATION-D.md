@@ -174,8 +174,8 @@ acceptance checks 8, 9 and 11). No wiring file was edited (BRIEF-COMMON §2). Pa
 
 Three fresh-context reviews of `r7-d` @ `bfcadb4` (silent-failure BLOCK, security WARN, code BLOCK) and the
 Workshop's nine decisions. Commits: **A** = `c9ddb2e` (SOS service, store, routes, door), **B** = `ee8a249`
-(watch store and jobs, flaky needles), **C** = the console commit (sheet and Watch tab JS and their browser
-tests), **D** = the docs commit that carries this section.
+(watch store and jobs, flaky needles), **C** = `6c20a64` (sheet and Watch tab JS and their browser tests),
+**D** = the docs commits that carry this section.
 
 **Owner decision (security M1), written here with its safe default.** While the app is locked, `/v1/sos/send`
 accepts only kind `real`; "test" and "I'm safe" answer 423 `device_locked` in plain words (a thief holding a
@@ -220,6 +220,12 @@ stays until he does.
 | code L6 (no tools with no store) | docstring fixed (the part is `off: no document store` and has none) |
 | code L7 (hygiene) | fixed in A and B: `Entry.extra` removed, `tzinfo` types, no `assert` as control flow, `SosRefused.code` |
 | code L8 a-e and the Watch pickers | fixed in C: blur and hidden tab end a hold, focus returns to the hold button after Cancel, the one-time link leaves the page (after Copy, when the sheet opens or closes, when Integrations closes, after 10 minutes), only the primary button starts a hold, one pointer at a time, the pickers keep their values after Save |
+
+Checks after the follow-ups: Part D's unit files and every `test_telegram_*` (with the guard tests of
+BRIEF-COMMON §6) 944 passed and the two I0 pins of §4.1 stay red by design; `evals/r7/run.py --mock --part
+body` 11/11 with the negative control failing the suite, 30 runs in a row; browser `test_r7_d_body.py`,
+`test_r7_d_follow_ups.py` (16 new), `test_ui_audit.py` and `test_dock_fit.py` 180 passed; `ruff check` and
+`ruff format --check` clean; `mypy` on Part D's files shows only the 9 pre-existing errors.
 
 Known limit: a repeated `press_id` is remembered in the server process (an hour, 64 presses). Two server
 instances would not share it; the limits (3 an hour, 10 a day) still bound any repeat.

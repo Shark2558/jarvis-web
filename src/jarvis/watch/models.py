@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import re
+import datetime as dt
 from datetime import date, datetime, timedelta
 from typing import Literal, Self
 
@@ -143,17 +144,17 @@ class Session(_Frozen):
 
 
 class DayIn(_Frozen):
-    date: date
+    date: dt.date
     steps: Steps | None = None
     heart: Heart | None = None
     sleep: tuple[Session, ...] = Field(default=(), max_length=MAX_SESSIONS)
 
     @field_validator("date", mode="before")
     @classmethod
-    def _iso(cls, v: object) -> date:
+    def _iso(cls, v: object) -> dt.date:
         if not isinstance(v, str) or len(v) != 10:
             raise ValueError("a date is YYYY-MM-DD")
-        return date.fromisoformat(v)
+        return dt.date.fromisoformat(v)
 
     @field_validator("sleep", mode="before")
     @classmethod

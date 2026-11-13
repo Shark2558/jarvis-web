@@ -256,8 +256,9 @@ class SosStore:
         except Exception as exc:  # noqa: BLE001 - fail closed: no join while it can't be read
             log.warning("SOS wrong-word counter unreadable", extra={"error": type(exc).__name__})
             return True
-        hour = int(now // 3600)
-        return bool(doc) and doc.get("hour") == hour and int(doc.get("count", 0)) >= WRONG_PER_HOUR
+        if not doc or doc.get("hour") != int(now // 3600):
+            return False
+        return int(doc.get("count", 0)) >= WRONG_PER_HOUR
 
     async def count_wrong(self, now: float) -> None:
         path, hour = self._join_path(WRONG_ID), int(now // 3600)

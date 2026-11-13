@@ -198,7 +198,8 @@ class WatchStore:
         doc = await self._get(self._state_path(uid))
         if doc is None:
             return WatchState()
-        kinds = doc.get("kinds") if isinstance(doc.get("kinds"), dict) else {}
+        raw = doc.get("kinds")
+        kinds: dict[str, Any] = raw if isinstance(raw, dict) else {}
         return WatchState(
             last_sync=_when(doc.get("last_sync")),
             kinds={k: kinds.get(k) is True for k in KINDS},

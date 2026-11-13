@@ -6,8 +6,10 @@ a log line: counts only.
   alert, silent) per silence, until it ends, when (a) a phone that synced has been silent for
   `STALE_AFTER` (26 hours: the app syncs every 6 hours and when opened), (b) a phone whose syncs
   are ALL refused has tried for that long, or (c) the phone syncs but no watch data (an empty or
-  old day) has arrived for `DATA_STALE_DAYS` days. A phone that never tried at all is not known
-  to this part, so it is never told about. "Told" is only a real delivery (ring or silent, to a
+  old day) has arrived for `DATA_STALE_DAYS` days, or (d) a phone LINKED that long ago has neither
+  synced nor tried (I1: the link time comes from Part C's `services["linked_since"]`; without it,
+  or when it can't be read, such a phone is not known here and never told about). "Told" is only
+  a real delivery (ring or silent, to a
   channel): a held or dropped notice is tried again after an hour, and a notice that went out but
   could not be noted is never sent again by this process. No notifier is logged and counted
   (`no_notifier`).
@@ -18,7 +20,7 @@ Each owner is served on his own: one owner's failure is counted (`failed`) and s
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime, time, timedelta
 
 from jarvis.logging import get_logger
@@ -57,6 +59,17 @@ def no_data_words(day: date) -> str:
     )
 
 
+def never_words(local: datetime) -> str:
+    return (
+        f"Your phone was linked on {local.day} {local.strftime('%b')}, "
+        f"{local.strftime('%H:%M')}, but it hasn't sent any watch data yet, Sir. Open the JARVIS "
+        "app on your phone and allow it to read Health Connect."
+    )
+
+
+LinkedSince = Callable[[str], Awaitable[float | None]]
+
+
 def _utc(at: datetime) -> datetime:
     return at if at.tzinfo is not None else at.replace(tzinfo=UTC)
 
@@ -71,10 +84,12 @@ class WatchStale:
         *,
         notifier: Callable[[], Notifier | None] | None,
         now: Callable[[], datetime],
+        linked: Callable[[], LinkedSince | None] | None = None,
     ) -> None:
         self._watch = watch
         self._notifier = notifier
         self._now = now
+        self._linked = linked  # Part C's link-time seam, read late (I1)
         # per owner: (the silence's moment, when it was tried, delivered). In this process only.
         self._tried: dict[str, tuple[datetime, datetime, bool]] = {}
 
@@ -95,7 +110,23 @@ class WatchStale:
             silent += got == "no_notifier"
         return {"told": told, "no_notifier": silent, FAILED_COUNT: failed}
 
-    def _silence(self, state: WatchState, now: datetime) -> tuple[datetime, str] | None:
+    async def _linked_at(self, uid: str) -> datetime | None:
+        """When his first phone was linked (Part C's seam); None: no seam, no phone, unreadable."""
+        read = self._linked() if self._linked is not None else None
+        if not callable(read):
+            return None
+        try:
+            at = await read(uid)
+        except Exception as exc:  # noqa: BLE001 - an unknown link time is "not known", never told
+            log.warning("the phone's link time unreadable", extra={"error": type(exc).__name__})
+            return None
+        if isinstance(at, bool) or not isinstance(at, int | float):
+            return None
+        return datetime.fromtimestamp(at, UTC)
+
+    def _silence(
+        self, state: WatchState, now: datetime, linked: datetime | None = None
+    ) -> tuple[datetime, str] | None:
         """The moment the silence counts from, and its kind; None when all is well."""
         last, zone = state.last_sync, self._watch.zone()
         if last is not None and now - last >= STALE_AFTER:
@@ -106,11 +137,14 @@ class WatchStale:
             base = state.last_data_day or (state.first_sync or last).astimezone(zone).date()
             if (now.astimezone(zone).date() - base).days >= DATA_STALE_DAYS:
                 return datetime.combine(base, time.min, tzinfo=UTC), "data"
+        elif state.first_refused is None and linked is not None and now - linked >= STALE_AFTER:
+            return linked, "never"
         return None
 
     async def _one(self, uid: str, now: datetime) -> str:
         state = await self._watch.state(uid)
-        found = self._silence(state, now)
+        never = state.last_sync is None and state.first_refused is None
+        found = self._silence(state, now, await self._linked_at(uid) if never else None)
         if found is None:
             return ""
         ref, kind = found
@@ -124,7 +158,7 @@ class WatchStale:
             log.warning("no notifier: the watch alert was not sent")
             return "no_notifier"
         local = ref.astimezone(self._watch.zone())
-        words = {"sync": stale_words, "refused": refused_words}.get(kind)
+        words = {"sync": stale_words, "refused": refused_words, "never": never_words}.get(kind)
         said = words(local) if words else no_data_words(local.date())
         got = await notifier.notify(uid, Signal(source="system", kind="watch_stale"), said)
         real = (

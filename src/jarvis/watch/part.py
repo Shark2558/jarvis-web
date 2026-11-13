@@ -18,7 +18,7 @@ Everything it needs is read LATE from the app (`ctx.state`): the Telegram client
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -31,7 +31,7 @@ from jarvis.sos.tools import sos_tools
 from jarvis.telegram.client import TelegramClient
 from jarvis.watch.brief import SleepBrief
 from jarvis.watch.door import health_handler, sos_handler
-from jarvis.watch.jobs import BodySweep, WatchStale
+from jarvis.watch.jobs import BodySweep, LinkedSince, WatchStale
 from jarvis.watch.phrases import watch_phrases
 from jarvis.watch.privacy import sos_privacy, watch_privacy
 from jarvis.watch.service import WatchService
@@ -60,6 +60,18 @@ def _telegram(ctx: MobileContext) -> Callable[[], TelegramClient | None]:
     return client
 
 
+def _linked(ctx: MobileContext) -> Callable[[], LinkedSince | None]:
+    """Part C's `services["linked_since"]`, read when the job runs (the parts are built first)."""
+
+    def seam() -> LinkedSince | None:
+        parts = ctx.state("r7_parts")
+        phone = parts.get("phone") if isinstance(parts, Mapping) else None
+        read = getattr(phone, "services", {}).get("linked_since")
+        return read if callable(read) else None
+
+    return seam
+
+
 def _owners(ctx: MobileContext) -> tuple[str, ...]:
     from jarvis.api.identity import LEGACY_USER_ID, user_id_for_email
 
@@ -86,7 +98,7 @@ def build(ctx: MobileContext) -> MobilePart:
     return MobilePart(
         "body",
         tools=(*watch_tools(watch), *sos_tools(sos)),
-        clock_jobs=(WatchStale(watch, notifier=ctx.notifier, now=now),),
+        clock_jobs=(WatchStale(watch, notifier=ctx.notifier, now=now, linked=_linked(ctx)),),
         daily_jobs=(BodySweep(watch, sos_store, keep_days=s.watch_keep_days, now=now),),
         privacy=(watch_privacy(watch.store), sos_privacy(sos_store)),
         services={

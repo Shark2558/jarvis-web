@@ -81,6 +81,7 @@ SERVICE_OWNER: Mapping[str, PartName] = {
     "app_lock": "phone",
     "sos_hook": "body",
     "sos_contacts": "body",
+    "linked_since": "phone",  # I1: Part C's link time, read by Part D's watch_stale
 }
 LOCKED = "JARVIS is locked on this device. Unlock it with your passkey."
 UNREADABLE = "JARVIS couldn't check its lock just now. Try again in a moment."

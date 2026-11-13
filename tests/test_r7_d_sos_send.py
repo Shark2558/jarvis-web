@@ -89,7 +89,7 @@ async def test_a_real_sos_reaches_each_contact_once_with_the_template_and_a_pin(
     for _, _, tg in (ASHA, RAVI, MEERA):
         assert [p["text"] for p in w.bot.to(tg)] == [text]  # once each, the fixed words
         (pin,) = w.bot.to(tg, "sendLocation")
-        assert (pin["latitude"], pin["longitude"]) == (-12.345678, -23.456789)
+        assert (pin["latitude"], pin["longitude"]) == (-31.415926, -17.320508)
     assert [r.status for r in res.results] == ["sent"] * 3
 
 
@@ -228,7 +228,7 @@ async def test_coordinates_appear_in_no_document_log_audit_line_or_alert(
         assert needle not in seen, needle
     assert "location yes" in "\n".join(e.detail for e in w.audit._entries)  # yes / no only
     for p in w.bot.paths:
-        assert "12.345" not in p and "23.456" not in p  # never in an address
+        assert "31.415" not in p and "17.320" not in p  # never in an address
 
 
 async def test_the_owner_is_told_with_sos_sent_and_no_name() -> None:

@@ -27,7 +27,7 @@ from jarvis.tools.audit import AuditLog
 
 KEY = bytes(range(101, 133))  # 32 distinct bytes, made for these tests only
 UID = "owner"
-LAT_E6, LON_E6 = -12_345_678, -23_456_789  # the open South Atlantic: nobody lives there
+LAT_E6, LON_E6 = -31_415_926, -17_320_508  # the open South Atlantic: nobody lives there
 # Made-up contacts with obviously fake numbers; Telegram ids from a made-up range
 ASHA = ("Asha Example", "+10000000001", 7_000_000_001)
 RAVI = ("Ravi Example", "+10000000002", 7_000_000_002)

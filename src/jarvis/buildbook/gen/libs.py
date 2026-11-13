@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import importlib.metadata as md
+import json
 import re
 import tomllib
 from collections.abc import Callable, Sequence
@@ -55,7 +56,8 @@ _TEXT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("MIT", re.compile(r"\bMIT License\b|Permission is hereby granted, free of charge")),
     ("BSD", re.compile(r"Redistribution and use in source and binary forms")),
 )
-# vendored licence files -> (library, its release constant in api/console.py, kind, role)
+# vendored licence files -> (library, its release constant in api/console.py or "manifest:<package>"
+# (its version in the newest vendor/vision/<release>/MANIFEST.json), kind, role)
 VENDORED: dict[str, tuple[str, str, str, str]] = {
     "vendor/LICENSE-three.txt": ("three.js", "THREE_RELEASE", "vendored", "3d"),
     "vendor/ort/LICENSE-onnxruntime.txt": ("onnxruntime-web", "ORT_RELEASE", "vendored", "voice"),
@@ -67,10 +69,10 @@ VENDORED: dict[str, tuple[str, str, str, str]] = {
         "voice",
     ),
     # R7 D14, I0 seam 24: the vision files Part B vendors under vendor/vision/<release>/ (each
-    # licence beside the release folders); a version comes from Part B's MANIFEST.json
+    # licence beside the release folders); I1: each version from Part B's MANIFEST.json
     "vendor/vision/LICENSE-mediapipe-tasks-vision.txt": (
         "MediaPipe Tasks Vision",
-        "",
+        "manifest:@mediapipe/tasks-vision",
         "vendored",
         "vision",
     ),
@@ -80,11 +82,37 @@ VENDORED: dict[str, tuple[str, str, str, str]] = {
         "model",
         "vision",
     ),
-    "vendor/vision/LICENSE-tesseract.js.txt": ("tesseract.js", "", "vendored", "vision"),
-    "vendor/vision/LICENSE-tesseract.js-core.txt": ("tesseract.js-core", "", "vendored", "vision"),
-    "vendor/vision/LICENSE-tessdata-eng.txt": ("Tesseract English data", "", "model", "vision"),
-    "vendor/vision/LICENSE-zxing-wasm.txt": ("zxing-wasm", "", "vendored", "vision"),
+    "vendor/vision/LICENSE-tesseract.js.txt": (
+        "tesseract.js",
+        "manifest:tesseract.js",
+        "vendored",
+        "vision",
+    ),
+    "vendor/vision/LICENSE-tesseract.js-core.txt": (
+        "tesseract.js-core",
+        "manifest:tesseract.js-core",
+        "vendored",
+        "vision",
+    ),
+    "vendor/vision/LICENSE-tessdata-eng.txt": (
+        "Tesseract English data",
+        "manifest:tessdata_fast",
+        "model",
+        "vision",
+    ),
+    "vendor/vision/LICENSE-zxing-wasm.txt": (
+        "zxing-wasm",
+        "manifest:zxing-wasm",
+        "vendored",
+        "vision",
+    ),
+    # I1 (INTEGRATION-B 2): the barcode reader inside zxing-wasm's .wasm; no version of its own
+    "vendor/vision/LICENSE-zxing-cpp.txt": ("zxing-cpp", "", "vendored", "vision"),
 }
+VISION_DIR = "vendor/vision/"
+MANIFEST_PREFIX = "manifest:"
+_NPM_SOURCE = re.compile(r"^npm:((?:@[\w.-]+/)?[\w.-]+)@([\w.+-]+)/")
+_RAW_SOURCE = re.compile(r"^https://raw\.githubusercontent\.com/[\w.-]+/([\w.-]+)/([\w.+-]+)/")
 RELEASE_NAMES = {"three": "three.js", "ort": "onnxruntime-web", "oww": "openWakeWord models"}
 ROLES: dict[str, tuple[str, ...]] = {
     "ai": ("anthropic", "jiter", "docstring-parser"),
@@ -210,8 +238,33 @@ def _releases(repo: Repo) -> dict[str, str]:
     return found
 
 
+def _manifest_versions(repo: Repo) -> dict[str, str]:
+    """{"manifest:<package>": version} from the newest vision release's MANIFEST.json: each file's
+    `source` is `npm:<package>@<version>/...` or a raw.githubusercontent.com address whose
+    repository and tag stand for the package and its version (I1)."""
+    prefix = STATIC + VISION_DIR
+    manifests = sorted(f for f in repo.under(prefix) if f.endswith("/MANIFEST.json"))
+    if not manifests:
+        return {}
+    try:
+        files = json.loads(repo.text(manifests[-1]) or "{}").get("files") or {}
+    except (ValueError, AttributeError):
+        return {}
+    found: dict[str, str] = {}
+    for entry in files.values() if isinstance(files, dict) else ():
+        source = entry.get("source") if isinstance(entry, dict) else None
+        m = (
+            (_NPM_SOURCE.match(source) or _RAW_SOURCE.match(source))
+            if isinstance(source, str)
+            else None
+        )
+        if m:
+            found.setdefault(MANIFEST_PREFIX + m.group(1), m.group(2))
+    return found
+
+
 def _vendored(repo: Repo) -> list[Library]:
-    releases, out = _releases(repo), []
+    releases, out = {**_releases(repo), **_manifest_versions(repo)}, []
     for rel in repo.under(STATIC):
         sub, name = rel[len(STATIC) :], rel.rsplit("/", 1)[-1]
         if sub in VENDORED:

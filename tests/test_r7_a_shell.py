@@ -110,7 +110,8 @@ def test_the_share_target_posts_files_to_the_share_route() -> None:
     assert files["name"] == "files"
     assert SHARE_TYPES <= set(files["accept"])
     assert not [a for a in files["accept"] if a.startswith("application/") and a not in SHARE_TYPES]
-    assert all(a in SHARE_TYPES or a in shell.SHARE_EXTENSIONS for a in files["accept"])
+    extensions = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+    assert all(a in SHARE_TYPES or a in extensions for a in files["accept"])
 
 
 def test_the_manifest_and_icons_ship_in_the_image() -> None:
@@ -171,6 +172,7 @@ async def test_without_the_mobile_switch_nothing_of_the_app_is_served(settings: 
         assert (await c.get("/manifest.webmanifest")).status_code == 404
         assert (await c.get("/static/icons/jarvis-192.png")).status_code == 404
         assert (await c.get("/app/share/sw.js")).status_code == 404
+        assert (await c.get("/app/share/in")).status_code == 404  # the reload page too
         assert app.state.r7_parts["shell"].ready == "off"
 
 
@@ -222,6 +224,14 @@ async def test_an_oversized_share_is_refused_before_it_is_read(settings: Setting
     async with app.router.lifespan_context(app):
         status, _, _, spy = await raw_post(app, "/app/share/in", big, {"content-type": "x/y"})
     assert status == 413 and spy.pulled == 0
+
+
+async def test_a_served_manifest_cannot_be_changed_through_a_caller(settings: Settings) -> None:
+    first = shell.manifest(settings)
+    first["icons"].append({"src": "/evil"})
+    first["shortcuts"].clear()
+    again = shell.manifest(settings)
+    assert all(i["src"] != "/evil" for i in again["icons"]) and again["shortcuts"]
 
 
 async def test_the_share_route_answers_a_get_with_the_console(settings: Settings) -> None:

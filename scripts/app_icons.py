@@ -321,7 +321,7 @@ def icon_named(name: str) -> Icon:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1] if __doc__ else None)
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     ap.add_argument("--check", action="store_true", help="compare, write nothing")
     ap.add_argument("--out", type=Path, default=OUT)
     args = ap.parse_args(argv)

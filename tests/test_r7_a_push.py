@@ -4,7 +4,7 @@
 # worker keeps that target (its address check learns the `?`), puts the kind in the tag (`tag:
 # kind`, phone-contract.md section 6) and offers "Talk"; a click hands the target to the JARVIS
 # window already open over a BroadcastChannel and never calls navigate() (static half; the browser
-# half is tests/browser/test_r7_a_push.py).
+# half is tests/browser/test_r7_a_links.py).
 from __future__ import annotations
 
 import json
@@ -32,6 +32,11 @@ def test_every_alert_kind_opens_a_panel_the_launch_reader_allows(kind: str) -> N
     assert re.fullmatch(r"/\?open=[a-z]+", url), url
     assert url.removeprefix("/?open=") in links_panels()
     assert re.fullmatch(SW_RULE, url)  # the worker keeps it
+
+
+def test_the_target_table_cannot_be_changed_at_run_time() -> None:
+    with pytest.raises(TypeError):
+        TARGETS["approval_waiting"] = "home"  # type: ignore[index]
 
 
 def test_the_targets_cover_every_kind_and_name_only_real_panels() -> None:

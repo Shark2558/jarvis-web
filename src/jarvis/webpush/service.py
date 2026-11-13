@@ -20,6 +20,7 @@ import json
 import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
+from types import MappingProxyType
 
 import httpx
 
@@ -72,29 +73,31 @@ _HOME = (
 )
 # R7 D8: the panel each alert opens (console-r7-links.js allows exactly the dock's panels). The
 # systems check, Offline mode, the phone app and Emergency SOS are cards in Integrations.
-TARGETS: Mapping[str, str] = {
-    "approval_waiting": "approvals",
-    "series_checkin": "approvals",  # the check-ins sit above the Approvals list (R11.1)
-    "offline_on": "integrations",
-    "offline_off": "integrations",
-    "brief_ready": "brief",
-    "vault_expiry": "vault",
-    "vitals_warn": "vitals",
-    "vitals_critical": "vitals",
-    "health_fault": "integrations",
-    "health_recovered": "integrations",
-    "health_degraded": "integrations",
-    "book_sealed": "book",
-    "book_seal_failed": "book",
-    "book_session_closed": "book",
-    "faces_to_name": "faces",
-    "sos_sent": "integrations",
-    "sos_contact_left": "integrations",
-    "phone_linked": "integrations",
-    "phone_unlinked": "integrations",
-    **{kind: "helpers" for kind in _HELPERS},
-    **{kind: "home" for kind in _HOME},
-}
+TARGETS: Mapping[str, str] = MappingProxyType(
+    {
+        "approval_waiting": "approvals",
+        "series_checkin": "approvals",  # the check-ins sit above the Approvals list (R11.1)
+        "offline_on": "integrations",
+        "offline_off": "integrations",
+        "brief_ready": "brief",
+        "vault_expiry": "vault",
+        "vitals_warn": "vitals",
+        "vitals_critical": "vitals",
+        "health_fault": "integrations",
+        "health_recovered": "integrations",
+        "health_degraded": "integrations",
+        "book_sealed": "book",
+        "book_seal_failed": "book",
+        "book_session_closed": "book",
+        "faces_to_name": "faces",
+        "sos_sent": "integrations",
+        "sos_contact_left": "integrations",
+        "phone_linked": "integrations",
+        "phone_unlinked": "integrations",
+        **{kind: "helpers" for kind in _HELPERS},
+        **{kind: "home" for kind in _HOME},
+    }
+)
 
 
 class BadSubscription(ValueError):

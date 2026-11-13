@@ -77,3 +77,11 @@ def test_the_script_draws_from_its_own_shapes_only() -> None:
     src = (ROOT / "scripts" / "app_icons.py").read_text(encoding="utf-8")
     assert "import PIL" not in src and "urllib" not in src and "open(" not in src
     assert src.isascii()
+
+
+def test_the_scripts_help_starts_with_its_one_line_description(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        ICON_SCRIPT.main(["--help"])
+    assert "the app's icons, drawn here" in " ".join(capsys.readouterr().out.split())

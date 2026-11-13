@@ -20,6 +20,7 @@ brain no tool and registers one privacy row: shared items wait in this phone's b
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Mapping
 from functools import lru_cache
@@ -44,7 +45,6 @@ MANIFEST_TYPE = "application/manifest+json"
 SHARE_SCOPE = "/app/share/"
 SHARE_SW_PATH = SHARE_SCOPE + "sw.js"
 SHARE_IN_PATH = SHARE_SCOPE + "in"  # the share target's action (= r7_wiring.SHARE_IN_PATH)
-SHARE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".pdf"})
 # scripts/app_icons.py draws exactly these; nothing else under /static/icons/ is ever served
 ICONS: Mapping[str, int] = {
     "jarvis-192.png": 192,
@@ -107,7 +107,7 @@ def _manifest_file() -> Mapping[str, Any]:
 def manifest(s: Settings) -> dict[str, Any]:
     """The manifest as it is served: the static file, without its share target when sharing
     is switched off."""
-    m = dict(_manifest_file())
+    m: dict[str, Any] = copy.deepcopy(dict(_manifest_file()))
     if not s.app_share_enabled:
         m.pop("share_target", None)
     return m
@@ -158,7 +158,7 @@ async def share_missed(s: Settings = Depends(_mobile_on)) -> HTMLResponse:
     return HTMLResponse(_PAGE.format(words=words), headers=_PAGE_HEADERS)
 
 
-@router.get(SHARE_IN_PATH)
+@router.get(SHARE_IN_PATH, dependencies=[Depends(_mobile_on)])
 async def share_reloaded() -> RedirectResponse:
     return RedirectResponse("/", status_code=303)
 
@@ -222,7 +222,6 @@ __all__ = [
     "MANIFEST_PATH",
     "MISSED",
     "PART",
-    "SHARE_EXTENSIONS",
     "SHARE_IN_PATH",
     "SHARE_OFF",
     "SHARE_SCOPE",

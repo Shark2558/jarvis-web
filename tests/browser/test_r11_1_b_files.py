@@ -199,11 +199,13 @@ def test_a_big_picture_is_made_smaller_before_it_leaves_the_browser(console: Pag
         """async (b64) => {
           const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
           const file = new File([bytes], 'icon.png', { type: 'image/png' });
-          return (await window.JarvisFixes.parts.files.shrink(file)) === file;
+          const out = await window.JarvisFixes.parts.files.shrink(file);
+          return [out === file, out.type, out.name];
         }""",
         base64.b64encode(make_png(16, 16)).decode(),
     )
-    assert same is True  # small enough already: it goes as it is (the server cleans it)
+    # R7 I1: small enough already, yet redrawn (a lossless PNG) so no metadata travels
+    assert same == [False, "image/png", "icon.png"]
     _clean(console)
 
 

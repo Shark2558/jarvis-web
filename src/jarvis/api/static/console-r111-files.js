@@ -10,7 +10,7 @@
 //       and, from 5 rupees up, the line above Send with the two tiers; the owner chooses, then it is sent. An
 //       estimate that failed (unavailable, an error, an odd answer) asks "Couldn't estimate the cost; send anyway?"
 //   shrink(file) -> file   a picture made smaller in the browser before upload (longest side and weight from
-//       GET /v1/input; a canvas re-draw, which also drops camera and location data)
+//       GET /v1/input; a canvas re-draw, which also drops camera and location data; R7 I1: EVERY picture is redrawn)
 //   folder(fileList) -> {blob, name, count, left}   a picked folder's readable files as ONE stored zip
 //   limits() -> what GET /v1/input said (accept list, files a message, megabytes); console-attach.js is told
 //   hints() -> this turn's recognition hints, for console-voice-phrases.js
@@ -173,29 +173,37 @@ async function cost(o) {
 }
 
 // ---- pictures: made smaller here, before they leave the browser -----------------------------------------------
-function drawn(bmp, w, h) {
+function drawn(bmp, w, h, white = true) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
   if (!g) return null;
-  g.fillStyle = 'white'; g.fillRect(0, 0, w, h); // a see-through PNG becomes a JPEG on white
+  if (white) { g.fillStyle = 'white'; g.fillRect(0, 0, w, h); } // a see-through PNG becomes a JPEG on white
   g.drawImage(bmp, 0, 0, w, h);
   return c;
 }
+const blobOf = (c, type, q) => new Promise(resolve => c.toBlob(resolve, type, q));
+/** R7 I1 (EXIF): EVERY picture is redrawn here before it leaves, so no camera or location data travels with it: a PNG
+ *  small enough stays a lossless PNG (its chunks dropped), anything else becomes a JPEG (never the original). */
 async function shrink(file) {
   if (!file || !PICTURE.test(file.name || '') || typeof createImageBitmap !== 'function') return file;
   let bmp = null;
   try { bmp = await createImageBitmap(file); } catch (_) { return file; } // not a picture this browser can read: the server says so
   const side = limits.picture_side, most = limits.picture_max_kb * 1024;
   const scale = Math.min(1, side / Math.max(bmp.width, bmp.height, 1));
-  if (scale === 1 && file.size <= most && !/\.webp$/i.test(file.name)) { if (bmp.close) bmp.close(); return file; } // small enough already
-  const c = drawn(bmp, Math.max(1, Math.round(bmp.width * scale)), Math.max(1, Math.round(bmp.height * scale)));
+  const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
+  if (scale === 1 && /\.png$/i.test(file.name)) {
+    const p = drawn(bmp, w, h, false), png = p ? await blobOf(p, 'image/png') : null;
+    if (png && png.size <= most) { if (bmp.close) bmp.close(); return new File([png], String(file.name), { type: 'image/png' }); }
+  }
+  const c = drawn(bmp, w, h);
   if (bmp.close) bmp.close();
   if (!c) return file;
+  let last = null;
   for (const q of JPEG_TRIES) {
-    const blob = await new Promise(resolve => c.toBlob(resolve, 'image/jpeg', q));
-    if (blob && blob.size <= most) return new File([blob], String(file.name).replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+    last = await blobOf(c, 'image/jpeg', q);
+    if (last && last.size <= most) break;
   }
-  return file;
+  return last ? new File([last], String(file.name).replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }) : file; // too big still: the server says so
 }
 
 // ---- a folder: its readable files as one stored (uncompressed) zip ----------------------------------------------

@@ -9,21 +9,32 @@ import android.content.Context
 import android.util.Log
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import io.github.shark2558.jarvis.link.AppState
 import io.github.shark2558.jarvis.link.Hello
 import java.io.IOException
+import java.util.concurrent.TimeoutException
 
 class HealthSyncWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
+        if (!AppState(applicationContext).canSend()) return Result.success() // linked, and not refused
         try {
             Hello.send(applicationContext)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return Result.retry()
         } catch (e: Exception) {
             Log.i(TAG, "hello not sent: ${e.javaClass.simpleName}")
         }
         return try {
-            when (HealthSync.run(applicationContext)) {
+            when (HealthSync.run(applicationContext).outcome) {
                 HealthSync.Outcome.FAILED -> Result.retry()
-                else -> Result.success()
+                else -> Result.success() // a plain "no" from the door is not retried
             }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            Result.retry()
+        } catch (e: TimeoutException) {
+            Result.retry()
         } catch (e: SecurityException) {
             Log.i(TAG, "watch read refused in the background")
             Result.success()

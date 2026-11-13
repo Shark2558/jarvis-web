@@ -9,36 +9,43 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import io.github.shark2558.jarvis.core.DayBuilder
 import io.github.shark2558.jarvis.core.Payloads
+import io.github.shark2558.jarvis.core.Replies
 import io.github.shark2558.jarvis.link.AppState
 import io.github.shark2558.jarvis.link.DoorClient
 import java.time.LocalDate
 import java.time.ZoneId
 
 object HealthSync {
-    enum class Outcome { SENT, NOTHING, NO_HEALTH_CONNECT, NO_PERMISSION, NOT_LINKED, FAILED }
+    /** FAILED is a wait (the job tries again); REFUSED is the door's no, with its plain `note`. */
+    enum class Outcome { SENT, NOTHING, NO_HEALTH_CONNECT, NO_PERMISSION, NOT_LINKED, FAILED, REFUSED }
+
+    data class Report(val outcome: Outcome, val note: String? = null)
 
     private const val FIRST_DAYS = 30L
     private const val ROUTINE_DAYS = 3L
 
-    fun run(context: Context): Outcome {
+    fun run(context: Context): Report {
         val state = AppState(context)
-        if (!state.isLinked()) return Outcome.NOT_LINKED
-        if (!HealthAccess.available(context)) return Outcome.NO_HEALTH_CONNECT
+        if (!state.isLinked()) return Report(Outcome.NOT_LINKED)
+        if (state.needsRelink()) return Report(Outcome.NOT_LINKED, Replies.NEEDS_LINKING)
+        if (!HealthAccess.available(context)) return Report(Outcome.NO_HEALTH_CONNECT)
         val client = HealthConnectClient.getOrCreate(context)
         val granted = await { client.permissionController.getGrantedPermissions() }
-        if (HealthPermissions.READ.none { it in granted }) return Outcome.NO_PERMISSION
+        if (HealthPermissions.READ.none { it in granted }) return Report(Outcome.NO_PERMISSION)
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val back = if (state.lastHealthSync() == 0L) FIRST_DAYS else ROUTINE_DAYS
         val days = (0L until back).map { today.minusDays(it) }
         val built = DayBuilder(zone).build(HealthReader(client, zone, granted), days)
         if (built.all { it.steps == null && it.heart == null && it.sleep.isEmpty() }) {
-            state.setLastHealthSync(System.currentTimeMillis())
-            return Outcome.NOTHING
+            return Report(Outcome.NOTHING) // not stamped: the first read's 30 days are still owed
         }
         val answer = DoorClient(context).signed("health", Payloads.health(built))
-        if (!answer.ok) return Outcome.FAILED
-        state.setLastHealthSync(System.currentTimeMillis())
-        return Outcome.SENT
+        val refusal = answer.refusal ?: run {
+            state.setLastHealthSync(System.currentTimeMillis())
+            return Report(Outcome.SENT)
+        }
+        val outcome = if (Replies.worthRetry(answer.status)) Outcome.FAILED else Outcome.REFUSED
+        return Report(outcome, refusal.sentence)
     }
 }

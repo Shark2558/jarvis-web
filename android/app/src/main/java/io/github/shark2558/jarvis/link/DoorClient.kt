@@ -9,6 +9,8 @@ import android.content.Context
 import io.github.shark2558.jarvis.BuildConfig
 import io.github.shark2558.jarvis.core.Door
 import io.github.shark2558.jarvis.core.Payloads
+import io.github.shark2558.jarvis.core.Refusal
+import io.github.shark2558.jarvis.core.Replies
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -22,8 +24,12 @@ class DoorRefused(val status: Int) : IOException("JARVIS answered $status")
 class NotLinked : IllegalStateException("this phone is not linked")
 
 class DoorClient(private val context: Context, private val host: String = BuildConfig.JARVIS_HOST) {
-    data class Answer(val status: Int, val body: String) {
+    /** `skewSeconds`: how far the server's clock (its `Date` header) is ahead of the phone's. */
+    data class Answer(val status: Int, val body: String, val skewSeconds: Long? = null) {
         val ok: Boolean get() = status in 200..299
+
+        /** Why the door said no, in the app's plain words; null when it said yes. */
+        val refusal: Refusal? get() = Replies.explain(status, skewSeconds)
     }
 
     /** D5: link with the one-time code; returns the device id the server gave. */
@@ -55,7 +61,18 @@ class DoorClient(private val context: Context, private val host: String = BuildC
         val t = System.currentTimeMillis() / MILLIS
         val nonce = Door.newNonce()
         val signature = PhoneKey.sign(Door.signingString(deviceId, t, nonce, "POST", path, body))
-        return post(path, body, Door.header(deviceId, t, nonce, signature), contentType)
+        val answer = post(path, body, Door.header(deviceId, t, nonce, signature), contentType)
+        noteAnswer(answer)
+        return answer
+    }
+
+    /** Three "this phone is not known" answers in a row: the app says it needs linking again and
+     *  its jobs stop sending. The link itself is kept until the owner links again. */
+    private fun noteAnswer(answer: Answer) {
+        val state = AppState(context)
+        val strikes = Replies.strikes(state.strikes(), answer.refusal)
+        state.setStrikes(strikes)
+        if (Replies.needsLinking(strikes)) state.setNeedsRelink(true) else if (answer.ok) state.setNeedsRelink(false)
     }
 
     private fun post(path: String, body: ByteArray, header: String?, contentType: String): Answer {
@@ -72,9 +89,11 @@ class DoorClient(private val context: Context, private val host: String = BuildC
             connection.setFixedLengthStreamingMode(body.size)
             connection.outputStream.use { it.write(body) }
             val status = connection.responseCode
+            val serverMs = connection.getHeaderFieldDate("Date", 0L)
+            val skew = Replies.skewSeconds(System.currentTimeMillis(), serverMs)
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.use { readCapped(it) } ?: ""
-            return Answer(status, text)
+            return Answer(status, text, skew)
         } finally {
             connection.disconnect()
         }

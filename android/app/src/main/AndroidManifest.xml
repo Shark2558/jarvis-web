@@ -133,10 +133,12 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- SOS (D19): a countdown on the lock screen too, and nothing else there. -->
+        <!-- SOS (D19): a countdown on the lock screen too, and nothing else there. singleTop is
+             safe because SosActivity.onNewIntent restarts a finished screen; the wide
+             configChanges list keeps a dark-mode switch or a font change from recreating it. -->
         <activity
             android:name=".sos.SosActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode"
             android:exported="false"
             android:launchMode="singleTop"
             android:showWhenLocked="true"

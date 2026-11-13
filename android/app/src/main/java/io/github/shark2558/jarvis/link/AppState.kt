@@ -10,8 +10,10 @@ import android.content.SharedPreferences
 import android.net.Uri
 import io.github.shark2558.jarvis.core.Door
 import io.github.shark2558.jarvis.core.SeenList
+import io.github.shark2558.jarvis.sos.ContactsVault
 
 class AppState(context: Context) {
+    private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -21,11 +23,48 @@ class AppState(context: Context) {
 
     fun saveDeviceId(id: String) {
         require(Door.isDeviceId(id)) { "not a device id" }
-        prefs.edit().putString(DEVICE, id).apply()
+        prefs.edit().putString(DEVICE, id).remove(STRIKES).remove(RELINK).apply()
     }
 
+    /** Forget this phone's link: the device id, the strikes and the sealed SOS contacts go. */
     fun forgetLink() {
-        prefs.edit().remove(DEVICE).apply()
+        prefs.edit().remove(DEVICE).remove(STRIKES).remove(RELINK).apply()
+        ContactsVault.clear(appContext)
+    }
+
+    /** Consecutive "this phone is not known" answers (see core's Replies.strikes). */
+    fun strikes(): Int = prefs.getInt(STRIKES, 0)
+
+    fun setStrikes(count: Int) {
+        if (count != strikes()) prefs.edit().putInt(STRIKES, count).apply()
+    }
+
+    /** True once the door has refused this phone three times in a row: the jobs stop sending
+     *  and the set-up screen asks for a new link code. Linking again clears it. */
+    fun needsRelink(): Boolean = prefs.getBoolean(RELINK, false)
+
+    fun setNeedsRelink(needed: Boolean) {
+        if (needed != needsRelink()) prefs.edit().putBoolean(RELINK, needed).apply()
+    }
+
+    /** Linked and not refused: the jobs send only then. */
+    fun canSend(): Boolean = isLinked() && !needsRelink()
+
+    /** The folder's last plain-words note (a file the door refused for good, or a wait). */
+    fun inboxNote(): String? = prefs.getString(INBOX_NOTE, null)
+
+    fun setInboxNote(note: String?) {
+        val editor = prefs.edit()
+        if (note == null) editor.remove(INBOX_NOTE) else editor.putString(INBOX_NOTE, note)
+        editor.apply()
+    }
+
+    /** The id of the last SOS press that started its send (so a recreated screen cannot send it
+     *  again, even after the process was restarted). */
+    fun lastSosPress(): String? = prefs.getString(SOS_PRESS, null)
+
+    fun setLastSosPress(id: String) {
+        prefs.edit().putString(SOS_PRESS, id).commit()
     }
 
     fun tileAdded(): Boolean = prefs.getBoolean(TILE_PREFIX + TILE_TALK, false) ||
@@ -78,5 +117,9 @@ class AppState(context: Context) {
         private const val SEEN_KEYS = "inbox_seen_keys"
         private const val HEALTH_AT = "health_at"
         private const val ASKED_PREFIX = "asked_"
+        private const val STRIKES = "link_strikes"
+        private const val RELINK = "needs_relink"
+        private const val INBOX_NOTE = "inbox_note"
+        private const val SOS_PRESS = "sos_last_press"
     }
 }

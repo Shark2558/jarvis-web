@@ -36,6 +36,11 @@ object ContactsVault {
         prefs(context).edit().putString(BOOK, text).apply()
     }
 
+    /** No numbers on the phone: the server's answer had none, or the link was forgotten. */
+    fun clear(context: Context) {
+        prefs(context).edit().remove(BOOK).apply()
+    }
+
     fun load(context: Context): SosBook? {
         val text = prefs(context).getString(BOOK, null) ?: return null
         val parts = text.split('.')

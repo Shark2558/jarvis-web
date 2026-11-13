@@ -7,6 +7,11 @@
 // with no internet). Then: call the first contact, call 112, "I'm safe". The location is asked
 // for once, 10 seconds at most, and travels only in the SOS body and the text. On the lock screen
 // it shows the countdown and no names. It is not an emergency service, and it says so.
+// One press is at most one send: the screen survives a recreation (its state is saved, the send
+// is claimed once per press id in the process-wide ledger), a new tile press restarts a finished
+// or cancelled screen (onNewIntent) but never a real countdown or send in progress, and the 112
+// and text-message buttons are on screen at every moment. Leaving the screen for good during the
+// countdown cancels it (the countdown is the owner's cancel window); the screen stays on until it ends.
 package io.github.shark2558.jarvis.sos
 
 import android.app.Activity
@@ -27,14 +32,18 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import io.github.shark2558.jarvis.R
 import io.github.shark2558.jarvis.core.Fix
 import io.github.shark2558.jarvis.core.Launch
 import io.github.shark2558.jarvis.core.Payloads
+import io.github.shark2558.jarvis.core.PressLedger
 import io.github.shark2558.jarvis.core.SosKind
 import io.github.shark2558.jarvis.core.SosMachine
+import io.github.shark2558.jarvis.core.SosPress
 import io.github.shark2558.jarvis.core.SosState
 import io.github.shark2558.jarvis.core.SosText
 import io.github.shark2558.jarvis.link.AppState
@@ -47,6 +56,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.time.ZoneId
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -54,12 +64,14 @@ class SosActivity : Activity() {
     private data class Answer(val ok: Boolean, val reached: Int, val why: String)
 
     private lateinit var machine: SosMachine
+    private var pressId = ""
     private lateinit var count: TextView
     private lateinit var status: TextView
     private lateinit var where: TextView
     private lateinit var after: View
     private lateinit var cancelButton: Button
     private lateinit var firstCall: Button
+    private lateinit var notice: TextView
     private val ticker = Handler(Looper.getMainLooper())
     private val io: ExecutorService = Executors.newSingleThreadExecutor()
     private var location: OneShotLocation? = null
@@ -75,7 +87,8 @@ class SosActivity : Activity() {
             val now = SystemClock.elapsedRealtime()
             machine.tick(now)
             render(now)
-            if (machine.state is SosState.Counting) ticker.postDelayed(this, TICK_MS)
+            val s = machine.state
+            if (s is SosState.Counting || s == SosState.Sending) ticker.postDelayed(this, TICK_MS)
         }
     }
 
@@ -92,19 +105,100 @@ class SosActivity : Activity() {
         after = findViewById(R.id.sos_after)
         cancelButton = findViewById(R.id.sos_cancel)
         firstCall = findViewById(R.id.sos_call_first)
-        kind = if (intent?.getBooleanExtra(EXTRA_TEST, false) == true) SosKind.TEST else SosKind.REAL
-        findViewById<TextView>(R.id.sos_title).setText(if (kind == SosKind.TEST) R.string.sos_title_test else R.string.sos_title)
+        notice = findViewById(R.id.sos_notice)
+        // a press that already sent (even before a restart of the process) is never sent twice
+        AppState(this).lastSosPress()?.let { ledger.claim(it) }
         book = ContactsVault.load(this)
         wireButtons()
-        machine = SosMachine(kind, 0L, COUNTDOWN_MS) { k -> sendSos(k) }
+        if (savedInstanceState?.containsKey(KEY_PRESS) == true) {
+            resume(savedInstanceState)
+        } else {
+            begin(kindOf(intent), newPressId())
+        }
+    }
+
+    /** A new press reached the screen that is already open (the tile or shortcut pressed again). */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val next = kindOf(intent)
+        // a finished or cancelled screen starts again; a real countdown or send in progress stands
+        if (SosPress.startsFresh(machine.state, kind, next)) {
+            location?.stop()
+            begin(next, newPressId())
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val saved = machine.saved()
+        outState.putString(KEY_PRESS, saved.pressId)
+        outState.putInt(KEY_PHASE, saved.phase)
+        outState.putLong(KEY_UNTIL, saved.untilMs)
+        outState.putInt(KEY_REACHED, saved.reached)
+        outState.putString(KEY_WHY, saved.why)
+        outState.putBoolean(KEY_TEST, kind == SosKind.TEST)
+    }
+
+    private fun kindOf(from: Intent?): SosKind =
+        if (from?.getBooleanExtra(EXTRA_TEST, false) == true) SosKind.TEST else SosKind.REAL
+
+    private fun newPressId(): String = UUID.randomUUID().toString()
+
+    private fun newMachine(): SosMachine = SosMachine(kind, 0L, COUNTDOWN_MS, pressId, ledger) { k -> sendSos(k) }
+
+    private fun showKind() {
+        findViewById<TextView>(R.id.sos_title).setText(if (kind == SosKind.TEST) R.string.sos_title_test else R.string.sos_title)
+        // a test never offers the real text message, so no test can reach the family by SMS
+        findViewById<View>(R.id.sos_text).visibility = if (kind == SosKind.TEST) View.GONE else View.VISIBLE
+    }
+
+    /** A fresh press: a new id, a new machine, a 10-second countdown. */
+    private fun begin(next: SosKind, id: String) {
+        kind = next
+        pressId = id
+        fix = null
+        lastBeep = -1L
+        after.visibility = View.GONE
+        notice.text = ""
+        count.text = ""
+        cancelButton.setText(R.string.sos_cancel)
+        showKind()
+        machine = newMachine()
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // the timeout must not end the countdown
         startLocation()
         machine.startCountdown(SystemClock.elapsedRealtime())
+        ticker.removeCallbacks(tick)
+        ticker.post(tick)
+    }
+
+    /** The same press after a recreation: the machine comes back as it was (see SosMachine.restore). */
+    private fun resume(saved: Bundle) {
+        kind = if (saved.getBoolean(KEY_TEST)) SosKind.TEST else SosKind.REAL
+        pressId = saved.getString(KEY_PRESS).orEmpty()
+        val state = SosMachine.Saved(
+            pressId,
+            saved.getInt(KEY_PHASE),
+            saved.getLong(KEY_UNTIL),
+            saved.getInt(KEY_REACHED),
+            saved.getString(KEY_WHY).orEmpty(),
+        )
+        showKind()
+        machine = SosMachine.restore(state, kind, 0L, COUNTDOWN_MS, SystemClock.elapsedRealtime(), ledger) { k -> sendSos(k) }
+        if (machine.state is SosState.Counting) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            startLocation()
+        }
         ticker.post(tick)
     }
 
     override fun onDestroy() {
         ticker.removeCallbacks(tick)
-        if (!isChangingConfigurations) machine.cancel(SystemClock.elapsedRealtime()) // leaving sends nothing
+        if (!isChangingConfigurations) {
+            val counting = machine.state is SosState.Counting
+            machine.cancel(SystemClock.elapsedRealtime()) // leaving sends nothing
+            if (counting) Toast.makeText(applicationContext, R.string.sos_cancelled, Toast.LENGTH_SHORT).show()
+        }
         location?.stop()
         tone?.release()
         io.shutdown() // a send already started still finishes
@@ -152,6 +246,8 @@ class SosActivity : Activity() {
     private fun sendSos(k: SosKind) {
         val at = System.currentTimeMillis() / MILLIS
         val place = fix
+        val press = pressId
+        if (k != SosKind.SAFE) AppState(this).setLastSosPress(press) // kept: this press has sent
         if (k == SosKind.REAL) openText()
         io.execute {
             val answer = try {
@@ -159,25 +255,31 @@ class SosActivity : Activity() {
                     Answer(false, -1, NOT_LINKED)
                 } else {
                     val reply = DoorClient(this).signed("sos", Payloads.sos(k, at, place))
-                    if (reply.ok) Answer(true, reachedOf(reply.body), "") else Answer(false, -1, "refused")
+                    val refusal = reply.refusal
+                    when {
+                        refusal == null -> Answer(true, reachedOf(reply.body), "")
+                        else -> Answer(false, -1, refusal.sentence)
+                    }
                 }
             } catch (e: IOException) {
-                Answer(false, -1, "offline")
+                Answer(false, -1, UNSURE) // it may have gone before the answer was lost
             } catch (e: GeneralSecurityException) {
-                Answer(false, -1, "key")
+                Answer(false, -1, FAILED)
             } catch (e: RuntimeException) {
-                Answer(false, -1, "failed")
+                Answer(false, -1, FAILED)
             }
-            runOnUiThread { answered(k, answer) }
+            if (k != SosKind.SAFE) ledger.record(press, PressLedger.Outcome(answer.ok, answer.reached, answer.why))
+            runOnUiThread { answered(k, answer, press) }
         }
     }
 
-    private fun answered(k: SosKind, answer: Answer) {
+    private fun answered(k: SosKind, answer: Answer, press: String) {
         if (isFinishing || isDestroyed) return
         if (k == SosKind.SAFE) {
             status.setText(if (answer.ok) R.string.sos_safe_sent else R.string.sos_failed)
             return
         }
+        if (press != pressId) return // the answer of an older press
         machine.done(answer.ok, answer.reached, answer.why)
         render(SystemClock.elapsedRealtime())
     }
@@ -205,7 +307,12 @@ class SosActivity : Activity() {
                 showAfter()
             }
             is SosState.Failed -> {
-                status.setText(if (s.why == NOT_LINKED) R.string.sos_not_linked else R.string.sos_failed)
+                status.text = when (s.why) {
+                    NOT_LINKED -> getString(R.string.sos_not_linked)
+                    UNSURE -> getString(R.string.sos_unsure)
+                    FAILED -> getString(R.string.sos_failed)
+                    else -> getString(R.string.sos_then_call, s.why)
+                }
                 showAfter()
             }
             is SosState.Cancelled -> {
@@ -216,6 +323,7 @@ class SosActivity : Activity() {
             }
             else -> Unit
         }
+        if (machine.state !is SosState.Counting) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     private fun renderLocation() {
@@ -228,17 +336,16 @@ class SosActivity : Activity() {
     }
 
     private fun showAfter() {
-        after.visibility = View.VISIBLE
+        // "I'm safe" tells the family the real SOS is over: a test has no such message to take back
+        after.visibility = if (kind == SosKind.REAL) View.VISIBLE else View.GONE
         cancelButton.setText(R.string.sos_close)
-        // a test never offers the real SOS text message, so no test can reach the family by SMS
-        if (kind == SosKind.TEST) findViewById<View>(R.id.sos_text).visibility = View.GONE
     }
 
     private fun openText() {
         val saved = book
         val uri = saved?.let { b -> SosText.smsUri(b.contacts.map { it.phone }) }
         if (saved == null || uri == null) {
-            where.text = getString(R.string.sos_no_numbers)
+            notice.setText(R.string.sos_no_numbers)
             return
         }
         val message = SosText.message(saved.label, fix, ZoneId.systemDefault())
@@ -252,6 +359,7 @@ class SosActivity : Activity() {
     }
 
     private fun confirmSafe() {
+        if (kind != SosKind.REAL) return // a test never sends the real "I'm safe"
         AlertDialog.Builder(this)
             .setMessage(R.string.sos_safe_ask)
             .setPositiveButton(R.string.sos_safe_send) { _, _ -> sendSos(SosKind.SAFE) }
@@ -263,7 +371,7 @@ class SosActivity : Activity() {
         try {
             startActivity(intent)
         } catch (e: ActivityNotFoundException) {
-            status.setText(R.string.sos_failed)
+            notice.setText(R.string.sos_no_app)
         }
     }
 
@@ -280,6 +388,14 @@ class SosActivity : Activity() {
             object : KeyguardManager.KeyguardDismissCallback() {
                 override fun onDismissSucceeded() {
                     action()
+                }
+
+                override fun onDismissCancelled() {
+                    notice.setText(R.string.sos_unlock_needed)
+                }
+
+                override fun onDismissError() {
+                    notice.setText(R.string.sos_unlock_needed)
                 }
             },
         )
@@ -322,6 +438,17 @@ class SosActivity : Activity() {
         private const val EMERGENCY = "112"
         private const val SMS_BODY = "sms_body"
         private const val NOT_LINKED = "not linked"
+        private const val UNSURE = "unsure"
+        private const val FAILED = "failed"
+        private const val KEY_PRESS = "press"
+        private const val KEY_PHASE = "phase"
+        private const val KEY_UNTIL = "until"
+        private const val KEY_REACHED = "reached"
+        private const val KEY_WHY = "why"
+        private const val KEY_TEST = "test"
+
+        /** One ledger for the process: a press id sends once, whichever screen holds it. */
+        private val ledger = PressLedger()
 
         fun fromTile(context: Context): Intent =
             Intent(context, SosActivity::class.java).setAction(Launch.ACTION_PREFIX + "SOS")

@@ -11,6 +11,8 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import io.github.shark2558.jarvis.core.Door
+import io.github.shark2558.jarvis.core.Inbox
+import io.github.shark2558.jarvis.core.InboxFate
 import io.github.shark2558.jarvis.core.InboxRules
 import io.github.shark2558.jarvis.core.Payloads
 import io.github.shark2558.jarvis.link.AppState
@@ -26,10 +28,14 @@ object FolderSync {
         DocumentsContract.Document.COLUMN_SIZE,
         DocumentsContract.Document.COLUMN_LAST_MODIFIED,
     )
-    private const val UNAUTHORISED = 401
 
-    fun run(context: Context, tree: Uri): Int {
+    /** `sent` files went; `waitStatus` is the door's status when a file had to wait (null: none). */
+    data class Run(val sent: Int, val waitStatus: Int? = null)
+
+    fun run(context: Context, tree: Uri): Run {
         val state = AppState(context)
+        var waiting: Int? = null
+        var note: String? = null
         val resolver = context.contentResolver
         var seen = state.seen()
         var keys = state.seenKeys()
@@ -47,16 +53,28 @@ object FolderSync {
             }
             val body = Payloads.inbox(InboxRules.cleanName(file.name), mime, bytes)
             val answer = DoorClient(context).signed("inbox", body, DoorClient.OCTETS)
-            if (answer.status == UNAUTHORISED || answer.status >= 500) break
-            keys = keys.adding(key)
-            if (answer.ok) {
-                seen = seen.adding(sha)
-                sent += 1
+            // success, or a refusal for good, marks the file; anything else leaves it for the next run
+            when (Inbox.fate(answer.status)) {
+                InboxFate.SENT -> {
+                    keys = keys.adding(key)
+                    seen = seen.adding(sha)
+                    sent += 1
+                }
+                InboxFate.REFUSED_FOR_GOOD -> {
+                    keys = keys.adding(key)
+                    note = "${InboxRules.cleanName(file.name)}: ${answer.refusal?.sentence.orEmpty()}"
+                }
+                InboxFate.LATER -> {
+                    waiting = answer.status
+                    note = answer.refusal?.sentence
+                    break
+                }
             }
         }
         state.saveSeen(seen)
         state.saveSeenKeys(keys)
-        return sent
+        if (note != null || sent > 0) state.setInboxNote(note)
+        return Run(sent, waiting)
     }
 
     private fun list(resolver: ContentResolver, tree: Uri): List<InboxRules.Candidate> {

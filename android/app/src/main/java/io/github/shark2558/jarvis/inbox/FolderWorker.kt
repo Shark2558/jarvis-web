@@ -6,6 +6,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import io.github.shark2558.jarvis.core.Replies
 import io.github.shark2558.jarvis.link.AppState
 import java.io.IOException
 
@@ -13,10 +14,14 @@ class FolderWorker(context: Context, params: WorkerParameters) : Worker(context,
     override fun doWork(): Result {
         val state = AppState(applicationContext)
         val tree = state.folder() ?: return Result.success()
-        if (!state.isLinked()) return Result.success()
+        if (!state.canSend()) return Result.success() // not linked, or the door refused this phone
         return try {
-            FolderSync.run(applicationContext, tree)
-            Result.success()
+            val run = FolderSync.run(applicationContext, tree)
+            val wait = run.waitStatus
+            if (wait != null && Replies.worthRetry(wait)) Result.retry() else Result.success()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            Result.retry()
         } catch (e: SecurityException) {
             state.setFolder(null) // Android took the folder back: the set-up screen offers it again
             Result.success()

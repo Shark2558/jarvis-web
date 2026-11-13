@@ -49,18 +49,26 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp" />
 
+            <!-- Reachable at every moment: the countdown, after Cancel, after the send, after a
+                 failure. A test hides only the text message (code), never 112. -->
             <LinearLayout
-                android:id="@+id/sos_after"
+                android:id="@+id/sos_help"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/row_gap"
-                android:orientation="vertical"
-                android:visibility="gone">
+                android:orientation="vertical">
                 <Button
-                    android:id="@+id/sos_text"
+                    android:id="@+id/sos_call_112"
                     style="@style/Jarvis.Button"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:text="@string/sos_call_112" />
+                <Button
+                    android:id="@+id/sos_text"
+                    style="@style/Jarvis.Button.Quiet"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
                     android:text="@string/sos_text" />
                 <Button
                     android:id="@+id/sos_call_first"
@@ -69,19 +77,27 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:text="@string/sos_call_first_locked" />
-                <Button
-                    android:id="@+id/sos_call_112"
-                    style="@style/Jarvis.Button.Quiet"
+                <TextView
+                    android:id="@+id/sos_notice"
+                    style="@style/Jarvis.Small"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="@string/sos_call_112" />
+                    android:accessibilityLiveRegion="polite" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/sos_after"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical"
+                android:visibility="gone">
                 <Button
                     android:id="@+id/sos_safe"
                     style="@style/Jarvis.Button.Quiet"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
                     android:text="@string/sos_safe" />
             </LinearLayout>
 

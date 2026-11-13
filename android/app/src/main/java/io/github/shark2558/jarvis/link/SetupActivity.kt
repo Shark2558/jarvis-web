@@ -28,6 +28,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
+import io.github.shark2558.jarvis.core.Replies
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import io.github.shark2558.jarvis.R
@@ -105,7 +106,7 @@ class SetupActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
-        if (state.isLinked()) helloAndSync()
+        if (state.canSend()) helloAndSync()
     }
 
     override fun onDestroy() {
@@ -159,19 +160,24 @@ class SetupActivity : ComponentActivity() {
     }
 
     private fun cleanCode(typed: String): String? {
-        val code = typed.uppercase(Locale.ROOT).filter { it != ' ' && it != '-' }
+        val code = typed.uppercase(Locale.ROOT).filter { !it.isWhitespace() && it != '-' }
         return if (code.length == CODE_LENGTH && code.all { it in 'A'..'Z' || it in '0'..'9' }) code else null
     }
 
     // ---- the lines -----------------------------------------------------------------------------
     private fun refresh() {
-        val linked = state.isLinked()
+        val linked = state.canSend()
+        if (state.isLinked() && !linked) linkStatus.setText(R.string.setup_relink)
         linkSection.visibility = if (linked) View.GONE else View.VISIBLE
         stepsSection.visibility = if (linked) View.VISIBLE else View.GONE
         if (!linked) return
         line(R.id.state_notifications, if (notificationsOn()) R.string.state_on else R.string.state_off)
         line(R.id.state_location, if (locationOn()) R.string.state_on else R.string.state_off)
         line(R.id.state_folder, if (state.folder() != null) R.string.state_folder_on else R.string.state_off)
+        state.inboxNote()?.let { note ->
+            val folderLine = findViewById<TextView>(R.id.state_folder)
+            folderLine.text = getString(R.string.state_folder_note, folderLine.text, note)
+        }
         val tiles = when {
             state.tileAdded() -> R.string.state_tile_added
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> R.string.state_off
@@ -245,15 +251,19 @@ class SetupActivity : ComponentActivity() {
     }
 
     private fun syncNow() {
-        if (!state.isLinked()) return
+        if (!state.canSend()) {
+            refresh()
+            return
+        }
         syncLine.setText(R.string.sync_running)
         io.execute {
-            val outcome = try {
+            val report = try {
                 HealthSync.run(this)
             } catch (e: Exception) {
-                HealthSync.Outcome.FAILED
+                HealthSync.Report(HealthSync.Outcome.FAILED, Replies.UNREACHED)
             }
-            runOnUiThread { syncLine.text = getString(R.string.sync_outcome, getString(wordsFor(outcome)), syncText()) }
+            val words = report.note ?: getString(wordsFor(report.outcome))
+            runOnUiThread { syncLine.text = getString(R.string.sync_outcome, words, syncText()) }
         }
     }
 
@@ -264,13 +274,15 @@ class SetupActivity : ComponentActivity() {
             } catch (e: Exception) {
                 // the job sends it again later
             }
-            val outcome = try {
+            val report = try {
                 HealthSync.run(this)
             } catch (e: Exception) {
-                HealthSync.Outcome.FAILED
+                HealthSync.Report(HealthSync.Outcome.FAILED)
             }
             runOnUiThread {
-                if (!isFinishing && outcome == HealthSync.Outcome.SENT) syncLine.text = syncText()
+                if (isFinishing) return@runOnUiThread
+                if (report.outcome == HealthSync.Outcome.SENT) syncLine.text = syncText()
+                if (state.needsRelink()) refresh() // three refusals in a row: ask for a new code
             }
         }
     }
@@ -280,7 +292,8 @@ class SetupActivity : ComponentActivity() {
         HealthSync.Outcome.NOTHING -> R.string.sync_nothing
         HealthSync.Outcome.NO_PERMISSION -> R.string.sync_no_permission
         HealthSync.Outcome.NO_HEALTH_CONNECT -> R.string.state_no_hc
-        HealthSync.Outcome.NOT_LINKED, HealthSync.Outcome.FAILED -> R.string.sync_failed
+        HealthSync.Outcome.NOT_LINKED -> R.string.setup_relink
+        HealthSync.Outcome.FAILED, HealthSync.Outcome.REFUSED -> R.string.sync_failed
     }
 
     private fun syncText(): String {

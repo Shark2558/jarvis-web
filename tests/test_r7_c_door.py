@@ -304,7 +304,8 @@ async def test_thirty_requests_a_minute_per_phone(app: Any, phone: tuple[str, An
     device, key = phone
     for _ in range(30):
         assert (await door(app, key, device, "hello", HELLO)).status_code == 200
-    assert (await door(app, key, device, "hello", HELLO)).status_code == 401
+    r = await door(app, key, device, "hello", HELLO)
+    assert r.status_code == 429 and r.content == b""  # I1 fixer: a limit, not "unknown phone"
     app.state.phone_clock.advance(61)
     assert (await door(app, key, device, "hello", HELLO)).status_code == 200
 

@@ -17,8 +17,10 @@ M1: an unauthenticated caller must not cost memory): `api/phone.py` runs the fir
     signature  ECDSA P-256 / SHA-256 over `contract.signing_string(...)`, the stored public key
     rate    at most 30 requests a minute per phone (after the signature: only the phone's own)
 
-Every failure is a bare 401 (404 for the route), logged by the check's name and never audited: a
-flood cannot fill the audit, and nothing tells a caller which check it failed. The nonce is
+Every authentication failure is a bare 401 (404 for the route); a flood or a rate limit (and a full
+nonce store) is a bare 429 instead (I1 fixer, security L4: the app retries a 429 and never counts it
+as "this phone is not known"). Each is logged by the check's name and never audited: a flood cannot
+fill the audit, and nothing tells a caller which check it failed. The nonce is
 recorded only after the signature verifies, so only the phone itself can fill the store; the
 store is bounded and, when full of live nonces, refuses (it never forgets one early).
 """
@@ -61,11 +63,16 @@ class Pre:
 
 @dataclass(frozen=True)
 class Refusal:
-    status: int  # 401, or 404 for a route that is not the door's
+    status: int  # 401, 404 for a route that is not the door's, or 429 for a limit
     check: str  # the check's name, for the log only
 
 
+LIMIT_CHECKS = frozenset({"flood", "rate", "nonce_full"})  # limits, not authentication: a bare 429
+
+
 def refuse(check: str, route: str = "", status: int = 401) -> Refusal:
+    if check in LIMIT_CHECKS:
+        status = 429
     log.info("phone door refused", extra={"check": check, "route": route})
     return Refusal(status, check)
 

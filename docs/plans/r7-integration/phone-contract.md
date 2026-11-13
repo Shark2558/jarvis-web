@@ -1,4 +1,4 @@
-Version v7.0.2 · 13 Nov 2026, 22:50 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v7.0.3 · 14 Nov 2026, 12:00 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
 
 # R7 — the phone contract (server ⇄ app)
 
@@ -58,16 +58,26 @@ X-Jarvis-Phone: v1;d=<device id>;t=<unix seconds>;n=<32 hex: 16 random bytes>;s=
 - The path is exactly one of `/phone/v1/hello`, `/phone/v1/health`, `/phone/v1/inbox`,
   `/phone/v1/sos`. **No query string, ever**: the signature covers only the path, so a request
   whose address carries a `?` is a bare 401.
-- The server checks, in this order, before parsing anything: the route (else 404) → no query
-  (401) → the body cap (`DOOR_CAPS`: hello 16 KB, health 256 KB, inbox 10 MB + 64 KB, sos 16 KB) →
-  the header's shape → the device is linked → `|now − t| ≤ phone_clock_skew_s` (120) → the nonce
-  unseen for 10 minutes → the signature → 30 requests a minute per phone. Every failure is a bare
-  401 (or 404 for an unknown route), logged by the check's name, never audited.
+- The server checks, in this order, and reads no body byte until the cheap ones have passed:
+  the route (else 404) → no query (401) → no `Cookie` header (401) → the header's shape, which
+  includes the nonce's shape (401) → **flood**: at most 60 requests a minute from one client
+  address, before any store is read (**429**) → the device is linked, read fresh on every request
+  (401) → `|now − t| ≤ phone_clock_skew_s` (120) (401) → the body under its cap (`DOOR_CAPS`: hello
+  16 KB, health 256 KB, inbox 10 MB + 64 KB, sos 16 KB), read no further than the cap (401) →
+  the nonce unseen for this phone for 2 × skew + 60 s, which is 300 s at the default skew (a
+  replay inside the window is refused; 401) → the signature (401) → the nonce is recorded only now,
+  so only the phone itself can fill the store (**429** when the store is full of live nonces) →
+  **rate**: at most 30 requests a minute per phone (**429**). Every refusal is bare, logged by the
+  check's name and never audited.
 - **Bare answers** (no body at all): `404` for an unknown route, the phone switched off or a route
-  whose part is not built; `401` for any failed check above, a query string or a cookie; `503`
-  when the phone store cannot be read (never "admitted"). A request that passed every check and
-  whose handler failed gets `503 {"error": "unavailable", "detail"}`. The app shows its own plain
-  words for each and never the server's body.
+  whose part is not built; `401` for every failed authentication check above (shape, unknown
+  phone, time, size, replay, signature), a query string or a cookie; `429` for the three limits
+  (flood, nonce store full, rate): never "this phone is not known", so the app retries it with
+  backoff and **counts only 401s as its "link again" strikes** (`Replies.strikes`: three 401s in
+  a row that are not a clock fault; a 429 leaves the count where it is); `503` when the phone
+  store cannot be read (never "admitted"). A request that passed every check and whose handler
+  failed gets `503 {"error": "unavailable", "detail"}`. The app shows its own plain words for each
+  and never the server's body.
 - The door never sets or reads a cookie (a request that carries one is refused) and reaches no
   `/v1` route.
 
@@ -140,3 +150,4 @@ at most 10 MB). The share worker (scope `/app/share/` only) keeps them in the br
 |---|---|---|---|---|
 | v7.0.1 | 13 Nov 2026, 16:05 IST | R7 | First edition, written at I0 with the shared vectors: the package and key, linking, the signed request and its checks in order, the one JSON form and each route's body, the launch words, the notification tag and channels, the share target | 🛠 Mark XVI |
 | v7.0.2 | 13 Nov 2026, 22:50 IST | R7 | I1: the asset links' fingerprint form; section 2's answers (the link code's shape, the link's answers and refusals, the hello answer and its `sos` part, which an unknown answer now leaves out so the phone keeps its numbers, the inbox answers) and the door's bare answers; the SOS body's optional `press_id` (a repeat within an hour gets the first result), the SOS answer with `reached`, and the app's cached SMS list and 112 on a non-200 or an empty `sms.numbers`; each notification's one `talk` action (`/?do=talk`) and the tag `alert` for an unreadable kind | 🛠 Mark XVII |
+| v7.0.3 | 14 Nov 2026, 12:00 IST | R7 | I1 fixer: section 3 now matches the door exactly (the nonce is remembered for 2 × skew + 60 s, the order of the checks, which status for which failure); a flood, a full nonce store and the per-phone rate are a bare 429, 401 stays for authentication, and the app counts only 401s as strikes | 🛠 Mark XVII |

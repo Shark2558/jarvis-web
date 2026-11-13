@@ -10,15 +10,21 @@ Android tool for it) and fails, listing EVERY finding at once, on:
 
 - a permission that is not on ALLOWED_PERMISSIONS, any of FORBIDDEN_PERMISSIONS, or a missing one
   the app needs; a declared permission other than AndroidX core's own signature permission;
-- a part reachable from outside the app (exported, or an intent filter with no `exported`) that
-  is not on REACHABLE, or that lacks the system permission REACHABLE names for it; one of the
-  app's own reachable parts missing (Health Connect's two privacy-page entries among them);
+- a part reachable from outside the app that is not on REACHABLE, or that lacks the system
+  permission REACHABLE names for it; one of the app's own reachable parts missing (Health
+  Connect's two privacy-page entries among them). "Reachable" is fail-closed: any `exported`
+  other than the literal false counts (a resource reference too), as does an intent filter with
+  no `exported`. What a reachable part ACCEPTS is held too: each of the app's own parts has the
+  exact intent filters (actions, categories, data) REACHABLE lists, and no reachable part,
+  a library's included, takes a BROWSABLE category or any address data (an App Link);
 - a package other than io.github.shark2558.jarvis; a debuggable build; backups on or no
   `dataExtractionRules`; cleartext traffic (the manifest's switch, or a network security config
   that permits it or trusts user certificates);
 - a launch address whose host is not the placeholder; a host name in the app's code or resources
-  that is not on the reviewed list (any host of a private hosting service always fails); a
-  secret-shaped string; a keystore or local.properties packed inside the app.
+  that is not on the reviewed list (any host of a private hosting service always fails; in the
+  resource files any dotted name ending in a public suffix counts, scheme or not; a URL with a
+  user name in it always fails); a secret-shaped string (Slack, JWT and Stripe shapes among
+  them); a keystore or local.properties packed inside the app.
 
 `--merged` cross-checks the decoder: the merged manifest Gradle wrote must give the same model.
 The lists were built from CI's first merged manifest and reviewed (docs/plans/r7-mobile.md D22;
@@ -109,32 +115,98 @@ _SIGNATURE = frozenset({"signature", "2", "0x2", "0x00000002"})
 
 
 @dataclass(frozen=True)
+class Filter:
+    """One intent filter: what it answers to. `data` holds each <data> element's attributes."""
+
+    actions: frozenset[str]
+    categories: frozenset[str] = frozenset()
+    data: frozenset[tuple[tuple[str, str], ...]] = frozenset()
+
+    def signature(self) -> str:
+        return repr((sorted(self.actions), sorted(self.categories), sorted(self.data)))
+
+
+def flt(
+    actions: Iterable[str], categories: Iterable[str] = (), mimes: Iterable[str] = ()
+) -> Filter:
+    return Filter(
+        frozenset(actions),
+        frozenset(categories),
+        frozenset((("mimeType", m),) for m in mimes),
+    )
+
+
+@dataclass(frozen=True)
 class Reach:
-    """A part other apps or the system may start, and the permission that guards it."""
+    """A part other apps or the system may start, the permission that guards it, and (for the
+    app's own parts) exactly the intent filters it may have; None leaves a library's own filters
+    unpinned (the BROWSABLE and address-data rules still apply to them)."""
 
     permission: str | None
     ours: bool  # the app's own part: it must be there
     reason: str
+    filters: frozenset[Filter] | None = None
+
+
+_DEFAULT = "android.intent.category.DEFAULT"
+_SHARE_MIMES = ("image/jpeg", "image/png", "image/webp", "application/pdf")
 
 
 REACHABLE: dict[str, Reach] = {
-    ICON_LAUNCHER: Reach(None, True, "the icon and the share entry; it ignores incoming addresses"),
+    ICON_LAUNCHER: Reach(
+        None,
+        True,
+        "the icon and the share entry; it ignores incoming addresses",
+        frozenset(
+            {
+                flt(["android.intent.action.MAIN"], ["android.intent.category.LAUNCHER"]),
+                flt(
+                    ["android.intent.action.SEND"],
+                    [_DEFAULT],
+                    (*_SHARE_MIMES, "text/plain"),
+                ),
+                flt(["android.intent.action.SEND_MULTIPLE"], [_DEFAULT], _SHARE_MIMES),
+            }
+        ),
+    ),
     f"{PACKAGE}.shell.JarvisDelegationService": Reach(
-        None, True, "Chrome hands alerts to it; the library checks the caller's token (D10)"
+        None,
+        True,
+        "Chrome hands alerts to it; the library checks the caller's token (D10)",
+        frozenset(
+            {flt(["android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE"], [_DEFAULT])}
+        ),
     ),
     f"{PACKAGE}.shell.TalkTileService": Reach(
-        "android.permission.BIND_QUICK_SETTINGS_TILE", True, "the Talk tile (D9)"
+        "android.permission.BIND_QUICK_SETTINGS_TILE",
+        True,
+        "the Talk tile (D9)",
+        frozenset({flt(["android.service.quicksettings.action.QS_TILE"])}),
     ),
     f"{PACKAGE}.shell.SosTileService": Reach(
-        "android.permission.BIND_QUICK_SETTINGS_TILE", True, "the SOS tile (D19)"
+        "android.permission.BIND_QUICK_SETTINGS_TILE",
+        True,
+        "the SOS tile (D19)",
+        frozenset({flt(["android.service.quicksettings.action.QS_TILE"])}),
     ),
     f"{PACKAGE}.health.PrivacyActivity": Reach(
-        None, True, "Health Connect's privacy page, Android 13 and older (D17)"
+        None,
+        True,
+        "Health Connect's privacy page, Android 13 and older (D17)",
+        frozenset({flt(["androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"])}),
     ),
     f"{PACKAGE}.health.ViewPermissionUsageActivity": Reach(
         "android.permission.START_VIEW_PERMISSION_USAGE",
         True,
         "Health Connect's privacy page, Android 14 and newer (D17)",
+        frozenset(
+            {
+                flt(
+                    ["android.intent.action.VIEW_PERMISSION_USAGE"],
+                    ["android.intent.category.HEALTH_PERMISSIONS"],
+                )
+            }
+        ),
     ),
     "androidx.work.impl.background.systemjob.SystemJobService": Reach(
         "android.permission.BIND_JOB_SERVICE", False, "WorkManager's job service"
@@ -176,8 +248,32 @@ PRIVATE_SUFFIXES = (
     ".web.app",
     ".cloudfunctions.net",
     ".ts.net",
+    ".onrender.com",
+    ".vercel.app",
+    ".workers.dev",
+    ".pages.dev",
+    ".trycloudflare.com",
+    ".duckdns.org",
+    ".ngrok-free.app",
+    ".ngrok.io",
+    ".fly.dev",
+    ".railway.app",
+    ".netlify.app",
+    ".herokuapp.com",
 )
-_URL = re.compile(rb"(?i)\bhttps?://([a-z0-9-]+(?:\.[a-z0-9-]+)+)")
+# In the app's resource files any dotted name that ends in one of these public suffixes is read
+# as a host name, with or without a scheme: it must be on the reviewed list.
+PUBLIC_SUFFIXES = (
+    "com", "org", "net", "io", "dev", "app", "co", "in", "me", "xyz", "info", "biz",
+    "page", "site", "online", "cloud", "tech", "ai", "gov", "edu", "eu", "uk", "us",
+)  # fmt: skip
+_URL = re.compile(rb"(?i)\bhttps?://(?:[^\s/@\"'<>]*@)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)")
+_USERINFO = re.compile(rb"(?i)\bhttps?://[^\s/@\"'<>]+@[a-z0-9-]+\.")
+_BARE = re.compile(
+    rb"(?i)(?<![A-Za-z0-9_.-])((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:"
+    + b"|".join(s.encode() for s in PUBLIC_SUFFIXES)
+    + rb"))(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
+)
 _PRIVATE = re.compile(
     rb"(?i)\b(?:[a-z0-9-]+\.)+(?:"
     + b"|".join(re.escape(s[1:].encode()) for s in PRIVATE_SUFFIXES)
@@ -190,6 +286,12 @@ SECRET_SHAPES: tuple[tuple[str, re.Pattern[bytes]], ...] = (
     ("model provider key", re.compile(rb"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}")),
     ("GitHub token", re.compile(rb"ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,}")),
     ("AWS key", re.compile(rb"AKIA[0-9A-Z]{16}")),
+    ("Slack token", re.compile(rb"xox[abprs]-[0-9A-Za-z-]{10,}")),
+    (
+        "JSON web token",
+        re.compile(rb"eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
+    ),
+    ("Stripe key", re.compile(rb"[sr]k_(?:live|test)_[0-9A-Za-z]{16,}")),
     (
         "Telegram bot token",
         re.compile(rb"(?<![0-9])[0-9]{8,10}:[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"),
@@ -217,6 +319,7 @@ class Component:
     exported: bool
     permission: str | None
     meta: tuple[tuple[str, str], ...]
+    filters: tuple[Filter, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -379,7 +482,9 @@ def _component(c: Node, package: str) -> Component:
     if exported_attr is None:
         exported = bool(filters) and c.tag != "provider"
     else:
-        exported = exported_attr == "true"
+        # fail closed: only the literal false is "not reachable" (a resource reference such as
+        # "@bool/x" can be true on some phones)
+        exported = exported_attr != "false"
     meta = tuple(
         (
             m.attrs.get("android:name", ""),
@@ -388,7 +493,26 @@ def _component(c: Node, package: str) -> Component:
         for m in c.children
         if m.tag == "meta-data"
     )
-    return Component(c.tag, name, exported, c.attrs.get("android:permission") or None, meta)
+    return Component(
+        c.tag,
+        name,
+        exported,
+        c.attrs.get("android:permission") or None,
+        meta,
+        tuple(_filter(f) for f in filters),
+    )
+
+
+def _filter(node: Node) -> Filter:
+    def names(tag: str) -> frozenset[str]:
+        return frozenset(k.attrs.get("android:name", "") for k in node.children if k.tag == tag)
+
+    data = frozenset(
+        tuple(sorted((k.removeprefix("android:"), v) for k, v in d.attrs.items()))
+        for d in node.children
+        if d.tag == "data"
+    )
+    return Filter(names("action"), names("category"), data)
 
 
 def summary(m: Manifest) -> tuple[object, ...]:
@@ -401,6 +525,9 @@ def summary(m: Manifest) -> tuple[object, ...]:
         m.package,
         tuple(sorted(m.permissions)),
         tuple(sorted((c.kind, c.name, c.exported, c.permission or "") for c in m.components)),
+        tuple(
+            sorted((c.name, tuple(sorted(f.signature() for f in c.filters))) for c in m.components)
+        ),
         flags,
         m.app_attr("android:dataExtractionRules") is not None,
     )
@@ -437,9 +564,28 @@ def _check_reachable(m: Manifest) -> list[str]:
             out.append(f"reachable from outside but not on the list: {c.kind} {c.name}")
         elif rule.permission and c.permission != rule.permission:
             out.append(f"{c.name} must be guarded by {rule.permission} (has {c.permission})")
+        out += _check_filters(c, rule)
     for name, rule in REACHABLE.items():
         if rule.ours and name not in present:
             out.append(f"one of the app's own reachable parts is missing: {name}")
+    return out
+
+
+def _check_filters(c: Component, rule: Reach | None) -> list[str]:
+    """What a reachable part accepts: never an App Link, and (for ours) nothing but the list."""
+    out = []
+    for f in c.filters:
+        if "android.intent.category.BROWSABLE" in f.categories:
+            out.append(f"{c.name} has a BROWSABLE intent filter (a web link would open it)")
+        for item in f.data:
+            extra = sorted(k for k, _ in item if k != "mimeType")
+            if extra:
+                out.append(f"{c.name} has an intent filter with address data ({', '.join(extra)})")
+    if rule is not None and rule.filters is not None and set(c.filters) != set(rule.filters):
+        for f in sorted(set(c.filters) - set(rule.filters), key=Filter.signature):
+            out.append(f"{c.name} has an intent filter that is not on the list: {f.signature()}")
+        for f in sorted(set(rule.filters) - set(c.filters), key=Filter.signature):
+            out.append(f"{c.name} lacks an intent filter on the list: {f.signature()}")
     return out
 
 
@@ -466,18 +612,30 @@ def _text_forms(data: bytes) -> Iterable[bytes]:
         yield data[start:].decode("utf-16-le", errors="ignore").encode("utf-8", errors="ignore")
 
 
-def hosts_in(data: bytes) -> set[str]:
+def hosts_in(data: bytes, bare: bool = False) -> set[str]:
+    """Host names written in `data`: from an http(s) address, of a private hosting service and
+    (with `bare`) any dotted name that ends in a public suffix."""
     found: set[str] = set()
     for form in _text_forms(data):
         found |= {m.group(1).decode("ascii", "ignore").lower() for m in _URL.finditer(form)}
         found |= {m.group(0).decode("ascii", "ignore").lower() for m in _PRIVATE.finditer(form)}
+        if bare:
+            found |= {m.group(1).decode("ascii", "ignore").lower() for m in _BARE.finditer(form)}
     return found
+
+
+def _is_resource_text(name: str) -> bool:
+    return name.startswith("res/") and name.endswith(".xml")
 
 
 def scan_entry(name: str, data: bytes, host: str = PLACEHOLDER) -> list[str]:
     out = []
     allowed = ALLOWED_HOSTS | {host}
-    for h in sorted(hosts_in(data)):
+    for form in _text_forms(data):
+        if _USERINFO.search(form):
+            out.append(f"a web address with a user name in it in {name}")
+            break
+    for h in sorted(hosts_in(data, bare=_is_resource_text(name))):
         private = h.endswith(PRIVATE_SUFFIXES) and h != host
         if private or h not in allowed:
             out.append(f"a host name in {name}: {h}")

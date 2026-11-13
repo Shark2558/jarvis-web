@@ -118,10 +118,14 @@ def axml(root: El, utf8: bool = False) -> bytes:
 
 
 # ---- the app as it should be built (our parts and the libraries' own entries) ---------------
-def _filter(*actions: str, categories: tuple[str, ...] = ()) -> El:
+def _filter(*actions: str, categories: tuple[str, ...] = (), mimes: tuple[str, ...] = ()) -> El:
     kids = [El("action", {"android:name": a}) for a in actions]
     kids += [El("category", {"android:name": c}) for c in categories]
+    kids += [El("data", {"android:mimeType": m}) for m in mimes]
     return El("intent-filter", kids=kids)
+
+
+SHARE = ("image/jpeg", "image/png", "image/webp", "application/pdf")
 
 
 def good_tree(**app_attrs: str) -> El:
@@ -160,7 +164,16 @@ def good_tree(**app_attrs: str) -> El:
                 },
             ),
             _filter("android.intent.action.MAIN", categories=("android.intent.category.LAUNCHER",)),
-            _filter("android.intent.action.SEND", categories=("android.intent.category.DEFAULT",)),
+            _filter(
+                "android.intent.action.SEND",
+                categories=("android.intent.category.DEFAULT",),
+                mimes=(*SHARE, "text/plain"),
+            ),
+            _filter(
+                "android.intent.action.SEND_MULTIPLE",
+                categories=("android.intent.category.DEFAULT",),
+                mimes=SHARE,
+            ),
         ],
     )
     comps = [
@@ -193,7 +206,12 @@ def good_tree(**app_attrs: str) -> El:
         El(
             "service",
             {"android:name": f"{PKG}.shell.JarvisDelegationService", "android:exported": "true"},
-            [_filter("android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE")],
+            [
+                _filter(
+                    "android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE",
+                    categories=("android.intent.category.DEFAULT",),
+                )
+            ],
         ),
         *(
             El(
@@ -614,3 +632,157 @@ def test_the_report_lists_the_hosts_and_parts_it_found(tmp_path: Path) -> None:
     ac.report(make_apk(tmp_path), host="jarvis.invalid", out=buf)
     text = buf.getvalue()
     assert "IconLauncherActivity" in text and "maps.google.com" in text
+
+
+# ---- review follow-ups: what a reachable part accepts, fail-closed `exported`, wider hosts ---
+def _part(tree: El, name: str) -> El:
+    return next(c for c in _app(tree).kids if c.attrs.get("android:name") == name)
+
+
+def test_control_an_app_link_added_to_the_icon_launcher_fails(tmp_path: Path) -> None:
+    tree = good_tree()
+    link = _filter(
+        "android.intent.action.VIEW",
+        categories=("android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"),
+    )
+    link.kids.append(El("data", {"android:scheme": "https", "android:host": "jarvis.invalid"}))
+    _part(tree, f"{PKG}.shell.IconLauncherActivity").kids.append(link)
+    problems = _problems(tmp_path, tree)
+    assert any("BROWSABLE" in p for p in problems)
+    assert any("address data" in p for p in problems)
+    assert any("not on the list" in p and "IconLauncherActivity" in p for p in problems)
+
+
+def test_control_an_extra_action_on_the_icon_or_a_tile_fails(tmp_path: Path) -> None:
+    tree = good_tree()
+    _part(tree, f"{PKG}.shell.IconLauncherActivity").kids.append(
+        _filter("android.intent.action.VIEW")
+    )
+    _part(tree, f"{PKG}.shell.SosTileService").kids.append(_filter("android.intent.action.SEND"))
+    problems = _problems(tmp_path, tree)
+    assert any("IconLauncherActivity" in p and "not on the list" in p for p in problems)
+    assert any("SosTileService" in p and "not on the list" in p for p in problems)
+
+
+def test_control_a_share_filter_that_takes_more_types_fails(tmp_path: Path) -> None:
+    tree = good_tree()
+    send = _part(tree, f"{PKG}.shell.IconLauncherActivity").kids[2]
+    send.kids.append(El("data", {"android:mimeType": "*/*"}))
+    assert any(
+        "IconLauncherActivity" in p and "not on the list" in p for p in _problems(tmp_path, tree)
+    )
+
+
+def test_control_a_missing_filter_on_an_own_part_fails(tmp_path: Path) -> None:
+    tree = good_tree()
+    part = _part(tree, f"{PKG}.health.PrivacyActivity")
+    part.kids.clear()
+    problems = _problems(tmp_path, tree)
+    assert any("PrivacyActivity" in p for p in problems)
+
+
+def test_a_library_part_may_keep_its_own_filters_but_never_a_web_link(tmp_path: Path) -> None:
+    tree = good_tree()
+    receiver = _part(tree, "androidx.work.impl.diagnostics.DiagnosticsReceiver")
+    receiver.kids.append(_filter("androidx.example.OTHER_ACTION"))
+    assert _problems(tmp_path, tree) == []
+    receiver.kids.append(
+        _filter("android.intent.action.VIEW", categories=("android.intent.category.BROWSABLE",))
+    )
+    assert any("DiagnosticsReceiver" in p and "BROWSABLE" in p for p in _problems(tmp_path, tree))
+
+
+def test_control_a_resource_reference_exported_on_the_sos_screen_fails(tmp_path: Path) -> None:
+    tree = good_tree()
+    _part(tree, f"{PKG}.sos.SosActivity").attrs["android:exported"] = "@bool/sos_open"
+    problems = _problems(tmp_path, tree)
+    assert any("SosActivity" in p and "not on the list" in p for p in problems)
+
+
+def test_exported_false_stays_private_and_anything_else_is_reachable() -> None:
+    def comp(value: str | None) -> object:
+        attrs = {"android:name": f"{PKG}.X"}
+        if value is not None:
+            attrs["android:exported"] = value
+        return ac._component(ac.Node("activity", attrs), PKG)
+
+    assert comp("false").exported is False  # type: ignore[attr-defined]
+    for value in ("true", "@0x7f050001", "", "0x0", "False"):
+        assert comp(value).exported is True, value  # type: ignore[attr-defined]
+
+
+def test_the_binary_and_the_text_manifest_agree_on_the_filters() -> None:
+    tree = good_tree()
+    binary = ac.manifest_from_tree(ac.decode_axml(axml(tree)))
+    text = ac.parse_text_manifest(_text(tree))
+    assert ac.summary(binary) == ac.summary(text)
+    icon = next(c for c in binary.components if c.name.endswith("IconLauncherActivity"))
+    assert len(icon.filters) == 3 and any(len(f.data) == 5 for f in icon.filters)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "jarvis-abc.onrender.com",
+        "foo.duckdns.org",
+        "demo.vercel.app",
+        "x.workers.dev",
+        "tunnel.trycloudflare.com",
+        "app.ngrok-free.app",
+        "svc.fly.dev",
+    ],
+)
+def test_control_a_bare_private_host_in_the_code_fails(tmp_path: Path, name: str) -> None:
+    dex = GOOD_DEX + b' "' + name.encode() + b'"'
+    assert any(name in p for p in _problems(tmp_path, dex=dex))
+
+
+def test_control_a_web_address_with_a_user_name_fails(tmp_path: Path) -> None:
+    dex = GOOD_DEX + b" https://someone@host.example.org/path"
+    assert any("user name" in p for p in _problems(tmp_path, dex=dex))
+
+
+def test_control_any_dotted_host_in_a_resource_file_fails_with_or_without_a_scheme(
+    tmp_path: Path,
+) -> None:
+    for text in (b"my-server.mything.net", b"https://my-server.mything.net/", b"api.mything.io"):
+        assert _problems(tmp_path, extra={"res/xml/x.xml": text}), text
+    ok = b"jarvis.invalid example.com androidx.core.app.Something io.github.shark2558.jarvis"
+    assert _problems(tmp_path, extra={"res/xml/ok.xml": ok}) == []
+
+
+def test_control_slack_jwt_and_stripe_shapes_fail(tmp_path: Path) -> None:
+    secrets = [
+        "xo" + "xb-1234567890-abcdefghij",
+        "ey" + "Jhbc12345678.ey" + "Jzdw12345678.abcdefgh12345678",
+        "sk" + "_live_" + "a1b2c3d4e5f6g7h8i9",
+    ]
+    for secret in secrets:
+        problems = _problems(tmp_path, dex=GOOD_DEX + b" " + secret.encode())
+        assert any("secret" in p for p in problems), secret
+
+
+def test_no_source_or_resource_file_of_the_app_names_a_real_host() -> None:
+    """The same wide host rule as the build's, over the repository's own android/ files."""
+    allowed = ac.ALLOWED_HOSTS | {ac.PLACEHOLDER, "services.gradle.org"}
+    skip_names = ("OFL-", "gradle-wrapper.jar", ".ttf")
+    found: dict[str, set[str]] = {}
+    for path in (ROOT / "android").rglob("*"):
+        if not path.is_file() or any(k in path.name for k in skip_names):
+            continue
+        if "build" in path.relative_to(ROOT / "android").parts[:1]:
+            continue
+        hosts = {
+            h
+            for h in ac.hosts_in(path.read_bytes(), bare=True) - allowed
+            if not h.endswith(".example.com")  # RFC 2606: reserved, never real
+        }
+        if hosts:
+            found[str(path.relative_to(ROOT))] = hosts
+    assert not found, found
+
+
+def test_the_host_rule_would_catch_a_planted_host(tmp_path: Path) -> None:
+    assert ac.hosts_in(b'val u = "jarvis-me.onrender.com"', bare=True) == {"jarvis-me.onrender.com"}
+    assert ac.hosts_in(b'val u = "my.example.net"', bare=True) == {"my.example.net"}
+    assert ac.hosts_in(b"import androidx.core.app.NotificationManagerCompat", bare=True) == set()

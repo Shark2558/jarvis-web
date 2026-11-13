@@ -51,8 +51,10 @@ enum class WriterKind(val word: String, val rank: Int) {
     OTHER("other", 2),
 }
 
-/** Which writer is the watch and which is the phone. The app passes `isPhone` so that a system
- *  app of the phone (its maker's health service) counts as the phone. */
+/** Which writer is the watch and which is the phone. The app passes nothing: only the package
+ *  `android` counts as the phone, and a phone maker's own health service arrives as itself and
+ *  ranks "other" (INTEGRATION-E.md, Needs I1 item 5). `isPhone` is the hook for a later release
+ *  that names such a package. */
 class Writers(
     private val watchApps: Set<String> = WATCH_APPS,
     private val isPhone: (String) -> Boolean = { it in PHONE_APPS },

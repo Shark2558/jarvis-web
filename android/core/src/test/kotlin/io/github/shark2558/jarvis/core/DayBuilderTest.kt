@@ -144,6 +144,12 @@ fun dayCases(): List<Case> = cases(
         same(NOISEFIT, writers.best(setOf("com.example.phonehealth", NOISEFIT)), "the watch still wins")
         same(null, writers.best(emptySet()), "no writer")
     },
+    "an unknown writer alone (a phone maker's health service) is kept, as itself, ranked other" to {
+        val maker = night("com.example.makerhealth", "2026-11-11T23:30:00+05:30", "2026-11-12T06:45:00+05:30")
+        val kept = build(FakeHealth(emptyList(), sessions = listOf(maker)), DAY).single().sleep.single()
+        same("com.example.makerhealth", kept.writer, "kept under its own package name")
+        same(WriterKind.OTHER, Writers().kind(kept.writer), "ranked other with the app's defaults")
+    },
     "a session that ends before it starts is dropped" to {
         val bad = SleepRecord(at("2026-11-12T06:00:00+05:30"), IST_S, at("2026-11-12T05:00:00+05:30"), IST_S, PHONE, emptyList())
         same(0, build(FakeHealth(emptyList(), sessions = listOf(bad)), DAY).single().sleep.size, "dropped")

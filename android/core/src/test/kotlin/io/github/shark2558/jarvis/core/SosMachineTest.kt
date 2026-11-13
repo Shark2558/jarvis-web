@@ -134,4 +134,60 @@ fun sosCases(): List<Case> = cases(
         m.done(ok = true, reached = 1, why = "")
         same<SosState>(SosState.Idle, m.state, "still idle")
     },
+    "a new tile press: a fresh flow unless a real one is counting or sending" to {
+        val real = SosKind.REAL
+        val test = SosKind.TEST
+        for (idle in listOf(SosState.Idle, SosState.Cancelled, SosState.Sent(2), SosState.Failed("x"))) {
+            yes(SosPress.startsFresh(idle, real, real), "a new press restarts from $idle")
+        }
+        yes(!SosPress.startsFresh(SosState.Counting(5L), real, real), "a real countdown stands")
+        yes(!SosPress.startsFresh(SosState.Sending, real, real), "a real send in progress stands")
+        yes(!SosPress.startsFresh(SosState.Holding(0L), real, real), "a hold stands")
+        yes(SosPress.startsFresh(SosState.Counting(5L), test, real), "a real press replaces a test countdown")
+        yes(!SosPress.startsFresh(SosState.Counting(5L), test, test), "a second test press does not restart")
+    },
+    "a recreated machine in Sending or Sent never sends again" to {
+        val ledger = PressLedger()
+        val s = Sends()
+        val first = SosMachine(SosKind.REAL, 0L, TILE_MS, "press-1", ledger) { s.kinds.add(it) }
+        first.startCountdown(0L)
+        runUntil(first, 0L, TILE_MS)
+        same(1, s.kinds.size, "the first screen sent once")
+        val saved = first.saved()
+        val again = SosMachine.restore(saved, SosKind.REAL, 0L, TILE_MS, TILE_MS + 100L, ledger) { s.kinds.add(it) }
+        same<SosState>(SosState.Sending, again.state, "restored while sending")
+        runUntil(again, TILE_MS, TILE_MS * 4)
+        same(1, s.kinds.size, "a recreated screen sends nothing more")
+        first.done(ok = true, reached = 3, why = "")
+        runUntil(again, TILE_MS * 4, TILE_MS * 4)
+        same<SosState>(SosState.Sent(3), again.state, "the answer reaches the new screen through the ledger")
+        val sent = SosMachine.restore(first.saved(), SosKind.REAL, 0L, TILE_MS, TILE_MS * 5, ledger) { s.kinds.add(it) }
+        same<SosState>(SosState.Sent(3), sent.state, "restored after it was sent")
+        runUntil(sent, TILE_MS * 5, TILE_MS * 9)
+        same(1, s.kinds.size, "still one send for the one press")
+    },
+    "a press id is claimed once, even by two machines" to {
+        val ledger = PressLedger()
+        val s = Sends()
+        val a = SosMachine(SosKind.REAL, 0L, TILE_MS, "same", ledger) { s.kinds.add(it) }
+        val b = SosMachine(SosKind.REAL, 0L, TILE_MS, "same", ledger) { s.kinds.add(it) }
+        a.startCountdown(0L)
+        b.startCountdown(0L)
+        runUntil(a, 0L, TILE_MS)
+        runUntil(b, 0L, TILE_MS)
+        same(1, s.kinds.size, "one press id, one send")
+    },
+    "a recreated countdown continues; one that ran out unseen is not fired late" to {
+        val ledger = PressLedger()
+        val s = Sends()
+        val m = SosMachine(SosKind.REAL, 0L, TILE_MS, "p", ledger) { s.kinds.add(it) }
+        m.startCountdown(0L)
+        runUntil(m, 0L, 3_000L)
+        val live = SosMachine.restore(m.saved(), SosKind.REAL, 0L, TILE_MS, 4_000L, ledger) { s.kinds.add(it) }
+        same(6L, live.remainingSeconds(4_000L), "six seconds are left, not ten")
+        val late = SosMachine.restore(m.saved(), SosKind.REAL, 0L, TILE_MS, TILE_MS * 6, ledger) { s.kinds.add(it) }
+        same<SosState>(SosState.Cancelled, late.state, "a stale screen does not fire minutes late")
+        runUntil(late, TILE_MS * 6, TILE_MS * 7)
+        same(0, s.kinds.size, "nothing was sent")
+    },
 )

@@ -45,7 +45,7 @@ inline fun <reified E : Throwable> refuses(what: String, block: () -> Unit) {
 
 fun allCases(): List<Case> =
     vectorCases() + jsonCases() + doorCases() + sosCases() + dayCases() + launchCases() +
-        channelCases() + inboxCases() + smsCases()
+        channelCases() + inboxCases() + smsCases() + replyCases()
 
 fun main() {
     val all = allCases()

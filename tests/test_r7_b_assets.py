@@ -7,11 +7,14 @@
 # source (an npm integrity, a tag or commit address, or a model whose sum is still to be pinned).
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
+import io
 import json
 import shutil
 import sys
+import tarfile
 from pathlib import Path
 from types import ModuleType
 
@@ -185,6 +188,9 @@ def test_the_object_model_is_refused_until_its_licence_is_read() -> None:
     va = _script()
     with pytest.raises(SystemExit, match="licence"):
         va.plan_models(object_licence="")
+    for unknown in ("whatever I read", "GPL-3.0", "see the page"):
+        with pytest.raises(SystemExit, match="recognised"):
+            va.plan_models(object_licence=unknown)
     picked = va.plan_models(object_licence="Apache-2.0")
     assert [m.name for m in picked] == [assets.POSE_MODEL, assets.OBJECT_MODEL]
     assert [m.name for m in va.plan_models(object_licence=None)] == [assets.POSE_MODEL]
@@ -198,9 +204,12 @@ def test_the_models_fetched_later_are_pinned_and_then_held_to_their_sum(
     copy = tmp_path / "vision"
     shutil.copytree(VISION, copy)
     bytes_of = {assets.POSE_MODEL: b"pose model v1", assets.OBJECT_MODEL: b"object model v1"}
-    monkeypatch.setattr(va, "download", lambda url: bytes_of[url.rsplit("/", 1)[-1]])
+
+    def fake(url: str) -> bytes:
+        return bytes_of[url.rsplit("/", 1)[-1]]
+
     files = dict(json.loads((copy / assets.RELEASE / "MANIFEST.json").read_text())["files"])
-    files.update(va.fetch_models(copy, assets.RELEASE, "Apache-2.0"))
+    files.update(va.fetch_models(copy, assets.RELEASE, "Apache-2.0", fetch=fake))
     va.write_manifest(copy, assets.RELEASE, files)
     assert va.check(copy, assets.RELEASE) == []
     doc = json.loads((copy / assets.RELEASE / "MANIFEST.json").read_text())
@@ -219,9 +228,127 @@ def test_the_models_fetched_later_are_pinned_and_then_held_to_their_sum(
         console.vision_files.cache_clear()
     bytes_of[assets.POSE_MODEL] = b"a changed pose model"
     with pytest.raises(SystemExit, match="pinned before"):
-        va.fetch_models(copy, assets.RELEASE, "Apache-2.0")
+        va.fetch_models(copy, assets.RELEASE, "Apache-2.0", fetch=fake)
 
 
 def test_the_script_says_ok_with_its_size(capsys: pytest.CaptureFixture[str]) -> None:
     assert _script().main(["check"]) == 0
     assert f"{assets.RELEASE}: OK (22." in capsys.readouterr().out
+
+
+# ---- review follow-ups: atomic writes, plain errors, an offline downloader, licences -----
+def _tar(members: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def _src(va: ModuleType, data: bytes, members: dict[str, str]) -> object:
+    digest = base64.b64encode(hashlib.sha512(data).digest()).decode()
+    return va.Source(
+        "npm", package="pkg", version="1.0.0", integrity="sha512-" + digest, members=members
+    )
+
+
+def test_a_missing_folder_is_answered_plainly(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    va = _script()
+    assert va.main(["check", "--folder", str(tmp_path / "nowhere")]) == 1
+    out = capsys.readouterr().out
+    assert "MANIFEST.json is missing" in out and "PROBLEMS" in out and "Traceback" not in out
+
+
+def test_a_tarball_that_lost_a_member_or_is_not_a_tarball_gives_a_plain_message() -> None:
+    va = _script()
+    good = _tar({"package/a.js": b"1"})
+    with pytest.raises(SystemExit, match=r"pkg.*package/b\.js"):
+        va.npm_files(_src(va, good, {"package/b.js": "b.js"}), good)
+    junk = b"this is not a gzip tarball"
+    with pytest.raises(SystemExit, match="pkg.*could not be read"):
+        va.npm_files(_src(va, junk, {"package/a.js": "a.js"}), junk)
+    assert va.npm_files(_src(va, good, {"package/a.js": "a.js"}), good) == {"a.js": b"1"}
+
+
+def test_a_download_stops_at_its_total_deadline_and_its_size() -> None:
+    va = _script()
+
+    class Slow(io.BytesIO):
+        ticks = 0
+
+    def opener_for(payload: bytes) -> object:
+        def opener(url: str, timeout: float) -> io.BytesIO:  # noqa: ARG001
+            return Slow(payload)
+
+        return opener
+
+    clock = iter(range(0, 10_000, 40))  # each read looks 40 s later
+    with pytest.raises(SystemExit, match="too long"):
+        va.download(
+            "https://example.com/x",
+            opener=opener_for(b"x" * 300_000),
+            monotonic=lambda: next(clock),
+        )
+    with pytest.raises(SystemExit, match="larger than"):
+        va.download("https://example.com/x", opener=opener_for(b"x" * 200), limit=100)
+    assert va.download("https://example.com/x", opener=opener_for(b"ok")) == b"ok"
+
+
+def test_a_failed_fetch_leaves_the_release_exactly_as_it_was(tmp_path: Path) -> None:
+    va = _script()
+    copy = tmp_path / "vision"
+    shutil.copytree(VISION, copy)
+    before = {p.name: p.read_bytes() for p in (copy / assets.RELEASE).iterdir()}
+    served = {"n": 0}
+
+    def flaky(url: str) -> bytes:
+        served["n"] += 1
+        if served["n"] > 3:
+            raise SystemExit("could not fetch " + url)
+        return b"not the pinned bytes"
+
+    with pytest.raises(SystemExit):
+        va.fetch_libraries(copy, assets.RELEASE, fetch=flaky)
+    assert {p.name: p.read_bytes() for p in (copy / assets.RELEASE).iterdir()} == before
+    assert not list(copy.rglob("*.tmp*"))
+
+
+def test_files_are_written_through_a_temporary_name_then_replaced(tmp_path: Path) -> None:
+    va = _script()
+    target = tmp_path / "f.bin"
+    target.write_bytes(b"old")
+    va._write_atomic(target, b"new")
+    assert target.read_bytes() == b"new" and [p.name for p in tmp_path.iterdir()] == ["f.bin"]
+
+
+def test_a_later_models_fetch_keeps_the_object_models_licence_line(tmp_path: Path) -> None:
+    va = _script()
+    copy = tmp_path / "vision"
+    shutil.copytree(VISION, copy)
+    data = {assets.POSE_MODEL: b"pose", assets.OBJECT_MODEL: b"object"}
+
+    def fake(url: str) -> bytes:
+        return data[url.rsplit("/", 1)[-1]]
+
+    files = dict(json.loads((copy / assets.RELEASE / "MANIFEST.json").read_text())["files"])
+    files.update(va.fetch_models(copy, assets.RELEASE, "Apache-2.0", fetch=fake))
+    va.write_manifest(copy, assets.RELEASE, files)
+    again = va.fetch_models(copy, assets.RELEASE, None, fetch=fake)  # pose only, no licence word
+    words = (copy / va.MODELS_LICENCE).read_text(encoding="utf-8")
+    assert f"{assets.OBJECT_MODEL}: Apache-2.0" in words and f"{assets.POSE_MODEL}:" in words
+    assert assets.POSE_MODEL in again and assets.OBJECT_MODEL not in again
+
+
+def test_models_pinned_on_first_fetch_carry_a_note_to_check_the_vendors_hashes(
+    tmp_path: Path,
+) -> None:
+    va = _script()
+    copy = tmp_path / "vision"
+    shutil.copytree(VISION, copy)
+    va.fetch_models(copy, assets.RELEASE, None, fetch=lambda url: b"pose")
+    words = (copy / va.MODELS_LICENCE).read_text(encoding="utf-8")
+    assert "first fetch" in words and "published" in words and "hash" in words

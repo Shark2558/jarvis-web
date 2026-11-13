@@ -13,7 +13,11 @@ Every source is pinned before a byte is kept: an npm tarball by its registry `sh
 GitHub file by a tag or commit address and its SHA-256. A model file has no recorded sum until its
 first fetch; that fetch pins it in MANIFEST.json (commit the result), and every later fetch must
 match it. The object model's licence must be read by a person first (its page links no model
-card): without `--object-licence` only the pose model is fetched. Only the files a task loads are
+card): without `--object-licence` (one of the recognised permissive names) only the pose model
+is fetched; a model pinned on first fetch is trusted on first use, so check its SHA-256 against the
+vendor's published hash before committing. A run downloads and verifies everything in memory,
+writes each file atomically (temporary name, `os.replace`) and the manifest last. Only the files
+a task loads are
 kept (no source maps, no CommonJS or module-worker copies). Nothing here runs a downloaded file:
 tarball members are read by name, never extracted. Standard library only.
 
@@ -28,14 +32,20 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import io
 import json
+import os
+import re
 import sys
 import tarfile
+import tempfile
+import time
 import urllib.error
 import urllib.request
-from collections.abc import Mapping, Sequence
+import zlib
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,7 +56,17 @@ from jarvis.vision.assets import FOLDER, OBJECT_MODEL, POSE_MODEL, RELEASE  # no
 REGISTRY = "https://registry.npmjs.org"
 RAW = "https://raw.githubusercontent.com"
 MAX_DOWNLOAD = 64 * 1024 * 1024
-TIMEOUT_S = 120
+TIMEOUT_S = 30  # one socket wait
+DEADLINE_S = 180  # the whole of one download (a slow trickle cannot run past it)
+CHUNK = 64 * 1024
+# the licences a person may name for the object model (permissive ones only; nothing copyleft)
+RECOGNISED_LICENCES = frozenset({"Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause"})
+PIN_NOTE = (
+    "Pinned on first fetch (the sums in MANIFEST.json come from whatever Google's storage\n"
+    "returned): before committing, check each model file's SHA-256 against the hash the vendor\n"
+    "published for it, and run `python scripts/vision_assets.py check`.\n"
+)
+Fetch = Callable[[str], bytes]
 JS, WASM, BYTES = "application/javascript", "application/wasm", "application/octet-stream"
 MODELS_LICENCE = "LICENSE-mediapipe-models.txt"
 MEDIAPIPE_LICENCE = "LICENSE-mediapipe-tasks-vision.txt"
@@ -187,15 +207,43 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def download(url: str) -> bytes:
+def download(
+    url: str,
+    *,
+    opener: Callable[..., object] = urllib.request.urlopen,
+    limit: int = MAX_DOWNLOAD,
+    deadline_s: float = DEADLINE_S,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> bytes:
+    """One https download, capped in size and in total time (`opener` is injectable for tests)."""
+    began = monotonic()
+    out = bytearray()
     try:
-        with urllib.request.urlopen(url, timeout=TIMEOUT_S) as r:  # noqa: S310 - pinned https
-            data: bytes = r.read(MAX_DOWNLOAD + 1)
+        with opener(url, timeout=TIMEOUT_S) as r:  # type: ignore[attr-defined]  # noqa: S310
+            while chunk := r.read(CHUNK):
+                out += chunk
+                if len(out) > limit:
+                    raise SystemExit(f"{url} is larger than {limit} bytes")
+                if monotonic() - began > deadline_s:
+                    raise SystemExit(f"{url} took too long to download")
     except (urllib.error.URLError, OSError) as exc:
         raise SystemExit(f"could not fetch {url}: {exc}") from None
-    if len(data) > MAX_DOWNLOAD:
-        raise SystemExit(f"{url} is larger than {MAX_DOWNLOAD} bytes")
-    return data
+    return bytes(out)
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Write beside the target, flush to disk, then replace: a failure never leaves half a file."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def tarball_url(src: Source) -> str:
@@ -210,24 +258,33 @@ def npm_files(src: Source, data: bytes) -> dict[str, bytes]:
     if got != want:
         raise SystemExit(f"{src.package}@{src.version}: the tarball does not match its integrity")
     out: dict[str, bytes] = {}
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        for member, name in src.members.items():
-            info = tar.getmember(member)
-            handle = tar.extractfile(info) if info.isfile() else None
-            if handle is None:
-                raise SystemExit(f"{src.package}: {member} is not a file")
-            out[name] = handle.read()
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+            for member, name in src.members.items():
+                try:
+                    info = tar.getmember(member)
+                except KeyError:
+                    raise SystemExit(f"{src.package}: {member} is not in the tarball") from None
+                handle = tar.extractfile(info) if info.isfile() else None
+                if handle is None:
+                    raise SystemExit(f"{src.package}: {member} is not a file")
+                out[name] = handle.read()
+    except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
+        raise SystemExit(f"{src.package}: the tarball could not be read ({exc})") from None
     return out
 
 
 def plan_models(object_licence: str | None) -> list[Source]:
     """The model files to fetch: the pose model always; the object model only once a person has
-    read its licence (`object_licence`: what it says, e.g. "Apache-2.0"). An empty word refuses."""
+    read its licence (`object_licence`: its name, one of RECOGNISED_LICENCES). Else it refuses."""
     models = [s for s in SOURCES if s.kind == "model"]
     if object_licence is None:
         return [m for m in models if m.name != OBJECT_MODEL]
     if not object_licence.strip():
         raise SystemExit("the object model's licence has not been read: pass what it says")
+    if object_licence.strip() not in RECOGNISED_LICENCES:
+        names = ", ".join(sorted(RECOGNISED_LICENCES))
+        raise SystemExit(f"the object model's licence is not a recognised one (use one of {names})")
     return models
 
 
@@ -261,7 +318,7 @@ def write_manifest(folder: Path, release: str, files: Mapping[str, object]) -> N
         "models": _pending_models(files),
     }
     text = json.dumps(doc, indent=1, sort_keys=False, ensure_ascii=True) + "\n"
-    (folder / release / "MANIFEST.json").write_text(text, encoding="utf-8")
+    _write_atomic(folder / release / "MANIFEST.json", text.encode("utf-8"))
 
 
 def _read_manifest(folder: Path, release: str) -> dict[str, object]:
@@ -272,29 +329,47 @@ def _read_manifest(folder: Path, release: str) -> dict[str, object]:
     return data if isinstance(data, dict) else {}
 
 
-def fetch_libraries(folder: Path, release: str) -> dict[str, object]:
+Staged = tuple[dict[Path, bytes], dict[str, object]]  # (every file to write, manifest entries)
+
+
+def stage_libraries(folder: Path, release: str, fetch: Fetch | None = None) -> Staged:
+    """Download and verify every library in memory (about 25 MB); nothing is written yet."""
+    get = fetch or download
     out = folder / release
-    out.mkdir(parents=True, exist_ok=True)
+    writes: dict[Path, bytes] = {}
     files: dict[str, object] = {}
     for src in SOURCES:
         if src.kind == "npm":
-            got = npm_files(src, download(tarball_url(src)))
-            for name, data in got.items():
+            for name, data in npm_files(src, get(tarball_url(src))).items():
                 if name.startswith("LICENSE-"):
-                    (folder / name).write_bytes(data)
+                    writes[folder / name] = data
                     continue
-                (out / name).write_bytes(data)
+                writes[out / name] = data
                 where = f"npm:{src.package}@{src.version}/{_member_of(src, name)}"
                 files[name] = _entry(name, data, where, src.licence_of[name])
         elif src.kind == "url":
-            data = download(src.url)
+            data = get(src.url)
             if sha256(data) != src.sha256:
                 raise SystemExit(f"{src.url} does not match its pinned SHA-256")
             if src.name.startswith("LICENSE-"):
-                (folder / src.name).write_bytes(data)
+                writes[folder / src.name] = data
             else:
-                (out / src.name).write_bytes(data)
+                writes[out / src.name] = data
                 files[src.name] = _entry(src.name, data, src.url, src.licence)
+    return writes, files
+
+
+def write_staged(writes: Mapping[Path, bytes]) -> None:
+    """Write every staged file, each through `_write_atomic` (the manifest comes after, last)."""
+    for path, data in writes.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomic(path, data)
+
+
+def fetch_libraries(folder: Path, release: str, fetch: Fetch | None = None) -> dict[str, object]:
+    """The libraries, all verified before the first file is written."""
+    writes, files = stage_libraries(folder, release, fetch)
+    write_staged(writes)
     return files
 
 
@@ -302,28 +377,50 @@ def _member_of(src: Source, name: str) -> str:
     return next(m for m, n in src.members.items() if n == name).removeprefix("package/")
 
 
-def fetch_models(folder: Path, release: str, object_licence: str | None) -> dict[str, object]:
+def _model_words(folder: Path) -> dict[str, str]:
+    """{model: licence word} already recorded in the models' licence file."""
+    try:
+        text = (folder / MODELS_LICENCE).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    found = re.findall(r"^([A-Za-z0-9_.-]+): (\S+) \(from ", text, flags=re.M)
+    return {name: word for name, word in found}
+
+
+def stage_models(
+    folder: Path, release: str, object_licence: str | None, fetch: Fetch | None = None
+) -> Staged:
     """The model files, each checked against the sum an earlier fetch pinned (none yet: this
-    fetch pins it). Their licence file is written beside the release folder."""
+    fetch pins it), and their licence file (earlier words kept), all in memory."""
+    get = fetch or download
     pinned = _read_manifest(folder, release).get("files")
     pinned = pinned if isinstance(pinned, dict) else {}
+    writes: dict[Path, bytes] = {}
     files: dict[str, object] = {}
     picked = plan_models(object_licence)
     for src in picked:
-        data = download(src.url)
+        data = get(src.url)
         before = pinned.get(src.name)
         if isinstance(before, dict) and before.get("sha256") not in (None, sha256(data)):
             raise SystemExit(f"{src.name} does not match the sum pinned before")
-        (folder / release / src.name).write_bytes(data)
+        writes[folder / release / src.name] = data
         files[src.name] = _entry(src.name, data, src.url, MODELS_LICENCE)
-    words = {s.name: s.licence or object_licence for s in picked}
-    head = "".join(
-        f"{n}: {w} (from {next(s.url for s in picked if s.name == n)})\n" for n, w in words.items()
-    )
+    words = _model_words(folder)
+    words.update({s.name: s.licence or str(object_licence) for s in picked})
+    urls = {s.name: s.url for s in SOURCES if s.kind == "model"}
+    head = "".join(f"{n}: {w} (from {urls.get(n, '')})\n" for n, w in sorted(words.items()))
     apache = (folder / MEDIAPIPE_LICENCE).read_text(encoding="utf-8")
-    (folder / MODELS_LICENCE).write_text(
-        "MediaPipe model files served by JARVIS (R7 D14)\n" + head + "\n" + apache, encoding="utf-8"
-    )
+    text = "MediaPipe model files served by JARVIS (R7 D14)\n" + head + "\n" + PIN_NOTE + "\n"
+    writes[folder / MODELS_LICENCE] = (text + apache).encode("utf-8")
+    return writes, files
+
+
+def fetch_models(
+    folder: Path, release: str, object_licence: str | None, fetch: Fetch | None = None
+) -> dict[str, object]:
+    """`stage_models`, then written."""
+    writes, files = stage_models(folder, release, object_licence, fetch)
+    write_staged(writes)
     return files
 
 
@@ -348,11 +445,8 @@ def check(folder: Path, release: str) -> list[str]:
         path = folder / str(name)
         if not path.is_file() or sha256(path.read_bytes()) != digest:
             problems.append(f"{name}: does not match its recorded sum")
-    stray = (
-        {p.name for p in (folder / release).iterdir() if p.is_file()}
-        - set(files)
-        - {"MANIFEST.json"}
-    )
+    shelf = folder / release
+    stray = {p.name for p in shelf.iterdir() if p.is_file()} - set(files) - {"MANIFEST.json"}
     problems.extend(f"{name}: in the folder but not in the manifest" for name in sorted(stray))
     return problems
 
@@ -365,18 +459,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--folder", type=Path, default=FOLDER)
     args = ap.parse_args(argv)
     if args.command == "fetch":
-        files = fetch_libraries(args.folder, RELEASE)
+        # everything is downloaded and verified in memory first; files are written after, the
+        # manifest last, so a failed run leaves the folder and its manifest as they were
+        writes, files = stage_libraries(args.folder, RELEASE)
         old = _read_manifest(args.folder, RELEASE).get("files")
         for name, entry in (old if isinstance(old, dict) else {}).items():
             if name in (POSE_MODEL, OBJECT_MODEL) and (args.folder / RELEASE / name).is_file():
                 files[name] = entry  # pinned before; `check` below proves it still matches
         if args.models:
-            files.update(fetch_models(args.folder, RELEASE, args.object_licence))
+            more_writes, more_files = stage_models(args.folder, RELEASE, args.object_licence)
+            writes.update(more_writes)
+            files.update(more_files)
+            print(PIN_NOTE, end="")
+        write_staged(writes)
         write_manifest(args.folder, RELEASE, files)
     problems = check(args.folder, RELEASE)
     for line in problems:
         print(line)
-    total = sum(p.stat().st_size for p in (args.folder / RELEASE).iterdir() if p.is_file())
+    shelf = args.folder / RELEASE
+    total = sum(p.stat().st_size for p in shelf.iterdir() if p.is_file()) if shelf.is_dir() else 0
     print(f"{RELEASE}: {'OK' if not problems else 'PROBLEMS'} ({total / 1024 / 1024:.1f} MB)")
     return 1 if problems else 0
 

@@ -1,14 +1,14 @@
-Version v7.0.3 · 12 Nov 2026, 16:15 IST · Release R7 · Status: Draft · Owner: 🛠 Mark XV
+Version v7.0.4 · 13 Nov 2026, 16:40 IST · Release R7 · Status: Ready · Owner: 🛠 Mark XVI
 
 # Release R7 — Mobile, watch & phone camera (`v7.0.0`)
 
 **Phase:** 6 (mobile app and wearable), reusing Phase 1 (voice) and laying Phase 5 groundwork (vision); Phase 7
 evals. **Type:** free: ₹0 a month, no new paid service, no new secret, no new Cloud Scheduler job, no Firebase.
-**Branches:** I0 `r7-i0` (forks from `main` once R11.1 is merged; until then from `r11-1-i1` @ `bbe056d`; Gate
-G0) → parts `r7-a` … `r7-e` → integration `r7-i1` → one PR `v7.0.0 · R7 Mobile, watch & phone camera · Mark XV`.
-Every commit carries `JARVIS-Version: v7.0.0` and `JARVIS-Mark: XV`. The code facts were re-read on `r11-1-i1` @
-`bbe056d` for v7.0.3, after the fresh-context review `docs/plans/r7-integration/PLAN-REVIEW-1.md`. This document is
-the plan only; it writes no application code.
+**Branches:** I0 `r7-i0` (G0 met: `main` @ `5519e2d`, R11.1 live as v11.1.1, merged into `r7-i0` by a merge
+commit) → parts `r7-a` … `r7-e` → integration `r7-i1` → one PR `v7.0.0 · R7 Mobile, watch & phone camera · Mark XVI`.
+Every commit carries `JARVIS-Version: v7.0.0` and `JARVIS-Mark: XVI`. The code facts were re-read on `main` @
+`5519e2d` for v7.0.4 (I0's notes: `docs/plans/r7-integration/I0-NOTES.md`), after the fresh-context review
+`docs/plans/r7-integration/PLAN-REVIEW-1.md`. This document is the plan; I0's seams are built on `r7-i0`.
 
 ## Goal (plain words)
 
@@ -25,11 +25,11 @@ Three limits are said now, because they are limits and not faults:
 1. The app is Chrome showing your JARVIS full screen, plus a few small native parts. It is not a second copy
    of JARVIS, so it needs the internet, and Android will not let it block screenshots.
 2. SOS is a message to your family. It is not an emergency service and it never calls 112 for you.
-3. The watch's own numbers are not proven yet. Health Connect on your phone lists NoiseFit as connected, and
-   you switched on NoiseFit's permission to write (12 Nov 2026, 08:25 IST). So far the only sleep entry came
-   from the phone itself. Tomorrow morning, after a night with the watch on, you look for a sleep entry from
-   NoiseFit. Until one is seen, the watch's sleep and heart rate stay marked "Needs you first" (they wait for
-   your check). The phone's own steps and sleep arrive now.
+3. The watch's sleep and heart rate are not proven yet. NoiseFit DOES write steps and calories into Health
+   Connect on your phone (your check, 13 Nov 2026, 15:19 IST). There is no sleep entry from it yet, because
+   the watch was not worn overnight. Until a NoiseFit sleep or heart-rate entry appears, those two stay
+   marked "Needs you first" (they wait for your check). The watch's steps and the phone's own steps and sleep
+   arrive now.
 
 ## The eight things you asked for
 
@@ -56,23 +56,20 @@ Not in this plan:
 
 ## Gate G0 · R11.1 first
 
-R11.1 is built and joined on `r11-1-i1` @ `bbe056d` (its I1-NOTES v11.1.3). On 12 Nov 2026 it is not yet merged
-into `main`.
-
-- **G0 is met once R11.1 is merged into `main`.** R7's I0 forks from `main` at that point.
-- **If the owner has not merged it yet** when I0 starts, I0 forks from `r11-1-i1`. The commits of R11.1's
-  integrated fixer are merged in when they land.
-- Either way the plan's own commits on `r7-i0` come along by a merge. Nothing is rebased or force-pushed.
+**Met.** R11.1 is merged and live: `main` @ `5519e2d` (v11.1.1: R11.1, its integrated fixer's last fifteen
+commits and hotfix 1). On 13 Nov 2026 I0 merged `main` into `r7-i0` (which held this plan's own commits, cut
+from `r11-1-i1` @ `bbe056d`) by a merge commit. Nothing was rebased or force-pushed.
 
 R7 builds on R11.1's picture path (`documents/pictures.py`, `documents/imagecheck.py`, `console-r111-files.js`)
 and touches files R11.1 changed (`console.js`, `console-attach.js`, every `console-voice*.js`, `core/prompts.py`).
-Every file:line below is from `bbe056d` (v7.0.3) and is re-checked at I0 against the base I0 forks from.
+Every file:line below was re-checked on `main` @ `5519e2d` for v7.0.4; the lines R11.1's fixer and hotfix 1
+moved are corrected, and I0-NOTES.md lists each one.
 
-## What exists today (`r11-1-i1` @ `bbe056d`)
+## What exists today (`main` @ `5519e2d`, before I0)
 
 1. **Sign-in.** Google only, owners only: `api/auth.py:185–190` sends the browser to Google and `:194–226`
    checks the verified e-mail against the owner list. The session is the signed cookie `jarvis_session`,
-   `SameSite=Lax`, Secure, 12 hours sliding (`config.py:90`, `api/app.py:557–568`) and 24 hours at most
+   `SameSite=Lax`, Secure, 12 hours sliding (`config.py:90`, `api/app.py:558–569`) and 24 hours at most
    (`api/auth.py:41`). A cookie write needs the header `X-Requested-With: JARVIS` (`api/auth.py:36–37`, `:111`);
    no CORS headers are served (`:9–10`). The page signs in with `location.href = '/auth/login'`
    (`console.js:124`).
@@ -110,14 +107,14 @@ Every file:line below is from `bbe056d` (v7.0.3) and is re-checked at I0 against
    beside its file until the conversation is deleted** (`documents/service.py:19–21`, `:374–381`;
    `documents/pictures.py:4–11`). It is never written into a turn and never sent with a later one. JPEG and PNG
    only, at most 2,048 px a side (`documents/imagecheck.py:13–14`; the console shrinks to 1,568 px first),
-   at most 900 KB after cleaning (`config.py:478`), at most 4 a turn (`documents/pictures.py:49`). Only a
+   at most 900 KB after cleaning (`config.py:478`), at most 4 a turn (`documents/pictures.py:50`). Only a
    brain with `BrainSpec.sees_pictures` gets them (it reads pictures and never learns); any other brain gets
    one fixed line instead. The console's brain detail does not say which brain sees (`{id, label, trains,
    tools}`, `console.js:53`). A picture turn's guard (`picture/turnguard.py`) refuses `research_person` and
    `web_search` with a face's name. A new permission row "Pictures" (R1, `picture_*`) holds the tool
    `picture_research`. `photos/imaging.py:20`, `:67` strips a JPEG's camera and location data.
    In the console the send path is `JarvisAttach` (`console-attach.js:13`, `:244`; it has no `add(files)`
-   today) and R11.1's `JarvisFixes.parts.files` with `shrink` and `cost` (`console-r111-files.js:183`, `:309`).
+   today) and R11.1's `JarvisFixes.parts.files` with `shrink` and `cost` (`console-r111-files.js:184`, `:310`).
 9. **Files and the vault.** Attach in the composer (`console.html:165–168`); vault upload `POST /v1/vault/upload`
    (`api/vault.py:202`); DigiLocker comes through a Drive folder read by a tick job
    (`vault_inbox/service.py:1–24`) into `VaultIntake.intake` (`vault/ports.py:16–36`): PDF, JPEG, PNG, ≤ 10 MB.
@@ -131,18 +128,21 @@ Every file:line below is from `bbe056d` (v7.0.3) and is re-checked at I0 against
 12. **Health words already taken.** `jarvis.health` is JARVIS's own systems check and `jarvis.vitals` its keys
     and limits. Nothing reads a watch; R11's `wellbeing/{uid}_{date}` holds water and stand-ups.
 13. **Line budgets.** `console.html` 795 lines, pinned at **≤ 795** (`test_r11_1_seams.py:244`), so every
-    added line fails until seam 10 frees lines and moves the pin; `api/app.py` 731, pinned ≤ 735 (`:243`;
-    guard 750); the dock has 21 tabs; `tools/gateway.py` is frozen at 760.
+    added line fails until seam 10 frees lines and moves the pin; `console.js` 753 (every console file ≤ 800);
+    `core/brain.py` 704 (pinned ≤ 770); `api/app.py` 732, pinned ≤ 735 (`:243`; the older guards 750); the dock
+    has 21 tabs; `tools/gateway.py` is frozen at 760. After I0: `console.html` 782 (pinned ≤ 782), `console.js`
+    761, `api/app.py` 735, the dock 22 tabs.
 14. **Release naming.** The build book names the release from the highest-numbered plan file
     (`buildbook/gen/plans.py:76–78`, and the fallback's `_label`, `buildbook/gen/fallback.py:81–84`), and reads
     the plans in that order (`plan_paths`, `plans.py:61–73`). That would stay "R11.1" after R7 ships (I0
     seam 2).
-15. **This workspace** (measured 12 Nov 2026, 06:37 IST, one request each). JDK 21, Gradle 8.14.3 and Node 22
-    are installed; there is no Android SDK. Reached: npm (200), PyPI (200), raw.githubusercontent.com (200),
-    GitHub release downloads (206). **Refused by the workspace's proxy (403):** dl.google.com,
-    maven.google.com, services.gradle.org, plugins.gradle.org, repo.maven.apache.org, repo1.maven.org,
-    storage.googleapis.com (where MediaPipe keeps its model files) and cdn.jsdelivr.net. So no Android build
-    and no model download can happen here.
+15. **This workspace** (measured again 13 Nov 2026 at I0, one request each). JDK 21, Gradle 8.14.3 and Node 22
+    are installed; there is no Android SDK. Reached: npm (200), PyPI (206), raw.githubusercontent.com (206,
+    which is where I0 took the Gradle wrapper from Gradle's own tag `v9.6.0`) and `git ls-remote` to GitHub.
+    **Refused:** dl.google.com, maven.google.com, services.gradle.org, plugins.gradle.org,
+    repo.maven.apache.org, repo1.maven.org, cdn.jsdelivr.net and developer.android.com (no connection), and
+    storage.googleapis.com (where MediaPipe keeps its model files) and github.com's release pages (403). So no
+    Android build, no Gradle distribution checksum and no model download can happen here.
 
 ## Decision record · which shell (question 1)
 
@@ -216,7 +216,7 @@ What you lose with D, plainly:
 | Phone camera, photo and live | L1 device, L2 Input Processing · Research & Intel | 6 | Build now |
 | On-device vision engine (one port, five tasks) | L2 Input Processing · Health & Wellbeing (the planned 11th skill) | 6, groundwork for 5 | Build now; pose and objects wait for two model files |
 | DigiLocker import from the phone | L6 Integration to L7 vault · Task & Productivity | 6 | Build now; automatic only where Android lets the folder be picked |
-| Watch data through Health Connect | L6 Integration, L7 sealed · Health & Wellbeing | 6 | Build now; the phone's own steps and sleep arrive now; the watch's sleep and heart rate are "Needs you first" until a NoiseFit entry is seen |
+| Watch data through Health Connect | L6 Integration, L7 sealed · Health & Wellbeing | 6 | Build now; NoiseFit's steps (and calories) and the phone's own steps and sleep arrive now; the watch's sleep and heart rate are "Needs you first" until a NoiseFit entry is seen |
 | Sleep tracking | L5 Skills, L8 brief · Health & Wellbeing | 6 | Build now |
 | Emergency SOS | L5 Skills, L8 Response & Output · Security Advisor | 6 | Build now; OFF until a contact joins |
 | App lock, sign out everywhere | Cross-cutting security | 6 and 7 | Build now |
@@ -499,8 +499,8 @@ a separate record type (`RestingHeartRateRecord`) behind its own permission (`RE
 happens when the app is opened and the tab says "Last synced: …".
 
 *Three apps can write the same steps.* Health Connect on your phone lists NoiseFit, Google Fit and one other
-app as connected. NoiseFit's write switches are on, and the phone itself writes steps and sleep (its only
-sleep entry so far is named "OnePlus 12R"). Adding up raw records would count your steps two or three times,
+app as connected. NoiseFit writes steps and calories (seen 13 Nov 2026, 15:19 IST), and the phone itself
+writes steps and sleep (its only sleep entry so far is named "OnePlus 12R"). Adding up raw records would count your steps two or three times,
 and "the longest sleep" could pick the phone's guess over the watch. So:
 
 - steps, and heart rate lowest, average and highest, are read with Health Connect's own `aggregate`, which
@@ -521,10 +521,13 @@ and opens it itself, so two entries must be reachable from outside the app:
 
 Without them either `apk_check.py` fails the build or Health Connect never asks; D22 lists both.
 
-*Which apps write.* It works with any app that writes to Health Connect. On your phone NoiseFit is connected to
-Health Connect directly (seen 12 Nov 2026, 08:17–08:25 IST), so the route is not only through Google Fit, as
-Noise's help page [S22] and a third-party page [S44] suggested. Whether NoiseFit writes the watch's **sleep and
-heart rate** is not seen yet. Until a NoiseFit entry appears, they stay "Needs you first" (owner question 3).
+*Which apps write.* It works with any app that writes to Health Connect. On your phone NoiseFit writes into
+Health Connect directly: it was listed as connected on 12 Nov 2026 (08:17–08:25 IST), and on 13 Nov 2026
+(15:19 IST) you saw its **steps and calories** there. So the earlier research that the route is only through
+Google Fit (Noise's help page [S22], a third-party page [S44]) is superseded. Whether NoiseFit writes the
+watch's **sleep and heart rate** is still to be seen: there is no sleep entry yet because the watch was not
+worn overnight. Until a NoiseFit sleep or heart-rate entry appears, they stay "Needs you first" (owner
+question 3). Calories are not read: R7 reads steps, heart rate and sleep only (D22).
 If the app were ever published on Google Play, each kind of data would have to be declared and reviewed, and a
 public privacy policy added [S20].
 
@@ -626,7 +629,7 @@ The "paired owner only" rule for everything else is untouched.
     `/app/share/*`, and the SOS routes.
   - *Order:* the app-lock middleware sits inside R6's show lock, and both sit inside the session middleware.
   - *Two kinds of 423.* Five places in the console treat any 423 as "a guest show is running" and send the
-    page to `/book/show`: `console.js:78`, `:101`, `:699` (the `/auth/me` recheck), `:740` (boot), and
+    page to `/book/show`: `console.js:78`, `:101`, `:699` (the `/auth/me` recheck), `:745` (boot), and
     `console-book-talk.js:147`. All five read the `error` code instead: `show_locked` goes to the show,
     `device_locked` to the unlock cover (I0 seam 14). Otherwise a locked app would jump to the show at boot
     and on every return to the screen.
@@ -688,20 +691,28 @@ secret-shaped string.
 - **Versions:** the app's `versionCode` is its own counter (`android/version.properties`, +1 per shipped
   build), never JARVIS's version, which goes "down" from 11.1 to 7.0 (safe: nothing compares JARVIS versions,
   D26).
-- **Pins, confirmed at I0 from the makers' pages, not guessed.** None of these pages can be read from this
-  workspace (refused, 12 Nov 2026), so every pin is *unverified* until CI's first green run.
-  - **Android Gradle plugin 9.5.1**, one number everywhere in this plan (the newest read on 12 Nov 2026 [S36]).
-    It needs Gradle 9.6.0 and at least JDK 17, and supports up to API 37. I0 confirms on the maker's
-    Studio-to-plugin table that Android Studio Rabbit 2 2026.2.2 opens it; if not, one step lower.
-  - **Gradle 9.6.0** through the wrapper, with `distributionSha256Sum` in `gradle-wrapper.properties`.
-  - **Kotlin.** AGP 9 compiles Kotlin itself ("built-in Kotlin") and uses its new DSL by default. So `app`
-    applies no `org.jetbrains.kotlin.android` plugin and has no `kotlinOptions {}` block; compiler options go
-    in `kotlin { compilerOptions { … } }`. The plain-Kotlin `core` module needs the Kotlin JVM plugin, pinned
-    once in `gradle/libs.versions.toml`: a version that works with AGP 9.5.x's built-in Kotlin **and runs on
-    JDK 25**, because Android Studio's Gradle JDK on your laptop is its bundled Java 25. No serialization
-    plugin is needed (D24). Part E's brief says all of this.
-  - **The JDK that runs Gradle** is set by `gradle/gradle-daemon-jvm.properties` or by Studio's "Gradle JDK"
-    setting, not by the wrapper. CI uses the image's Java 17 or 21 [S37].
+- **Pins, confirmed 13 Nov 2026 on Google's pages** (read by the Workshop; this workspace cannot reach them).
+  - **Android Studio Rabbit 2 | 2026.2.2 opens AGP 7.1 to 9.5** (Rabbit 1 opens 7.1 to 9.4), and AGP 9.5 needs
+    Gradle 9.6.0 [S50]. The AGP 9.5 release notes list **9.5.1**, Gradle 9.6.0 as the minimum and the default,
+    SDK Build Tools 36.0.0, **JDK 17** as the minimum and the default, and API 37 as the highest [S36]. So:
+    **Android Gradle plugin 9.5.1**, one number everywhere in this plan.
+  - **Gradle 9.6.0** through the wrapper. I0 took the wrapper scripts and jar from Gradle's own GitHub tag
+    `v9.6.0` (CI's wrapper validation checks the jar). `distributionSha256Sum` is **not pinned yet**: Gradle's
+    checksum file is on services.gradle.org, refused here. CI's `wrapper-pin` job prints the official sum and
+    fails until Part E writes it into `gradle-wrapper.properties` (I0-NOTES.md, "What CI must prove").
+  - **Kotlin.** AGP 9 compiles Kotlin itself ("built-in Kotlin", which needs KGP 2.2.10 or newer) and uses its
+    new DSL by default. So `app` applies no `org.jetbrains.kotlin.android` plugin and has no `kotlinOptions {}`
+    block; compiler options go in `kotlin { compilerOptions { … } }`. A higher Kotlin Gradle plugin on the
+    classpath lifts AGP's built-in one. **The Kotlin pin for `core` is 2.4.10** (the version Google's AGP page
+    uses in its own example), pinned once in `gradle/libs.versions.toml` with the plugin `kotlin-jvm`. No
+    serialization plugin is needed (D24). Part E's brief says all of this.
+  - **The JDK that runs Gradle.** Google's pages do **not** state that JDK 25 is supported (a JDK 25 warning
+    was fixed in 9.5.0-alpha08). **CI runs Gradle on JDK 17** (`actions/setup-java`, Temurin 17; the image
+    also carries 21 [S37]). On your laptop, Android Studio's "Gradle JDK" is its bundled Java 25: the first
+    Studio sync is the proof; if it fails, set Settings → Build, Execution, Deployment → Build Tools → Gradle
+    → Gradle JDK to 17 or 21 (owner step C3). The JDK is set by that setting or by
+    `gradle/gradle-daemon-jvm.properties`, never by the wrapper; I0 writes no daemon-JVM file, so Studio's
+    setting decides.
   - `compileSdk` and `targetSdk` 36 (Health Connect's client 1.1.0+ requires `compileSdk 36` [S17]; the helper
     library compiles against 36 [S11]); `minSdk` 28, Android 9, the oldest Health Connect runs on [S17].
 - **The package name** is `io.github.shark2558.jarvis` (`applicationId`; D5).
@@ -741,9 +752,9 @@ so `tests/test_r7_e_*.py` reads them from the source: the tile's `startActivityA
   only), `sos_test_per_hour` 3, `sos_test_per_day` 10 (tests and "I'm safe"), `sos_countdown_s` 10,
   `vision_enabled`, `vision_keep_days` 90, `app_lock_minutes` 5, `app_share_enabled`.
 
-**D26 · Version, persona, release name.** `__version__` = `7.0.0` at I0, and the release is "R7". The number
-goes down from 11.1.0 to 7.0.0, and that is safe, because **nothing compares JARVIS's version** (checked on
-`bbe056d`):
+**D26 · Version, persona, release name.** `__version__` = `7.0.0` at I0, and the release is "R7" (owner
+default, Workshop 12 Nov 2026; it stands). The number goes down from 11.1.1 to 7.0.0, and that is safe,
+because **nothing compares JARVIS's version** (checked on `bbe056d`, re-checked on `5519e2d` at I0):
 
 - the only version comparisons are for the home kit's own `0.2.0` (`photos/edge.py:173–180`,
   `home/kit.py:198–207`);
@@ -859,7 +870,12 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
 
 ## The I0 seams (branch `r7-i0`, after G0; tests green: `tests/test_r7_seams.py`)
 
-1. `jarvis.__version__` = `7.0.0`. **Pinned test to update:** `tests/test_about.py:24`.
+**Status at v7.0.4:** built on `r7-i0` (see `docs/plans/r7-integration/I0-NOTES.md` for what each seam
+became, where I0 placed what the plan left open, and what only CI or the owner's Android Studio can
+prove). The lines below keep the plan's words; where I0 decided something, the seam says so in brackets.
+
+1. `jarvis.__version__` = `7.0.0`. **Pinned tests to update:** `tests/test_about.py:24` and
+   `tests/test_r11_1_seams.py:73` (both pin 11.1.1 on `5519e2d`).
 2. **The build book names the release from the repository's own version**, not from the highest plan number
    (`7.0.0` → "R7", `11.1.0` → "R11.1"), and lists this release's plan first.
    - Read the label from the repository's own `src/jarvis/__init__.py` (`fallback.version_of`,
@@ -871,8 +887,8 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
 
    **Pinned tests to update:** `tests/test_book_gen_plans.py:87–91` (the rule itself), `:101–103` (newest
    first), `:180` (the fixture's label) and `:205–214` (the real plans; green today and expecting **R11.1**
-   first); `tests/test_book_gen_determinism.py:209–212` (expects the label "R11.1"). This task changes none of
-   them.
+   first); `tests/test_book_gen_determinism.py:209–212` (expects the label "R11.1"). [I0: the rule is
+   `fallback.label_from_version`, shared by `plans.release_label` and `fallback._label`.]
 3. `buildbook/gen/layers.py`: `mobile` and `phone` L1, `vision` L2, `watch` and `sos` L5
    (`tests/test_book_gen_code.py:102` fails on an unmapped package). `buildbook/gen/snapshot.py:42`: the binary
    list learns `.jar`, `.ttf`, `.task`, `.tflite`, `.gz`, `.webp`, and `android/**/build/` is never read
@@ -888,7 +904,8 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
    `tests/test_r3_seams.py:905`, `tests/test_r11_1_seams.py:138`, and `RISK_OF` / `TOOL_OF` / `EXPECTED` in
    `tests/test_permissions_policy.py`. `tests/test_r11_1_seams.py:139` pins exactly `plans, pictures` between
    `kitchen` and `maps`, and R3's test keeps Maps and YouTube last, so R7's three rows go elsewhere (I0 places
-   them and says where).
+   them and says where). [I0: right after Camera, the end of R3's block, before Vitals: `vision`, `watch`,
+   `sos`.]
 7. Keyring purposes 18 → 21 (the count is still 18 on `bbe056d`). **Pinned:** `tests/test_r3_seams.py:846–847`
    (the whole set), `tests/test_r11_seams.py:162`, `tests/test_book_gen_code.py:170`.
 8. `jarvis.mobile.ports` (`MobilePart` with R11.1's part fields (seam 20), `MobileContext`, `PARTS`,
@@ -897,8 +914,8 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
    contract is left out; the others run), stub packages and routes, slots in `api/app.py`, `tools/setup.py` (`r7=`),
    `api/personal.py`. In `api/app.py` also: a slot for the app-lock middleware beside R6's show lock (inside
    the session middleware, as that one is) and body caps for `/phone/v1/inbox` (10 MB) and `/app/share/in`.
-   **Pinned:** `tests/test_r11_1_seams.py:243` (`app.py` ≤ 735; it is 731 now), `tests/test_r11_wiring.py:283`
-   (≤ 750) and `tests/test_r6_wiring_seams.py:75` (≤ 750).
+   **Pinned:** `tests/test_r11_1_seams.py:243` (`app.py` ≤ 735; it was 732 on `5519e2d`, 735 after I0),
+   `tests/test_r11_wiring.py:283` (≤ 750) and `tests/test_r6_wiring_seams.py:75` (≤ 750).
 9. The door's fake and the contract: `docs/plans/r7-integration/phone-contract.md`,
    `tests/fixtures/r7/phone_vectors.json`, `tests/r7_fakes.py`.
 10. Console. First **free about 19 lines of `console.html`** by letting `console-dock.js` (240 lines) build the
@@ -928,7 +945,7 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
     `tests/test_r5_seams.py:118` (the camera file becomes the second and only other place `getUserMedia(` may
     appear) and `:171–176`.
 14. `console.js`: a 423 answer is read by its `error` code in **all five** places that read it today:
-    `console.js:78`, `:101`, `:699` (the `/auth/me` recheck on every return to the screen), `:740` (boot, which
+    `console.js:78`, `:101`, `:699` (the `/auth/me` recheck on every return to the screen), `:745` (boot, which
     today sends the page to `/book/show`) and `console-book-talk.js:147`. `show_locked` goes to the show,
     `device_locked` to the unlock cover. Plus the app lock's slot in `api/app.py` (seam 8) with its list of
     routes that are never locked and its order (inside R6's show lock, both inside the session middleware), as
@@ -948,7 +965,8 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
     Web Activity, MediaPipe, Tesseract, zxing, Health Connect, Kotlin and Gradle), the corrected "Mobile"
     departure, the roadmap. In `docs/architecture/JARVIS-Architecture.md` (`bbe056d`) these lines say
     Capacitor or ML Kit and are corrected: L195, L196, L1438, L1486, L1770, L1771 (R8's row names ML Kit,
-    which D14 bans), L1806 (the glossary's "Capacitor"), L1849 and L1918. `scripts/arch_coverage.py` and
+    which D14 bans), L1806 (the glossary's "Capacitor"), L1849, L1874 (the glossary's vision libraries name
+    ML Kit; missing from v7.0.3) and L1918 (the same numbers on `5519e2d`). `scripts/arch_coverage.py` and
     `scripts/check_doc_versions.py` pass.
 18. `evals/r7/run.py` with stub parts `shell`, `vision`, `phone`, `body`, `needles` and I0's own built part
     `contract`; `docs/plans/r7-integration/BRIEF-COMMON.md` (seam 26).
@@ -956,7 +974,7 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
     pinned by 17 test files; the persona may hold no `{` or `}` (`tests/test_voice_persona.py:104`). At I1 it
     becomes `p7.0` (D26; nothing compares it).
 20. **`MobilePart` copies R11.1's part fields** (`FixPart`, `fixes/ports.py:74–81`, read by
-    `api/r11_1_wiring.py:100–138`): `tools`, `clock_jobs`, `daily_jobs`, `privacy` (`PrivacySource`s) and
+    `api/r11_1_wiring.py:100–148`): `tools`, `clock_jobs`, `daily_jobs`, `privacy` (`PrivacySource`s) and
     `services` with `phrases` (the No-AI phrases) and `brief` (a brief contributor). They carry the
     `watch_stale` check (a clock job), the 400-day and 90-day retention sweeps (daily jobs) and every part's
     privacy rows. R11.1's I1 had to add the phrase slot and the brief contributor late; R7 has them from I0.
@@ -967,14 +985,14 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
     `watch_today`, `sleep_note`, `sos_status`, `vision_results`) is sorted into `ACTION_WORDS` or `TOOL_NOUNS`
     (`understand/words.py:126`; `tests/test_r11_1_b_guard.py:66–93`), or joining the parts turns that test red.
 23. **The brief's sleep line** goes into the brief model with a pinned API shape (proposed: `sleep: {minutes,
-    start, end, source: "watch" | "phone" | "typed"} | null`; I0 pins the final one). The brief's e-mailed inbox copy
-    (`brief/service.py:688–694`) and Telegram leave it out (owner question 19; default no).
+    start, end, source: "watch" | "phone" | "typed"} | null`; I0 pinned exactly this, `brief.models.SleepLine`).
+    The brief's e-mailed inbox copy (`brief/service.py:691–697`) and Telegram leave it out (owner question 19; default no).
 24. **Licences.** `buildbook/gen/libs.py:59–69` (`VENDORED`) gains the vision files' licences (MediaPipe Tasks
     Vision and its models, tesseract.js, its core and the English data, zxing-wasm), or the build book
     silently leaves them out.
 25. **The picture send door** (D12, D15): `console-r7-send.js` (Ask, Vault, Attach and the "Pictures sent
     today" count) over `JarvisAttach.add(files)`, added to `console-attach.js` (`:13`, `:244`), and R11.1's
-    `JarvisFixes.parts.files.shrink` and `cost` (`console-r111-files.js:183`, `:309`); `shrink` learns `.webp`
+    `JarvisFixes.parts.files.shrink` and `cost` (`console-r111-files.js:184`, `:310`); `shrink` learns `.webp`
     (`:23`); `sees` (from `BrainSpec.sees_pictures`) joins the brain detail (`console.js:53`).
 26. **`BRIEF-COMMON.md`** carries R11.1's "ask nothing before sign-in" rule for every new console module: one
     `test_before_sign_in_the_block_asks_the_server_nothing` per part. The share tray keeps `do=shared` items
@@ -1026,8 +1044,10 @@ on A–D; `silent-failure-hunter` on D (an SOS that says "sent" when it was not)
 **A · Tell us first.** Done on 12 Nov 2026, Sir: your phone, your Android Studio, your watch, NoiseFit's write
 switch in Health Connect, and DigiLocker's Share button (questions 1, 2, 3 and 9). Still open:
 
-1. **Tomorrow morning**, after a night with the watch on: open Health Connect → Data and access → Sleep, and
-   tell us whether there is an entry from **NoiseFit**. (Today the only one is from "OnePlus 12R", the phone.)
+1. **After a night with the watch on:** open Health Connect → Data and access → Sleep (and Heart rate under
+   Vitals), and tell us whether there is an entry from **NoiseFit**. *Checked in part on 13 Nov 2026, 15:19
+   IST:* NoiseFit writes steps and calories; no sleep entry yet, because the watch was not worn overnight.
+   (The only sleep entry is still the phone's, "OnePlus 12R".)
 2. **Set App priority, NoiseFit first.** In Health Connect → Data and access, open Sleep, then Steps (under
    Activity), then Heart rate (under Vitals). In each, open **App priority** and move NoiseFit to the top. This
    makes the watch's numbers win over the phone's and Google Fit's, and stops your steps being counted twice.
@@ -1044,7 +1064,9 @@ switch in Health Connect, and DigiLocker's Share button (questions 1, 2, 3 and 9
 1. Wait until the builder says "the project is in `C:\Jarvis\android`".
 2. Open Android Studio → **Open** → choose `C:\Jarvis\android` → **Trust Project**.
 3. Wait for "Gradle sync finished" at the bottom (the first time it downloads about 1.5 GB; 5 to 15 minutes).
-   If a blue link says "Install missing SDK package", click it, accept, **Finish**.
+   If a blue link says "Install missing SDK package", click it, accept, **Finish**. If the sync stops with a
+   message about the Java or JDK version, open Settings → Build, Execution, Deployment → Build Tools → Gradle,
+   set **Gradle JDK** to a version 17 or 21 (Studio offers to download one), and sync again.
 4. On the left edge click **Build Variants** and choose **personal** for `app`.
 5. Menu **Build → Build App Bundle(s) / APK(s) → Build APK(s)**. Wait for "Build completed". (Recent
    Android Studio versions renamed this menu. I0 checks the words against your Rabbit 2 and corrects this step
@@ -1100,13 +1122,14 @@ about every hour (the folder). A live camera look uses the battery like a video 
 1. **What is your phone's model and Android version, and is Chrome your browser?** *Answered:* a OnePlus 12R
    on Android 16, with Chrome. Built for Android 9 and newer, with Chrome.
 2. **Which Android Studio version did you install (Help → About)?** *Answered:* Rabbit 2, 2026.2.2 Patch 1.
-   The project is pinned to Android Gradle plugin 9.5.1; if your Studio says it is too old for that, we pin one
-   step lower.
+   *Confirmed 13 Nov 2026 on Google's table:* Rabbit 2 opens AGP 7.1 to 9.5, so the pin AGP 9.5.1 (Gradle
+   9.6.0, JDK 17) stands. Whether Studio's own Java 25 runs this Gradle is proven by your first sync (step C3).
 3. **Does the watch's data reach Health Connect?** *Answered in part:* a ColorFit Vision 3; NoiseFit is
-   connected to Health Connect with write switched on. It becomes: tomorrow morning, look for a NoiseFit
-   sleep entry, and set App priority with NoiseFit first (owner steps A1 and A2). Default meanwhile: the
-   reader is built for anything that writes to Health Connect; the watch's sleep and heart rate stay "Needs
-   you first" until a NoiseFit entry is seen. This does not block I0.
+   connected to Health Connect with write switched on, and on 13 Nov 2026 (15:19 IST) it had written steps
+   and calories. Still open: a NoiseFit sleep or heart-rate entry after a night with the watch on, and App
+   priority with NoiseFit first (owner steps A1 and A2). Default meanwhile: the reader is built for anything
+   that writes to Health Connect; the watch's sleep and heart rate stay "Needs you first" until a NoiseFit
+   entry is seen. This does not block the parts.
 4. **Who are your emergency contacts (up to 5), do they use Telegram, and which number should the text
    message go to?** Default: none, so SOS stays off.
 5. **Should the SOS text message be sent without your tap?** It needs the SMS permission, which Android
@@ -1148,29 +1171,31 @@ about every hour (the folder). A live camera look uses the battery like a video 
 19. **Should the sleep line also be in the brief's e-mailed copy and on Telegram?** Default: **no**. It shows
     in the console's brief and answers by voice and chat only.
 
-## The owner's answers so far (12 Nov 2026)
+## The owner's answers so far (12 and 13 Nov 2026)
 
 Only what the build needs is written here (the repository is public).
 
 | Question | Answer | What it changes |
 |---|---|---|
 | 1 · The phone | A OnePlus 12R on Android 16, with Chrome as its browser | Inside the supported range (D23: `minSdk` 28). Health Connect is part of Android from 14 on, so nothing extra is installed. The runtime notification permission, the per-app language and predictive-back rules of Android 13 to 16 apply; I0 lists them. OxygenOS may hold back background work (optional step C14). |
-| 2 · Android Studio | Rabbit 2, 2026.2.2 Patch 1 (build `AI-262.10968.63`, 5 Nov 2026; its own Java runtime is 25) | One plugin pin, 9.5.1 (the newest read on 12 Nov 2026 [S36]; Gradle 9.6.0, JDK 17 as the minimum). I0 confirms on the maker's Studio-to-plugin table that this Studio opens it, and that Gradle 9.6 and the Kotlin pin run on the Studio's Java 25. The JDK that runs Gradle is set by `gradle/gradle-daemon-jvm.properties` or Studio's "Gradle JDK" setting, not by the wrapper (D23). |
-| 3 · The watch | A Noise ColorFit Vision 3 with the NoiseFit app. On 12 Nov 2026, 08:17–08:25 IST, Health Connect on his phone listed NoiseFit, Google Fit and one other app as connected; he switched on NoiseFit's write permissions (08:25); the only sleep entry so far is the phone's own ("OnePlus 12R"). He checks tomorrow morning for a NoiseFit sleep entry after wearing the watch overnight. | NoiseFit reaches Health Connect directly, not only through Google Fit. Three writers mean double-counting unless read with `aggregate` and one sleep writer per night (D17), and App priority with NoiseFit first (step A2). The watch's sleep and heart rate stay "Needs you first" until a NoiseFit entry is seen. The check does not block I0. |
+| 2 · Android Studio | Rabbit 2, 2026.2.2 Patch 1 (build `AI-262.10968.63`, 5 Nov 2026; its own Java runtime is 25) | Confirmed 13 Nov 2026 on Google's pages: Rabbit 2 opens AGP 7.1 to 9.5 [S50]; AGP 9.5.1 needs Gradle 9.6.0 and JDK 17 (minimum and default), up to API 37 [S36]. Kotlin for `core`: 2.4.10. JDK 25 is not stated as supported: CI uses JDK 17; on the laptop the first sync is the proof, else Studio's "Gradle JDK" 17 or 21 (D23, step C3). |
+| 3 · The watch | A Noise ColorFit Vision 3 with the NoiseFit app. On 12 Nov 2026, 08:17–08:25 IST, Health Connect on his phone listed NoiseFit, Google Fit and one other app as connected; he switched on NoiseFit's write permissions (08:25). On 13 Nov 2026, 15:19 IST: NoiseFit DOES write steps and calories into Health Connect; no sleep entry yet, because the watch was not worn overnight. | NoiseFit reaches Health Connect directly (the earlier "only through Google Fit" research is superseded). Three writers mean double-counting unless read with `aggregate` and one sleep writer per night (D17), and App priority with NoiseFit first (step A2). The watch's sleep and heart rate stay "Needs you first" (to be seen) until a NoiseFit entry appears. |
 | 9 · DigiLocker | A document has a Share button on his phone | D16's first way (share into JARVIS) works for him; the watched folder stays optional. |
 | 10 · App lock | Default changed (Workshop, 12 Nov) | ON once a passkey has been registered from this phone, not merely "once you have a passkey" (D21; step C12). |
 | 15 · Package name | Adopted by default (Workshop, 12 Nov) | `io.github.shark2558.jarvis`; he may still object before the first install. |
 | 8, 13, 16 and the rest | Not answered | The safe defaults stand. Two questions were added with defaults: 18 (a passkey on the phone: yes) and 19 (the sleep line in the e-mailed brief and on Telegram: no). |
 | The shell (D1) | Told on 12 Nov; no objection so far | Proceed with D1 unless he says otherwise before I0. |
-| The version | R7 stays `v7.0.0`, "R7" (Workshop, 12 Nov) | Safe: nothing compares JARVIS versions (D26); the build book's plan order is fixed by I0 seam 2. |
+| The version | R7 stays `v7.0.0`, "R7" (Workshop, 12 Nov; the default stands at I0, 13 Nov) | Safe: nothing compares JARVIS versions (D26); the build book names the release from the version and lists this plan first (I0 seam 2, built). |
+| 15 again · Package name | The default stands at I0 (13 Nov) | `io.github.shark2558.jarvis` is in `jarvis.mobile.ports.PACKAGE`, `phone-contract.md` and the shared vectors. |
+| The vision head start | Confirmed at I0 (13 Nov) | Appendix A's 24 hand-held phone rows are the settled list (R9 and R10, on R7's engine); the desk rows wait for a USB webcam; the laptop has no built-in camera. |
 
-**What the research found about the watch (12 Nov 2026), and what his phone showed.**
+**What the research found about the watch (12 Nov 2026), and what his phone showed (12 and 13 Nov 2026).**
 - The maker's own support page says a Noise watch "can sync with Google Fit via NoiseFit app" and names no other app [S22]. Its product page and the app's store listing (updated 7 Sep 2026) do not mention Health Connect.
 - A third-party integration page says of NoiseFit: "On Android the app syncs to Google Fit rather than Health Connect" [S44]. **His phone contradicts it:** Health Connect lists NoiseFit itself as a connected app, and he switched on its write permissions (12 Nov 2026, 08:25 IST).
 - Google's Fit app has a switch "Sync Fit with Health Connect" (Profile → Settings) [S45]. Fit is connected on his phone too. Whether Fit passes on what ANOTHER app wrote into it is not stated on Google's pages read today: unverified, and no longer needed for the watch.
 - Google says "Google Fit APIs will be supported until the end of 2026" [S21]. That end date matters only if NoiseFit writes through Fit; it does not matter for NoiseFit's own connection to Health Connect.
 - Gadgetbridge (open source) can write a watch's data to Health Connect [S48], but this watch is not on the device pages read today [S49]: not a route to rely on.
-- **So:** the route is watch → NoiseFit → Health Connect, directly. What is not yet seen is a NoiseFit **entry** (the only sleep entry is the phone's own, "OnePlus 12R"). His check tomorrow morning decides it (steps A1 and A2; they go into `OWNER-STEPS.md`). The phone's own steps and sleep reach Health Connect regardless of the watch, which is why D17 removes duplicates.
+- **So:** the route is watch → NoiseFit → Health Connect, directly, and it works: on 13 Nov 2026 (15:19 IST) NoiseFit's steps and calories were in Health Connect. What is not yet seen is a NoiseFit **sleep or heart-rate** entry (the watch was not worn overnight; the only sleep entry is the phone's own, "OnePlus 12R"). His next check after a night with the watch on decides it (steps A1 and A2; they go into `OWNER-STEPS.md`). The phone's own steps and sleep reach Health Connect regardless of the watch, which is why D17 removes duplicates.
 
 ## Cost (₹; no new paid service, secret or Scheduler job)
 
@@ -1189,10 +1214,10 @@ Not part of R7 and not costed here: a phone stand, a USB webcam for the desk (R8
 
 ## Risks
 
-- **The watch's own sleep and heart rate may not arrive.** NoiseFit is connected to Health Connect with write
-  on, but no NoiseFit entry has been seen yet; the only sleep entry is the phone's. If NoiseFit writes
-  nothing, deliverables 5 and 7 show the phone's own steps and sleep and what you type. Your check tomorrow
-  (step A1) settles it; it does not block I0. (Google's end-of-2026 date for the Fit APIs [S21] matters only
+- **The watch's own sleep and heart rate may not arrive.** NoiseFit writes steps and calories into Health
+  Connect (13 Nov 2026), but no NoiseFit sleep or heart-rate entry has been seen yet; the only sleep entry is
+  the phone's. If NoiseFit writes neither, deliverables 5 and 7 show the watch's steps, the phone's own sleep
+  and what you type. Your check after a night with the watch on (step A1) settles it; it blocks no part. (Google's end-of-2026 date for the Fit APIs [S21] matters only
   if NoiseFit writes through Fit.)
 - **Steps or sleep counted twice.** The phone, Google Fit and NoiseFit can all write steps, and the phone
   writes its own guess at sleep. Summed raw, your steps would be two or three times too high and "last
@@ -1201,8 +1226,9 @@ Not part of R7 and not costed here: a phone stand, a USB webcam for the desk (R8
   (step A2). A JVM test with three writers holds it.
 - **The first Android build is blind.** Nothing here can compile Android code; the first compile is CI's.
   Part E keeps the app thin, pins its versions from the makers' pages at I0, and plans several CI rounds.
-- **Your Android Studio may be older than the pinned plugin.** The sync then stops with a plain message;
-  question 2 and one lower pin.
+- **Your Android Studio's own Java 25 and Gradle 9.6.** Google's table says Rabbit 2 opens AGP 9.5, but its
+  pages do not say JDK 25 is supported. If the first sync stops on the Java version, step C3 sets Studio's
+  Gradle JDK to 17 or 21; CI already builds on 17.
 - **Chrome's check of the site–app link can lag.** A browser bar may show for a while after linking; nothing
   else is affected. D4 orders things so the first check should pass.
 - **Phone makers that kill background apps** delay alerts and the 6-hourly sync. Telegram stays the second
@@ -1261,7 +1287,7 @@ Each line ends with the exact check you do.
 - **Sharing through the app reaches the small service worker** on your Chrome. *Check:* acceptance 7.
 - **MediaPipe and Tesseract under the console's CSP on a phone**, and their speed. Read from the packages, not
   run. *Check:* acceptance 4 and 5.
-- **A NoiseFit entry in Health Connect** (NoiseFit is connected with write on; no entry from it is seen yet),
+- **A NoiseFit sleep or heart-rate entry in Health Connect** (its steps and calories were seen on 13 Nov 2026),
   that App priority removes the duplicates for heart rate as well as steps, the background-read switch on
   your Android version, and that Health Connect shows its permission screen and its privacy page for an app
   installed by hand (Google's pages describe only Play). *Check:* steps A1 and A2; step C10; Health Connect →
@@ -1277,9 +1303,11 @@ Each line ends with the exact check you do.
 - **SOS over the lock screen and the tile on a locked phone.** *Check:* lock the phone, pull the shade, tap SOS.
 - **Play Protect and "restricted settings"** when installing by hand on your Android version (third-party
   reports say Android 15 guards SMS access for such apps [S30]; R7 asks for none). *Check:* step C8.
-- **The Android toolchain pins** (plugin 9.5.1, Gradle 9.6.0, the Kotlin pin on JDK 25, `compileSdk` 36, and
-  every library on Google's Maven) against your Android Studio and GitHub's image. *Check:* CI's first step
-  resolves every dependency; CI's first green run; your step C3.
+- **The Android toolchain pins**: AGP 9.5.1, Gradle 9.6.0 and Kotlin 2.4.10 are confirmed on Google's pages
+  (13 Nov 2026), but nothing has resolved them yet; `distributionSha256Sum` is not pinned; whether Studio's
+  Java 25 runs Gradle 9.6 is not stated anywhere; `compileSdk` 36 and every library on Google's Maven are
+  Part E's. *Check:* CI's `resolveDependencies` step (it resolves the two plugins from I0 on); CI's
+  `wrapper-pin` job (it prints the sum to pin); CI's first green build; your step C3.
 - **Adding a passkey from the phone** when the existing one is on the laptop. *Check:* step C12.
 - **The menu words** for building the app in Rabbit 2 (step C5) and the battery setting on OxygenOS (step
   C14). *Check:* I0 against Rabbit 2; your phone.
@@ -1292,6 +1320,10 @@ Each line ends with the exact check you do.
 - **Battery use** of the 6-hourly and hourly jobs and of a live look on your phone.
 
 ## Appendix A · The vision use cases, and which need only your phone in your hand
+
+**Settled at I0 (13 Nov 2026).** The 24 rows that need only your phone in your hand are the head start: they
+land in R9 and R10 on R7's engine. The desk-camera rows wait for the USB webcam you plan to buy; your laptop
+has no built-in camera. This replaces the release plan's "19 rows" (decision 9) for good.
 
 **What R7 itself delivers, plainly.** R7 builds the camera, the share and the engine: rows 214 and 215 (the
 phone camera, photo and live, and sharing into JARVIS) and the engine's tasks. **R7 delivers no vision use case
@@ -1414,7 +1446,7 @@ and 253 ("What's in this jar?") most of the way. The kitchen and care "Musts" ne
 devices: R9 and R10 must budget for your labelled photos or the paid check, and the port (D13) already has
 the place for both.
 
-## Sources (every one read on 12 Nov 2026)
+## Sources (read on 12 Nov 2026; S36 and S50 on 13 Nov 2026)
 
 | # | What | Address |
 |---|---|---|
@@ -1453,7 +1485,7 @@ the place for both.
 | S33 | Android, restrictions on starting a foreground service from the background (updated 28 Oct 2026) | https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start |
 | S34 | Android, access documents and other files (folder grants and their limits; updated 28 Oct 2026) | https://developer.android.com/training/data-storage/shared/documents-files |
 | S35 | Android, sign your app (the debug certificate; updated 6 Mar 2026) | https://developer.android.com/studio/publish/app-signing |
-| S36 | Android Gradle plugin release notes, 9.5.0 (updated 5 Nov 2026) and 9.5.1 (the newest, read 12 Nov 2026); not reachable from this workspace when v7.0.3 was written, so the pin is confirmed at I0 | https://developer.android.com/build/releases/gradle-plugin |
+| S36 | Android Gradle plugin 9.5 release notes: 9.5.1; Gradle 9.6.0 minimum and default; SDK Build Tools 36.0.0; JDK 17 minimum and default; API 37 at most; built-in Kotlin needs KGP 2.2.10 or newer; a JDK 25 warning fixed in 9.5.0-alpha08 (read by the Workshop, 13 Nov 2026; not reachable from this workspace) | https://developer.android.com/build/releases/gradle-plugin |
 | S37 | GitHub runner image Ubuntu 24.04, version 20261101.360.1 | https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md |
 | S38 | GitHub, Actions billing (free for public repositories) | https://docs.github.com/en/billing/concepts/product-billing/github-actions |
 | S39 | Google Play Console help: registration fee; testing rules for new personal accounts | https://support.google.com/googleplay/android-developer/answer/6112435 · https://support.google.com/googleplay/android-developer/answer/14151465 |
@@ -1467,6 +1499,7 @@ the place for both.
 | S47 | AndroidX source (the tip of `androidx-main`, not a release): the manifests that WorkManager, AndroidX core and the Health Connect client merge into an app; android-browser-helper's manifest | https://github.com/androidx/androidx/blob/androidx-main/work/work-runtime/src/main/AndroidManifest.xml · https://github.com/androidx/androidx/blob/androidx-main/core/core/src/main/AndroidManifest.xml · https://github.com/androidx/androidx/blob/androidx-main/health/connect/connect-client/src/main/AndroidManifest.xml · https://github.com/GoogleChrome/android-browser-helper/blob/main/androidbrowserhelper/src/main/AndroidManifest.xml |
 | S48 | Gadgetbridge, its Health Connect integration | https://gadgetbridge.org/basics/integrations/health-connect/ |
 | S49 | Gadgetbridge device pages (Moyoung, GloryFit): the owner's watch is not listed | https://gadgetbridge.org/gadgets/wearables/moyoung/ and https://freeyourgadget.codeberg.page/gadgetbridge_org/gadgets/wearables/gloryfit/ |
+| S50 | Android, "About the Android Gradle plugin": the Studio-to-AGP table (Rabbit 2 2026.2.2 → AGP 7.1–9.5; Rabbit 1 → 7.1–9.4), AGP 9.5 needs Gradle 9.6.0, and its Kotlin example uses 2.4.10 (read by the Workshop, 13 Nov 2026) | https://developer.android.com/build/releases/about-agp |
 
 ## Change log
 
@@ -1475,3 +1508,4 @@ the place for both.
 | v7.0.1 | 12 Nov 2026, 07:28 IST | R7 | First edition: goal and limits, the eight deliverables mapped, findings from the code with file:line, the decision record for the shell with its evidence table (a Trusted Web Activity inside a small native app, not Capacitor), D0–D26, data model, modules, server changes, the A–E split with each part's files, the I0 seams with every pinned test they touch, tests and evals with negative controls, acceptance, the owner's numbered steps, 17 owner questions with safe defaults, cost in ₹, risks, what is deferred, what is not verified live, Appendix A (52 vision use cases that need no new camera) and the sources | 🛠 Mark XV |
 | v7.0.2 | 12 Nov 2026, 08:05 IST | R7 | The owner's first answers (phone on Android 16 with Chrome; Android Studio Rabbit 2, 2026.2.2 Patch 1; a Noise watch; DigiLocker has Share) and what the research found about the watch and Health Connect (the maker names only Google Fit; Fit's APIs end with 2026; unverified bridge); sources S48, S49 | 🛠 Mark XV |
 | v7.0.3 | 12 Nov 2026, 16:15 IST | R7 | Review 1 written in (A1–A10, every B line re-read on `r11-1-i1` @ `bbe056d`, the C seams 20–27, gaps, owner steps and split, D's 24 hand-held vision rows, E's answers): Health Connect read without double-counting and NoiseFit's own connection, the app lock's five 423 readers and its default, SOS's own test budget and its recorded exception, launch addresses that never start the mic, the package `io.github.shark2558.jarvis`, one AGP pin, ₹ only, G0 on `main` | 🛠 Mark XV |
+| v7.0.4 | 13 Nov 2026, 16:40 IST | R7 | Ready for the parts: G0 met (`main` @ `5519e2d`, v11.1.1, merged into `r7-i0`); every file:line re-read on `5519e2d` (the moved lines corrected: `app.py:558–569`, `pictures.py:50`, `console-r111-files.js:184`/`:310`, `console.js:745`, `r11_1_wiring.py:100–148`, `brief/service.py:691–697`; sizes; `test_r11_1_seams.py:73` also pins the version; the guide's L1874); D23's pins confirmed on Google's pages (Rabbit 2 → AGP 7.1–9.5; AGP 9.5.1, Gradle 9.6.0, JDK 17, API 37; Kotlin 2.4.10 for `core`; JDK 25 not stated, so CI on 17 and Studio's Gradle JDK as the fallback; `distributionSha256Sum` left to CI), sources S36 and S50; Health Connect: NoiseFit writes steps and calories (13 Nov 15:19 IST), sleep and heart rate still to be seen; the workspace re-measured; Appendix A's 24 hand-held rows settled; the owner's defaults (package, version) stand; the I0 seams built (I0-NOTES.md) | 🛠 Mark XVI |

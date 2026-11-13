@@ -59,10 +59,16 @@ def test_a_cancel_clears_every_timer_before_anything_is_sent() -> None:
 
 
 def test_nothing_is_asked_before_sign_in() -> None:
-    for fn in ("async function refreshCard()", "async function openSheet()"):
+    for fn, ask in (
+        ("async function refreshCard()", "api("),
+        ("async function openSheet()", "loadSheet("),
+    ):
         body = SOS_JS[SOS_JS.index(fn) :]
         body = body[: body.index("\n}\n")]
-        first_api = body.index("api(")
-        assert "signedIn()" in body[:first_api], fn
+        assert "signedIn()" in body[: body.index(ask)], fn
+    # the sheet's read lives in loadSheet(); it is reached only from openSheet() (after that check)
+    # and from a countdown, which a hold starts only when signed in (begin() checks it)
+    assert SOS_JS.count("loadSheet(") == 3  # its definition and its two callers
+    assert "if (S.phase !== 'idle' || !signedIn()) return false;" in SOS_JS
     load = WATCH_JS[WATCH_JS.index("async function load()") :]
     assert load.index("signedIn()") < load.index("H.api(")

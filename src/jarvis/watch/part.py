@@ -3,14 +3,14 @@
 
 `build(ctx)` hands back `MobilePart("body")` with:
 - tools: `sleep_last_night`, `sleep_week`, `watch_today`, `sleep_note` (`jarvis.watch.tools`) and
-  `sos_status` (`jarvis.sos.tools`), the brain's only SOS tool (a read). Always registered, so the
-  rows and the Telegram guard see them; each says plainly when it is off (no token key, switched
-  off). No tool sends an SOS (D19);
+  `sos_status` (`jarvis.sos.tools`), the brain's only SOS tool (a read). Registered
+  whenever there is a document store (with none the part is `off: no document store` and has no
+  tools); each says plainly when it is off (no token key, switched off). No tool sends an SOS (D19);
 - services: `door` {health, sos} for Part C's door; `sos_hook` (the code behind I0's Telegram hook,
   `ContactHook`); `phrases` (the No-AI router); `brief` (`SleepBrief`: no Helpers line ever, the
   pinned `sleep()` for the console's brief); and for its own routes and other parts: `watch`
-  (`WatchService`), `sos` (`SosService`) and `sos_sms` (`async (uid) -> {label, contacts}` for the
-  phone's `hello` reply, Part C);
+  (`WatchService`), `sos` (`SosService`) and `sos_contacts` (`SosService.sms_view`:
+  `async (uid) -> {label, contacts: [{label, phone}]}` for the phone's `hello` reply, Part C);
 - clock job `watch_stale`, daily job `body_sweep`, privacy rows `watch_days` and `sos`.
 Everything it needs is read LATE from the app (`ctx.state`): the Telegram client, the clock
 (`helpers_now`, set by R11's wiring) and the notifier.
@@ -96,7 +96,7 @@ def build(ctx: MobileContext) -> MobilePart:
             "brief": SleepBrief(watch),
             "watch": watch,
             "sos": sos,
-            "sos_sms": sos.sms_view,
+            "sos_contacts": sos.sms_view,
         },
         ready=READY if ring is not None else NO_KEY,
     )

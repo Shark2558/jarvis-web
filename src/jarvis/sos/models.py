@@ -6,18 +6,20 @@ D19, D20; docs/plans/r7-integration/phone-contract.md section 4).
   `sos_max_contacts` (5) contacts. A contact is HIS label, optionally a phone number for the SMS
   screen, and, once they pressed Start on their join link, their Telegram user and chat ids. A
   pending join word is never kept: only its MAC (`join_mac`) and when it runs out.
-- `SosIn`: `{"v":1,"kind":"real"|"test"|"safe","at","location":{"lat_e6","lon_e6","accuracy_m",
-  "age_s"}|null}`; strict integers (a coordinate is micro-degrees). Coordinates are used once to
-  write the messages and are never stored, logged or audited.
+- `parse_press`: the phone's `sos` body and the web sheet's `{"kind":"real"|"test"|"safe",
+  "press_id"?, "at"?, "location"?: {"lat_e6","lon_e6","accuracy_m","age_s"}|null}`; only `kind`
+  must be right, a bad place is dropped (strict integers: a coordinate is micro-degrees).
+  Coordinates are used once to write the messages and are never stored, logged or audited.
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 Kind = Literal["real", "test", "safe"]
 KINDS: tuple[Kind, ...] = ("real", "test", "safe")
@@ -78,16 +80,52 @@ class Location(_Frozen):
     age_s: StrictInt = Field(ge=0, le=86_400)
 
 
-class SosIn(_Frozen):
-    """The phone's `sos` body (and the web sheet's, with `at` left to the server)."""
+PRESS_ID = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
-    v: StrictInt = Field(ge=1, le=1)
+
+@dataclass(frozen=True)
+class Press:
+    """One press as the phone or the web sheet sent it: only `kind` is needed. A place that does
+    not validate is dropped (`dropped`), never a reason to refuse an SOS."""
+
     kind: Kind
-    at: StrictInt = Field(ge=0)
+    at: int | None = None
     location: Location | None = None
+    press_id: str | None = None
+    dropped: bool = False
+
+
+def parse_press(raw: object) -> Press | None:
+    """A press from a decoded JSON body; None only when there is no usable `kind`. Everything
+    else (`v`, `at`, an extra key, a bad place, a bad press id) is best effort, because an SOS
+    must go out whatever else is wrong with the request."""
+    if not isinstance(raw, dict):
+        return None
+    kind = raw.get("kind")
+    if kind not in KINDS:
+        return None
+    at = raw.get("at")
+    pid = raw.get("press_id")
+    place, dropped = raw.get("location"), False
+    location: Location | None = None
+    if place is not None:
+        try:
+            location = Location.model_validate(place)
+        except ValidationError:
+            dropped = True
+    return Press(
+        kind=kind,
+        at=at if isinstance(at, int) and not isinstance(at, bool) and at >= 0 else None,
+        location=location,
+        press_id=pid if isinstance(pid, str) and PRESS_ID.fullmatch(pid) else None,
+        dropped=dropped,
+    )
 
 
 __all__ = [
+    "PRESS_ID",
+    "Press",
+    "parse_press",
     "CONTACT_ID",
     "DEFAULT_LABEL",
     "KINDS",
@@ -96,7 +134,6 @@ __all__ = [
     "Contact",
     "Kind",
     "Location",
-    "SosIn",
     "clean_label",
     "clean_phone",
 ]

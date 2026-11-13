@@ -176,19 +176,13 @@ async def test_the_sos_door_sends_and_keeps_no_place(caplog: pytest.LogCaptureFi
 
 @pytest.mark.parametrize(
     "raw",
-    [
-        b"",
-        b"[]",
-        b'{"v":1,"kind":"panic","at":1,"location":null}',
-        b'{"v":1,"kind":"real","at":1,"location":{"lat_e6":91000000,"lon_e6":0,"accuracy_m":1,"age_s":1}}',
-        b'{"v":1,"kind":"real","at":1,"location":{"lat_e6":1.5,"lon_e6":0,"accuracy_m":1,"age_s":1}}',
-        b'{"v":1,"kind":"real","at":1,"location":null,"extra":1}',
-    ],
+    [b"", b"[]", b'{"v":1,"kind":"panic","at":1,"location":null}'],
 )
 async def test_a_bad_sos_body_is_refused_and_nothing_is_sent(raw: bytes) -> None:
     rig = Rig()
     reply = await rig.door.call("sos", raw)
     assert reply.status == 422 and rig.bot.calls == [] and rig.notes.sent == []
+    assert "112" in reply.body["detail"]  # the phone still opens its SMS screen and 112
 
 
 async def test_sos_status_names_no_one_and_says_how_to_send() -> None:
@@ -275,7 +269,7 @@ async def test_the_hello_reply_can_read_the_sms_list() -> None:
     await rig.sos.set_label(UID, "Kiran Example")
     await rig.sos.add_contact(UID, *ASHA[:2])
     await rig.sos.add_contact(UID, "No Number Example", None)
-    got = await rig.part.services["sos_sms"](UID)
+    got = await rig.part.services["sos_contacts"](UID)
     assert got == {"label": "Kiran Example", "contacts": [{"label": ASHA[0], "phone": ASHA[1]}]}
 
 

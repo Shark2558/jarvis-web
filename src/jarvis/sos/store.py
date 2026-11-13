@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import secrets
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
@@ -39,8 +39,10 @@ PURPOSE = "sos"
 VERSION = 1
 JOIN_S = 24 * 3600
 DAY_S = 24 * 3600
-WRONG_ID = "wrong"  # the wrong-word counter's document in sos_join
-WRONG_PER_HOUR = 30  # wrong join words an hour, from anyone, before every join waits for the hour
+WRONG_ID = "wrong"  # the global wrong-word counter's document in sos_join
+WRONG_PER_CHAT = 30  # wrong join words an hour from one chat before that chat waits for the hour
+WRONG_GLOBAL_PER_HOUR = 300  # ... and from everyone together (a flood from many chats)
+WRONG_BUCKETS = 256  # chats share 256 counters, so strangers can never make unbounded documents
 SWEEP_MAX = 500
 Pool = Literal["real", "test"]
 _SPECIAL = ("budget", "last")
@@ -71,8 +73,12 @@ class Budget:
     def of(cls, doc: Doc | None, now: float) -> Budget:
         def times(key: str) -> tuple[float, ...]:
             raw = doc.get(key) if doc else None
+            if raw is not None and not isinstance(raw, list):
+                log.warning("the SOS budget has a bad list: read as empty", extra={"pool": key})
             items = raw if isinstance(raw, list) else []
-            ok = (float(t) for t in items if isinstance(t, int | float) and not isinstance(t, bool))
+            ok = [float(t) for t in items if isinstance(t, int | float) and not isinstance(t, bool)]
+            if len(ok) != len(items):
+                log.warning("the SOS budget had bad entries: dropped", extra={"pool": key})
             return tuple(t for t in ok if 0 <= now - t < DAY_S)
 
         return cls(times("real"), times("test"))
@@ -92,7 +98,6 @@ class Entry:
     joined: int
     location: bool
     via: str
-    extra: dict[str, Any] = field(default_factory=dict)
 
     def doc(self, uid: str) -> Doc:
         return {
@@ -250,23 +255,37 @@ class SosStore:
         result: tuple[str, Book] | None = await self._tx(fn)
         return result
 
-    async def wrong_blocked(self, now: float) -> bool:
-        try:
-            doc = await self._docs.get(self._join_path(WRONG_ID))
-        except Exception as exc:  # noqa: BLE001 - fail closed: no join while it can't be read
-            log.warning("SOS wrong-word counter unreadable", extra={"error": type(exc).__name__})
-            return True
-        if not doc or doc.get("hour") != int(now // 3600):
-            return False
-        return int(doc.get("count", 0)) >= WRONG_PER_HOUR
+    def _wrong_paths(self, chat_id: int) -> tuple[str, str]:
+        bucket = chat_id % WRONG_BUCKETS
+        return self._join_path(WRONG_ID), self._join_path(f"{WRONG_ID}_{bucket}")
 
-    async def count_wrong(self, now: float) -> None:
-        path, hour = self._join_path(WRONG_ID), int(now // 3600)
+    async def wrong_blocked(self, now: float, chat_id: int) -> bool:
+        """True when this chat (or everyone together) got too many wrong words this hour."""
+        hour = int(now // 3600)
+        limits = zip(
+            self._wrong_paths(chat_id), (WRONG_GLOBAL_PER_HOUR, WRONG_PER_CHAT), strict=True
+        )
+        for path, cap in limits:
+            try:
+                doc = await self._docs.get(path)
+            except Exception as exc:  # noqa: BLE001 - fail closed: no join while it can't be read
+                log.warning(
+                    "SOS wrong-word counter unreadable", extra={"error": type(exc).__name__}
+                )
+                return True
+            if doc and doc.get("hour") == hour and int(doc.get("count", 0)) >= cap:
+                return True
+        return False
+
+    async def count_wrong(self, now: float, chat_id: int) -> None:
+        hour = int(now // 3600)
+        paths = self._wrong_paths(chat_id)
 
         async def fn(tx: DocTx) -> None:
-            doc = await tx.get(path) or {}
-            count = int(doc.get("count", 0)) if doc.get("hour") == hour else 0
-            tx.set(path, {"hour": hour, "count": count + 1})
+            docs = [await tx.get(p) or {} for p in paths]
+            for path, doc in zip(paths, docs, strict=True):
+                count = int(doc.get("count", 0)) if doc.get("hour") == hour else 0
+                tx.set(path, {"hour": hour, "count": count + 1})
 
         try:
             await self._docs.transaction(fn)
@@ -293,6 +312,30 @@ class SosStore:
 
         result: str | None = await self._tx(fn)
         return result
+
+    async def give_back(self, uid: str, pool: Pool, stamp: float, now: float) -> None:
+        """Return the slot taken at `stamp` (a press that reached nobody); never raises."""
+        path = self._log_path(uid, "budget")
+
+        async def fn(tx: DocTx) -> None:
+            budget = Budget.of(await tx.get(path), now)
+            times = list(getattr(budget, pool))
+            if stamp not in times:
+                return
+            times.remove(stamp)
+            new = (
+                Budget(tuple(times), budget.test)
+                if pool == "real"
+                else Budget(budget.real, tuple(times))
+            )
+            tx.set(
+                path, {"uid": uid, "kind": "budget", "real": list(new.real), "test": list(new.test)}
+            )
+
+        try:
+            await self._tx(fn)
+        except (SosOff, SosUnavailable, ValueError) as exc:
+            log.warning("an SOS slot was not given back", extra={"error": type(exc).__name__})
 
     async def budget(self, uid: str, now: float) -> Budget:
         try:
@@ -360,20 +403,27 @@ class SosStore:
         return len(gone)
 
     async def delete_all(self, uid: str) -> int:
-        """Everything of his: the book, join words, the log, the limits' times. Returns how many
-        contacts and log entries went (the count the dashboard showed)."""
+        """Everything of his: the book, join words, the log. The send limits' times STAY (a delete
+        never resets the 3 an hour and 10 a day). It deletes even when the book will not open.
+        Returns how many contacts and log entries went (the count the dashboard showed)."""
         rows = await self._rows("sos_log", uid)
-        logs = [f"{self._prefix}sos_log/{i}" for i, _ in rows]
+        logs = [f"{self._prefix}sos_log/{i}" for i, _ in rows if not i.endswith("_budget")]
         joins = [f"{self._prefix}sos_join/{i}" for i, _ in await self._rows("sos_join", uid)]
-        book = await self.book(uid) if self.sealed else Book()
+        contacts = 0
+        if self.sealed:
+            try:
+                contacts = len((await self.book(uid)).contacts)
+            except SosUnavailable:
+                log.warning("the SOS book would not open: deleted without counting it")
         await self._write([Delete(p) for p in [*logs, *joins, self._book_path(uid)]])
-        return len(book.contacts) + sum(1 for i, _ in rows if not _special(i))
+        return contacts + sum(1 for i, _ in rows if not _special(i))
 
 
 __all__ = [
     "JOIN_S",
     "PURPOSE",
-    "WRONG_PER_HOUR",
+    "WRONG_GLOBAL_PER_HOUR",
+    "WRONG_PER_CHAT",
     "Budget",
     "Entry",
     "SosOff",

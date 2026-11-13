@@ -210,7 +210,7 @@ def parse_health(body: bytes, today: date) -> HealthBody:
         raw = json.loads(body.decode("utf-8"))
         # every number is a StrictInt: a float, a bool or a "8000" is refused
         parsed = HealthBody.model_validate(raw) if isinstance(raw, dict) else None
-    except (UnicodeDecodeError, ValueError, ValidationError, TypeError):
+    except (UnicodeDecodeError, ValueError, ValidationError, TypeError, RecursionError):
         raise IntakeRefused() from None
     if parsed is None or not all(in_window(d.date, today) for d in parsed.days):
         raise IntakeRefused()

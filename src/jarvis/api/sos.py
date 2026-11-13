@@ -10,14 +10,20 @@ GET    /v1/sos                     {part, ready, enabled, sealed, telegram, labe
                                     countdown_s, hold_s, web_countdown_s, contacts: [{id, label,
                                     phone_hint, has_phone, joined, pending}], last, left, note}
 GET    /v1/sos/sheet               {enabled, label, numbers, first, emergency, text, hold_s,
-                                    countdown_s, note}: what the SOS sheet needs before a press
+                                    countdown_s, note, locked, unreadable, warning?}: what the SOS
+                                    sheet needs before a press (locked: numbers only, no label)
 PUT    /v1/sos/label               {label} -> the view
 POST   /v1/sos/contacts            {label, phone?} -> {contact: {id, label}}
 DELETE /v1/sos/contacts/{id}       -> {removed: true} | 404
 POST   /v1/sos/contacts/{id}/link  -> {link, until}: the one-time Telegram join link (24 hours)
-POST   /v1/sos/send                {kind: real | test | safe, location?: {lat_e6, lon_e6,
+POST   /v1/sos/send                {kind: real | test | safe, press_id?, location?: {lat_e6, lon_e6,
                                     accuracy_m, age_s}} -> the send's honest view, always with the
-                                    SMS screen's numbers and text and 112
+                                    SMS screen's numbers and text and 112. `press_id` (16-64 of
+                                    A-Za-z0-9_-, one per hold): a repeat within an hour is answered
+                                    with the first result and sends nothing. A place that does not
+                                    validate is dropped (sent without it). While locked: real only
+                                    (423 device_locked for test / safe), and no contact label.
+                                    Errors: {error, detail, words, sent: false, call}
 
 SOS is never a tool: this route (after the sheet's hold and countdown) and the phone's door are
 the only ways in, so the brain can never reach it. The place travels only in the POST body and
@@ -27,7 +33,7 @@ the reply; nothing here logs or stores it. Errors are plain words.
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -39,7 +45,7 @@ from jarvis.api.mobile_status import NO_STORE, part_of
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.logging import get_logger
 from jarvis.mobile.ports import NOT_BUILT, PartName
-from jarvis.sos.models import CONTACT_ID, Location
+from jarvis.sos.models import CONTACT_ID, parse_press
 from jarvis.sos.service import NOT_A_SERVICE, SosRefused, SosService
 from jarvis.sos.store import SosOff, SosUnavailable
 
@@ -49,6 +55,11 @@ CHANGES_PER_MINUTE = 20
 SENDS_PER_MINUTE = 12  # far above a hold plus a countdown; the service's own limits still apply
 SEND_FAILED = "The SOS could not be sent from the server. Use the SMS screen or call 112."
 LOCKED = "JARVIS is locked on this device: unlock it to change your SOS set-up, Sir."
+LOCKED_SEND = (
+    "JARVIS is locked on this device, Sir: only a real SOS can be sent now. Unlock it to send a "
+    "test or \u201cI\u2019m safe\u201d."
+)
+UNREADABLE = "JARVIS could not read that SOS request, Sir. Use the SMS screen or call 112."
 router = APIRouter(prefix="/v1/sos", dependencies=[Depends(require_auth)])
 _changes = RateLimiter(CHANGES_PER_MINUTE)
 _sends = RateLimiter(SENDS_PER_MINUTE)
@@ -63,12 +74,6 @@ class ContactBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     label: str = Field(max_length=200)
     phone: str | None = Field(default=None, max_length=40)
-
-
-class SendBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    kind: Literal["real", "test", "safe"]
-    location: Location | None = None
 
 
 def _json(body: dict[str, Any], status: int = 200) -> JSONResponse:
@@ -141,7 +146,7 @@ async def sos_sheet(request: Request, uid: str = Depends(current_user)) -> JSONR
     _, svc = _service(request)
     if svc is None:
         return _json({"enabled": False, "numbers": [], "first": None, "emergency": "112"})
-    return _json(await svc.sheet(uid))
+    return _json(await svc.sheet(uid, locked=await _locked(request)))
 
 
 @router.put("/label", include_in_schema=False)
@@ -196,43 +201,65 @@ async def sos_link(cid: str, request: Request, uid: str = Depends(current_user))
     try:
         return _json(await svc.join_link(uid, cid))
     except SosRefused as exc:
-        status = 503 if "Telegram" in str(exc) else 422
-        return _err("telegram_off" if status == 503 else "invalid", str(exc), status)
+        return _err(exc.code, str(exc), 503 if exc.code == "telegram_off" else 422)
     except (SosOff, SosUnavailable) as exc:
         return _refusal(exc)
 
 
 @router.post("/send", include_in_schema=False)
-async def sos_send(
-    body: SendBody, request: Request, uid: str = Depends(current_user)
-) -> JSONResponse:
+async def sos_send(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     """After the sheet's hold and countdown. Every outcome is 200 with the honest view, so the
-    sheet always shows the SMS screen and 112."""
+    sheet always shows the SMS screen and 112; every other answer carries plain `words` and
+    `detail` (the console shows `detail`). The body is read here, not by FastAPI, so a bad body is
+    one plain 422 and never a list of validation objects; a place that does not validate is
+    dropped and the SOS still goes. While locked only a real SOS goes."""
     _, svc = _service(request)
     if svc is None:
-        return _json(_not_sent("Emergency SOS isn't set up on this server, Sir. Call 112."), 503)
-    allowed, _ = _sends.allow(uid)
-    if not allowed:
-        return _json(
-            _not_sent("Too many presses at once, Sir. Call 112 now if you need help."), 429
+        return _not_sent(
+            "Emergency SOS isn't set up on this server, Sir. Call 112.", "sos_off", 503
         )
     try:
-        result = await svc.send(uid, body.kind, body.location, via="web")
+        press = parse_press(await request.json())
+    except (ValueError, RecursionError):
+        press = None
+    if press is None:
+        return _not_sent(UNREADABLE, "invalid", 422)
+    allowed, _ = _sends.allow(uid)
+    if not allowed:
+        words = "Too many presses at once, Sir. Call 112 now if you need help."
+        return _not_sent(words, "busy", 429)
+    locked = await _locked(request)
+    if locked and press.kind != "real":
+        return _not_sent(LOCKED_SEND, "device_locked", 423)
+    try:
+        result = await svc.send(
+            uid,
+            press.kind,
+            press.location,
+            via="web",
+            press_id=press.press_id,
+            locked=locked,
+            location_dropped=press.dropped,
+        )
     except Exception as exc:  # noqa: BLE001 - never a bare 500: the sheet must offer SMS and 112
         log.error("SOS: the send failed", extra={"error": type(exc).__name__})
-        return _json(_not_sent(SEND_FAILED), 500)
+        return _not_sent(SEND_FAILED, "failed", 500)
     return _json(result.view())
 
 
-def _not_sent(words: str) -> dict[str, Any]:
-    """A send the server could not even try: never "sent", always the SMS screen and 112."""
-    return {
+def _not_sent(words: str, code: str, status: int) -> JSONResponse:
+    """A send the server could not even try: never "sent", always 112 and plain `words` (also as
+    `detail`, which the console shows). The SMS numbers are the console's own, from the sheet."""
+    body = {
         "sent": False,
+        "error": code,
         "outcome": "unavailable",
         "words": words,
+        "detail": words,
         "sms": {"numbers": [], "text": ""},
         "call": {"first": None, "emergency": "112"},
     }
+    return _json(body, status)
 
 
 __all__ = ["PART", "router"]

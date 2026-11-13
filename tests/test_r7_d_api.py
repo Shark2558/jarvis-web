@@ -145,8 +145,8 @@ async def test_the_send_keeps_the_place_in_the_body_only() -> None:
         docs = app.state.r7_parts["body"].services["sos"].store._docs
         stored = json.dumps(docs._data, default=str)
         assert not [n for n in needles() if n in stored]
-        for bad in ({"kind": "panic"}, {"kind": "real", "location": {**PLACE, "lat_e6": 9e9}}):
-            assert (await c.post("/v1/sos/send", json=bad, headers=CSRF)).status_code == 422
+        bad = await c.post("/v1/sos/send", json={"kind": "panic"}, headers=CSRF)
+        assert bad.status_code == 422
 
 
 async def test_while_locked_sos_still_works_and_the_setup_does_not_change() -> None:

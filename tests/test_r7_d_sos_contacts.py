@@ -18,7 +18,7 @@ from jarvis.sos.contacts_hook import ContactHook
 from jarvis.sos.hook import is_sos_word
 from jarvis.sos.models import clean_label, clean_phone
 from jarvis.sos.service import SosRefused, SosService
-from jarvis.sos.store import WRONG_PER_HOUR, SosStore
+from jarvis.sos.store import WRONG_PER_CHAT, SosStore
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.audit import AuditLog
 
@@ -92,13 +92,13 @@ async def test_a_new_link_replaces_the_old_one() -> None:
     assert await svc.join(new, tg_user_id=ASHA[2], chat_id=ASHA[2]) is not None
 
 
-async def test_wrong_words_have_their_own_counter_and_it_stops_them_all() -> None:
+async def test_wrong_words_have_their_own_counter_and_it_stops_that_chat() -> None:
     svc = _svc()
     _, word = await _word(svc)
-    for i in range(WRONG_PER_HOUR):
+    for i in range(WRONG_PER_CHAT):
         bad = "sos-" + f"{i:02d}" + "x" * 22
         assert await svc.join(bad, tg_user_id=9, chat_id=9) is None
-    assert await svc.join(word, tg_user_id=ASHA[2], chat_id=ASHA[2]) is None  # held for the hour
+    assert await svc.join(word, tg_user_id=9, chat_id=9) is None  # that chat is held for the hour
 
 
 async def test_removing_a_contact_drops_its_word_and_the_limit_holds() -> None:

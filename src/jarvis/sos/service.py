@@ -15,7 +15,14 @@ one SOS tool is the read `sos_status` (`jarvis.sos.tools`).
    `not_joined` (SMS only). Nothing is ever called "sent" that Telegram did not take;
 4. one log entry and one audit line (time, kind, counts, location yes / no; never a place), and
    the owner's notice `sos_sent` on every channel (counts only, never a name; no off switch and
-   no Telegram cap, D25). A notifier, a log or an audit that fails never fails the send.
+   no Telegram cap, D25). They run apart from the answer and are waited for at most `AFTER_S`
+   seconds, so a slow log, audit or notifier never holds "sent" (and `told` / `logged` say false
+   when it was not confirmed). A notifier, a log or an audit that fails never fails the send.
+5. a press that reached nobody gives its slot back (a real SOS is never refused because earlier
+   presses failed); when the limits cannot be read a real SOS still goes out, bounded by an
+   in-process counter (the same 3 an hour and 10 a day); a repeated `press_id` (one hold) is
+   answered with the first result and sends nothing again; while the app is locked the answer
+   names no contact (`Contact 1`, `Contact 2`).
 The coordinates exist only in the request body that brought them and the bodies sent to Telegram
 (the message's map link and the pin); never in a document, a log line, an audit line or an alert.
 
@@ -27,9 +34,9 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -37,11 +44,19 @@ from jarvis.alerts import AlertKind
 from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Notifier, Signal
+from jarvis.notify.ports import Delivery, Notifier, Signal
 from jarvis.sos import message as msg
 from jarvis.sos.hook import is_sos_word
-from jarvis.sos.models import Book, Contact, Kind, Location, clean_label, clean_phone
-from jarvis.sos.store import JOIN_S, Budget, Entry, SosOff, SosStore, SosUnavailable
+from jarvis.sos.models import (
+    PRESS_ID,
+    Book,
+    Contact,
+    Kind,
+    Location,
+    clean_label,
+    clean_phone,
+)
+from jarvis.sos.store import DAY_S, JOIN_S, Budget, Entry, SosOff, SosStore, SosUnavailable
 from jarvis.telegram.client import TelegramClient, TelegramError
 from jarvis.tools.audit import AuditTrail
 
@@ -49,6 +64,9 @@ log = get_logger(__name__)
 HOURLY_CAP = True  # read at call time; only the eval's negative control switches it off
 OWN_TEST_BUDGET = True  # tests and "I'm safe" never count in the real budget (eval control only)
 HOUR_S = 3600
+AFTER_S = 5.0  # the log, audit and owner's notice are waited for this long, never longer
+STORE_S = 8.0  # the book or the limits: a store that hangs is "unreadable"
+PRESS_KEEP = 64  # presses remembered at once (an hour each)
 SEND_TIMEOUT_S = 12.0  # one contact's message or pin; a send that does not answer is not "sent"
 AT_SLACK_S = 600  # the phone's press time is used for the message when it is this close to ours
 HOLD_S, WEB_COUNTDOWN_S = 2, 5  # inside JARVIS: a 2-second hold, then a 5-second countdown
@@ -62,11 +80,20 @@ NOT_A_SERVICE = (
 OFF_HERE = "Emergency SOS is switched off on this server, Sir."
 NO_TELEGRAM = "Telegram isn't switched on, Sir, so nothing could be sent there."
 SMS_OR_CALL = "Use the SMS screen or call 112."
+UNREADABLE_SHEET = (
+    "Your contacts couldn't be loaded just now, Sir. If you need help, call 112 or use your "
+    "phone's own SMS."
+)
 WHAT = {"real": "SOS", "test": "Test SOS", "safe": '"I\'m safe"'}
 
 
 class SosRefused(ValueError):
-    """A change or a link that is not allowed, in plain words for the owner."""
+    """A change or a link that is not allowed, in plain words for the owner (`code` is the
+    route's error word)."""
+
+    def __init__(self, words: str, code: str = "invalid") -> None:
+        super().__init__(words)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -74,6 +101,7 @@ class Reach:
     id: str
     label: str
     status: Status
+    same_chat: bool = False  # shares a Telegram chat with an earlier contact: one message for both
 
 
 @dataclass(frozen=True)
@@ -89,6 +117,7 @@ class SendResult:
     reason: str | None = None
     numbers: tuple[str, ...] = ()
     told: bool = False
+    logged: bool = True
 
     def view(self) -> dict[str, Any]:
         return {
@@ -108,6 +137,7 @@ class SendResult:
                 "emergency": msg.EMERGENCY,
             },
             "told": self.told,
+            "logged": self.logged,
         }
 
 
@@ -123,6 +153,11 @@ class _Run:
     numbers: tuple[str, ...] = ()
     total: int = 0
     results: list[Reach] = field(default_factory=list)
+    locked: bool = False
+    location_dropped: bool = False
+    slot: Literal["store", "memory"] | None = None  # where this press's budget slot was taken
+    stamp: float = 0.0
+    names: dict[str, str] = field(default_factory=dict)
 
 
 def _log_extra(kind: str, outcome: str, reached: int, joined: int, located: bool) -> dict[str, Any]:
@@ -159,6 +194,9 @@ class SosService:
         self._audit = audit
         self._now = now
         self.owners = tuple(owners)
+        self._mem: dict[str, list[float]] = {}  # the fallback counter: real presses, per owner
+        self._presses: dict[tuple[str, str], tuple[float, asyncio.Future[SendResult]]] = {}
+        self._bg: set[asyncio.Task[Any]] = set()
 
     @property
     def enabled(self) -> bool:
@@ -168,7 +206,7 @@ class SosService:
     def store(self) -> SosStore:
         return self._store
 
-    def _zone(self) -> Any:
+    def _zone(self) -> tzinfo:
         try:
             return ZoneInfo(self._s.user_timezone)
         except (KeyError, ValueError):
@@ -246,12 +284,15 @@ class SosService:
         if client is None:
             raise SosRefused(
                 "Telegram isn't switched on yet, Sir: set it up in Integrations → Telegram "
-                "first. The SMS screen works without it."
+                "first. The SMS screen works without it.",
+                "telegram_off",
             )
         try:
             bot = await client.get_me()
         except TelegramError:
-            raise SosRefused("Telegram couldn't be reached just now, Sir. Try again.") from None
+            raise SosRefused(
+                "Telegram couldn't be reached just now, Sir. Try again.", "telegram_off"
+            ) from None
         word = "sos-" + secrets.token_urlsafe(24)  # 192 random bits
         mac = self._store.mac(word)
         until = self._utc().timestamp() + JOIN_S
@@ -277,7 +318,7 @@ class SosService:
         if not is_sos_word(word) or not self._store.sealed:
             return None
         now = self._utc().timestamp()
-        if await self._store.wrong_blocked(now):
+        if await self._store.wrong_blocked(now, chat_id):
             log.warning("SOS join words held for the hour")
             return None
         joined_at = self._utc().isoformat()
@@ -299,7 +340,7 @@ class SosService:
 
         got = await self._store.join(mac, now, seat)
         if got is None:
-            await self._store.count_wrong(now)
+            await self._store.count_wrong(now, chat_id)
             log.info("an SOS join word did not join")
             return None
         uid, book = got
@@ -372,18 +413,54 @@ class SosService:
         tests = "" if kind == "real" else " tests"
         return f"the limit of {n}{tests} {span} was reached."
 
-    async def _take(self, uid: str, kind: Kind, now: float) -> str | None:
+    async def _take(self, uid: str, run: _Run, now: float) -> str | None:
+        """Reserve a slot. A real SOS whose limits cannot be read goes out anyway, bounded by the
+        in-process counter (3 an hour, 10 a day); a test is refused."""
+        kind = run.kind
         pool: Literal["real", "test"] = "real" if kind == "real" else "test"
         try:
-            return await self._store.take(uid, pool, now, self._decide(kind, now))
-        except (SosUnavailable, SosOff) as exc:
-            if kind == "real":
-                log.error(
-                    "SOS limits unreadable: a real SOS goes out anyway",
-                    extra={"error": type(exc).__name__},
-                )
-                return None
-            return "unreadable"
+            why = await asyncio.wait_for(
+                self._store.take(uid, pool, now, self._decide(kind, now)), STORE_S
+            )
+        except (SosUnavailable, SosOff, TimeoutError) as exc:
+            if kind != "real":
+                return "unreadable"
+            log.error(
+                "SOS limits unreadable: a real SOS goes out, bounded in memory",
+                extra={"error": type(exc).__name__},
+            )
+            return self._take_memory(uid, run, now)
+        if why is None:
+            run.slot, run.stamp = "store", now
+        return why
+
+    def _take_memory(self, uid: str, run: _Run, now: float) -> str | None:
+        s = self._s
+        times = [t for t in self._mem.get(uid, []) if 0 <= now - t < DAY_S]
+        why: str | None = None
+        if HOURLY_CAP and _in_hour(times, now) >= s.sos_per_hour:
+            why = "hour"
+        elif len(times) >= s.sos_per_day:
+            why = "day"
+        if why is None:
+            times.append(now)
+            run.slot, run.stamp = "memory", now
+        self._mem[uid] = times
+        return why
+
+    async def _give_back(self, uid: str, run: _Run, now: float) -> None:
+        """A real press that reached nobody does not use up the hour."""
+        if run.kind != "real" or run.slot is None:
+            return
+        if run.slot == "memory":
+            times = self._mem.get(uid, [])
+            if run.stamp in times:
+                times.remove(run.stamp)
+            return
+        try:
+            await asyncio.wait_for(self._store.give_back(uid, "real", run.stamp, now), STORE_S)
+        except TimeoutError:
+            log.warning("an SOS slot was not given back in time")
 
     async def send(
         self,
@@ -393,59 +470,114 @@ class SosService:
         *,
         via: Literal["web", "phone"],
         at: int | None = None,
+        press_id: str | None = None,
+        locked: bool = False,
+        location_dropped: bool = False,
+    ) -> SendResult:
+        """One press. A repeated `press_id` (the same hold, within an hour) is answered with the
+        first result and sends nothing again; the send itself is never cancelled by a caller."""
+
+        def go() -> Awaitable[SendResult]:
+            return self._send(uid, kind, location, via, at, locked, location_dropped)
+
+        if not isinstance(press_id, str) or not PRESS_ID.fullmatch(press_id):
+            return await go()
+        now = self._utc().timestamp()
+        for key in [k for k, (t, _) in self._presses.items() if now - t >= HOUR_S]:
+            del self._presses[key]
+        while len(self._presses) >= PRESS_KEEP:  # the oldest goes first
+            del self._presses[next(iter(self._presses))]
+        key = (uid, press_id)
+        if key not in self._presses:
+            self._presses[key] = (now, asyncio.ensure_future(go()))
+        try:
+            return await asyncio.shield(self._presses[key][1])
+        except Exception:
+            self._presses.pop(key, None)  # an unforeseen failure may be tried again
+            raise
+
+    async def _send(
+        self,
+        uid: str,
+        kind: Kind,
+        location: Location | None,
+        via: Literal["web", "phone"],
+        at: int | None,
+        locked: bool,
+        location_dropped: bool,
     ) -> SendResult:
         loc = location if kind != "safe" else None
         now = self._utc().timestamp()
-        run = _Run(kind=kind, via=via, located=loc is not None, at=self._hhmm(now))
+        run = _Run(
+            kind=kind,
+            via=via,
+            located=loc is not None,
+            at=self._hhmm(now),
+            locked=locked,
+            location_dropped=location_dropped,
+        )
         try:
-            book = await self._store.book(uid)
-        except (SosOff, SosUnavailable) as exc:
+            book = await asyncio.wait_for(self._store.book(uid), STORE_S)
+        except (SosOff, SosUnavailable, TimeoutError) as exc:
             run.text = msg.message_for(kind, Book().label, loc, self._fixed_at(at, loc))
-            return await self._finish(uid, run, "unavailable", reason="unreadable", why=str(exc))
+            said = str(exc) or SosUnavailable.WORDS
+            return await self._finish(uid, run, "unavailable", reason="unreadable", why=said)
         run.text = msg.message_for(kind, book.label, loc, self._fixed_at(at, loc))
         run.numbers = tuple(c.phone for c in book.contacts if c.phone)
         run.total = len(book.contacts)
+        run.names = {
+            c.id: (f"Contact {i}" if locked else c.label) for i, c in enumerate(book.contacts, 1)
+        }
         if not self.enabled:
             return await self._finish(uid, run, "unavailable", reason="off", why=OFF_HERE)
-        why = await self._take(uid, kind, now)
+        why = await self._take(uid, run, now)
         if why is not None:
             return await self._finish(uid, run, "refused", reason=why)
         return await self._deliver(uid, run, book, loc)
 
     async def _deliver(self, uid: str, run: _Run, book: Book, loc: Location | None) -> SendResult:
         joined: list[Contact] = []
-        chats: set[int] = set()
+        first: dict[int, Contact] = {}
         for c in book.contacts:
-            if c.joined and c.tg_chat is not None and c.tg_chat not in chats:
-                chats.add(c.tg_chat)
+            if c.joined and c.tg_chat is not None and c.tg_chat not in first:
+                first[c.tg_chat] = c
                 joined.append(c)
-        run.results = [Reach(c.id, c.label, "not_joined") for c in book.contacts if not c.joined]
+        name = run.names
+        not_joined = [Reach(c.id, name[c.id], "not_joined") for c in book.contacts if not c.joined]
         if not joined:
+            run.results = not_joined
             return await self._finish(uid, run, "none_joined")
         client = self._telegram()
         if client is None:
-            run.results = [Reach(c.id, c.label, "failed") for c in joined] + run.results
+            run.results = [Reach(c.id, name[c.id], "failed") for c in joined] + not_joined
             return await self._finish(uid, run, "failed", why=NO_TELEGRAM)
-        sent = await asyncio.gather(*(self._one(client, c, run.text, loc) for c in joined))
-        run.results = [*sent, *run.results]
+        sent = await asyncio.gather(*(self._one(client, c, run, loc) for c in joined))
+        by_chat = {c.tg_chat: r for c, r in zip(joined, sent, strict=True)}
+        extra = [
+            Reach(c.id, name[c.id], by_chat[c.tg_chat].status, same_chat=True)
+            for c in book.contacts
+            if c.joined and c.tg_chat in first and first[c.tg_chat].id != c.id
+        ]
+        run.results = [*sent, *extra, *not_joined]
         reached = sum(1 for r in sent if r.status in ("sent", "sent_no_pin"))
         outcome: Outcome = "sent" if reached == len(joined) else "partial" if reached else "failed"
         return await self._finish(uid, run, outcome)
 
     async def _one(
-        self, client: TelegramClient, c: Contact, text: str, loc: Location | None
+        self, client: TelegramClient, c: Contact, run: _Run, loc: Location | None
     ) -> Reach:
         assert c.tg_chat is not None
+        label = run.names[c.id]
         try:
-            await asyncio.wait_for(client.send_message(c.tg_chat, text), SEND_TIMEOUT_S)
+            await asyncio.wait_for(client.send_message(c.tg_chat, run.text), SEND_TIMEOUT_S)
         except (TelegramError, TimeoutError) as exc:
             log.warning("an SOS message was not taken", extra={"error": type(exc).__name__})
-            return Reach(c.id, c.label, "failed")
+            return Reach(c.id, label, "failed")
         except Exception as exc:  # noqa: BLE001 - one contact never stops the others
             log.error("an SOS message failed", extra={"error": type(exc).__name__})
-            return Reach(c.id, c.label, "failed")
+            return Reach(c.id, label, "failed")
         if loc is None:
-            return Reach(c.id, c.label, "sent")
+            return Reach(c.id, label, "sent")
         try:
             await asyncio.wait_for(
                 client.send_location(
@@ -455,8 +587,8 @@ class SosService:
             )
         except Exception as exc:  # noqa: BLE001 - the message went; the pin is reported apart
             log.warning("an SOS map pin was not taken", extra={"error": type(exc).__name__})
-            return Reach(c.id, c.label, "sent_no_pin")
-        return Reach(c.id, c.label, "sent")
+            return Reach(c.id, label, "sent_no_pin")
+        return Reach(c.id, label, "sent")
 
     def _words(self, run: _Run, outcome: Outcome, reached: int, joined: int, why: str) -> str:
         what = WHAT[run.kind]
@@ -487,12 +619,17 @@ class SosService:
     async def _finish(
         self, uid: str, run: _Run, outcome: Outcome, *, reason: str | None = None, why: str = ""
     ) -> SendResult:
-        reached = sum(1 for r in run.results if r.status in ("sent", "sent_no_pin"))
-        joined = sum(1 for r in run.results if r.status != "not_joined")
+        own = [r for r in run.results if not r.same_chat]
+        reached = sum(1 for r in own if r.status in ("sent", "sent_no_pin"))
+        joined = sum(1 for r in own if r.status != "not_joined")
         if outcome == "refused" and reason is not None:
             why = self._limit_words(run.kind, reason)
         words = self._words(run, outcome, reached, joined, why)
+        if run.location_dropped and reached > 0:
+            words += " Your location couldn't be used, so it was sent without your location."
         log.info("SOS finished", extra=_log_extra(run.kind, outcome, reached, joined, run.located))
+        if reached == 0:
+            await self._give_back(uid, run, self._utc().timestamp())
         entry = Entry(
             at=self._utc().isoformat(),
             kind=run.kind,
@@ -502,15 +639,10 @@ class SosService:
             location=run.located,
             via=run.via,
         )
-        try:
-            await self._store.log(uid, entry)
-        except (SosUnavailable, ValueError) as exc:
-            log.error("an SOS was not logged", extra={"error": type(exc).__name__})
         detail = f"reached {reached} of {joined}; location {'yes' if run.located else 'no'}"
         args = {"kind": run.kind, "via": run.via, "location": run.located}
-        await self._note_audit(uid, f"sos_{run.kind}", outcome, args, detail)
         notice = msg.notice_for(run.kind, outcome, reached, joined, run.at, why)
-        told = await self._tell(uid, "sos_sent", notice)
+        logged, told = await self._after(uid, run, entry, outcome, args, detail, notice)
         return SendResult(
             kind=run.kind,
             outcome=outcome,
@@ -523,22 +655,71 @@ class SosService:
             reason=reason,
             numbers=run.numbers,
             told=told,
+            logged=logged,
         )
 
-    # ---- side channels: never fail the caller ---------------------------------------------------
+    # ---- side channels: never fail or hold the caller -------------------------------------------
+    def _background(self, coro: Awaitable[Any]) -> asyncio.Task[Any]:
+        task = asyncio.ensure_future(coro)
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+        return task
+
+    async def _after(
+        self,
+        uid: str,
+        run: _Run,
+        entry: Entry,
+        outcome: str,
+        args: dict[str, Any],
+        detail: str,
+        notice: str,
+    ) -> tuple[bool, bool]:
+        """The log, the audit line and the owner's notice, side by side, waited for `AFTER_S` at
+        most. What did not finish is left running and reported as not done (never as done)."""
+        log_t = self._background(self._log_entry(uid, entry))
+        audit_t = self._background(self._note_audit(uid, f"sos_{run.kind}", outcome, args, detail))
+        tell_t = self._background(self._tell(uid, "sos_sent", notice))
+        done, _ = await asyncio.wait({log_t, audit_t, tell_t}, timeout=AFTER_S)
+        if len(done) < 3:
+            log.warning("an SOS side channel did not finish in time", extra={"kind": run.kind})
+        logged = log_t in done and bool(log_t.result())
+        told = tell_t in done and bool(tell_t.result())
+        return logged, told
+
+    async def _log_entry(self, uid: str, entry: Entry) -> bool:
+        try:
+            await self._store.log(uid, entry)
+        except (SosUnavailable, ValueError) as exc:
+            log.error("an SOS was not logged", extra={"error": type(exc).__name__})
+            return False
+        except Exception as exc:  # noqa: BLE001 - the send already happened
+            log.error("an SOS was not logged", extra={"error": type(exc).__name__})
+            return False
+        return True
+
     async def _tell(self, uid: str, kind: AlertKind, words: str) -> bool:
+        """True only when the notifier really delivered (rang or was silent, to Telegram or a
+        browser); a held or dropped notice, or one that reached no device, is not "told"."""
         notifier = self._notifier() if self._notifier is not None else None
         if notifier is None:
             log.warning("no notifier: the owner was not told", extra={"kind": kind})
             return False
         try:
-            await notifier.notify(uid, Signal(source="system", kind=kind), words)
+            got = await notifier.notify(uid, Signal(source="system", kind=kind), words)
         except Exception as exc:  # noqa: BLE001 - the send already happened; say it was not told
             log.error(
                 "the owner's SOS notice failed", extra={"kind": kind, "error": type(exc).__name__}
             )
             return False
-        return True
+        told = (
+            isinstance(got, Delivery)
+            and got.action in ("ring", "silent")
+            and (got.telegram or got.push > 0)
+        )
+        if not told:
+            log.warning("the owner's SOS notice was not delivered", extra={"kind": kind})
+        return told
 
     async def _note_audit(
         self, uid: str, tool: str, outcome: str, args: dict[str, Any], detail: str = ""
@@ -585,24 +766,33 @@ class SosService:
             "note": NOT_A_SERVICE,
         }
 
-    async def sheet(self, uid: str) -> dict[str, Any]:
-        """What the SOS sheet needs before a press (works while the app is locked, D21)."""
+    async def sheet(self, uid: str, *, locked: bool = False) -> dict[str, Any]:
+        """What the SOS sheet needs before a press (works while the app is locked, D21). A book that
+        cannot be read says so (`unreadable`, `warning`), never a normal empty list. While locked
+        the numbers are there for the SMS screen's link only: no name, no first number."""
+        unreadable = False
         try:
-            book = await self._store.book(uid)
-        except (SosOff, SosUnavailable):
-            book = Book()
+            book = await asyncio.wait_for(self._store.book(uid), STORE_S)
+        except (SosOff, SosUnavailable, TimeoutError):
+            book, unreadable = Book(), True
         numbers = [c.phone for c in book.contacts if c.phone]
-        return {
+        out: dict[str, Any] = {
             "enabled": self.enabled,
-            "label": book.label,
             "numbers": numbers,
-            "first": numbers[0] if numbers else None,
+            "first": None if locked else (numbers[0] if numbers else None),
             "emergency": msg.EMERGENCY,
             "text": msg.message_for("real", book.label, None, ""),
             "hold_s": HOLD_S,
             "countdown_s": WEB_COUNTDOWN_S,
             "note": NOT_A_SERVICE,
+            "locked": locked,
+            "unreadable": unreadable,
         }
+        if not locked:
+            out["label"] = book.label
+        if unreadable:
+            out["warning"] = UNREADABLE_SHEET
+        return out
 
     async def sms_view(self, uid: str) -> dict[str, Any]:
         """For the phone's `hello` reply (Part C): his label and each contact's label and number,
@@ -647,6 +837,8 @@ def _contact_view(c: Contact, now: float) -> dict[str, Any]:
         "phone_hint": ("••" + c.phone[-2:]) if c.phone else "",
         "has_phone": c.phone is not None,
         "joined": c.joined,
+        "joined_at": c.joined_at,
+        "tg_hint": ("••" + str(c.tg_user)[-4:]) if c.tg_user is not None else "",
         "pending": (not c.joined) and c.join_until is not None and c.join_until > now,
     }
 
@@ -658,7 +850,7 @@ def _last_view(last: dict[str, Any] | None) -> dict[str, Any] | None:
     return {k: last.get(k) for k in keys}
 
 
-def _last_words(last: dict[str, Any] | None, zone: Any) -> str:
+def _last_words(last: dict[str, Any] | None, zone: tzinfo) -> str:
     if not last or not isinstance(last.get("at"), str):
         return "No SOS has been sent."
     try:

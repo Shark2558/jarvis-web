@@ -273,3 +273,22 @@ def test_every_route_of_the_part_is_one_router(path: str) -> None:
     paths = {getattr(r, "path", "") for r in shell.router.routes}
     assert path in paths
     assert "/static/icons/{name}" in paths and "/app/share/in" in paths
+
+
+# ---- launch words on a visit another site sent (D8; the server half is I0's, held here too) ----
+@pytest.mark.parametrize(
+    ("query", "location"),
+    [
+        ("?source=app&do=talk&open=home&reauth=1", "/?source=app&reauth=1"),
+        ("?do=look", "/"),
+        ("?open=vault&do=sos&keep=a%26b", "/?keep=a%26b"),
+    ],
+)
+async def test_a_cross_site_visit_loses_do_and_open_and_keeps_every_other_word(
+    settings: Settings, query: str, location: str
+) -> None:
+    async with running(settings) as (_, c):
+        r = await c.get("/" + query, headers={"Sec-Fetch-Site": "cross-site"})
+        assert r.status_code == 302 and r.headers["location"] == location
+        for site in ("none", "same-origin", "same-site"):
+            assert (await c.get("/" + query, headers={"Sec-Fetch-Site": site})).status_code == 200

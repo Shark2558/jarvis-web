@@ -198,7 +198,11 @@ def _strokes(
     return layer
 
 
-def _arc(cx: float, cy: float, radius: float, start: float, end: float, steps: int = 24) -> list:
+Segment = tuple[float, float, float, float]
+
+
+def _arc(cx: float, cy: float, radius: float, start: float, end: float) -> list[Segment]:
+    steps = 24
     pts = [_polar(radius, start + (end - start) * i / steps) for i in range(steps + 1)]
     return [
         (cx + x0, cy + y0, cx + x1, cy + y1)

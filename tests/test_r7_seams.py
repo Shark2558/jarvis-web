@@ -809,14 +809,14 @@ def test_one_kotlin_pin_and_the_agp_pin() -> None:
         ("C65", "### Layer 6", ("`src/jarvis/sos/`", "`sos/{uid}`", "`sos_log/{uid}_{id}`")),
     ],
 )
-def test_the_guide_has_the_four_planned_r7_cards(
+def test_the_guide_has_the_four_r7_cards_built_after_i1(
     card: str, layer: str, needles: tuple[str, ...]
 ) -> None:
     guide = _text(GUIDE)
     body = guide[guide.index(f"#### {card} · ") :]
     body = body[: body.index(layer)]
     body = body[: body.index("\n#### ", 10)] if "\n#### " in body[10:] else body
-    assert "PLANNED" in body and "R7" in body
+    assert "Built in R7" in body and "PLANNED until" not in body  # I1 (was PLANNED at I0)
     for needle in needles:
         assert needle in body, (card, needle)
 

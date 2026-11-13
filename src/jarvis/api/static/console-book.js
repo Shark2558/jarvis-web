@@ -26,6 +26,7 @@
   const Deck = window.JarvisDeck || { open() {}, isOpen: () => false };
   const S = { data: undefined, error: '', busy: false, token: '', session: null, reading: '', resume: null, setup: false,
     tries: 0, loading: null, focus: null };
+  const MAX_TIMER_MS = 2147483647; // the longest delay setTimeout keeps (2^31 - 1 ms)
   let beatTimer = 0, sealTimer = 0, endTimer = 0, noteEl = null, dialog = null, setBox = null, readerBox = null, readerKey = '';
   // ?reauth=done|stale as this page was LOADED: Permissions may already have replaced the address by the time this runs
   const back = (() => {
@@ -275,8 +276,16 @@
     S.token = r.token; S.session = session; S.reading = '';
     say('ok', 'Open. Read it here or start the show.');
     clearInterval(beatTimer); beatTimer = setInterval(beat, BEAT_MS);
-    const left = Date.parse(session.until) - Date.now();
-    clearTimeout(endTimer); if (left > 0) endTimer = setTimeout(() => forget('The session reached its time limit and closed.'), left);
+    armEnd(Date.parse(session.until));
+  }
+  /** The session's own end. A browser timer holds at most 2^31-1 ms (about 24.8 days): a later end is waited for in
+   *  steps, never wrapped round into "now" (R7 I1: an `until` far away closed the session at once). */
+  function armEnd(until) {
+    clearTimeout(endTimer);
+    const left = until - Date.now();
+    if (!(left > 0)) return;
+    endTimer = left > MAX_TIMER_MS ? setTimeout(() => armEnd(until), MAX_TIMER_MS)
+      : setTimeout(() => forget('The session reached its time limit and closed.'), left);
   }
   /** The show runs in this tab: the token moves to this tab's sessionStorage, nowhere else. A guest's show replaces
    *  the console page, so it is no Back entry (a back/forward-cache view would skip the lock). */

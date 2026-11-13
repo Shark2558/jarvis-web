@@ -1,4 +1,4 @@
-Version v7.0.2 · 13 Nov 2026, 22:10 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v7.0.3 · 13 Nov 2026, 23:10 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
 
 # R7 — putting the JARVIS app on your phone (your steps, Sir)
 
@@ -91,7 +91,10 @@ checked)*. If your screen says something slightly different, choose the item tha
     microphone; the first time you open the camera, for the camera.
 12. Add a passkey from this phone: in JARVIS open **Approvals → Permissions**, type a name such as
     "Phone", press **Add another passkey** and confirm on the phone. If the phone cannot offer one, stop
-    and tell the Workshop: nothing is lost, and the app lock simply stays off.
+    and tell the Workshop: nothing is lost, and the app lock simply stays off. **Once this passkey is
+    added from the app, the app lock turns on by itself**: after 5 minutes away JARVIS on the phone asks
+    for this passkey again. From the laptop you can always switch it off (**Integrations → Phone app**) or
+    unlink the phone.
 13. If you installed JARVIS from Chrome earlier (step B), remove that older icon: long-press it →
     **Uninstall** (or **Remove**). Otherwise you have two JARVIS icons.
 14. *(Optional)* Let the watch read run on time: **Settings → Apps → JARVIS → Battery** → allow background
@@ -100,8 +103,10 @@ checked)*. If your screen says something slightly different, choose the item tha
     contact, send them the join link yourself, then press **Send a test** (or **Test SOS** in the phone's
     set-up screen). What you must see on your phone: a screen titled **Test SOS** with a 10-second count, a
     big **Cancel**, a **Call 112** button and **no** "Open the text message" button (a test never opens the
-    text message app). Let it run: it ends with "Sent", and only YOU get a Telegram notice that a test was
-    sent; your contacts get nothing. The **I'm safe** button is not shown for a test.
+    text message app). Let it run: it ends with "Sent". Each contact who joined gets a Telegram message
+    that starts "TEST from" your name, says it is only a test and asks them to ignore it, with the map
+    link; you get a notice that a test was sent. Tell your family before your first test. The **I'm
+    safe** button is not shown for a test. Tests have their own limit, so they never use up a real SOS.
     **Check once with the phone locked** (unverified): pull the shade down on the lock screen and tap the SOS
     tile. Android may ask you to unlock first; that is normal. Tell the Workshop what happened.
 
@@ -135,7 +140,8 @@ is, a browser bar shows at the top of JARVIS; it goes after the Workshop updates
    screen for good during the countdown, it is cancelled and says so. Whether it works from the lock screen
    is **unverified, check on the phone** (step C15). This is a message to your family, not an emergency
    service: in danger, call 112, and set up Android's own Emergency SOS too (press the power button five times).
-4. **Test SOS** (in the set-up screen): the same countdown, sending a test message on Telegram to you only.
+4. **Test SOS** (in the set-up screen): the same countdown; each contact gets a Telegram message marked as
+   a test ("TEST from …, please ignore it") and you get a notice. It never opens the text message app.
 
 ## F · Sharing into JARVIS
 
@@ -181,4 +187,5 @@ few seconds every 6 hours (watch) and about every hour (the folder, only if you 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v7.0.2 | 13 Nov 2026, 22:10 IST | R7 | Review follow-ups: section B restored (Today, with no app) so the letters run A to H; App priority is A2 as in the plan; a new laptop or a new debug key (uninstall once, link again, assetlinks); what a OnePlus 12R on Android 16 is expected to show when installing over USB (wording not checked); what to see after each step; Health Connect's background switch missing; what a Test SOS shows; the lock-screen tile marked unverified; the clock and re-link messages | 🛠 Mark XVII |
+| v7.0.3 | 13 Nov 2026, 23:10 IST | R7 | I1, checked against what was built: step C12 says the app lock turns on by itself once the passkey is added from the app (and the laptop can switch it off or unlink the phone); steps C15 and E4 say a test SOS reaches each joined contact marked as a test (not you only), as Part D built it and acceptance check 9 expects | 🛠 Mark XVII |
 | v7.0.1 | 13 Nov 2026, 19:50 IST | R7 | First edition (Part E): Health Connect's App priority, building `personal` in Android Studio Rabbit 2 with the Gradle JDK fallback (C3), installing over USB by file transfer, linking, the set-up list, the tiles, SOS, sharing, what each screen asks, and where the menu words were not checked | 🛠 Mark XVII |

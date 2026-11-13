@@ -61,6 +61,7 @@ VOICES_FAIL_TTL_S = 60.0
 SHORT_CLIP_S = 15.0
 STT_MODEL = "latest_short"
 STT_MODEL_LONG = "latest_long"
+MAX_ALTERNATIVES = 3  # R11.1 D9: asked of Google; costs nothing extra
 _DURATION = re.compile(r"^(\d{1,6}(?:\.\d{1,9})?)s$")
 # Failures where the request never left JARVIS: it can't have been billed.
 _NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.ProxyError)
@@ -212,6 +213,34 @@ def _seconds(v: object) -> float | None:
     return None
 
 
+def _alternatives(results: list[Any]) -> tuple[str, ...]:
+    """Google's other guesses as whole sentences (R11.1 D9): guess k of every part of the clip,
+    with the first guess wherever a part has no k-th; without the first guess itself."""
+    per_part: list[list[str]] = []
+    for res in results:
+        alts = res.get("alternatives") if isinstance(res, dict) else None
+        if not alts or not isinstance(alts[0], dict):
+            continue
+        texts = [
+            a["transcript"].strip()
+            for a in alts[:MAX_ALTERNATIVES]
+            if isinstance(a, dict) and isinstance(a.get("transcript"), str)
+        ]
+        if texts and texts[0]:
+            per_part.append([t for t in texts if t])
+    if not per_part:
+        return ()
+    first = " ".join(texts[0] for texts in per_part)
+    out: list[str] = []
+    for k in range(1, MAX_ALTERNATIVES):
+        if not any(len(texts) > k for texts in per_part):
+            continue
+        guess = " ".join(texts[k] if len(texts) > k else texts[0] for texts in per_part)
+        if guess != first and guess not in out:
+            out.append(guess)
+    return tuple(out)
+
+
 class GoogleSTT:
     """`STTProvider` on Cloud Speech-to-Text v1 `speech:recognize` (sync, ≤ 60 s)."""
 
@@ -233,7 +262,7 @@ class GoogleSTT:
             "languageCode": language,
             "model": STT_MODEL if seconds <= SHORT_CLIP_S else STT_MODEL_LONG,
             "enableAutomaticPunctuation": True,
-            "maxAlternatives": 1,
+            "maxAlternatives": MAX_ALTERNATIVES,
         }
         if phrases:
             config["speechContexts"] = [{"phrases": list(phrases)}]
@@ -261,12 +290,14 @@ class GoogleSTT:
             confidence=confidence,
             billed_seconds=_seconds(data.get("totalBilledTime")),
             language=lang,
+            alternatives=_alternatives(data.get("results", []) or []),
         )
 
 
 __all__ = [
     "DEADLINE_S",
     "HTTP_TIMEOUT",
+    "MAX_ALTERNATIVES",
     "SHORT_CLIP_S",
     "STT_MODEL",
     "STT_MODEL_LONG",

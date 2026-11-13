@@ -173,7 +173,15 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "sections_status",
     }
     assert set(b["data"]["calendar"]) == {"today", "clashes", "free_blocks", "tomorrow_first"}
-    assert set(b["data"]["inbox"]) == {"total", "items"}
+    assert set(b["data"]["inbox"]) == {
+        "total",
+        "items",
+        "groups",
+        "withheld",
+        "exact",
+        "failed",
+        "listed",
+    }  # R11.1 D20 (INTEGRATION-A 3.4)
     # slice 10 C: this link has no Tasks scope, so the to-do section says so (and asked nothing)
     assert b["data"]["todo"] is None
     assert b["data"]["sections_status"] == {

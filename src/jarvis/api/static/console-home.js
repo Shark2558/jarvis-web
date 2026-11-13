@@ -111,7 +111,7 @@
   }
   function kitRow(d) {
     const row = mk('div', 'hkit');
-    if (d && d.outdated) row.appendChild(mk('p', 'warn', 'Your home kit is older than this JARVIS. Download it again and run setup-windows.ps1 once more.'));
+    if (d && d.outdated) row.appendChild(mk('p', 'warn', 'Your home kit is older than this JARVIS. Download it again and run setup-windows.ps1 -Update in PowerShell.'));
     const a = mk('a', 'btn bact', 'Download home kit'); a.id = 'homeKit'; a.href = '/v1/home/kit'; a.download = 'JARVIS-Home-kit.zip';
     const sha = mk('p', 'fine hsha'); sha.id = 'homeKitSha';
     row.append(a, sha);

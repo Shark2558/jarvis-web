@@ -219,6 +219,21 @@ idna==3.20 \
     #   httpx
     #   httpx2
     #   requests
+# The face reader for still pictures (R11.1 O7; home bridge only, never the cloud image):
+# numpy 2.5.4 (BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0) and opencv-python-headless
+# 5.0.0.93 (OpenCV: Apache-2.0; the packaging: MIT; the Linux wheel also carries FFmpeg under
+# LGPL-2.1, libvpx, libaom, libavif, OpenBLAS, libpng and OpenSSL under their own licences, see
+# its LICENSE-3RD-PARTY.txt: the bridge uses only the JPEG decoder, dnn and objdetect). Hashes
+# from PyPI's JSON metadata on 12 Nov 2026, the wheels for the bridge image's Python 3.12 on
+# Linux only (x86-64 and ARM64): nothing else is accepted.
+numpy==2.5.4 \
+    --hash=sha256:fbde6962867ee75b48b0ee29b2b9372ec5d617799dbaf38e82dc0596f2f7738a \
+    --hash=sha256:fe4d21ab149f15e4e6043dfb0de87e6e5f34ac176cde83060e9802981fca2ac2
+opencv-python-headless==5.0.0.93 \
+    --hash=sha256:ed709fdf9aa0bd1f2ed8549e71d19449b03a675bb581eb292285f6861953be37 \
+    --hash=sha256:09a872a157c1376ab922a69bbf22f9a95bcc7b658a9d8b436a60212b02b2eeb4 \
+    --hash=sha256:840bd717c21e5c11cadadc022a823315ea417f961213d06b4df010e019eb16f4 \
+    --hash=sha256:10818d91510e05c04568ae12b5cd120779c70c01bf897b001a6221fe430df80f
 paho-mqtt==2.1.0 \
     --hash=sha256:6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee \
     --hash=sha256:12d6e7511d4137555a3f6ea167ae846af2c7357b10bc6fa4f7c3968fc1723834

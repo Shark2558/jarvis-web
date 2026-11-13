@@ -41,7 +41,7 @@ from jarvis.api.helpers_nudges import router as nudges_router
 from jarvis.api.helpers_today import router as today_router
 from jarvis.api.identity import LEGACY_USER_ID, user_id_for_email
 from jarvis.api.r4_wiring import _notifier
-from jarvis.api.r11_1_wiring import fix_clock_jobs, fix_daily_jobs
+from jarvis.api.r11_1_wiring import fix_brief, fix_clock_jobs, fix_daily_jobs, install_fix_phrases
 from jarvis.config import Settings
 from jarvis.helpers.brief import HelpersBrief
 from jarvis.helpers.clock import (
@@ -237,12 +237,13 @@ async def wire_r11(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> 
     if not s.helpers_enabled:
         log.info(HELPERS_OFF_NOTE)
         _off(app, "switched_off")
-        return
-    try:
-        _wire(app, s, docs, audit)
-    except Exception as exc:  # noqa: BLE001 - optional part: never fatal at start
-        log.error("The R11 helpers are OFF: setup failed", extra={"error": type(exc).__name__})
-        _off(app, "setup_failed")
+    else:
+        try:
+            _wire(app, s, docs, audit)
+        except Exception as exc:  # noqa: BLE001 - optional part: never fatal at start
+            log.error("The R11 helpers are OFF: setup failed", extra={"error": type(exc).__name__})
+            _off(app, "setup_failed")
+    install_fix_phrases(app)  # R11.1: after the helpers' own phrases, with the helpers on or off
 
 
 def install_r11_routes(app: FastAPI) -> None:
@@ -290,7 +291,8 @@ def helpers_brief(app: FastAPI) -> HelpersBrief | None:
         return list((getattr(st, "r11_parts", None) or {}).values())
 
     def contributors() -> list[Any]:
-        return [c for p in parts() for c in p.brief]
+        # + R11.1: the parts' own lines (the plan's open check-ins), read when the brief is made
+        return [*(c for p in parts() for c in p.brief), *fix_brief(app)]
 
     def pauses() -> list[Any]:
         return [x for p in parts() for x in p.paused]

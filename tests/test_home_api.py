@@ -127,7 +127,8 @@ async def test_link_then_status_then_unlink(gc: AsyncClient, w: World) -> None:
     await w.bridge.heartbeat.beat()  # type: ignore[union-attr]
     body = (await gc.get("/v1/home")).json()
     assert body["linked"] and body["state"] == "online" and body["host"] == "laptop.tail1234.ts.net"
-    assert body["parts"]["ha"] is True and body["bridge_version"] == "0.1.0"
+    # R11.1 C: the real bridge reports the kit's own version (0.2.0: the first with photo routes)
+    assert body["parts"]["ha"] is True and body["bridge_version"] == "0.2.0"
     assert body["kit_outdated"] is False and body["devices_available"] is True
     assert "seed" not in str(body) and "tail1234.ts.net:8443" not in str(body)
     w.clock.t += 800

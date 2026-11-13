@@ -8,7 +8,7 @@
 // rev, available, delete_count}], passkey_in_force, generated_at}; POST /v1/privacy/{id}/export
 // {proof?} -> JSON (content categories need the proof, purpose privacy_export, target export:<id>,
 // or a fresh Google sign-in); POST /v1/privacy/export-all {proof?}; POST /v1/privacy/{id}/delete
-// {rev, confirm?, proof?} -> {deleted, category, remaining}. Errors {error, detail, reason?}: 409 changed, 403 proof_required {reason:
+// {rev, confirm?, proof?} -> {deleted, category, remaining, pending}. Errors {error, detail, reason?}: 409 changed, 403 proof_required {reason:
 // reauth}, passkey_required / passkey_rejected, console_only.
 // Deletes that can't be brought back: a passkey check (window.JarvisPasskey.prove, bound to the
 // category and its rev) when passkeys are in force; otherwise the typed word DELETE plus a Google
@@ -235,7 +235,8 @@
       const out = obj(await api(`/v1/privacy/${c.id}/delete`, { body })) || {};
       closeDlg();
       const gone = Number.isInteger(out.deleted) ? out.deleted.toLocaleString() : 'it';
-      if (Number.isInteger(out.remaining) && out.remaining > 0) note('bad', `Deleted ${gone} from ${c.label}, but ${out.remaining.toLocaleString()} ${out.remaining === 1 ? 'is' : 'are'} still there. Try again in a moment.`);
+      if (typeof out.pending === 'string' && out.pending) note('bad', `${c.label}: ${out.pending.slice(0, 200)}`); // R11.1: finished later
+      else if (Number.isInteger(out.remaining) && out.remaining > 0) note('bad', `Deleted ${gone} from ${c.label}, but ${out.remaining.toLocaleString()} ${out.remaining === 1 ? 'is' : 'are'} still there. Try again in a moment.`);
       else if (out.remaining === null || out.remaining === undefined) note('ok', `Deleted ${gone} from ${c.label}. Check the list to be sure nothing is left.`);
       else note('ok', `Deleted ${gone} from ${c.label}.`);
       await load(true);

@@ -57,7 +57,10 @@ async def test_upload_returns_201_and_the_ref(client: AsyncClient) -> None:
     r = await upload(client, "Board memo.docx", make_docx(["Budget is 4 crore."]))
     assert r.status_code == 201, r.text
     body = r.json()
-    assert set(body) == {"id", "name", "kind", "size", "pages", "words", "chars", "truncated"}
+    assert set(body) == {
+        *("id", "name", "kind", "size", "pages", "words", "chars", "truncated"),
+        *("sheets", "rows", "slides", "files", "skipped", "pictures"),  # R11.1 D10-D11
+    }
     assert body["name"] == "Board memo.docx" and body["kind"] == "docx" and body["words"] == 4
 
 
@@ -257,11 +260,27 @@ async def test_documents_switched_off_refuses_uploads_and_sending(
     assert r.status_code == 200, r.text  # switched back on: the waiting file goes
 
 
-async def test_more_than_three_files_in_one_message_is_refused(client: AsyncClient) -> None:
+async def test_more_files_than_the_owners_limit_in_one_message_is_refused(
+    settings: Settings, provider: MockProvider
+) -> None:
+    """R11.1 D11: a message carries `attach_max_files` files (10 by default; it was a fixed 3)."""
+    three = settings.model_copy(update={"attach_max_files": 3})
+    app = create_app(three, provider=provider, store=InMemorySessionStore())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            ids = [(await upload(client, f"{i}.txt", b"note")).json()["id"] for i in range(4)]
+            r = await client.post("/v1/chat", json={"message": "read all", "attachments": ids})
+            assert r.status_code == 422 and "3 files" in r.json()["detail"]
+            assert (await client.get("/v1/sessions")).json() == []  # no empty conversation left
+
+
+async def test_four_files_now_go_with_one_message(
+    client: AsyncClient, provider: MockProvider
+) -> None:
     ids = [(await upload(client, f"{i}.txt", b"note")).json()["id"] for i in range(4)]
+    provider.script("Four notes, Sir.")
     r = await client.post("/v1/chat", json={"message": "read all", "attachments": ids})
-    assert r.status_code == 422 and "3 files" in r.json()["detail"]
-    assert (await client.get("/v1/sessions")).json() == []  # no empty conversation left
+    assert r.status_code == 200, r.text
 
 
 async def test_doc_tools_are_offered_to_the_model(

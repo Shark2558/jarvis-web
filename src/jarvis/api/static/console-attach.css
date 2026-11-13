@@ -48,4 +48,9 @@
 @media (max-width:520px){
   .achip .aname{max-width:14ch}
 }
+/* R11.1 D0: on a phone the Remove button keeps its size to the eye and gains a 44 px hit area */
+@media (max-width:899px){
+  .achip .arm{position:relative}
+  .achip .arm::before{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%)}
+}
 html[data-motion="calm"] .clip{transition:none}

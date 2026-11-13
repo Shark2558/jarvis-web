@@ -1,15 +1,25 @@
 // src/jarvis/api/static/console-people.js -- R4 D10/D11/D7: the People panel and the brain-mode switch.
-// People: a name (and an optional role / organisation) -> a short dossier from PUBLIC sources -> "Open all
-// profiles" opens each profile in its own browser tab (window.open per URL, from the click itself so the
-// browser's pop-up rules allow it). Public figures and work due-diligence only: the server refuses anything
-// else with a plain message, shown as is. Nothing is saved. Brain mode: AI / No-AI switch and a badge; in
-// No-AI mode JARVIS answers from fixed rules and the dossier is links only.
+// People: a name (and an optional role / organisation) -> a short dossier from PUBLIC sources. Public
+// figures and work due-diligence only: the server refuses anything else with a plain message, shown as is.
+// Nothing is saved. Brain mode: AI / No-AI switch and a badge; in No-AI mode JARVIS answers from fixed
+// rules and the dossier is links only.
+// R11.1 D16 (the owner's observation O8: the old one-press button opened nothing): each profile is a card (the site, the
+// page's title, the dossier's own line about that site) with its OWN real link, <a target="_blank"
+// rel="noopener noreferrer">: one tab per click, never a pop-up a browser can block. "Open next" presses
+// the next unopened card's link from the click itself and the card says "Opened". No button opens every
+// profile at once, and this file never asks the browser for a new window itself (with noopener that call
+// answers null by specification, so its result could never be counted). No page is framed: most of these
+// sites refuse it.
 // Server strings reach the page through textContent only. No build step; CSP script-src 'self'; ASCII source.
 // Mounts into #p-people .pbody (shell in console.html, integrator). Optional #brainModeSlot gets the pill (console-deck.css styles it; console-people.css the panel).
 // API: POST /v1/people/research {name, context?} -> {name, context, profiles:[{platform,url,title}],
 //   findings:[{title,domain,snippet}], summary|null, spoken, ambiguous, no_ai, note}; GET /v1/people/last;
 //   GET|POST /v1/settings/brain-mode {mode: 'ai'|'none'} -> {mode, meaning}.
 // Events: 'jarvis:brainmode' (detail {mode}); window.JarvisBrainMode = {get, set} (set('ai') only asks).
+// R11.1 D21-D (security review H1): window.JarvisPeople.offerCard(card) draws the reply card of kind
+// 'people_offer' (jarvis/people/offer.py): a name the picture's own text holds, the caption line it was read
+// from, and ONE button, "Look up". Nothing is looked up until he presses it; then this panel researches the
+// name exactly as when he types it (the server's usual check decides). The reply's card list calls it.
 (() => {
   'use strict';
   const panel = document.getElementById('p-people');
@@ -22,10 +32,13 @@
     /^(?:[a-z0-9-]+\.)*instagram\.com$/, /^(?:[a-z0-9-]+\.)*facebook\.com$/];
   const hostOk = (h) => HOST_OK.some((re) => re.test(h));
   const MAX_PROFILES = 8, MAX_FINDINGS = 4;
+  const SITES = { linkedin: 'LinkedIn', linkedin_company: 'LinkedIn company page', github: 'GitHub', youtube: 'YouTube',
+    x: 'X', wikipedia: 'Wikipedia', instagram: 'Instagram', facebook: 'Facebook' };
+  const siteName = (p) => (Object.prototype.hasOwnProperty.call(SITES, p.toLowerCase()) ? SITES[p.toLowerCase()] : p);
   const OFFLINE = 'Can\'t reach JARVIS. Check your connection.';
   const MODE_WORD = { ai: 'AI on', none: 'No-AI' };
   const MODE_MEANS = { ai: 'JARVIS reasons and writes with the model. Paid replies apply.', none: 'Fixed rules only, no model. Nothing paid is used.' };
-  const S = { dossier: null, mode: null, meaning: '', busy: false, switching: false, failed: false };
+  const S = { dossier: null, mode: null, meaning: '', busy: false, switching: false, failed: false, opened: new Set(), links: [] };
   let nameEl, ctxEl, goBtn, noteEl, card, openBtn, speakBtn, modeAi, modeNone, meaningEl, pill, pillLabel, menu, asking;   // S.mode is null until the server has answered
 
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -52,20 +65,52 @@
   function normal(raw) {
     const d = obj(raw);
     if (!d) return null;
+    const findings = arr(d.findings).slice(0, MAX_FINDINGS).map((f) => { const it = obj(f) || {}; return { domain: txt(it.domain, 80), snippet: txt(it.snippet, 400) }; });
     const profiles = arr(d.profiles).slice(0, MAX_PROFILES).map((p) => {
       const it = obj(p), url = it && safeUrl(it.url);
-      return url ? { platform: txt(it.platform, 20), url, title: txt(it.title, 120) } : null;
+      if (!url) return null;
+      // the dossier's own line about that site goes on its card (and is then not repeated below)
+      const mine = findings.find((f) => !f.used && f.snippet && f.domain === new URL(url).hostname);
+      if (mine) mine.used = true;
+      return { platform: txt(it.platform, 20), url, title: txt(it.title, 120), line: mine ? mine.snippet : '' };
     }).filter(Boolean);
     return { name: txt(d.name, 80), profiles, summary: txt(d.summary, 900) || null, spoken: txt(d.spoken, 600),
-      ambiguous: d.ambiguous === true, noAi: d.no_ai === true, note: txt(d.note, 200),
-      findings: arr(d.findings).slice(0, MAX_FINDINGS).map((f) => { const it = obj(f) || {}; return { domain: txt(it.domain, 80), snippet: txt(it.snippet, 400) }; }) };
+      ambiguous: d.ambiguous === true, noAi: d.no_ai === true, note: txt(d.note, 200), findings: findings.filter((f) => !f.used) };
   }
+  function show(dossier) { S.dossier = dossier; S.opened = new Set(); render(); }   // a new dossier: nothing opened yet
 
+  // One profile: the site, the page's title, the dossier's line about it, and its own link.
+  function profileCard(p) {
+    const li = mk('li', 'trow pprof'), t = mk('div', 'ttxt'), site = siteName(p.platform);
+    const state = mk('span', 'tmeta pstate'); state.hidden = true;
+    t.append(mk('b', 'tname', site), mk('span', 'tmeta', p.title || p.url));
+    if (p.line) t.append(mk('span', 'tmeta pline', p.line));
+    t.append(state);
+    const a = mk('a', 'btn bact lift plink', 'Open in browser');
+    a.href = p.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.setAttribute('aria-label', 'Open in browser: ' + site + (p.title ? ', ' + p.title : ''));
+    a.addEventListener('click', () => { S.opened.add(p.url); marks(); });   // the tab itself is the link's own doing
+    li.append(t, a);
+    S.links.push({ url: p.url, a, li, state });
+    return li;
+  }
+  // Which cards have been opened, and what "Open next" can still do.
+  function marks() {
+    S.links.forEach((l) => {
+      const done = S.opened.has(l.url);
+      if (done) l.li.dataset.opened = 'true'; else delete l.li.dataset.opened;
+      l.state.textContent = done ? 'Opened' : ''; l.state.hidden = !done;
+    });
+    const left = S.links.filter((l) => !S.opened.has(l.url)).length;
+    openBtn.textContent = S.links.length && !left ? 'All opened' : 'Open next';
+    openBtn.disabled = !left;
+    if (S.links.length && S.opened.size) say('', left ? 'Opened ' + (S.links.length - left) + ' of ' + S.links.length + '.' : 'All ' + S.links.length + ' opened. A card\'s own link opens it again.');
+  }
   function render() {
     const d = S.dossier;
-    card.textContent = ''; card.className = 'pcard';
+    card.textContent = ''; card.className = 'pcard'; S.links = [];
     openBtn.hidden = speakBtn.hidden = !d || (!d.profiles.length && !d.spoken);
-    openBtn.disabled = !d || !d.profiles.length;
+    marks();
     if (!d) return;
     card.className = 'integ pdoss'; card.dataset.state = d.profiles.length ? 'linked' : 'unlinked';
     const head = mk('div', 'ihead'); head.append(mk('b', 'pname', d.name), mk('span', 'istate', d.profiles.length ? d.profiles.length + ' profiles' : 'No profiles'));
@@ -75,14 +120,11 @@
     if (d.note) body.append(mk('p', 'fine', d.note));
     if (d.profiles.length) {
       const ul = mk('ul', 'tlist plinks');
-      d.profiles.forEach((p) => {
-        const li = mk('li', 'trow'), t = mk('div', 'ttxt'), a = mk('a', 'tname plink', p.platform);
-        a.href = p.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-        t.append(a, mk('span', 'tmeta', p.title || p.url)); li.append(t); ul.append(li);
-      });
+      d.profiles.forEach((p) => ul.append(profileCard(p)));
       body.append(ul);
     }
     d.findings.forEach((f) => body.append(mk('p', 'fine', (f.domain ? f.domain + ': ' : '') + f.snippet)));
+    marks();
   }
 
   async function research() {
@@ -90,22 +132,39 @@
     const name = nameEl.value.trim(), context = ctxEl.value.trim();
     if (!name) { say('bad', 'Give me a name to research, Sir.'); return; }
     S.busy = true; goBtn.disabled = true; say('', 'Searching public sources...');
+    let found = null, note = ['', ''];
     try {
       const body = context ? { name, context } : { name };
-      S.dossier = normal(await api('/v1/people/research', { method: 'POST', body }));
-      say('', S.dossier && S.dossier.ambiguous ? 'Several people share this name. Add a role or organisation.' : '');
-    } catch (e) { S.dossier = null; say('bad', detailOf(e)); }
-    S.busy = false; goBtn.disabled = false; render();
+      found = normal(await api('/v1/people/research', { method: 'POST', body }));
+      note = ['', found && found.ambiguous ? 'Several people share this name. Add a role or organisation.' : ''];
+    } catch (e) { note = ['bad', detailOf(e)]; }
+    S.busy = false; goBtn.disabled = false; show(found); say(note[0], note[1]);
   }
 
-  // D11: one tab per profile. Called straight from the click, with no await before window.open.
-  function openAll() {
-    const d = S.dossier;
-    if (!d) return;
-    let opened = 0;
-    d.profiles.forEach((p) => { if (window.open(p.url, '_blank', 'noopener,noreferrer')) opened += 1; });
-    say(opened < d.profiles.length ? 'bad' : '', opened < d.profiles.length
-      ? 'Your browser blocked some tabs. Allow pop-ups for JARVIS and try again.' : 'Opened ' + opened + ' profile(s).');
+  // R11.1 D16: ONE tab per click. The next unopened card's own link is pressed from this click itself (no
+  // await before it), so the browser opens it as it opens any link; the link's handler marks the card.
+  function openNext() {
+    const next = S.links.find((l) => !S.opened.has(l.url));
+    if (next) next.a.click();
+  }
+
+  // R11.1 D21-D: the "Look up" offer under a chat reply. His press opens People and researches the name there.
+  function offerCard(raw) {
+    const c = obj(raw), name = c && c.kind === 'people_offer' && c.button === 'Look up' ? txt(c.name, 80) : '';
+    if (!name) return null;
+    const box = mk('div', 'integ'); box.dataset.kind = 'people_offer';
+    const caption = txt(c.caption, 200), b = mk('button', 'btn primary lift bact', 'Look up');
+    box.append(mk('p', 'psum', txt(c.words, 300)));
+    if (caption) box.append(mk('p', 'fine', 'Caption read: \'' + caption + '\''));
+    b.type = 'button'; b.setAttribute('aria-label', 'Look up ' + name + ' in People');
+    b.addEventListener('click', () => lookUp(name));
+    const act = mk('div', 'actions'); act.append(b); box.append(act);
+    return box;
+  }
+  function lookUp(name) {
+    const D = window.JarvisDeck;
+    if (D && typeof D.open === 'function') D.open('people', { focus: false });
+    nameEl.value = name; ctxEl.value = ''; research();
   }
 
   function speak() {
@@ -251,8 +310,8 @@
     const form = mk('div', 'pform'); form.append(field('peopleName', 'Name', nameEl), field('peopleContext', 'Role or organisation (optional)', ctxEl));
     const go = mk('div', 'actions'); go.append(goBtn);
     card = mk('div', 'pcard'); card.id = 'peopleCard';
-    openBtn = mk('button', 'btn lift', 'Open all profiles'); openBtn.type = 'button'; openBtn.id = 'peopleOpen'; openBtn.hidden = true;
-    openBtn.addEventListener('click', openAll);
+    openBtn = mk('button', 'btn lift', 'Open next'); openBtn.type = 'button'; openBtn.id = 'peopleOpen'; openBtn.hidden = true;
+    openBtn.addEventListener('click', openNext);
     speakBtn = mk('button', 'btn lift', 'Speak'); speakBtn.type = 'button'; speakBtn.id = 'peopleSpeak'; speakBtn.hidden = true;
     speakBtn.addEventListener('click', speak);
     const acts = mk('div', 'actions pacts2'); acts.append(openBtn, speakBtn);
@@ -274,12 +333,13 @@
   async function load() {
     if (!hasApi()) return;
     await refresh();
-    try { const l = obj(await api('/v1/people/last')); if (l && l.dossier) { S.dossier = normal(l.dossier); render(); } } catch (_) { /* nothing researched yet */ }
+    try { const l = obj(await api('/v1/people/last')); if (l && l.dossier) show(normal(l.dossier)); } catch (_) { /* nothing researched yet */ }
   }
 
   build();
   // set('none') switches at once (the safe direction); set('ai') only opens the same confirm as the pill.
   window.JarvisBrainMode = Object.freeze({ get: () => S.mode, set: (m) => (m === 'ai' ? requestAi() : m === 'none' ? switchMode('none') : undefined) });
+  window.JarvisPeople = Object.freeze({ offerCard });
   const JC = window.JarvisConsole;
   if (JC && typeof JC.ready === 'function' && JC.ready()) load();
   document.addEventListener('jarvis:ready', load);

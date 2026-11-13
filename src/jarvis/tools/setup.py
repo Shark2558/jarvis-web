@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from jarvis.home.parts import HomeParts
     from jarvis.kb.service import NotesService
     from jarvis.media.service import MediaServices
+    from jarvis.picture.turnguard import TurnGuard
     from jarvis.recall.service import MemoryService
     from jarvis.storage.docs import Docs
     from jarvis.tools.base import Tool
@@ -108,9 +109,11 @@ def _register_services(
     documents: DocumentService | None,
     drive: DriveService | None,
     media: MediaServices | None,
+    pictures: TurnGuard | None = None,
 ) -> None:
     """Long-term memory, web search (a Tavily key), attached files, Drive (chosen folders,
-    read-only) and Maps / YouTube (JARVIS's own Google API key): each only when it exists."""
+    read-only) and Maps / YouTube (JARVIS's own Google API key): each only when it exists.
+    `pictures`: the app's turn guard for web_search, Maps and YouTube (R11.1 D21-D, I1)."""
     tools: list[Tool] = []
     if memory is not None:
         from jarvis.recall.tools import memory_tools
@@ -119,7 +122,7 @@ def _register_services(
     if web is not None:  # slice 10 B: only with a Tavily key (jarvis.web.service)
         from jarvis.web.tools import web_tools
 
-        tools += web_tools(web)
+        tools += web_tools(web, pictures)
     if documents is not None:
         from jarvis.documents.tools import document_tools
 
@@ -132,7 +135,7 @@ def _register_services(
         from jarvis.media.tools import youtube_tools
         from jarvis.places.tools import maps_tools
 
-        tools += maps_tools(media.maps) + youtube_tools(media.youtube)
+        tools += maps_tools(media.maps, pictures) + youtube_tools(media.youtube, pictures)
     for t in tools:
         reg.register(t)
 
@@ -164,8 +167,8 @@ def _register_personal(
 
 def _register_home(reg: ToolRegistry, home: HomeParts | None) -> None:
     """R3: the home, its alarm, camera history and the people JARVIS recognises. Telegram refuses
-    home_devices, camera_* and faces_* by default (`telegram.rules.HOME_PATTERNS`); home_status
-    and home_arm stay. A training brain is offered no tools at all and offline mode only
+    home_devices, camera_*, faces_*, photos_import(_*) by default (`telegram.rules.HOME_PATTERNS`);
+    home_status and home_arm stay. A training brain is offered no tools at all and offline mode only
     `llm.fallback.OFFLINE_TOOLS` (none of these), so the private ones reach neither."""
     if home is None:
         return
@@ -192,6 +195,34 @@ def attach_activity(gw: Gateway, store: ActivityStore, s: Settings) -> None:
     gw.observers.append(ActivityRecorder(store, gw.registry, timezone=s.user_timezone))
 
 
+def _builtins(google: GoogleConnector | None) -> ToolRegistry:
+    """The built-in tools; with the Google link, without their in-memory twins."""
+    reg = ToolRegistry()
+    for t in builtin_tools(InMemoryWorld()):
+        if google is None or t.name not in FAKE_TWINS:
+            reg.register(t)
+    return reg
+
+
+def _register_undo(reg: ToolRegistry, undo: UndoBin | None) -> None:
+    if undo is not None:  # R2 review M2: notes and things are undo-able without Google too
+        from jarvis.undo.tools import undo_tools
+
+        for t in undo_tools(undo):
+            reg.register(t)
+
+
+def _register_parts(
+    reg: ToolRegistry, r11: Mapping[str, HelperPart] | None, r111: Sequence[Tool]
+) -> None:
+    if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring
+        from jarvis.api.r11_wiring import register_r11_tools
+
+        register_r11_tools(reg, r11)
+    for t in r111:  # R11.1: the four parts' tools, checked at wiring (api/r11_1_wiring.py)
+        reg.register(t)
+
+
 def build_gateway(
     s: Settings,
     *,
@@ -213,36 +244,26 @@ def build_gateway(
     r4: R4Parts | None = None,
     r11: Mapping[str, HelperPart] | None = None,
     r111: Sequence[Tool] = (),
+    pictures: TurnGuard | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
-    D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`)."""
-    reg = ToolRegistry()
-    for t in builtin_tools(InMemoryWorld()):
-        if google is not None and t.name in FAKE_TWINS:
-            continue
-        reg.register(t)
+    D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`).
+    `pictures` (R11.1 D21-D, I1): ONE turn guard for research_person, web_search, YouTube and
+    Maps; without it they fail closed (every Brain turn counts as a picture turn)."""
+    reg = _builtins(google)
     if r4 is not None:  # R4 W6: vitals_show / systems_check are always-on (no-AI mode needs them)
         from jarvis.api.r4_wiring import register_r4_tools
 
-        register_r4_tools(reg, r4)
+        register_r4_tools(reg, r4, pictures)
     if google is not None:
         _register_google(reg, s, google, undo=undo, marks=marks, docs=docs)
     _register_people(reg, google)
-    if undo is not None:  # R2 review M2: notes and things are undo-able without Google too
-        from jarvis.undo.tools import undo_tools
-
-        for t in undo_tools(undo):
-            reg.register(t)
-    _register_services(reg, memory, web, documents, drive, media)
+    _register_undo(reg, undo)
+    _register_services(reg, memory, web, documents, drive, media, pictures)
     _register_personal(reg, vault, notes, belongings)
     _register_home(reg, home)
-    if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring
-        from jarvis.api.r11_wiring import register_r11_tools
-
-        register_r11_tools(reg, r11)
-    for t in r111:  # R11.1: the four parts' tools, checked at wiring (api/r11_1_wiring.py)
-        reg.register(t)
+    _register_parts(reg, r11, r111)
     return Gateway(
         registry=reg,
         policy=Policy(),

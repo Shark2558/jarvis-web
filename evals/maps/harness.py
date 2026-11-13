@@ -35,6 +35,7 @@ from jarvis.logging import new_trace_id
 from jarvis.media.service import MediaServices, YouTubeService
 from jarvis.media.tools import youtube_tools
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.picture.turnguard import DocumentTurns, TurnGuard
 from jarvis.places.service import MapsService
 from jarvis.places.store import MapsPlaces
 from jarvis.places.tools import maps_tools
@@ -186,7 +187,11 @@ def build() -> Rig:
     # the real tools, plus the builtin "world" (a reminder: R2, a message: R3) the injection
     # cases try to write through
     reg = ToolRegistry()
-    for t in builtin_tools(world) + maps_tools(media.maps) + youtube_tools(media.youtube):
+    # R11.1 I1: Maps and YouTube carry the picture turn guard; this rig attaches no files, so its
+    # port (the app's, over no document service) answers "no picture" and nothing changes here
+    pictures = TurnGuard(DocumentTurns(lambda: None))
+    media_tools = maps_tools(media.maps, pictures) + youtube_tools(media.youtube, pictures)
+    for t in builtin_tools(world) + media_tools:
         reg.register(t)
     gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=audit)
     provider = MockProvider()

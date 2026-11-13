@@ -439,7 +439,7 @@ def test_the_bridge_builds_every_plugin_with_its_environment(tmp_path: Path) -> 
     env = {"MQTT_USER": "bridge", "MQTT_PASSWORD": "pw-1234567890", "FACES_ATTEMPTS_DIR": "/x"}
     bridge = create_bridge(cfg, PLUGINS, env=env)
     names = [p.name for p in bridge.plugins]
-    assert names == ["core", "camera", "faces"]
+    assert names == ["core", "camera", "faces", "facegroups"]  # R11.1 C: the face groups
     camera = bridge.plugins[1]
     assert camera._ctx.env["MQTT_USER"] == "bridge"  # noqa: SLF001
     assert camera._ctx.peers["faces"] is bridge.plugins[2]  # noqa: SLF001

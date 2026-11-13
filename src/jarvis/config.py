@@ -439,9 +439,9 @@ class Settings(BaseSettings):
     work_output_tokens: int = Field(
         default=8192,
         ge=1024,
-        le=64_000,
+        le=32_000,  # R11.1 I1: the tool loop does not stream; above ~21k a vendor refuses the call
         description="Output cap for a turn that works with tools or attached files (D1); a "
-        "plain chat reply keeps max_output_tokens",
+        "plain chat reply keeps max_output_tokens. At most 32,000: the tool loop does not stream",
     )
     empty_reply_retries: int = Field(
         default=1, ge=0, le=2, description="Retries when the model answers with no words (D2)"
@@ -461,7 +461,10 @@ class Settings(BaseSettings):
         default=40, ge=0, le=200, description="Per-turn recognition hints from file names and chat"
     )
     attach_max_files: int = Field(
-        default=10, ge=1, le=20, description="Files one message may carry (3 before R11.1)"
+        default=10,
+        ge=1,
+        le=10,
+        description="Files one message may carry (3 before R11.1; at most ChatRequest's 10)",
     )
     attach_folder_max_files: int = Field(
         default=50, ge=1, le=200, description="Files read from one uploaded folder"
@@ -482,7 +485,10 @@ class Settings(BaseSettings):
         default=2000, ge=1, le=2000, description="Photos per Google Photos pick (Picker maximum)"
     )
     photos_import_batch: int = Field(
-        default=10, ge=1, le=50, description="Picked photos handled per background step"
+        default=10,
+        ge=1,
+        le=50,
+        description="The least a step reads when its time allows (a step reads up to 50)",
     )
     picture_research_enabled: bool = Field(
         default=True,

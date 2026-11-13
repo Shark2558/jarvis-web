@@ -78,6 +78,9 @@ class Transcript:
     confidence: float | None
     billed_seconds: float | None  # what the engine says it billed (None: unknown)
     language: str | None
+    # R11.1 D9: the engine's other guesses for the whole clip (at most two), for "heard /
+    # understood as". Never logged, like `text`.
+    alternatives: tuple[str, ...] = ()
 
 
 class TokenSource(Protocol):

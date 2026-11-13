@@ -9,7 +9,8 @@ old → new, and the other people Google will email. Every value goes through
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Mapping, Sequence
+from datetime import UTC, date, datetime, time, tzinfo
 from typing import Any
 
 from jarvis.tools.addresses import display_address
@@ -145,4 +146,150 @@ def update_card(event: dict[str, Any], a: dict[str, Any], new_guests: list[str] 
     )
 
 
-__all__ = ["create_card", "delete_card", "others_on", "update_card", "when_arg"]
+# ---- R11.1 D4, D5: many events on one card -------------------------------------------------------
+
+_MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+OPEN_JARVIS = "Open JARVIS to see the full list."
+
+
+def day_words(value: Any) -> str:
+    """ "16 Nov 2026" from an ISO time or date (shown as given when it can't be read)."""
+    text = one_line(value, TIME_LIMIT)
+    try:
+        d = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text or "?"
+    return f"{d.day} {_MONTHS[d.month - 1]} {d.year}"
+
+
+def _moment(value: Any, tz: tzinfo | None) -> datetime | None:
+    """A start as a time (an all-day date at midnight; no offset: the calendar's zone)."""
+    text = one_line(value, TIME_LIMIT)
+    try:
+        d = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            d = datetime.combine(date.fromisoformat(text), time(0))
+        except ValueError:
+            return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=tz or UTC)
+    return d.astimezone(tz) if tz is not None else d
+
+
+def _span(starts: list[Any], tz: tzinfo | None = None) -> str:
+    """The first and last day, read as times (in `tz` when given), never as text."""
+    moments = [m for m in (_moment(s, tz) for s in starts) if m is not None]
+    if not moments:
+        return day_words(sorted(one_line(s, TIME_LIMIT) for s in starts)[0])
+    first, last = (f"{d.day} {_MONTHS[d.month - 1]} {d.year}" for d in (min(moments), max(moments)))
+    return first if first == last else f"{first} to {last}"
+
+
+def _events(n: int) -> str:
+    return f"{n} event{'' if n == 1 else 's'}"
+
+
+def _carry(n: int) -> str:
+    return f"{_events(n)} {'carries' if n == 1 else 'carry'}"
+
+
+def _written(events: Sequence[Mapping[str, Any]], outside: bool) -> str:
+    """How many events carry a description or alerts, and whose words they are ("": none)."""
+    notes = sum(1 for e in events if one_line(e.get("description"), FIELD_LIMIT))
+    alerts = sum(1 for e in events if e.get("reminders_minutes"))
+    parts = [f"{_carry(notes)} a description"] if notes else []
+    parts += [f"{_carry(alerts)} alerts"] if alerts else []
+    if not parts:
+        return ""
+    whose = ", written from an attached file or other people's words" if outside else ""
+    return f"{' and '.join(parts)}{whose}: the list in JARVIS shows each."
+
+
+def _twins(events: Sequence[Mapping[str, Any]]) -> str:
+    """Events of one list with the same title and times as an earlier one ("": none)."""
+    keys = [
+        (
+            one_line(e.get("summary"), TITLE_LIMIT).casefold(),
+            one_line(e.get("start"), TIME_LIMIT),
+            one_line(e.get("end"), TIME_LIMIT),
+        )
+        for e in events
+    ]
+    k = len(keys) - len(set(keys))
+    if not k:
+        return ""
+    verb = "repeats" if k == 1 else "repeat"
+    return f"{k} of these events {verb} another in the list (same title and time)."
+
+
+def batch_card(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    prefix: str = "",
+    plan: str = "",
+    there: int = 0,
+    outside: bool = False,
+    tz: tzinfo | None = None,
+) -> str:
+    """The one card for a batch of events (no guests): how many, the first and last date (in
+    `tz`), the title prefix and the plan it starts, how many carry a description or alerts
+    (and, `outside`, that a file or other people wrote them), and repeated events. `there`:
+    how many of the list are already in the calendar (a retry adds only the rest). The console
+    lists every event, with its description and alerts, from the card's own arguments;
+    Telegram shows this text."""
+    n, span = len(events), _span([e.get("start") for e in events], tz)
+    if there >= n:
+        head = f"All {_events(n)} of this list are already in your calendar: nothing will be added."
+    elif there:
+        head = (
+            f"Add the {_events(n - there)} of this list that are not in your calendar yet "
+            f"({there} of {n} are already there): {span}."
+        )
+    else:
+        head = f"Add {_events(n)} to your calendar: {span}."
+    lines = [head]
+    if one_line(prefix, FIELD_LIMIT):
+        lines.append(f"Titles start with “{one_line(prefix, FIELD_LIMIT)} - ”.")
+    if one_line(plan, FIELD_LIMIT):
+        lines.append(
+            f"A plan to follow: {quoted(plan, FIELD_LIMIT)}. JARVIS will ask after each session "
+            "whether it happened."
+        )
+    lines += [x for x in (_written(events, outside), _twins(events)) if x]
+    lines.append("No invitations: only your calendar changes. One Undo removes them all.")
+    lines.append(OPEN_JARVIS)
+    return "\n".join(lines)
+
+
+def undo_card(events: Sequence[Mapping[str, Any]], *, kept: int = 0) -> str:
+    """The card for removing a batch: how many go, the dates, and how many stay because the
+    owner changed them since."""
+    n = len(events) - kept
+    span = _span([_time_of(e.get("start")) for e in events])
+    if n <= 0:
+        return (
+            f"All {_events(len(events))} of this batch were changed by you since: nothing will "
+            "be removed."
+        )
+    lines = [
+        f"Remove {_events(n)} of one batch from your calendar: {span}.",
+        "Each is kept in Recently deleted for 30 days: you can bring any of them back.",
+    ]
+    if kept:
+        lines.append(f"{kept} that you changed since {'is' if kept == 1 else 'are'} left alone.")
+    return "\n".join(lines)
+
+
+__all__ = [
+    "OPEN_JARVIS",
+    "TITLE_LIMIT",
+    "batch_card",
+    "create_card",
+    "day_words",
+    "delete_card",
+    "others_on",
+    "undo_card",
+    "update_card",
+    "when_arg",
+]

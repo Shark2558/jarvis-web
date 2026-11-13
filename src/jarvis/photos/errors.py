@@ -11,4 +11,9 @@ class PickerError(RuntimeError):
     """The Picker answered something unusable (plain words)."""
 
 
-__all__ = ["BAD_ANSWER", "BAD_PICTURE", "PickerError"]
+class PickerRetry(PickerError):
+    """Google could not hand a photo over just now (5xx, 429, a timeout, a dropped connection):
+    try again later; the photo is not bad (R11.1 review C-code M1)."""
+
+
+__all__ = ["BAD_ANSWER", "BAD_PICTURE", "PickerError", "PickerRetry"]

@@ -119,9 +119,7 @@ class Rig:
             c.page.route("**/v1/helpers/kitchen**", self._kitchen)
             c.open()
             if surface == "day":
-                c.page.locator("#themeBtn").click()
-                c.page.locator('label[for="jx-s-day"]').click()
-                c.page.keyboard.press("Escape")
+                c.choose_day()
             c.page.wait_for_timeout(1000)
             self.pages[key] = c
         return self.pages[key]

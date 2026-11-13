@@ -9,6 +9,8 @@
 // renewal_due, pictures, laptop_code}], total, limit, statements:{version, adult, child}};
 // POST /v1/faces {name, relation, child, vip, given_by, consent_version, confirm:true} -> 201;
 // PATCH /v1/faces/{id} {reconfirm?, vip?}; POST /v1/faces/{id}/delete {proof?}; GET /v1/faces/local.
+// R11.1 C: #facesGroups is the place console-r111-photos.js fills with "Unnamed groups"; naming a group
+// uses this panel's own dialog and consent form (JarvisFaces.nameForm), so the statement is asked one way.
 (() => {
   'use strict';
   const panel = document.getElementById('p-faces');
@@ -68,6 +70,7 @@
     stateEl = mk('div', 'empty'); stateEl.id = 'facesState'; stateEl.setAttribute('role', 'status');
     list = mk('ul', 'tlist'); list.id = 'facesList'; list.setAttribute('aria-label', 'People JARVIS recognises');
     const lc = mk('p', 'bfine'); lc.id = 'facesLocal';
+    const groups = mk('section', 'fgroups'); groups.id = 'facesGroups';
     dlg = mk('dialog', 'bdialog'); dlg.id = 'facesDialog'; dlg.setAttribute('role', 'alertdialog'); dlg.setAttribute('aria-labelledby', 'facesDialogTitle');
     dlgTitle = mk('h3'); dlgTitle.id = 'facesDialogTitle'; dlgBody = mk('div', 'fbody');
     const row = mk('div', 'brow');
@@ -86,7 +89,7 @@
       if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
       else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
     });
-    root.append(noteEl, intro, addBtn, stateEl, list, lc, dlg);
+    root.append(noteEl, intro, addBtn, stateEl, list, lc, groups, dlg);
     host.appendChild(root);
   }
   function ask(title, yes, content, trigger, first) {
@@ -141,9 +144,7 @@
 
   // ---- actions ----------------------------------------------------------------------------------
   function field(label, input) { const l = mk('label', 'bl', label); const w = mk('div', 'ffield'); w.append(l, input); l.htmlFor = input.id; return w; }
-  async function addPerson() {
-    const d = S.data;
-    if (S.busy || !d || !d.available) return;
+  function consentForm(d) {
     const box = mk('div', 'fform');
     const name = mk('input', 'tin'); name.id = 'facesName'; name.maxLength = 40; name.autocomplete = 'off';
     const rel = mk('select', 'tin'); rel.id = 'facesRel';
@@ -164,14 +165,34 @@
     const k = mk('div', 'frow'); k.append(kid, kidL); const v = mk('div', 'frow'); v.append(vip, vipL);
     const o = mk('div', 'frow'); o.append(ok, okLabel);
     box.append(field('Name', name), field('Relation', rel), k, v, stmt, o);
-    if (!(await ask('Add a person', 'Add', box, addBtn, name))) return;
+    const body = () => ({ name: name.value, relation: rel.value, child: kid.checked, vip: vip.checked,
+      given_by: kid.checked ? 'parent_guardian' : 'self', consent_version: d.version, confirm: ok.checked });
+    return { box, name, body };
+  }
+  async function addPerson() {
+    const d = S.data;
+    if (S.busy || !d || !d.available) return;
+    const f = consentForm(d);
+    if (!(await ask('Add a person', 'Add', f.box, addBtn, f.name))) return;
     S.busy = true;
     try {
-      await api('/v1/faces', { method: 'POST', body: { name: name.value, relation: rel.value, child: kid.checked, vip: vip.checked,
-        given_by: kid.checked ? 'parent_guardian' : 'self', consent_version: d.version, confirm: ok.checked } });
+      await api('/v1/faces', { method: 'POST', body: f.body() });
       say('ok', 'Added. Now add their pictures on your home laptop.'); await load(true);
     } catch (e) { say('bad', detailOf(e) || 'Couldn\'t add that person. Please try again.'); }
     finally { S.busy = false; }
+  }
+  // R11.1 C: who a group of faces is. A new person gets the consent form above; someone already added has
+  // their consent on record, so nothing is asked again. Resolves to the request body, or null (cancelled).
+  async function nameForm(title, yes, trigger) {
+    if (S.data === undefined) await load(false);
+    const d = S.data;
+    if (S.busy || !d || !d.available) return null;
+    const f = consentForm(d), wrap = mk('div', 'fform'), who = mk('select', 'tin'); who.id = 'facesWho';
+    [{ id: '', name: 'A new person' }].concat(d.people.filter((p) => p.state !== 'deleting')).forEach((p) => { const o = mk('option', '', p.name); o.value = p.id; who.appendChild(o); });
+    who.addEventListener('change', () => { f.box.hidden = !!who.value; });
+    wrap.append(field('Who is this?', who), f.box);
+    if (!(await ask(title, yes, wrap, trigger, who))) return null;
+    return who.value ? { person_id: who.value } : f.body();
   }
   async function reconfirm(p) {
     try { await api('/v1/faces/' + p.id, { method: 'PATCH', body: { reconfirm: true } }); say('ok', 'Thanks. Consent for ' + p.name + ' renewed.'); await load(true); }
@@ -217,5 +238,6 @@
   document.addEventListener('jarvis:ready', shown);
   const C = window.JarvisConsole;
   if (C && typeof C.ready === 'function' && C.ready()) shown();
-  window.JarvisFaces = Object.freeze({ refresh: () => load(true), normal });
+  window.JarvisFaces = Object.freeze({ refresh: () => load(true), normal, nameForm,
+    confirm: (title, yes, text, trigger) => ask(title, yes, mk('p', '', text), trigger) });
 })();

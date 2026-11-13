@@ -256,7 +256,9 @@
     const ctrl = S.abort = new AbortController();
     let r;
     try {
-      r = await Chat.raw('/v1/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: window.JarvisWav.encode(frames), signal: ctrl.signal });
+      const headers = { 'Content-Type': 'audio/wav' }, sid = typeof Chat.session === 'function' ? Chat.session() : null;
+      if (typeof sid === 'string' && sid) headers['X-Jarvis-Session'] = sid;   // R11.1 D9: this conversation's hints
+      r = await Chat.raw('/v1/voice/transcribe', { method: 'POST', headers, body: window.JarvisWav.encode(frames), signal: ctrl.signal });
     } catch (e) {
       if (t === S.turn) { S.conv = false; setMode('idle'); releaseMic(); if (!e || (e.status !== 401 && e.name !== 'AbortError')) say('Couldn\'t reach JARVIS. Check your connection.'); }
       return;
@@ -268,7 +270,8 @@
     if (t !== S.turn) return;
     const text = j && typeof j.text === 'string' ? clean(j.text) : '';
     if (!text || (j && j.no_speech === true) || emptyWords(text) || echoed(text)) { afterEmpty('I didn\'t catch that.'); return; }
-    deliver(text, { state: 'listening' });
+    const alternatives = Array.isArray(j.alternatives) ? j.alternatives.filter(a => typeof a === 'string').map(clean).filter(Boolean).slice(0, 2) : [];
+    deliver(text, { state: 'listening', alternatives, confidence: Number.isFinite(j.confidence) ? j.confidence : null });
   }
   const emptyWords = (text) => { const w = text.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean); return !w.length || w.every(x => FILLER.has(x)); };
   /** An interruption's words that are mostly JARVIS's own coming back through the speakers are dropped (D7). */
@@ -331,7 +334,7 @@
     const d = V.device();
     if (d.autoSend && !Chat.busy()) {
       cue('heard');
-      Promise.resolve(Chat.send(text, { channel: 'voice' })).then(ok => { if (!ok && S.mode === 'thinking') endOrResume(); });
+      Promise.resolve(Chat.send(text, { channel: 'voice', alternatives: o.alternatives, confidence: o.confidence })).then(ok => { if (!ok && S.mode === 'thinking') endOrResume(); });
       return;
     }
     const before = input.value.replace(/\s+$/, '');

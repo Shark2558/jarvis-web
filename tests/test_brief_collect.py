@@ -162,7 +162,9 @@ async def test_inbox_items_total_and_snippets_kept_apart() -> None:
     assert got.snippets == ("Can you & …", "hi")  # type: ignore[attr-defined]
     assert "snippet" not in got.data.model_dump_json()  # type: ignore[attr-defined]
     listing = next(r for r in fake.requests if r.url.path.endswith("/messages"))
-    assert listing.url.params["q"] == INBOX_QUERY and listing.url.params["maxResults"] == "10"
+    # R11.1 O12: the whole inbox (every category, 7 days), read within a fixed number of reads
+    assert listing.url.params["q"] == INBOX_QUERY == "is:unread in:inbox newer_than:7d"
+    assert listing.url.params["maxResults"] == "30"
 
 
 async def test_one_unreadable_message_is_skipped() -> None:

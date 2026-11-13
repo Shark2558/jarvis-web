@@ -24,6 +24,7 @@ from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.picture.turnguard import TurnGuard
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
 from jarvis.web.allowance import WebAllowance
@@ -48,6 +49,14 @@ def _settings(**over: object) -> Settings:
     return Settings(**base)  # type: ignore[arg-type]
 
 
+class NoPictures:
+    """R11.1 D21-D: the turn guard's port as the app answers it for a turn without a picture
+    (unwired, web_search counts every Brain turn as a picture turn and fails closed)."""
+
+    async def carried(self, uid: str, session_id: str) -> str:
+        return "no"
+
+
 class Rig:
     def __init__(self, *, training: bool = False) -> None:
         self.fake = FakeTavily()
@@ -58,7 +67,7 @@ class Rig:
             WebAllowance(MemoryDocs(), now=lambda: NOW),
         )
         reg = ToolRegistry()
-        for t in web_tools(service):
+        for t in web_tools(service, TurnGuard(NoPictures())):
             reg.register(t)
         self.gateway = Gateway(
             registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog()

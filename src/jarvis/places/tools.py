@@ -40,6 +40,7 @@ from urllib.parse import quote_plus, urlencode
 
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.google_key import KeyAPIError
+from jarvis.picture.turnguard import FAIL_CLOSED, TurnGuard
 from jarvis.places.google_maps import (
     PLACES_FIELD_MASK,
     ROUTES_FIELD_MASK,
@@ -273,9 +274,20 @@ def directions_link(origin: str, destination: str, mode: Mode) -> str:
 # ---- runs -------------------------------------------------------------------------------------
 
 
+def _search_words(a: dict[str, Any]) -> list[str]:
+    """What maps_search sends out: the query and the area."""
+    return [str(a.get(k) or "").strip() for k in ("query", "near")]
+
+
+def _route_words(a: dict[str, Any]) -> list[str]:
+    """What maps_route sends out: each end, except 'home' / 'work' (his saved places)."""
+    ends = (str(a.get(k) or "").strip() for k in ("from", "to"))
+    return [e for e in ends if alias(e) is None]
+
+
 class _Maps:
-    def __init__(self, service: MapsService) -> None:
-        self.s = service
+    def __init__(self, service: MapsService, pictures: TurnGuard = FAIL_CLOSED) -> None:
+        self.s, self.pictures = service, pictures
 
     async def _admit(self, sku: Sku) -> Reservation:
         """One of the message's Maps calls, within the owner's hour, and `sku` reserved from the
@@ -304,6 +316,8 @@ class _Maps:
         query = str(a["query"]).strip()
         near = str(a["near"]).strip() if a.get("near") else ""
         text = f"{query} near {near}" if near else query
+        if (stop := await self.pictures.texts_stop(_search_words(a))) is not None:
+            return stop  # R11.1 I1 (security M2): a picture turn sends no name from a face
         if reply_full(drafts=False):  # refused before anything is spent (final review)
             return dict(NOT_SHOWN)
         r = await self._admit(MAPS_SEARCH)
@@ -354,6 +368,8 @@ class _Maps:
     async def route(self, a: dict[str, Any]) -> dict[str, Any]:
         mode: Mode = a.get("mode") or "drive"
         depart = _depart(a)
+        if (stop := await self.pictures.texts_stop(_route_words(a))) is not None:
+            return stop  # R11.1 I1: a route's ends are outward words too
         if reply_full(drafts=False):  # refused before Home / Work are read or anything spent
             return dict(NOT_SHOWN)
         origin, origin_label = await self._resolve(str(a["from"]).strip())
@@ -415,58 +431,67 @@ def _place_view(n: int, p: Place) -> dict[str, Any]:
     return out
 
 
-def maps_tools(service: MapsService) -> list[Tool]:
-    m = _Maps(service)
-    return [
-        Tool(
-            "maps_search",
-            "Find places on Google Maps (name, address, open/closed). Up to 5; the owner sees "
-            "them on a card with Open in Google Maps links. No ratings, hours or phone numbers. "
-            "near: an area in words (not the owner's home or work). At most 3 Maps look-ups per "
-            "message. Never put private details in the query.",
-            {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "maxLength": QUERY_LIMIT},
-                    "near": {"type": "string", "maxLength": PLACE_LIMIT},
-                },
-                "required": ["query"],
+def _search_tool(m: _Maps, guard: TurnGuard) -> Tool:
+    return Tool(
+        "maps_search",
+        "Find places on Google Maps (name, address, open/closed). Up to 5; the owner sees "
+        "them on a card with Open in Google Maps links. No ratings, hours or phone numbers. "
+        "near: an area in words (not the owner's home or work). At most 3 Maps look-ups per "
+        "message. Never put private details in the query.",
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "maxLength": QUERY_LIMIT},
+                "near": {"type": "string", "maxLength": PLACE_LIMIT},
             },
-            ActionRisk.READ_ONLY,
-            stops_answered(m.search),
-            agent="maps",
-            summarize=_search_card,
-            check=_check_search,
-        ),
-        Tool(
-            "maps_route",
-            "Travel time and distance on Google Maps with current traffic (drive, two_wheeler) "
-            "or on foot (walk). from / to: an address or place in words, or 'home' / 'work' for "
-            "the owner's saved places. depart: a future time with its zone, to plan ahead. The "
-            "owner sees a card with an Open in Google Maps link. Counts as one of the message's "
-            "3 Maps look-ups.",
-            {
-                "type": "object",
-                "properties": {
-                    "from": {"type": "string", "maxLength": PLACE_LIMIT},
-                    "to": {"type": "string", "maxLength": PLACE_LIMIT},
-                    "mode": {"type": "string", "enum": list(MODES)},
-                    "depart": {
-                        "type": "string",
-                        "maxLength": DEPART_LIMIT,
-                        "description": "e.g. 2026-11-20T08:30:00+05:30",
-                    },
+            "required": ["query"],
+        },
+        ActionRisk.READ_ONLY,
+        stops_answered(m.search),
+        agent="maps",
+        summarize=_search_card,
+        check=_check_search,
+        preview=guard.preview_for(_search_words, _search_card),
+    )
+
+
+def _route_tool(m: _Maps, guard: TurnGuard) -> Tool:
+    return Tool(
+        "maps_route",
+        "Travel time and distance on Google Maps with current traffic (drive, two_wheeler) "
+        "or on foot (walk). from / to: an address or place in words, or 'home' / 'work' for "
+        "the owner's saved places. depart: a future time with its zone, to plan ahead. The "
+        "owner sees a card with an Open in Google Maps link. Counts as one of the message's "
+        "3 Maps look-ups.",
+        {
+            "type": "object",
+            "properties": {
+                "from": {"type": "string", "maxLength": PLACE_LIMIT},
+                "to": {"type": "string", "maxLength": PLACE_LIMIT},
+                "mode": {"type": "string", "enum": list(MODES)},
+                "depart": {
+                    "type": "string",
+                    "maxLength": DEPART_LIMIT,
+                    "description": "e.g. 2026-11-20T08:30:00+05:30",
                 },
-                "required": ["from", "to"],
             },
-            ActionRisk.READ_ONLY,
-            stops_answered(m.route),
-            agent="maps",
-            summarize=_route_card,
-            check=_check_route,
-            ask_when=_saved_place_in_outside_round,
-        ),
-    ]
+            "required": ["from", "to"],
+        },
+        ActionRisk.READ_ONLY,
+        stops_answered(m.route),
+        agent="maps",
+        summarize=_route_card,
+        check=_check_route,
+        ask_when=_saved_place_in_outside_round,
+        preview=guard.preview_for(_route_words, _route_card),
+    )
+
+
+def maps_tools(service: MapsService, pictures: TurnGuard | None = None) -> list[Tool]:
+    """`pictures`: the app's turn guard (R11.1 I1); unwired it fails closed."""
+    guard = pictures or FAIL_CLOSED
+    m = _Maps(service, guard)
+    return [_search_tool(m, guard), _route_tool(m, guard)]
 
 
 __all__ = [

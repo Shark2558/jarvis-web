@@ -658,6 +658,9 @@ def test_bridge_routes_are_the_fixed_list() -> None:
             # R4 C (D-C3): picked photos and consented enrolment; the kit serves them later
             ("POST", "/bridge/v1/faces/photos"),
             ("POST", "/bridge/v1/faces/enrol"),
+            # R11.1 C (D15, D21-C): the unnamed groups, and forgetting them
+            ("GET", "/bridge/v1/faces/groups"),
+            ("POST", "/bridge/v1/faces/groups/forget"),
         }
     )
     assert route_allowed("GET", "/bridge/v1/health")
@@ -770,8 +773,14 @@ class _Plugin:
 
 
 def test_the_registry_lists_the_camera_and_faces_plugins_and_plugins_satisfy_the_port() -> None:
-    # I1: the core plugin is built by the bridge itself; the registry adds B's and C's
-    assert [f.__name__ for f in PLUGINS] == ["camera_plugin", "create_plugin"]
+    # I1: the core plugin is built by the bridge itself; the registry adds B's and C's (and, since
+    # R11.1 C, the face groups' plugin, whose factory is also called `create_plugin`)
+    assert [f.__name__ for f in PLUGINS] == ["camera_plugin", "create_plugin", "create_plugin"]
+    assert [f.__module__ for f in PLUGINS] == [
+        "jarvis.homebridge.camera",
+        "jarvis.homebridge.faces",
+        "jarvis.homebridge.face_groups",
+    ]
     assert isinstance(_Plugin("camera"), BridgePlugin)
     ctx = BridgeContext(env={}, data_dir=ROOT, events=None)  # type: ignore[arg-type]
     assert ctx.now() > 0
@@ -1092,10 +1101,16 @@ def test_the_bridge_extra_is_optional_and_the_cloud_image_unchanged() -> None:
     assert cfg["project"]["optional-dependencies"]["homebridge"] == [
         "aiomqtt==2.5.1",
         "paho-mqtt==2.1.0",
+        # R11.1 I1: the face engine's picture libraries, also only in the bridge image, and
+        # only for the kit's Python (I1 code review L4: NumPy 2.5 needs 3.12)
+        'opencv-python-headless==5.0.0.93; python_version >= "3.12"',
+        'numpy==2.5.4; python_version >= "3.12"',
     ]
-    assert not any(d.startswith(("aiomqtt", "paho")) for d in cfg["project"]["dependencies"])
+    bridge_only = ("aiomqtt", "paho", "opencv", "numpy")
+    assert not any(d.startswith(bridge_only) for d in cfg["project"]["dependencies"])
     lock = (ROOT / "requirements.lock").read_text(encoding="utf-8")
-    assert "aiomqtt" not in lock and "paho-mqtt" not in lock
+    for name in ("aiomqtt", "paho-mqtt", "opencv-python-headless", "numpy=="):
+        assert name not in lock, name
 
 
 # ---- Telegram: the home group ----------------------------------------------------------------
@@ -1129,7 +1144,14 @@ HOME_READS = ["home_devices", "camera_history", "faces_list"]
 
 
 async def test_the_home_group_needs_its_own_switch_on_telegram() -> None:
-    assert HOME_PATTERNS == ("home_devices", "camera_*", "faces_*")
+    # R11.1 I1: the photo import (faces found, people recognised) and its status joined the group
+    assert HOME_PATTERNS == (
+        "home_devices",
+        "camera_*",
+        "faces_*",
+        "photos_import",
+        "photos_import_*",
+    )
     assert "Telegram" in HOME_REFUSAL and HOME_REFUSAL.isascii()
     assert await _denied(None, HOME_READS) == set(HOME_READS)
     for kw in (

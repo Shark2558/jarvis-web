@@ -383,6 +383,7 @@ async def test_transcribe_returns_the_contract(vc: AsyncClient, rig: Rig) -> Non
         "cost_inr": 0.0,
         "language": "en-IN",
         "no_speech": False,
+        "alternatives": [],  # R11.1 D9: the engine's other guesses
     }
     call = rig.stt.calls[0]
     assert call["rate"] == 16_000 and call["language"] == "en-IN"

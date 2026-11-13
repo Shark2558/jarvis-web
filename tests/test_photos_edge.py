@@ -44,8 +44,10 @@ async def test_analyse_posts_each_picture_and_parses_faces() -> None:
 
 
 async def test_enrol_sends_ids_only() -> None:
-    home = ScriptedHome({})
-    await BridgeHomeEdge(home).enrol(UID, C1, PID)  # type: ignore[arg-type]
+    # R11.1 O7: the bridge now serves this route and answers with two facts: how many face
+    # pictures it holds for the person, and whether the camera's library has them yet
+    home = ScriptedHome({"pictures": 4, "camera": "copied"})
+    assert await BridgeHomeEdge(home).enrol(UID, C1, PID) == 4  # type: ignore[arg-type]
     assert home.calls == [("POST", ENROL_PATH, {"cluster": C1, "person": PID})]
 
 

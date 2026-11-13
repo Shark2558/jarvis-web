@@ -11,12 +11,17 @@ to the JARVIS cloud, and this page is the only place they are added.
   SameSite=Strict, 12 hours) plus a CSRF token the page sends in `X-CSRF` on every write.
 - Lists consented people by their code (`fp_...`), takes uploads (raw JPEG or PNG body, <= 5 MB,
   <= 20 a person) or lets the owner pick from recent visitors. An id without consent is refused.
+- R11.1 O7: it also shows the groups of faces found in the owner's photos, each by its number
+  and its few crops (the cloud console shows the number and counts only), with "Forget this
+  group", the watched folder's state and "read the folder again". Naming a group is done in
+  JARVIS, where the consent check lives; this page never names anyone.
 - Its own CSP: `default-src 'self'`; no inline script; no remote anything. Responses are never
   cached. Pictures are not logged.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import os
 import secrets
@@ -85,6 +90,11 @@ class Classify(BaseModel):
     file: str = Field(max_length=120)
 
 
+class ForgetGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    group: str = Field(pattern=r"^c_[0-9a-f]{12}$")
+
+
 class Sessions:
     def __init__(self, now: Callable[[], float]) -> None:
         self._now = now
@@ -135,7 +145,10 @@ def create_local_app(
     *,
     port: int = PORT,
     now: Callable[[], float] = time.time,
+    groups: Callable[[], Any] | None = None,
 ) -> FastAPI:
+    """`groups` (R11.1 O7): finds the face-groups plugin when a request arrives (None: that part
+    is not in this bridge). Only this page ever shows a group's crops."""
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     sessions = Sessions(now)
     hosts = {f"localhost:{port}", f"127.0.0.1:{port}"}
@@ -258,7 +271,59 @@ def create_local_app(
             return _plain(422, exc.code, exc.words)
         return _reply(200, {"ok": True})
 
+    _group_routes(app, session, groups)
     return app
+
+
+def _group_routes(
+    app: FastAPI,
+    session: Callable[..., JSONResponse | None],
+    groups: Callable[[], Any] | None,
+) -> None:
+    """R11.1 O7: the face groups on the laptop's own page, the only place a crop is shown."""
+
+    def face_groups() -> Any:
+        return groups() if groups is not None else None
+
+    @app.get("/faces/api/groups")
+    async def group_list(request: Request) -> JSONResponse:
+        if (refused := session(request)) is not None:
+            return refused
+        part = face_groups()
+        if part is None:
+            return _reply(200, {"available": False})
+        view = await asyncio.to_thread(part.page_view)
+        return _reply(200, {"available": True, **view})
+
+    @app.get("/faces/api/groups/{group}/{index}")
+    async def group_crop(request: Request, group: str, index: int) -> Response:
+        if (refused := session(request)) is not None:
+            return refused
+        part = face_groups()
+        data = await asyncio.to_thread(part.crop, group, index) if part is not None else None
+        if not data:
+            return _plain(404, "not_found", "There is no such picture.")
+        return Response(data, media_type="image/jpeg", headers=HEADERS)
+
+    @app.post("/faces/api/groups/forget")
+    async def group_forget(request: Request, body: ForgetGroup) -> JSONResponse:
+        if (refused := session(request, write=True)) is not None:
+            return refused
+        part = face_groups()
+        if part is None:
+            return _plain(404, "not_found", "Face groups are not part of this bridge.")
+        done = await part.forget([body.group])
+        return _reply(200, {"forgotten": done["forgotten"]})
+
+    @app.post("/faces/api/groups/rescan")
+    async def group_rescan(request: Request) -> JSONResponse:
+        if (refused := session(request, write=True)) is not None:
+            return refused
+        part = face_groups()
+        if part is None:
+            return _plain(404, "not_found", "Face groups are not part of this bridge.")
+        await part.rescan()
+        return _reply(200, {"ok": True})
 
 
 def bind_host(env: Mapping[str, str]) -> str:
@@ -273,7 +338,13 @@ async def serve_local_page(library: FaceLibrary, ctx: BridgeContext) -> None:
     import uvicorn
 
     port = int(ctx.env.get("FACES_PORT", PORT))
-    app = create_local_app(library, login_code(ctx.env, ctx.data_dir), port=port, now=ctx.now)
+    app = create_local_app(
+        library,
+        login_code(ctx.env, ctx.data_dir),
+        port=port,
+        now=ctx.now,
+        groups=lambda: ctx.peers.get("facegroups"),
+    )
     config = uvicorn.Config(
         app, host=bind_host(ctx.env), port=port, log_level="warning", access_log=False
     )

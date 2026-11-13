@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import re
 import subprocess
 import sys
@@ -69,7 +70,7 @@ def _lines(path: Path) -> int:
 
 
 def test_the_version_is_eleven_point_one() -> None:
-    assert jarvis.__version__ == "11.1.0"
+    assert jarvis.__version__ == "11.1.1"  # R11.1 hotfix 1 (was 11.1.0)
 
 
 # ---- settings -----------------------------------------------------------------------------------
@@ -94,11 +95,11 @@ def test_the_new_settings_have_safe_defaults() -> None:
     ("field", "bad"),
     [
         ("work_output_tokens", 512),
-        ("work_output_tokens", 64_001),
+        ("work_output_tokens", 32_001),  # R11.1 I1: the tool loop does not stream (A 3.13)
         ("empty_reply_retries", 3),
         ("calendar_batch_max", 101),
         ("voice_hint_words", 201),
-        ("attach_max_files", 21),
+        ("attach_max_files", 11),  # R11.1 I1: at most what ChatRequest carries (B 3.3)
         ("attach_picture_max_kb", 1000),
         ("photos_max_picked", 2001),
         ("photos_max_picked", 0),
@@ -223,7 +224,9 @@ def _completion(text: str, stop: str | None = "end_turn") -> Completion:
 
 def test_the_brain_takes_its_reply_from_the_finish_module() -> None:
     assert finish.reply_text(_completion("  Done, Sir. ")) == "Done, Sir."
-    assert finish.reply_text(_completion("")) == finish.FILLER  # I0: unchanged; Part A replaces it
+    assert finish.reply_text(_completion("")) == finish.EMPTY  # R11.1 A: a plain sentence, by code
+    assert finish.OLD_FILLER not in finish.EMPTY
+    assert not hasattr(finish, "FILLER")  # R11.1 I1: I0's alias is gone (INTEGRATION-A 3.1)
     assert finish.cut_short(_completion("half", "max_tokens")) is True
     assert finish.cut_short(_completion("whole")) is False
     assert finish.output_cap(Settings(_env_file=None), working=False) == 1024
@@ -234,10 +237,11 @@ def test_the_brain_takes_its_reply_from_the_finish_module() -> None:
 
 
 def test_the_line_budgets_leave_the_builders_room() -> None:
-    assert _lines(SRC / "core" / "brain.py") <= 770  # 779 at R11 (guard < 800): room for Part A
+    assert _lines(SRC / "core" / "brain.py") <= 770  # 779 at R11 (guard < 800): Part A made it 704
     assert _lines(SRC / "tools" / "gateway.py") <= 760  # no part may grow it
-    assert _lines(SRC / "api" / "app.py") <= 730  # guard 750: room for I1
-    assert _lines(STATIC / "console.html") <= 796  # guard < 800: 798 at R11
+    # guard 750; R11.1 I1 made it 731 (the brief's governed inbox read, the one turn guard)
+    assert _lines(SRC / "api" / "app.py") <= 735
+    assert _lines(STATIC / "console.html") <= 795  # guard < 800: 798 at R11, 795 at R11.1
 
 
 # ---- the four parts -----------------------------------------------------------------------------
@@ -356,20 +360,52 @@ def test_the_guide_has_the_r11_1_card() -> None:
         "`src/jarvis/picture/`",
         "`console-r111.js`",
         "`series/{uid}`",
-        "PLANNED",
+        "Built in R11.1",  # R11.1 I1: as built, no longer PLANNED
+        "`photo_imports/{uid}`",
+        "`face_groups/{uid}`",
     ):
         assert needle in card, needle
+    assert "PLANNED" not in card
 
 
-def test_the_eval_runner_passes_with_every_part_still_a_stub() -> None:
+def test_every_part_is_built_and_the_runner_passes_with_every_control_failing() -> None:
+    """R11.1 I1 (retires I0's stub-stage test): all four parts are built, every case passes, and
+    each part's own negative control made that part fail (a part that cannot fail proves
+    nothing)."""
     run = subprocess.run(
         [sys.executable, str(ROOT / "evals" / "r11_1" / "run.py"), "--mock"],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=300,
         check=False,
     )
-    assert run.returncode == 0, run.stdout + run.stderr
-    assert "not built yet" in run.stdout
-    for part in ("plan", "files", "photos", "look"):
-        assert part in run.stdout
+    assert run.returncode == 0, run.stdout[-4000:] + run.stderr[-4000:]
+    assert "not built yet" not in run.stdout
+    report = json.loads((ROOT / "evals" / "r11_1" / "report.json").read_text(encoding="utf-8"))
+    ids = {r["id"] for r in report["results"]}
+    assert not any(i.endswith(":not_built_yet") or i.endswith(":missing") for i in ids), ids
+    assert report["passed"] == report["cases"]
+    control = report["negative_control"]
+    assert control["suite_failed"] is True and control["parts_not_built"] == []
+    parts = ("plan", "files", "photos", "look")
+    assert set(control["failed_cases"]) == set(parts)
+    for part in parts:
+        assert {i.split(":", 1)[0] for i in ids} >= {part}, part
+        assert control["failed_cases"][part], f"{part}: its control failed none of its cases"
+
+
+def test_the_r11_1_suite_is_gated_in_run_all_mock() -> None:
+    text = (ROOT / "evals" / "run_all_mock.py").read_text(encoding="utf-8")
+    line = next(x for x in text.splitlines() if '"r11_1 (gated)"' in x)
+    assert 'HERE / "r11_1" / "run.py"' in line and line.rstrip().endswith("True),")
+
+
+def test_the_build_book_knows_the_layer_of_every_r11_1_package() -> None:
+    """A package missing from the layer map fails the book's `--check` (and so the deploy)."""
+    from jarvis.buildbook.gen.layers import LAYER_OF
+
+    assert LAYER_OF["understand"] == "L2"
+    assert LAYER_OF["facegroups"] == "L2"
+    assert LAYER_OF["series"] == "L5"
+    assert LAYER_OF["picture"] == "L5"
+    assert LAYER_OF["fixes"] == "X"

@@ -657,8 +657,24 @@ def _puts(fake: FakeVoice) -> list[Any]:
     return [p["body"] for p in fake.to("PUT", "/v1/voice/settings")]
 
 
+SAVE_SETTLE_TRIES = 50  # x 100 ms: the voice settings save waits 500 ms, then one PUT at a time
+BOTH = {"phrases": ["Trivandrum", "Thiruvananthapuram"]}
+
+
+def _settled(c: Console, fake: FakeVoice, want: dict[str, Any]) -> list[Any]:
+    """The PUTs once the last one carries `want`. The save is debounced (500 ms): words added
+    within it go in one PUT, words added after it in a second (CI run 111, a slower runner)."""
+    for _ in range(SAVE_SETTLE_TRIES):
+        if _puts(fake) and _puts(fake)[-1] == want:
+            break
+        c.page.wait_for_timeout(100)
+    return _puts(fake)
+
+
+@pytest.mark.parametrize("pause_ms", [0, 900], ids=["quick", "after-the-first-save"])
 def test_the_editor_adds_and_removes_words_and_saves_them_through_the_voice_settings(
     make: Callable[..., Console],  # noqa: F811
+    pause_ms: int,
 ) -> None:
     c = make()
     fake = PhrasesVoice(c.page)
@@ -667,6 +683,9 @@ def test_the_editor_adds_and_removes_words_and_saves_them_through_the_voice_sett
     assert "No words yet" in str(c.page.locator("#vPhraseCount").text_content())
     c.page.locator("#vPhraseIn").fill("  Trivandrum ")
     c.page.locator("#vPhraseAdd").click()
+    if pause_ms:  # the owner adds the second word after the first save went
+        c.page.wait_for_timeout(pause_ms)
+        _settled(c, fake, {"phrases": ["Trivandrum"]})  # that save is out before he goes on
     c.page.locator("#vPhraseIn").fill("Thiruvananthapuram")
     c.page.keyboard.press("Enter")
     assert slot.locator("#vPhraseList .bl").all_text_contents() == [
@@ -675,15 +694,18 @@ def test_the_editor_adds_and_removes_words_and_saves_them_through_the_voice_sett
     ]
     assert c.page.locator("#vPhraseCount").text_content() == "2 of 50 words."
     c.page.locator("#voiceNote.ok").wait_for()
-    assert _puts(fake) == [{"phrases": ["Trivandrum", "Thiruvananthapuram"]}]  # one debounced PUT
+    added = _settled(c, fake, BOTH)
+    assert added[-1] == BOTH
+    # never a word list that wasn't on screen: the first word alone, then both
+    assert added in ([BOTH], [{"phrases": ["Trivandrum"]}, BOTH])
+    if pause_ms:
+        assert len(added) == 2  # the pause outlasted the save delay: two saves
     c.page.locator("#vPhraseRm-0").click()
     c.page.locator("#voiceNote.ok").wait_for()
     _wait(c, "() => document.querySelectorAll('#vPhraseList .bl').length === 1")
-    for _ in range(40):
-        if len(_puts(fake)) == 2:
-            break
-        c.page.wait_for_timeout(100)
-    assert _puts(fake)[-1] == {"phrases": ["Thiruvananthapuram"]}
+    removed = _settled(c, fake, {"phrases": ["Thiruvananthapuram"]})
+    assert removed[-1] == {"phrases": ["Thiruvananthapuram"]}
+    assert len(removed) == len(added) + 1  # one save for the removal
     assert c.errors == [] and c.csp_violations() == []
 
 
@@ -797,6 +819,14 @@ def test_the_helper_cleans_like_the_server_and_offers_the_list_only_where_suppor
     view = voice_view()
     view["settings"]["phrases"] = ["Kochi"]
     PhrasesVoice(c.page, view)
+    # R11.1 D9 adds this turn's hints to the list (tests/browser/test_r11_1_b_files.py); none here,
+    # so the count below is still his own one word
+    c.page.route(
+        "**/v1/input/hints*",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"hints": []}'
+        ),
+    )
     c.open()
     clean = "(s) => JarvisVoicePhrases.clean(s)"
     assert c.page.evaluate(clean, "  Tri​van   drum ") == "Trivan drum"

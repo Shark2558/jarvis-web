@@ -269,7 +269,7 @@ async def test_recognize_sends_the_documented_request() -> None:
         "languageCode": "en-IN",
         "model": "latest_short",
         "enableAutomaticPunctuation": True,
-        "maxAlternatives": 1,
+        "maxAlternatives": 3,  # R11.1 D9 (it was 1)
         "speechContexts": [{"phrases": ["JARVIS", "Sir"]}],
     }
 

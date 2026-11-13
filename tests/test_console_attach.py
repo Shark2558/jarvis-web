@@ -58,8 +58,9 @@ def test_attach_script_writes_text_only_and_uses_the_console_transport() -> None
     assert "textContent" in js and "fetch(" not in js  # JarvisChat.raw / JarvisConsole.api only
     assert "chat.raw('/v1/attachments'" in js and "'X-Jarvis-Filename': encodeURIComponent(" in js
     assert "/v1/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' }" in js
-    for limit in ("MAX_FILES = 3", "MAX_BYTES = 10 * 1024 * 1024"):
-        assert limit in js
+    # R11.1 D11: 10 files a message (it was 3), 10 MB each, 40 MB together, 4 pictures
+    assert "let MAX_FILES = 10, MAX_BYTES = 10 * MB, TOTAL_BYTES = 40 * MB, MAX_PICTURES = 4;" in js
+    assert "const MB = 1024 * 1024;" in js
     for lit in re.findall(r"'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`", js):
         assert "$" not in re.sub(r"\$\{", "", lit), lit[:80]  # rupees only, never dollars
 

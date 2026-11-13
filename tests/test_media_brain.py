@@ -21,11 +21,21 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelTier
 from jarvis.media.service import MediaServices, YouTubeService
 from jarvis.memory.inmemory import InMemorySessionStore
+from jarvis.picture.turnguard import TurnGuard
 from jarvis.places.service import MapsService
 from jarvis.places.store import MapsPlaces
 from jarvis.quota.ledger import QuotaLedger
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.setup import build_gateway
+
+
+class NoPictures:
+    """R11.1 I1: the turn guard's port as the app answers it for a turn without a picture
+    (unwired, Maps and YouTube count every Brain turn as a picture turn and fail closed)."""
+
+    async def carried(self, uid: str, session_id: str) -> str:
+        return "no"
+
 
 TIERS = {t: f"mock-{t.value}" for t in ModelTier}
 
@@ -50,7 +60,7 @@ def _rig(
         session_backend=SessionBackend.MEMORY,
         usd_inr_live=False,
     )
-    gw = build_gateway(s, media=media)
+    gw = build_gateway(s, media=media, pictures=TurnGuard(NoPictures()))
     gw.gate = ConfirmationGate()
     provider = MockProvider()
     brains = BrainRegistry(

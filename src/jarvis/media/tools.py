@@ -51,6 +51,7 @@ from jarvis.logging import get_logger
 from jarvis.media import youtube as yt
 from jarvis.media.service import YouTubeService
 from jarvis.media.youtube import iso_duration
+from jarvis.picture.turnguard import FAIL_CLOSED, TurnGuard
 from jarvis.quota.ledger import (
     YOUTUBE_SEARCH,
     YOUTUBE_UNITS,
@@ -224,8 +225,8 @@ def _full(shown: bool) -> bool:
 
 
 class _YouTube:
-    def __init__(self, service: YouTubeService) -> None:
-        self.s = service
+    def __init__(self, service: YouTubeService, pictures: TurnGuard = FAIL_CLOSED) -> None:
+        self.s, self.pictures = service, pictures
 
     async def _reserve(self, sku: Sku, n: int = 1) -> Reservation:
         try:
@@ -267,6 +268,8 @@ class _YouTube:
 
     async def search(self, a: dict[str, Any]) -> dict[str, Any]:
         query = str(a["query"]).strip()
+        if (stop := await self.pictures.query_stop(query)) is not None:  # R11.1 I1: the hook
+            return stop  # a picture turn: no name taken from a face leaves (security M2)
         if reply_full(drafts=False):  # refused before anything is spent (final review)
             return dict(NOT_SHOWN)
         take_youtube_search()
@@ -429,33 +432,37 @@ class _YouTube:
         return likes if isinstance(likes, str) and yt.PLAYLIST_ID.fullmatch(likes) else None
 
 
-def youtube_tools(service: YouTubeService) -> list[Tool]:
-    y = _YouTube(service)
-    tools = [
-        Tool(
-            "youtube_search",
-            "Search YouTube for videos, or music (kind=music). Up to 5 results: title, channel, "
-            "length. The owner sees them on a card and presses Play to watch or listen; you "
-            "can't start playback. At most 2 searches per message (90 a day for the whole "
-            "deployment). Never put private details in the query.",
-            {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "maxLength": QUERY_LIMIT},
-                    "kind": {"type": "string", "enum": list(KINDS)},
-                },
-                "required": ["query"],
+def _search_words(a: dict[str, Any]) -> list[str]:
+    return [str(a.get("query", "")).strip()]
+
+
+def _search_tool(y: _YouTube, guard: TurnGuard) -> Tool:
+    return Tool(
+        "youtube_search",
+        "Search YouTube for videos, or music (kind=music). Up to 5 results: title, channel, "
+        "length. The owner sees them on a card and presses Play to watch or listen; you "
+        "can't start playback. At most 2 searches per message (90 a day for the whole "
+        "deployment). Never put private details in the query.",
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "maxLength": QUERY_LIMIT},
+                "kind": {"type": "string", "enum": list(KINDS)},
             },
-            ActionRisk.READ_ONLY,
-            stops_answered(y.search),
-            agent="youtube",
-            summarize=_search_card,
-            check=_check_search,
-        )
-    ]
-    if service.google is None:  # no Google link on this server: nothing to read playlists with
-        return tools
-    tools += [
+            "required": ["query"],
+        },
+        ActionRisk.READ_ONLY,
+        stops_answered(y.search),
+        agent="youtube",
+        summarize=_search_card,
+        check=_check_search,
+        preview=guard.preview_for(_search_words, _search_card),
+    )
+
+
+def _playlist_tools(y: _YouTube) -> list[Tool]:
+    """The owner's own playlists (only with the Google link to read them with)."""
+    return [
         Tool(
             "youtube_my_playlists",
             "List the owner's own YouTube playlists (Liked videos first), numbered. Needs the "
@@ -495,7 +502,15 @@ def youtube_tools(service: YouTubeService) -> list[Tool]:
             check=_check_playlist,
         ),
     ]
-    return tools
+
+
+def youtube_tools(service: YouTubeService, pictures: TurnGuard | None = None) -> list[Tool]:
+    """`pictures`: the app's turn guard (R11.1 I1); unwired it fails closed."""
+    guard = pictures or FAIL_CLOSED
+    y = _YouTube(service, guard)
+    if service.google is None:  # no Google link on this server: nothing to read playlists with
+        return [_search_tool(y, guard)]
+    return [_search_tool(y, guard), *_playlist_tools(y)]
 
 
 __all__ = ["GRANT_MSG", "MUSIC_CATEGORY", "iso_duration", "youtube_tools"]

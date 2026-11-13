@@ -20,6 +20,7 @@ from jarvis.api.identity import current_user
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.helpers.kitchen import part as kitchen_part
 from jarvis.helpers.ports import HelperPart
+from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.policy import Policy
@@ -43,6 +44,7 @@ async def rig() -> AsyncIterator[tuple[AsyncClient, FastAPI, FakeGoogle]]:
         reg.register(t)
     app.state.r11_parts = {"kitchen": built}
     app.state.helpers_limit = change_limiter()
+    app.state.store = InMemorySessionStore()  # R11.1 I1: the card waits in a real conversation
     app.state.gateway = Gateway(
         registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog()
     )
@@ -91,7 +93,7 @@ async def test_bad_input_is_422_in_plain_words(rig: Any) -> None:
 
 
 async def test_the_blocks_button_makes_a_card_and_never_writes_the_calendar(rig: Any) -> None:
-    client, _, fake = rig
+    client, app, fake = rig
     r = await client.put(
         f"{PREFIX}/blocks",
         json={
@@ -107,6 +109,9 @@ async def test_the_blocks_button_makes_a_card_and_never_writes_the_calendar(rig:
     assert r.status_code == 200 and r.json()["pending"] is True
     assert "Cooking 19:30-20:10" in r.json()["message"]
     assert fake.sent("POST", "/events") == []
+    [card] = await app.state.gateway.pending()  # R11.1 I1: in a stored conversation of his own
+    assert card.scope == f"{UID}:{r.json()['session_id']}"
+    assert await app.state.store.get(r.json()["session_id"]) is not None
 
 
 async def test_a_saved_recipe_can_be_removed(rig: Any) -> None:

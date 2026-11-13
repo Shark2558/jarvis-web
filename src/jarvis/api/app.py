@@ -113,6 +113,7 @@ from jarvis.memory import SessionConflict, SessionNotFound, SessionStore
 from jarvis.offline.rules import wrap_offline
 from jarvis.offline.service import build_local_fallback
 from jarvis.packages.tools import PackageScanner
+from jarvis.picture.turnguard import app_guard
 from jarvis.recall.errors import (
     ConsentRequired,
     ImportTooLarge,
@@ -127,6 +128,7 @@ from jarvis.storage.docs import Docs, MemoryDocs
 from jarvis.telegram.alerts import ALERT_TEXT
 from jarvis.telegram.rules import wrap_rules
 from jarvis.tools.audit import AuditLog, AuditTrail
+from jarvis.tools.background import BackgroundReads
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.r1_tools import build_family_service
 from jarvis.tools.setup import attach_activity, build_gateway
@@ -160,6 +162,7 @@ def build_brief_service(
     else:
         approvals = built.approvals if built is not None else None
         audit = built.audit if built is not None else AuditLog()
+    reads = BackgroundReads(lambda: getattr(app.state, "gateway", None), audit=audit)
     return BriefService(
         store=BriefStore(docs, prefix=s.firestore_prefix),
         google=app.state.google,
@@ -171,8 +174,11 @@ def build_brief_service(
         ai_daily_cap=s.brief_ai_daily_cap,
         retention_days=s.brief_retention_days,
         billing=getattr(app.state, "billing", None),
+        # R11.1 D20 / I1 M1: the inbox and deliveries reads obey the "Search and read email" row
+        reads=reads,
+        mail_max_reads=s.mail_summary_max_reads,
         # R1 D: Deliveries and Family today (only with the Google link they read through)
-        deliveries=DeliveriesBrief(PackageScanner(app.state.google))
+        deliveries=DeliveriesBrief(PackageScanner(app.state.google), reads=reads)
         if getattr(app.state, "google", None) is not None
         else None,
         family_day=FamilyBrief(family) if (family := getattr(app.state, "family", None)) else None,
@@ -363,6 +369,7 @@ def _build_tool_gateway(
         r4=app.state.r4_parts,  # R4: vitals, systems check, connectors, people (each when on)
         r11=app.state.r11_parts,  # R11: the helpers' tools (each part's own families)
         r111=fix_tools(app.state.r111_parts),  # R11.1: the four parts' tools
+        pictures=app_guard(lambda name: getattr(app.state, name, None)),  # R11.1 D21-D
     )
 
 

@@ -102,16 +102,26 @@ object Payloads {
         return first + byteArrayOf(NEWLINE) + file
     }
 
-    fun sos(kind: SosKind, at: Long, fix: Fix?): ByteArray = CanonicalJson.bytes(
-        Json.obj(
-            "v" to V,
-            "kind" to kind.word,
-            "at" to at,
+    private val PRESS_ID = Regex("[A-Za-z0-9_-]{16,64}")
+
+    /** The one optional field the door accepts besides the contract's: `press_id`, 16 to 64 of
+     *  A-Z a-z 0-9 _ -, the same for every retry of one press (the server dedupes on it). */
+    fun isPressId(id: String): Boolean = PRESS_ID.matches(id)
+
+    fun sos(kind: SosKind, at: Long, fix: Fix?, pressId: String? = null): ByteArray {
+        require(pressId == null || isPressId(pressId)) { "not a press id" }
+        val fields = ArrayList<Pair<String, Any?>>()
+        fields.add("v" to V)
+        fields.add("kind" to kind.word)
+        fields.add("at" to at)
+        fields.add(
             "location" to fix?.let {
                 Json.obj("lat_e6" to it.latE6, "lon_e6" to it.lonE6, "accuracy_m" to it.accuracyM, "age_s" to it.ageS)
             },
-        ),
-    )
+        )
+        if (pressId != null) fields.add("press_id" to pressId)
+        return CanonicalJson.bytes(Json.obj(*fields.toTypedArray()))
+    }
 
     private const val NEWLINE: Byte = 0x0A
 }

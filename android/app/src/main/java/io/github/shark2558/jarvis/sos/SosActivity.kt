@@ -254,7 +254,7 @@ class SosActivity : Activity() {
                 if (!AppState(this).isLinked()) {
                     Answer(false, -1, NOT_LINKED)
                 } else {
-                    val reply = DoorClient(this).signed("sos", Payloads.sos(k, at, place))
+                    val reply = DoorClient(this).signed("sos", Payloads.sos(k, at, place, if (k == SosKind.SAFE) null else press))
                     val refusal = reply.refusal
                     when {
                         refusal == null -> Answer(true, reachedOf(reply.body), "")

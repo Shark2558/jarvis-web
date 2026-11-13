@@ -29,6 +29,23 @@ fun replyCases(): List<Case> = cases(
         same(-90L, Replies.skewSeconds(1_000_000L, 910_000L), "phone ahead by 90 s")
         same(null, Replies.skewSeconds(1_000_000L, 0L), "no server time")
     },
+    "the SOS body carries press_id only when given, and only in the door's shape" to {
+        val plain = String(Payloads.sos(SosKind.REAL, 100L, null), Charsets.UTF_8)
+        yes("press_id" !in plain, "no press id unless given: the contract's vectors stay byte for byte")
+        val id = "0f8fad5b-d9cb-469f-a165-70867728950e"
+        val given = String(Payloads.sos(SosKind.REAL, 100L, null, id), Charsets.UTF_8)
+        yes(given.endsWith(",\"press_id\":\"$id\"}"), "press_id is the one added field: $given")
+        for (bad in listOf("", "short", "a".repeat(65), "has space 0123456789", "{$id}")) {
+            yes(!Payloads.isPressId(bad), "refused: $bad")
+            refuses<IllegalArgumentException>("bad press id") { Payloads.sos(SosKind.REAL, 100L, null, bad) }
+        }
+        yes(Payloads.isPressId(id) && Payloads.isPressId("A".repeat(16)) && Payloads.isPressId("a_b-".repeat(16)), "good ids")
+    },
+    "a 422 from the SOS door is a plain refusal, never silence" to {
+        val refusal = Replies.explain(422, null)
+        yes(refusal != null && refusal.sentence.contains("Sir"), "422 has a sentence")
+        yes(!Replies.worthRetry(422), "a 422 is not retried")
+    },
     "jobs retry only 408, 425, 429 and 5xx" to {
         for (status in listOf(408, 425, 429, 500, 502, 503, 504)) yes(Replies.worthRetry(status), "$status retries")
         for (status in listOf(400, 401, 403, 404, 413, 415, 422, 200)) yes(!Replies.worthRetry(status), "$status stops")

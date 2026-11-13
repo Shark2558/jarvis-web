@@ -275,3 +275,19 @@ def test_owner_steps_answer_the_review() -> None:
     flat = " ".join(text.split())
     assert "Test SOS" in flat and "never opens the text message app" in flat
     assert "unverified" in text.lower()
+
+
+# ---- the coordinator's press_id: the one optional field the SOS door accepts ----------------
+def test_the_sos_body_adds_press_id_and_no_other_field() -> None:
+    payloads = code(read(CORE / "Payloads.kt"))
+    sos = payloads[payloads.index("fun sos(") :]
+    assert 'fields.add("press_id" to pressId)' in sos
+    assert sos.count("fields.add(") == 5  # v, kind, at, location, press_id
+    assert "[A-Za-z0-9_-]{16,64}" in payloads
+    assert "press" in code(SOS) and ", if (k == SosKind.SAFE) null else press)" in code(SOS)
+
+
+def test_control_a_sixth_sos_field_is_caught() -> None:
+    sos = code(read(CORE / "Payloads.kt"))
+    sos = sos[sos.index("fun sos(") :] + ' fields.add("extra" to 1)'
+    assert sos.count("fields.add(") != 5

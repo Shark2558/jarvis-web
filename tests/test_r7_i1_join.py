@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -182,3 +183,33 @@ async def test_the_real_phone_part_offers_its_link_time_to_the_body_part(
     assert (await job.run([owner_uid()]))["told"] == 1
     (words,) = [m for _, sig, m in app.state.notify.sent if sig.kind == "watch_stale"]
     assert "linked" in words and "Sir" in words
+
+
+# ---- the app lock: every write the console sends by itself is a background write (C needs I1 7) -
+# I1 read every POST of every console file (A, B, C, D and the existing console). The ones the page
+# sends on a timer, on viewing or when a show ends by itself are below, with the file that sends
+# each; an owner's own press still counts as activity through the page's "I'm here" call.
+STATIC = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
+BACKGROUND = {
+    "/v1/book/show/beat": ("console-book.js", "'/v1/book/show/beat'"),  # the show's heartbeat
+    "/v1/brief/seen": ("console-brief.js", "'/v1/brief/seen'"),  # the brief looked at
+    "/v1/brief/generate": ("console-brief.js", "generate(false, 'open')"),  # made on opening
+    "/v1/book/show/speak": ("console-book-voice.js", "'/v1/book/show/speak'"),  # narration
+    "/v1/book/close": ("console-book-show.js", "'/v1/book/close'"),  # the show's own ending
+    "/v1/facegroups/import/step": ("console-r111-photos.js", "setTimeout(() => stepJob(false)"),
+    "/v1/session/app": ("console-r7-lock.js", "'/v1/session/app'"),  # marked at page load
+}
+
+
+def test_every_background_write_of_the_console_is_never_activity() -> None:
+    from jarvis.phone import applock
+
+    headers = [(b"x-requested-with", b"JARVIS")]
+    for path, (name, sent_by) in BACKGROUND.items():
+        assert sent_by in (STATIC / name).read_text(encoding="utf-8"), (path, name)
+        assert path in applock.BACKGROUND_WRITES, path
+        assert not applock.counts_as_activity("POST", path, headers), path
+    # an owner's write still counts, and so does the page's "I'm here" after a real touch
+    for path in ("/v1/notes", "/v1/session/here", "/v1/vision/results", "/v1/watch/sleep"):
+        assert applock.counts_as_activity("POST", path, headers), path
+        assert path not in applock.BACKGROUND_WRITES

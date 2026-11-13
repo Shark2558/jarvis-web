@@ -65,8 +65,20 @@ REGISTER = ("POST", "/v1/passkeys/register")
 REGISTER_WINDOW_S = 120.0
 ARMED_CACHE_S = 5.0
 SESSIONS_MAX = 256
-# writes the console sends by itself, on a timer or on viewing: never "the owner was here"
-BACKGROUND_WRITES = frozenset({"/v1/book/show/beat", "/v1/brief/seen"})
+# writes the console sends by itself, on a timer, on viewing or when a show ends by itself: never
+# "the owner was here" (I1 read every console POST; his own presses still count through
+# /v1/session/here, which the page sends after a real touch or key)
+BACKGROUND_WRITES = frozenset(
+    {
+        "/v1/book/show/beat",  # the show's heartbeat
+        "/v1/brief/seen",  # the brief was looked at
+        "/v1/brief/generate",  # today's brief made on opening the panel (and by "Make it now")
+        "/v1/book/show/speak",  # the show's narration, fetched line by line
+        "/v1/book/close",  # the show closing at its own end (and by End)
+        "/v1/facegroups/import/step",  # the photo import's next step, on a timer
+        "/v1/session/app",  # this session marked as the app's, at page load
+    }
+)
 # answered by Part C itself while locked (beyond the slot's own list, which already covers them)
 EXEMPT = frozenset({("POST", "/v1/session/unlock")})
 

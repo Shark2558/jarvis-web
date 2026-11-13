@@ -76,8 +76,12 @@ BODY_CAPS: Mapping[str, int] = {
     # installed yet, and that route discards the body unread (D15)
     SHARE_IN_PATH: 5 * 10 * _MB + 64 * 1024,
 }
-# a service only one part may offer
-SERVICE_OWNER: Mapping[str, PartName] = {"app_lock": "phone", "sos_hook": "body"}
+# a service only one part may offer (I1: `sos_contacts`, Part D's, read by Part C's hello)
+SERVICE_OWNER: Mapping[str, PartName] = {
+    "app_lock": "phone",
+    "sos_hook": "body",
+    "sos_contacts": "body",
+}
 LOCKED = "JARVIS is locked on this device. Unlock it with your passkey."
 UNREADABLE = "JARVIS couldn't check its lock just now. Try again in a moment."
 WS_LOCKED, WS_UNREADABLE = 4423, 4503

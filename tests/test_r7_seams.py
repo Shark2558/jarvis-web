@@ -334,20 +334,43 @@ async def running(s: Settings) -> AsyncIterator[tuple[FastAPI, AsyncClient]]:
             yield app, c
 
 
-async def test_the_app_starts_with_four_stub_parts_and_their_status_routes(
+async def test_the_app_starts_with_four_built_parts_and_their_status_routes(
     settings: Settings,
 ) -> None:
     async with running(settings) as (app, client):
         parts = app.state.r7_parts
         assert list(parts) == list(PARTS)
         assert all(isinstance(p, MobilePart) and p.name == n for n, p in parts.items())
+        assert all(p.ready != wiring.SETUP_FAILED for p in parts.values())  # I1: none left out
         for name in PARTS:
             r = await client.get(STATUS_ROUTE[name])
             assert r.status_code == 200, name
             assert r.json()["part"] == name and "ready" in r.json()
             assert r.headers["cache-control"] == "no-store"
         assert (await client.get("/v1/sos")).json()["part"] == "body"
-        assert wiring.door_handlers(app) == {}  # no part has built its handlers yet
+        # I1: every part is built: C's hello and inbox, D's health and sos (DOOR_OWNER)
+        handlers = wiring.door_handlers(app)
+        assert set(handlers) == {"hello", "inbox", "health", "sos"}
+        assert all(callable(h) for h in handlers.values())
+        for route in handlers:
+            assert route in (parts[DOOR_OWNER[route]].services.get("door") or {}), route
+
+
+# ---- I1 · the one name of the SOS contacts seam (Part D offers it, Part C's hello reads it) -----
+async def test_the_sos_contacts_seam_has_one_name_one_owner_and_one_reader(
+    settings: Settings,
+) -> None:
+    from jarvis.phone.handlers import SOS_SEAM
+
+    assert SOS_SEAM == "sos_contacts"  # what Part C's hello reads
+    assert wiring.SERVICE_OWNER["sos_contacts"] == "body"  # only Part D may offer it
+    async with running(settings) as (app, _):
+        parts = app.state.r7_parts
+        assert callable(parts["body"].services["sos_contacts"])
+        assert all("sos_contacts" not in p.services for n, p in parts.items() if n != "body")
+    stray = MobilePart("vision", services={"sos_contacts": _reply})
+    with pytest.raises(ValueError, match="services it doesn't own"):
+        wiring.check_part("vision", stray)
 
 
 def _tool(name: str, risk: ActionRisk = R1) -> Tool:
@@ -810,7 +833,7 @@ def test_the_guide_no_longer_names_capacitor_or_ml_kit_as_the_plan() -> None:
 
 
 # ---- 18 · the eval runner -----------------------------------------------------------------------
-def test_the_r7_runner_passes_with_its_contract_built_and_the_rest_stubs() -> None:
+def test_the_r7_runner_passes_with_every_server_and_app_part_built() -> None:
     run = subprocess.run(
         [sys.executable, str(ROOT / "evals" / "r7" / "run.py"), "--mock"],
         capture_output=True,
@@ -821,12 +844,16 @@ def test_the_r7_runner_passes_with_its_contract_built_and_the_rest_stubs() -> No
     assert run.returncode == 0, run.stdout[-4000:] + run.stderr[-4000:]
     report = json.loads((ROOT / "evals" / "r7" / "report.json").read_text(encoding="utf-8"))
     ids = {r["id"] for r in report["results"]}
-    for part in ("shell", "vision", "phone", "body", "needles"):
-        assert f"{part}:not_built_yet" in ids, part
-    assert any(i.startswith("contract:") and "not_built" not in i for i in ids)
+    built = ("shell", "vision", "phone", "body", "contract")  # I1: every part built
+    for part in built:
+        assert f"{part}:not_built_yet" not in ids, part
+        assert any(i.startswith(f"{part}:") for i in ids), part
+    assert "needles:not_built_yet" in ids  # I1 builds it next
     control = report["negative_control"]
-    assert control["suite_failed"] is True and control["failed_cases"]["contract"]
-    assert set(control["parts_not_built"]) == {"shell", "vision", "phone", "body", "needles"}
+    assert control["suite_failed"] is True
+    for part in built:
+        assert control["failed_cases"][part], part  # each part's own control fails it
+    assert set(control["parts_not_built"]) == {"needles"}
 
 
 def test_the_r7_suite_is_gated_in_run_all_mock() -> None:

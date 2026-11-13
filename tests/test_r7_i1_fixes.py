@@ -340,3 +340,19 @@ def test_the_vision_stamp_sees_a_swapped_file_even_with_its_name_size_and_time_r
     os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     after = console._vision_stamp(rel)  # noqa: SLF001
     assert after != before
+
+
+# ---- code L7: no function in the watch tools is over 50 lines -----------------------------------
+def test_every_function_in_the_watch_tools_is_under_fifty_lines() -> None:
+    import ast
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "watch" / "tools.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    long = [
+        f"{n.name} ({n.end_lineno - n.lineno + 1} lines)"  # type: ignore[operator]
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        and n.end_lineno - n.lineno + 1 >= 50  # type: ignore[operator]
+    ]
+    assert long == []

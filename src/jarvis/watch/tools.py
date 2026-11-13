@@ -64,32 +64,27 @@ def _guarded(svc: WatchService, read: Run) -> Callable[[dict[str, Any]], Awaitab
     return run
 
 
-def watch_tools(svc: WatchService) -> tuple[Tool, ...]:
-    async def last_night(uid: str) -> str:
-        return last_night_words(await svc.night(uid, svc.today()))
+async def _today_words(svc: WatchService, uid: str) -> str:
+    day = await svc.day(uid, svc.today())
+    state = await svc.state(uid)
+    local = state.last_sync.astimezone(svc.zone()) if state.last_sync else None
+    parts: list[str] = []
+    if day is not None and day.steps is not None:
+        src = source_of(day.steps.writer)
+        parts.append(f"Today so far: {day.steps.count:,} steps, {FROM[src]}.")
+    if day is not None and day.heart is not None:
+        h, src = day.heart, source_of(day.heart.writer)
+        parts.append(
+            f"Heart rate today: {h.min} lowest, {h.avg} average, {h.max} highest, "
+            f"{FROM[src]}. {ESTIMATE[src]}"
+        )
+    if not parts:
+        parts.append(NOTHING_TODAY)
+    parts.append(synced_words(state, local))
+    return " ".join(parts)
 
-    async def this_week(uid: str) -> str:
-        return week_words(await svc.week(uid, svc.today()))
 
-    async def today(uid: str) -> str:
-        day = await svc.day(uid, svc.today())
-        state = await svc.state(uid)
-        local = state.last_sync.astimezone(svc.zone()) if state.last_sync else None
-        parts: list[str] = []
-        if day is not None and day.steps is not None:
-            src = source_of(day.steps.writer)
-            parts.append(f"Today so far: {day.steps.count:,} steps, {FROM[src]}.")
-        if day is not None and day.heart is not None:
-            h, src = day.heart, source_of(day.heart.writer)
-            parts.append(
-                f"Heart rate today: {h.min} lowest, {h.avg} average, {h.max} highest, "
-                f"{FROM[src]}. {ESTIMATE[src]}"
-            )
-        if not parts:
-            parts.append(NOTHING_TODAY)
-        parts.append(synced_words(state, local))
-        return " ".join(parts)
-
+def _note_tool(svc: WatchService) -> Tool:
     async def note(args: dict[str, Any]) -> dict[str, Any]:
         if not svc.enabled:
             return {"message": SWITCHED_OFF, "unavailable": True}
@@ -101,56 +96,74 @@ def watch_tools(svc: WatchService) -> tuple[Tool, ...]:
             return {"message": str(exc), "unavailable": True}
         return {"message": noted_words(night)}
 
+    return Tool(
+        "sleep_note",
+        "Keep the time he says he slept last night (his own words, 24-hour HH:MM), marked "
+        "'typed by you'. Only when he says it himself.",
+        {
+            "type": "object",
+            "properties": {"start": _HHMM, "end": _HHMM},
+            "required": ["start", "end"],
+            "additionalProperties": False,
+        },
+        R2,
+        note,
+        agent=AGENT,
+        summary_template="Note that you slept {start} to {end}",
+        trusted_output=True,
+        activity_words="Noted a sleep time you typed",
+    )
+
+
+def _read_tool(svc: WatchService, name: str, about: str, read: Run, shown: str) -> Tool:
+    """One of the three reads: no arguments, his own numbers in JARVIS's words."""
+    return Tool(
+        name,
+        about,
+        _NONE,
+        R1,
+        _guarded(svc, read),
+        agent=AGENT,
+        trusted_output=True,
+        activity_words=shown,
+    )
+
+
+def watch_tools(svc: WatchService) -> tuple[Tool, ...]:
+    async def last_night(uid: str) -> str:
+        return last_night_words(await svc.night(uid, svc.today()))
+
+    async def this_week(uid: str) -> str:
+        return week_words(await svc.week(uid, svc.today()))
+
+    async def today(uid: str) -> str:
+        return await _today_words(svc, uid)
+
     return (
-        Tool(
+        _read_tool(
+            svc,
             "sleep_last_night",
-            "How he slept last night: minutes, times, whether the watch or the phone measured it, "
-            "and stages when the watch wrote them. Estimates, never a diagnosis.",
-            _NONE,
-            R1,
-            _guarded(svc, last_night),
-            agent=AGENT,
-            trusted_output=True,
-            activity_words="Read last night's sleep",
+            "How he slept last night: minutes, times, whether the watch or the phone measured "
+            "it, and stages when the watch wrote them. Estimates, never a diagnosis.",
+            last_night,
+            "Read last night's sleep",
         ),
-        Tool(
+        _read_tool(
+            svc,
             "sleep_week",
             "His last 7 nights: average sleep and the spread of bedtimes. Estimates only.",
-            _NONE,
-            R1,
-            _guarded(svc, this_week),
-            agent=AGENT,
-            trusted_output=True,
-            activity_words="Read this week's sleep",
+            this_week,
+            "Read this week's sleep",
         ),
-        Tool(
+        _read_tool(
+            svc,
             "watch_today",
-            "Today's steps and heart rate (lowest, average, highest) from his watch or phone, and "
-            "when the phone last synced.",
-            _NONE,
-            R1,
-            _guarded(svc, today),
-            agent=AGENT,
-            trusted_output=True,
-            activity_words="Read today's steps and heart rate",
+            "Today's steps and heart rate (lowest, average, highest) from his watch or phone, "
+            "and when the phone last synced.",
+            today,
+            "Read today's steps and heart rate",
         ),
-        Tool(
-            "sleep_note",
-            "Keep the time he says he slept last night (his own words, 24-hour HH:MM), marked "
-            "'typed by you'. Only when he says it himself.",
-            {
-                "type": "object",
-                "properties": {"start": _HHMM, "end": _HHMM},
-                "required": ["start", "end"],
-                "additionalProperties": False,
-            },
-            R2,
-            note,
-            agent=AGENT,
-            summary_template="Note that you slept {start} to {end}",
-            trusted_output=True,
-            activity_words="Noted a sleep time you typed",
-        ),
+        _note_tool(svc),
     )
 
 

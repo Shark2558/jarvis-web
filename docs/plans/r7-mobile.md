@@ -697,9 +697,10 @@ secret-shaped string.
     SDK Build Tools 36.0.0, **JDK 17** as the minimum and the default, and API 37 as the highest [S36]. So:
     **Android Gradle plugin 9.5.1**, one number everywhere in this plan.
   - **Gradle 9.6.0** through the wrapper. I0 took the wrapper scripts and jar from Gradle's own GitHub tag
-    `v9.6.0` (CI's wrapper validation checks the jar). `distributionSha256Sum` is **not pinned yet**: Gradle's
-    checksum file is on services.gradle.org, refused here. CI's `wrapper-pin` job prints the official sum and
-    fails until Part E writes it into `gradle-wrapper.properties` (I0-NOTES.md, "What CI must prove").
+    `v9.6.0` (CI's wrapper validation checks the jar). `distributionSha256Sum` is pinned: Gradle's checksum
+    file is on services.gradle.org, refused here, so CI's `wrapper-pin` job read the official sum on its first
+    run (13 Nov 2026) and I0 wrote it in; the job checks it on every run. That first run also proved Gradle
+    9.6.0 on JDK 17 and that both plugin pins (AGP 9.5.1, Kotlin 2.4.10) resolve (I0-NOTES.md, section 4).
   - **Kotlin.** AGP 9 compiles Kotlin itself ("built-in Kotlin", which needs KGP 2.2.10 or newer) and uses its
     new DSL by default. So `app` applies no `org.jetbrains.kotlin.android` plugin and has no `kotlinOptions {}`
     block; compiler options go in `kotlin { compilerOptions { … } }`. A higher Kotlin Gradle plugin on the
@@ -1304,10 +1305,10 @@ Each line ends with the exact check you do.
 - **Play Protect and "restricted settings"** when installing by hand on your Android version (third-party
   reports say Android 15 guards SMS access for such apps [S30]; R7 asks for none). *Check:* step C8.
 - **The Android toolchain pins**: AGP 9.5.1, Gradle 9.6.0 and Kotlin 2.4.10 are confirmed on Google's pages
-  (13 Nov 2026), but nothing has resolved them yet; `distributionSha256Sum` is not pinned; whether Studio's
-  Java 25 runs Gradle 9.6 is not stated anywhere; `compileSdk` 36 and every library on Google's Maven are
-  Part E's. *Check:* CI's `resolveDependencies` step (it resolves the two plugins from I0 on); CI's
-  `wrapper-pin` job (it prints the sum to pin); CI's first green build; your step C3.
+  (13 Nov 2026), and CI's first run (I0) resolved both plugins and ran Gradle 9.6.0 on JDK 17 with the
+  wrapper's sum pinned. Still open: whether Studio's Java 25 runs Gradle 9.6 (stated nowhere), and
+  `compileSdk` 36 and every library on Google's Maven (Part E's). *Check:* CI's `resolveDependencies` step
+  once Part E's modules exist; CI's first green build; your step C3.
 - **Adding a passkey from the phone** when the existing one is on the laptop. *Check:* step C12.
 - **The menu words** for building the app in Rabbit 2 (step C5) and the battery setting on OxygenOS (step
   C14). *Check:* I0 against Rabbit 2; your phone.
@@ -1508,4 +1509,4 @@ the place for both.
 | v7.0.1 | 12 Nov 2026, 07:28 IST | R7 | First edition: goal and limits, the eight deliverables mapped, findings from the code with file:line, the decision record for the shell with its evidence table (a Trusted Web Activity inside a small native app, not Capacitor), D0–D26, data model, modules, server changes, the A–E split with each part's files, the I0 seams with every pinned test they touch, tests and evals with negative controls, acceptance, the owner's numbered steps, 17 owner questions with safe defaults, cost in ₹, risks, what is deferred, what is not verified live, Appendix A (52 vision use cases that need no new camera) and the sources | 🛠 Mark XV |
 | v7.0.2 | 12 Nov 2026, 08:05 IST | R7 | The owner's first answers (phone on Android 16 with Chrome; Android Studio Rabbit 2, 2026.2.2 Patch 1; a Noise watch; DigiLocker has Share) and what the research found about the watch and Health Connect (the maker names only Google Fit; Fit's APIs end with 2026; unverified bridge); sources S48, S49 | 🛠 Mark XV |
 | v7.0.3 | 12 Nov 2026, 16:15 IST | R7 | Review 1 written in (A1–A10, every B line re-read on `r11-1-i1` @ `bbe056d`, the C seams 20–27, gaps, owner steps and split, D's 24 hand-held vision rows, E's answers): Health Connect read without double-counting and NoiseFit's own connection, the app lock's five 423 readers and its default, SOS's own test budget and its recorded exception, launch addresses that never start the mic, the package `io.github.shark2558.jarvis`, one AGP pin, ₹ only, G0 on `main` | 🛠 Mark XV |
-| v7.0.4 | 13 Nov 2026, 16:40 IST | R7 | Ready for the parts: G0 met (`main` @ `5519e2d`, v11.1.1, merged into `r7-i0`); every file:line re-read on `5519e2d` (the moved lines corrected: `app.py:558–569`, `pictures.py:50`, `console-r111-files.js:184`/`:310`, `console.js:745`, `r11_1_wiring.py:100–148`, `brief/service.py:691–697`; sizes; `test_r11_1_seams.py:73` also pins the version; the guide's L1874); D23's pins confirmed on Google's pages (Rabbit 2 → AGP 7.1–9.5; AGP 9.5.1, Gradle 9.6.0, JDK 17, API 37; Kotlin 2.4.10 for `core`; JDK 25 not stated, so CI on 17 and Studio's Gradle JDK as the fallback; `distributionSha256Sum` left to CI), sources S36 and S50; Health Connect: NoiseFit writes steps and calories (13 Nov 15:19 IST), sleep and heart rate still to be seen; the workspace re-measured; Appendix A's 24 hand-held rows settled; the owner's defaults (package, version) stand; the I0 seams built (I0-NOTES.md) | 🛠 Mark XVI |
+| v7.0.4 | 13 Nov 2026, 16:40 IST | R7 | Ready for the parts: G0 met (`main` @ `5519e2d`, v11.1.1, merged into `r7-i0`); every file:line re-read on `5519e2d` (the moved lines corrected: `app.py:558–569`, `pictures.py:50`, `console-r111-files.js:184`/`:310`, `console.js:745`, `r11_1_wiring.py:100–148`, `brief/service.py:691–697`; sizes; `test_r11_1_seams.py:73` also pins the version; the guide's L1874); D23's pins confirmed on Google's pages (Rabbit 2 → AGP 7.1–9.5; AGP 9.5.1, Gradle 9.6.0, JDK 17, API 37; Kotlin 2.4.10 for `core`; JDK 25 not stated, so CI on 17 and Studio's Gradle JDK as the fallback; `distributionSha256Sum` pinned from CI's first run, which also resolved both plugins on JDK 17), sources S36 and S50; Health Connect: NoiseFit writes steps and calories (13 Nov 15:19 IST), sleep and heart rate still to be seen; the workspace re-measured; Appendix A's 24 hand-held rows settled; the owner's defaults (package, version) stand; the I0 seams built (I0-NOTES.md) | 🛠 Mark XVI |

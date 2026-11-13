@@ -756,6 +756,7 @@ def test_the_android_workflow_proves_without_secrets() -> None:
     assert "java-version: '17'" in wf  # D23: CI runs Gradle on JDK 17
     props = _text(ROOT / "android" / "gradle" / "wrapper" / "gradle-wrapper.properties")
     assert "gradle-9.6.0-bin.zip" in props
+    assert re.search(r"^distributionSha256Sum=[0-9a-f]{64}$", props, re.M)  # CI's first run read it
     for name in ("gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar"):
         assert (ROOT / "android" / name).is_file(), name
 

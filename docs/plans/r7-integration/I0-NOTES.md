@@ -139,7 +139,7 @@ Tests first: `tests/test_r7_seams.py` (94 cases with the hook file) and
     `build.gradle.kts` (the two plugins declared once, `resolveDependencies`), `gradle.properties`,
     `gradle/libs.versions.toml` (AGP 9.5.1, Kotlin 2.4.10, once), `version.properties`
     (versionCode 1), the wrapper scripts and jar from Gradle's tag `v9.6.0` and
-    `gradle-wrapper.properties` (Gradle 9.6.0; no `distributionSha256Sum`: see section 4).
+    `gradle-wrapper.properties` (Gradle 9.6.0, with the `distributionSha256Sum` CI read: section 4).
 17. The guide (v7.0.1): cards C62–C65, PLANNED, with what I0 built; the Mobile departure (a Trusted
     Web Activity, instead of Capacitor); L196 unchanged (it is right); the phases table, the
     decisions log (the R6.1 row reworded, an R7 row), the roadmap (R7, and R8 without ML Kit), the
@@ -183,15 +183,17 @@ what CI or the owner's Studio proves.
 Refused from this workspace (13 Nov 2026): Google's Maven, Gradle's distributions and plugin
 portal, Maven Central, developer.android.com and storage.googleapis.com. So:
 
-- **`distributionSha256Sum`** for `gradle-9.6.0-bin.zip`: not pinned. CI's `wrapper-pin` job prints
-  the official sum (from `services.gradle.org`) and **fails until it is written** into
-  `android/gradle/wrapper/gradle-wrapper.properties`. Part E's first CI round pins it.
+- **`distributionSha256Sum`** for `gradle-9.6.0-bin.zip`: CI's first run on `r7-i0` (run
+  `43414082880`, commit `6d0c34b`) read the official sum from `services.gradle.org`
+  (`bbaeb2fe…2a529a01`), failed `wrapper-pin` by design, and I0 pinned that value; the job checks it
+  on every run.
 - **The wrapper jar**: taken from Gradle's tag `v9.6.0` (SHA-256 `497c8c2a…a9c7`; it is the jar of
   9.6.0-rc-3, which that tag's own wrapper uses). CI's `gradle/actions/wrapper-validation` checks it
   against Gradle's known sums.
-- **AGP 9.5.1 and Kotlin 2.4.10 exist and resolve**: CI's `resolveDependencies` step (from I0 on it
-  resolves the two plugins; Part E's modules add every library: android-browser-helper 2.7.4,
-  AndroidX, Health Connect 1.1.x).
+- **AGP 9.5.1 and Kotlin 2.4.10 exist and resolve: proven** by that same run's `build` job (green in
+  52 s): the wrapper jar validated, Gradle 9.6.0 downloaded and ran on Temurin JDK 17.0.21, and the
+  root project's plugin block resolved both pins ("BUILD SUCCESSFUL"). Still for CI: every library
+  once Part E's modules use them (android-browser-helper 2.7.4, AndroidX, Health Connect 1.1.x).
 - **JDK 25**: Google's pages do not state it is supported. CI runs on JDK 17. The owner's first
   Studio sync (step C3) is the proof; the fallback is Studio's Gradle JDK 17 or 21.
 - **The Android build itself**, lint, the JVM tests, `apk_check.py` and the merged manifest's
@@ -201,8 +203,8 @@ portal, Maven Central, developer.android.com and storage.googleapis.com. So:
 - **The menu words** for "Build APK(s)" in Rabbit 2 (owner step C5) and OxygenOS's battery setting
   (step C14): not checked here.
 
-The first push of I0 runs `android.yml` (it touches `android/**`): the `wrapper-pin` job is
-expected to fail by design, and the `build` job proves the wrapper and the two plugin pins.
+The first push of I0 ran `android.yml` (it touches `android/**`): `build` passed and `wrapper-pin`
+failed by design, printing the sum; the next push carries the pin.
 
 ## 5. For the owner
 

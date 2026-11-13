@@ -6,9 +6,9 @@
 # Order: validate the wrapper; resolve EVERY dependency first (android-browser-helper and AndroidX live on
 # Google's Maven, and a GitHub tag does not prove an artifact exists there); then, once Part E's modules
 # exist: lint, the JVM tests, the `personal` build and scripts/apk_check.py. JDK 17 runs Gradle (AGP 9.5's
-# minimum and default; the image also carries 21). The `wrapper-pin` job fails until gradle-wrapper.properties
-# carries the official distributionSha256Sum, which it prints (the workspace that wrote this could not
-# reach services.gradle.org).
+# minimum and default; the image also carries 21). The `wrapper-pin` job checks gradle-wrapper.properties'
+# distributionSha256Sum against the official sum on services.gradle.org (it printed the sum on its first run,
+# because the workspace that wrote this could not reach that host, and I0 pinned it from there).
 name: android
 on:
   push:

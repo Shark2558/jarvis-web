@@ -1,4 +1,4 @@
-Version v7.0.1 · 13 Nov 2026, 16:50 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVI
+Version v7.0.2 · 13 Nov 2026, 18:30 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVI
 
 # R7 — I0 notes (the joins for "Mobile, watch and phone camera")
 
@@ -214,7 +214,34 @@ sleep or heart-rate entry after a night with the watch on, and App priority with
 (steps A1, A2); the emergency contacts (question 4); and, after the first CI run, nothing for him
 unless the first Studio sync stops on the Java version (step C3 says what to set).
 
-## 6. Sizes after I0
+## 6. The checks (in order, one at a time)
+
+| Check | Result |
+|---|---|
+| Unit suite, Python 3.12 (whole, from the repository root) | 13,747 passed, 120 skipped at `7da2eb0` (the first run after the seams found 25 failures: 22 pinned tests to move and three real defects, below) |
+| Unit suite, Python 3.11 | 13,748 passed, 119 skipped at `7da2eb0` (the same at `d3b233c`) |
+| `ruff check src tests`, `ruff format --check src tests` | clean (1,430 files) |
+| `mypy src` | 9 errors: the 9 old ones (one new error, the snapshot's suffix tuple, was fixed) |
+| `evals/run_all_mock.py` | ALL MOCK EVALS: PASS; the phase0 smoke fails by design (8 of its cases); `r7 (gated)` 15/15 with its control failing |
+| `scripts/check_doc_versions.py` | 27 documents pass |
+| `scripts/arch_coverage.py` | OK: 61 packages and modules, 90 console modules, 2 Scheduler jobs, 30 outside services, 90 collections |
+| `scripts/markdy_export.py --check` | 14 diagrams, 0 problems |
+| `python -m jarvis.buildbook.gen --check` | the book is "R7"; two builds byte-identical |
+| Browser: `test_r7_i0_sheet.py`, `test_ui_audit.py`, `test_dock_fit.py`, `test_alerts.py`, `test_r51_dock.py` | 171 passed |
+| Browser: the other files the console changes touch (console, attach, R11.1 files, the four Helpers tabs and paused lines, permissions, the book lock, boot, R6 seams) | 106 passed (one timeout under load re-ran green alone) |
+| CI `android.yml` | run `43414082880`: `build` green, `wrapper-pin` red by design (it printed the sum); run `43416013994`: both green |
+
+Three real defects the checks found, fixed in I0:
+
+1. `PermissionsPatch.groups` was capped at 48 entries: with R7's 49 rows a patch naming every row
+   (what "set all" sends) would have been refused. The cap is 51 (two to spare, as before).
+2. With the More sheet built by script, the dock's pre-fit clip in `console-deck.css` no longer
+   matched, so every tab could paint past the dock for a frame before `console-dock.js` ran. The
+   rule now also matches a sheet with no entries yet.
+3. The permissions eval's samples (`evals/permissions/suites.py`) had no case for the new rows
+   (a `KeyError`); one sample each now.
+
+## 7. Sizes after I0
 
 | File | Lines | Guard |
 |---|---|---|
@@ -224,6 +251,7 @@ unless the first Studio sync stops on the Java version (step C3 says what to set
 | `src/jarvis/tools/gateway.py` | 760 | ≤ 760 (unchanged) |
 | `src/jarvis/core/brain.py` | 704 | ≤ 770 (unchanged) |
 | `src/jarvis/api/static/console-dock.js` | 283 | ≤ 800 |
+| `src/jarvis/api/static/console-deck.js` | 596 | ≤ 800 |
 | new stylesheets (four stubs) | 2 each | ≤ 150 (≤ 300 for any new CSS) |
 
 ## Change log
@@ -231,3 +259,4 @@ unless the first Studio sync stops on the Java version (step C3 says what to set
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v7.0.1 | 13 Nov 2026, 16:50 IST | R7 | First edition: the base and the merge, the 37 stale lines found in the plan v7.0.3 and their fixes, what I0 built for each of the 27 seams (and where it placed what the plan left open), what only CI or the owner's Studio can prove, the owner's open points, the sizes after I0 | 🛠 Mark XVI |
+| v7.0.2 | 13 Nov 2026, 18:30 IST | R7 | The checks and their numbers, the three real defects they found (the permissions patch cap, the dock's pre-fit clip, the permissions eval's samples) and what CI's first two Android runs proved (the wrapper jar, Gradle 9.6.0 on JDK 17, both plugin pins, the distribution's sum, now pinned) | 🛠 Mark XVI |

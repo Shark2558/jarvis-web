@@ -1,4 +1,4 @@
-Version v7.0.1 · 13 Nov 2026, 20:05 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v7.0.2 · 13 Nov 2026, 22:40 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
 
 # R7 — Part E, the Android app: what was built, what CI proved, what I1 needs
 
@@ -26,7 +26,7 @@ in Android Studio on his laptop (`OWNER-STEPS.md`).
 | The DigiLocker folder (one picked folder, hourly, three files a run, each once) | built | `inbox/*.kt` |
 | `scripts/apk_check.py` (standard library only; decodes the binary manifest itself) | built, CI-proved on the real APK and against Gradle's merged manifest | `scripts/apk_check.py` |
 | `android.yml` (resolve, JVM tests, `personal` build, merged manifest, apk_check, lint, artifact "not for installing", the controls job) | built, green | `.github/workflows/android.yml` |
-| Python static tests of the manifest, the Gradle files, the Kotlin sources, the workflow and apk_check | built: 117 tests | `tests/test_r7_e_*.py` |
+| Python static tests of the manifest, the Gradle files, the Kotlin sources, the workflow and apk_check | built: 165 tests (after the review follow-ups) | `tests/test_r7_e_*.py` |
 | `OWNER-STEPS.md` | written | this folder |
 
 ## 2. What CI proved (no secret, placeholder host `jarvis.invalid`, a throwaway debug key)
@@ -53,8 +53,8 @@ plus WorkManager's network state, wake lock and boot, and AndroidX core's own si
 
 | Check | Result |
 |---|---|
-| `pytest tests/test_r7_e_*.py` | 117 passed (apk_check 33, sources 25, manifest 17, gradle 12, workflow 6) |
-| Guard tests (`test_r7_seams.py`, `test_r7_telegram_hook.py`, `test_r11_1_seams.py`, `test_arch_coverage.py`, `test_telegram_tool_guard.py`) with Part E's | 346 passed |
+| `pytest tests/test_r7_e_*.py` | 165 passed (apk_check 69, review fixes 28, sources 29, manifest 19, gradle 14, workflow 6) |
+| Guard tests (`test_r7_seams.py`, `test_r7_telegram_hook.py`, `test_r11_1_seams.py`, `test_arch_coverage.py`, `test_telegram_tool_guard.py`) with Part E's | 393 passed before the last follow-up commit (the one runner-pin guard stays red by design: I1 updates it) |
 | `ruff check` / `ruff format --check` on `src tests evals scripts` | clean (1,538 files) |
 | `mypy src` | 9 errors in 3 files: the 9 pre-existing ones (Part E changes no file in `src`) |
 | `evals/r7/run.py --mock --part contract` | 10/10; its control fails it. Part E has no eval part of its own (the runner has none); its proofs are CI's |
@@ -112,6 +112,22 @@ plus WorkManager's network state, wake lock and boot, and AndroidX core's own si
 9. I1: the `security-reviewer` pass on the manifest, the exported parts and the signed client (the plan's
    review for Part E).
 
+10. Part D and I1: the SOS body gains ONE optional field, `press_id` (a string of 16 to 64 characters from
+    `A-Z a-z 0-9 _ -`; the app sends a random UUID without braces, the same value for every retry of one
+    press, for `real` and `test` only, never for `safe`). Part D's door accepts it and dedupes on it; I1 adds
+    it to `phone-contract.md` section 3 (`sos`). The phone also keeps its own rule: one press, at most one
+    send, whatever the server does. A 422 from the SOS door reads "JARVIS did not accept that, Sir. Please
+    text your family or call 112." and leaves the 112 and text-message buttons on screen.
+11. I1 (the repository's `render.yaml`, not Part E's file): lines 5 and 19 carry a real host name
+    (`jarvis-…onrender.com`). The decision record says the address is never in the repository: the owner
+    decides whether to take it out (an environment value instead). apk_check now fails on any such host in
+    the app, but it cannot read `render.yaml`.
+12. Owner decision (written here because D19 is silent): **leaving the SOS screen for good during the
+    countdown cancels it** and says "Cancelled. Nothing was sent." (the countdown is the owner's cancel
+    window; the safe default). The screen stays on during the countdown, and Home alone does not cancel.
+    If the owner prefers that a killed screen still sends, the alternative is a one-time background job on
+    expiry; it was not built.
+
 ## 6. Deviations from the plan, with reasons
 
 1. **`core`'s JVM tests use a small runner of their own** (`:core:jvmTests`, a `main` that runs every case
@@ -162,8 +178,37 @@ plus WorkManager's network state, wake lock and boot, and AndroidX core's own si
 - The app's speed and battery use, the fonts on the phone's screen, and the screens' look at the phone's
   size (no visual gate exists for native screens).
 
+## 8. Review follow-ups (v7.0.2)
+
+Two fresh-context reviews of `a637489` (code: H1, M1-M3, L1-L6; security: M1, M2, L1-L6, I1-I3). CI runs:
+`43446622573` (round 1, green: `core` 78/78, `apk_check` passed with the new filter rules, lint, controls)
+and `43447378090` (final, on `8ca2192`, the last commit that touches `android/`; green, all three jobs: `core` 80/80, `apk_check` passed, lint, the four controls still make `core` fail, `wrapper-pin`). Commits after it are documents only, which the workflow does not run on. Commits: `c44a901` apk_check, `f47e3eb` core, `8ef0055` app,
+`5423394` OWNER-STEPS, `8ca2192` press_id.
+
+| Finding | Result |
+|---|---|
+| Code H1, stale SOS screen | Fixed in `8ef0055`, `f47e3eb`: `onNewIntent` restarts a finished or cancelled screen; a real countdown or send stands (`SosPress.startsFresh`, core-tested); a real press replaces a test countdown. Static test + control |
+| Code M1, recreation mid-SOS | Fixed: `configChanges` widened (uiMode, density, fontScale, locale, layoutDirection, colorMode, keyboard, navigation); the machine is saved and restored; a process-wide `PressLedger` lets a press id send once; the last sent press id is kept in the app's prefs. Core tests: a recreated machine in Sending or Sent never sends again; a countdown that ran out unseen is not fired late |
+| Code M2, 112 and SMS hidden; silent keyguard refusal | Fixed: 112, text message and first contact are outside the hidden block, on screen at every moment (the text message hidden only in a test); `onDismissCancelled`/`onDismissError` say "Please unlock the phone to do that…" |
+| Code M3, sec L2, L3 (clock, error mapping, retries) | Fixed: `Replies` (core): 401 (clock hint over 120 s from the `Date` header), 403, 404, 413, 429, 408/425, 5xx, other 4xx each have a sentence; workers retry only 408/425/429/5xx and network errors; the set-up and SOS screens show the sentence; after three 401s: "This phone needs linking again, Sir.", jobs stop, the link is kept. The SOS send still tries (it is not a job). A network error on the SOS says it may have gone |
+| Code L1, backfill lost | Fixed: the sync time is stamped only on a send |
+| Code L2, isPhone comment | Fixed: comment now true; test for an unknown writer alone (stays "other"; Needs I1 item 5) |
+| Code L3, sec L3, folder 4xx | Fixed: `Inbox.fate`: marked only on success or 400/413/415/422 (with a plain note); 401/403/404/408/425/429/5xx leave the file for the next run |
+| Code L4, lock-screen tile | Fixed in OWNER-STEPS: marked unverified, with a step to try it |
+| Code L5, input and cancel details | (a) any white space dropped from a pasted code; (b) a toast "Cancelled" when leaving during the countdown; (c) `InterruptedException` and the Health Connect timeout now give `retry()`. Fixed |
+| Code L6, OWNER-STEPS | Fixed in v7.0.2: section B restored so the letters run A to H; App priority is A2; a new laptop or key; the USB install on the OnePlus (wording marked not checked); what to see after each step; the missing background switch; what Test SOS shows |
+| Sec M1, filters | Fixed: each own reachable part has its exact intent filters in `REACHABLE`; no reachable part (a library's too) may carry BROWSABLE or address data. Controls: an App Link on the icon, an extra action, a wider share type, a missing filter |
+| Sec M2, exported | Fixed: only the literal `false` is private; control: `@bool` on SosActivity. The decoder-versus-merged check now covers filters too |
+| Sec L1, hosts and secrets | Fixed in apk_check: more private-hosting suffixes, user-name URLs, any dotted name with a public suffix in resource files, Slack, JWT and Stripe shapes; a repository test applies the same host rule to every `android/` file. `render.yaml`: Needs I1 item 11 |
+| Sec L4, safe after a test | Fixed: hidden and refused in a test |
+| Sec L5, screen and cancel | Fixed: the screen stays on during the countdown; leaving cancels (owner decision, item 12) |
+| Sec L6, sealed contacts | Fixed: cleared when the answer has no contacts or no `sos` part, and in `forgetLink()` |
+| Sec I1-I3 | No change (recorded by the reviewer) |
+| Not built: `forgetLink()` has no button | The link is only forgotten by code; "needs linking again" asks for a new code instead. Declined: no screen asked for it |
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v7.0.2 | 13 Nov 2026, 22:40 IST | R7 | Review follow-ups (section 8): every finding of the code and security reviews fixed or declined with a reason; `press_id` and the SOS 422 (Needs I1 10); `render.yaml`'s host (11); the cancel-on-leaving owner decision (12); CI runs `43446622573` and `43447378090` | 🛠 Mark XVII |
 | v7.0.1 | 13 Nov 2026, 20:05 IST | R7 | First edition: what Part E built, the three CI rounds and what each proved (runs 43439904145, 43441109044, 43442154933), the checks run here, the contract as the app uses it, nine items for I1, eleven deviations with their reasons, and what only the phone can show | 🛠 Mark XVII |

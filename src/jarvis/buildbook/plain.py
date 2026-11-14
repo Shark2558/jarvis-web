@@ -199,6 +199,16 @@ ALERT_WORDS: Mapping[str, str] = MappingProxyType(
         "sos_contact_left": "An emergency contact left",
         "phone_unlinked": "A phone was unlinked",
         "watch_stale": "The watch has not synced for a day",
+        # R14 D6: JARVIS's own health and its backups
+        "job_failing": "Background jobs keep failing",
+        "clock_stopped": "One of JARVIS's clocks stopped",
+        "brief_missed": "The morning brief was not made",
+        "errors_piling": "Errors are piling up",
+        "spend_spike": "A day's AI spend is far above normal",
+        "deploy_changed": "A new version of JARVIS is live",
+        "backup_problem": "A backup or the restore drill has a problem",
+        "selfwatch_ok": "JARVIS has recovered",
+        "backup_ok": "The monthly restore drill passed",
     }
 )
 

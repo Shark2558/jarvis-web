@@ -138,8 +138,8 @@ def test_the_console_passkey_helper_allows_the_book_purposes() -> None:
 def test_three_book_kinds_make_twenty_three() -> None:
     kinds = get_args(AlertKind)
     # R11 added thirteen helper kinds after them (tests/test_r11_seams.py): 36; R11.1 two: 38; R7
-    # five: 43 in all
-    assert set(BOOK_KINDS) <= set(kinds) and len(kinds) == len(set(kinds)) == 43
+    # five: 43; R14 nine: 52 in all
+    assert set(BOOK_KINDS) <= set(kinds) and len(kinds) == len(set(kinds)) == 52
     assert set(DEFAULT_URGENCY) == set(kinds)
 
 

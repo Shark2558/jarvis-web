@@ -161,8 +161,9 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     # R5.1 added home_offline_idle (19 -> 20)
     # R6 added book_sealed/book_seal_failed/book_session_closed (20 -> 23)
     # R11 added the thirteen helper kinds (23 -> 36; tests/test_r11_seams.py) and R11.1 two more
-    # (36 -> 38; tests/test_r11_1_seams.py), R7 five (38 -> 43; tests/test_r7_seams.py)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 43
+    # (36 -> 38; tests/test_r11_1_seams.py), R7 five (38 -> 43; tests/test_r7_seams.py), R14
+    # nine (43 -> 52; tests/test_r14_seams.py)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 52
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -865,6 +866,7 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         "watch",
         "sos",
         "vision",
+        "backup_probe",  # R14: the backup canary's sealed nonce (tests/test_r14_seams.py)
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):

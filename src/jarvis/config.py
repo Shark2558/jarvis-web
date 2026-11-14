@@ -10,7 +10,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -539,6 +539,62 @@ class Settings(BaseSettings):
     app_share_enabled: bool = Field(
         default=True, description="JARVIS in Android's share sheet (the share tray, D15)"
     )
+    # R14 (docs/plans/r14-hardening.md seam 5): self-health (D5-D7), backups and the drill (D3,
+    # D4), the turn's tools and the token ledger (D8, D9), the UPI cap (D13). Nothing here spends
+    # money: backups exist only after the owner's one-time step; `DRILL_DB` is never a setting.
+    selfwatch_enabled: bool = Field(default=True, description="JARVIS watches itself (D5)")
+    selfwatch_fail_streak: int = Field(default=3, ge=2, le=10, description="Failed runs in a row")
+    selfwatch_errors_per_hour: int = Field(
+        default=30, ge=5, le=500, description="ERROR log records in an hour before he is told"
+    )
+    selfwatch_brief_grace_min: int = Field(
+        default=60, ge=15, le=240, description="Minutes after his brief time before 'not made'"
+    )
+    selfwatch_spike_factor: float = Field(
+        default=3.0, ge=1.5, le=10.0, description="A day's AI spend over N x the 14-day average"
+    )
+    selfwatch_spike_min_inr: int = Field(
+        default=50, ge=10, le=1_000, description="...and at least this many rupees"
+    )
+    cloud_run_revision: str | None = Field(
+        default=None,
+        max_length=120,
+        validation_alias=AliasChoices("K_REVISION", "cloud_run_revision"),
+        description="Cloud Run's own K_REVISION (S5): a new one is a new version live",
+    )
+    backup_checks_enabled: bool = Field(
+        default=True, description="Read the backups' list and the canary daily (D4)"
+    )
+    backup_max_age_h: int = Field(
+        default=36,
+        ge=25,
+        le=200,
+        description="Hours without a newer READY backup before he is told",
+    )
+    backup_drill_enabled: bool = Field(default=True, description="The monthly restore drill (D4)")
+    backup_drill_day: int = Field(default=1, ge=1, le=28, description="Day of the month it runs")
+    backup_drill_max_inr: int = Field(
+        default=100, ge=10, le=1_000, description="A drill never starts above this estimate"
+    )
+    backup_drill_manual_per_month: int = Field(
+        default=2, ge=0, le=4, description="Drills he may start himself in a month (a card each)"
+    )
+    tool_offer: Literal["by_skill", "all"] = Field(
+        default="by_skill", description="Send only the turn's skills' tools; 'all' = before R14"
+    )
+    tool_offer_sticky_s: int = Field(
+        default=300, ge=0, le=3_600, description="The last turn's tools stay offered this long"
+    )
+    history_tool_result_chars: int = Field(
+        default=2_000, ge=500, le=12_000, description="An earlier turn's tool result is cut to this"
+    )
+    cache_history: bool = Field(
+        default=True, description="Anthropic only: a second cache breakpoint on the last message"
+    )
+    token_ledger_enabled: bool = Field(default=True, description="Count tokens by part (D8)")
+    bill_pay_cap_inr: int = Field(
+        default=1_00_000, ge=1, le=1_00_000, description="A prepared UPI payment's ceiling (₹)"
+    )
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")
@@ -557,6 +613,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JARVIS_HOME_OFFLINE_AFTER_S must be at least twice JARVIS_HOME_HEARTBEAT_S"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _not_the_drill_copy(self) -> Settings:
+        """R14 D4 lock 5: the live database is never the drill's throw-away copy, so a real
+        restore into that id can't be the next drill's target (which deletes it)."""
+        from jarvis.backup.ports import DRILL_DB
+
+        if self.firestore_database == DRILL_DB:
+            raise ValueError(f"JARVIS_FIRESTORE_DATABASE must not be {DRILL_DB} (the drill's copy)")
         return self
 
     @model_validator(mode="after")

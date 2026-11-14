@@ -106,6 +106,17 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "sos_contact_left": "important",
         "phone_unlinked": "info",
         "watch_stale": "info",
+        # R14 D6: self-health and backups ring by day (held at night); recovered and a passed
+        # drill are feed only
+        "job_failing": "important",
+        "clock_stopped": "important",
+        "brief_missed": "important",
+        "errors_piling": "important",
+        "spend_spike": "important",
+        "deploy_changed": "important",
+        "backup_problem": "important",
+        "selfwatch_ok": "info",
+        "backup_ok": "info",
     }
 )
 _FEED: dict[str, FeedDecision] = {

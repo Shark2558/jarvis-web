@@ -14,6 +14,9 @@ set, built at its first model call and then fixed, is the union of
   provider wasn't offered).
 Within the turn the only change: after the model calls `skills_open(skill)`, the next round adds
 that skill's tools. A tool the register can't file (unknown, or filed twice) is always offered.
+Each turn's set is kept under (owner, trace id), so a web turn and a Telegram turn of the same
+owner that overlap keep their own sets ("the previous turn" is his newest from any surface); only
+the newest `TURNS_KEPT` sets are remembered.
 The offer only narrows what the model sees: every call still passes `jarvis.tools.gateway` and
 meets its registry, permission rows, Telegram classes, taint rules and R3 tokens.
 """
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
@@ -36,6 +40,7 @@ if TYPE_CHECKING:
 
 HISTORY_TURNS: Final = 3
 STICKY_MAX_TOOLS: Final = 40  # a sticky set past this starts afresh (a long busy session)
+TURNS_KEPT: Final = 32  # the turn sets remembered (a few owners, a few surfaces each)
 SHORT_WORD: Final = 3  # words this short match a whole word, or with an s ("ac", "tv", "emi")
 OPEN_TOOL: Final = "skills_open"
 _EDGE = r"(?<![a-z0-9])"
@@ -99,9 +104,11 @@ def calls_in(messages: Iterable[ChatMessage]) -> list[ToolCall]:
 
 
 def opened_skills(messages: Iterable[ChatMessage]) -> frozenset[SkillId]:
-    """The skills `skills_open` calls among `messages` asked for (an unknown one: none)."""
-    asked = {c.arguments.get("skill") for c in calls_in(messages) if c.name == OPEN_TOOL}
-    return frozenset(s for s in SKILL_IDS if s in asked)
+    """The skills `skills_open` calls among `messages` asked for (an unknown one, or a value the
+    model sent that isn't a word, such as a list: none)."""
+    asked = [c.arguments.get("skill") for c in calls_in(messages) if c.name == OPEN_TOOL]
+    words = {a for a in asked if isinstance(a, str)}
+    return frozenset(s for s in SKILL_IDS if s in words)
 
 
 class SkillOffer:
@@ -117,7 +124,9 @@ class SkillOffer:
         self._core = frozenset(register.catalogue.core)
         self._sticky_s = sticky_s
         self._clock = clock
-        self._last: dict[str, _Turn] = {}  # per owner: the current (or last) turn's set
+        # (owner, trace id) -> that turn's set, newest last: each surface's turn keeps its own
+        # set while another overlaps it; only the newest TURNS_KEPT are remembered.
+        self._turns: OrderedDict[tuple[str, str], _Turn] = OrderedDict()
 
     def __call__(self, ctx: OfferContext, specs: Sequence[ToolSpec]) -> list[ToolSpec]:
         turns = turns_of(ctx.messages)
@@ -139,19 +148,35 @@ class SkillOffer:
         specs: Sequence[ToolSpec],
         opened: frozenset[SkillId],
     ) -> frozenset[str]:
-        now, key = self._clock(), (ctx.turn, len(turns), ctx.text)
-        last = self._last.get(ctx.uid)
-        if last is not None and last.key == key:
-            groups = last.groups  # fixed for the whole turn
+        now, key, where = self._clock(), (ctx.turn, len(turns), ctx.text), (ctx.uid, ctx.turn)
+        mine = self._turns.get(where)
+        if mine is not None and mine.key == key:
+            groups = mine.groups  # fixed for the whole turn
         else:
-            groups = self._fresh(ctx.text, turns)
-            if last is not None and now - last.at < self._sticky_s:
-                union = groups | last.groups
-                if self._count(union, specs) <= STICKY_MAX_TOOLS:
-                    groups = union
+            fresh = self._fresh(ctx.text, turns)
+            groups = self._sticky(fresh, self._latest(ctx.uid), now, specs)
         groups |= {g.id for g in self._reg.catalogue.groups if g.skill in opened}
-        self._last[ctx.uid] = _Turn(key, groups, now)
+        self._remember(where, _Turn(key, groups, now))
         return groups
+
+    def _sticky(
+        self, groups: frozenset[str], last: _Turn | None, now: float, specs: Sequence[ToolSpec]
+    ) -> frozenset[str]:
+        """`groups` with the owner's last set while it is fresh and the union isn't too large."""
+        if last is None or now - last.at >= self._sticky_s:
+            return groups
+        union = groups | last.groups
+        return union if self._count(union, specs) <= STICKY_MAX_TOOLS else groups
+
+    def _latest(self, uid: str) -> _Turn | None:
+        """The owner's newest turn set, from any of his surfaces."""
+        return next((t for (owner, _), t in reversed(self._turns.items()) if owner == uid), None)
+
+    def _remember(self, where: tuple[str, str], turn: _Turn) -> None:
+        self._turns[where] = turn
+        self._turns.move_to_end(where)
+        while len(self._turns) > TURNS_KEPT:
+            self._turns.popitem(last=False)
 
     def _fresh(self, text: str, turns: list[list[ChatMessage]]) -> frozenset[str]:
         hits = {gid for gid, words in self._words.items() if words.search(text)}
@@ -170,6 +195,7 @@ __all__ = [
     "HISTORY_TURNS",
     "OPEN_TOOL",
     "STICKY_MAX_TOOLS",
+    "TURNS_KEPT",
     "SkillOffer",
     "Words",
     "calls_in",

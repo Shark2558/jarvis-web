@@ -11,17 +11,19 @@ taints nothing (`trusted_output`). An unknown skill is refused by its argument c
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any, Final
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.skills.ids import SKILL_IDS
+from jarvis.skills.ids import SKILL_IDS, SkillId
 from jarvis.skills.offer import OPEN_TOOL
 from jarvis.skills.registry import SkillRegister
 from jarvis.tools.base import Tool
 from jarvis.tools.registry import ToolRegistry
 
 OPEN_WORDS: Final = "Opened a skill"
+_PLAIN_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")  # a tool name as the providers accept it
 NEXT_STEP: Final = "Its tools are yours from your next step; nothing was done."
 _LEAD = (
     "Open one of your skills when none of the tools you hold this turn can do what he asks: "
@@ -32,6 +34,16 @@ _LEAD = (
 def _description(register: SkillRegister) -> str:
     """The lead and each skill's id with what it holds (the register's own words)."""
     return _LEAD + " ".join(f"{s.id}: {s.about}" for s in register.catalogue.skills)
+
+
+def _listed(register: SkillRegister, held: list[str], skill: SkillId) -> list[str]:
+    """The skill's live tools, only plain names the register files: the answer is trusted, so a
+    name made from outside text (a dynamic tool) never reaches it (security review LOW-3)."""
+    return [
+        n
+        for n in held
+        if n != OPEN_TOOL and _PLAIN_NAME.fullmatch(n) and register.skill_of(n) == skill
+    ]
 
 
 def _check(args: dict[str, Any]) -> None:
@@ -46,12 +58,11 @@ def skills_open_tool(register: SkillRegister, registry: Callable[[], ToolRegistr
         skill = register.skill(args["skill"])
         live = registry()
         held = [s.name for s in live.specs()] if live is not None else []
-        names = [n for n in held if register.skill_of(n) == skill.id and n != OPEN_TOOL]
         return {
             "skill": skill.id,
             "label": skill.label,
             "about": skill.about,
-            "tools": names,
+            "tools": _listed(register, held, skill.id),
             "note": NEXT_STEP,
         }
 

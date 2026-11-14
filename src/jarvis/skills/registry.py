@@ -34,6 +34,7 @@ from jarvis.tools.base import Tool
 from jarvis.tools.registry import ToolRegistry
 
 CATALOGUE_VERSION: Final = 1
+FILED_KEPT: Final = 1_024  # names whose filing is remembered (the registry's fit many times)
 TelegramClass = Literal["private", "personal", "home", "both", "open"]
 RISK_WORDS: Mapping[ActionRisk, str] = {
     ActionRisk.READ_ONLY: "R1",
@@ -112,7 +113,7 @@ def _group(raw: Any, skill: SkillId) -> Group:
     if not isinstance(raw, Mapping) or not isinstance(raw.get("id"), str):
         raise CatalogueError(f"a group of {skill} has no id")
     words, tools = raw.get("words", []), raw.get("tools", [])
-    if not isinstance(tools, list) or not tools or not all(isinstance(t, str) for t in tools):
+    if not isinstance(tools, list) or not tools or not all(isinstance(t, str) and t for t in tools):
         raise CatalogueError(f"group {raw['id']} has no tools")
     if not isinstance(words, list) or not all(isinstance(w, str) and w for w in words):
         raise CatalogueError(f"group {raw['id']}: words must be a list of words")
@@ -180,7 +181,8 @@ class SkillRegister:
             got = tuple(g for g in groups if g.exact(name)) or tuple(
                 g for g in groups if g.family(name)
             )
-            self._filed[name] = got
+            if len(self._filed) < FILED_KEPT:  # names also come from the model's replayed calls
+                self._filed[name] = got
         return got
 
     def group_of(self, name: str) -> Group | None:
@@ -274,6 +276,7 @@ def _tools(registry: ToolRegistry) -> list[Tool]:
 
 __all__ = [
     "CATALOGUE_VERSION",
+    "FILED_KEPT",
     "RISK_WORDS",
     "Catalogue",
     "CatalogueError",

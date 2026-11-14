@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from r14_fakes_c import Clock, called, ctx, later, names, owner, reply, specs
 
-from jarvis.skills.offer import STICKY_MAX_TOOLS, SkillOffer, Words
+from jarvis.skills.offer import STICKY_MAX_TOOLS, TURNS_KEPT, SkillOffer, Words, opened_skills
 from jarvis.skills.registry import SkillRegister, load_catalogue
 
 REGISTRY = (
@@ -149,3 +149,33 @@ def test_the_words_table_matches_word_starts() -> None:
     assert words.search("two acs") and not words.search("acsr")
     assert words.search("anything near   me") and not words.search("unremind")
     assert not Words(()).search("anything")
+
+
+def test_a_malformed_skills_open_call_adds_nothing_and_never_breaks_the_offer() -> None:
+    """Python review M1: the model's `skill` may be a list or an object (unhashable); the call
+    stays in the turn after the gateway refuses it, so every later round must still narrow."""
+    offer = _offer()
+    before = names(offer(ctx("hello"), SPECS))
+    for odd in (["finance"], {"skill": "finance"}, 7, None):
+        assert names(offer(later("hello", called("skills_open", skill=odd)), SPECS)) == before
+    assert opened_skills(called("skills_open", skill=["finance"])) == frozenset()
+
+
+def test_two_surfaces_of_one_owner_keep_their_own_turn_sets() -> None:
+    """Code review LOW-5, python review L3: a web turn and a Telegram turn of the same owner
+    overlap; each turn's set stays fixed for its own rounds."""
+    offer = _offer()
+    web = names(offer(ctx("any new email?", turn="web"), SPECS))
+    telegram = names(offer(ctx("what's the weather?", turn="telegram"), SPECS))
+    assert "weather_now" in telegram and "weather_now" not in web
+    assert names(offer(later("any new email?", called("gmail_search"), turn="web"), SPECS)) == web
+
+
+def test_the_offer_remembers_only_the_newest_turns() -> None:
+    """Security review LOW-4: the offer's memory is bounded (one entry per owner was never
+    dropped): after TURNS_KEPT newer turns an owner's last set is forgotten (so not sticky)."""
+    offer = _offer()
+    offer(ctx("any new email?", uid="first", turn="a"), SPECS)
+    for n in range(TURNS_KEPT):
+        offer(ctx("thanks", uid=f"other{n}", turn=f"t{n}"), SPECS)
+    assert names(offer(ctx("thanks", uid="first", turn="b"), SPECS)) == CORE

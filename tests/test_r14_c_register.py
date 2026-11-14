@@ -13,6 +13,7 @@ import pytest
 from jarvis.core.guardrails import ActionRisk
 from jarvis.skills.ids import SKILL_IDS, SKILL_LABELS
 from jarvis.skills.registry import (
+    FILED_KEPT,
     CatalogueError,
     SkillRegister,
     load_catalogue,
@@ -166,6 +167,7 @@ def test_summaries_count_each_skills_tools_and_those_without_the_ai() -> None:
         (lambda d: d["skills"][1]["groups"].append(dict(d["skills"][0]["groups"][0])), "twice"),
         (lambda d: d["skills"][0]["groups"][0].update(words=["Calendar"]), "lower"),
         (lambda d: d["skills"][0]["groups"][0].update(tools=[]), "no tools"),
+        (lambda d: d["skills"][0]["groups"][0].update(tools=[""]), "no tools"),  # review L2
         (lambda d: d.update(core="calendar_list_events"), "list"),
         (lambda d: d.update(version=2), "version"),
     ],
@@ -185,3 +187,12 @@ def test_a_catalogue_file_that_cannot_be_read_is_refused(tmp_path: Path) -> None
     good = tmp_path / "good.json"
     good.write_text(json.dumps(_data()), encoding="utf-8")
     assert load_catalogue(good).core == ("calendar_list_events",)
+
+
+def test_the_filing_memory_is_bounded() -> None:
+    """Python review L2: names also come from replayed model calls; a made-up name is still
+    filed right, but only the first FILED_KEPT names are remembered."""
+    reg = SkillRegister(load_catalogue())
+    for n in range(FILED_KEPT + 300):
+        assert reg.skill_of(f"gmail_made_up_{n}") == "communication"
+    assert len(reg._filed) <= FILED_KEPT

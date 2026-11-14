@@ -10,7 +10,9 @@ the app's own fields; a vault changed since the snapshot never passes vacuously 
 compared"); the live side is never written (the verifier holds only reads on both sides); a
 `(default)` or live target is refused before any Google call; empty backup stats never start a
 drill; a stale backup alerts once; nothing alerts before the set-up; the copy is deleted whatever
-the switches say.
+the switches say. Review follow-ups (v14.0.2): a tick cut off after the restore began never
+restores twice; an alert that reached nobody is tried again; lost access to the drill copy is
+told, never read as idle.
 
 Negative controls (the suite must fail under each): (1) the verifier's read-only view swapped for
 the writable store -> "no live write" fails; (2) comparisons keyed on Firestore's `update_time`
@@ -20,6 +22,7 @@ compares" fails.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import sys
 from collections.abc import Awaitable, Callable
@@ -57,6 +60,7 @@ from jarvis.backup.readonly import read_only  # noqa: E402
 from jarvis.backup.status import BackupStatusService, Teller  # noqa: E402
 from jarvis.config import Settings  # noqa: E402
 from jarvis.keyring import Keyring  # noqa: E402
+from jarvis.notify.ports import Delivery, Signal  # noqa: E402
 from jarvis.storage.docs import Set  # noqa: E402
 from jarvis.storage.firestore_admin import FirestoreAdmin  # noqa: E402
 from jarvis.storage.firestore_walk import FirestoreWalk  # noqa: E402
@@ -261,6 +265,52 @@ async def _cleanup_whatever(view: View, keys: verify.Keys) -> list[str]:
     return left + (["a restore ran"] if "restore" in names else [])
 
 
+async def _cut_off_tick(view: View, keys: verify.Keys) -> list[str]:
+    world = await _world(lose_restore_reply=True)
+    rig = await Rig(world, view=view, keys=keys).ready()
+    try:
+        await rig.drill.step(OWNERS)
+    except asyncio.CancelledError:
+        pass
+    world.lose_restore_reply = False
+    rig.clock.at += dt.timedelta(minutes=30)
+    last = await rig.run()
+    out = [] if rig.admin.names().count("restore") == 1 else ["a second restore ran"]
+    if last is None or last.reason != "interrupted":
+        out.append(f"ended {last.words if last else 'without a result'}")
+    return out + (["the copy is still there"] if world.drill is not None else [])
+
+
+class _DropsFirst(RecordingNotifier):
+    """The storm's cap drops the first send; later ones ring."""
+
+    async def notify(self, uid: str, signal: Signal, message: str, **_: Any) -> Delivery:
+        self.sent.append((uid, signal, message))
+        if len(self.sent) == 1:
+            return Delivery(action="drop", reason="self_cap")
+        return Delivery(action="ring", reason="important", telegram=True)
+
+
+async def _lost_alert_retried(view: View, keys: verify.Keys) -> list[str]:
+    world, clock, sent = World(), Clock(SNAP), _DropsFirst()
+    log = DrillLog(world.live, prefix=PREFIX, zone=IST)
+    teller = Teller(BackupStatusService(world.live, log, prefix=PREFIX, clock=clock, zone=IST),
+                    lambda: sent)  # fmt: skip
+    first = await teller.problem(OWNERS, "copy_left")
+    clock.at += dt.timedelta(minutes=30)
+    second = await teller.problem(OWNERS, "copy_left")
+    return [] if (first, second, len(sent.sent)) == (0, 1, 2) else [f"told {first}, {second}"]
+
+
+async def _access_lost_told(view: View, keys: verify.Keys) -> list[str]:
+    rig = await Rig(await _world(), view=view, keys=keys, s=_settings(backup_drill_enabled=False)
+                    ).ready()  # fmt: skip
+    rig.world.refuse = {"get_database"}
+    said = await rig.drill.step(OWNERS)
+    told = ("backup_problem", "no_access") in rig.sent.kinds()
+    return [] if said == "no_access" and told else [f"said {said}, told {told}"]
+
+
 CASES: dict[str, Callable[[View, verify.Keys], Awaitable[list[str]]]] = {
     "drill_passes_on_fakes": _passes,
     "missing_document_fails_the_count": _missing_document,
@@ -273,6 +323,9 @@ CASES: dict[str, Callable[[View, verify.Keys], Awaitable[list[str]]]] = {
     "stale_backup_alerts_once": _stale_once,
     "nothing_alerts_before_the_set_up": _quiet_before_set_up,
     "cleanup_whatever_the_switches": _cleanup_whatever,
+    "cut_off_tick_never_restores_twice": _cut_off_tick,
+    "lost_alert_is_tried_again": _lost_alert_retried,
+    "lost_access_is_told": _access_lost_told,
 }
 
 

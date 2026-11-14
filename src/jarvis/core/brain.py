@@ -75,6 +75,7 @@ from jarvis.offline.mode import BrainMode
 from jarvis.offline.no_ai import NoAIRunner
 from jarvis.recall.models import MemoryRef
 from jarvis.recall.service import MemoryService, Recall
+from jarvis.skills.ports import BrainSlots, LedgerCall
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.calendar_gather import gathered
 from jarvis.tools.gateway import Gateway, GatewayResult
@@ -142,6 +143,7 @@ class Brain:
         self.documents = documents  # attached files (None: refused with a plain message)
         # R4 D7: the persisted AI on / off switch; a stray model call fails loudly while it is off
         self.mode = brain_mode or BrainMode(settings)
+        self.slots = BrainSlots()  # R14 seam 7: Part C's offer and ledger (api/r14_wiring.py)
         self.noai = NoAIRunner(
             store=store, settings=settings, gateway=gateway, mode=self.mode, documents=documents
         )
@@ -419,6 +421,8 @@ class Brain:
         """One model call: admitted by the monthly limit first, metered after. `working`: it may
         use the working turn's output cap (R11.1 D1, `finish.output_cap`)."""
         give_tools = with_tools and self.gateway is not None and spec.tools_allowed
+        specs = self.gateway.registry.specs() if (give_tools and self.gateway) else None
+        tools = self.slots.tools(req, messages, specs) if specs is not None else None
         await self._admit(req.user_id, spec)
         completion = await self.brains.router_for(spec.id).complete(
             tier=self._tier(req),
@@ -427,9 +431,11 @@ class Brain:
             messages=messages,
             max_tokens=finish.output_cap(self.s, working=working),
             effort=self._effort(),
-            tools=self.gateway.registry.specs() if (give_tools and self.gateway) else None,
+            tools=tools,
         )
         await self.billing.record(req.user_id, spec.id, completion.cost_usd)
+        call = (req.user_id, spec.id, prompt.system, prompt.trailer, messages, tools or ())
+        await self.slots.record(LedgerCall(*call, completion=completion))
         return completion
 
     async def _run_loop(

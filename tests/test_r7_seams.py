@@ -107,7 +107,7 @@ def _text(path: Path) -> str:
 
 # ---- 1, 2 · the version and the build book's release name --------------------------------------
 def test_the_version_is_seven() -> None:
-    assert jarvis.__version__ == "7.0.0"  # R7 I0 (was 11.1.1); nothing compares it (D26)
+    assert jarvis.__version__ == "14.0.0"  # R14 I0 (7.0.0 at R7 I0); nothing compares it (D26)
 
 
 def _repo(tmp_path: Path, version: str | None) -> Repo:
@@ -155,9 +155,10 @@ def test_the_fallback_label_reads_the_checkouts_version_file(tmp_path: Path) -> 
 
 
 def test_the_real_repository_is_r7_and_its_plan_comes_first() -> None:
-    repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R7"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r7-mobile.md"
+    repo = Repo.from_git(ROOT)  # R14 I0: the release is now R14 (tests/test_r14_seams.py)
+    assert plans.release_label(repo) == "R14"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r14-hardening.md"
+    assert "docs/plans/r7-mobile.md" in plans.plan_paths(repo)
 
 
 # ---- 3 · layers and the snapshot ----------------------------------------------------------------
@@ -228,7 +229,7 @@ def test_five_kinds_make_forty_three() -> None:
         "phone_unlinked",
         "watch_stale",
     )
-    assert len(every) == len(set(every)) == 43 and set(DEFAULT_URGENCY) == set(every)
+    assert len(every) == len(set(every)) == 52 and set(DEFAULT_URGENCY) == set(every)  # R14: 52
     assert DEFAULT_URGENCY["sos_sent"] == DEFAULT_URGENCY["phone_linked"] == "urgent"
     assert DEFAULT_URGENCY["sos_contact_left"] == "important"
     assert DEFAULT_URGENCY["phone_unlinked"] == DEFAULT_URGENCY["watch_stale"] == "info"
@@ -289,8 +290,8 @@ def test_no_row_lets_a_tool_send_an_sos() -> None:
 
 # ---- 7 · key purposes ---------------------------------------------------------------------------
 def test_three_key_purposes_make_twenty_one() -> None:
-    assert keyring.PURPOSES[-3:] == ("watch", "sos", "vision")
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 21
+    assert keyring.PURPOSES[-4:-1] == ("watch", "sos", "vision")  # R14 appended backup_probe
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 22
 
 
 # ---- 8, 20 · the parts' contract and wiring -----------------------------------------------------
@@ -433,7 +434,7 @@ def test_the_wiring_files_have_their_slots() -> None:
     assert "mobile_brief(app)" in r11
     # I1 fixer (code M5): R7's clock and daily jobs ride their OWN tick jobs, never the helpers'
     assert "mobile_clock_jobs" not in r11 and "mobile_daily_jobs" not in r11
-    assert "r7.mobile_tick_jobs(app)" in app_py
+    assert "r7.mobile_tick_jobs(app)" in _text(SRC / "api" / "tick_wiring.py")  # R14 I0 moved it
     assert "install_mobile_phrases(app)" in r11
 
 

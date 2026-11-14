@@ -99,6 +99,7 @@ def vitals_sources(app: FastAPI) -> OwnSources:
         home=getattr(st, "home_store", None),  # HomeStore.status(uid)
         default_brain=brains.default.id,  # the brain the systems check's probe watches
         book=lambda: setup_failure(app),  # R6 review L2: read per board (R6 wires after Vitals)
+        r14=lambda: getattr(st, "r14_vitals", None),  # R14 seam 7: the parts' items, read late
     )
 
 
@@ -180,15 +181,17 @@ def wire_health(app: FastAPI, s: Settings, docs: Docs, mode: BrainMode) -> Healt
 def shared_health_job(app: FastAPI) -> HealthTickJob | None:
     """R5.1 D4: the ONE systems-check job, built once and shared by the tick and the 5-minute home
     watchdog (its per-owner 15-minute gate lives on the instance). Safe to call more than once:
-    `Watchdog.extend` refuses a name it already runs, so the job is added only when built."""
+    the 5-minute clock takes a name only once, so the job is added only when built. R14 D7: it
+    joins the one 5-minute clock (`api/tick_wiring.py`), so it runs with Home off too."""
+    from jarvis.api.tick_wiring import add_clock_job  # late: tick_wiring imports the wiring
+
     st = app.state
     if getattr(st, "health", None) is None:
         return None
     job: HealthTickJob | None = getattr(st, "health_job", None)
     if job is None:
         job = st.health_job = HealthTickJob(st.health)
-        if getattr(st, "home_watchdog", None) is not None:
-            st.home_watchdog.extend(job)  # around the clock, every 5 minutes
+        add_clock_job(app, job)  # around the clock, every 5 minutes (Home on or off)
     return job
 
 

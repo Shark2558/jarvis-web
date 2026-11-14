@@ -267,7 +267,8 @@ def register_r11_tools(reg: ToolRegistry, parts: Mapping[str, HelperPart] | None
 
 
 def r11_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
-    """Both composites on the morning tick; the clock also on the home watchdog, added once."""
+    """Both composites on the morning tick; the clock also on the one 5-minute clock (R14 D7:
+    Home on or off), added once."""
     st = app.state
     built: tuple[TickJob, ...] | None = getattr(st, "r11_jobs", None)
     if built is not None:
@@ -275,8 +276,10 @@ def r11_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
     clock: Composite | None = getattr(st, "helpers_clock", None)
     daily: Composite | None = getattr(st, "helpers_daily", None)
     jobs: tuple[TickJob, ...] = tuple(j for j in (clock, daily) if j is not None)
-    if clock is not None and getattr(st, "home_watchdog", None) is not None:
-        st.home_watchdog.extend(clock)  # around the clock, every 5 minutes (D3)
+    if clock is not None:  # around the clock, every 5 minutes (D3; R14 D7)
+        from jarvis.api.tick_wiring import add_clock_job  # late: tick_wiring imports this module
+
+        add_clock_job(app, clock)
     st.r11_jobs = jobs
     return jobs
 

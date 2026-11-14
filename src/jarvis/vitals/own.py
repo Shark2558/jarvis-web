@@ -21,6 +21,7 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from jarvis.config import Settings
+from jarvis.hardening.ports import VITALS_IDS, VITALS_QUIET
 from jarvis.logging import get_logger
 from jarvis.vitals import words
 from jarvis.vitals.auto import UNREADABLE, next_month_start
@@ -42,6 +43,7 @@ LABELS: Mapping[str, str] = {
     "github_token": "GitHub token",
     "home_link": "Home laptop link",
     "build_book": "Build book",  # R6 review L2: only when it could not start on this server
+    **VITALS_IDS,  # R14: backups, the drill, the database size, the clocks, the AI money by part
 }
 OWN_IDS = frozenset(LABELS)
 # Rung elsewhere already, so quiet here; the health brain probe reads only the DEFAULT brain.
@@ -190,6 +192,13 @@ class OwnSources:
     # Its item is quiet here; the other brain's key still rings from Vitals. None: both ring.
     default_brain: str | None = None
     book: Callable[[], str | None] | None = None  # R6: the build book's setup error class, or None
+    # R14 seam 7: R14's parts' items, read late (`api/r14_wiring.R14Vitals`), only under
+    # `hardening.ports.VITALS_IDS`; None = no reader
+    r14: Callable[[], R14Reader | None] | None = None
+
+
+class R14Reader(Protocol):
+    async def items(self, uid: str, now: datetime, tz: ZoneInfo) -> Sequence[OwnItem]: ...
 
 
 @dataclass(frozen=True)
@@ -206,6 +215,15 @@ def _item(
     kind: Kind = "quota" if pid == "web_credits" else "key"
     p = Provider(id=pid, label=LABELS[pid], kind=kind, source="auto", note=note, **kw)
     return OwnItem(p, base, "allowances" if kind == "quota" else "keys", checking)
+
+
+def own_item(
+    pid: str, status: Status, reason: str, *, note: str = "", kind: Kind = "key", **kw: Any
+) -> OwnItem:
+    """An automatic item for one of `LABELS`' ids (R14's parts build theirs with it)."""
+    p = Provider(id=pid, label=LABELS[pid], kind=kind, source="auto", note=note, **kw)
+    group: Group = "allowances" if kind in ("quota", "allowance") else "keys"
+    return OwnItem(p, (status, reason), "bills" if kind in ("billing", "storage") else group)
 
 
 def unknown(pid: str, note: str = UNREADABLE, reason: str = UNKNOWN_REASON) -> OwnItem:
@@ -270,7 +288,7 @@ class Own:
     def quiet_ids(self) -> frozenset[str]:
         """Items something else already rings for (never alerted from Vitals)."""
         brain = DEFAULT_BRAIN_ITEM.get(self._src.default_brain or "")
-        return QUIET_IDS | ({brain} if brain else frozenset())
+        return QUIET_IDS | VITALS_QUIET | ({brain} if brain else frozenset())
 
     async def items(self, uid: str, now: datetime, tz: ZoneInfo) -> list[OwnItem]:
         s = self._s
@@ -285,7 +303,19 @@ class Own:
             ("build_book", self._book),
         ]
         got = await asyncio.gather(*(self._guard(pid, job) for pid, job in jobs))
-        return [i for i in got if i is not None]
+        return [i for i in got if i is not None] + await self._r14(uid, now, tz)
+
+    async def _r14(self, uid: str, now: datetime, tz: ZoneInfo) -> list[OwnItem]:
+        """R14's items, on their own deadline; an id outside R14's is dropped (never a clash)."""
+        reader = self._src.r14() if self._src.r14 is not None else None
+        if reader is None:
+            return []
+        try:
+            got = await asyncio.wait_for(reader.items(uid, now, tz), SOURCE_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - one source never breaks the board
+            log.warning("vitals: R14 items unreadable", extra={"error": type(exc).__name__})
+            return []
+        return [i for i in got if isinstance(i, OwnItem) and i.provider.id in VITALS_IDS]
 
     @staticmethod
     async def _guard(pid: str, job: Callable[[], Awaitable[OwnItem | None]]) -> OwnItem | None:
@@ -407,6 +437,8 @@ class Own:
 
 __all__ = [
     "LABELS",
+    "R14Reader",
+    "own_item",
     "OWN_IDS",
     "QUIET_IDS",
     "BrainReader",

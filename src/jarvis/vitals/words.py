@@ -59,6 +59,29 @@ WORDS: Mapping[str, tuple[str, str]] = {
         "If this stops: the build book is off on this server; the rest of JARVIS keeps working.",
         "Deploy again; if it stays, the server's logs name the error class shown here.",
     ),
+    # R14 (docs/plans/r14-hardening.md D4, D5, D8): the parts' items (`hardening.ports.VITALS_IDS`)
+    "backups": (
+        "If this stops: there is no fresh copy of your data to restore from.",
+        "If backups are not set up, run the one-time step (bash deploy/backup_setup.sh in Cloud "
+        "Shell); otherwise wait for tomorrow's copy, and tell the Workshop if it stays.",
+    ),
+    "backup_drill": (
+        "If this fails: JARVIS can't prove that a copy would restore.",
+        'Say "test my backup" to run a drill again; if it fails twice, send the result to the '
+        "Workshop.",
+    ),
+    "db_size": (
+        "If this fills: Google charges for the data above its free 1 GB.",
+        "Look at what JARVIS keeps in the Privacy panel and delete what you don't need.",
+    ),
+    "clocks": (
+        "If this stops: reminders, the brief and alerts wait until the clocks run again.",
+        "Open Cloud Scheduler in your Google project and check both JARVIS jobs are enabled.",
+    ),
+    "ai_parts": (
+        "If this grows: replies cost more than they need to.",
+        "Nothing to do: JARVIS shows where the money goes; tell the Workshop if one part is large.",
+    ),
     SPEND_ID: (
         "If this stops: paid replies pause; JARVIS uses the free brain.",
         "Raise the monthly limit with Set limit above, or wait for the new month.",

@@ -9,7 +9,8 @@ inbox), R3's home, camera and faces (`api/home_wiring.py`; its one alert policy 
 core, before anything takes the alert sink), R4's vitals, self-health, connectors, people research
 and the one no-AI switch (`api/r4_wiring.py`), R6's build book (`api/r6_wiring.py`), R11.1's
 and R7's parts (`api/r11_1_wiring.py`, `api/r7_wiring.py`), R11's helpers (`api/r11_wiring.py`),
-the gateway with the owner's rules and the Brain, then the privacy dashboard and tick jobs; then
+R14's parts (`api/r14_wiring.py`), the gateway with the owner's rules and the Brain, then the
+privacy dashboard, the tick jobs and the one 5-minute clock (`api/tick_wiring.py`); then
 the middleware (R7's app lock inside R6's guest show lock, both inside the sign-in session), the
 error mapping and the routers. The "jarvis up" line is `api/startup_log.py`.
 """
@@ -28,6 +29,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 import jarvis.api.r7_wiring as r7
+import jarvis.api.r14_wiring as r14
 from jarvis import __version__ as VERSION
 from jarvis.activity.service import ActivityService
 from jarvis.activity.store import ActivityStore
@@ -47,7 +49,7 @@ from jarvis.api.faces import install_faces
 from jarvis.api.family import install_family
 from jarvis.api.feature_wiring import wire_features, wire_slice12
 from jarvis.api.home import install_home
-from jarvis.api.home_wiring import check_job_names, notify_tick_jobs, wire_home, wire_notify
+from jarvis.api.home_wiring import wire_home, wire_notify
 from jarvis.api.identity import LEGACY_USER_ID, adopt_legacy_sessions, user_id_for_email
 from jarvis.api.integrations import router as integrations_router
 from jarvis.api.media import router as media_router
@@ -56,18 +58,19 @@ from jarvis.api.notes import install_notes
 from jarvis.api.notify import install_notify
 from jarvis.api.offline import install_offline
 from jarvis.api.permissions import build_permissions, install_permissions
-from jarvis.api.personal import personal_tick_jobs, wire_personal, wire_privacy
+from jarvis.api.personal import wire_personal, wire_privacy
 from jarvis.api.privacy import install_privacy
-from jarvis.api.r4_wiring import install_r4_routes, r4_tick_jobs, vitals_brief, wire_r4
-from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, r6_tick_jobs, wire_r6
+from jarvis.api.r4_wiring import install_r4_routes, vitals_brief, wire_r4
+from jarvis.api.r6_wiring import install_r6_routes, install_show_lock, wire_r6
 from jarvis.api.r11_1_wiring import fix_tools, install_r11_1_routes, wire_r11_1
-from jarvis.api.r11_wiring import helpers_brief, install_r11_routes, r11_tick_jobs, wire_r11
+from jarvis.api.r11_wiring import helpers_brief, install_r11_routes, wire_r11
 from jarvis.api.ratelimit import RateLimiter, make_middleware
 from jarvis.api.routes import conflict_body
 from jarvis.api.routes import router as v1_router
 from jarvis.api.scheduler_auth import GoogleOIDCVerifier, SchedulerUnauthorized
 from jarvis.api.startup_log import log_up
 from jarvis.api.telegram import build_telegram, install_telegram
+from jarvis.api.tick_wiring import finish_wiring
 from jarvis.api.usage import router as usage_router
 from jarvis.api.vault import VAULT_BODY_BYTES, VAULT_UPLOAD_PATH, install_vault
 from jarvis.api.vault_inbox import install_vault_inbox
@@ -371,6 +374,7 @@ def _build_tool_gateway(
         r11=app.state.r11_parts,  # R11: the helpers' tools (each part's own families)
         r111=fix_tools(app.state.r111_parts),  # R11.1: the four parts' tools
         r7=r7.mobile_tools(app.state.r7_parts),  # R7: the mobile parts' tools
+        r14=r14.r14_tools(app.state.r14_parts),  # R14: backups and the skill register's tools
         pictures=app_guard(lambda name: getattr(app.state, name, None)),  # R11.1 D21-D
     )
 
@@ -415,21 +419,6 @@ def _wire_brain(app: FastAPI, s: Settings, built: Storage | None, docs: Docs) ->
         await alerts.send(uid, ALERT_TEXT["brief_ready"], kind="brief_ready")
 
     app.state.brief.ready_hook = brief_ready
-
-
-def _tick_jobs(app: FastAPI) -> tuple[Any, ...]:
-    """R2's jobs, the alert policy's, R4's vitals and health check, R6's book jobs, R7's own two
-    (not the helpers'), R11's helpers clock and daily jobs (the existing tick, no new job)."""
-    jobs = (
-        *personal_tick_jobs(app),
-        *notify_tick_jobs(app),
-        *r4_tick_jobs(app),
-        *r6_tick_jobs(app),
-        *r11_tick_jobs(app),
-        *r7.mobile_tick_jobs(app),
-    )
-    check_job_names(jobs)
-    return jobs
 
 
 async def _drain_memory(app: FastAPI) -> None:
@@ -504,13 +493,14 @@ def _lifespan(
             await wire_r11_1(app, s, docs, audit)  # R11.1: before R11 (its jobs ride that clock)
             await r7.wire_r7(app, s, docs, audit)  # R7: the same, for the four mobile parts
             await wire_r11(app, s, docs, audit)  # R11: the free proactive helpers (A-D)
+            await r14.wire_r14(app, s, docs, audit)  # R14: backups, self-health, cost, No-AI 2
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
             _wire_brain(app, s, built, docs)
             closers.register_new()
             wire_privacy(app, s, docs, audit)  # R2 D14: after the gateway and the brief
-            app.state.tick_jobs = _tick_jobs(app)  # R2 + R3 H3: run after the tick's sweeps
+            finish_wiring(app)  # the tick jobs, R14's one 5-minute clock, the brain's slots
             stack.push_async_callback(_drain_memory, app)  # runs first on the way out
             await adopt_legacy_sessions(app.state.store, s)
             log_up(app, s)
@@ -693,6 +683,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     install_r11_routes(app)  # R11: /v1/helpers (the gate) and the four parts' routes
     install_r11_1_routes(app)  # R11.1: /v1/series, /v1/input, /v1/facegroups, /v1/picture
     r7.install_r7_routes(app)  # R7: /app, /v1/vision, /v1/phone, /v1/watch, /v1/sos
+    r14.install_r14_routes(app)  # R14: /v1/r14, /v1/backup, /v1/selfwatch, /v1/skills
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

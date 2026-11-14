@@ -193,6 +193,7 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         r11=r11_parts(google, ring),  # R11 I1: every helper part's tools
         r111=r111_tools(google, docs),  # R11.1 I1: every observation part's tools
         r7=r7_tools(google, docs),  # R7 I0 seam 21: every mobile part's tools, as the app builds
+        r14=r14_tools(google, docs),  # R14 I0 seam 4: backups' and the register's tools (C4)
     )
 
 
@@ -223,6 +224,20 @@ def r7_tools(google: Any, docs: Any) -> tuple[Any, ...]:
         s=get_settings(), docs=docs, audit=AuditLog(), state=state.get, notifier=lambda: None
     )
     return mobile_tools(build_parts(ctx))
+
+
+def r14_tools(google: Any, docs: Any) -> tuple[Any, ...]:
+    """The four R14 parts built through the real wiring on fakes (none has a tool at I0; Part A's
+    `vitals_backups` / `vitals_drill_start` and Part C's `skills_open` arrive here, so D11's
+    coverage test and the Telegram guards see them)."""
+    from jarvis.api.r14_wiring import build_parts
+    from jarvis.api.r14_wiring import r14_tools as tools_of
+    from jarvis.hardening.ports import HardeningContext
+    from jarvis.tools.audit import AuditLog
+
+    state = {"google": google}
+    ctx = HardeningContext(s=get_settings(), docs=docs, audit=AuditLog(), state=state.get)
+    return tools_of(build_parts(ctx))
 
 
 def r111_tools(google: Any, docs: Any) -> tuple[Any, ...]:

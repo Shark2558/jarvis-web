@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 import jarvis.api.r11_wiring as r11
-from jarvis.api import create_app
+from jarvis.api import create_app, tick_wiring
 from jarvis.api.console import APP_ASSETS
 from jarvis.api.r7_wiring import mobile_clock_jobs, mobile_daily_jobs
 from jarvis.api.r11_1_wiring import fix_clock_jobs
@@ -176,8 +176,9 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
             ToolCall(id="t2", name="bill_pay_prepare", arguments={}), scope="u:s"
         )
         assert pay.outcome is GatewayOutcome.AWAITING_CONFIRMATION  # R3: always a card
-        out = await a.client.post(WATCHDOG_PATH)  # Home off: the watchdog runs the clock alone
-        assert out.status_code == 200 and out.json()["jobs"] == {"helpers_clock": "ok"}
+        out = await a.client.post(WATCHDOG_PATH)  # Home off: the one 5-minute clock (R14 D7)
+        assert out.status_code == 200 and out.json()["jobs"]["helpers_clock"] == "ok"
+        assert set(out.json()["jobs"]) == {"health_check", "helpers_clock", "mobile_clock"}
         assert job.seen == [r11.owners_of(settings)]  # the configured owners, never a list passed
         status = await st.helpers_status.read()
         assert status is not None and status["jobs"]["bills_due"] == "ok"
@@ -192,12 +193,17 @@ async def test_with_home_on_the_clock_is_added_to_the_watchdog_once(settings: Se
         def extend(self, job: Any) -> None:
             self.added.append(job.name)
 
+        def prepend(self, job: Any) -> None:
+            self.added.insert(0, job.name)
+
     async with running(settings) as a:
         st = a.state
         dog = st.home_watchdog = Dog()
-        st.r11_jobs = None
+        st.r11_jobs = st.clock_jobs = None
         first, again = r11.r11_tick_jobs(a.app), r11.r11_tick_jobs(a.app)
-        assert first is again and dog.added == ["helpers_clock"]
+        assert first is again
+        tick_wiring.install_clocks(a.app)  # R14 D7: the one 5-minute clock puts it on the dog
+        assert dog.added.count("helpers_clock") == 1
 
 
 async def test_a_failing_helper_job_is_degraded_never_a_503(
@@ -213,7 +219,7 @@ async def test_a_failing_helper_job_is_degraded_never_a_503(
     monkeypatch.setattr(r11, "BUILDERS", {**r11.BUILDERS, "nudges": nudges})
     async with running(settings) as a:
         out = await a.client.post(WATCHDOG_PATH)
-        assert out.status_code == 200 and out.json()["jobs"] == {"helpers_clock": "degraded"}
+        assert out.status_code == 200 and out.json()["jobs"]["helpers_clock"] == "degraded"
 
 
 # ---- /v1/helpers --------------------------------------------------------------------------------
@@ -291,8 +297,11 @@ def test_app_py_has_the_six_r11_slots_and_stays_under_its_guard() -> None:
     # R11.1 and R7 are wired between them: their parts' jobs ride the helpers' clock
     assert _at(lines, "await wire_r11(app, s, docs, audit)") == _at(lines, "await wire_r6(") + 3
     assert _at(lines, "install_r11_routes(app)") == _at(lines, "install_r6_routes(app)") + 1
-    assert _at(lines, "*r11_tick_jobs(app),") == _at(lines, "*r6_tick_jobs(app),") + 1
-    assert _at(lines, "*r7.mobile_tick_jobs(app),") == _at(lines, "*r11_tick_jobs(app),") + 1
+    # R14 I0 moved the tick list into api/tick_wiring.py (app.py had no line to spare)
+    ticks = (API / "tick_wiring.py").read_text(encoding="utf-8").splitlines()
+    assert _at(ticks, "*r11_tick_jobs(app),") == _at(ticks, "*r6_tick_jobs(app),") + 1
+    assert _at(ticks, "*r7.mobile_tick_jobs(app),") == _at(ticks, "*r11_tick_jobs(app),") + 1
+    assert "finish_wiring(app)" in "\n".join(lines)
     assert _at(lines, "r11=app.state.r11_parts,") == _at(lines, "r4=app.state.r4_parts,") + 1
     assert _at(lines, "helpers=helpers_brief(app),") == _at(lines, "vitals=vitals_brief(app),") + 1
     assert "def _log_up" not in "\n".join(lines) and "log_up(app, s)" in "\n".join(lines)

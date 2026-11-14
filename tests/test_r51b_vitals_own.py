@@ -27,6 +27,7 @@ from r51b_fakes import (
 )
 from vitals_fakes import UID, key
 
+from jarvis.hardening.ports import VITALS_IDS
 from jarvis.vitals.own import OWN_IDS, QUIET_IDS, OwnSources
 
 
@@ -337,7 +338,7 @@ async def test_every_own_item_has_fixed_words_and_is_reserved() -> None:
     board = await OwnRig(own, clock=rig.clock).svc.board(UID)
 
     ids = {v.provider.id for v in board.items}
-    assert OWN_IDS <= ids
+    assert OWN_IDS - set(VITALS_IDS) <= ids  # R14's items come from R14's parts (test_r14_seams)
     for v in board.items:
         if v.provider.id in OWN_IDS:
             assert v.provider.source == "auto"

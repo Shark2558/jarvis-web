@@ -88,7 +88,9 @@ async def test_the_tick_and_the_home_watchdog_share_one_health_job() -> None:
         job = st.health_job
         assert isinstance(job, HealthTickJob)
         assert [j for j in st.tick_jobs if j.name == "health_check"] == [job]
-        assert [j for j in st.home_watchdog._extra if j.name == "health_check"] == [job]  # noqa: SLF001
+        # R14 D7: on the watchdog through the one 5-minute clock, run for the brief's owners
+        extra = [j for j in st.home_watchdog._extra if j.name == "health_check"]  # noqa: SLF001
+        assert [getattr(j, "job", j) for j in extra] == [job]
         out = await st.home_watchdog.run()
         assert out["jobs"]["health_check"] == "ok"
 

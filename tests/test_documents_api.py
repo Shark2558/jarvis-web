@@ -286,7 +286,9 @@ async def test_four_files_now_go_with_one_message(
 async def test_doc_tools_are_offered_to_the_model(
     client: AsyncClient, provider: MockProvider
 ) -> None:
-    await client.post("/v1/chat", json={"message": "hello"})
+    # R14 D9 (I1): a turn is offered the tools its words name ("attached", "document"), so a bare
+    # "hello" no longer carries them; any other turn reaches them through skills_open
+    await client.post("/v1/chat", json={"message": "what does the attached document say?"})
     names = {t.name for t in provider.calls[-1].tools or []}
     assert {"doc_read", "doc_search"} <= names
 

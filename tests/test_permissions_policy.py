@@ -124,6 +124,11 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("sleep_note", R2, {"watch"}),
     ("sos_status", R1, {"sos"}),
     ("sos_send", R3, set()),  # never a tool (D19): no row could ever allow it
+    # R14 I0 (docs/plans/r14-hardening.md seam 4): no new row; the tools under their planned names
+    ("vitals_backups", R1, {"vitals"}),
+    ("vitals_drill_start", R2, {"vitals_change"}),
+    ("maint_service_request", R1, {"household"}),
+    ("skills_open", R1, set()),  # no row: the risk default (R1, no side effect) applies
     ("memory_search", R1, set()),  # unknown to every group: the risk default applies
     ("brand_new_tool", R3, set()),
 ]

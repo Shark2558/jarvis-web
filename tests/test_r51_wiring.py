@@ -88,7 +88,9 @@ async def test_the_tick_and_the_home_watchdog_share_one_health_job() -> None:
         job = st.health_job
         assert isinstance(job, HealthTickJob)
         assert [j for j in st.tick_jobs if j.name == "health_check"] == [job]
-        assert [j for j in st.home_watchdog._extra if j.name == "health_check"] == [job]  # noqa: SLF001
+        # R14 D7: on the watchdog through the one 5-minute clock, run for the brief's owners
+        extra = [j for j in st.home_watchdog._extra if j.name == "health_check"]  # noqa: SLF001
+        assert [getattr(j, "job", j) for j in extra] == [job]
         out = await st.home_watchdog.run()
         assert out["jobs"]["health_check"] == "ok"
 
@@ -103,6 +105,9 @@ async def test_without_a_home_the_health_job_rides_the_tick_only(settings: Setti
             "helpers_daily",
             "mobile_clock",  # R7's own two, after R11's
             "mobile_daily",
+            "backup_canary",  # R14 I1: the parts' daily jobs, last (A's two, B's one)
+            "backup_drill",
+            "selfwatch_daily",
         ]
         assert app.state.health_job is app.state.tick_jobs[1]
 

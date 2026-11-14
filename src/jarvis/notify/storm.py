@@ -15,6 +15,11 @@ R11 D5 (docs/plans/r11-free-helpers.md): a disaster alert is treated like a haza
 only the same subject (one CAP warning) repeated within 30 minutes is a duplicate. The helpers'
 nudges: one per kind per 20 minutes and at most `MAX_NUDGES_PER_HOUR` an hour per owner in all,
 a ceiling over the gate's own configured caps (`helpers.gate`), so a fault can't flood Telegram.
+
+R14 D6 (docs/plans/r14-hardening.md, review A6): JARVIS's own health and backup rings have their
+own table, apart from the R5.1 soft-urgent one: one per kind and subject per 30 minutes and at
+most `MAX_SELF_PER_HOUR` an hour per owner in all, so an outage that fails every job at once can
+never crowd out an approval or a systems-check ring.
 """
 
 from __future__ import annotations
@@ -46,6 +51,20 @@ NUDGE_KINDS = frozenset(
 NUDGE_GAP = timedelta(minutes=20)
 MAX_NUDGES_PER_HOUR = 8
 DISASTER_GAP = timedelta(minutes=30)
+# R14 D6: self-health and backups (important daytime rings, held at night)
+SELF_KINDS = frozenset(
+    {
+        "job_failing",
+        "clock_stopped",
+        "brief_missed",
+        "errors_piling",
+        "spend_spike",
+        "deploy_changed",
+        "backup_problem",
+    }
+)
+SELF_GAP = timedelta(minutes=30)
+MAX_SELF_PER_HOUR = 3
 SUMMARY_EVERY = timedelta(minutes=10)
 PACKAGE_GAP = timedelta(minutes=10)
 GREETING_GAP = timedelta(minutes=30)
@@ -73,6 +92,8 @@ class Storm:
         self._nudge: dict[tuple[str, str], datetime] = {}  # (uid, kind) -> last nudge (R11)
         self._nudges: dict[str, deque[datetime]] = {}  # uid -> nudges in the last hour (R11)
         self._disaster: dict[tuple[str, str], datetime] = {}  # (uid, subject) -> last (R11)
+        self._self: dict[tuple[str, str, str], datetime] = {}  # (uid, kind, subject) (R14)
+        self._self_rings: dict[str, deque[datetime]] = {}  # uid -> self-health rings, last hour
         # what a gap stamp was before the last admission set it (for `rollback`), by table
         self._before: dict[tuple[str, str, str], datetime | None] = {}
 
@@ -90,6 +111,9 @@ class Storm:
         storm or a flap (integrated review S3). A later admission is never undone."""
         if signal.kind in SOFT_URGENT_KINDS:
             self._rollback_soft(uid, signal, now)
+            return
+        if signal.kind in SELF_KINDS:
+            self._rollback_self(uid, signal, now)
             return
         if signal.kind in NUDGE_KINDS:
             self._rollback_nudge(uid, signal, now)
@@ -191,6 +215,32 @@ class Storm:
         self._prune(self._soft, now, SOFT_URGENT_GAP)
         return Verdict(True)
 
+    def _rollback_self(self, uid: str, signal: Signal, now: datetime) -> None:
+        key = (uid, signal.kind, signal.subject or "-")
+        if self._self.get(key) == now:
+            del self._self[key]
+        window = self._self_rings.get(uid)
+        if window is not None and now in window:
+            window.remove(now)
+
+    def _self_ok(self, uid: str, signal: Signal, now: datetime) -> Verdict:
+        """R14 D6: a gap per kind and subject, then an hourly cap of their own."""
+        key = (uid, signal.kind, signal.subject or "-")
+        last = self._self.get(key)
+        if last is not None and now - last < SELF_GAP:
+            return Verdict(False, "self_gap")
+        window = self._self_rings.setdefault(uid, deque())
+        while window and now - window[0] >= timedelta(hours=1):
+            window.popleft()
+        if len(window) >= MAX_SELF_PER_HOUR:
+            return Verdict(False, "self_cap")
+        window.append(now)
+        self._self[key] = now
+        self._prune(self._self, now, SELF_GAP)
+        if len(self._self_rings) > MAX_KEYS:
+            self._self_rings = {k: v for k, v in self._self_rings.items() if v}
+        return Verdict(True)
+
     @staticmethod
     def _prune(table: dict, now: datetime, keep: timedelta) -> None:  # type: ignore[type-arg]
         if len(table) <= MAX_KEYS:
@@ -244,6 +294,8 @@ class Storm:
             return Verdict(True)
         if kind in SOFT_URGENT_KINDS:
             return self._soft_ok(uid, signal, now)
+        if kind in SELF_KINDS:
+            return self._self_ok(uid, signal, now)
         if kind == "disaster_alert":
             return self._disaster_ok(uid, signal, now)
         if kind in NUDGE_KINDS:
@@ -302,8 +354,12 @@ def summary_text(count: int) -> str:
 __all__ = [
     "DISASTER_GAP",
     "MAX_NUDGES_PER_HOUR",
+    "MAX_SELF_PER_HOUR",
     "NUDGE_GAP",
     "NUDGE_KINDS",
+    "SELF_GAP",
+    "SELF_KINDS",
+    "SOFT_URGENT_KINDS",
     "Storm",
     "Verdict",
     "summary_text",

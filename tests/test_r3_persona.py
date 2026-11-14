@@ -13,7 +13,7 @@ def _flat(rule: str) -> str:
 
 
 def test_persona_is_p11_0() -> None:  # R6 I1: p6.0 (BOOK_RULE); R11 I1: p11.0 (HELPERS_RULE)
-    assert p.PERSONA_VERSION == "p7.0"
+    assert p.PERSONA_VERSION == "p14.0"
 
 
 @pytest.mark.parametrize("name", ["HOME_RULES", "CAMERA_RULES", "FACES_RULE", "ALERTS_RULE"])
@@ -53,7 +53,7 @@ def test_home_rules_match_the_permission_rows_and_name_no_pronoun() -> None:
     )
     assert "his passkey" not in r and " his " not in f" {r} "
     assert "alarms and heaters always ask" not in r and "Locks, gates, alarms" not in r
-    assert p.PERSONA_VERSION == "p7.0"  # R3 is unreleased: the wording changes in place
+    assert p.PERSONA_VERSION == "p14.0"  # R3 is unreleased: the wording changes in place
 
 
 def test_camera_never_names_or_describes_an_unknown_person() -> None:

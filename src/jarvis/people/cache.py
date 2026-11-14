@@ -3,9 +3,11 @@
 
 - LRU with a 1 hour TTL, bounded to `MAX_OWNERS`; `get` refreshes recency.
 - With a Docs store, the entry is also kept in the owner's own document
-  `<prefix>people_last/<uid>` (carries `expires_at`; deleted on an expired read and by `clear`;
-  deploy sets a Firestore TTL policy on `expires_at`), so a restart or a second instance still
-  finds it. Without one it is in-process only (single instance).
+  `<prefix>people_last/<uid>` (carries `expires_at`; deleted on an expired read and by `clear`),
+  so a restart or a second instance still finds it. Without one it is in-process only (single
+  instance). There is no TTL policy (R14 D13): `expires_at` is a float, which a Firestore TTL
+  policy can't read (it needs a timestamp), and TTL deletes are billed with no free usage, so
+  the code deletes what has expired itself.
 - The last target is kept IN PROCESS even when the request was refused, so a follow-up ("what
   about her home?") is checked together with what came before. A refused target is NEVER
   written to the store: the name of a refused private person is not persisted (I2 F3).

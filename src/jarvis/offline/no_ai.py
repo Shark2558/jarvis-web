@@ -17,7 +17,14 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.config import Settings
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
+from jarvis.core.models import (
+    NO_AI_MODEL,
+    ChatRequest,
+    ChatResponse,
+    PendingApproval,
+    Session,
+    Turn,
+)
 from jarvis.core.rounds import Rounds
 from jarvis.documents.service import DocumentService, save_owner_turn
 from jarvis.llm.base import Role, ToolCall, Usage
@@ -26,6 +33,7 @@ from jarvis.logging import get_trace_id
 from jarvis.memory.base import SessionStore
 from jarvis.offline.mode import BrainMode
 from jarvis.offline.rules import NoAIRoute, NoAIRouter, route_no_ai
+from jarvis.offline.said import say
 from jarvis.people.guard import REFUSAL_LINES
 from jarvis.tools.budget import turn_budget
 from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
@@ -56,8 +64,11 @@ def _compact(value: Any) -> str:
     return text if len(text) <= RENDER_LIMIT else text[:RENDER_LIMIT] + "…"
 
 
-def _render(result: Any) -> str:
-    """A fixed-template line for one tool result."""
+def _render(result: Any, tool: str = "") -> str:
+    """A fixed-template line for one tool result: its tool's own words (`offline.said`, R14 I1),
+    else a summary key, else compact JSON."""
+    if (said := say(tool, result)) is not None:
+        return said
     if isinstance(result, dict):
         if isinstance(result.get(OPEN_KEY), list) and result[OPEN_KEY]:
             return "\n".join([str(result.get("message", DONE)), *map(str, result[OPEN_KEY])])
@@ -71,11 +82,11 @@ def _render(result: Any) -> str:
     return _compact(result)
 
 
-def _line(res: GatewayResult) -> str:
+def _line(res: GatewayResult, tool: str = "") -> str:
     """One fixed line per outcome. Gateway error text is never repeated, except our own fixed
     refusal lines (the scope guard's words), which are matched exactly."""
     if res.outcome is GatewayOutcome.EXECUTED:
-        return _render(res.result)
+        return _render(res.result, tool)
     if res.outcome is GatewayOutcome.AWAITING_CONFIRMATION:
         return NEEDS_OK
     if res.error in REFUSAL_LINES:
@@ -124,15 +135,12 @@ async def run_no_ai(
                 res = await gateway.execute(tool_call, scope=scope)
             ran.append(tool_call)
             results.append(res)
-            lines.append(UNAVAILABLE if _unavailable(res) else _line(res))
+            lines.append(UNAVAILABLE if _unavailable(res) else _line(res, call.tool))
             if res.outcome is GatewayOutcome.AWAITING_CONFIRMATION and res.pending:
                 pending.append(PendingApproval.from_action(res.pending))
             if res.outcome is not GatewayOutcome.EXECUTED or _stopped(res.result):
                 break  # a refused or waiting step ends the chain (no URLs after a refusal)
     return NoAIResult("\n".join(lines), len(ran), pending, cards, tuple(ran), tuple(results))
-
-
-NO_AI_MODEL = "no-ai"
 
 
 def _owner_now(s: Settings) -> datetime:

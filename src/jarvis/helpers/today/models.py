@@ -26,6 +26,8 @@ from typing import Annotated, Any
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from jarvis.config import Settings, get_settings
+from jarvis.helpers.sources import MAX_UPI_AMOUNT_PAISE
 from jarvis.helpers.today.text import (
     NUMBER_REFUSAL,
     PAYEE_MAX,
@@ -44,7 +46,7 @@ MAX_PAID = 24
 MAX_LEAD = 14
 MAX_EVERY = 12
 DEFAULT_LEADS = (3, 1, 0)
-PAY_CAP_PAISE = 1_00_000 * 100  # owner decision 12: ₹1,00,000 per prepared payment
+PAY_CAP_PAISE = MAX_UPI_AMOUNT_PAISE  # the ceiling (₹1,00,000); in force: `pay_cap_paise()`
 MAX_BILL_PAISE = 1_00_00_000 * 100  # what a bill may say it costs (a prepared one: the cap)
 BILL_ID = re.compile(r"^[0-9a-f]{12}$")
 UPI_ID = re.compile(r"^[A-Za-z0-9._-]{2,256}@[A-Za-z][A-Za-z0-9]{1,63}$")
@@ -132,6 +134,14 @@ def _grouped(rupees: int) -> str:
         pairs.insert(0, head[-2:])
         head = head[:-2]
     return ",".join([head, *pairs, tail]) if head else ",".join([*pairs, tail])
+
+
+def pay_cap_paise(settings: Settings | None = None) -> int:
+    """The cap of one prepared payment in force (R14 D13 (6)): the deploy-time setting
+    `bill_pay_cap_inr` (the app's own settings when none is given), never above the ceiling
+    `PAY_CAP_PAISE`, so the setting can only lower it."""
+    s = settings if settings is not None else get_settings()
+    return min(PAY_CAP_PAISE, max(1, int(s.bill_pay_cap_inr)) * 100)
 
 
 def inr(paise: int) -> str:
@@ -294,6 +304,7 @@ __all__ = [
     "NUMBER_REFUSAL",
     "PAYEE_MAX",
     "PAY_CAP_PAISE",
+    "pay_cap_paise",
     "UPI_ID",
     "VARIES",
     "Bill",

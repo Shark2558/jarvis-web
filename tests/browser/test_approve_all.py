@@ -71,6 +71,9 @@ def test_approve_all_runs_the_undoable_cards_and_leaves_the_other(
         page.locator("#approveAll").wait_for(state="hidden")
         assert page.locator(".row.jarvis .bubble").count() == 2
         cards = page.locator("#approvals .approval")
+        # the bar hides once fewer than two cards can be batched, which can be before the list has
+        # finished re-rendering: wait for it to settle (a load-only race seen at R14 I1's checks)
+        cards.nth(1).wait_for(state="detached")
         assert cards.count() == 1
         assert "send message" in str(cards.first.locator(".title").text_content())
         assert _ran(perm_url, "create_reminder") == before + 3

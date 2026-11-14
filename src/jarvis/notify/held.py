@@ -36,6 +36,18 @@ _WORDS = {
     "faces_to_name": "faces to name",
     # R7: an emergency contact who left is held at night (an SOS and a new phone ring)
     "sos_contact_left": "emergency contact left",
+    # R5.1's two systems rings (held words were missing) and R14 D6: self-health and backups
+    "health_fault": "systems check problem",
+    "vitals_critical": "key, quota or bill at its limit",
+    "job_failing": "background jobs failing",
+    "clock_stopped": "JARVIS's clock stopped",
+    "brief_missed": "morning brief not made",
+    "errors_piling": "errors piling up",
+    "spend_spike": "AI spend spike",
+    "deploy_changed": "new version live",
+    "backup_problem": "backup problem",
+    "selfwatch_ok": "JARVIS recovered",
+    "backup_ok": "backup drill passed",
 }
 
 

@@ -11,6 +11,7 @@ from faces_fakes import Faces, faces
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
+from jarvis.api import auth as auth_mod
 from jarvis.api import create_app
 from jarvis.api.faces import install_faces
 from jarvis.api.identity import user_id_for_email
@@ -79,7 +80,14 @@ def gsettings(settings: Settings) -> Settings:
 
 async def _login(c: AsyncClient) -> None:
     async def fake(request: Any) -> dict[str, Any]:
-        return {"userinfo": {"email": OWNER, "email_verified": True, "sub": OWNER}}
+        return {
+            "userinfo": {
+                "email": OWNER,
+                "email_verified": True,
+                "sub": OWNER,
+                "auth_time": int(auth_mod._now()),
+            }
+        }
 
     c.app.state.oauth.google.authorize_access_token = fake  # type: ignore[attr-defined]
     assert (await c.get("/auth/callback?code=abc&state=x")).status_code in (302, 307)

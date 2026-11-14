@@ -28,6 +28,7 @@ from passkey_fakes import SoftAuthenticator
 from pydantic import SecretStr
 from r7_fakes import phone_key, sign_request
 
+from jarvis.api import auth as auth_mod
 from jarvis.api import create_app
 from jarvis.api.identity import user_id_for_email
 from jarvis.config import AuthMode, Settings
@@ -132,7 +133,14 @@ async def browser(
     async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as c:
 
         async def fake(request: Any) -> dict[str, Any]:
-            return {"userinfo": {"email": email, "email_verified": True, "sub": email}}
+            return {
+                "userinfo": {
+                    "email": email,
+                    "email_verified": True,
+                    "sub": email,
+                    "auth_time": int(auth_mod._now()),
+                }
+            }
 
         app.state.oauth.google.authorize_access_token = fake
         if fresh:

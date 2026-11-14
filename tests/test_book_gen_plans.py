@@ -207,12 +207,12 @@ def test_planted_personal_data_is_scrubbed_and_leaks_without_the_scrub(tmp_path:
 def test_the_real_plans_parse(tmp_path: Path) -> None:
     r = Repo.from_git(ROOT)
     read = plans.read_plans(r, default_scrubber())
-    # R7 I0 seam 2: the release is named from the repository's own version (7.0.0 -> R7) and its
-    # plan comes first, though R11.1's plan has the higher number; R6's own decisions are still read
-    assert read[0].path == "docs/plans/r7-mobile.md" and read[0].label == "R7"
+    # R7 I0 seam 2: the release is named from the repository's own version (R14 I0: 14.0.0 ->
+    # R14) and its plan comes first; R6's own decisions are still read
+    assert read[0].path == "docs/plans/r14-hardening.md" and read[0].label == "R14"
     assert read[1].path == "docs/plans/r11-1-observations.md"
     r6 = next(d for d in plans.decisions(read) if d.plan == "docs/plans/r6-build-book.md")
     assert len(r6.decisions) == 17 and r6.decisions[0].startswith("D1 · Deterministic")
     assert any(f.release == "R6" for f in plans.fit_rows(read))
     lims = plans.limitations(read)
-    assert lims[0].release == "R7" and 0 < len(lims) <= MAX_LIMITATIONS  # this release's first
+    assert lims[0].release == "R14" and 0 < len(lims) <= MAX_LIMITATIONS  # this release's first

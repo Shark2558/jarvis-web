@@ -12,9 +12,10 @@ Sessions valid after (integrated review SEC-4): a Resume or the emergency unlock
 `signed_out_before=<cookie clock>`; the same document then keeps `{sessions_valid_after}` (for the
 owner AND every other owner, whose consoles the lock held too, beside any lock of theirs), and the
 middleware clears every cookie session issued before it. It is read WITH the lock, in the same
-document and the same <= 3 s cache entry (`view`: one lookup for both). A later `set` starts a
-fresh document: while a lock is on every owner session is held anyway, and its own lift writes a
-later mark.
+document and the same <= 3 s cache entry (`view`: one lookup for both). R14 D13 (2): a later
+`set` keeps that mark beside the new lock (before R14 it started a fresh document, so a show
+opened after "Sign out everywhere" brought the ended sessions back once it was lifted), a lift
+without a mark keeps it, and a mark never moves back.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from pydantic import ValidationError
 from jarvis.buildbook.model import ShowLockState
 from jarvis.buildbook.ports import LockUnreadable
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Docs, DocTx, Set
+from jarvis.storage.docs import Docs, DocTx
 
 log = get_logger(__name__)
 
@@ -42,6 +43,20 @@ UNREADABLE = (
 AFTER = "sessions_valid_after"
 _LOCK_KEYS = ("id", "bk", "since")
 View = tuple[ShowLockState | None, float | None]  # (the lock, sessions valid after)
+
+
+def _mark_of(doc: dict[str, Any] | None) -> float | None:
+    """Another owner's mark, read leniently: one that isn't a time is replaced by the new mark (as
+    before R14), so it never blocks this owner's Resume."""
+    after = (doc or {}).get(AFTER)
+    return None if isinstance(after, bool) or not isinstance(after, int | float) else float(after)
+
+
+def _later(mark: float | None, new: float | None) -> float | None:
+    """A "sessions valid after" mark only ever moves forward."""
+    if mark is None or new is None:
+        return new if mark is None else mark
+    return max(mark, new)
 
 
 class DocShowLock:
@@ -118,34 +133,50 @@ class DocShowLock:
         return (await self._read(uid))[0]
 
     async def set(self, uid: str, session_id: str, *, now: datetime) -> ShowLockState:
+        """A new lock, in the same transaction as the read of the document's mark, which it keeps
+        (R14 D13 (2)): a show opened after "Sign out everywhere" or a Resume never brings the
+        sessions that mark ended back. A document it can't read sets nothing (it raises)."""
         state = ShowLockState(id=f"bl_{secrets.token_hex(6)}", bk=session_id, since=now.isoformat())
-        await self._docs.write([Set(self._path(uid), state.model_dump())])
-        self._cache[uid] = ((state, None), self._clock())
+
+        async def work(tx: DocTx) -> float | None:
+            _, mark = self._parse(await tx.get(self._path(uid)))
+            doc = state.model_dump()
+            tx.set(self._path(uid), doc if mark is None else {**doc, AFTER: mark})
+            return mark
+
+        mark = await self._docs.transaction(work)
+        self._cache[uid] = ((state, mark), self._clock())
         return state
 
     async def lift(self, uid: str, lock_id: str, *, signed_out_before: float | None = None) -> bool:
         """Lift `uid`'s lock if it is `lock_id`; with `signed_out_before`, every owner's cookie
-        sessions issued before it stop counting (in the same transaction)."""
+        sessions issued before it stop counting (in the same transaction). An earlier mark stays
+        and never moves back (R14 D13 (2)): without `signed_out_before` the lock goes and the
+        mark is kept; with it, the later of the two counts. This owner's own document must parse:
+        a malformed one raises `LockUnreadable` here as on every read (never read leniently, which
+        would drop his own mark); only another owner's mark is lenient (`_mark_of`)."""
         others = [o for o in self._owners if o != uid] if signed_out_before is not None else []
 
-        async def work(tx: DocTx) -> bool:
+        async def work(tx: DocTx) -> tuple[bool, float | None]:
             raw = await tx.get(self._path(uid))
             if raw is None or raw.get("id") != lock_id:
-                return False
+                return False, None
             held = [(o, await tx.get(self._path(o))) for o in others]
-            if signed_out_before is None:
+            mark = _later(self._parse(raw)[1], signed_out_before)
+            if mark is None:
                 tx.delete(self._path(uid))
-                return True
-            tx.set(self._path(uid), {AFTER: signed_out_before})
+            else:
+                tx.set(self._path(uid), {AFTER: mark})
             for other, doc in held:
-                tx.set(self._path(other), {**(doc or {}), AFTER: signed_out_before})
-            return True
+                theirs = _later(_mark_of(doc), signed_out_before)
+                tx.set(self._path(other), {**(doc or {}), AFTER: theirs})
+            return True, mark
 
-        lifted = await self._docs.transaction(work)
+        lifted, mark = await self._docs.transaction(work)
         for other in others:
             self._cache.pop(other, None)
         if lifted:
-            self._cache[uid] = ((None, signed_out_before), self._clock())
+            self._cache[uid] = ((None, mark), self._clock())
         else:
             self._cache.pop(uid, None)  # read it again next time
         return lifted

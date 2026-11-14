@@ -118,6 +118,9 @@ SUITES = [
     # controls must make the suite fail
     ("r11_1 (gated)", [sys.executable, str(HERE / "r11_1" / "run.py"), "--mock"], True),
     ("r7 (gated)", [sys.executable, str(HERE / "r7" / "run.py"), "--mock"], True),
+    # R14 I0: "Free hardening" -- I0's contract part (built) and the four parts' stubs; each built
+    # part's negative control must make the suite fail
+    ("r14 (gated)", [sys.executable, str(HERE / "r14" / "run.py"), "--mock"], True),
 ]
 
 

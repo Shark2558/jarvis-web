@@ -2,7 +2,8 @@
 """JARVIS's own words about a plan (R11.1 O2b, D6): the check-in question, the re-plan card and
 what an answer or a move did. Fixed templates by code: a session's number, the plan's name (only
 when it is the owner's own word, `Plan.words`), dates and times. Never a title: titles may be a
-file's words, and an alert or a card line never carries those."""
+file's words, and an alert or a card line never carries those. The re-plan card's first line
+carries no plan name either (R14 D13 (5)): Telegram shows that line alone."""
 
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ QUESTION = (
     "Say 'session done' or 'session skipped'."
 )
 ARROW = "→"
+CARD_PLAN = "your plan"  # the re-plan card's first line: code's words only (R14 D13 (5))
 SHOW_LEFT = 5  # sessions named one by one; the rest are counted
 
 
@@ -92,7 +94,9 @@ def replan_card(
     """The ONE approval card of a re-plan: how many move and why (and the earlier skipped ones
     that move too), the count before and after, the new last day, what stays where it is, then
     every "old date -> new date" (the console lists these lines). A session that keeps its own
-    time (a gap he left absorbed the shift) is not listed."""
+    time (a gap he left absorbed the shift) is not listed. R14 D13 (5): the first line, the only
+    one Telegram shows, names no plan (its name is the batch call's argument, the model's words);
+    the stored plan's words open the second line, which only the console shows."""
     changes = replan.real(moves)
     k = len(changes)
     slots = "its next free slot" if k == 1 else "their next free slots"
@@ -104,14 +108,18 @@ def replan_card(
         else ""
     )
     lines = [
-        f"Move {_count(k)} of {plan.words} to {slots} (session {s.n} was skipped{also}).",
-        f"{_count(plan.total)} before, {plan.total} after: none is dropped. "
-        f"The plan now ends on {_ends(plan, moves, tz)}.",
+        f"Move {_count(k)} of {CARD_PLAN} to {slots} (session {s.n} was skipped{also}).",
+        f"{_upper(plan.words)}: {_count(plan.total)} before, {plan.total} after: none is "
+        f"dropped. The plan now ends on {_ends(plan, moves, tz)}.",
     ]
     if kept:
         lines.append(f"Left where they are: {_left(kept)}.")
     lines += [f"{m.n}. {when(m.was, tz)} {ARROW} {when(m.start, tz)}" for m in changes]
     return "\n".join(lines)
+
+
+def _upper(words: str) -> str:
+    return words[:1].upper() + words[1:]
 
 
 def _was_skipped(plan: Plan, n: int) -> bool:
@@ -160,6 +168,7 @@ def moved_words(plan: Plan, done: Moved) -> str:
 
 __all__ = [
     "ARROW",
+    "CARD_PLAN",
     "QUESTION",
     "clock",
     "day",

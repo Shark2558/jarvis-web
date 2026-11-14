@@ -445,8 +445,8 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "vitals",
         "Vitals",
         "See your keys, quotas, bills and limits",
-        "Usage, limits, reset and expiry for everything JARVIS uses, and this month's spend. "
-        "Read only.",
+        "Usage, limits, reset and expiry for everything JARVIS uses, this month's spend and "
+        "when the last backups were made. Read only.",
         R1,
         (_m("vitals_*", R1),),
     ),
@@ -454,8 +454,8 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "vitals_change",
         "Vitals",
         "Add, edit and remove the keys you track",
-        "The limit and expiry you type for a key. Removing a tracked key is reversible "
-        "(re-add it).",
+        "The limit and expiry you type for a key, and a restore drill you start (a card; about "
+        "₹2 each, at most 2 a month). Removing a tracked key is reversible (re-add it).",
         R2,
         (_m("vitals_*", R2),),
     ),

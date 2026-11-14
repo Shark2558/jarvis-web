@@ -71,6 +71,10 @@ PURPOSES: tuple[str, ...] = (
     "watch",
     "sos",
     "vision",
+    # R14 (docs/plans/r14-hardening.md D4): the backup canary's sealed nonce (and, as a MAC
+    # domain, the key fingerprint `mac("backup_probe", "fingerprint/v1")`): a restored copy must
+    # open it with the live key
+    "backup_probe",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

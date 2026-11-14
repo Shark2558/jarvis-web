@@ -94,6 +94,8 @@ OTHER_PARTS_TOOLS = (
 R7_PARTS_TOOLS = (
     *("sleep_last_night", "sleep_week", "watch_today", "sleep_note", "sos_status"),
     "vision_results",
+    # R14 I0 seam 4: the tools Parts A, C and D will register
+    *("vitals_backups", "vitals_drill_start", "skills_open", "maint_service_request"),
 )
 TOOL_NOUNS = frozenset(
     "activity bill birthdays breach calendar checkin chore contacts disaster doc focus freetime "
@@ -103,7 +105,9 @@ TOOL_NOUNS = frozenset(
     "people profile notes vault things drive maps youtube web news brief camera free slots "
     "blocks "
     # R7 I0: the watch, sleep, SOS and camera-results tools' nouns
-    "sleep last night week watch today sos vision results".split()
+    "sleep last night week watch today sos vision results "
+    # R14 I0: the backups, the drill, the skill register and the home-service request
+    "backups drill skills service request".split()
 )
 
 

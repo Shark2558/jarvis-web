@@ -43,7 +43,7 @@ from jarvis.home.ports import ArmReader
 from jarvis.home.store import HomeStore
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Delivery, Notifier, Signal
-from jarvis.ticks import FAILED_COUNT, TickJob, run_jobs
+from jarvis.ticks import FAILED_COUNT, TickJob, TickObserver, run_jobs
 
 log = get_logger(__name__)
 
@@ -78,8 +78,9 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
 # R6: a build book seal over the storage limit fails every run until the owner raises it (he is
 # told once) and a sweep retries its deletes by itself: neither may 503 the watchdog
 # R11 D3: the helpers' 5-minute clock rides here too; its reminders never fail the laptop check
+# R14 D7: self-health's 5-minute job runs FIRST (before the laptop check), for the brief's owners
 ADVISORY_JOBS = frozenset(
-    {"health_check", "book_seal", "book_sweep", "helpers_clock", "mobile_clock"}
+    {"health_check", "book_seal", "book_sweep", "helpers_clock", "mobile_clock", "selfwatch_clock"}
 )
 
 
@@ -221,20 +222,37 @@ class Watchdog:
         self._claims = _Sweep("home_claims_sweep", store.sweep_claims)
         self._codes = _Sweep("home_link_sweep", store.sweep_codes)
         self._extra = tuple(extra)
+        self._first: tuple[TickJob, ...] = ()  # R14 D7: before the laptop check
+        self.observer: TickObserver | None = None  # R14: each job's outcome (Part B)
+
+    def _jobs(self) -> list[TickJob]:
+        return [*self._first, self._offline, self._claims, self._codes, *self._extra]
+
+    def _refuse_twice(self, job: TickJob) -> None:
+        if job.name in {j.name for j in self._jobs()}:
+            raise ValueError(f"the watchdog already runs a job named {job.name}")
 
     def extend(self, job: TickJob) -> None:
-        """Add a job built after the watchdog (R5.1 D4: the shared systems-check job, which
-        `wire_r4` builds after home wiring). A name already in the list is refused."""
-        jobs: list[TickJob] = [self._offline, self._claims, self._codes, *self._extra]
-        names = {j.name for j in jobs}
-        if job.name in names:
-            raise ValueError(f"the watchdog already runs a job named {job.name}")
+        """Add a job built after the watchdog, after the laptop check (the one 5-minute clock,
+        `api/tick_wiring.py`). A name already in the list is refused."""
+        self._refuse_twice(job)
         self._extra = (*self._extra, job)
+
+    def prepend(self, job: TickJob) -> None:
+        """R14 D7: a job that runs before the laptop check (`selfwatch_clock`)."""
+        self._refuse_twice(job)
+        self._first = (*self._first, job)
 
     async def run(self) -> dict[str, object]:
         owners = await self._store.linked_uids()
-        jobs: list[TickJob] = [self._offline, self._claims, self._codes, *self._extra]
-        results: dict[str, str] = dict(await run_jobs(jobs, owners, total_budget_s=self._budget_s))
+        got = await run_jobs(
+            self._jobs(),
+            owners,
+            total_budget_s=self._budget_s,
+            observer=self.observer,
+            clock="watchdog",
+        )
+        results: dict[str, str] = dict(got)
         for name in ADVISORY_JOBS & results.keys():  # int-sec M4: never a 503 for these
             if results[name] == "failed":
                 log.error("an advisory watchdog job did not finish", extra={"job": name})

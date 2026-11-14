@@ -58,6 +58,7 @@ def test_build_passes_the_contract_with_its_own_names() -> None:
     assert {t.name for t in p.tools} == {
         "chore_list", "chore_add", "chore_done", "maint_list", "maint_add", "maint_done",
         "maint_starters", "weather_now", "disaster_status", "breach_status",
+        "maint_service_request",  # R14 D2 (row 102): a prepared request, never a booking
     }  # fmt: skip
     risks = {t.name: t.risk for t in p.tools}
     assert {n for n, r in risks.items() if r is ActionRisk.REVERSIBLE} == {

@@ -69,11 +69,18 @@ def _cli(c: AsyncClient) -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=c.app), base_url=ORIGIN, headers=BEARER)  # type: ignore[attr-defined]
 
 
+def _fresh(claims: dict[str, Any]) -> dict[str, Any]:
+    """Google's ID token carries `auth_time` once its Session age claims are on (R14 D13 (1)):
+    now, unless the test names one; `auth_time=None` leaves it out (the setting decides)."""
+    out = {"auth_time": int(auth_mod._now()), **claims}
+    return {k: v for k, v in out.items() if v is not None}
+
+
 async def _google(c: AsyncClient, *, reauth: bool = True, **claims: Any) -> Any:
     """Sign in through the real /auth routes; Google's half is faked (who the user is)."""
 
     async def fake(request: Any) -> dict[str, Any]:
-        return {"userinfo": {"email": OWNER, "email_verified": True, "sub": "1", **claims}}
+        return {"userinfo": {"email": OWNER, "email_verified": True, "sub": "1", **_fresh(claims)}}
 
     c.app.state.oauth.google.authorize_access_token = fake  # type: ignore[attr-defined]
     if reauth:
@@ -203,7 +210,12 @@ async def test_reauth_asks_google_again_and_only_it_stamps_the_window(
     r = await _google(gclient, reauth=False)
     assert r.headers["location"] == "/"
     assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0  # not stamped
-    r = await _google(gclient)  # no auth_time from Google: the moment it completed
+    # R14 D13 (1): no auth_time from Google and `reauth_requires_auth_time` off (the default):
+    # the moment it completed, as before R14 (tests/test_r14_d_auth.py has the setting on)
+    r = await _google(gclient, auth_time=None)
+    assert r.headers["location"] == "/?reauth=done"
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 300
+    r = await _google(gclient)  # Google's auth_time: the moment it asked again
     assert r.headers["location"] == "/?reauth=done"
     assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 300
     now[0] += 299

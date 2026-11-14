@@ -18,6 +18,7 @@ from pydantic import SecretStr
 from r3_app import HOME_ID, UID, H, R3App, detection, heartbeat, r3_app, r3_settings
 
 from jarvis.alerts import AlertResult
+from jarvis.api import auth as auth_mod
 from jarvis.home.heartbeat import HeartbeatHandler
 from jarvis.home.ports import FacesState
 from jarvis.home.webhook import HomeWebhook
@@ -311,7 +312,14 @@ async def _sign_in(w: R3App, *, fresh: bool) -> str:
     from jarvis.api.identity import user_id_for_email
 
     async def fake(request: Any) -> dict[str, Any]:
-        return {"userinfo": {"email": OWNER_EMAIL, "email_verified": True, "sub": OWNER_EMAIL}}
+        return {
+            "userinfo": {
+                "email": OWNER_EMAIL,
+                "email_verified": True,
+                "sub": OWNER_EMAIL,
+                "auth_time": int(auth_mod._now()),
+            }
+        }
 
     w.app.state.oauth.google.authorize_access_token = fake
     assert (await w.client.get("/auth/callback?code=abc&state=x")).status_code in (302, 307)

@@ -200,6 +200,14 @@ class Completion(BaseModel):
     offline: bool = False
 
 
+# R14 D9: the fixed words every provider's four error classes carry (fact 13). The vendor's own
+# message never leaves the provider module: not in the error, its chain or a log line.
+AUTH_REFUSED = "the AI provider refused the key"
+UNREACHABLE = "the AI provider could not be reached"
+BUSY = "the AI provider is busy or rate-limited"
+NO_ANSWER = "the AI provider could not answer"
+
+
 class LLMError(Exception):
     """Base class for provider failures. Retryable ones subclass LLMTransientError."""
 
@@ -239,6 +247,16 @@ class LLMDeclined(LLMError):
 
     def __init__(self, message: str = DECLINED) -> None:
         super().__init__(message)
+
+
+FIXED_ERROR_WORDS: tuple[str, ...] = (
+    AUTH_REFUSED,
+    UNREACHABLE,
+    BUSY,
+    NO_ANSWER,
+    OUT_OF_CREDIT,
+    DECLINED,
+)
 
 
 @runtime_checkable

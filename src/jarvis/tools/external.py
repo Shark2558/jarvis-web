@@ -30,6 +30,7 @@ from jarvis.tools.card import _is_invisible, one_line
 SOURCE_LIMIT = 120
 FENCE_REMOVED = "[fence-like text removed]"
 FENCE_END = re.compile(r"<<END [0-9a-f]{6}>>")
+_FID = re.compile(r"[0-9a-f]{6}")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 _ASCII_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 FENCE_PREFIX = "<<EXTERNAL CONTENT from "  # what `taint` looks for in an owner turn's blocks
@@ -98,17 +99,23 @@ def _defused(text: str) -> str:
     return _FENCE_LIKE.sub(FENCE_REMOVED, body)
 
 
-def wrap_external(text: str, *, source: str, limit: int | None = None) -> str:
+def wrap_external(
+    text: str, *, source: str, limit: int | None = None, fid: str | None = None
+) -> str:
     """Fence `text` as data from `source`, with a fresh id on both markers. A fence-looking
     string inside the content is removed, so the content cannot pretend to close the fence and
-    speak as the system."""
+    speak as the system. `fid` (6 hex characters) fixes the id, for a fence sent again with
+    every reply (`core.window`: the provider's cache needs the same text each time); the
+    content is defused all the same, so a known id still can't be closed from inside."""
+    if fid is not None and not _FID.fullmatch(fid):
+        raise ValueError("a fence id is 6 lower-case hex characters")
     body = _defused(text)
     if limit is not None:
         body = truncate(body, limit)
     # one line, no angle brackets (also full-width ones): a sender can't break or fake the header
     flat = unicodedata.normalize("NFKC", one_line(source, SOURCE_LIMIT))
     src = " ".join(model_text(flat).replace(">", " ").replace("<", " ").split()) or "unknown"
-    fid = secrets.token_hex(3)
+    fid = fid or secrets.token_hex(3)
     return f"{_FENCE_OPEN.format(source=src, fid=fid)}\n{body}\n{_FENCE_CLOSE.format(fid=fid)}"
 
 

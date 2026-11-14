@@ -51,6 +51,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "picture": "L5",  # R11.1 D: research a picture of a thing, place, label or logo
         "watch": "L5",  # R7 D: watch days and sleep (Health & Wellbeing, the 11th skill)
         "sos": "L5",  # R7 D: emergency SOS (Security Advisor)
+        "skills": "L5",  # R14 C: the skill register and the turn's tools
         # L6 Integration & Tools
         "tools": "L6",
         "integrations": "L6",
@@ -67,6 +68,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "vault": "L7",
         "vault_inbox": "L7",
         "quota": "L7",
+        "backup": "L7",  # R14 A: Firestore's daily backups and the restore drill
         # L8 Response & Output
         "alerts": "L8",
         "notify": "L8",
@@ -84,6 +86,8 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "health": "X",
         "buildbook": "X",
         "fixes": "X",  # R11.1: the plug-in contract the four parts of the release share
+        "hardening": "X",  # R14: the plug-in contract of the four parts of "Free hardening"
+        "selfwatch": "X",  # R14 B: JARVIS watches itself (job streaks, clocks, errors, spend)
     }
 )
 

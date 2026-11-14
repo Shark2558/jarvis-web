@@ -45,7 +45,7 @@ async def test_permissions_script_speaks_plain_english_for_each_failure(
     # no sign-in shortcut: removing and switching off always carry a passkey check
     assert "{ body: { proof: await prove({ purpose: 'remove', credential_id: p.id }) } }" in js
     assert "proof: await prove({ purpose: 'disable' })" in js
-    assert "Google didn\\'t ask you to sign in again" in js
+    assert "Google didn\\'t confirm a fresh sign-in" in js  # R14 I1 (D13 (1)): the words moved
 
 
 async def test_permissions_section_is_collapsed_in_the_approvals_panel(client: AsyncClient) -> None:

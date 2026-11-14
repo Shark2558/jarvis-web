@@ -56,6 +56,18 @@
     ['sos_contact_left', 'An emergency contact left'],
     ['phone_unlinked', 'A phone was unlinked'],
     ['watch_stale', 'The watch has not synced for a day'],
+    // R5.1's two systems rings (their rows were missing) and R14 D6: JARVIS's own health, backups
+    ['health_fault', 'One of JARVIS\'s systems is down'],
+    ['vitals_critical', 'A key, quota or bill reached its limit'],
+    ['job_failing', 'Background jobs keep failing'],
+    ['clock_stopped', 'One of JARVIS\'s clocks stopped'],
+    ['brief_missed', 'My morning brief was not made'],
+    ['errors_piling', 'Errors are piling up'],
+    ['spend_spike', 'A day\'s AI spend is far above normal'],
+    ['deploy_changed', 'A new version of JARVIS is live'],
+    ['backup_problem', 'A backup or the restore drill has a problem'],
+    ['selfwatch_ok', 'JARVIS has recovered'],
+    ['backup_ok', 'The monthly restore drill passed'],
   ];
   const LEVEL = { urgent: 'Urgent', important: 'Important', info: 'Just so you know' };
   const S = { data: undefined, vip: [], devices: [], error: '', loadedAt: 0, loading: null, busy: false, key: '' };

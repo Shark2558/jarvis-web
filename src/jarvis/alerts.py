@@ -81,6 +81,19 @@ AlertKind = Literal[
     "sos_contact_left",
     "phone_unlinked",
     "watch_stale",
+    # R14 (docs/plans/r14-hardening.md D5, D6): JARVIS's own health and its backups. Seven are
+    # "important" daytime rings held in quiet hours, under their own soft cap (notify.storm
+    # SELF_KINDS: one per kind and subject per 30 minutes, 3 an hour in all); recovered and a
+    # passed drill are info (feed only). Part A alone raises the two backup kinds.
+    "job_failing",
+    "clock_stopped",
+    "brief_missed",
+    "errors_piling",
+    "spend_spike",
+    "deploy_changed",
+    "backup_problem",
+    "selfwatch_ok",
+    "backup_ok",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",
@@ -159,12 +172,24 @@ R7_ALERT_KINDS: tuple[AlertKind, ...] = (
     "phone_unlinked",
     "watch_stale",
 )
+R14_ALERT_KINDS: tuple[AlertKind, ...] = (
+    "job_failing",
+    "clock_stopped",
+    "brief_missed",
+    "errors_piling",
+    "spend_spike",
+    "deploy_changed",
+    "backup_problem",
+    "selfwatch_ok",
+    "backup_ok",
+)
 
 
 __all__ = [
     "HOME_ALERT_KINDS",
     "R11_1_ALERT_KINDS",
     "R11_ALERT_KINDS",
+    "R14_ALERT_KINDS",
     "R7_ALERT_KINDS",
     "AlertKind",
     "AlertResult",

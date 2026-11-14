@@ -19,7 +19,7 @@ def _flat(text: str) -> str:
 
 
 def test_the_release_has_one_persona_version_with_its_note() -> None:
-    assert p.PERSONA_VERSION == "p7.0"  # from R6 the version follows the release (v7.0.0)
+    assert p.PERSONA_VERSION == "p14.0"  # from R6 the version follows the release (v7.0.0)
     with open(p.__file__, encoding="utf-8") as fh:
         text = fh.read()
     assert "# p7.0: R7" in text

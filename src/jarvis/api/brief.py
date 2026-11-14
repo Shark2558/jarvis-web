@@ -35,7 +35,7 @@ from jarvis.brief.service import BriefService
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import InputRejected
 from jarvis.logging import get_logger
-from jarvis.ticks import run_jobs
+from jarvis.ticks import JobOutcome, report, run_jobs
 
 log = get_logger(__name__)
 
@@ -153,8 +153,12 @@ async def tick(request: Request, svc: BriefService = Depends(_svc)) -> TickResul
     web = getattr(state, "web", None)
     if web is not None:  # Tavily's own count, at most once a day (slice 11 D7 b)
         sweeps["web"] = await _sweep("web", web.check_vendor_usage())
+    # R14 D5: every sweep's outcome to the self-health watch (Part B's observer), then the jobs'
+    observer = getattr(state, "tick_observer", None)
+    for name, res in sweeps.items():
+        report(observer, JobOutcome("tick", name, res, 0.0))
     # R2: feature jobs (vault reminders, the DigiLocker inbox); never raises, same ok/failed words
-    jobs = await run_jobs(getattr(state, "tick_jobs", ()), svc.owners)
+    jobs = await run_jobs(getattr(state, "tick_jobs", ()), svc.owners, observer=observer)
     sweeps.update({name: res for name, res in jobs.items() if name not in sweeps})
     return result.model_copy(update={"sweeps": sweeps})
 

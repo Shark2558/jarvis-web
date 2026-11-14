@@ -217,12 +217,13 @@ def _register_parts(
     r11: Mapping[str, HelperPart] | None,
     r111: Sequence[Tool],
     r7: Sequence[Tool] = (),
+    r14: Sequence[Tool] = (),
 ) -> None:
     if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring
         from jarvis.api.r11_wiring import register_r11_tools
 
         register_r11_tools(reg, r11)
-    for t in (*r111, *r7):  # R11.1 and R7: the parts' tools, checked at wiring (api/r*_wiring.py)
+    for t in (*r111, *r7, *r14):  # R11.1, R7, R14: the parts' tools, checked at wiring
         reg.register(t)
 
 
@@ -248,6 +249,7 @@ def build_gateway(
     r11: Mapping[str, HelperPart] | None = None,
     r111: Sequence[Tool] = (),
     r7: Sequence[Tool] = (),
+    r14: Sequence[Tool] = (),
     pictures: TurnGuard | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
@@ -267,7 +269,7 @@ def build_gateway(
     _register_services(reg, memory, web, documents, drive, media, pictures)
     _register_personal(reg, vault, notes, belongings)
     _register_home(reg, home)
-    _register_parts(reg, r11, r111, r7)
+    _register_parts(reg, r11, r111, r7, r14)
     return Gateway(
         registry=reg,
         policy=Policy(),

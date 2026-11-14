@@ -70,7 +70,7 @@ def _lines(path: Path) -> int:
 
 
 def test_the_version_is_eleven_point_one() -> None:
-    assert jarvis.__version__ == "7.0.0"  # R7 I0 (11.1.1 at R11.1 hotfix 1; nothing compares it)
+    assert jarvis.__version__ == "14.0.0"  # R14 I0 (7.0.0 at R7; nothing compares it)
 
 
 # ---- settings -----------------------------------------------------------------------------------
@@ -115,8 +115,8 @@ def test_a_setting_outside_its_range_is_refused(field: str, bad: int) -> None:
 def test_two_kinds_make_thirty_eight() -> None:
     every = get_args(AlertKind)
     assert R11_1_ALERT_KINDS == ("series_checkin", "faces_to_name")
-    # R7 I0 added five (tests/test_r7_seams.py): 43
-    assert len(every) == len(set(every)) == 43 and set(DEFAULT_URGENCY) == set(every)
+    # R7 I0 added five (tests/test_r7_seams.py): 43; R14 I0 nine (tests/test_r14_seams.py): 52
+    assert len(every) == len(set(every)) == 52 and set(DEFAULT_URGENCY) == set(every)
     assert DEFAULT_URGENCY["series_checkin"] == "important"
     assert DEFAULT_URGENCY["faces_to_name"] == "info"
     # "did the session happen?" is asked every time: it rings by day and is HELD at night,

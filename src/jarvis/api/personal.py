@@ -30,6 +30,7 @@ from jarvis.api.r6_wiring import r6_privacy_sources
 from jarvis.api.r7_wiring import mobile_privacy_sources
 from jarvis.api.r11_1_wiring import fix_privacy_sources
 from jarvis.api.r11_wiring import r11_privacy_sources
+from jarvis.api.r14_wiring import r14_privacy_sources
 from jarvis.api.rows import DRIVE_TOOL
 from jarvis.belongings.privacy import BelongingsPrivacy
 from jarvis.belongings.service import BelongingsService
@@ -283,6 +284,7 @@ def privacy_sources(
         *r11_privacy_sources(app),  # R11 D17: the helpers' rows (I0's nudge row, then A-D)
         *fix_privacy_sources(app),  # R11.1: the four parts' rows (series, photo imports, ...)
         *mobile_privacy_sources(app),  # R7: linked phones, watch days, SOS, camera results
+        *r14_privacy_sources(app),  # R14: backups (A), the token ledger (C), self-health (B)
         *home_privacy_sources(app),  # R3 I1: C's FacesPrivacy replaces the placeholder, last
     ]
 

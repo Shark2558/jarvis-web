@@ -7,7 +7,7 @@
   ("setup failed") and the others still run. It also hands Part D's `sos_hook` to the Telegram
   front door (`TelegramService.sos`), when both exist.
 - `mobile_tick_jobs(app)`: the parts' clock and daily jobs as TWO tick jobs of their own,
-  `mobile_clock` (also on the home watchdog's 5 minutes) and `mobile_daily`, built once and
+  `mobile_clock` (also on the one 5-minute clock, R14 D7) and `mobile_daily`, built once and
   independent of the R11 helpers (switched off or failed at set-up: the 400-day sweeps and
   `watch_stale` still run), inside the tick's own deadline (I1 fixer, code M5).
 - `mobile_tools(parts)`: every part's tools, for `tools.setup.build_gateway(r7=...)`.
@@ -161,7 +161,7 @@ CLOCK_BUDGET_S, DAILY_BUDGET_S = 20.0, 60.0  # each inside MAX_BUDGET_S and the 
 
 def mobile_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
     """R7's own two tick jobs (never the R11 helpers' composites), built once. The clock one also
-    rides the home watchdog's 5 minutes when Home is on, as R11's does."""
+    rides the one 5-minute clock (R14 D7: Home on or off), as R11's does."""
     from jarvis.helpers.clock import Composite  # a plain runner of jobs: it needs no R11 wiring
 
     st = app.state
@@ -176,9 +176,10 @@ def mobile_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
         jobs.append(Composite(MOBILE_CLOCK, clock, owners, budget_s=CLOCK_BUDGET_S, now=now))
     if daily:
         jobs.append(Composite(MOBILE_DAILY, daily, owners, budget_s=DAILY_BUDGET_S, now=now))
-    watchdog = getattr(st, "home_watchdog", None)
-    if watchdog is not None and clock:
-        watchdog.extend(jobs[0])  # around the clock, every 5 minutes
+    if clock:  # around the clock, every 5 minutes, Home on or off (R14 D7)
+        from jarvis.api.tick_wiring import add_clock_job
+
+        add_clock_job(app, jobs[0])
     st.r7_jobs = built = tuple(jobs)
     return built
 

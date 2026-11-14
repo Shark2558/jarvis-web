@@ -26,3 +26,9 @@ android/.kotlin/
 *.apk
 *.aab
 captures/
+
+# R14 D17: coverage reports (CI writes them; never committed)
+.coverage
+.coverage.*
+coverage.json
+htmlcov/

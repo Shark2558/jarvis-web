@@ -148,8 +148,8 @@ async def home_webhook(request: Request) -> Response:
 @internal.post("/watchdog", dependencies=[Depends(require_scheduler)], response_model=None)
 async def home_watchdog(request: Request) -> dict[str, Any] | JSONResponse:
     dog: Watchdog | None = _svc(request, "home_watchdog")
-    if dog is None:  # R11 D3: with Home off the same Scheduler job is the helpers' 5-minute clock
-        return await _helpers_clock_only(request)
+    if dog is None:  # R11 D3, R14 D7: with Home off the same Scheduler job is the 5-minute clock
+        return await _clock_only(request)
     out = await dog.run()
     jobs = out.get("jobs")
     if isinstance(jobs, dict) and "failed" in jobs.values():
@@ -157,15 +157,23 @@ async def home_watchdog(request: Request) -> dict[str, Any] | JSONResponse:
     return out
 
 
-async def _helpers_clock_only(request: Request) -> dict[str, Any]:
-    """R11 D3: Home is off, so no laptop check runs; the helpers' clock (if any) still does, and
-    is advisory: a job it could not finish is "degraded", never a 503 (the Scheduler would retry
-    a 5-minute job for nothing)."""
+async def _clock_only(request: Request) -> dict[str, Any]:
+    """R11 D3, R14 D7: Home is off, so no laptop check runs; the one 5-minute clock still does
+    (`app.state.clock_jobs`: self-health first, the systems check, the helpers' and R7's clocks,
+    each for the brief's owners), and is advisory: a job it could not finish is "degraded",
+    never a 503 (the Scheduler would retry a 5-minute job for nothing)."""
     out: dict[str, Any] = {"homes": 0, "offline": 0, "held_sent": 0, "swept": 0, "jobs": {}}
-    clock = getattr(request.app.state, "helpers_clock", None)
-    if clock is None:
+    state = request.app.state
+    jobs = getattr(state, "clock_jobs", None) or ()
+    if not jobs:
         return out
-    got = await run_jobs((clock,), (), total_budget_s=WATCHDOG_BUDGET_S)
+    got = await run_jobs(
+        jobs,
+        (),
+        total_budget_s=WATCHDOG_BUDGET_S,
+        observer=getattr(state, "tick_observer", None),
+        clock="watchdog",
+    )
     out["jobs"] = {name: "degraded" if res == "failed" else res for name, res in got.items()}
     return out
 

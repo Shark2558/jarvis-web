@@ -187,3 +187,19 @@ def test_problem_words_are_one_line_and_cleaned() -> None:
     req = sr.clean_request("pest", "ants‮ in the\nkitchen", " this   week ")
     assert req.text.splitlines()[1] == "Problem: ants in the kitchen."
     assert req.when == "this week"
+
+
+async def test_a_refused_request_leaves_no_number_in_the_audit() -> None:
+    """Code review: a request the check refuses is audited as an error with a hash of its
+    arguments and the fixed refusal, never the words (so never his number)."""
+    tool, _ = await _house_tool()
+    reg = ToolRegistry()
+    reg.register(tool)
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    bad = ToolCall(id="t1", name=TOOL, arguments={"job": "plumber", "problem": "ring 9876543210"})
+    refused = await gw.execute(bad, scope=f"{UID}:s1")
+    assert refused.outcome is GatewayOutcome.ERROR
+    [entry] = (await gw.audit.tail(5)).entries
+    assert entry.outcome == "error" and sr.CONTACT_REFUSAL[:60] in entry.detail
+    dumped = entry.model_dump_json()
+    assert "9876543210" not in dumped and "ring" not in dumped

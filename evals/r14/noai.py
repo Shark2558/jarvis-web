@@ -2,34 +2,60 @@
 """R14 eval, Part D's suite (`noai`): No-AI pass 2 (plan D12), on fakes, through a real `Brain`
 with the AI off:
 
-- every example of every D12 row (`tests/r14_fakes_d.py` `D12_ROWS`) makes ZERO provider calls
-  and ends in exactly its one tool through the gateway (a read runs; a write or the drill waits on
-  one card for exactly that call);
+- every example of every D12 row (`noai_fakes.py` `D12_ROWS`, beside this file) makes ZERO
+  provider calls and ends in exactly its one tool through the gateway (a read runs; a write or the
+  drill waits on one card for exactly that call);
 - the fixed lines (disarm never routes; the time and the date from the clock; "what can you do")
   and the generative asks (they keep `NO_AI_LINE`) make no provider call and no tool call;
 - row 102's request carries no address or phone number: one with a phone number is refused.
 
 Negative control: Part D's phrases switched off (the Brain gets no R14 router): every D12 row
 then misses its tool, so this part must fail.
+
+The fakes are loaded by file path under the name `tests/r14_fakes_d.py` uses too (one module;
+this eval needs nothing from tests/ nor any sys.path change).
 """
 
 from __future__ import annotations
 
+import importlib.util
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "tests"))
-from r14_fakes_d import CARDS, D12_ROWS, GENERATIVE, WRITES, no_ai_brain  # noqa: E402
+from jarvis.core.brain import Brain
+from jarvis.core.models import ChatRequest
+from jarvis.helpers.house.service_request import CONTACT_REFUSAL, service_request
+from jarvis.llm.mock_provider import MockProvider
+from jarvis.offline.phrases_r14 import ABILITIES_LINE, DISARM_LINE, ROUTERS
+from jarvis.offline.rules import NO_AI_LINE, NoAIRouter
+from jarvis.tools.taint import context_trust
 
-from jarvis.core.models import ChatRequest  # noqa: E402
-from jarvis.helpers.house.service_request import CONTACT_REFUSAL, service_request  # noqa: E402
-from jarvis.offline.phrases_r14 import ABILITIES_LINE, DISARM_LINE, ROUTERS  # noqa: E402
-from jarvis.offline.rules import NO_AI_LINE, NoAIRouter  # noqa: E402
-from jarvis.tools.taint import context_trust  # noqa: E402
+FAKES_NAME = "jarvis_eval_r14_noai_fakes"
+Row = tuple[str, str, dict[str, Any]]
+
+
+def _fakes() -> ModuleType:
+    if FAKES_NAME in sys.modules:
+        return sys.modules[FAKES_NAME]
+    spec = importlib.util.spec_from_file_location(
+        FAKES_NAME, Path(__file__).with_name("noai_fakes.py")
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[FAKES_NAME] = mod  # dataclasses look their module up while the class is built
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_F = _fakes()
+CARDS: frozenset[str] = _F.CARDS
+D12_ROWS: list[Row] = _F.D12_ROWS
+GENERATIVE: tuple[str, ...] = _F.GENERATIVE
+WRITES: frozenset[str] = _F.WRITES
+no_ai_brain: Callable[[Sequence[NoAIRouter]], tuple[Brain, MockProvider, Any]] = _F.no_ai_brain
 
 PART = "noai"
 BUILT = True
@@ -87,7 +113,9 @@ async def _no_contact() -> dict[str, Any]:
 
 
 async def _rows(phrases: Sequence[NoAIRouter]) -> list[dict[str, Any]]:
-    return [await _row(n, *row, phrases) for n, row in enumerate(D12_ROWS, 1)]
+    return [
+        await _row(n, text, tool, args, phrases) for n, (text, tool, args) in enumerate(D12_ROWS, 1)
+    ]
 
 
 async def cases() -> list[dict[str, Any]]:

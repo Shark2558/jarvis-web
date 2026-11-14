@@ -1,15 +1,15 @@
-Version v14.0.1 · 14 Nov 2026, 15:30 IST · Release R14 · Status: Current · Owner: 🛠 Mark XVIII
+Version v14.0.2 · 14 Nov 2026, 19:20 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
 
 # JARVIS Architecture & Technology Guide
 
-This guide was checked against JARVIS's real code. This is edition v14.0.1 of the guide (the first
+This guide was checked against JARVIS's real code. This is edition v14.0.2 of the guide (the first
 edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
 program at version v14.0.0: release R6.1 as built, release R11, the free proactive helpers (card
 C60), release R11.1, your observations fixed (card C61), and release R7 (the phone app, the watch,
 SOS and the phone camera; cards C62 to C65), all live, and release R14, "Free hardening" (backups
-and a restore drill, self-health, cheaper replies and the skill register; cards C66 to C68), whose
-joins are built and whose parts are PLANNED (the version number goes down from 11.1 at R7 on
-purpose, as nothing compares it). Anything that is planned but not built yet is marked PLANNED.
+and a restore drill, self-health, cheaper replies and the skill register; cards C66 to C68),
+built and joined, not yet deployed (the version number goes down from 11.1 at R7 on purpose, as
+nothing compares it). Anything that is planned but not built yet is marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -116,8 +116,10 @@ Details: section 9.
   JARVIS does not add its own lock to these. Anyone who can open your Google Cloud project could
   read them.
 - **Your laptop.** Camera pictures and the face library stay there.
-- **No backups.** JARVIS makes no backup copies. When you delete something it is gone for good
-  (after 30 days in "Recently deleted", where that applies).
+- **Backups, after your one-time step.** Google copies the whole database every day and keeps
+  each copy 7 days, and once a month JARVIS proves a copy opens (C66). A thing you delete leaves
+  the live data at once (after 30 days in "Recently deleted", where that applies) and the copies
+  within 7 days. Until you run the step, no copy is kept and Vitals says "Backups: not set up".
 - **Your Google account, as always.** Your Calendar, Gmail, Tasks, Contacts, Drive and Photos stay
   with Google. JARVIS reads them through the link you gave it.
 
@@ -171,9 +173,9 @@ silently go stale. Figure 2 in section 4 draws it.
 | L2 Input Processing | Turns speech, files and camera sightings into text and facts. | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent |
 | L3 Context & Orchestration | Keeps the conversation, long-term memory, the clock that wakes JARVIS, and the undo bin. | C09 Conversations, C10 Long-term memory, C11 Scheduler ticks and watchdog, C12 Recently deleted |
 | L4 Core Reasoning Engine | The brain: one loop that reads context, asks a model, calls tools and checks every step. | C13 Brain core loop, C14 Persona and prompts, C15 Guardrails and trust, C16 Brain router and LLM layer, C17 Brain switch, No-AI and offline mode, C18 Approval cards and Approve all |
-| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11), C68 Skill register and the turn's tools (R14, PLANNED) |
+| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11), C68 Skill register and the turn's tools (R14) |
 | L6 Integration & Tools | The doors to outside services and the house, all through one gateway. | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail and mail read aloud, C32 To-dos, C33 Contacts, C34 Drive folders, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history |
-| L7 Data & Persistence | Where things are kept, and how much of each free allowance is used. | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger, C66 Backups and restore drill (R14, PLANNED) |
+| L7 Data & Persistence | Where things are kept, and how much of each free allowance is used. | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger, C66 Backups and restore drill (R14) |
 | L8 Response & Output | How JARVIS tells you things: alerts, browser notifications, the Activity log. | C45 Alerts port, C46 Alert policy, C47 Web Push, C48 Activity log |
 | X Cross-cutting | Settings, logs, keys, permissions, privacy, costs, health, the build book, delivery and quality. | C49 Configuration, C50 Logging, C51 Keyring, C52 Permissions and passkeys, C53 Privacy dashboard, C54 Costs in ₹ and the monthly limit, C55 Vitals, C56 Systems check, C57 Build book, C58 Delivery, C59 Evals and the visual gate |
 
@@ -395,7 +397,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Name | Long-term memory ("About you") |
 | What it does | Remembers facts about you (people, places, preferences) and brings the relevant ones (at most 12) into a reply, with "what I used" shown. Learning from your messages is opt-in, runs in the background on the cheapest tier, at most 20 times a day, and a filter refuses ID numbers, card numbers and passwords. |
 | Layer | L3 Context & Orchestration |
-| Skill | Knowledge Base & Memory |
+| Skill | Research & Intel (knowledge and memory) |
 | Where in the code | `src/jarvis/recall/`, `src/jarvis/api/memory.py`, `console-memory.js` |
 | Depends on | C16 Brain router (fast tier), C54 Costs, C41 Document store |
 | Data it keeps | `memory/{uid}` (header and settings) and `memory_shards/{uid}_{n}` (up to 100 facts each). Kept until you delete them; stored as plain JSON under Google's encryption, not JARVIS's own key (*see section 6*). |
@@ -607,7 +609,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Name | Notes, voice memos and saved links |
 | What it does | Your own notes, voice-memo transcripts (never the audio) and saved web links, searched by code with no model call. |
 | Layer | L5 Skills & Capabilities |
-| Skill | Knowledge Base & Memory |
+| Skill | Research & Intel (knowledge and memory) |
 | Where in the code | `src/jarvis/kb/`, `src/jarvis/api/notes.py`, `console-notes.js`, `console-notes-memo.js` |
 | Depends on | C51 Keyring, C12 Recently deleted, C28 Tool gateway |
 | Data it keeps | `kb/{uid}` (header), `kb_shards/{uid}_{id}` (the notes, encrypted with the `notes` key), `kb_fetch` (state of fetching a saved link's text). |
@@ -623,7 +625,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Name | Things ("Where did I keep it?") |
 | What it does | Tell JARVIS where you put something ("passport in the blue suitcase") and ask later. Moving a thing keeps its history (up to 50 moves). |
 | Layer | L5 Skills & Capabilities |
-| Skill | Knowledge Base & Memory |
+| Skill | Research & Intel (knowledge and memory) |
 | Where in the code | `src/jarvis/belongings/`, `src/jarvis/api/belongings.py`, `console-things.js` |
 | Depends on | C51 Keyring, C12 Recently deleted, C28 Tool gateway |
 | Data it keeps | `belongings/{uid}` and `belongings_history/{uid}_{thing}`, both encrypted with the `belongings` key. |
@@ -744,21 +746,21 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | A refused or failed send still opens the SMS screen and the 112 button; the phone uses the numbers it keeps whatever the answer. With no contact SOS stays off. A real SOS has its own budget (3 an hour, 10 a day), separate from tests and "I'm safe", so tests never block it; a press that reached nobody gives its slot back; when the limits can't be read a real SOS still goes. `sos_sent` has no off switch and no quiet hours, storm control or Telegram cap drops it. | |
 | Since | R7 (v7.0.0): I0 the Telegram hook, Parts D and E the send and the screens, I1 the joins |
 
-#### C68 · Skill register and the turn's tools (R14, PLANNED)
+#### C68 · Skill register and the turn's tools (R14)
 
 | Field | Value |
 |---|---|
-| Name | Skill register and the turn's tools (R14, PLANNED) |
-| What it does | PLANNED (R14 Parts C and D; I0 built the joins). Every tool is filed under one of the 11 skills (data: the skills catalogue, a JSON file), with its risk, permission row and Telegram class; a test stops a tool that isn't filed. Each reply then sends only the tools the turn's skills need (his words, the last 3 turns, the sticky set, a small core, `skills_open` for the rest) instead of all ~135, old tool results from earlier turns are shortened, and the Anthropic provider caches the conversation within a reply; a token ledger counts where the money goes (counts only). "all" (`tool_offer`) restores sending every tool. The brain has two slots for it (`Brain.slots`: the offer and the ledger); an offer that breaks sends every tool. Part D adds No-AI pass 2 (groceries, vault expiry, belongings, home status, parcels, inbox, recently deleted, the time, memory, backups, "what can you do") and the home-service request (`maint_service_request`: prepares the text and gives the booking site's address; never books or pays). | |
+| Name | Skill register and the turn's tools (R14) |
+| What it does | Built in R14 (Parts C and D; joined at I1, not yet deployed). **The register:** every tool is filed under one group of one of the 11 skills by its name (data: `skills/catalogue.json`, 40 groups of at most 10 tools; an exact name wins over a family), with its risk, permission rows and Telegram class; a check stops a tool that isn't filed, is filed twice, or a pattern that matches nothing (136 tools on the fullest fake registry, 0 problems). **The turn's tools:** each reply is offered the groups his words name (English and common Hinglish), the groups of tools used in the last 3 turns, the previous turn's set within 5 minutes (at most 40 tools), a small core (`skills_open`, `reminder_add`, `calendar_list_events`, `memory_search`) and every tool a replayed call names; fixed for the turn, and `skills_open(skill)` adds that skill from the next round. On the labelled messages about 9.5 tools are offered of 136; recall is 100 % on the 122 messages the words were tuned on and 87.5 % on 24 held-out ones, so about 1 message in 8 needs a `skills_open` round. Persona p14.0 calls `skills_open` before it says something "isn't connected". `tool_offer = "all"` restores every tool; an offer that breaks sends every tool; a brain that trains on content still gets none. **The window:** every block counts toward the history's size; earlier turns' tool results older than the last 2 tool rounds are cut to `history_tool_result_chars` (2,000) with their header and flags kept; old turns go in chunks down to 70 %, so the start stays put. The Anthropic provider adds a second cache point on the last message of every call with tools (a reply's rounds reuse what was read). Every model error carries fixed words, never the vendor's text. **The ledger:** `billing/ledger.py` counts per call, per owner per day: calls, cold calls, input, cache and output tokens, characters by part, tools offered, skills opened, and the cost by part; it counts the chat replies only (the brain's record slot), not recall, the brief's summary, understanding or the helpers, so the billed total is higher. Vitals "Where the AI money goes" (`ai_parts`, quiet) and the Privacy row `token_ledger`. **No-AI pass 2 (Part D):** 13 anchored phrase routers (groceries, vault expiry, where a thing is, home status and arming, parcels, the inbox, Recently deleted, memory, the time and date, backups and the drill card, a home-service request, "what can you do" with the 11 skills); disarming never routes; the real tools' answers are said in words (`offline/said.py`, I1), never as data. **Home services (row 102):** `maint_service_request` (R1, Task & Productivity, open on Telegram) writes a fixed-template request (no address or phone; a contact in his words is refused) and gives the booking site's address as text; it never books, pays or opens anything, and a person he picks gets a `whatsapp_draft`. **The car (row 101)** stays "not possible yet"; a "Car service" starter every 6 months is offered. | |
 | Layer | L5 Skills & Capabilities (L3/L4 for the offer and the window) |
 | Skill | Code & DevOps; Finance & Analytics (the ledger) |
-| Where in the code | `src/jarvis/skills/` (I0: `ids.py` the 11 ids and labels, `ports.py` `BrainSlots`, `OfferContext`, `LedgerCall`, `offer.py` `offer_all`, `part.py` the stub; PLANNED: the catalogue (data), the register and the `skills_open` tool), `src/jarvis/billing/ledger.py` (a no-op at I0), `src/jarvis/core/brain.py` (the two slots), `src/jarvis/api/skills.py` (`GET /v1/skills`, `GET /v1/costs/ledger`, stubs), `src/jarvis/offline/phrases_r14.py` and `offline/r14_part.py` (Part D, stubs); eval `evals/r14/offer.py`, `evals/r14/noai.py` | |
+| Where in the code | `src/jarvis/skills/` (`catalogue.json` the data, shipped as package data; `registry.py` the register and its check; `offer.py` the turn's tools; `open_tool.py` `skills_open`; `part.py` the join; I0's `ids.py`, `ports.py`), `src/jarvis/billing/ledger.py`, `src/jarvis/core/window.py`, `src/jarvis/core/brain.py` (the two slots; the window gets the setting), `src/jarvis/core/prompts.py` (persona p14.0), `src/jarvis/llm/base.py` (the fixed error words), `src/jarvis/llm/anthropic_provider.py` (the history cache point), `src/jarvis/llm/factory.py`, `src/jarvis/api/skills.py` (`GET /v1/skills`, `GET /v1/costs/ledger`), `scripts/skill_coverage.py` (the register's table), `src/jarvis/offline/phrases_r14.py`, `src/jarvis/offline/r14_part.py`, `src/jarvis/offline/said.py` (the No-AI words), `src/jarvis/helpers/house/service_request.py`; eval `evals/r14/offer.py`, `evals/r14/noai.py` | |
 | Depends on | C13 Brain core loop; C16 Brain router and LLM layer; C28 Tool gateway and audit; C52 Permissions and passkeys; C17 Brain switch, No-AI and offline mode; C54 Costs in ₹ and the monthly limit |
-| Data it keeps | PLANNED: `token_ledger/{uid}_{yyyymmdd}` (calls, cold calls, tokens and characters by part, tools offered, skills opened; counts only; 90 days). | |
+| Data it keeps | `token_ledger/{uid}_{yyyymmdd}` (calls, cold calls, tokens and characters by part, tools offered, skills opened, the cost by part; counts only; 90 days). | |
 | Outside services | None |
-| Cost (₹ a month) | ₹0 to run; saves an estimated ≈ ₹1,460 a month at 20 replies a day (≈ 45 % a reply), measured by the ledger |
-| When it fails | A tool the offer missed: `skills_open` adds its skill for the next round; an offer that crashes sends every tool; a ledger write that fails is logged and the reply goes on; a brain that trains on content still gets no tools. | |
-| Since | R14 (v14.0.0): I0 the ids, the ports and the brain's two slots |
+| Cost (₹ a month) | ₹0 to run (one ledger transaction a model call, about 40 reads and 40 writes a day); saves an estimated ≈ ₹1,460 a month at 20 replies a day (≈ 45 % a reply, with about 25 tools assumed; about 9.5 are offered on the labelled set), until a week of the ledger's data measures it |
+| When it fails | The catalogue can't be read: the part is left out and every tool is offered; the offer raises: every tool; a tool the offer missed: `skills_open` adds its skill for the next round; a ledger write fails: logged, the reply goes on; the ledger can't be read: Vitals "unknown", the route 503; a No-AI answer whose shape isn't known: the generic line. | |
+| Since | R14 (v14.0.0): I0 the ids, the ports and the brain's two slots; Parts C and D built it; I1 joined it (persona p14.0, the window's setting, the catalogue as package data, the No-AI words) |
 
 ### Layer 6 — Integration & Tools
 
@@ -1036,21 +1038,21 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | A counter that can't be read stops the call rather than risking paid use. Google may count per billing account: the deploy script warns when other projects share it. |
 | Since | Slice 12 (v0.12.0) |
 
-#### C66 · Backups and restore drill (R14, PLANNED)
+#### C66 · Backups and restore drill (R14)
 
 | Field | Value |
 |---|---|
-| Name | Backups and restore drill (R14, PLANNED) |
-| What it does | PLANNED (R14 Part A; I0 built the joins only). After the owner's one-time step (`deploy/backup_setup.sh`, which shows the cost lines and waits for YES), Firestore makes its own daily copy of the database and keeps each for 7 days; delete protection is turned on for the live database. Every morning JARVIS writes a canary (a random value sealed with the live key) and reads the list of backups; once a month (and when he approves the "test my backup" card, at most 2 a month, never with Approve all) it restores the newest filled copy into a throw-away database `jarvis-drill`, counts every collection, checks the canary opens with the live key, opens one vault item and compares samples on JARVIS's own fields, then deletes the copy. Its code can't write the live database: the verifier reads both sides through a read-only port, the adapters refuse any database but `jarvis-drill` before any call, and JARVIS refuses to start with the live database named `jarvis-drill`. Not in the copy: the laptop's pictures and face library, Secret Manager, his Google account data; the backups and the key share one project, so the drill proves recovery from a bad write or delete, not from losing the project or the key. Until the set-up, Vitals says "Backups: not set up" and nothing alerts. | |
+| Name | Backups and restore drill (R14) |
+| What it does | Built in R14 (Part A; joined at I1, not yet deployed). After the owner's one-time step (`bash deploy/backup_setup.sh` in Cloud Shell: four cost and privacy lines, then nothing changes unless he types YES), Firestore copies the whole database every day and keeps each copy 7 days, and the live database gets delete protection. Every morning (job `backup_canary`) JARVIS writes a canary (the SHA-256 of a random value, the value sealed with the key purpose `backup_probe`, the key's fingerprint) and reads Google's list of copies and the schedule into its status. Once a month (job `backup_drill`, from 05:00 on the drill day) and when he approves the "test my backup" card (`vitals_drill_start`, at most 2 a month, never with Approve all: `core/guardrails.py` `NO_BULK_TOOLS`), it restores the newest finished copy whose document count is filled into a throw-away database `jarvis-drill` (refused when the restore would cost more than ₹100 at the live rate), then checks it one unit at a time across morning ticks: a `count()` per collection group must equal Google's document count exactly, the canary from the 26 hours before the copy must match and open with the live key, each owner's vault opens through its own read path and matches on JARVIS's own fields (`rev`, `updated_at`; one file is opened and hashed in memory only), and up to 20 documents a collection (at least 3 in all) match live on their own time field. Nothing or too little compared fails; an owner with no vault is "skipped", never a pass. Then it deletes the copy (delete protection off first), whatever the switches say. Its code can't write the live database: the verifier holds a read-only view of both sides, the two adapters refuse any database but `jarvis-drill` before any call (and refuse to run at all when the live database is `jarvis-drill`), the checks import neither the document store nor the result log, the only delete right is a custom role on `jarvis-drill`, and JARVIS refuses to start with the live database named `jarvis-drill`. Vitals: `backups` (the last copy, the monthly ₹), `backup_drill` (the last result, overdue after 40 days), `db_size` (the newest copy's size against Firestore's free 1 GiB; the only R14 item that rings, amber at 80 %, red at 100 %). Alerts, only after the set-up has been seen once: `backup_problem` (no copy newer than 36 hours, no schedule, the key changed, a drill failed, a copy left over, access lost) and `backup_ok` (a drill passed), fixed words, once a cause on his day; one that reached nobody is tried again, 3 times a day. The tool `vitals_backups` (open on Telegram) says when the last copy was; the approved drill card's line is JARVIS's own words, also with the AI off. Privacy panel: "Backups (Google's copies)". Not in the copy: the laptop's pictures and face library, Secret Manager, his Google account data. The copies and the key share one project, so the drill proves recovery from a bad write or delete, not from losing the project or the key; `roles/datastore.restoreAdmin` is project-wide (a stolen jarvis-run could restore into a new database, a cost, never an overwrite). | |
 | Layer | L7 Data & Persistence (cross-cut operations) |
 | Skill | Code & DevOps |
-| Where in the code | `src/jarvis/backup/` (I0: `ports.py` with `DRILL_DB`, `drill_target`, `ReadOnlyDocs`, `BackupAdmin`, `DrillWalk`, `BackupFacts`, `BackupStatus`; `part.py` the stub), `src/jarvis/api/backup.py` (`GET /v1/backup`, `POST /v1/backup/drill`, stubs), `deploy/backup_setup.sh` (I0: `--status` read only, the set-up waits for YES); PLANNED: the admin and drill-reader adapters in storage/, and the canary, read-only port, drill, checks, vault probe, result log, status, tools and jobs in backup/; eval `evals/r14/backup.py` | |
+| Where in the code | `src/jarvis/backup/` (`part.py` the join; `canary.py`, `status.py` the service `backup_status` that Part B and Vitals read, `texts.py` the fixed alert words, `log.py` the only writer of the drill's state and results, `drill.py`, `drill_start.py`, `drill_end.py`, `drill_deps.py` the state machine, `verify.py`, `walk_checks.py`, `vault_probe.py` the checks, `readonly.py` the read-only view, `jobs.py`, `tools.py`, `names.py`, `vitals.py`, `privacy.py`; I0's `ports.py` with `DRILL_DB` and `drill_target`), `src/jarvis/storage/firestore_admin.py` (the admin adapter, async, every call bounded), `src/jarvis/storage/firestore_walk.py` (the drill-side reader), `src/jarvis/api/backup.py` (`GET /v1/backup`; `POST /v1/backup/drill`, the same card in his conversation, 3 a minute), `src/jarvis/core/guardrails.py` (`NO_BULK_TOOLS`), `deploy/backup_setup.sh` (the set-up after YES: the schedule, delete protection, the clean-up role first, then the restore and schedule-viewer roles; `--status` only reads and is the deploy's only call); eval `evals/r14/backup.py` | |
 | Depends on | C41 Document store; C51 Keyring (`backup_probe`); C42 Document vault (its read path); C11 Scheduler ticks and watchdog; C55 Vitals; C46 Alert policy |
-| Data it keeps | PLANNED: `backup_canary/{yyyymmdd}` (nonce hash, sealed nonce, key fingerprint; 30 days), `backup_status/current` (schedule seen, the newest backup's time, size and count), `backup_drill/current` (the drill's state), `backup_drills/{yyyymm}` (each result and counts; 13 months). Google keeps the copies themselves, 7 days. | |
+| Data it keeps | `backup_canary/{yyyymmdd}` (nonce hash, sealed nonce, key fingerprint, version, time; 30 days), `backup_status/current` (schedule now and first seen, the newest finished copy's time, size and count, when each cause was told), `backup_drill/current` (the drill's state, written only by `log.py`), `backup_drills/{yyyymm}` (each month's result and counts; 13 months). Google keeps the copies themselves, 7 days. | |
 | Outside services | Firestore (its backup schedule, restore and the throw-away database) |
-| Cost (₹ a month) | ≈ ₹4.9 at 100 MB (copies ₹2.0, a drill's restore ₹1.9, counts ≈ ₹0), ≈ ₹39 at 1 GB; a copy left over ₹1.4 (100 MB) to ₹14 (1 GB) a month; ₹0 until the one-time step |
-| When it fails | PLANNED: no schedule or no permission → "not set up" (no alert before the set-up has run once); a copy whose stats are empty is never restored; a slow restore or check resumes at the next tick; a drill that fails anywhere stores "failed" with a reason and still deletes the copy, whatever the switches say; a copy older than 2 days rings `backup_problem` once and weekly after; nothing compared is a failure, never a pass. | |
-| Since | R14 (v14.0.0): I0 the ports, the stubs and the set-up script's two modes |
+| Cost (₹ a month) | ≈ ₹3.8 at 100 MB (copies 7 × 0.0977 GiB × ₹2.86 ≈ ₹1.95, a drill's restore ≈ ₹1.86, counts and samples ≈ ₹0; "about ₹4" where a round figure is shown), ≈ ₹39 at 1 GB ("about ₹40"); a copy left over ₹1.4 (100 MB) to ₹14 (1 GB) a month; ₹0 until the one-time step |
+| When it fails | Before the set-up: "not set up", no alert and no Google call; a copy whose count isn't filled yet is never restored ("waiting"); a slow restore or check resumes at the next tick; a drill that can't start for 2 days (no finished copy, access lost) is a failed result and gives a manual slot back; a tick cut off after the restore began ends "interrupted", never a second restore; a failure anywhere stores "failed" with a reason code and still deletes the copy; a copy older than 2 days rings `backup_problem` once and weekly after; an unreadable drill state fails closed (a clean-up, no new drill). | |
+| Since | R14 (v14.0.0): I0 the ports, the stubs and the set-up script's two modes; Part A built it; I1 joined it (Approve all never runs the drill card) |
 
 ### Layer 8 — Response & Output
 
@@ -1296,21 +1298,21 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | No key: the real gate is skipped with a notice, never failed. A failing pull-request check (the tests, the emulator, the browser and visual gate) blocks the merge. The real-model gate runs on main after the merge and only reports: it does not stop a deploy. |
 | Since | Phase 0; visual gate R5.1 (v5.1.0) |
 
-#### C67 · Self-health watch (R14, PLANNED)
+#### C67 · Self-health watch (R14)
 
 | Field | Value |
 |---|---|
-| Name | Self-health watch (R14, PLANNED) |
-| What it does | PLANNED (R14 Part B; I0 built the joins). JARVIS watches itself on the clocks it already has and says so in fixed words: background jobs failing again and again (one message an hour at most, naming them all), a clock that stopped, the morning brief not made, errors piling up, a day's AI spend far above normal (after a week of history), a new version live. These are important daytime rings, held at night, with a cap of their own (one per kind and subject per 30 minutes, at most 3 an hour), so they never crowd out an approval; "recovered" is feed only. Each job's outcome (ok, failed, timed out, skipped for time) reaches it from the tick and the 5-minute route (`ticks` observer); a skip never counts. The 5-minute clock (`app.state.clock_jobs`: self-health first, the systems check, the helpers' and R7's clocks) runs for the brief's owners with Home on or off. If both clocks stop it cannot speak up; the Vitals board shows "Clocks stopped since …". | |
+| Name | Self-health watch (R14) |
+| What it does | Built in R14 (Part B; joined at I1, not yet deployed). JARVIS watches itself on the clocks it already has and says so in fixed words. Two jobs: `selfwatch_clock` (every 5 minutes, first on both 5-minute paths, 10 s) and `selfwatch_daily` (the morning tick, 25 s); each watches the other's streak, never its own. Rules: `job_failing` when a job or sweep fails or times out 3 times in a row (a skip for time never counts; one message an hour at most, naming every job in a streak); `clock_stopped` when the 5-minute clock is unseen for 20 minutes (said by the tick) or no tick ran by 05:00 (said by the 5-minute clock), once per outage, and a clock that never starts after a deploy is said once, never in its first hour; `brief_missed` an hour after his brief time; `errors_piling` past 30 ERROR log records in an hour (counted by logger name only; held for 6 hours after a told job alert, so an outage rings once); `spend_spike` when a day's AI spend is over 3 times the 14-day average and at least ₹50, after 7 days of history; `deploy_changed` once per new revision (Cloud Run's `K_REVISION`) or version, the first run silent; `selfwatch_ok` (feed only) when the streaks or the outage end. They are important daytime rings, held at night, with their own cap (one per kind and subject per 30 minutes, at most 3 an hour). The once-only claim is written before the send; an alert counts as told when a channel took it, it was held for the morning, or he chose where it goes; one that reached nobody gives its claim back and is tried again every 30 minutes, 6 times. Each job's outcome (ok, failed, timed out, skipped) reaches it from the tick, the watchdog and the Home-off route (`ticks` observer). The errors handler sits once on the root logger (taken off when the app shuts down) and skips its own package and the send path while an alert is being sent. The Vitals item `clocks` (quiet) says "Clocks stopped since …" if both stop, since then nothing can speak up. A held `home_offline_idle` is dropped when the laptop is back before the morning summary (never the armed `home_offline`). | |
 | Layer | X Cross-cutting (observability; L8 for the alerts) |
 | Skill | Code & DevOps |
-| Where in the code | `src/jarvis/selfwatch/` (I0: `ports.py`, the outcome and the context flag; `part.py` the stub), `src/jarvis/hardening/` (I0: the four parts' contract `ports.py`), `src/jarvis/ticks.py` (the outcomes to the observer), `src/jarvis/api/tick_wiring.py` (the tick jobs, the one 5-minute clock, `finish_wiring`), `src/jarvis/api/r14_wiring.py` (the parts' join, the observer, the errors handler once), `src/jarvis/api/selfwatch.py` (`GET /v1/selfwatch`, a stub), `src/jarvis/api/r14_status.py` (`GET /v1/r14`), `notify/storm.py` (`SELF_KINDS`); eval `evals/r14/selfwatch.py` | |
+| Where in the code | `src/jarvis/selfwatch/` (`part.py` the join; `ledger.py` streaks and once-only claims, `texts.py` the fixed words and the teller, `errors.py` the errors handler, `clocks.py`, `brief_check.py`, `spend.py`, `deploys.py`, `jobs.py` the two jobs, `status.py` the route's view and the privacy row, `vitals.py`; I0's `ports.py`), `src/jarvis/hardening/` (the four parts' contract), `src/jarvis/ticks.py` (the outcomes to the observer), `src/jarvis/api/tick_wiring.py` (the tick jobs, the one 5-minute clock), `src/jarvis/api/r14_wiring.py` (the parts' join, the observer, the errors handler once), `src/jarvis/api/selfwatch.py` (`GET /v1/selfwatch`: clocks, streaks, today's errors, alerts waiting or given up, the revision), `src/jarvis/api/r14_status.py` (`GET /v1/r14`), `src/jarvis/notify/storm.py` (`SELF_KINDS`), `src/jarvis/notify/store.py` (`held_drop`), `src/jarvis/home/heartbeat.py` (the laptop-back drop); eval `evals/r14/selfwatch.py` | |
 | Depends on | C11 Scheduler ticks and watchdog; C46 Alert policy; C54 Costs in ₹ and the monthly limit; C55 Vitals; C56 Systems check; C66 (the backups' facts) |
-| Data it keeps | PLANNED: `selfwatch/jobs`, `selfwatch/clocks`, `selfwatch/deploy`, `selfwatch/spend` (streaks, clock stamps, revision, daily month totals), `selfwatch_errors/{yyyymmdd}` (counts by hour and logger name; 14 days), `selfwatch_told/{uid}_{key}` (once-only claims; 30 days). Names and counts only, never a log message. | |
+| Data it keeps | `selfwatch/jobs` (streaks), `selfwatch/clocks` (both clocks' stamps, the outages, when either was first seen), `selfwatch/deploy` (revision and version, the last 10 revisions), `selfwatch/spend` (each owner's daily month totals, 16 days), `selfwatch_errors/{yyyymmdd}` (counts by hour and logger name, at most 50 names; 14 days), `selfwatch_told/{uid}_{key}` (once-only claims, the cause hashed; 30 days; a Privacy row, no export or delete). Names and counts only, never a log message. | |
 | Outside services | None |
-| Cost (₹ a month) | ₹0 (about 600 reads and 300 writes a day, inside the free quota) |
-| When it fails | PLANNED: a handler that fails never logs itself; the claim is written before the send and a failed send is no job failure, so it never alarms about itself; its own job is watched by the other clock; nothing about backups before the set-up. | |
-| Since | R14 (v14.0.0): I0 the observer, the shared clock, the soft cap and the nine alert kinds |
+| Cost (₹ a month) | ₹0 (about 310 reads and 300 writes a day, inside the free quota) |
+| When it fails | A handler that fails never logs itself and counts what it couldn't record; a step that fails or runs out of time is counted and the others still run, the streaks are written in a reserved slice; the claim is written before the send and a failed send is no job failure, so it never alarms about itself; with the store down, claims and stamps live in memory (an outage is still said once); nothing about backups before the set-up. | |
+| Since | R14 (v14.0.0): I0 the observer, the shared clock, the soft cap and the nine alert kinds; Part B built it; I1 joined it (the handler comes off at shutdown) |
 
 ## 4. Diagrams
 
@@ -1731,8 +1733,10 @@ directly (they predate the keyring).
 
 ### 6.6 Deleting
 
-The Privacy panel (C53) exports or deletes each category. Firestore has no backups or point-in-time
-recovery in this setup (Google bills them), so a delete is final once it leaves the 30-day bin.
+The Privacy panel (C53) exports or deletes each category. After the owner's one-time backup step
+(C66), Firestore keeps a daily copy of everything for 7 days, so a delete leaves the live data at
+once (or after the 30-day bin, where that applies) and the copies within 7 days; the panel's
+"Backups (Google's copies)" row says so. There is no point-in-time recovery (Google bills it).
 
 ## 7. Security model
 
@@ -1826,12 +1830,42 @@ nothing; `--reconfigure`, `--web-search` and `--telegram` ask again.
 that must fail). `bash deploy/run-real-evals.sh` runs them on the real brain after showing a ₹
 estimate and asking you to type YES.
 
-**Backups.** None of the data, by design for now (Firestore backups are billed). The code is in
+**Backups.** After the owner's one-time step (`bash deploy/backup_setup.sh` in Cloud Shell, which
+shows the cost and waits for YES), Firestore copies the whole database every day and keeps each
+copy 7 days, and the live database has delete protection on. Once a month JARVIS restores the
+newest copy into a throw-away database `jarvis-drill`, checks it, and deletes it (card C66).
+`bash deploy/backup_setup.sh --status` shows what is on; it only reads, and it is the only part
+the deploy runs. A deleted item leaves the live database at once and the copies within 7 days.
+Not in the copies: the laptop's pictures and face library, Secret Manager (Google keeps its
+versions), his Google account data. The copies and `jarvis-token-key` share one project: the drill
+proves recovery from a bad write or delete, not from losing the project or the key. The code is in
 GitHub, and each release's source is also sealed in the vault with its build book. Copies of this
 guide and the project documents are kept in the owner's Drive by hand (R6.1 D5).
 
-**Monitoring.** Vitals (C55), the systems check (C56), alerts on Telegram and Web Push, structured
-logs in Cloud Logging, and the ₹1 budget alert on the billing account.
+**Restoring for real** (only with the Workshop on the line; nothing here is automatic):
+
+1. In Cloud Shell, list the copies: `gcloud firestore backups list --format="table(name,snapshotTime,state)"`.
+   Pick the newest copy from before the mistake.
+2. Restore it into a new database id, never `jarvis-drill` (the drill deletes that id) and never one
+   in use: `gcloud firestore databases restore --source-backup=<the copy's name>
+   --destination-database=jarvis-restored`. It takes minutes; check with
+   `gcloud firestore operations list --database=jarvis-restored`.
+3. Either point JARVIS at it (Cloud Run variable `JARVIS_FIRESTORE_DATABASE=jarvis-restored`;
+   JARVIS refuses to start if it is `jarvis-drill`), noting that a named database has no free quota
+   (≈ ₹14 a month per GiB stored); or, to keep the free quota, restore into `(default)` itself: turn
+   its delete protection off (`gcloud firestore databases update --database='(default)'
+   --no-delete-protection`), delete it, wait 5 minutes (an id is reusable only then), restore with
+   `--destination-database='(default)'`, and turn delete protection on again.
+4. After any real restore, clear the drill's state document (`jarvis_backup_drill/current`): the
+   copy carries the state it had at the snapshot. The next morning tick starts clean.
+5. Things deleted after the snapshot come back, and things made after it are gone: say so to him,
+   and delete again what he had deleted (the Privacy panel lists them).
+
+**Monitoring.** Vitals (C55), the systems check (C56), the self-health watch (C67: failing jobs,
+stopped clocks, a missed brief, errors piling up, a spend spike, a new version, backups), alerts on
+Telegram and Web Push, structured logs in Cloud Logging, and the ₹1 budget alert on the billing
+account (once backups cost money it e-mails every month; raising it to ₹100 is the owner's
+choice).
 
 **Recovery.** Roll forward, not back: an old revision from before slice 5 runs as the build account
 and would fail to start. A failed health check leaves the current version serving. A lost passkey
@@ -1846,7 +1880,8 @@ All figures are **estimates** in ₹ at ₹95.24 to the dollar.
 | Cloud Run, Firestore, Scheduler, Artifact Registry, Cloud Logging | ₹0 | Inside the free tiers at one owner's use |
 | Secret Manager | ₹0–30 | 6 secret versions are free; about ₹5.7 a month for each one beyond (with every feature on, JARVIS keeps 11 secrets) |
 | GitHub Actions | ₹0 | Inside the free minutes |
-| Claude replies | About ₹100 at 20 replies a day (₹0.17 a reply in the owner's test run) | Replies a day, the tier (Opus costs twice Sonnet), web search (₹0.5–2 a reply) |
+| Claude replies | About ₹100 at 20 replies a day (₹0.17 a reply in the owner's Phase 0 test run, on a far smaller persona and tool set; R14's estimate for today's is ≈ ₹3.0 a reply after its savings, until the token ledger measures it) | Replies a day, the tier (Opus costs twice Sonnet), web search (₹0.5–2 a reply), how many tools a turn is offered (C68) |
+| Backups (after the one-time step) | ≈ ₹3.8 at 100 MB of data, ≈ ₹39 at 1 GB (C66) | The database's size; a monthly drill's restore is most of it |
 | Morning brief summary | About ₹3 (optional) | One fast-tier call a morning |
 | Background learning | About ₹5, at most ₹24 (optional) | Runs a day (at most 20) |
 | People research summary, build book questions | A few rupees (about ₹1.5 a book question) | How often you use them |
@@ -1859,6 +1894,13 @@ for Secret Manager. The worst cases come from web-search replies (₹300–1,200
 day search), listening beyond 54 minutes (about ₹560 a month at 10 minutes a day) and the strong
 tier.
 
+**Measured, not estimated (R14).** The token ledger (C68) counts every chat reply's model calls:
+tokens by kind, characters by part (persona, tools, history, tool results, memory, trailer),
+tools offered and skills opened, and Vitals shows "Where the AI money goes" in ₹. It covers the
+chat replies only; recall, the brief's summary, understanding and the helpers call the model
+directly and are not in it. This section's Claude figures are rewritten from it after a week of
+data.
+
 **The brake.** Your monthly limit in ₹ (Vitals panel) is checked before every paid model or speech
 call; at the limit no paid call is made and the reply says so. A new JARVIS has no limit until you
 set one (₹1 to ₹1,00,000; `src/jarvis/billing/budget.py`), and then Anthropic's prepaid credit is
@@ -1869,7 +1911,8 @@ the Cloud project.
 
 - **One copy only.** Cloud Run is capped at one instance: rate limits, the per-conversation queue
   and the home nonce cache live in one process. More copies need those moved out first.
-- **No data backups.** Deletes are final after the 30-day bin.
+- **Backups need the owner's one-time step** (C66), and the copies, like the key, live in the
+  same Cloud project: they recover from a bad write or delete, not from losing the project.
 - **Long-term memory is not sealed by JARVIS.** Facts in `memory_shards`, conversations, the text
   of attached files (`attachments`) and the audit are protected by Google's encryption at rest
   only; anyone who can open the Cloud project can read them.
@@ -1900,7 +1943,7 @@ Nothing in this section is built. It follows the 11 Nov 2026 release plan v6.1.1
 | R10 Care and health assist | Care and health use cases |
 | R8–R10 together | 66 home vision use cases, on-device only, each starting after the owner confirms its cameras |
 | New core skill | An 11th core skill, "Health & Wellbeing" |
-| Later | R11 free helpers, R12 smart home extras, R13 camera life, R14 hardening, R15–R18 subscription releases, R19 a trading desk (decision later) |
+| Later | R11 free helpers (built), R12 smart home extras, R13 camera life, R14 hardening (built, cards C66 to C68), R15–R18 subscription releases, R19 a trading desk (decision later) |
 | Phase 7 | OpenTelemetry tracing |
 
 ## 12. Glossary
@@ -2123,6 +2166,15 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
   (`watch_stale`, `body_sweep`, `vision_sweep`), the privacy rows and Telegram as the one outside
   service; the camera button beside the paperclip is not built; the brief's sleep line. The
   diagrams are unchanged (no figure became wrong).
+- **Edition v14.0.2.** Written at R14's I1 on `r14-i1` (the four parts merged and joined): cards
+  C66 Backups and restore drill, C67 Self-health watch and C68 Skill register and the turn's tools
+  as built, each with its modules, routes, tools, jobs, collections, Vitals items, privacy rows,
+  cost and how it fails (the backups' cost corrected to ≈ ₹3.8 at 100 MB); page 1, section 6.6
+  and section 8 say backups exist after the owner's step, with "Restoring for real"; section 9
+  adds the backups row and what the token ledger measures; the three "Knowledge Base & Memory"
+  skill rows read "Research & Intel (knowledge and memory)" (R14 D11). `scripts/arch_coverage.py`,
+  `scripts/check_doc_versions.py` and `scripts/markdy_export.py --check` pass. The diagrams are
+  unchanged.
 
 ## Change log
 
@@ -2140,3 +2192,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v7.0.1 | 13 Nov 2026, 16:05 IST | R7 | R7 I0 (the joins for 'Mobile, watch and phone camera'): cards C62 Phone app and the phone's door, C63 Camera and vision engine, C64 Watch and sleep, C65 Emergency SOS (PLANNED, with what I0 built); the Mobile departure as a Trusted Web Activity; four technology rows (phone app, Android build pins, vision on the device, Health Connect); the R7 collections and key purposes; the roadmap, decisions log and glossary corrected; C01's Camera tab; the program version v7.0.0 (the number goes down on purpose) | 🛠 Mark XVI |
 | v7.0.2 | 13 Nov 2026, 23:00 IST | R7 | R7 I1: cards C62 Phone app and the phone's door, C63 Camera and vision engine, C64 Watch and sleep, C65 Emergency SOS from PLANNED to built, each with its files, routes, collections, the `r7_dev` cookie, the browser-only stores (Cache Storage `jarvis-share-v1`, the camera-off switch), jobs, privacy rows and outside service; the camera button beside the paperclip not built; the brief's sleep line (watch, phone, another health app, typed); page 1, the Mobile row, the R7 collections, roadmap and glossary no longer say planned | 🛠 Mark XVII |
 | v14.0.1 | 14 Nov 2026, 15:30 IST | R14 | R14 I0 (the joins for 'Free hardening'): cards C66 Backups and restore drill, C67 Self-health watch, C68 Skill register and the turn's tools (PLANNED, with what I0 built: the four parts' contract `hardening/ports.py`, the backup, self-health and skills ports, the tick observer, the one 5-minute clock for the brief's owners `api/tick_wiring.py`, the brain's two slots, the stub routes and the set-up script's two modes, every planned collection named); the L5 and L7 rows; this edition line | 🛠 Mark XVIII |
+| v14.0.2 | 14 Nov 2026, 19:20 IST | R14 | R14 I1: cards C66, C67 and C68 from PLANNED to built (the backups and the drill with its five locks and ≈ ₹3.8 at 100 MB, not ₹4.9; the self-health watch's seven kinds, two jobs, retries and the laptop-back drop; the register, the turn's tools with measured recall and size, the window, the ledger's scope, No-AI pass 2 with the real tools' words, the home-service request, the car); page 1, sections 6.6, 8 (backups and "Restoring for real"), 9 (backups, the ledger) and 10; the D11 relabel; this edition line | 🛠 Mark XIX |

@@ -581,14 +581,71 @@ async def test_the_parts_privacy_rows_reach_the_dashboard(settings: Settings) ->
         assert set(ids) <= set(app.state.privacy.registry.ids())
 
 
-# ---- 8 · the guide's planned cards ---------------------------------------------------------------
-def test_the_guide_lists_the_three_r14_cards_as_planned() -> None:
+# ---- 8 · the guide's cards, built at I1 ----------------------------------------------------------
+def _card(guide: str, card: str) -> str:
+    start = guide.index(f"#### {card} · ")
+    ends = [guide.find(mark, start + 1) for mark in ("\n#### ", "\n## ")]
+    return guide[start : min(e for e in ends if e > 0)]
+
+
+@pytest.mark.parametrize(
+    ("card", "needles"),
+    [
+        (
+            "C66",
+            (
+                "`src/jarvis/backup/`",
+                "storage/firestore_admin.py`",
+                "storage/firestore_walk.py`",
+                "`GET /v1/backup`",
+                "`vitals_drill_start`",
+                "never with Approve all",
+                "≈ ₹3.8 at 100 MB",
+                "`backup_drills/{yyyymm}`",
+            ),
+        ),
+        (
+            "C67",
+            (
+                "`src/jarvis/selfwatch/`",
+                "`GET /v1/selfwatch`",
+                "`selfwatch_clock`",
+                "`selfwatch_daily`",
+                "`home_offline_idle`",
+                "every 30 minutes, 6 times",
+            ),
+        ),
+        (
+            "C68",
+            (
+                "`catalogue.json` the data, shipped as package data",
+                "`skills_open`",
+                "`GET /v1/skills`",
+                "`scripts/skill_coverage.py`",
+                "chat replies",
+                "`src/jarvis/offline/said.py`",
+                "p14.0",
+            ),
+        ),
+    ],
+)
+def test_the_guide_has_the_three_r14_cards_built_after_i1(
+    card: str, needles: tuple[str, ...]
+) -> None:
+    body = _card(_text(GUIDE), card)
+    assert "Built in R14" in body and "PLANNED" not in body  # I1 (was PLANNED at I0)
+    for needle in needles:
+        assert needle in body, (card, needle)
+
+
+def test_the_guide_names_every_r14_collection_and_says_backups_exist() -> None:
     guide = _text(GUIDE)
-    for card in ("C66 · Backups and restore drill", "C67 · Self-health watch"):
-        assert f"#### {card}" in guide, card
-    assert "#### C68 · Skill register and the turn's tools" in guide
     for name in (*COLLECTIONS["backup"], *COLLECTIONS["selfwatch"], *COLLECTIONS["skills"]):
         assert f"`{name}" in guide, name
+    assert "**No backups.**" not in guide and "Firestore has no backups" not in guide  # D15
+    assert "Restoring for real" in guide  # D4, the guide's section 8
+    assert "within 7 days" in guide  # D3: a deleted thing leaves the copies within 7 days
+    assert "| Skill | Knowledge Base & Memory |" not in guide  # D11: no such skill in the project
 
 
 # ---- 9 · the eval runner and its gate ------------------------------------------------------------

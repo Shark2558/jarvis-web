@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from jarvis.alerts import AlertKind
 from jarvis.backup.log import DrillLog
 from jarvis.backup.ports import NOT_SET_UP, BackupAdmin, BackupFacts, BackupInfo
+from jarvis.backup.texts import FAILED_TEXT, REASON_WORDS, TEXTS
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Delivery, Notifier, Signal
 from jarvis.storage.docs import Doc, Docs, DocTx
@@ -54,50 +55,6 @@ KEEP_ONCE: Final = dt.timedelta(days=40)  # a drill result's "told once" mark
 DELIBERATE: Final = frozenset({"switched_off", "feed_only"})  # his choice, not a lost alert
 KEY_CHANGE_TOLD: Final = dt.timedelta(days=RETENTION_DAYS)  # then every copy has the new key
 Every = Literal["day", "week", "once"]
-
-TEXTS: Mapping[str, str] = {
-    "stale": (
-        "Backups: Google has made no new copy of your data for longer than expected. JARVIS "
-        "checks again tomorrow; if it stays, send the Backups line in Vitals to the Workshop."
-    ),
-    "no_schedule": (
-        "Backups: the daily backup schedule, or JARVIS's access to it, is gone, so no new copies "
-        "are made. Run bash deploy/backup_setup.sh again in Cloud Shell."
-    ),
-    "key_changed": (
-        "Backups: JARVIS's encryption key changed, so copies made before the change may not open "
-        "with it. JARVIS says so each day until a restore drill passes; send this to the Workshop."
-    ),
-    "copy_left": (
-        "Restore drill: its throw-away test copy could not be deleted, and Google charges for it "
-        "while it stays. Send this to the Workshop."
-    ),
-    "drill_ok": (
-        "Restore drill passed: the newest backup opened in a throw-away copy, everything was "
-        "there, your locked documents opened, and the copy is deleted."
-    ),
-}
-FAILED_TEXT = (
-    "Restore drill failed: {why}. Your live data was not touched and JARVIS deletes the test "
-    'copy. Say "test my backup" to try again; if it fails twice, send this to the Workshop.'
-)
-REASON_WORDS: Mapping[str, str] = {
-    "count_mismatch": "the copy's document count did not match the backup",
-    "canary_missing": "the daily check mark was missing from the copy",
-    "canary_mismatch": "the daily check mark in the copy did not match",
-    "key": "today's key could not open the copy",
-    "vault_missing": "your vault was missing from the copy",
-    "vault_mismatch": "a vault item in the copy differed",
-    "vault_file": "a locked document in the copy did not open",
-    "live_unreadable": "your live vault could not be read to compare",
-    "sample_mismatch": "a document in the copy differed",
-    "nothing_compared": "nothing could be compared",
-    "restore": "Google could not make the copy",
-    "over_cap": "the copy would cost more than the drill's limit",
-    "stuck": "it took more than three days",
-    "no_key": "this server has no encryption key",
-    "unknown": "an unexpected error",
-}
 
 
 def _now() -> dt.datetime:

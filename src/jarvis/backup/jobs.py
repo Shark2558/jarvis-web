@@ -3,12 +3,15 @@
 `R14_JOB_NAMES`): no new Scheduler job, they ride the existing tick (`0,30 4-11`).
 
 - `backup_canary` (while `backup_checks_enabled`): the day's canary, once (and the ones past 30
-  days go), with a look at whether the key changed since the newest earlier canary; the status
+  days go), with a look at whether the key changed since the newest earlier canary (kept in the
+  status, so a lost alert or a morning with nobody to tell never loses it); the status
   (backups and schedule, free admin calls) at most every `STATUS_EVERY`; then, ONLY once the
   set-up has been seen (a schedule seen once, A6), `backup_problem` once a cause a day: the
   newest READY copy older than `backup_max_age_h` ("stale"), the schedule gone ("no_schedule"),
-  the key changed ("key_changed"). Before the set-up Google refuses: that is "not set up",
-  never a job failure. Storage trouble is a failure (counted, so Part B can see a streak).
+  the key changed ("key_changed", until a drill passes or 7 days). Before the set-up Google
+  refuses: that is "not set up", never a job failure. The three steps fail apart: a canary or a
+  list that fails is counted (Part B sees a streak) and the alerts are still decided, from the
+  stored status when the list failed.
 - `backup_drill`: one step of the restore drill (`drill.Drill.step`); a check that raised this
   tick is reported "failed" so a streak shows.
 """
@@ -51,14 +54,15 @@ class BackupCanaryJob:
         self._s, self._canaries, self._status = s, canaries, status
         self._teller, self._admin, self._ring, self._clock = teller, admin, ring, clock
 
-    async def _canary(self, now: dt.datetime) -> tuple[int, bool]:
-        """(1 when today's canary was written now, whether the key changed)."""
+    async def _canary(self, now: dt.datetime) -> int:
+        """1 when today's canary was written now; a changed key is kept in the status."""
         if self._ring is None:
-            return 0, False
-        changed = await self._canaries.key_changed(self._ring, self._canaries.today(now))
+            return 0
+        if await self._canaries.key_changed(self._ring, self._canaries.today(now)):
+            await self._status.note_key_changed(now)
         written = await self._canaries.write(self._ring, now)
         await self._canaries.prune(now)
-        return int(written), changed
+        return int(written)
 
     async def _refreshed(self, now: dt.datetime) -> tuple[StatusDoc, int]:
         doc = await self._status.doc()
@@ -67,13 +71,11 @@ class BackupCanaryJob:
             return doc, 0
         return await self._status.refresh(self._admin), 1
 
-    async def _tell(
-        self, owners: Sequence[str], doc: StatusDoc, now: dt.datetime, changed: bool
-    ) -> int:
+    async def _tell(self, owners: Sequence[str], doc: StatusDoc, now: dt.datetime) -> int:
         if not doc.set_up:
             return 0  # nothing about backups before his one-time step (A6)
         told = 0
-        if changed:
+        if doc.key_changing(now):
             told += await self._teller.problem(owners, "key_changed")
         if not doc.schedule_now:
             told += await self._teller.problem(owners, "no_schedule")
@@ -86,16 +88,25 @@ class BackupCanaryJob:
         counts = {"canary": 0, "listed": 0, "told": 0, "failed": 0}
         if not self._s.backup_checks_enabled:
             return counts
-        now, changed = self._clock(), False
+        now, doc = self._clock(), None
         try:
-            counts["canary"], changed = await self._canary(now)
+            counts["canary"] = await self._canary(now)
+        except Exception as exc:  # noqa: BLE001 - counted; the list and the alerts still run
+            _failed(counts, "backup canary failed", exc)
+        try:
             doc, counts["listed"] = await self._refreshed(now)
+        except Exception as exc:  # noqa: BLE001 - counted; stale is decided from the stored status
+            _failed(counts, "backup list failed", exc)
+        try:
+            counts["told"] = await self._tell(owners, doc or await self._status.doc(), now)
         except Exception as exc:  # noqa: BLE001 - counted: the tick reports the job failed
-            log.error("backup checks failed", extra={"error": type(exc).__name__})
-            counts["failed"] += 1
-            return counts
-        counts["told"] = await self._tell(owners, doc, now, changed)
+            _failed(counts, "backup alerts failed", exc)
         return counts
+
+
+def _failed(counts: dict[str, int], what: str, exc: Exception) -> None:
+    log.error(what, extra={"error": type(exc).__name__})
+    counts["failed"] += 1
 
 
 class BackupDrillJob:

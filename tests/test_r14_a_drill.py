@@ -162,6 +162,14 @@ async def test_a_whole_drill_passes_on_fakes_and_the_copy_is_deleted(s: Settings
     assert written <= {f"{PREFIX}backup_drill", f"{PREFIX}backup_drills", f"{PREFIX}backup_status"}
 
 
+async def test_a_passing_drill_settles_a_key_change(s: Settings) -> None:
+    rig = await _rig(s)
+    await rig.status.note_key_changed(rig.clock.at)
+    await rig.until_idle()
+    assert (await rig.log.last_result()).outcome == "passed"  # type: ignore[union-attr]
+    assert (await rig.status.doc()).key_changed_at is None
+
+
 async def test_every_google_call_names_only_the_drill_copy(s: Settings) -> None:
     rig = await _rig(s)
     await rig.until_idle()

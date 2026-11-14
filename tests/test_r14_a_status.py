@@ -23,7 +23,7 @@ from r14_fakes_a import (
 
 from jarvis.backup import canary
 from jarvis.backup.log import DrillLog, DrillResult
-from jarvis.backup.ports import NOT_SET_UP, BackupFacts, BackupStatus
+from jarvis.backup.ports import NOT_SET_UP, BackupFacts, BackupInfo, BackupStatus
 from jarvis.backup.status import (
     TEXTS,
     BackupStatusService,
@@ -32,7 +32,7 @@ from jarvis.backup.status import (
     restore_inr,
 )
 from jarvis.notify.ports import Delivery, Signal
-from jarvis.storage.docs import MemoryDocs
+from jarvis.storage.docs import MemoryDocs, Set
 
 NOW = dt.datetime(2026, 11, 14, 5, 30, tzinfo=dt.UTC)
 IST = ZoneInfo("Asia/Kolkata")
@@ -138,6 +138,29 @@ async def test_the_status_keeps_the_newest_ready_backup_and_when_the_schedule_wa
     assert got == BackupFacts(
         set_up=True, schedule_seen_at=NOW, newest_at=SNAP, size_bytes=10, document_count=5
     )
+
+
+async def test_a_refresh_never_erases_a_claim_made_meanwhile() -> None:
+    docs, clock, world = MemoryDocs(), Clock(), World()
+    world.snapshot()
+    status = _service(docs, clock)
+
+    class Racing(FakeAdmin):
+        async def list_backups(self) -> list[BackupInfo]:
+            assert await status.claim("copy_left", every="week") is not None  # the drill job
+            return list(await super().list_backups())
+
+    await status.refresh(Racing(world))
+    assert "copy_left" in (await status.doc()).told
+    assert await status.claim("copy_left", every="week") is None
+
+
+async def test_an_unreadable_field_keeps_the_rest_of_the_status() -> None:
+    docs, clock = MemoryDocs(), Clock()
+    raw = {"schedule_now": True, "schedule_seen_at": NOW.isoformat(), "told": "garbled"}
+    await docs.write([Set(f"{PREFIX}backup_status/current", raw)])
+    doc = await _service(docs, clock).doc()
+    assert doc.set_up and doc.schedule_now and doc.told == {}  # alerts keep running
 
 
 async def test_the_facts_carry_the_last_drills_result() -> None:

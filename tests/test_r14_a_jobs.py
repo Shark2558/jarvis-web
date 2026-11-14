@@ -125,25 +125,94 @@ async def test_a_schedule_that_went_away_is_told(settings: Settings) -> None:
     assert rig.sent.kinds() == [("backup_problem", "no_schedule")]
 
 
-async def test_a_changed_key_is_told_once(settings: Settings) -> None:
+def _job(rig: Rig, keys: Keyring) -> BackupCanaryJob:
+    return BackupCanaryJob(
+        s=rig.job._s,  # noqa: SLF001 - the same settings, a new key
+        canaries=rig.canaries,
+        status=rig.status,
+        teller=Teller(rig.status, lambda: rig.sent),
+        admin=rig.admin,
+        ring=keys,
+        clock=rig.clock,
+    )
+
+
+async def test_a_changed_key_is_told_once_a_day(settings: Settings) -> None:
     world = World()
     world.snapshot()
     rig = Rig(settings, world, keys=ring())
     await rig.job.run(OWNERS)
     rig.later(days=1)
-    rig.job = BackupCanaryJob(
-        s=settings,
-        canaries=rig.canaries,
-        status=rig.status,
-        teller=Teller(rig.status, lambda: rig.sent),
-        admin=rig.admin,
-        ring=ring(OTHER_KEY),
-        clock=rig.clock,
-    )
+    rig.job = _job(rig, ring(OTHER_KEY))
     await rig.job.run(OWNERS)
     await rig.job.run(OWNERS)
     assert ("backup_problem", "key_changed") in rig.sent.kinds()
     assert rig.sent.kinds().count(("backup_problem", "key_changed")) == 1
+
+
+async def test_a_changed_key_is_told_each_day_until_a_drill_passes(settings: Settings) -> None:
+    world = World()
+    world.snapshot()
+    rig = Rig(settings, world, keys=ring())
+    await rig.job.run(OWNERS)
+    rig.later(days=1)
+    rig.job = _job(rig, ring(OTHER_KEY))
+    await rig.job.run(())  # nobody to tell that morning: the change is kept, not lost
+    await rig.job.run(OWNERS)
+    rig.later(days=1)  # the next day's canary opens with the new key, yet he is told again
+    await rig.job.run(OWNERS)
+    assert rig.sent.kinds().count(("backup_problem", "key_changed")) == 2
+    await rig.status.clear_key_changed()  # a restore drill passed with the new key
+    rig.later(days=1)
+    await rig.job.run(OWNERS)
+    assert rig.sent.kinds().count(("backup_problem", "key_changed")) == 2
+
+
+async def test_a_key_change_is_told_until_every_copy_has_the_new_key(settings: Settings) -> None:
+    world = World()
+    world.snapshot()
+    rig = Rig(settings, world, keys=ring())
+    await rig.job.run(OWNERS)
+    rig.later(days=1)
+    rig.job = _job(rig, ring(OTHER_KEY))
+    for _ in range(12):
+        world.snapshot(f"b{len(world.backups)}", at=rig.clock.at)
+        await rig.job.run(OWNERS)
+        rig.later(days=1)
+    assert rig.sent.kinds().count(("backup_problem", "key_changed")) == 8  # 7-day copies + 1
+
+
+async def test_a_failing_canary_still_lets_the_alerts_run(settings: Settings) -> None:
+    world = World()
+    world.snapshot()
+    rig = Rig(settings, world, keys=ring())
+    await rig.job.run(OWNERS)
+
+    async def broken(*_: object) -> bool:
+        raise RuntimeError("a bad canary document")
+
+    rig.canaries.write = broken  # type: ignore[method-assign]
+    rig.later(hours=settings.backup_max_age_h)
+    got = await rig.job.run(OWNERS)
+    assert got["failed"] == 1 and rig.sent.kinds() == [("backup_problem", "stale")]
+
+
+async def test_a_failing_list_still_tells_stale_from_the_stored_status(
+    settings: Settings,
+) -> None:
+    world = World()
+    world.snapshot()
+    rig = Rig(settings, world, keys=ring())
+    await rig.job.run(OWNERS)
+
+    async def down() -> list[object]:
+        raise RuntimeError("Google's admin endpoint is down")
+
+    rig.admin.list_backups = down  # type: ignore[method-assign]
+    rig.later(hours=settings.backup_max_age_h)
+    got = await run_jobs((rig.job,), OWNERS)
+    assert got == {"backup_canary": "failed"}  # counted, so Part B sees a streak
+    assert rig.sent.kinds() == [("backup_problem", "stale")]
 
 
 async def test_switched_off_the_job_does_nothing(settings: Settings) -> None:

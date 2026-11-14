@@ -36,7 +36,7 @@ from jarvis.backup.log import DrillLog
 from jarvis.backup.ports import NOT_SET_UP, BackupAdmin, BackupFacts, BackupInfo
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Delivery, Notifier, Signal
-from jarvis.storage.docs import Doc, Docs, DocTx, Set
+from jarvis.storage.docs import Doc, Docs, DocTx
 
 log = get_logger(__name__)
 
@@ -52,6 +52,7 @@ WEEKLY: Final = dt.timedelta(days=7) - dt.timedelta(hours=1)  # a tick may come 
 MAX_TRIES: Final = 3  # sends that reached nobody, per cause on his day
 KEEP_ONCE: Final = dt.timedelta(days=40)  # a drill result's "told once" mark
 DELIBERATE: Final = frozenset({"switched_off", "feed_only"})  # his choice, not a lost alert
+KEY_CHANGE_TOLD: Final = dt.timedelta(days=RETENTION_DAYS)  # then every copy has the new key
 Every = Literal["day", "week", "once"]
 
 TEXTS: Mapping[str, str] = {
@@ -64,8 +65,8 @@ TEXTS: Mapping[str, str] = {
         "are made. Run bash deploy/backup_setup.sh again in Cloud Shell."
     ),
     "key_changed": (
-        "Backups: JARVIS's encryption key changed since yesterday, so older backups may not open "
-        "with it. Send this to the Workshop today."
+        "Backups: JARVIS's encryption key changed, so copies made before the change may not open "
+        "with it. JARVIS says so each day until a restore drill passes; send this to the Workshop."
     ),
     "copy_left": (
         "Restore drill: its throw-away test copy could not be deleted, and Google charges for it "
@@ -139,10 +140,15 @@ class StatusDoc(BaseModel):
     copies: int = 0
     told: Mapping[str, dt.datetime] = Field(default_factory=dict)
     tries: Mapping[str, Tries] = Field(default_factory=dict)
+    key_changed_at: dt.datetime | None = None  # told daily until a drill passes (or 7 days)
 
     @property
     def set_up(self) -> bool:
         return self.schedule_seen_at is not None
+
+    def key_changing(self, now: dt.datetime) -> bool:
+        at = self.key_changed_at
+        return at is not None and now - at <= KEY_CHANGE_TOLD
 
 
 def _doc_of(raw: Doc | None) -> StatusDoc:
@@ -151,8 +157,22 @@ def _doc_of(raw: Doc | None) -> StatusDoc:
     try:
         return StatusDoc.model_validate(raw)
     except ValidationError:
-        log.error("backup status unreadable: read as not set up")
-        return StatusDoc()
+        log.error("backup status partly unreadable: its readable fields are kept")
+        return _salvaged(raw)
+
+
+def _salvaged(raw: Doc) -> StatusDoc:
+    """Every field that reads on its own: one bad field never silences the alerts (set up)."""
+    kept = {}
+    for name in StatusDoc.model_fields:
+        if name not in raw:
+            continue
+        try:
+            StatusDoc.model_validate({name: raw[name]})
+        except ValidationError:
+            continue
+        kept[name] = raw[name]
+    return StatusDoc.model_validate(kept)
 
 
 def _newest(backups: Sequence[BackupInfo]) -> tuple[BackupInfo | None, BackupInfo | None]:
@@ -221,31 +241,50 @@ class BackupStatusService:
     async def doc(self) -> StatusDoc:
         return _doc_of(await self._d.get(self._path))
 
-    async def _save(self, doc: StatusDoc) -> StatusDoc:
-        await self._d.write([Set(self._path, doc.model_dump(mode="json"))])
-        return doc
+    async def _change(self, fold: Callable[[StatusDoc], StatusDoc]) -> StatusDoc:
+        """Read-modify-write in one transaction: a claim made meanwhile is never erased."""
+
+        async def run(tx: DocTx) -> StatusDoc:
+            new = fold(_doc_of(await tx.get(self._path)))
+            tx.set(self._path, new.model_dump(mode="json"))
+            return new
+
+        return await self._d.transaction(run)
 
     async def refresh(self, admin: BackupAdmin) -> StatusDoc:
         """List the backups and the schedule; before the set-up Google refuses: not set up."""
-        now, doc = self._clock(), await self.doc()
+        now = self._clock()
         try:
             backups, schedules = list(await admin.list_backups()), list(await admin.schedules())
         except PermissionError:
             denied = {"schedule_now": False, "checked_at": now}
-            return await self._save(doc.model_copy(update=denied))
+            return await self._change(lambda doc: doc.model_copy(update=denied))
         newest, filled = _newest(backups)
-        seen = bool(schedules)
-        update = {
-            "schedule_now": seen,
-            "schedule_seen_at": doc.schedule_seen_at or (now if seen else None),
-            "checked_at": now,
-            "newest_name": newest.name if newest else None,
-            "newest_at": newest.snapshot_time if newest else None,
-            "size_bytes": filled.size_bytes if filled else doc.size_bytes,
-            "document_count": filled.document_count if filled else doc.document_count,
-            "copies": sum(1 for b in backups if b.state == "READY"),
-        }
-        return await self._save(doc.model_copy(update=update))
+        seen, copies = bool(schedules), sum(1 for b in backups if b.state == "READY")
+
+        def fold(doc: StatusDoc) -> StatusDoc:
+            update = {
+                "schedule_now": seen,
+                "schedule_seen_at": doc.schedule_seen_at or (now if seen else None),
+                "checked_at": now,
+                "newest_name": newest.name if newest else None,
+                "newest_at": newest.snapshot_time if newest else None,
+                "size_bytes": filled.size_bytes if filled else doc.size_bytes,
+                "document_count": filled.document_count if filled else doc.document_count,
+                "copies": copies,
+            }
+            return doc.model_copy(update=update)
+
+        return await self._change(fold)
+
+    async def note_key_changed(self, now: dt.datetime) -> None:
+        """The key changed (the canary job saw it): told daily until a drill passes."""
+        await self._change(lambda doc: doc.model_copy(update={"key_changed_at": now}))
+
+    async def clear_key_changed(self) -> None:
+        """A restore drill passed with today's key: the key change is settled."""
+        if (await self.doc()).key_changed_at is not None:
+            await self._change(lambda doc: doc.model_copy(update={"key_changed_at": None}))
 
     async def facts(self) -> BackupFacts:
         doc, last = await self.doc(), await self._log.last_result()

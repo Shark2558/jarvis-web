@@ -312,6 +312,7 @@ class Drill:
         run = run.model_copy(update={"result": result})
         st = await self.d.log.save(st.model_copy(update={"phase": "cleanup", "run": run}))
         if outcome == "passed":
+            await self.d.status.clear_key_changed()
             await self.d.teller.passed(owners, run=run_key(run.started_at))
         elif outcome == "failed":
             await self.d.teller.failed(owners, reason, run=run_key(run.started_at))

@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
-from jarvis.api.r14_status import NO_STORE, part_of, ready_of
+from jarvis.api.r14_status import NO_STORE, part_of, read_limited, ready_of
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.backup.tools import START, BackupDesk
 from jarvis.hardening.ports import PartName
@@ -89,6 +89,8 @@ async def _his_conversation(request: Request, uid: str, session_id: str | None) 
 
 @router.get("", include_in_schema=False)
 async def status(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+    if (limited := read_limited(request, "backup", uid)) is not None:
+        return limited
     desk, ready = _desk(request), ready_of(request, PART)
     if desk is None:
         return _answer(200, {"part": PART, "ready": ready, "set_up": False, "spoken": OFF})

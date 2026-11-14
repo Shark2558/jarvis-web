@@ -156,3 +156,43 @@ def test_the_alarm_and_the_laptop_in_words() -> None:
     assert said.say("home_arm", {"status": "no_zones"}) == said.NO_ZONES
     online = {"linked": True, "laptop": "online", "cameras": []}
     assert said.say("home_status", online) == "Your home laptop is online, Sir."
+
+
+# ---- R14 I1 follow-up (integrated security review LOW-3): words written to the model ---------
+
+
+def test_a_note_written_to_the_model_is_not_read_to_him() -> None:
+    box = {
+        "unread": 3,
+        "groups": {},
+        "note": "The groups count the 30 most recent unread messages of the last 3 days; "
+        "`unread` is the whole inbox.",
+    }
+    got = said.say("gmail_inbox_summary", box)
+    assert got == (
+        "3 unread in your inbox, Sir. The groups count the 30 most recent unread messages of "
+        "the last 3 days."
+    )
+    change = {
+        "status": "done",
+        "results": [{"action": "added", "title": "milk"}],
+        "note": "Made your Groceries list in Google Tasks. Tell the owner it is saved.",
+    }
+    assert said.say("grocery_add", change) == (
+        "Your Groceries list, Sir: added milk. Made your Groceries list in Google Tasks."
+    )
+
+
+def test_a_note_only_for_the_model_leaves_the_plain_line() -> None:
+    empty = {"items": [], "note": "Do not say the list is empty; say the owner has none."}
+    assert said.say("grocery_list", empty) == "Your Groceries list is empty, Sir."
+    none = {"packages": [], "note": "Tell the owner to connect Gmail."}
+    assert said.say("gmail_track_packages", none) == "No parcels found in your mail, Sir."
+
+
+def test_his_own_sentences_in_a_note_stay() -> None:
+    assert said.for_him("Say “undo” to bring it back. Never shared with anyone.") == (
+        "Say “undo” to bring it back. Never shared with anyone."
+    )
+    assert said.for_him("Where the owner last said it is. Say when they noted it.") == ""
+    assert said.for_him(None) == "" and said.for_him("") == ""

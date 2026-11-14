@@ -18,7 +18,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from jarvis.api.auth import require_auth
-from jarvis.api.r14_status import NO_STORE, part_of, ready_of
+from jarvis.api.identity import current_user
+from jarvis.api.r14_status import NO_STORE, part_of, read_limited, ready_of
 from jarvis.hardening.ports import PartName
 from jarvis.logging import get_logger
 
@@ -36,7 +37,9 @@ router = APIRouter(prefix="/v1/selfwatch", dependencies=[Depends(require_auth)])
 
 
 @router.get("", include_in_schema=False)
-async def selfwatch_status(request: Request) -> JSONResponse:
+async def selfwatch_status(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+    if (limited := read_limited(request, "selfwatch", uid)) is not None:
+        return limited
     body: dict[str, Any] = {"part": PART, "ready": ready_of(request, PART)}
     part = part_of(request, PART)
     status = part.services.get("status") if part is not None else None

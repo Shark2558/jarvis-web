@@ -28,6 +28,14 @@ ITEM_LIMIT = 80  # characters of one name, title or line shown
 LISTED = 10  # items named in one reply; the rest are counted
 _FENCED = re.compile(r"<<EXTERNAL CONTENT from [^\n]*?>>\n(.*?)\n<<END [0-9a-f]{6}>>", re.S)
 _LEFT_OVER = re.compile(r"<<(?:EXTERNAL CONTENT|END)[^>]*>>")
+# a sentence written to the model, not to him (R14 I1, security review LOW-3): it names "the
+# owner", tells the model what to say, or quotes a result's field name
+_TO_THE_MODEL = re.compile(
+    r"\bthe owner\b|^(?:tell|ask)\s+(?:him|her|them)\b|\b(?:do\s+not|don't)\s+say\b"
+    r"|^say\s+(?:when|that|so)\b|`",
+    re.I,
+)
+_SENTENCE = re.compile(r"(?<=[.;!?])\s+")
 PARCEL_WORDS = {
     "ordered": "ordered",
     "shipped": "shipped",
@@ -59,6 +67,14 @@ def plain(value: Any, limit: int = ITEM_LIMIT) -> str:
     return one_line(_LEFT_OVER.sub("", inner), limit)
 
 
+def for_him(note: Any) -> str:
+    """A tool's note without the sentences it wrote to the model ("" when nothing is left)."""
+    if not isinstance(note, str):
+        return ""
+    kept = [s for s in _SENTENCE.split(note.strip()) if s and not _TO_THE_MODEL.search(s)]
+    return _end(" ".join(kept).rstrip(";, ")) if kept else ""
+
+
 def _end(text: str) -> str:
     """`text` as a sentence: a full stop unless it already ends with one, a "?" or a "!"."""
     return text if text.endswith((".", "?", "!")) else text + "."
@@ -78,8 +94,8 @@ def _list(result: Mapping[str, Any], key: str) -> list[Mapping[str, Any]] | None
 
 
 def _note(result: Mapping[str, Any]) -> str:
-    note = result.get("note")
-    return f" {note}" if isinstance(note, str) and note.strip() else ""
+    note = for_him(result.get("note"))
+    return f" {note}" if note else ""
 
 
 # ---- groceries ----------------------------------------------------------------------------------
@@ -98,8 +114,7 @@ def grocery_list(result: Mapping[str, Any]) -> str | None:
     if items is None:
         return None
     if not items:
-        note = result.get("note")
-        return note if isinstance(note, str) and note else "Your Groceries list is empty, Sir."
+        return for_him(result.get("note")) or "Your Groceries list is empty, Sir."
     return f"Your Groceries list ({len(items)}), Sir: {_named([_quantity(i) for i in items])}."
 
 
@@ -166,8 +181,7 @@ def _thing(row: Mapping[str, Any]) -> str:
 
 def belongings_where(result: Mapping[str, Any]) -> str | None:
     if result.get("found") is False:
-        note = result.get("note")
-        return note if isinstance(note, str) and note else None
+        return for_him(result.get("note")) or None
     best = result.get("best")
     if result.get("found") is not True or not isinstance(best, Mapping):
         return None
@@ -249,8 +263,8 @@ def inbox_summary(result: Mapping[str, Any]) -> str | None:
     head = f"{unread} unread in your inbox, Sir" if isinstance(unread, int) else "Your inbox, Sir"
     out = head + (f": {', '.join(counts)}." if counts else ".")
     out += "".join(_letters(g) for g in shown)
-    held = result.get("withheld_note")
-    out += f" {held}." if isinstance(held, str) and held else ""
+    held = for_him(result.get("withheld_note"))
+    out += f" {held}" if held else ""
     return out + _note(result)
 
 
@@ -306,4 +320,4 @@ def say(tool: str, result: Any) -> str | None:
     return said if said and said.strip() else None
 
 
-__all__ = ["SAYERS", "Sayer", "plain", "say"]
+__all__ = ["SAYERS", "Sayer", "for_him", "plain", "say"]

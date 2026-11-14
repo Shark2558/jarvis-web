@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
-from jarvis.api.r14_status import NO_STORE, part_of, ready_of
+from jarvis.api.r14_status import NO_STORE, part_of, read_limited, ready_of
 from jarvis.billing.fx import DEFAULT_RATE
 from jarvis.billing.ledger import MonthLedger, TokenLedgerStore
 from jarvis.hardening.ports import PartName
@@ -56,7 +56,9 @@ async def _rate(request: Request) -> float:
 
 
 @router.get("/v1/skills", include_in_schema=False)
-async def skills(request: Request) -> JSONResponse:
+async def skills(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+    if (limited := read_limited(request, "skills", uid)) is not None:
+        return limited
     body: dict[str, Any] = {"part": PART, "ready": ready_of(request, PART)}
     register = _service(request, "register")
     if isinstance(register, SkillRegister):
@@ -92,6 +94,8 @@ def _month_body(month: MonthLedger, rate: float) -> dict[str, Any]:
 
 @router.get("/v1/costs/ledger", include_in_schema=False)
 async def ledger(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
+    if (limited := read_limited(request, "ledger", uid)) is not None:
+        return limited
     body: dict[str, Any] = {"part": PART, "ready": ready_of(request, PART)}
     store = _service(request, "ledger_view")
     if part_of(request, PART) is None or not _service(request, "register"):

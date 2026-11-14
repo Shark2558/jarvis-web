@@ -64,7 +64,7 @@ offer on, that turns every tool left out of a turn into a refusal instead of a `
 | Coverage (my tests) | `skills/offer` 99 %, `registry` 98 %, `part` 98 %, `ports` 88 %, `billing/ledger` 98 %, `core/window` 99 %, `api/skills` 93 %, `llm/anthropic_provider` 97 %, `llm/factory` 88 % |
 | `ruff check` / `ruff format --check` | clean (1,672 files) |
 | `mypy src` | **1 error** (`memory/redis_store.py`); the 8 baseline errors in `core/window.py` and `llm/anthropic_provider.py` are fixed |
-| `arch_coverage.py`, `check_doc_versions.py` | OK; 28 documents (29 with this one) |
+| `arch_coverage.py`, `check_doc_versions.py` | OK; 28 documents (it reads top-level folders only; this file carries its version line and change log anyway) |
 | Seam set | 265 passed, 13 failed: the 3 I0 pins and 1 Telegram pin of "Needs I1" E and D, and 9 `test_claude_guard` cases (G: the worktree's location) |
 | Sizes | every module ≤ 307 lines; every new function ≤ 50 lines. Pre-existing long functions in `llm/` untouched in length or shorter (`router.complete` 68, `router.stream` 70, the two providers' `complete` 61, `local_provider.stream` 52, `brains.from_settings` 77 → 73) |
 

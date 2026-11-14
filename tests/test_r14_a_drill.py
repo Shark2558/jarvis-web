@@ -7,6 +7,7 @@
 # is told after 2 days, weekly; one drill at a time.
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 from dataclasses import replace
 from typing import Any
@@ -37,11 +38,13 @@ from jarvis.backup.drill import (
     Drill,
     DrillDeps,
 )
-from jarvis.backup.log import DrillLog, DrillResult
-from jarvis.backup.ports import DRILL_DB
+from jarvis.backup.jobs import BackupDrillJob
+from jarvis.backup.log import DrillLog, DrillResult, DrillState
+from jarvis.backup.ports import DRILL_DB, DatabaseInfo
 from jarvis.backup.readonly import read_only
 from jarvis.backup.status import BackupStatusService, Teller
 from jarvis.config import Settings
+from jarvis.storage.docs import Set
 
 DAY1 = dt.datetime(2026, 12, 1, 0, 0, tzinfo=dt.UTC)  # 05:30 in Kolkata
 OWNERS = (UID,)
@@ -282,11 +285,179 @@ async def test_the_clean_up_runs_whatever_the_switches_say(s: Settings) -> None:
     assert await rig.tick() == "idle" and rig.admin.names().count("get_database") == 2
 
 
-async def test_access_taken_away_after_the_set_up_is_no_job_failure(s: Settings) -> None:
+async def test_access_taken_away_after_the_set_up_is_told_never_a_job_failure(
+    s: Settings,
+) -> None:
     off = s.model_copy(update={"backup_drill_enabled": False})
     rig = await _rig(off)
-    rig.world.denied = True  # the canary job tells "no schedule, or JARVIS's access to it"
-    assert await rig.tick() == "idle"
+    rig.world.denied = True
+    assert await BackupDrillJob(rig.drill).run(OWNERS) == {"no_access": 1, "failed": 0}
+    assert rig.sent.kinds() == [("backup_problem", "no_access")]
+
+
+async def test_access_lost_while_idle_is_told_once_a_day_and_looked_for_again(
+    s: Settings,
+) -> None:
+    rig = await _rig(s.model_copy(update={"backup_drill_enabled": False}))
+    rig.world.refuse = {"get_database"}  # only the clean-up role's grant is gone
+    assert await rig.tick() == "no_access"
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "no_access"  # not marked checked: it looks again
+    assert rig.sent.kinds() == [("backup_problem", "no_access")]
+    rig.world.refuse = set()
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "idle" and rig.admin.names().count("get_database") == 3
+
+
+async def test_a_failed_look_for_a_left_over_copy_is_tried_again_the_same_day(
+    s: Settings,
+) -> None:
+    rig = await _rig(s.model_copy(update={"backup_drill_enabled": False}))
+    rig.world.broken = {"get_database"}
+    with pytest.raises(RuntimeError):
+        await rig.tick()  # the job fails (counted); the day is not marked checked
+    rig.world.broken = set()
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "idle" and rig.admin.names().count("get_database") == 2
+
+
+async def test_a_restore_refused_waits_then_fails_and_gives_his_slot_back(s: Settings) -> None:
+    rig = await _rig(s, at=dt.datetime(2026, 12, 10, 3, 0, tzinfo=dt.UTC))
+    await rig.log.save((await rig.log.state()).model_copy(update={"auto_month": "202612"}))
+    assert await rig.drill.request() == REQUESTED
+    rig.world.refuse = {"restore"}  # restoreAdmin is gone
+    assert await rig.tick() == "no_access"
+    assert rig.world.drill is None and (await rig.log.state()).requested_at is not None
+    rig.clock.later(days=1)
+    assert await rig.tick() == "no_access" and rig.sent.sent == []
+    rig.clock.later(days=1, minutes=1)
+    assert await rig.tick() == "refused"
+    last = await rig.log.last_result()
+    assert last is not None and (last.outcome, last.reason, last.manual) == (
+        "failed",
+        "no_access",
+        True,
+    )
+    assert rig.sent.kinds() == [("backup_problem", "drill_failed")]
+    st = await rig.log.state()
+    assert st.requested_at is None and st.manual_count == 0 and st.phase == "idle"
+    assert await rig.drill.request() == REQUESTED  # his slot came back
+
+
+async def test_a_drill_with_no_finished_backup_fails_after_two_days(s: Settings) -> None:
+    world = await _world()
+    world.backups[-1] = replace(world.backups[-1], size_bytes=None, document_count=None)
+    rig = await _rig(s, world=world)
+    assert await rig.tick() == "waiting"
+    rig.clock.later(days=2, minutes=1)
+    assert await rig.tick() == "refused"
+    last = await rig.log.last_result()
+    assert last is not None and (last.outcome, last.reason) == ("failed", "no_backup")
+    assert rig.sent.kinds() == [("backup_problem", "drill_failed")]
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "idle" and "restore" not in rig.admin.names()
+
+
+async def test_access_lost_mid_drill_ends_it_and_a_copy_left_is_told(s: Settings) -> None:
+    rig = await _rig(s, world=await _world(restore_polls=3))
+    assert await rig.tick() == "started"
+    rig.world.refuse = {"operation_done", "get_database", "delete_database"}
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "no_access"
+    last = await rig.log.last_result()
+    assert last is not None and (last.outcome, last.reason) == ("failed", "no_access")
+    assert (await rig.log.state()).phase == "cleanup"
+    rig.clock.later(days=2, hours=1)
+    assert await rig.tick() == "no_access"
+    assert rig.sent.kinds() == [
+        ("backup_problem", "drill_failed"),
+        ("backup_problem", "copy_left"),
+    ]
+    rig.world.refuse = set()
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "done" and rig.world.drill is None
+
+
+async def test_a_clean_up_whose_look_fails_still_tells_the_copy_left(s: Settings) -> None:
+    world = await _world()
+    world.restore_into_drill(world.backups[-1].name)
+    rig = await _rig(s, world=world)
+    await rig.log.save(DrillState(phase="cleanup", auto_month="202612"))
+    world.broken = {"get_database"}
+    assert await BackupDrillJob(rig.drill).run(OWNERS) == {"error": 1, "failed": 1}
+    rig.clock.later(days=2, hours=1)
+    assert await rig.tick() == "error"
+    assert rig.sent.kinds() == [("backup_problem", "copy_left")]
+
+
+async def test_a_tick_cut_off_after_the_restore_began_never_restores_twice(
+    s: Settings,
+) -> None:
+    rig = await _rig(s)
+    rig.world.lose_restore_reply = True
+    with pytest.raises(asyncio.CancelledError):
+        await rig.tick()
+    assert rig.world.drill is not None  # Google made the copy
+    rig.world.lose_restore_reply = False
+    rig.clock.later(minutes=30)
+    await rig.until_idle()
+    assert rig.admin.names().count("restore") == 1 and rig.world.drill is None
+    last = await rig.log.last_result()
+    assert last is not None and (last.outcome, last.reason) == ("failed", "interrupted")
+    assert (await rig.log.state()).auto_month == "202612"
+
+
+async def test_a_restore_that_raises_is_a_failed_restore_and_never_repeats(s: Settings) -> None:
+    rig = await _rig(s)
+    rig.world.broken = {"restore"}
+    assert await rig.tick() == "done"
+    last = await rig.log.last_result()
+    assert last is not None and (last.outcome, last.reason) == ("failed", "restore")
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "idle" and rig.admin.names().count("restore") == 1
+
+
+async def test_an_unreadable_drill_state_never_starts_a_second_restore(s: Settings) -> None:
+    rig = await _rig(s)
+    await rig.until_idle()  # December's drill passed
+    garbled = {"phase": "exploded", "manual_count": "many"}
+    await rig.world.live.write([Set(f"{PREFIX}backup_drill/current", garbled)])
+    for _ in range(3):
+        rig.clock.later(minutes=30)
+        await rig.tick()
+    assert rig.admin.names().count("restore") == 1
+    assert (await rig.log.state()).auto_month == "202612"
+
+
+async def test_a_request_approved_before_the_drill_was_switched_off_needs_a_new_one(
+    s: Settings,
+) -> None:
+    rig = await _rig(s, at=dt.datetime(2026, 12, 10, 3, 0, tzinfo=dt.UTC))
+    await rig.log.save((await rig.log.state()).model_copy(update={"auto_month": "202612"}))
+    assert await rig.drill.request() == REQUESTED
+    off = Drill(replace(rig.deps, s=s.model_copy(update={"backup_drill_enabled": False})))
+    assert await off.step(OWNERS) == "off"
+    st = await rig.log.state()
+    assert st.requested_at is None and st.manual_count == 0
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "idle" and "restore" not in rig.admin.names()
+
+
+async def test_a_request_he_makes_during_a_tick_is_kept(s: Settings) -> None:
+    rig = await _rig(s, at=dt.datetime(2026, 12, 10, 3, 0, tzinfo=dt.UTC))
+    await rig.log.save((await rig.log.state()).model_copy(update={"auto_month": "202612"}))
+    asked = []
+
+    class Approving(FakeAdmin):
+        async def get_database(self, database: str) -> DatabaseInfo | None:
+            asked.append(await rig.drill.request())  # he approves the card meanwhile
+            return await super().get_database(database)
+
+    rig.drill = Drill(replace(rig.deps, admin=Approving(rig.world)))
+    assert await rig.tick() == "idle" and asked == [REQUESTED]
+    assert (await rig.log.state()).requested_at is not None
+    rig.clock.later(minutes=30)
+    assert await rig.tick() == "started"
 
 
 async def test_switched_off_mid_drill_it_stops_and_cleans_up_without_an_alert(s: Settings) -> None:

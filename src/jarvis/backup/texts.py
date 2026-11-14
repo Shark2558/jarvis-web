@@ -25,6 +25,10 @@ TEXTS: Mapping[str, str] = {
         "Restore drill: its throw-away test copy could not be deleted, and Google charges for it "
         "while it stays. Send this to the Workshop."
     ),
+    "no_access": (
+        "Restore drill: JARVIS has lost its access to the drill's throw-away copy, so it can't "
+        "look for one or delete it. Run bash deploy/backup_setup.sh again in Cloud Shell."
+    ),
     "drill_ok": (
         "Restore drill passed: the newest backup opened in a throw-away copy, everything was "
         "there, your locked documents opened, and the copy is deleted."
@@ -49,6 +53,11 @@ REASON_WORDS: Mapping[str, str] = {
     "over_cap": "the copy would cost more than the drill's limit",
     "stuck": "it took more than three days",
     "no_key": "this server has no encryption key",
+    "no_access": (
+        "JARVIS has no permission to run it (run bash deploy/backup_setup.sh again in Cloud Shell)"
+    ),
+    "no_backup": "Google had no finished backup to test for two days",
+    "interrupted": "it was cut off while Google made the copy",
     "unknown": "an unexpected error",
 }
 

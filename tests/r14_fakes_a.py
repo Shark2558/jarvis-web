@@ -5,6 +5,7 @@
 # on it. The Google SDK clients' stand-ins are in `r14_fakes_a_sdk.py`.
 from __future__ import annotations
 
+import asyncio
 import copy
 import datetime as dt
 import hashlib
@@ -72,6 +73,9 @@ class World:
     restore_fails: bool = False  # the operation ends without a database
     delete_fails: bool = False  # Google refuses the delete (the condition not honoured)
     denied: bool = False  # no backup permission yet (before the set-up)
+    refuse: set[str] = field(default_factory=set)  # admin calls Google refuses (access lost)
+    broken: set[str] = field(default_factory=set)  # admin calls that fail (Google down)
+    lose_restore_reply: bool = False  # the restore begins, then the tick is cancelled
     polls: int = 0
 
     def snapshot(self, name: str = BACKUP_NAME, *, at: dt.datetime = SNAP, **kw: Any) -> None:
@@ -111,8 +115,10 @@ class FakeAdmin:
         if database is not None:
             drill_target(database, live=self.live)
         self.calls.append((name, *(() if database is None else (database,))))
-        if self.w.denied:
+        if self.w.denied or name in self.w.refuse:
             raise FakeDenied(name)
+        if name in self.w.broken:
+            raise RuntimeError(name)
 
     async def list_backups(self) -> Sequence[BackupInfo]:
         self._check("list_backups")
@@ -129,6 +135,8 @@ class FakeAdmin:
         self.w.polls = 0
         if not self.w.restore_fails:
             self.w.restore_into_drill(backup)
+        if self.w.lose_restore_reply:
+            raise asyncio.CancelledError  # Google began it; the tick never saw the answer
         return f"projects/{PROJECT}/databases/{database}/operations/op1"
 
     async def operation_done(self, operation: str) -> bool:

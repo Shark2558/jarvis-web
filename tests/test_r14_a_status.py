@@ -25,6 +25,8 @@ from jarvis.backup import canary
 from jarvis.backup.log import DrillLog, DrillResult
 from jarvis.backup.ports import NOT_SET_UP, BackupFacts, BackupInfo, BackupStatus
 from jarvis.backup.status import (
+    FAILED_TEXT,
+    REASON_WORDS,
     TEXTS,
     BackupStatusService,
     Teller,
@@ -331,5 +333,9 @@ async def test_a_passed_drill_is_an_info_line_and_a_failure_names_its_reason_in_
         assert len(text) <= 300 and "₹" not in text and "{" not in text
 
 
-def test_every_cause_has_its_text() -> None:
-    assert set(TEXTS) == {"stale", "no_schedule", "key_changed", "copy_left", "drill_ok"}
+def test_every_cause_has_its_text_and_every_reason_fits() -> None:
+    causes = {"stale", "no_schedule", "key_changed", "copy_left", "no_access", "drill_ok"}
+    assert set(TEXTS) == causes
+    for reason in ("no_access", "no_backup", "interrupted", *REASON_WORDS):
+        failed = FAILED_TEXT.format(why=REASON_WORDS[reason])
+        assert len(failed) <= 300 and "₹" not in failed, reason

@@ -16,8 +16,9 @@ drill's state and results. The checks (`verify`, `walk_checks`, `vault_probe`) n
                                      month; 13 months
 
 Counts, ids and reason codes only: no document content, no vault text, no key. A state document
-that can't be read is treated as idle (the drill's clean-up still asks Google whether a copy
-exists, so nothing is left behind) and logged by class name.
+that can't be read fails CLOSED: it reads as a clean-up with this month's drill already had, so
+no second restore starts (the clean-up asks Google whether a copy exists and deletes it), and is
+logged. The tick's writes are transactions that keep a request he made meanwhile (`save`).
 """
 
 from __future__ import annotations
@@ -107,17 +108,21 @@ class DrillState(_Frozen):
     copy_seen_at: dt.datetime | None = None
     deleted_at: dt.datetime | None = None
     checked_on: str | None = None
+    blocked_since: dt.datetime | None = None  # due but unable to start (no backup, no access)
     updated_at: dt.datetime | None = None
 
 
-def _state_of(doc: Doc | None) -> DrillState:
+REQUEST_FIELDS = ("requested_at", "manual_month", "manual_count")  # `Drill.request`'s own
+
+
+def _state_of(doc: Doc | None, month: str) -> DrillState:
     if doc is None:
         return DrillState()
     try:
         return DrillState.model_validate(doc)
     except ValidationError:
-        log.error("restore drill state unreadable: treated as idle")
-        return DrillState()
+        log.error("restore drill state unreadable: a clean-up, and no restore this month")
+        return DrillState(phase="cleanup", auto_month=month)
 
 
 class DrillLog:
@@ -143,18 +148,31 @@ class DrillLog:
         stamped = state.model_copy(update={"updated_at": self._clock()})
         return stamped.model_dump(mode="json")
 
-    async def state(self) -> DrillState:
-        return _state_of(await self._d.get(self._state))
+    def _read(self, doc: Doc | None) -> DrillState:
+        return _state_of(doc, self.month_of(self._clock()))
 
-    async def save(self, state: DrillState) -> DrillState:
-        await self._d.write([Set(self._state, self._doc(state))])
-        return state
+    async def state(self) -> DrillState:
+        return self._read(await self._d.get(self._state))
+
+    async def save(self, state: DrillState, *, request: bool = False) -> DrillState:
+        """The tick's write, in one transaction: a request he made meanwhile (`change`) is kept,
+        unless this write settles it (`request=True`: started, refused, dropped)."""
+
+        async def run(tx: DocTx) -> DrillState:
+            new = state
+            if not request:
+                now = self._read(await tx.get(self._state))
+                new = state.model_copy(update={f: getattr(now, f) for f in REQUEST_FIELDS})
+            tx.set(self._state, self._doc(new))
+            return new
+
+        return await self._d.transaction(run)
 
     async def change(self, fn: Callable[[DrillState], tuple[DrillState, T]]) -> T:
         """Read-modify-write in one transaction (a manual request and the tick never race)."""
 
         async def run(tx: DocTx) -> T:
-            new, out = fn(_state_of(await tx.get(self._state)))
+            new, out = fn(self._read(await tx.get(self._state)))
             tx.set(self._state, self._doc(new))
             return out
 
@@ -186,6 +204,7 @@ class DrillLog:
 
 __all__ = [
     "KEEP_MONTHS",
+    "REQUEST_FIELDS",
     "RESULTS_COLLECTION",
     "STATE_COLLECTION",
     "DrillLog",

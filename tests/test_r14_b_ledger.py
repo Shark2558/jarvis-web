@@ -3,6 +3,7 @@
 # once-only claims (`selfwatch_told`, written before the send).
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -119,10 +120,9 @@ async def test_what_this_process_saw_wins_over_the_stored_ledger() -> None:
 async def test_a_ledger_that_cannot_be_read_or_kept_stays_in_memory() -> None:
     book = JobLedger()
     _fail(book, "a", 3)
-    with pytest.raises(RuntimeError):
-        await book.flush(BrokenDocs())
+    assert await book.flush(BrokenDocs()) is False  # unread: never written over the stored one
     await book.load(BrokenDocs())  # logged, never raised: the ledger keeps what it saw
-    assert book.untold(3) == ["a"]
+    assert book.untold(3) == ["a"] and book.dirty
 
 
 # ---- the once-only claims ------------------------------------------------------------------------
@@ -160,3 +160,141 @@ async def test_old_claims_are_swept_after_30_days_and_counted_per_owner() -> Non
     assert await told.count(UID) == 2
     assert await told.sweep(T) == 1
     assert await told.count(UID) == 1
+
+
+# ---- review follow-ups (v14.0.2) -----------------------------------------------------------------
+async def test_a_naive_stored_time_reads_as_unknown_never_as_a_time() -> None:
+    docs = MemoryDocs()
+    docs._data["jarvis_selfwatch/jobs"] = {  # noqa: SLF001 - a hand-edited document
+        "jobs": {"web": {"runs": 3, "since": "2026-11-16T06:00:00", "told_at": None}},
+        "last_alert": "2026-11-16T06:00:00",
+    }
+    book = JobLedger()
+    await book.load(docs)
+    assert book.last_alert is None and book.failing(1) == []  # python review M1
+
+
+async def test_a_naive_claim_time_is_swept_not_a_crash() -> None:
+    docs = MemoryDocs()
+    docs._data["jarvis_selfwatch_told/owner-1_abc"] = {"uid": UID, "at": "2026-11-16T06:00:00"}  # noqa: SLF001
+    assert await Told(docs).sweep(T) == 1
+
+
+class _WriteWhileObserving(MemoryDocs):
+    """A store whose write lets the other job's observer run meanwhile (python review M2)."""
+
+    def __init__(self, book: JobLedger) -> None:
+        super().__init__()
+        self.book = book
+
+    async def write(self, ops):  # type: ignore[no-untyped-def]
+        self.book.observe("late_job", "failed", T)  # the other clock, during the await
+        await super().write(ops)
+
+
+async def test_a_change_made_while_the_ledger_is_written_stays_to_write() -> None:
+    book = JobLedger()
+    _fail(book, "web", 1)
+    docs = _WriteWhileObserving(book)
+    assert await book.flush(docs) is True
+    assert book.dirty  # the late change is still to be written
+    assert await book.flush(docs) is True
+    stored = await docs.get("jarvis_selfwatch/jobs")
+    assert stored is not None and "late_job" in stored["jobs"]
+
+
+async def test_a_write_that_fails_keeps_the_ledger_to_write() -> None:
+    book = JobLedger()
+    await book.load(MemoryDocs())
+    _fail(book, "web", 1)
+    with pytest.raises(RuntimeError):
+        await book.flush(BrokenDocs())
+    assert book.dirty
+
+
+async def test_failures_seen_before_the_load_join_the_stored_streak() -> None:
+    docs = MemoryDocs()
+    old = JobLedger()
+    _fail(old, "memory", 2)
+    old.mark_told(["memory"], T)
+    _fail(old, "web", 2)
+    await old.flush(docs)
+    fresh = JobLedger()  # a restart: one more failure of each before the first load
+    fresh.observe("memory", "failed", T + timedelta(hours=1))
+    fresh.observe("web", "failed", T + timedelta(hours=1))
+    await fresh.load(docs)
+    got = dict(fresh.failing(1))
+    assert got["web"] == Streak(3, T)  # silent review M5: 2 stored + 1 seen, since kept
+    assert got["memory"].runs == 3 and got["memory"].told_at == T  # told: never told again
+    assert fresh.untold(3) == ["web"]
+
+
+async def test_a_streak_that_ended_here_and_began_again_is_this_processs_own() -> None:
+    docs = MemoryDocs()
+    old = JobLedger()
+    _fail(old, "web", 2)
+    await old.flush(docs)
+    fresh = JobLedger()
+    fresh.observe("web", "ok", T)
+    fresh.observe("web", "failed", T + timedelta(minutes=5))
+    await fresh.load(docs)
+    assert dict(fresh.failing(1))["web"] == Streak(1, T + timedelta(minutes=5))
+
+
+async def test_skips_before_the_load_never_hide_the_stored_streak() -> None:
+    docs = MemoryDocs()
+    old = JobLedger()
+    _fail(old, "web", 2)
+    await old.flush(docs)
+    fresh = JobLedger()
+    fresh.observe("web", "skipped", T)
+    await fresh.load(docs)
+    assert dict(fresh.failing(1))["web"] == Streak(2, T)
+
+
+async def test_the_ledger_is_never_written_over_a_stored_one_it_could_not_read() -> None:
+    docs = MemoryDocs()
+    old = JobLedger()
+    _fail(old, "web", 2)
+    await old.flush(docs)
+    fresh = JobLedger()
+    await fresh.load(BrokenDocs())  # the first read failed
+    _fail(fresh, "web", 1)
+    assert await fresh.flush(docs) is True  # it reads (and joins) the stored one first
+    assert dict(fresh.failing(1))["web"].runs == 3
+
+
+async def test_a_released_claim_can_be_made_again() -> None:
+    docs = MemoryDocs()
+    told = Told(docs)
+    assert await told.claim(UID, "job_failing", "c", T)
+    await told.release(UID, "job_failing", "c")
+    assert await docs.query(Query("jarvis_selfwatch_told")) == []
+    assert await told.claim(UID, "job_failing", "c", T)
+
+
+class _NoDelete(MemoryDocs):
+    async def write(self, ops):  # type: ignore[no-untyped-def]
+        raise RuntimeError("firestore: 503")
+
+
+async def test_a_claim_whose_delete_failed_is_still_released_in_this_process() -> None:
+    docs = _NoDelete()
+    told = Told(docs)
+    assert await told.claim(UID, "job_failing", "c", T)
+    await told.release(UID, "job_failing", "c")  # logged, never raised
+    assert len(await docs.query(Query("jarvis_selfwatch_told"))) == 1  # still stored
+    assert await told.claim(UID, "job_failing", "c", T)  # but made again here
+    assert not await told.claim(UID, "job_failing", "c", T)
+
+
+class _SlowBroken(BrokenDocs):
+    async def transaction(self, fn):  # type: ignore[no-untyped-def]
+        await asyncio.sleep(0)  # the other claim runs meanwhile
+        raise self._down()
+
+
+async def test_two_claims_at_once_with_the_store_down_make_one() -> None:
+    told = Told(_SlowBroken())
+    got = await asyncio.gather(*(told.claim(UID, "job_failing", "c", T) for _ in range(3)))
+    assert sorted(got) == [False, False, True]  # python review L4

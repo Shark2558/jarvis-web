@@ -6,11 +6,13 @@
   left for the job) never counts and never ends one. A streak is told once (`mark_told`); the
   job that reports never reports its own streak (`exclude`). Kept in memory and written, only
   when it changed, to `{prefix}selfwatch/jobs` by the 5-minute job (batched): names, counts and
-  times only. What this process saw wins over the stored copy (a restart reads it back once).
+  times only. A restart reads it back once: failures seen before that join the stored streak;
+  only an `ok` seen here ends it. It is never written before the stored copy was read.
 - `Told`: the once-only claims, `{prefix}selfwatch_told/{uid}_{hash}` with the kind and the time
-  (the cause is hashed, never kept), written BEFORE the alert is sent, so a failed or slow send
-  can never be repeated in a loop. With the store down a claim is kept in this process only.
-  Swept after 30 days.
+  (the cause is hashed, never kept), written BEFORE the alert is sent, so a slow send can never
+  be repeated in a loop. A send that reached nobody gives its claim back (`release`; the teller
+  bounds the retries). With the store down a claim is kept in this process only. Swept after 30
+  days.
 
 No message text, no logger name and no exception text is ever kept here.
 """
@@ -64,12 +66,14 @@ def _iso(at: datetime | None) -> str | None:
 
 
 def _when(value: object) -> datetime | None:
+    """A stored time, or None: never a naive one (it could not be compared with now)."""
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value)
+        at = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return at if at.tzinfo is not None else None
 
 
 def _decode(raw: object) -> Streak | None:
@@ -88,6 +92,7 @@ class JobLedger:
         self._path = f"{prefix}selfwatch/jobs"
         self._streaks: dict[str, Streak] = {}
         self._seen: set[str] = set()  # names this process has an outcome for
+        self._ended: set[str] = set()  # names this process saw `ok` for (a stored streak ended)
         self._recovered = False  # a told streak ended since the last `take_recovered`
         self.last_alert: datetime | None = None  # the last aggregated `job_failing`
         self.dirty = False
@@ -99,6 +104,8 @@ class JobLedger:
         if name not in self._seen and len(self._seen) >= MAX_JOBS:
             return
         self._seen.add(name)
+        if outcome == "ok":
+            self._ended.add(name)
         before = self._streaks.get(name)
         after = step(before, outcome, at)
         if after == before:
@@ -146,15 +153,25 @@ class JobLedger:
         return {"jobs": jobs, "last_alert": _iso(self.last_alert), "recovered": self._recovered}
 
     async def flush(self, docs: Docs) -> bool:
-        """Write the ledger when it changed. Raises when the store is down (kept dirty)."""
+        """Write the ledger when it changed, never over a stored copy it has not read (False: it
+        could not be read). Raises when the write fails (kept dirty). A change the other job's
+        observer makes during the write stays dirty for the next one."""
         if not self.dirty:
             return False
-        await docs.write([Set(self._path, self._doc())])
-        self.dirty = False
+        if not self.loaded:
+            await self.load(docs)
+            if not self.loaded:
+                return False
+        doc, self.dirty = self._doc(), False
+        try:
+            await docs.write([Set(self._path, doc)])
+        except BaseException:
+            self.dirty = True
+            raise
         return True
 
     async def load(self, docs: Docs) -> None:
-        """Read the stored ledger once (after a restart); this process's own outcomes win."""
+        """Read the stored ledger once (after a restart) and join what this process saw."""
         if self.loaded:
             return
         try:
@@ -166,12 +183,19 @@ class JobLedger:
         self._merge(doc or {})
 
     def _merge(self, doc: dict[str, Any]) -> None:
+        """The stored streaks joined with this process's: an `ok` seen here ended a stored one;
+        failures seen here before the load add to it (its start and its `told_at` kept)."""
         jobs = doc.get("jobs")
         for name, raw in (jobs if isinstance(jobs, dict) else {}).items():
             got = _decode(raw)
-            if got is not None and name not in self._seen and _NAME.fullmatch(str(name)):
-                if len(self._streaks) < MAX_JOBS:
-                    self._streaks[str(name)] = got
+            if got is None or name in self._ended or not _NAME.fullmatch(str(name)):
+                continue
+            mine = self._streaks.get(name)
+            if mine is not None:
+                told = got.told_at or mine.told_at
+                self._streaks[name] = Streak(got.runs + mine.runs, min(got.since, mine.since), told)
+            elif len(self._streaks) < MAX_JOBS:
+                self._streaks[str(name)] = got
         self.last_alert = self.last_alert or _when(doc.get("last_alert"))
         self._recovered = self._recovered or doc.get("recovered") is True
 
@@ -183,6 +207,7 @@ class Told:
         self._docs = docs
         self._coll = f"{prefix}selfwatch_told"
         self._memory: dict[str, datetime] = {}
+        self._released: set[str] = set()  # given back here, but its stored copy may remain
 
     @staticmethod
     def key(uid: str, kind: str, cause: str) -> str:
@@ -202,12 +227,17 @@ class Told:
         key = self.key(uid, kind, cause)
         if key in self._memory:
             return False
-        path = f"{self._coll}/{key}"
+        self._remember(key, now)  # before the await: a second claim meanwhile is not made
+        path, again = f"{self._coll}/{key}", key in self._released
+        body = {"uid": uid, "kind": kind, "at": now.isoformat()}
 
         async def run(tx: DocTx) -> bool:
+            if again:  # given back here: its stored copy (a delete that failed) is ours
+                tx.set(path, body)
+                return True
             if await tx.get(path) is not None:
                 return False
-            tx.create(path, {"uid": uid, "kind": kind, "at": now.isoformat()})
+            tx.create(path, body)
             return True
 
         try:
@@ -217,8 +247,29 @@ class Told:
         except Exception as exc:  # noqa: BLE001 - the store is down: claim in this process only
             log.warning("selfwatch claim kept in memory", extra={"error": type(exc).__name__})
             made = True
-        self._remember(key, now)
+        except BaseException:
+            self._memory.pop(key, None)
+            raise
+        self._released.discard(key)
         return made
+
+    def forget(self, uid: str, kind: str, cause: str) -> None:
+        """Give the claim back in this process (synchronous: safe while being cancelled)."""
+        key = self.key(uid, kind, cause)
+        self._memory.pop(key, None)
+        if len(self._released) < MAX_MEMORY_CLAIMS:
+            self._released.add(key)
+
+    async def release(self, uid: str, kind: str, cause: str) -> None:
+        """Give the claim back (its send reached nobody): here, and in the store when it can."""
+        self.forget(uid, kind, cause)
+        key = self.key(uid, kind, cause)
+        try:
+            await self._docs.write([Delete(f"{self._coll}/{key}")])
+        except Exception as exc:  # noqa: BLE001 - given back here; the store's copy is overwritten
+            log.warning("selfwatch claim not given back", extra={"error": type(exc).__name__})
+            return
+        self._released.discard(key)
 
     async def count(self, uid: str) -> int:
         return len(await self._docs.query(Query(self._coll, where=("uid", uid))))

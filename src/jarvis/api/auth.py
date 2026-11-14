@@ -10,12 +10,13 @@ Cookie-authenticated writes must also carry `X-Requested-With: JARVIS` (CSRF def
 cross-site form cannot set custom headers, and we serve no CORS headers).
 
 Slice 10 D: `/auth/login?reauth=1` asks Google to authenticate the owner again (`max_age=0`)
-and remembers when that started. Only such a re-sign-in stamps `auth_at` in the cookie — the
-ID token's `auth_time` when Google sends one (and it must not be older than the start: Google
-did not actually ask again → `/?reauth=stale`, nothing stamped), else the moment it completed —
-and returns to `/?reauth=done`. For 5 minutes it lets THIS browser set up a first passkey or
-start the 24-hour passkey reset; it never removes a passkey or lowers protection by itself. An
-ordinary sign-in stamps nothing.
+and remembers when that started. Only such a re-sign-in stamps `auth_at` in the cookie: the
+ID token's `auth_time`, which must not be older than the start (Google did not actually ask
+again → `/?reauth=stale`, nothing stamped) and must be there (R14 D13 (1): with `max_age` sent,
+OpenID Connect returns it, so a token without one is stale too) — and returns to
+`/?reauth=done`. For 5 minutes it lets THIS browser set up a first passkey or start the 24-hour
+passkey reset; it never removes a passkey or lowers protection by itself. An ordinary sign-in
+stamps nothing.
 """
 
 from __future__ import annotations
@@ -164,11 +165,13 @@ def fresh_sign_in_left(request: Request, s: Settings) -> int | None:
 
 
 def _reauth_at(info: Any, started: float, now: float) -> float | None:
-    """When the owner authenticated in this re-sign-in, or None when Google says it was before
-    the re-sign-in began (it did not ask again). No `auth_time` (Google may omit it): now."""
+    """When the owner authenticated in this re-sign-in, or None when Google did not confirm a
+    fresh one: its `auth_time` is before the re-sign-in began (it did not ask again), or missing
+    or not a number (R14 D13 (1): OpenID Connect sends `auth_time` whenever `max_age` is asked,
+    so its absence is never read as "now")."""
     at = info.get("auth_time") if hasattr(info, "get") else None
     if not isinstance(at, int | float) or isinstance(at, bool):
-        return now
+        return None
     if at < started - AUTH_TIME_SKEW_S or at > now + AUTH_TIME_SKEW_S:
         return None
     return float(min(at, now))

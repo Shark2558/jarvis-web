@@ -69,17 +69,18 @@ def test_recovered_only_when_every_told_streak_ended() -> None:
     _fail(book, "b", 3)
     book.mark_told(["a", "b"], T)
     book.observe("a", "ok", T)
-    assert not book.take_recovered()
+    assert not book.recovered()
     book.observe("b", "ok", T)
-    assert book.take_recovered() and not book.take_recovered()
-    assert not book.has_told()
+    assert book.recovered() and book.recovered()  # until its all-clear is said
+    book.clear_recovered()
+    assert not book.recovered() and not book.has_told()
 
 
 def test_an_untold_streak_ending_is_no_recovery() -> None:
     book = JobLedger()
     _fail(book, "a", 3)
     book.observe("a", "ok", T)
-    assert not book.take_recovered()
+    assert not book.recovered()
 
 
 def test_odd_names_are_ignored_and_the_table_is_bounded() -> None:

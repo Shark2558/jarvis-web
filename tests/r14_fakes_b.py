@@ -46,6 +46,7 @@ class Sent:
     text: str
     sending: bool  # selfwatch.ports.SENDING was set while it was sent
     rang: bool
+    took: bool = False  # a channel took it, or it was held for the morning summary
 
 
 @dataclass
@@ -76,7 +77,7 @@ class RingCounter:
         now = self.clock()
         decision = decide(signal, self.settings, now)
         if decision.action not in ("ring", "silent"):
-            self._record(uid, signal, message, rang=False)
+            self._record(uid, signal, message, rang=False, took=decision.action == "hold")
             return Delivery(action=decision.action, reason=decision.reason)
         verdict = self.storm.admit(uid, signal, decision, now)
         if not verdict.admit:
@@ -86,11 +87,18 @@ class RingCounter:
             self.storm.rollback(uid, signal, now)
             self._record(uid, signal, message, rang=False)
             return Delivery(action=decision.action, reason=decision.reason)
-        self._record(uid, signal, message, rang=decision.action == "ring")
+        self._record(uid, signal, message, rang=decision.action == "ring", took=True)
         return Delivery(action=decision.action, reason=decision.reason, telegram=True)
 
-    def _record(self, uid: str, signal: Signal, message: str, *, rang: bool) -> None:
-        self.sent.append(Sent(uid, signal.kind, signal.subject, message, SENDING.get(), rang))
+    def _record(
+        self, uid: str, signal: Signal, message: str, *, rang: bool, took: bool = False
+    ) -> None:
+        sent = Sent(uid, signal.kind, signal.subject, message, SENDING.get(), rang, took)
+        self.sent.append(sent)
+
+    def took(self) -> list[str]:
+        """The kinds a channel took (or that were held), in order."""
+        return [s.kind for s in self.sent if s.took]
 
     def kinds(self) -> list[str]:
         return [s.kind for s in self.sent]

@@ -137,13 +137,15 @@ class JobLedger:
         """Whether a streak that was told is still going (its alert is still true)."""
         return any(s.told_at is not None for s in self._streaks.values())
 
-    def take_recovered(self) -> bool:
-        """True once when every told streak has ended."""
-        if not self._recovered or self.has_told():
-            return False
-        self._recovered = False
-        self.dirty = True
-        return True
+    def recovered(self) -> bool:
+        """Whether every told streak has ended (its all-clear not said yet)."""
+        return self._recovered and not self.has_told()
+
+    def clear_recovered(self) -> None:
+        """The all-clear was said (or settled): only after its send, so a lost one is retried."""
+        if self._recovered:
+            self._recovered = False
+            self.dirty = True
 
     def _doc(self) -> dict[str, Any]:
         jobs = {

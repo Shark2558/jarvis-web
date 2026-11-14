@@ -11,11 +11,16 @@ that day's snapshot alone. A day with no snapshot the day before is no "day".
 A spike: today's figure is more than `factor` (3) times the average of the up to 14 days before
 it and at least `min_inr` (₹50); never before `HISTORY_MIN` (7) days of history. The alert says
 only that figure (D6: the one amount an alert may carry). Counts and rupees only.
+
+An owner's day is done (`settle`) only once his snapshot is kept and his spike (if any) was
+said: a figure that could not be read or kept is tried again at the next tick the same day
+(`Snapshot.failed`, so the job says so), and one owner's failure never costs another his.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
@@ -65,14 +70,32 @@ def spike(snaps: Mapping[str, float], day: str, factor: float, min_inr: float) -
     return today if today > factor * (sum(history) / len(history)) else None
 
 
+def _day_key(k: object) -> bool:
+    if not isinstance(k, str) or len(k) != 10:
+        return False
+    try:
+        date.fromisoformat(k)
+    except ValueError:
+        return False
+    return True
+
+
 def _series(raw: object) -> dict[str, float]:
+    """An owner's stored snapshots; a damaged key or figure is left out."""
     if not isinstance(raw, dict):
         return {}
     out: dict[str, float] = {}
     for k, v in raw.items():
-        if isinstance(k, str) and len(k) == 10 and isinstance(v, int | float) and v >= 0:
+        ok = isinstance(v, int | float) and not isinstance(v, bool) and v >= 0
+        if ok and _day_key(k):
             out[k] = float(v)
     return out
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    spikes: dict[str, float] = field(default_factory=dict)  # uid -> today's rupees, to tell
+    failed: bool = False  # an owner's figure could not be read or kept (tried again later)
 
 
 class SpendWatch:
@@ -91,38 +114,48 @@ class SpendWatch:
         self._path = f"{prefix}selfwatch/spend"
         self._done: dict[str, str] = {}  # uid -> the local day already snapshotted
 
-    async def snapshot(self, docs: Docs, owners: Sequence[str], now: datetime) -> dict[str, float]:
-        """Today's snapshot for each owner (once a day); uid -> rupees for those that spiked."""
+    def day_of(self, now: datetime) -> str:
+        return now.astimezone(self._tz).date().isoformat()
+
+    async def snapshot(self, docs: Docs, owners: Sequence[str], now: datetime) -> Snapshot:
+        """Today's snapshot for each owner whose day is not done; the spikes to tell. Without
+        billing yet (read late) nothing is done and nothing failed: the next tick tries."""
         billing = self._billing()
         if billing is None:
-            return {}
-        day = now.astimezone(self._tz).date().isoformat()
-        out: dict[str, float] = {}
+            return Snapshot()
+        day = self.day_of(now)
+        spikes: dict[str, float] = {}
+        failed = False
         for uid in owners:
             if self._done.get(uid) == day or not owner_ok(uid):
                 continue
             try:
                 total = float((await billing.month(uid)).inr_total)
+                got = spike(await self._keep(docs, uid, day, total), day, self._factor, self._min)
             except Exception as exc:  # noqa: BLE001 - one owner's figure never stops the rest
-                log.warning("selfwatch spend unreadable", extra={"error": type(exc).__name__})
+                log.warning("selfwatch spend not kept", extra={"error": type(exc).__name__})
+                failed = True
                 continue
-            snaps = await self._keep(docs, uid, day, total)
-            self._done[uid] = day
-            got = spike(snaps, day, self._factor, self._min) if snaps is not None else None
-            if got is not None:
-                out[uid] = got
-        return out
+            if got is None:
+                self.settle(uid, day)
+            else:
+                spikes[uid] = got
+        return Snapshot(spikes, failed)
 
-    async def _keep(self, docs: Docs, uid: str, day: str, total: float) -> dict[str, float] | None:
-        """The owner's snapshots with today's (the first of the day wins); None: already kept."""
+    def settle(self, uid: str, day: str) -> None:
+        """His day is done: kept, and its spike (if any) said."""
+        self._done[uid] = day
 
-        async def fn(tx: DocTx) -> dict[str, float] | None:
+    async def _keep(self, docs: Docs, uid: str, day: str, total: float) -> dict[str, float]:
+        """The owner's snapshots with today's (the first of the day wins)."""
+
+        async def fn(tx: DocTx) -> dict[str, float]:
             doc: dict[str, Any] = await tx.get(self._path) or {}
             raw = doc.get("owners")
             owners: dict[str, Any] = raw if isinstance(raw, dict) else {}
             mine = _series(owners.get(uid))
             if day in mine:
-                return None
+                return mine
             mine[day] = round(total, 2)
             mine = {k: mine[k] for k in sorted(mine)[-KEEP:]}
             kept = {k: v for k, v in owners.items() if k != uid}
@@ -138,6 +171,7 @@ __all__ = [
     "HISTORY_MIN",
     "KEEP",
     "BillingLike",
+    "Snapshot",
     "SpendWatch",
     "day_spends",
     "spike",

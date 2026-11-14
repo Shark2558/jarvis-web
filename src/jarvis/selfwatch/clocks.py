@@ -7,6 +7,8 @@
   today by 05:00" when no tick ran by `TICK_BY` on the owner's local day.
 - Each is told once per outage (`clock_stopped`); the stopped clock's own next run says it is
   back (`selfwatch_ok`). Nothing is said without a baseline (a clock never seen yet).
+- An alert that reached nobody is undone (`undo`): the outage it opened (or closed) goes back
+  as it was, so the next run raises it again (the teller bounds the tries).
 - If both clocks stop nothing can speak up; the Vitals item `clocks` shows it when he looks.
 
 `{prefix}selfwatch/clocks` holds the two stamps and the open outages. Every update is a
@@ -47,6 +49,7 @@ class Event:
     clock: ClockName
     cause: str  # the claim's cause: one outage
     at: str = ""  # the local time the message names
+    outage: str = ""  # the outage it opens or closes: a local day (tick) or a stamp (watchdog)
 
 
 def _later(a: datetime | None, b: datetime | None) -> datetime | None:
@@ -75,12 +78,13 @@ def on_watchdog(s: ClockState, now: datetime, tz: ZoneInfo) -> tuple[ClockState,
     s = replace(s, watchdog=_later(s.watchdog, now))
     events: list[Event] = []
     if s.watchdog_outage is not None:
-        back = f"back:watchdog:{s.watchdog_outage.isoformat()}"
-        events.append(Event("selfwatch_ok", "watchdog", back))
+        was = s.watchdog_outage.isoformat()
+        events.append(Event("selfwatch_ok", "watchdog", f"back:watchdog:{was}", outage=was))
         s = replace(s, watchdog_outage=None)
     day = tick_missing(s, now, tz)
     if day is not None:
-        events.append(Event("clock_stopped", "tick", f"tick:{day}", f"{TICK_BY:%H:%M}"))
+        at = f"{TICK_BY:%H:%M}"
+        events.append(Event("clock_stopped", "tick", f"tick:{day}", at, outage=day))
         s = replace(s, tick_outage=day)
     return s, events
 
@@ -90,14 +94,27 @@ def on_tick(s: ClockState, now: datetime, tz: ZoneInfo) -> tuple[ClockState, lis
     s = replace(s, tick=_later(s.tick, now))
     events: list[Event] = []
     if s.tick_outage is not None:
-        events.append(Event("selfwatch_ok", "tick", f"back:tick:{s.tick_outage}"))
+        was = s.tick_outage
+        events.append(Event("selfwatch_ok", "tick", f"back:tick:{was}", outage=was))
         s = replace(s, tick_outage=None)
     since = watchdog_stopped(s, now)
     if since is not None:
-        at = f"{since.astimezone(tz):%H:%M}"
-        events.append(Event("clock_stopped", "watchdog", f"watchdog:{since.isoformat()}", at))
+        at, was = f"{since.astimezone(tz):%H:%M}", since.isoformat()
+        events.append(Event("clock_stopped", "watchdog", f"watchdog:{was}", at, outage=was))
         s = replace(s, watchdog_outage=since)
     return s, events
+
+
+def undo(s: ClockState, e: Event) -> ClockState:
+    """The state as if `e` had not happened (its alert reached nobody: raised again next run)."""
+    if e.clock == "tick":
+        if e.kind == "clock_stopped":
+            return replace(s, tick_outage=None) if s.tick_outage == e.outage else s
+        return s if s.tick_outage is not None else replace(s, tick_outage=e.outage or None)
+    was = _when(e.outage)
+    if e.kind == "clock_stopped":
+        return replace(s, watchdog_outage=None) if s.watchdog_outage == was else s
+    return s if s.watchdog_outage is not None else replace(s, watchdog_outage=was)
 
 
 def _when(v: object) -> datetime | None:
@@ -191,5 +208,6 @@ __all__ = [
     "on_tick",
     "on_watchdog",
     "tick_missing",
+    "undo",
     "watchdog_stopped",
 ]

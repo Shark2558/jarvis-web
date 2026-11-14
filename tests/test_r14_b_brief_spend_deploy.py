@@ -12,7 +12,7 @@ from r14_fakes_b import OTHER, UID, BrokenDocs, FakeBilling, FakeBrief
 from jarvis.selfwatch import spend
 from jarvis.selfwatch.brief_check import BriefCheck
 from jarvis.selfwatch.deploys import DeployWatch
-from jarvis.selfwatch.spend import SpendWatch, day_spends, spike
+from jarvis.selfwatch.spend import Snapshot, SpendWatch, day_spends, spike
 from jarvis.storage.docs import MemoryDocs
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -33,7 +33,18 @@ async def test_the_brief_is_missed_an_hour_after_its_time() -> None:
     check = _check(brief)
     assert await check.missed(UID, ist(16, 7, 59)) is None
     assert await check.missed(UID, ist(16, 8, 0)) == ("2026-11-16", "08:00")
-    assert await check.missed(UID, ist(16, 8, 5)) is None  # settled for the day
+    assert await check.missed(UID, ist(16, 8, 5)) is not None  # not said yet: still missed
+    check.settle(UID)  # its alert was said
+    assert await check.missed(UID, ist(16, 8, 10)) is None  # settled for the day
+
+
+async def test_a_missed_brief_he_made_meanwhile_is_no_longer_missed() -> None:
+    brief = FakeBrief(status="none", due_at=ist(16, 7, 0).astimezone(IST))
+    check = _check(brief)
+    assert await check.missed(UID, ist(16, 8, 0)) is not None  # its alert reached nobody
+    brief.status = "ready"
+    assert await check.missed(UID, ist(16, 8, 30)) is None
+    assert await check.missed(UID, ist(16, 9, 0)) is None and brief.calls == 2
 
 
 async def test_a_failed_brief_is_missed_too_and_a_ready_one_never() -> None:
@@ -53,7 +64,8 @@ async def test_the_brief_is_read_rarely_not_every_five_minutes() -> None:
     check = _check(brief)
     at = ist(16, 0, 5)
     while at < ist(16, 12, 0):
-        await check.missed(UID, at)
+        if await check.missed(UID, at) is not None:
+            check.settle(UID)  # the job settles it once said
         at += timedelta(minutes=5)
     assert brief.calls == 2  # once to learn its time, once at its time + 60 minutes
 
@@ -118,15 +130,29 @@ async def test_a_spike_is_reported_with_its_rupees() -> None:
     for d in range(2, 12):
         total += 100.0 if d == 11 else 20.0
         billing.inr[UID] = total
-        got = await watch.snapshot(docs, (UID,), ist(d, 4, 0))
+        got = (await watch.snapshot(docs, (UID,), ist(d, 4, 0))).spikes
     assert got == {UID: pytest.approx(100.0)}
+    again = await watch.snapshot(docs, (UID,), ist(11, 4, 30))  # not said yet: found again
+    assert again.spikes == {UID: pytest.approx(100.0)}
+    watch.settle(UID, "2026-11-11")
+    assert await watch.snapshot(docs, (UID,), ist(11, 5, 0)) == Snapshot()
 
 
 async def test_unreadable_spend_skips_that_owner_only() -> None:
     watch = SpendWatch(lambda: FakeBilling(raises=True), tz=IST, factor=3.0, min_inr=50)
-    assert await watch.snapshot(MemoryDocs(), (UID,), ist(16, 4, 0)) == {}
+    assert await watch.snapshot(MemoryDocs(), (UID,), ist(16, 4, 0)) == Snapshot(failed=True)
     none = SpendWatch(lambda: None, tz=IST, factor=3.0, min_inr=50)
-    assert await none.snapshot(MemoryDocs(), (UID,), ist(16, 4, 0)) == {}
+    assert await none.snapshot(MemoryDocs(), (UID,), ist(16, 4, 0)) == Snapshot()
+
+
+async def test_a_damaged_stored_day_is_left_out_never_a_crash() -> None:
+    docs = MemoryDocs()
+    bad = {"2026-13-45": 5.0, "2026-11-15": True, "2026-11-14": 10.0}
+    docs._data["jarvis_selfwatch/spend"] = {"owners": {UID: bad}}  # noqa: SLF001
+    watch = SpendWatch(lambda: FakeBilling({UID: 20.0}), tz=IST, factor=3.0, min_inr=50)
+    assert await watch.snapshot(docs, (UID,), ist(16, 4, 0)) == Snapshot()  # python review M3
+    doc = await docs.get("jarvis_selfwatch/spend")
+    assert doc is not None and set(doc["owners"][UID]) == {"2026-11-14", "2026-11-16"}
 
 
 # ---- the version ---------------------------------------------------------------------------------
@@ -144,7 +170,9 @@ async def test_a_new_revision_is_told_once_and_an_old_one_coming_back_never() ->
     await DeployWatch(revision="jarvis-00041", version="14.0.0").check(docs, ist(16, 9))
     new = DeployWatch(revision="jarvis-00042", version="14.1.0")
     assert await new.check(docs, ist(16, 10)) == ("jarvis-00042|14.1.0", "14.1.0")
-    assert await new.check(docs, ist(16, 10, 5)) is None  # once per process
+    assert await new.check(docs, ist(16, 10, 5)) is not None  # not told yet: still new
+    await new.remember(docs, ist(16, 10, 5))  # told
+    assert await new.check(docs, ist(16, 10, 10)) is None  # once per process
     restart = DeployWatch(revision="jarvis-00042", version="14.1.0")
     assert await restart.check(docs, ist(16, 11)) is None  # the same revision after a restart
     old = DeployWatch(revision="jarvis-00041", version="14.0.0")  # an old instance in a deploy

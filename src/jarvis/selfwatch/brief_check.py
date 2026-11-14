@@ -5,13 +5,15 @@ works whatever time he chose; told once a day (the caller's claim, cause = the d
 
 The brief service is read rarely: `BriefService.today(uid)` once a day to learn the brief's time
 (and whether it is on), then again only at that time plus the grace, until the day is settled
-(ready, missed and told, or off). Only the status and the time are read, never the brief.
+(ready, off, or missed and its alert settled: `settle`). A missed brief whose alert reached
+nobody is read again at each run until it is said (or he made it meanwhile). Only the status
+and the time are read, never the brief.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -74,11 +76,17 @@ class BriefCheck:
         due = view.due_at
         late = due is not None and now >= due + self._grace
         missed = late and view.status in MISSED
-        settled = due is None or view.status == "ready" or missed
+        settled = due is None or view.status == "ready"
         self._days[uid] = _Day(view.date, due, settled, tz)
         if not missed or due is None:
             return None
         return view.date, f"{(due + self._grace).astimezone(tz):%H:%M}"
+
+    def settle(self, uid: str) -> None:
+        """Today's missed brief was said (or settled): not read again today."""
+        known = self._days.get(uid)
+        if known is not None:
+            self._days[uid] = replace(known, settled=True)
 
 
 __all__ = ["MISSED", "BriefCheck", "BriefLike", "TodayLike"]

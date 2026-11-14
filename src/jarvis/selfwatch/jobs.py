@@ -15,6 +15,10 @@ Each step stands alone: one that fails is logged as a class name and counted und
 the rest still run. Job failures go out as ONE `job_failing` naming every job in a streak, at
 most one an hour per owner (`JOB_ALERT_EVERY`), each streak once; errors piling up are not said
 while a told streak is still going (the same incident, said once).
+
+What an alert settles (a streak told, the hour's alert, an outage, a revision seen, a day's
+spend or brief done) is committed only when the teller says it is settled (`texts.Said`): one
+that reached nobody is raised again by the next run.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from jarvis.notify.ports import Notifier
 from jarvis.selfwatch import errors as errs
 from jarvis.selfwatch import texts
 from jarvis.selfwatch.brief_check import BriefCheck, BriefLike
-from jarvis.selfwatch.clocks import Clocks, ClockState, Event, on_tick, on_watchdog
+from jarvis.selfwatch.clocks import Clocks, ClockState, Event, on_tick, on_watchdog, undo
 from jarvis.selfwatch.deploys import DeployWatch
 from jarvis.selfwatch.errors import ErrorCounter
 from jarvis.selfwatch.ledger import JobLedger, Streak, Told
@@ -159,15 +163,20 @@ class Watch:
             return new
 
         _, kept = await self.clocks.update(self.docs, change)
-        told = 0
+        told, owed = 0, []
         for e in events:
-            if e.kind == "clock_stopped":
-                text = texts.clock_stopped(e.clock, e.at)
-            else:
-                text = texts.clock_back(e.clock)
-            told += (
-                await self.teller.tell(owners, e.kind, e.cause, text, now, subject=e.clock)
-            ).sent
+            said = await self.teller.tell(owners, e.kind, e.cause, _text(e), now, subject=e.clock)
+            told += said.sent
+            if not said.settled:
+                owed.append(e)
+        if owed:  # reached nobody: as if it had not happened, so the next run raises it again
+
+            def back(s: ClockState) -> ClockState:
+                for e in owed:
+                    s = undo(s, e)
+                return s
+
+            kept = (await self.clocks.update(self.docs, back))[1] and kept
         return told, kept
 
     async def watchdog_beat(self, owners: Sequence[str], now: datetime, me: str) -> Done:
@@ -180,16 +189,18 @@ class Watch:
         """One `job_failing` naming every job in a streak (never `me`), once per streak, at most
         one an hour; `selfwatch_ok` once every told streak has ended."""
         told = 0
-        if self.ledger.take_recovered():
+        if self.ledger.recovered():
             cause = f"jobs_back:{self.ledger.last_alert}"
             said = await self.teller.tell(owners, "selfwatch_ok", cause, texts.jobs_back(), now)
             told += said.sent
+            if said.settled:
+                self.ledger.clear_recovered()
         failing = self.ledger.failing(self.streak, exclude=me)
         new = set(self.ledger.untold(self.streak, exclude=me))
         last = self.ledger.last_alert
         if not new or (last is not None and now - last < JOB_ALERT_EVERY):
             return told, True
-        streaks = dict(failing)
+        streaks, settled = dict(failing), True
         for subject, group in job_alerts([n for n, _ in failing]):
             fresh = [n for n in group if n in new]
             if not fresh:
@@ -198,9 +209,12 @@ class Watch:
             text = texts.job_failing(group)
             said = await self.teller.tell(owners, "job_failing", cause, text, now, subject=subject)
             told += said.sent
-            self.ledger.mark_told(fresh, now)
-        self.ledger.last_alert = now
-        self.ledger.dirty = True
+            if said.settled:
+                self.ledger.mark_told(fresh, now)
+            settled = settled and said.settled
+        if settled:  # the hour's alert is used only by one that was said
+            self.ledger.last_alert = now
+            self.ledger.dirty = True
         return told, True
 
     async def errors_step(self, owners: Sequence[str], now: datetime, me: str) -> Done:
@@ -235,6 +249,8 @@ class Watch:
                 text = texts.brief_missed(by)
                 said = await self.teller.tell((uid,), "brief_missed", f"brief:{day}", text, now)
                 told += said.sent
+                if said.settled:
+                    self.briefs.settle(uid)
         return told, kept
 
     async def deploy_step(self, owners: Sequence[str], now: datetime, me: str) -> Done:
@@ -244,22 +260,33 @@ class Watch:
         cause, version = got
         text = texts.deploy_changed(version)
         said = await self.teller.tell(owners, "deploy_changed", f"deploy:{cause}", text, now)
+        if said.settled:
+            await self.deploys.remember(self.docs, now)
         return said.sent, True
 
     async def once_a_day(self, owners: Sequence[str], now: datetime, me: str) -> Done:
-        """The first morning tick of the local day: the spend snapshot, then the sweeps."""
-        day = now.astimezone(self.tz).date().isoformat()
-        if self._day_done == day:
-            return 0, True
+        """Each owner's spend snapshot until his day is done (a failure is tried at the next
+        tick), then the first morning tick of the local day sweeps."""
+        day = self.spend.day_of(now)
+        snap = await self.spend.snapshot(self.docs, owners, now)
         told = 0
-        for uid, inr in (await self.spend.snapshot(self.docs, owners, now)).items():
+        for uid, inr in snap.spikes.items():
             text = texts.spend_spike(inr, self.factor)
             said = await self.teller.tell((uid,), "spend_spike", f"spend:{day}", text, now)
             told += said.sent
-        await self.told.sweep(now)
-        await self.errors.sweep(self.docs, now)
-        self._day_done = day
-        return told, True
+            if said.settled:
+                self.spend.settle(uid, day)
+        if self._day_done != day:
+            await self.told.sweep(now)
+            await self.errors.sweep(self.docs, now)
+            self._day_done = day
+        return told, not snap.failed
+
+
+def _text(e: Event) -> str:
+    if e.kind == "clock_stopped":
+        return texts.clock_stopped(e.clock, e.at)
+    return texts.clock_back(e.clock)
 
 
 class _Job:

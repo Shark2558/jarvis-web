@@ -14,6 +14,7 @@ from jarvis.selfwatch.clocks import (
     on_tick,
     on_watchdog,
     tick_missing,
+    undo,
     watchdog_stopped,
 )
 from jarvis.storage.docs import MemoryDocs
@@ -101,3 +102,32 @@ async def test_a_damaged_stored_document_reads_as_nothing_known() -> None:
     docs._data["jarvis_selfwatch/clocks"] = {"tick": "not a time", "watchdog": 7}  # noqa: SLF001
     got = await Clocks().read(docs)
     assert got == ClockState()
+
+
+def test_an_event_that_reached_nobody_is_undone_and_raised_again() -> None:
+    s = ClockState(tick=ist(15, 11, 30), watchdog=ist(16, 4, 55))
+    after, (stopped,) = on_watchdog(s, ist(16, 5, 0), IST)
+    s = undo(after, stopped)
+    assert s.tick_outage is None
+    _, again = on_watchdog(s, ist(16, 5, 5), IST)
+    assert [e.cause for e in again] == [stopped.cause]  # the same outage, raised again
+    dog = ClockState(tick=ist(16, 7, 0), watchdog=ist(16, 7, 5))
+    after, (gone,) = on_tick(dog, ist(16, 7, 30), IST)
+    assert undo(after, gone).watchdog_outage is None
+    told, _ = on_tick(dog, ist(16, 7, 30), IST)
+    after, (back,) = on_watchdog(told, ist(16, 8, 3), IST)
+    restored = undo(after, back)
+    assert restored.watchdog_outage == ist(16, 7, 5) and restored.watchdog == ist(16, 8, 3)
+    _, (back_again,) = on_watchdog(restored, ist(16, 8, 8), IST)
+    assert back_again.cause == back.cause
+    tick_back = on_tick(ClockState(tick_outage="2026-11-16"), ist(16, 9, 0), IST)
+    assert undo(tick_back[0], tick_back[1][0]).tick_outage == "2026-11-16"
+
+
+def test_undo_never_touches_a_newer_outage() -> None:
+    s = ClockState(tick_outage="2026-11-17")
+    after, (e,) = on_watchdog(ClockState(tick=ist(15, 11, 30)), ist(16, 5, 0), IST)
+    assert undo(s, e) == s  # another day's outage stays
+    assert undo(ClockState(watchdog_outage=ist(16, 9, 0)), e) == ClockState(
+        watchdog_outage=ist(16, 9, 0)
+    )

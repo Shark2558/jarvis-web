@@ -49,6 +49,7 @@ REASON_WORDS: Mapping[str, str] = {
     "live_unreadable": "your live vault could not be read to compare",
     "sample_mismatch": "a document in the copy differed",
     "nothing_compared": "nothing could be compared",
+    "too_few_compared": "too few documents could be compared",
     "restore": "Google could not make the copy",
     "over_cap": "the copy would cost more than the drill's limit",
     "stuck": "it took more than three days",

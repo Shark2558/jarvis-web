@@ -36,7 +36,7 @@ from jarvis.backup.vault_probe import probe
 from jarvis.keyring import Keyring
 from jarvis.storage.docs import Set
 from jarvis.vault.crypto import VaultCrypto
-from jarvis.vault.models import VaultIndex
+from jarvis.vault.models import Item, VaultIndex
 from jarvis.vault.store import VaultStore
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "jarvis"
@@ -203,6 +203,26 @@ async def test_a_vault_item_that_differs_in_the_copy_fails() -> None:
     assert (await _probe(world, walk))[:2] == ("failed", "vault_mismatch")
 
 
+async def test_an_item_lost_from_the_copy_at_the_same_version_fails() -> None:
+    world = World()
+    keys = ring()
+    await seed_vault(world.live, keys)
+    store = VaultStore(world.live, VaultCrypto(keys), prefix=PREFIX, clock=lambda: SNAP)
+    at = SNAP - dt.timedelta(days=1)
+    second = Item(id="v_ba9876543210", type="note", title="Made up", created_at=at, updated_at=at)
+    await store.change(UID, lambda i: (i.model_copy(update={"items": (*i.items, second)}), None))
+    world.snapshot()
+    walk = await _restored(world)
+    assert world.drill is not None
+    _, index = await VaultStore(world.drill, VaultCrypto(keys), prefix=PREFIX).load(UID)
+    raw = data_of(world.drill)[f"{PREFIX}vault/{UID}"]  # rev and updated_at stay the same
+    blob = VaultCrypto(keys).seal_index(
+        UID, VaultIndex(items=index.items[:1]).model_dump_json().encode()
+    )
+    world.drill._data[f"{PREFIX}vault/{UID}"] = {**raw, "blob": blob}  # noqa: SLF001
+    assert (await _probe(world, walk))[:2] == ("failed", "vault_mismatch")
+
+
 async def test_a_vault_file_that_does_not_open_in_the_copy_fails() -> None:
     world = await _world()
     walk = await _restored(world)
@@ -252,6 +272,20 @@ async def test_a_sample_that_differs_with_the_same_time_fails() -> None:
     world.tamper_on_restore = {f"{PREFIX}notes/n1": {**raw, "blob": "other"}}
     p = await _run(_job(world))
     assert verify.outcome(p) == ("failed", "sample_mismatch") and f"{PREFIX}notes" in p.differ
+
+
+async def test_a_pass_never_rests_on_too_few_compared_documents() -> None:
+    world = World()  # a vault and one note: the canaries (checked on their own) don't count
+    await seed_vault(world.live, ring())
+    at = (SNAP - dt.timedelta(hours=5)).isoformat()
+    await world.live.write([Set(f"{PREFIX}notes/n1", {"user_id": UID, "updated_at": at})])
+    for back in (2, 26, 50):
+        await canary.CanaryStore(world.live, prefix=PREFIX, zone=IST).write(
+            ring(), SNAP - dt.timedelta(hours=back)
+        )
+    world.snapshot()
+    p = await _run(_job(world))
+    assert p.samples == 2 and verify.outcome(p) == ("failed", "too_few_compared")
 
 
 async def test_the_checks_resume_within_the_ticks_time() -> None:

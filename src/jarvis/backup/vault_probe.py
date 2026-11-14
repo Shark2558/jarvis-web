@@ -6,7 +6,8 @@ own read path (`VaultStore.load`, `VaultStore.chunk`, `VaultCrypto`), and matche
 Both sides are read only (`ReadOnlyDocs`, handed to `VaultStore`, which reads with `get` alone; a
 write would be an `AttributeError`). The plaintext is only hashed in memory, never kept, logged or
 returned. Compared on the app's own fields, never Firestore's `update_time`:
-- both vault documents carry the same `rev` and `updated_at`: every item is compared;
+- both vault documents carry the same `rev` and `updated_at`: every item is compared, and both
+  must hold the same items (one lost from, or added to, the copy is `vault_mismatch`);
 - otherwise (he changed his vault since the snapshot) each item whose own `updated_at` is the same
   on both sides;
 - then one file of a compared item is opened whole on the copy's side and must give the SHA-256
@@ -74,12 +75,20 @@ def _made_after(doc: Doc, snapshot: dt.datetime) -> bool:
     return doc.get("rev") == 1 and (at if at.tzinfo else at.replace(tzinfo=dt.UTC)) > snapshot
 
 
+def _same(raw: tuple[Doc, Doc], doc_key: DocKey) -> bool:
+    """Both vault documents carry the same version: nothing changed since the snapshot."""
+    return doc_key(raw[0]) is not None and doc_key(raw[0]) == doc_key(raw[1])
+
+
+def _ids(index: VaultIndex) -> set[str]:
+    return {i.id for i in index.items}
+
+
 def _pairs(
-    raw: tuple[Doc, Doc], index: tuple[VaultIndex, VaultIndex], doc_key: DocKey, item_key: ItemKey
+    raw: tuple[Doc, Doc], index: tuple[VaultIndex, VaultIndex], same: bool, item_key: ItemKey
 ) -> list[tuple[Item, Item]]:
     (d_raw, l_raw), (d_index, l_index) = raw, index
     live = {i.id: i for i in l_index.items}
-    same = doc_key(d_raw) is not None and doc_key(d_raw) == doc_key(l_raw)
     out: list[tuple[Item, Item]] = []
     for item in d_index.items:
         other = live.get(item.id)
@@ -146,7 +155,11 @@ async def probe(
     store, crypto, d_index, l_index = opened
     if l_raw is None or not l_index.items:
         return VaultCheck("no_vault")  # nothing of his to compare with (the copy did open)
-    pairs = _pairs((dict(d_raw), dict(l_raw)), (d_index, l_index), doc_key, item_key)
+    raw = (dict(d_raw), dict(l_raw))
+    same = _same(raw, doc_key)
+    if same and _ids(d_index) != _ids(l_index):
+        return _failed("vault_mismatch")  # the same version, other items: a broken copy
+    pairs = _pairs(raw, (d_index, l_index), same, item_key)
     if not pairs:
         return _failed("nothing_compared")
     if any(_hash(a) != _hash(b) for a, b in pairs):

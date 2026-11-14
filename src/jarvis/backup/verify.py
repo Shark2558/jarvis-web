@@ -13,8 +13,9 @@ starts only with `RESERVE_S` to spare, so the tick never times out mid-way):
 3. `list`    the collection-group ids to count and the root collections to sample;
 4. `counts`  one `count()` per group; the sum must equal the backup's document count -> else
              `count_mismatch`;
-5. `samples` one collection a unit (`walk_checks.compare_samples`) -> `sample_mismatch`; none
-             compared at all -> `nothing_compared`.
+5. `samples` one collection a unit (`walk_checks.compare_samples`, the canaries left to unit
+             1) -> `sample_mismatch`; none compared at all -> `nothing_compared`; fewer than
+             `MIN_SAMPLES` -> `too_few_compared` (a pass never rests on one document).
 The first failure ends the checks (the drill then cleans up). `outcome`: "failed" with that
 reason, "skipped" (`no_vault`: no vault to open, never a pass), or "passed".
 `Keys` are the comparisons' own fields (the app's); the eval's negative control swaps them for
@@ -38,6 +39,7 @@ from jarvis.storage.docs import Query
 from jarvis.ticks import time_left as tick_time_left
 
 RESERVE_S = 8.0
+MIN_SAMPLES = 3
 CANARY_WINDOW = dt.timedelta(hours=26)
 Phase = Literal["canary", "vault", "list", "counts", "samples", "done"]
 TimeLeft = Callable[[], float | None]
@@ -162,11 +164,11 @@ async def _count_unit(p: Progress, job: VerifyJob) -> Progress:
 
 async def _sample_unit(p: Progress, job: VerifyJob) -> Progress:
     if not p.roots:
-        return (
-            _fail(p, "nothing_compared")
-            if p.samples == 0
-            else p.model_copy(update={"phase": "done"})
-        )
+        if p.samples == 0:
+            return _fail(p, "nothing_compared")
+        if p.samples < MIN_SAMPLES:
+            return _fail(p, "too_few_compared")
+        return p.model_copy(update={"phase": "done"})
     col = p.roots[0]
     compared, differs = await walk_checks.compare_samples(col, job.walk, job.live, job.keys.sample)
     p = p.model_copy(update={"roots": p.roots[1:], "samples": p.samples + compared})
@@ -209,6 +211,7 @@ def outcome(p: Progress) -> tuple[Literal["passed", "failed", "skipped"], str | 
 __all__ = [
     "APP_KEYS",
     "CANARY_WINDOW",
+    "MIN_SAMPLES",
     "RESERVE_S",
     "Keys",
     "Progress",

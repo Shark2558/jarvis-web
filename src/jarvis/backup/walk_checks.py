@@ -41,7 +41,9 @@ ACTIVITY_DAYS = "activity_days"
 _DAY = re.compile(r"\d{8}")
 _RESERVED = re.compile(r"^__.*__$")
 SAMPLES_PER_COLLECTION = 20
-SKIP_SAMPLES = ("backup_drill", "backup_status")  # the drill writes these itself meanwhile
+# the drill writes the first two itself meanwhile; the canary has its own check (and would make
+# a thin comparison look thick: review follow-up silent M3)
+SKIP_SAMPLES = ("backup_drill", "backup_status", "backup_canary")
 TIME_FIELDS = ("updated_at", "updated", "at", "ts")
 TimeKey = Callable[[Mapping[str, Any]], object]
 

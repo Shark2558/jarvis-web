@@ -200,6 +200,7 @@ async def test_the_daily_job_says_a_spend_spike_with_its_rupees() -> None:
         w.clock.now = ist(day, 4, 0)
         total += 400.0 if day == 11 else 20.0
         w.billing.inr[UID] = total
+        await w.watchdog()  # the 5-minute clock runs alongside
         await w.tick()
     assert w.ring.kinds() == ["spend_spike"]
     assert "₹400" in w.ring.sent[0].text

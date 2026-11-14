@@ -135,6 +135,27 @@ def test_clocks_not_seen_yet_are_unknown_and_a_morning_before_the_first_tick_is_
     assert fresh.base[0] == "ok" and "hasn't run yet" in fresh.provider.note
 
 
+def test_a_morning_clock_that_never_ran_by_its_time_is_amber_not_ok() -> None:
+    s = ClockState(watchdog=ist(17, 8, 58), first_seen=ist(16, 14, 0))
+    item = clocks_item(s, ist(17, 9, 0), IST)
+    assert item.base == ("amber", "one has stopped")  # code review L1
+    assert "morning clock" in item.provider.note
+
+
+def test_a_five_minute_clock_that_never_ran_is_amber_after_an_hour() -> None:
+    s = ClockState(tick=ist(16, 8, 30), first_seen=ist(16, 7, 0))
+    item = clocks_item(s, ist(16, 9, 0), IST)
+    assert item.base == ("amber", "one has stopped")
+    assert "5-minute clock hasn't run" in item.provider.note
+    fresh = clocks_item(ClockState(tick=ist(16, 8, 30), first_seen=ist(16, 8, 30)), ist(16, 9), IST)
+    assert fresh.base[0] == "ok"
+
+
+def test_clocks_with_only_a_first_seen_are_red_not_a_crash() -> None:
+    item = clocks_item(ClockState(first_seen=ist(15, 9, 0)), ist(16, 9, 0), IST)
+    assert item.base == ("red", "have stopped")
+
+
 async def test_the_vitals_reader_reads_the_stored_clocks() -> None:
     w = build_world(now=ist(16, 9, 0))
     await w.watchdog()

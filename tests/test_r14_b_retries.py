@@ -153,6 +153,12 @@ async def test_a_new_version_that_reached_nobody_is_said_again_and_once() -> Non
     assert again.ring.sent == []
 
 
+async def _tick(w: BWorld) -> dict[str, str]:
+    """A morning tick, the 5-minute clock running alongside (as live)."""
+    await w.watchdog()
+    return await w.tick()
+
+
 async def _spend_days(w: BWorld, last_day: float, *, owners: tuple[str, ...] = (UID,)) -> None:
     total: dict[str, float] = {}
     for day in range(2, 11):
@@ -160,7 +166,7 @@ async def _spend_days(w: BWorld, last_day: float, *, owners: tuple[str, ...] = (
         for uid in owners:
             total[uid] = total.get(uid, 0.0) + 20.0
             w.billing.inr[uid] = total[uid]
-        await w.tick()
+        await _tick(w)
     for uid in owners:
         w.billing.inr[uid] = total[uid] + last_day
     w.clock.now = ist(11, 4, 0)
@@ -171,12 +177,12 @@ async def test_a_spend_spike_that_reached_nobody_is_said_at_the_next_tick() -> N
     w.ring.settings = NotifySettings(quiet=QuietHours(on=False))  # 04:00 would be held
     await _spend_days(w, 400.0)
     w.ring.dead = True
-    await w.tick()
+    await _tick(w)
     w.ring.dead = False
     w.clock.now = ist(11, 4, 30)
-    await w.tick()
+    await _tick(w)
     w.clock.now = ist(11, 5, 0)
-    await w.tick()
+    await _tick(w)
     assert w.ring.took() == ["spend_spike"] and "₹400" in w.ring.sent[-1].text
 
 
@@ -184,11 +190,11 @@ async def test_an_unreadable_spend_fails_the_step_and_is_taken_later_that_day() 
     w = build_world(now=ist(2, 4, 0))
     await _spend_days(w, 400.0)
     w.billing.raises = True
-    got = await w.tick()
+    got = await _tick(w)
     assert got[DAILY_NAME] == "failed"  # silent review M2: not "ok" with nothing kept
     w.billing.raises = False
     w.clock.now = ist(11, 4, 30)
-    assert (await w.tick())[DAILY_NAME] == "ok"
+    assert (await _tick(w))[DAILY_NAME] == "ok"
     assert w.ring.took() == ["spend_spike"]
 
 

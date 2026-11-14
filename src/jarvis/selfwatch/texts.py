@@ -63,14 +63,15 @@ def jobs_back() -> str:
     return "JARVIS's background jobs are working again."
 
 
-def clock_stopped(clock: Clock, at: str) -> str:
+def clock_stopped(clock: Clock, at: str, *, never: bool = False) -> str:
     if clock == "tick":
         return (
             f"{CLOCK_WORDS['tick']} did not run today by {at}. The brief and the daily checks "
             "wait until it runs; check JARVIS's jobs in Cloud Scheduler."
         )
+    since = f"at all since {at}" if never else f"since {at}"
     return (
-        f"{CLOCK_WORDS['watchdog']} has not run since {at}. Reminders and checks wait until it "
+        f"{CLOCK_WORDS['watchdog']} has not run {since}. Reminders and checks wait until it "
         "runs; check JARVIS's jobs in Cloud Scheduler."
     )
 

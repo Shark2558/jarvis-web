@@ -3,12 +3,16 @@
 # tick ran by 05:00; each once per outage, and the other clock says when it is back.
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from r14_fakes_b import BrokenDocs
+import pytest
+from r14_fakes_b import BrokenDocs, build_world
 
+from jarvis.selfwatch import texts
 from jarvis.selfwatch.clocks import (
+    FRESH,
     Clocks,
     ClockState,
     on_tick,
@@ -131,3 +135,92 @@ def test_undo_never_touches_a_newer_outage() -> None:
     assert undo(ClockState(watchdog_outage=ist(16, 9, 0)), e) == ClockState(
         watchdog_outage=ist(16, 9, 0)
     )
+
+
+# ---- a clock never seen (silent review M3, code review L1) ---------------------------------------
+def test_a_morning_clock_never_seen_is_missing_at_its_first_five_oclock_an_hour_on() -> None:
+    s = ClockState(watchdog=ist(16, 14, 0), first_seen=ist(16, 14, 0))  # installed at 14:00
+    assert tick_missing(s, ist(16, 23, 0), IST) is None
+    assert tick_missing(s, ist(17, 4, 59), IST) is None
+    assert tick_missing(s, ist(17, 5, 0), IST) == "2026-11-17"
+    late = ClockState(watchdog=ist(17, 4, 30), first_seen=ist(17, 4, 30))  # within its hour
+    assert tick_missing(late, ist(17, 5, 0), IST) is None
+    assert tick_missing(late, ist(18, 5, 0), IST) == "2026-11-18"
+    assert FRESH.total_seconds() == 3600
+
+
+def test_a_five_minute_clock_never_seen_is_stopped_an_hour_after_the_first_tick() -> None:
+    s = ClockState(tick=ist(16, 4, 0), first_seen=ist(16, 4, 0))
+    assert watchdog_stopped(s, ist(16, 5, 0)) is None
+    assert watchdog_stopped(s, ist(16, 5, 1)) == ist(16, 4, 0)
+
+
+def test_the_tick_says_a_never_seen_five_minute_clock_once_and_back() -> None:
+    s, ev = on_tick(ClockState(), ist(16, 4, 0), IST)
+    assert ev == [] and s.first_seen == ist(16, 4, 0)
+    s, ev = on_tick(s, ist(16, 4, 30), IST)
+    assert ev == []
+    s, ev = on_tick(s, ist(16, 5, 30), IST)
+    assert [(e.kind, e.clock, e.never) for e in ev] == [("clock_stopped", "watchdog", True)]
+    s, again = on_tick(s, ist(16, 6, 0), IST)
+    s, back = on_watchdog(s, ist(16, 6, 2), IST)
+    assert again == [] and [e.kind for e in back] == ["selfwatch_ok"]
+
+
+def test_the_never_seen_text_says_it_never_ran() -> None:
+    text = texts.clock_stopped("watchdog", "04:00", never=True)
+    assert "has not run at all since 04:00" in text and len(text) <= texts.MAX_TEXT
+
+
+async def test_a_fresh_install_says_nothing_in_its_first_hour() -> None:
+    w = build_world(now=ist(16, 14, 0))
+    for _ in range(14):
+        await w.watchdog()
+        w.clock.advance(minutes=5)
+    assert w.ring.sent == []
+
+
+async def test_a_morning_clock_that_never_starts_after_a_deploy_is_said() -> None:
+    w = build_world(now=ist(16, 14, 0))
+    while w.clock() < ist(17, 5, 10):
+        await w.watchdog()
+        w.clock.advance(minutes=5)
+    assert w.ring.kinds() == ["clock_stopped"]
+    assert "did not run today by 05:00" in w.ring.sent[0].text
+
+
+async def test_the_first_seen_is_kept_and_the_earliest_wins() -> None:
+    docs = MemoryDocs()
+    a, b = Clocks(), Clocks()
+    await a.update(docs, lambda s: on_watchdog(s, ist(16, 7, 5), IST)[0])
+    await b.update(docs, lambda s: on_tick(s, ist(16, 9, 0), IST)[0])
+    assert (await Clocks().read(docs)).first_seen == ist(16, 7, 5)
+
+
+class _SeenDuringWrite(MemoryDocs):
+    def __init__(self, clocks: Clocks) -> None:
+        super().__init__()
+        self.clocks = clocks
+
+    async def transaction(self, fn):  # type: ignore[no-untyped-def]
+        got = await super().transaction(fn)
+        self.clocks.seen("tick", ist(16, 7, 1))  # an observer stamp while the write was awaited
+        return got
+
+
+async def test_a_stamp_seen_during_the_update_is_kept() -> None:
+    c = Clocks()
+    state, ok = await c.update(_SeenDuringWrite(c), lambda s: on_watchdog(s, ist(16, 7, 0), IST)[0])
+    assert ok and state.watchdog == ist(16, 7, 0)
+    assert c.mine.tick == ist(16, 7, 1)  # python review L1: not overwritten by the older result
+
+
+def test_a_damaged_stored_field_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    from jarvis.selfwatch.clocks import decode
+
+    caplog.set_level(logging.WARNING, logger="jarvis.selfwatch.clocks")
+    assert decode({"tick": "2026-11-16T07:00:00", "watchdog": 7}) == ClockState()
+    assert any("unreadable" in r.getMessage() for r in caplog.records)  # silent review L4
+    caplog.clear()
+    decode({})
+    assert caplog.records == []

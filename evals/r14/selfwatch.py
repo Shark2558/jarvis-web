@@ -15,11 +15,16 @@ documents (or a store that is down), a settable clock:
 - a new revision told once, naming the version;
 - nothing rings at 02:00 (held for the morning);
 - every text is a fixed template: no logger name, no exception or vendor words, <= 300
-  characters, rupees only in the spike.
+  characters, rupees only in the spike;
+- an alert no channel took is said later, once, when one does (v14.0.2, review H1);
+- a morning clock that never starts after a deploy is said at the first 05:00 an hour on, and
+  nothing is said in a fresh install's first hour (v14.0.2, review M3).
 
 Negative controls (each must fail its case): streak counting off (every failure a new streak)
 -> "once per streak" fails; aggregation off (one alert per job, no hourly limit) -> the outage
-rings more than once; the outcome ignored (a skip counts as a failure) -> `job_failing` on a skip.
+rings more than once; the outcome ignored (a skip counts as a failure) -> `job_failing` on a skip;
+the delivery ignored (any answer counts as told) -> the undelivered alert is never said; the
+baseline off (a clock never seen is never due) -> the clock that never started is never said.
 """
 
 from __future__ import annotations
@@ -38,7 +43,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 from r14_fakes_b import TWO_AM, UID, BrokenDocs, BWorld, FlakyJob, build_world  # noqa: E402
 
-from jarvis.selfwatch import jobs, ledger  # noqa: E402
+from jarvis.selfwatch import clocks, jobs, ledger, texts  # noqa: E402
 from jarvis.selfwatch.ledger import Streak  # noqa: E402
 from jarvis.selfwatch.ports import SENDING  # noqa: E402
 from jarvis.ticks import JobOutcome  # noqa: E402
@@ -187,6 +192,7 @@ async def spend_spike() -> list[str]:
             w.clock.now = ist(day, 4, 0)
             total += 400.0 if day == 11 else 20.0
             w.billing.inr[UID] = total
+            await w.watchdog()  # the 5-minute clock runs alongside (else it is "stopped")
             await w.tick()
         _expect(f, f"{days - 2} days of history", w.ring.kinds(), want)
         if want and "₹400" not in w.ring.sent[0].text:
@@ -232,6 +238,33 @@ async def fixed_texts() -> list[str]:
     return f
 
 
+async def undelivered_said_later() -> list[str]:
+    f: list[str] = []
+    w = build_world()
+    w.ring.dead = True  # Telegram and push both down when the streak is told
+    job = FlakyJob("vault_reminders")
+    await _runs(w, 4, job)
+    _expect(f, "no channel took it", w.ring.took(), [])
+    w.ring.dead = False
+    await _runs(w, 12, job)
+    _expect(f, "said once a channel takes it", w.ring.took(), ["job_failing"])
+    return f
+
+
+async def clock_never_started() -> list[str]:
+    f: list[str] = []
+    w = build_world(now=ist(16, 14, 0))  # deployed at 14:00; the morning clock never runs
+    for _ in range(12):
+        await w.watchdog()
+        w.clock.advance(minutes=5)
+    _expect(f, "its first hour", w.ring.kinds(), [])
+    while w.clock() < ist(17, 5, 30):
+        await w.watchdog()
+        w.clock.advance(minutes=5)
+    _expect(f, "the next 05:00", w.ring.kinds(), ["clock_stopped"])
+    return f
+
+
 CASES: dict[str, Case] = {
     "three_failures_one_alert": once_per_streak,
     "recovery_one_info": recovery_once,
@@ -244,6 +277,8 @@ CASES: dict[str, Case] = {
     "new_revision_once": new_revision,
     "nothing_rings_at_two": nothing_rings_at_two,
     "fixed_texts": fixed_texts,
+    "undelivered_said_later": undelivered_said_later,
+    "clock_never_started": clock_never_started,
 }
 
 
@@ -288,6 +323,10 @@ async def _controlled() -> dict[str, list[dict[str, Any]]]:
         got["aggregation off"] = await _run(("outage_rings_once",))
     with _patched(ledger, FAILING=frozenset({"failed", "timed_out", "skipped"})):
         got["the outcome ignored"] = await _run(("skip_never_counts",))
+    with _patched(texts, reached=lambda got: True):
+        got["the delivery ignored"] = await _run(("undelivered_said_later",))
+    with _patched(clocks, tick_due=lambda s, tz: None):
+        got["the baseline off"] = await _run(("clock_never_started",))
     return got
 
 

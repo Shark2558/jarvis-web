@@ -291,7 +291,7 @@ class Watch:
 
 def _text(e: Event) -> str:
     if e.kind == "clock_stopped":
-        return texts.clock_stopped(e.clock, e.at)
+        return texts.clock_stopped(e.clock, e.at, never=e.never)
     return texts.clock_back(e.clock)
 
 

@@ -14,7 +14,10 @@ PATCH  /v1/notes/{id}             {text?, title?, tags?, owner_note?, adopt?} ->
 DELETE /v1/notes/{id}             -> {undo_id, kind: "note"}: Recently deleted for 30 days.
 POST   /v1/notes/{id}/fetch       {confirm_credit: true} -> NoteView with the page excerpt; uses 1
                                   of the month's web credits. 409 web_off / allowance, 422 bad_url.
-GET    /v1/notes/export           JSON attachment jarvis-notes-YYYY-MM-DD.json
+GET    /v1/notes/export           JSON attachment jarvis-notes-YYYY-MM-DD.json. Audited FIRST (R14
+                                  D13 (4): agent `privacy`, the count only); 503 export_unaudited
+                                  when the audit chain can't be written or there is none (tools
+                                  off): nothing is sent.
 POST   /v1/notes/import           {data} (<= 2 MB, filter applied) -> {added, skipped}
 """
 
@@ -30,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from jarvis.api.auth import require_auth
 from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
+from jarvis.core.guardrails import ActionRisk
 from jarvis.kb.models import (
     IMPORT_MAX_BYTES,
     MAX_OWNER_NOTE,
@@ -43,8 +47,18 @@ from jarvis.kb.models import (
     invalid,
 )
 from jarvis.kb.service import NOT_CONFIGURED, NotesService
+from jarvis.logging import get_logger
 
+log = get_logger(__name__)
 router = APIRouter(prefix="/v1/notes", dependencies=[Depends(require_auth)])
+EXPORT_AUDIT_AGENT, EXPORT_AUDIT_TOOL = "privacy", "notes_export"
+UNAUDITED = (
+    "The export couldn't be recorded in the audit log just now, so nothing was sent. Try again."
+)
+NO_CHAIN = (
+    "Exports are recorded in the audit log, which is off while JARVIS's tools are switched off, "
+    "so nothing was sent."
+)
 
 
 class _Body(BaseModel):
@@ -167,11 +181,39 @@ async def fetch_note(
     return NoteView.of(await svc.fetch(uid, note_id))
 
 
+async def _audit_export(request: Request, count: int) -> str | None:
+    """R14 D13 (4): one line on the app's audit chain (the gateway's), the count only, before the
+    file goes out. None when written; else why nothing may be sent: the chain could not be
+    written (`UNAUDITED`), or there is none (tools switched off: `NO_CHAIN`; fail closed, as the
+    vault does)."""
+    gw = getattr(request.app.state, "gateway", None)
+    if gw is None:
+        log.error("no audit chain: a notes export is refused", extra={"count": count})
+        return NO_CHAIN
+    try:
+        await gw.audit.append(
+            agent=EXPORT_AUDIT_AGENT,
+            tool=EXPORT_AUDIT_TOOL,
+            risk=ActionRisk.READ_ONLY,
+            outcome="executed",
+            args={"count": count},
+            detail=f"notes: {count}",
+        )
+    except Exception as exc:  # noqa: BLE001 - an export nobody can see later is not sent
+        log.error("AUDIT WRITE FAILED for a notes export", extra={"error": type(exc).__name__})
+        return UNAUDITED
+    return None
+
+
 @router.get("/export")
 async def export_notes(
-    svc: NotesService = Depends(_svc), uid: str = Depends(current_user)
+    request: Request, svc: NotesService = Depends(_svc), uid: str = Depends(current_user)
 ) -> Response:
     data = await svc.export(uid)
+    notes = data.get("notes")
+    refused = await _audit_export(request, len(notes) if isinstance(notes, list) else 0)
+    if refused is not None:
+        raise NotesError(503, "export_unaudited", refused)
     name = f"jarvis-notes-{datetime.now(UTC):%Y-%m-%d}.json"
     return Response(
         content=json.dumps(data, ensure_ascii=False, indent=2),

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -15,6 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from jarvis.api.notes import install_notes
 from jarvis.config import Settings
 from jarvis.kb.models import IMPORT_MAX_BYTES
+from jarvis.tools.audit import AuditLog
 
 BEARER = {"Authorization": "Bearer cli-token"}
 VIEW_KEYS = {
@@ -40,6 +42,7 @@ def make_app(settings: Settings, rig: Rig | None) -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key="x" * 32)
     app.state.settings = settings
     app.state.notes = rig.svc if rig is not None else None
+    app.state.gateway = SimpleNamespace(audit=AuditLog())  # R14 D13 (4): the export is audited
     install_notes(app)
     return app
 

@@ -66,7 +66,14 @@ def google_settings(settings: Settings) -> Settings:
 
 async def _sign_in(c: AsyncClient, *, reauth: bool = True) -> None:
     async def fake(request: Any) -> dict[str, Any]:
-        return {"userinfo": {"email": OWNER, "email_verified": True, "sub": "1"}}
+        return {
+            "userinfo": {
+                "email": OWNER,
+                "email_verified": True,
+                "sub": "1",
+                "auth_time": int(auth_mod._now()),
+            }
+        }
 
     c.app.state.oauth.google.authorize_access_token = fake  # type: ignore[attr-defined]
     if reauth:

@@ -76,6 +76,7 @@
       const err = new Error(gone ? 'The book session ended.' : 'Sign in required.'); err.status = 401; if (gone) err.code = 'session_gone'; throw err;
     }
     if (r.status === 423) await lockedBy(r); // R6 D10 show_locked: the show; R7 D21 device_locked: the unlock cover
+    if (r.status === 503) unsure(await code423(r)); // R14 D13 (3): a lock that can't be read covers the page
     if (!r.ok) {
       let detail = r.statusText, code = '';
       try { // the app's shape: {error: code, detail: plain words}; err.code carries the code
@@ -99,6 +100,7 @@
     const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body, signal: opts.signal, credentials: 'same-origin' });
     if (r.status === 401) { showGate(); const err = new Error('Sign in required.'); err.status = 401; throw err; }
     if (r.status === 423) await lockedBy(r);
+    if (r.status === 503) unsure(await code423(r));
     return r;
   }
   async function bookGone(r) {
@@ -118,6 +120,12 @@
     const err = new Error('JARVIS is locked on this device.'); err.status = 423; err.code = 'device_locked'; throw err;
   }
   async function lockedBy(r) { if ((await code423(r)) === 'device_locked') deviceLocked(); showLocked(); }
+  /** R14 D13 (3): a lock that can't be read never leaves the page on screen. R7's app lock: its unlock cover (that unlock
+   *  reads the lock again); R6's show lock: the gate until /auth/me answers 200. Any other 503 is only its caller's. */
+  function unsure(code) {
+    if (code === 'lock_unreadable') { document.documentElement.dataset.locked = 'device'; emit('jarvis:device-locked', {}); }
+    else if (code === 'show_lock_unreadable' && state.authMode === 'google' && live) cover(UNSURE, true);
+  }
 
   // ---- sign-in gate -------------------------------------------------------------------------
   const LOCK = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="9" width="12" height="8" rx="2.2"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/></svg>';

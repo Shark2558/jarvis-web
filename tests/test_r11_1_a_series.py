@@ -310,11 +310,11 @@ async def test_skipped_marks_it_and_puts_one_re_plan_card_in_approvals(rig: Plan
     assert card.bulk_ok is False and card.scope == f"{UID}:sess_1"
     lines = card.summary.splitlines()
     assert lines[0] == (
-        "Move 54 sessions of your CCA plan to their next free slots (session 7 was skipped)."
-    )
-    assert (
-        lines[1]
-        == "60 sessions before, 60 after: none is dropped. The plan now ends on 8 Feb 2027."
+        "Move 54 sessions of your plan to their next free slots (session 7 was skipped)."
+    )  # R14 D13 (5): Telegram shows this line, so no plan name (a model's words) is on it
+    assert lines[1] == (
+        "Your CCA plan: 60 sessions before, 60 after: none is dropped. "
+        "The plan now ends on 8 Feb 2027."
     )
     moves = [x for x in lines if "→" in x]
     assert len(moves) == 54
@@ -652,7 +652,7 @@ async def test_a_re_plan_leaves_a_hand_placed_session_where_he_put_it_and_avoids
     await rig.run("series_checkin", {"answer": "skipped"})
     [card] = await rig.gw.pending()
     lines = card.summary.splitlines()
-    assert lines[0].startswith("Move 53 sessions of your CCA plan")
+    assert lines[0].startswith("Move 53 sessions of your plan")
     assert "session 11 (you changed it)" in card.summary
     moves = [x for x in lines if "→" in x]
     assert not any(x.startswith("11. ") for x in moves)
@@ -689,7 +689,7 @@ async def test_a_second_skip_moves_the_earlier_skipped_session_too(rig: PlanRig)
     [card] = await rig.gw.pending()
     lines = card.summary.splitlines()
     assert lines[0] == (
-        "Move 55 sessions of your CCA plan to their next free slots (session 7 was skipped; "
+        "Move 55 sessions of your plan to their next free slots (session 7 was skipped; "
         "1 earlier skipped session moves too)."
     )
     assert "5. Fri 20 Nov 19:00 → Wed 25 Nov 19:00" in lines
@@ -810,7 +810,7 @@ async def test_a_gap_he_left_absorbs_the_shift_and_later_sessions_keep_their_tim
     await rig.run("series_checkin", {"answer": "skipped"})
     [card] = await rig.gw.pending()
     lines = card.summary.splitlines()
-    assert lines[0].startswith("Move 4 sessions of your CCA plan")
+    assert lines[0].startswith("Move 4 sessions of your plan")
     assert [x for x in lines if "→" in x][-1] == "10. Fri 27 Nov 19:00 → Mon 30 Nov 19:00"
     out = await rig.approve(card.id)
     assert out.result["moved"] == 4 and len(rig.fake.sent("PATCH")) == 4

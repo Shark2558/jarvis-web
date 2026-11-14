@@ -110,6 +110,8 @@ where = ["src"]
 "jarvis.buildbook.gen" = ["redact.json", "fake_secrets.txt"]
 # R11 D15 (I1): the kitchen's USDA FoodData Central subset (CC0), built by scripts/kitchen_fdc_subset.py
 "jarvis.helpers.kitchen" = ["data/*.json"]
+# R14 Part C (D11): the skill register's catalogue (data)
+"jarvis.skills" = ["catalogue.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

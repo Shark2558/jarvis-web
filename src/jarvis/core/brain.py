@@ -203,7 +203,10 @@ class Brain:
             turns = turns[int(session.metadata.get(CUTOFF_KEY, 0)) :]
             turns = [t for t in turns if not t.blocks and not t.tool_derived]
         return build_window(
-            turns, max_turns=self.s.session_max_turns, max_chars=self.s.session_max_chars
+            turns,
+            max_turns=self.s.session_max_turns,
+            max_chars=self.s.session_max_chars,
+            tool_result_chars=self.s.history_tool_result_chars,
         )
 
     # ---- spending ---------------------------------------------------------------------------

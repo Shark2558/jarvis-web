@@ -256,6 +256,13 @@ async def test_the_clean_up_runs_whatever_the_switches_say(s: Settings) -> None:
     assert await rig.tick() == "idle" and rig.admin.names().count("get_database") == 2
 
 
+async def test_access_taken_away_after_the_set_up_is_no_job_failure(s: Settings) -> None:
+    off = s.model_copy(update={"backup_drill_enabled": False})
+    rig = await _rig(off)
+    rig.world.denied = True  # the canary job tells "no schedule, or JARVIS's access to it"
+    assert await rig.tick() == "idle"
+
+
 async def test_switched_off_mid_drill_it_stops_and_cleans_up_without_an_alert(s: Settings) -> None:
     rig = await _rig(s, world=await _world(restore_polls=3))
     assert await rig.tick() == "started"

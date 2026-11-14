@@ -144,7 +144,10 @@ class Drill:
         if st.checked_on == today:
             return "idle"
         st = await self.d.log.save(st.model_copy(update={"checked_on": today}))
-        found = await self.d.admin.get_database(DRILL_DB)  # a copy left over? (any switch)
+        try:
+            found = await self.d.admin.get_database(DRILL_DB)  # a copy left over? (any switch)
+        except PermissionError:  # access gone: the canary job tells him ("no_schedule")
+            return "idle"
         if found is None:
             return "idle"
         st = st.model_copy(update={"phase": "cleanup", "copy_seen_at": st.copy_seen_at or now})

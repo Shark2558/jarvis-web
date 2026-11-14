@@ -162,6 +162,254 @@ def test_a_worktree_itself_and_its_scratch_can_still_be_removed(where: Path, com
     assert got.returncode == 0, (command, got.stderr)
 
 
+# R14 integrated review (security M1, code M1): the hook does not expand globs, so `../*` read as
+# "a whole worktree named *" and the shell then removed every worktree. A glob, `?`, `[...]` or
+# `{a,b}` in an rm target is refused unless the folder above it is below /tmp or a scratch folder.
+SRC = WORKTREE / "src"
+GLOBS_BLOCKED = [
+    (WORKTREE, "rm -rf ../*"),
+    (WORKTREE, "cd .. && rm -rf *"),
+    (WORKTREE, "rm -rf /home/claude/wt/*"),
+    (WORKTREE, "rm -rf /home/claude/wt/r14-?"),
+    (WORKTREE, "rm -rf /home/claude/wt/r14-*"),
+    (WORKTREE, "rm -rf ../../wt/*"),
+    (WORKTREE, "rm -rf ../r14-?"),
+    (WORKTREE, "rm -rf ../r14-[a-z]"),
+    (WORKTREE, "rm -rf ../{r14-x,r14-z}"),
+    (WORKTREE, "rm -rf .claude/worktrees/*"),
+    (WORKTREE, "rm -rf b*"),
+    (WORKTREE, "rm -rf build/*/../../src"),
+    (WORKTREE, "rm -rf build/{lib,../src}"),
+    (WORKTREE, "rm -rf /tmp/*"),  # every builder's logs and venvs at once
+    (WORKTREE, "rm -rf /tmp/../home/claude/wt/*"),
+    (SRC, "rm -rf ../*"),
+    (SRC, "rm -rf ../../*"),
+    (SRC, "rm -rf ../../r14-?"),
+    (MAIN, "rm -rf /home/claude/wt/*"),
+    (MAIN, "rm -rf .claude/worktrees/*"),
+    (Path("/tmp"), "rm -rf /home/claude/wt/r14-*"),
+]
+GLOBS_ALLOWED = [
+    (WORKTREE, "rm -rf /tmp/r14-logs/book*"),
+    (WORKTREE, "rm -rf /tmp/r14-logs/i1-shots-?"),
+    (WORKTREE, "rm -rf build/*"),
+    (WORKTREE, "rm -rf dist/*.whl build/lib*"),
+    (WORKTREE, "rm -rf /home/claude/wt/r14-z/build/*"),
+    (SRC, "rm -rf build/*"),
+    (Path("/tmp/r14-logs"), "rm -rf scratch/*"),
+]
+
+
+@pytest.mark.parametrize(("where", "command"), GLOBS_BLOCKED, ids=str)
+def test_a_glob_never_reaches_past_tmp_or_a_scratch_folder(where: Path, command: str) -> None:
+    got = _bash(command, cwd=where)
+    assert got.returncode == 2, (command, str(where))
+    assert len(got.stderr.strip().splitlines()) == 1
+
+
+@pytest.mark.parametrize(("where", "command"), GLOBS_ALLOWED, ids=str)
+def test_a_glob_below_tmp_or_inside_a_scratch_folder_passes(where: Path, command: str) -> None:
+    got = _bash(command, cwd=where)
+    assert got.returncode == 0, (command, got.stderr)
+
+
+# Security M2: the ordinary wrappers. The text a shell would run (`bash -c`, `sh -c`, `eval`), rm
+# fed by xargs, find's own deleting, `git clean` of untracked or ignored files, `pushd` and `cd`'s
+# spellings (`~`, `$HOME`, `-P`, `-`), and a `cd` inside `( )` that does not leak out.
+TMP = Path("/tmp")
+WRAPPERS_BLOCKED = [
+    (WORKTREE, "bash -c 'rm -rf src'"),
+    (WORKTREE, 'sh -c "rm -rf src"'),
+    (WORKTREE, "zsh -c 'rm -rf tests'"),
+    (WORKTREE, "dash -c 'rm -rf .git'"),
+    (WORKTREE, "/bin/bash -lc 'cd .. && rm -rf *'"),
+    (WORKTREE, "bash -e -c 'rm -rf src'"),
+    (WORKTREE, "bash -o pipefail -c 'rm -rf src'"),
+    (WORKTREE, "bash --norc -c 'rm -rf src'"),
+    (WORKTREE, "env FOO=1 bash -c 'rm -rf src'"),
+    (WORKTREE, "timeout 60 bash -c 'rm -rf src'"),
+    (WORKTREE, "sudo sh -c 'rm -rf /'"),
+    (WORKTREE, "bash -c \"bash -c 'rm -rf src'\""),
+    (WORKTREE, "ls && bash -c 'git push --force'"),
+    (WORKTREE, "eval 'rm -rf src'"),
+    (WORKTREE, "eval rm -rf src"),
+    (WORKTREE, 'eval "cd .. && rm -rf r14-?"'),
+    (WORKTREE, "echo src | xargs rm -rf"),
+    (WORKTREE, "ls | xargs -0 rm -rf"),
+    (WORKTREE, "find . -name x -print0 | xargs -0 rm -rf --"),
+    (WORKTREE, "xargs -I{} rm -rf {} < list.txt"),
+    (TMP, "echo /tmp/a | xargs rm -rf"),  # the targets come from stdin: the hook can't read them
+    (WORKTREE, "find src -delete"),
+    (WORKTREE, "find . -name '*.py' -delete"),
+    (WORKTREE, "find -delete"),
+    (WORKTREE, "find -L src -type f -delete"),
+    (WORKTREE, r"find . \( -name '*.py' -o -name '*.md' \) -delete"),
+    (WORKTREE, "find . -name __pycache__ -exec rm -rf {} +"),
+    (WORKTREE, r"find src -type f -exec rm {} \;"),
+    (WORKTREE, "find /home/claude/wt -maxdepth 1 -execdir rm -rf {} +"),
+    (WORKTREE, "find src -exec /bin/rm -f {} +"),
+    (TMP, "find /home/claude/wt/r14-x -delete"),
+    (WORKTREE, "git clean -fdx"),
+    (WORKTREE, "git clean -fdxq ."),
+    (WORKTREE, "git clean -f -d"),
+    (WORKTREE, "git clean -fx"),
+    (WORKTREE, "git clean -fX"),
+    (WORKTREE, "git clean --force -d -x"),
+    (WORKTREE, "git clean -fd src"),
+    (TMP, "git -C /home/claude/wt/r14-x clean -fdx"),
+    (MAIN, "git clean -fdx"),
+    (WORKTREE, "pushd src; rm -rf ../src"),
+    (WORKTREE, "pushd src && rm -rf ../tests"),
+    (TMP, "pushd /home/claude/wt/r14-x >/dev/null && rm -rf src"),
+    (WORKTREE, "pushd /tmp && popd && rm -rf src"),  # popd comes back to the worktree
+    (WORKTREE, "(cd /tmp) && rm -rf src"),
+    (WORKTREE, "(cd /tmp && ls) | rm -rf src"),
+    (WORKTREE, "(cd /tmp); rm -rf src"),
+    (WORKTREE, "echo $(cd /tmp); rm -rf src"),
+    (WORKTREE, "(cd ..); rm -rf r14-x"),
+    (WORKTREE, "rm -rf src find"),
+    (WORKTREE, "`rm -rf src`"),
+    (WORKTREE, "echo `cd /tmp` && rm -rf src"),
+    (TMP, "cd `git rev-parse --show-toplevel` && rm -rf src"),
+    (TMP, "cd /tmp && { cd /home/claude/wt/r14-x; rm -rf src; }"),
+    (TMP, "if cd /home/claude/wt/r14-x; then rm -rf src; fi"),
+    (TMP, "find /tmp/x -exec sh -c 'rm -rf \"$1\"' _ {} \\;"),
+    (WORKTREE, "bash -c 'cd /tmp'; rm -rf src"),
+    (TMP, "cd ~ && rm -rf jarvis-web"),
+    (TMP, "cd && rm -rf jarvis-web"),
+    (TMP, "cd $HOME && rm -rf jarvis-web"),
+    (TMP, "cd ${HOME}/jarvis-web && rm -rf src"),
+    (TMP, "cd -P /home/claude/wt/r14-x && rm -rf src"),
+    (TMP, "cd -L -- /home/claude/wt/r14-x && rm -rf src"),
+    (TMP, 'cd "$WT" && rm -rf src'),
+    (TMP, "cd - && rm -rf src"),
+    (TMP, "cd ~someone && rm -rf src"),
+    (TMP, "cd $(git rev-parse --show-toplevel) && rm -rf src"),
+]
+WRAPPERS_ALLOWED = [
+    (WORKTREE, "bash -c 'rm -rf /tmp/r14-x'"),
+    (WORKTREE, "bash -lc 'cd /tmp && rm -rf scratch'"),
+    (WORKTREE, 'sh -c "pytest -q tests"'),
+    (WORKTREE, "bash scripts/run.sh"),
+    (WORKTREE, 'eval "$(ssh-agent -s)"'),
+    (WORKTREE, "find /tmp/r14-logs -name '*.log' -delete"),
+    (WORKTREE, "find build -name '*.pyc' -delete"),
+    (WORKTREE, "find /tmp/x -exec rm -rf {} +"),
+    (WORKTREE, "find . -name '*.py' | xargs grep -n foo"),
+    (WORKTREE, "find src -name '*.py' -newer pyproject.toml"),
+    (WORKTREE, r"find . \( -name a -o -name b \) -print"),
+    (WORKTREE, "find . -name __pycache__ -print"),
+    (WORKTREE, "git clean -n -dx"),
+    (WORKTREE, "git clean -ndx"),
+    (WORKTREE, "git clean --dry-run -d -x"),
+    (WORKTREE, "git clean -f"),
+    (WORKTREE, "git clean -fdx build dist"),
+    (WORKTREE, "git clean -f -e .venv"),
+    (WORKTREE, "git -C /tmp/r14-logs/export clean -fdx"),
+    (WORKTREE, "cd /tmp/r14-logs/export && git clean -fdx"),
+    (WORKTREE, "pushd /tmp && rm -rf scratch && popd"),
+    (WORKTREE, "cd -P /tmp && rm -rf scratch"),
+    (WORKTREE, "cd ~ && ls"),
+    (WORKTREE, "(cd /tmp && rm -rf scratch)"),
+    (WORKTREE, "bash -c 'cd /tmp'; ls"),
+    (WORKTREE, "echo 'rm -rf src' > /tmp/notes.txt"),
+    (WORKTREE, "printf '%s\\n' 'bash -c \"rm -rf src\"' > /tmp/x"),
+    (WORKTREE, "xargs -a list.txt grep foo"),
+    (WORKTREE, "ls | xargs rm -f"),  # not recursive and forced together: not this rule's business
+    (WORKTREE, "git commit -q -F - <<'EOF'\nfix: eval rm -rf src in bash -c\nEOF"),
+    (WORKTREE, "git commit -q -m 'docs: `rm -rf build` is allowed'"),
+    (WORKTREE, "git clean -fd -- build"),
+]
+
+
+@pytest.mark.parametrize(("where", "command"), WRAPPERS_BLOCKED, ids=str)
+def test_the_usual_wrappers_are_judged_like_a_bare_command(where: Path, command: str) -> None:
+    got = _bash(command, cwd=where)
+    assert got.returncode == 2, (command, str(where))
+    assert len(got.stderr.strip().splitlines()) == 1
+
+
+@pytest.mark.parametrize(("where", "command"), WRAPPERS_ALLOWED, ids=str)
+def test_harmless_uses_of_the_wrappers_pass(where: Path, command: str) -> None:
+    got = _bash(command, cwd=where)
+    assert got.returncode == 0, (command, got.stderr)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ")",
+        "((",
+        "( cd /tmp",
+        "cd",
+        "cd -P",
+        "pushd",
+        "popd",
+        "popd; popd; ls",
+        "bash -c",
+        'bash -c "\'"',
+        "sh -c 'echo \"'",
+        "eval",
+        "find",
+        "find -name x",
+        "git clean",
+        "xargs",
+        "rm -rf",
+        "bash -c " + '"bash -c ' * 10 + "ls" + '"' * 10,
+    ],
+)
+def test_odd_spellings_never_jam_the_hook(command: str) -> None:
+    got = _bash(command, cwd=WORKTREE)
+    assert got.returncode == 0, (command, got.stderr)
+    assert "Traceback" not in got.stderr
+
+
+# The briefs' own commands always pass (BRIEF-COMMON's code blocks read from the file; the
+# Workshop's sandbox brief lives outside the repository, so its commands are written here).
+WORKSHOP_BRIEF = [
+    "git -c push.negotiate=true push",
+    "git ls-remote origin refs/heads/r14-i1",
+    "/tmp/venv-12/bin/pytest -q -p no:cacheprovider tests/test_r14_i1_said.py tests/test_x.py",
+    "flock /tmp/r14-logs/heavy.lock /tmp/venv-12/bin/pytest -q -p no:cacheprovider"
+    " tests/test_r14_seams.py tests/test_r14_wiring.py tests/test_claude_guard.py"
+    " tests/test_arch_coverage.py tests/test_telegram_tool_guard.py",
+    "/tmp/venv-12/bin/ruff check src tests evals scripts"
+    " && /tmp/venv-12/bin/ruff format --check src tests evals scripts",
+    "flock /tmp/r14-logs/heavy.lock /tmp/venv-12/bin/mypy src",
+    "PYTHONPATH=$PWD/src /tmp/venv-12/bin/python evals/r14/run.py --mock --part needles",
+    "PYTHONPATH=$PWD/src /tmp/venv-12/bin/python scripts/arch_coverage.py"
+    " && /tmp/venv-12/bin/python scripts/check_doc_versions.py",
+    "/tmp/venv-c/bin/python -m pytest -q -p no:cacheprovider tests/browser/test_ui_audit.py",
+    "/tmp/venv-b/bin/pytest -q -p no:cacheprovider tests/test_claude_guard.py",
+    "flock /tmp/r14-logs/heavy.lock make test",
+    "rm -rf /tmp/r14-logs/book1 /tmp/r14-logs/book2",
+]
+
+
+def _brief_commands() -> list[str]:
+    brief = ROOT / "docs" / "plans" / "r14-integration" / "BRIEF-COMMON.md"
+    text = brief.read_text(encoding="utf-8").replace("\\\n", " ")
+    blocks = text.split("\n```")[1::2]
+    lines = [ln.strip() for b in blocks for ln in b.splitlines()[1:]]
+    found = [
+        ln for ln in lines if ln.startswith(("pytest ", "ruff ", "mypy ", "PYTHONPATH=", "git "))
+    ]
+    assert len(found) >= 5, found  # the brief's test commands were read
+    return found
+
+
+@pytest.mark.parametrize("where", [WORKTREE, MAIN, ROOT], ids=str)
+def test_every_command_in_the_briefs_passes(where: Path) -> None:
+    for command in _brief_commands() + WORKSHOP_BRIEF:
+        got = _bash(command, cwd=where)
+        assert got.returncode == 0, (command, got.stderr)
+
+
+def test_the_docstring_says_it_is_a_guard_rail_not_a_sandbox() -> None:
+    text = GUARD.read_text(encoding="utf-8")
+    assert "guard rail for agents, not a sandbox" in " ".join(text.split())
+
+
 def _git(base: Path, branch: str) -> Path:
     repo = base / f"repo-{branch}"
     repo.mkdir(parents=True)

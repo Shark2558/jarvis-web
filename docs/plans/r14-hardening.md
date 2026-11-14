@@ -1,4 +1,4 @@
-Version v14.0.3 · 14 Nov 2026, 19:30 IST · Release R14 · Status: Ready · Owner: 🛠 Mark XIX
+Version v14.0.4 · 14 Nov 2026, 22:55 IST · Release R14 · Status: Ready · Owner: 🛠 Mark XIX
 
 # Release R14 — Free hardening (`v14.0.0`)
 
@@ -508,7 +508,13 @@ recursive and force flags on anything but what is below `/tmp/`, a whole worktre
 (`/home/claude/wt/<name>` or `.claude/worktrees/<name>`, never the one the command stands in) or a
 scratch folder (`build`, `dist`, `tmp`, `.tmp`) of the current folder or of a worktree (never `/`,
 `~`, a worktree's own `src`, `tests`, `.git`, nor a path it can't read such as `$HOME/x`; I1 closed
-builder A's finding that a relative `rm -rf src` inside a worktree passed); writes
+builder A's finding that a relative `rm -rf src` inside a worktree passed); a glob (`*`, `?`, `[…]`,
+`{a,b}`) only where the folder above it is below `/tmp` or a scratch folder (the integrated review:
+`rm -rf ../*` read as "a worktree named `*`"); never an `rm -rf` fed by `xargs`; the same rules
+through the usual wrappers (the text given to `bash|sh|zsh|dash|ksh|su -c` and `eval`; `find
+-delete` / `-exec rm` and `git clean -d|-x|-X` only below `/tmp` or on scratch folders; the folder
+followed through `cd`'s option and `~` spellings, `pushd`, `popd`, and a `cd` inside `( )` kept
+there; a `cd` it can't follow makes later relative targets unknown, so refused); writes
 to `.env*` and key files, a private key block, a shell redirect into `.env*`; edits that switch a
 check off in `[tool.ruff]`, `[tool.mypy]`, `ruff.toml`, `.ruff.toml`, `mypy.ini` or `setup.cfg`'s
 lint sections (more ignores or excludes, fewer selected rules, a strictness flag turned off, an
@@ -517,8 +523,8 @@ lint sections (more ignores or excludes, fewer selected rules, a strictness flag
 the hook is allowed with a note, so it can never jam a session; a heredoc's body is data, not a
 command. CLAUDE.md and BRIEF-COMMON say a blocked action means stop and report, never work around
 it; every command in BRIEF-COMMON passes it (`tests/test_claude_guard.py`: a table of the Workshop's
-own commands and the blocked ones). Not a security boundary against a hostile agent (a determined one
-could spell a command another way); it stops the mistakes the rule names.
+own commands and the blocked ones). It is a guard rail for agents, not a sandbox (see Risks): it
+stops the mistakes the rule names, not a determined agent.
 
 **D16 · Deferred, with reasons.**
 
@@ -758,6 +764,12 @@ re-sign-in (D13 item 1 refuses when it doesn't); the Urban Company address; the 
   `roles/datastore.user` on the live database, so the live database's safety rests on the code locks
   (D4's five), not on IAM. A condition on the restore grant would have to name the database the
   restore creates, which nobody here can try against Google.
+- **Honest limit (D18, the integrated review M1/M2): the hook is a guard rail for agents, not a
+  sandbox.** It reads a command's text; it never runs a shell, expands a variable or a glob,
+  follows a symlink or opens a script. Out of its reach: `python -c` / `perl -e`, a script file,
+  text piped into `sh` or a heredoc fed to a shell, a path held in a variable, a symlink planted at
+  `build`. What binds an agent is CLAUDE.md's rule (a blocked action means stop and report; never
+  work around it), not the hook; worktrees are protected by pushing after every commit.
 - **Privacy promise changes**: deleted data lives up to 7 days in backups (D3); said everywhere.
 - **Key loss** makes every backup useless: the deploy never rotates the key (tested); the canary
   catches a changed key within a day. The key and the backups share a project (D3).
@@ -787,3 +799,4 @@ re-sign-in (D13 item 1 refuses when it doesn't); the Urban Company address; the 
 | v14.0.1 | 14 Nov 2026, 13:40 IST | R14 | First edition: summary for the owner, the workbook rows 101/102/109–112 read from his sheet, code facts with file:line, Google's terms, D0–D16 (backups and a drill that can't write live, self-health, the token ledger and free cost wins with ₹ before/after, the skill register, No-AI pass 2, rows 101/102, the leftovers taken and deferred), data model, per-item evals with negative controls, the A–D split, the I0 seam list, owner questions and one-time steps, what can't be verified, risks, sources | 🛠 Mark XVIII |
 | v14.0.2 | 14 Nov 2026, 14:30 IST | R14 | The owner's scope addition (14 Nov, 13:45 IST, "add them") written in at I0: D17 coverage measured (95.33 % at I0, floor 95) and ratcheted in CI on 3.12, D18 a GateGuard hook for the coding agents (seam 12); seam 4's nouns corrected (TOOL_NOUNS only). Plan review 1 written in; Status Ready. A1: cache within the reply only (choice (b)), the provider applies the hint, D10 reworked at ₹95.24 (₹5.42 → ₹2.99 a reply, ≈ 45 %). A2: empty stats never start a drill, comparisons on the app's own fields, `count()` aggregations, "nothing compared" fails. A3: clean-up whatever the switches say, `get_database` decides, delete protection off first, the 5-minute wait, the left-over cost and a weekly alert, 2 manual drills, `bulk_ok=False`. A4: the deploy runs only `backup_setup.sh --status`, the cost line is a range, no TTL policy. A5: the locks said honestly, `ReadOnlyDocs` on both sides, an import test, lock 5 in `Settings`, a custom role. A6: one aggregated `job_failing` an hour, R14's own soft table (3 an hour), outcomes with skips, `selfwatch_clock` first, no loops, no backup alert before the set-up, the spike from daily differences after 7 days. A7: the clock jobs run for the brief's owners. A8: Vitals and Privacy server-sent (no console change), A alone produces the backup kinds and size (`BackupStatus`), no third brain slot, the booking address as text. B: 14 lines corrected (prices `:30`; 135 tools; the ₹0.17 reading; all four error classes and the router log; the two UPI constants; the TTL; the runbook; the version, kind, keyring and tick-list pins; 14-day and 1 GiB costs; the STARTERS pin) and one found at I0 (cards C61–C65 are taken: C66–C68). C: the 12 seams joined to the I0 list. D notes taken: the tool-use names in the offer, shortened results keep their flags, the async admin client, the rate limit, the Vitals index stays, the data-safety limit and the runbook lines. Decisions taken at I0 listed | 🛠 Mark XVIII |
 | v14.0.3 | 14 Nov 2026, 19:30 IST | R14 | I1 (🛠 Mark XIX): the backups' cost corrected from ≈ ₹4.9 to ≈ ₹3.8 at 100 MB ("about ₹4" wherever a round figure is shown, as the set-up script prints; 14 days ≈ ₹6), D13 (1) met only partly with the Workshop's reason and the optional setting `reauth_requires_auth_time`, D18's rm rule as I1 rebuilt it (a whole worktree or its scratch, never its content or the one it stands in), the honest limit of the project-wide `restoreAdmin` grant (A #8) | 🛠 Mark XIX |
+| v14.0.4 | 14 Nov 2026, 22:55 IST | R14 | The integrated review's follow-ups (🛠 Mark XIX): D18's rm rule with globs, `xargs`, the shell wrappers, `find -delete`, `git clean` and the folder followed through `cd`/`pushd`/`popd`/`( )`; the honest limit that the hook is a guard rail for agents, not a sandbox | 🛠 Mark XIX |

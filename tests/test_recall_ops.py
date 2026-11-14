@@ -1,13 +1,17 @@
 # tests/test_recall_ops.py — slice 8 §2/§3/D8/D9: pure memory state transitions (no storage).
 from __future__ import annotations
 
+import gc
 import random
 import string
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import pytest
 
+from jarvis.recall import ops as recall_ops
 from jarvis.recall.errors import (
     ImportRejected,
     InvalidMemoryInput,
@@ -208,20 +212,81 @@ def _words(seed: int, n: int) -> str:
     )
 
 
+# R14 hotfix 1: the import is judged by how its cost grows from 100 facts to 500 (5x when linear,
+# ~25x when quadratic), never by a wall-clock limit. By this file's turn the whole suite's process
+# holds ~13 M objects (4 GB), and one full collection of them took 7.6 s here: on main's CI run
+# after the R14 merge one landed inside the 3 s window this test timed (8.9 s), while the import
+# itself costs the same 0.16 s at R7 and R14. Two measures: the duplicate checks' operation count
+# (deterministic), and CPU time with the collector paused (no full pass, no other process's load).
+GROWTH_LIMIT = 12.0  # between linear (5x) and quadratic (~25x), on a log scale
+IMPORT_CPU_LIMIT_S = 3.0  # a backstop for a slower linear import: ~0.2 s of CPU here
+MIN_CPU_S = 0.001  # the 100-fact import's floor, so the ratio never divides by ~0
+DUPLICATE_HELPERS = ("norm_key", "token_set", "jaccard")  # what one duplicate check computes
+
+
+def _facts(n: int) -> list[dict[str, object]]:
+    return [
+        {"text": _words(i, 25), "category": "other", "keywords": _words(i + 9_999, 3).split()}
+        for i in range(n)
+    ]
+
+
+def _cpu_s(run: Callable[[], object], runs: int = 3) -> float:
+    """The least CPU time of `runs` calls of `run`, the garbage collector paused."""
+    best = float("inf")
+    for _ in range(runs):
+        was_on = gc.isenabled()
+        gc.disable()
+        try:
+            t0 = time.process_time()
+            run()
+            best = min(best, time.process_time() - t0)
+        finally:
+            if was_on:
+                gc.enable()
+    return best
+
+
+def _import_twice(raw: list[dict[str, object]]) -> None:
+    """Into an empty memory, then again into the full one (every fact a duplicate)."""
+    kept, added, skipped = import_data(MemoryState.empty(), {"facts": raw}, NOW)
+    assert (added, skipped) == (len(raw), 0) and len(kept.active()) == len(raw)
+    assert import_data(kept, {"facts": raw}, NOW)[1:] == (0, len(raw))
+
+
 def test_a_500_fact_import_is_not_quadratic() -> None:
     """HIGH 2: duplicate checks re-tokenised every stored fact for every imported one (O(n²)):
     500 facts blocked the event loop for ~14 s."""
-    raw = [
-        {"text": _words(i, 25), "category": "other", "keywords": _words(i + 9_999, 3).split()}
-        for i in range(500)
-    ]
-    t0 = time.perf_counter()
-    state, added, skipped = import_data(MemoryState.empty(), {"facts": raw}, NOW)
-    assert time.perf_counter() - t0 < 3.0
-    assert (added, skipped) == (500, 0) and len(state.active()) == 500
-    t0 = time.perf_counter()  # again on a full memory: every one a duplicate
-    _, added, skipped = import_data(state, {"facts": raw}, NOW)
-    assert time.perf_counter() - t0 < 3.0 and (added, skipped) == (0, 500)
+    few, many = _facts(100), _facts(500)
+    _import_twice(many)
+    kept = [import_data(MemoryState.empty(), {"facts": raw}, NOW)[0] for raw in (few, many)]
+    for into_few, into_many in ((MemoryState.empty(), MemoryState.empty()), kept):
+        cheap = _cpu_s(partial(import_data, into_few, {"facts": few}, NOW))
+        dear = _cpu_s(partial(import_data, into_many, {"facts": many}, NOW))
+        assert dear < IMPORT_CPU_LIMIT_S, dear
+        assert dear / max(cheap, MIN_CPU_S) < GROWTH_LIMIT, (cheap, dear)
+
+
+def test_an_imports_duplicate_checks_grow_linearly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same, counted: checking each imported fact against every stored one grows ~25x for
+    5x the facts even when the token memo makes each check too cheap to time. 80 and 400 facts:
+    below 500 the second import has room, so it checks every fact too (at 500 it checks none)."""
+    calls = [0]
+    for name in DUPLICATE_HELPERS:
+
+        def counted(
+            *args: object, _real: Callable[..., object] = getattr(recall_ops, name)
+        ) -> object:
+            calls[0] += 1
+            return _real(*args)
+
+        monkeypatch.setattr(recall_ops, name, counted)
+    counts = []
+    for n in (80, 400):
+        calls[0] = 0
+        _import_twice(_facts(n))
+        counts.append(calls[0])
+    assert counts[0] >= 100 and counts[1] / counts[0] < GROWTH_LIMIT, counts
 
 
 def test_an_import_over_1000_facts_is_refused() -> None:

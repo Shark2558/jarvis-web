@@ -41,7 +41,9 @@ def _registry(*tools: Tool) -> ToolRegistry:
 
 def _data(**over: Any) -> dict[str, Any]:
     """A small valid catalogue: every skill, two of them with groups."""
-    skills = [{"id": sid, "about": f"about {sid}", "groups": []} for sid in SKILL_IDS]
+    skills: list[dict[str, Any]] = [
+        {"id": sid, "about": f"about {sid}", "groups": []} for sid in SKILL_IDS
+    ]
     skills[0]["groups"] = [
         {"id": "calendar", "tools": ["calendar_*"], "words": ["calendar", "meeting"]},
         {"id": "kitchen_block", "tools": ["calendar_kitchen_blocks"], "words": ["cook"]},

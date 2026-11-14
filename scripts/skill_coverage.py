@@ -59,7 +59,7 @@ def table(register: SkillRegister, registry: ToolRegistry) -> list[str]:
         "| Tool | Skill | Group | Risk | Rows | Telegram | Without the AI |",
         "|---|---|---|---|---|---|---|",
     ]
-    order = {sid: i for i, sid in enumerate(SKILL_LABELS)}
+    order: dict[str, int] = {sid: i for i, sid in enumerate(SKILL_LABELS)}
     ranked = sorted(cards, key=lambda c: (order.get(c.skill or "", 99), c.group or "", c.name))
     return out + [_row(c) for c in ranked]
 

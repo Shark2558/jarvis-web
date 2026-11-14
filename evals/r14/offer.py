@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -254,7 +255,7 @@ def _fail_safe(specs: list[ToolSpec]) -> list[dict[str, Any]]:
     odd = [ToolSpec(name="brand_new_tool", description="x", input_schema={}), *specs]
     fails = [] if "brand_new_tool" in _offered(_register(Controls()), odd, "hi") else ["hidden"]
 
-    def boom(ctx: OfferContext, given: Any) -> list[ToolSpec]:
+    def boom(ctx: OfferContext, specs: Sequence[ToolSpec]) -> list[ToolSpec]:
         raise RuntimeError("offer")
 
     if len(BrainSlots(offer=boom).tools(None, [], specs)) != len(specs):
@@ -263,7 +264,7 @@ def _fail_safe(specs: list[ToolSpec]) -> list[dict[str, Any]]:
 
 
 def _window(c: Controls) -> list[dict[str, Any]]:
-    s = Settings(_env_file=None)
+    s = Settings.model_validate({})  # the defaults: no .env, no environment
     turns = session_turns(rounds=30, size=6_000)
     build = legacy_window if c.content_only_window else build_window
     win = build(turns, max_turns=s.session_max_turns, max_chars=s.session_max_chars)

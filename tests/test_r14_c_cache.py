@@ -167,12 +167,8 @@ async def test_a_second_round_keeps_the_first_rounds_prefix_byte_for_byte() -> N
 
 
 def _anthropic_settings(**kw: Any) -> Settings:
-    return Settings(
-        _env_file=None,
-        llm_backend=LLMBackend.ANTHROPIC,
-        anthropic_api_key=SecretStr("sk-ant-test"),
-        **kw,
-    )
+    claude = {"llm_backend": LLMBackend.ANTHROPIC, "anthropic_api_key": SecretStr("sk-ant-test")}
+    return Settings.model_validate(claude | kw)  # these and the defaults: no .env, no environment
 
 
 def test_the_factory_builds_claude_with_the_setting() -> None:

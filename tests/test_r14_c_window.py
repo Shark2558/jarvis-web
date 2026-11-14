@@ -9,7 +9,14 @@ from itertools import groupby
 from jarvis.core.guardrails import ActionRisk
 from jarvis.core.models import Turn
 from jarvis.core.window import KEEP_FULL_ROUNDS, SHORTENED, build_window, message_chars
-from jarvis.llm.base import ChatMessage, Role, TextBlock, ToolCall, ToolResultBlock
+from jarvis.llm.base import (
+    ChatMessage,
+    MessageBlock,
+    Role,
+    TextBlock,
+    ToolCall,
+    ToolResultBlock,
+)
 from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.taint import untrusted_seen
 
@@ -153,7 +160,7 @@ def test_the_newest_turn_is_kept_even_when_it_alone_is_over_the_budget() -> None
 
 
 def test_message_chars_counts_text_calls_and_results() -> None:
-    blocks = [
+    blocks: list[MessageBlock] = [
         TextBlock(text="abc"),
         ToolCall(id="c1", name="web_read", arguments={"url": "u"}),
         ToolResultBlock(tool_use_id="c1", content="12345"),
@@ -171,7 +178,7 @@ def test_the_default_cut_is_the_settings_default() -> None:
         turns,
         max_turns=40,
         max_chars=100_000,
-        tool_result_chars=Settings(_env_file=None).history_tool_result_chars,
+        tool_result_chars=Settings.model_validate({}).history_tool_result_chars,  # defaults
     )
     assert plain == explicit
 

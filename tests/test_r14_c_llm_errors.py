@@ -277,7 +277,7 @@ async def test_the_router_logs_the_class_name_not_the_message(
         ModelTier.FAST: "fast-model",
     }
     provider = _Flaky()
-    router = ModelRouter(provider, tiers)  # type: ignore[arg-type]
+    router = ModelRouter(provider, tiers)
     done = await router.complete(tier=ModelTier.STRONG, system="s", messages=MSGS, max_tokens=5)
     assert done.text == "ok" and provider.models == ["strong-model", "balanced-model"]
     degraded = [r for r in caplog.records if "degraded" in r.getMessage()]

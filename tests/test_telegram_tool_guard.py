@@ -129,8 +129,10 @@ TELEGRAM_SAFE = frozenset(
         "people_open_profiles",
         # R14 I1 (INTEGRATION-A #2, C D, D #2): Part A's backups' own facts (set up or not, the
         # last copy's time, the count, the size, a rupee estimate, the last drill's result), like
-        # vitals_show; Part C's register words (labels, abouts, tool names; no side effect);
-        # Part D's prepared service request in his words (never books or sends)
+        # vitals_show; its rupee figure is JARVIS's own running cost, not his money, so it may go
+        # where bill_list / spend_month may not (security review LOW-2); Part C's register words
+        # (labels, abouts, tool names; no side effect); Part D's prepared service request in his
+        # words (never books or sends)
         "vitals_backups",
         "skills_open",
         "maint_service_request",

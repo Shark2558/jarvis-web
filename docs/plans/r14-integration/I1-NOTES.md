@@ -1,4 +1,4 @@
-Version v14.0.1 · 14 Nov 2026, 21:30 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
+Version v14.0.2 · 14 Nov 2026, 23:40 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
 
 # R14 — I1 notes (the four parts joined)
 
@@ -103,7 +103,8 @@ remove: anything below `/tmp`; a whole worktree (the innermost `/home/claude/wt/
 `…/.claude/worktrees/<name>`), but never the one the command stands in; and a scratch folder
 (`build`, `dist`, `tmp`, `.tmp`) of the current folder or of a worktree (`build` and `dist`
 themselves too; before, only what was below them). Paths are normalised first (`build/../src`,
-`./src`, `.`, `*`, the worktree's own path, a parent-path spelling are all refused). Tests first:
+`./src`, `.`, `*`, the worktree's own path, a parent-path spelling are all refused; the integrated
+review then found `rm -rf ../*` and the usual wrappers still passed: section 11). Tests first:
 the nine rm cases now run from the main checkout's place, a `/home/claude/wt` worktree, a nested
 `.claude/worktrees` one and this checkout (ROOT, whatever it is in CI), with more spellings (33
 failed before the fix), plus a table of what must still pass (154 cases in the file, all green).
@@ -182,14 +183,41 @@ are still wholly scratch, by design. The hook never blocked an edit of itself.
 
 Every Google call (plan "What can't be verified"; INTEGRATION-A 10, B 7, C 6, D 5); the persona and
 voice evals on a real model for p14.0 (D14: real runs, keys); whether Google sends `auth_time` for
-this app; real token counts and ₹ by part (the ledger, after deploy); CI's coverage on its own
+this app; **verify live (integrated review LOW-1 / code L2): the `claims` authorize parameter is
+always sent on a re-sign-in**: if Google rejected or errored on it, `/auth/login?reauth=1` would
+fail, and with it the first passkey's set-up and the 24-hour reset. First step after the deploy:
+one `/auth/login?reauth=1` round trip; if it fails, send `claims` only when a new setting is on
+(the reviewer's `reauth_sends_claims`, default True); not built here, as nothing can try it; real token counts and ₹ by part (the ledger, after deploy); CI's coverage on its own
 runners (here 95.50 %); the hook inside a real Claude Code session (tested by running the script as
 the hook does); the cause of the one unreproduced browser flake
 (`test_keyboard_focus_stays_in_the_maps_section[desktop]`, pre-R14 code), which CI's own browser job
 will show again if it is a real race.
+
+## 11. Integrated review follow-ups
+
+The two integrated reviews of `e8ab86d` (`/tmp/r14-logs/review-r14-i1-security.md`: WARN, 0
+critical, 0 high, 5 medium, 6 low; `review-r14-i1-code.md`: approve with 2 medium, 2 low), each
+finding with its outcome. Every code change was test first (the test seen failing, then the fix).
+
+| Finding | Outcome | Test (red before) | Commit |
+|---|---|---|---|
+| Security M1 / code M1: a glob in an rm target (`../*`, `/home/claude/wt/*`, `../r14-?`) read as "a whole worktree named `*`" | Fixed: a glob passes only where the folder above it is below `/tmp` or a scratch folder, with no `..` after it | `tests/test_claude_guard.py` (76 new rows red before; 303 pass) | `a26c9a1` |
+| Security M2: `bash -c`, `sh -c`, `eval`, `xargs rm`, `find -delete`, `git clean -fdx`, `pushd`, `( )`, `cd ~`, `cd -P` bypassed the rm rule | Fixed in the hook (each judged; a `cd` it can't follow makes later relative targets unknown, so refused); malformed input still passes; every BRIEF-COMMON and Workshop-brief command still passes. The plan (D18, Risks) and the hook's docstring say plainly it is a guard rail for agents, not a sandbox (`python -c`, scripts, a pipe into `sh`, variables, symlinks are out of its reach); CLAUDE.md unchanged | the same file | `a26c9a1`, `548b33d` |
+| Security M3: with the AI off, mail subjects, senders and merchants were stored as the assistant's own words | Fixed at the window, for every brain: a No-AI reply made from tools (`model` = `core.models.NO_AI_MODEL`, `tool_derived`) is sent whole inside an outside-content fence, its content defused, with an id from the turn's id (the same text each time: the cache prefix holds), counted in the window's budget. What is stored and shown stays plain, so a reload shows him no markers. Only No-AI tool replies: fencing every `tool_derived` turn (the model's own replies after tools) would change what every model reads of its own words and needs the real-model evals; not tainting the round either, as before I1 (a No-AI read of his own groceries would make every later write a card) | `tests/test_r14_i1_noai_fence.py` (5 of 7): a hostile subject through the real inbox tool, the Brain, the AI back on; a forged END marker; the cap | `e8b3cd9` |
+| Security M4: the drill card got Telegram's one-tap buttons | **Workshop decision: console only.** `core.guardrails.CONSOLE_ONLY_TOOLS = {vitals_drill_start}`: never buttons on Telegram, "Approve it in the console, under Approvals…", the usual alert, an old or forged button refused (section 9, item 6; plan D4; guide C66) | `tests/test_r14_i1_telegram_drill.py` (2 of 5) | `22b6e6c` |
+| Security M5: the needles eval was I0's stub reporting `passed: True` | Built to the review's spec (section 7 and the plan's "Needles (I1)" row): one simulated day of the four parts, nine needle classes in five forms, four sinks, the rules, a positive control per sink, the negative control failing exactly the three document cases. Google's backup name is also kept by a running drill's own `backup_drill/current.run` (`backup`, `operation`: it needs them between ticks, cleared when it ends); the eval allows exactly those fields and checks they are cleared. The runner now fails any part still a stub | `tests/test_r14_seams.py` (red on the stub) | `284f3d0` |
+| Code M2: his questions about JARVIS itself got only the core tools | Fixed: 21 words in the `vitals` group (no bare "clock" or "health"); the 7 phrasings in the labelled set (129, recall 100 %); a held-out set of 8, written before the words, reported not gated: 2/8 before, 5/8 after | `tests/test_r14_i1_offer_recall.py` (11 red); the eval's recall red at 94.6 % | `2cc6f57` |
+| Code L1: C68 said 136 tools | Fixed: 139, 9.7 offered on average, recall on 129, the second held-out set (guide v14.0.3) | — | `7a055d5` |
+| Security LOW-1 / code L2: `claims` always sent | Recorded as **verify live** (section 10) | — | — |
+| Security LOW-2: the Telegram reads | No change needed; the guard list's comment now says `vitals_backups`' rupee figure is JARVIS's own cost, not his money | — | this commit |
+| Security LOW-3: notes written to the model shown with the AI off | Fixed: `offline/said.for_him` drops a note's sentences written to the model ("the owner", "do not say", "tell him", a field name in backticks); his own sentences stay | `tests/test_r14_i1_said.py` (2 of 3) | `7a055d5` |
+| Security LOW-4: chat links and `?authuser=` | `?authuser=3/4` taken out of the plan's links. The `Claude-Session` lines in the BRIEF files stay (the standard trailer line the rules allow; the Workshop's call) | — | `7a055d5` |
+| Security LOW-5: no per-route limit on the four status reads | Fixed: each 30 a minute per owner (`api/r14_status.read_limited`, per process like the drill route's), a 429 with `no-store` and `Retry-After` | `tests/test_r14_i1_route_limits.py` (4) | `7a055d5` |
+| Security LOW-6: detail notes | No change needed (the reviewer: fine); the needles eval keeps the backup name out of logs, alerts and routes, and documents the code-only logger-name rule (50 kept) | the needles eval | `284f3d0` |
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v14.0.1 | 14 Nov 2026, 21:30 IST | R14 | First edition: the four merges (no conflicts), every Needs I1 item with its outcome and commit, the defects found at the join (No-AI's JSON answers of the real tools, the drill card's line, the offer's effect on two pins, the errors handler outliving its app, the window's setting), every pin changed and why, the hook fix, the docs, the checks with their numbers, the sizes, the decisions taken, what can't be verified | 🛠 Mark XIX |
+| v14.0.2 | 14 Nov 2026, 23:40 IST | R14 | The integrated review follow-ups (section 11): each finding with its outcome, test and commit (the hook's globs and wrappers, the fenced No-AI turn, the drill card console only, the needles eval built, the Vitals words, the route limits, the notes to the model, the guide's count, the links); LOW-1 as verify live; decisions 5 and 6; the checks after the follow-ups | 🛠 Mark XIX |

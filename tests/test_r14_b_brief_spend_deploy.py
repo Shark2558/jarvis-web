@@ -91,8 +91,17 @@ def _snaps(days: dict[int, float], month: int = 11) -> dict[str, float]:
 def test_a_days_spend_is_the_difference_and_the_first_stands_alone() -> None:
     got = day_spends({"2026-10-30": 100.0, "2026-10-31": 130.0, "2026-11-01": 12.0})
     assert got == [("2026-10-31", 30.0), ("2026-11-01", 12.0)]
-    gap = day_spends({"2026-11-03": 10.0, "2026-11-05": 50.0})  # a missing day is no "day"
-    assert gap == []
+    assert day_spends({"2026-11-05": 50.0}) == []  # the oldest, mid-month: no day before it
+
+
+def test_a_missed_snapshot_spreads_the_spend_over_its_days() -> None:
+    gap = day_spends({"2026-11-03": 10.0, "2026-11-05": 50.0})  # silent review M2
+    assert gap == [("2026-11-05", 20.0)]
+    across = day_spends({"2026-10-30": 100.0, "2026-11-03": 45.0})  # the month began again
+    assert across == [("2026-11-03", 15.0)]
+    steady = {d: 20.0 * (d - 1) for d in range(2, 10)}  # ₹20 a day, then no tick on the 10th
+    snaps = _snaps({**steady, 11: steady[9] + 40.0 + 400.0})
+    assert spike(snaps, "2026-11-11", 3.0, 50) == pytest.approx(220.0)  # seen, not blinded
 
 
 def test_a_spike_needs_seven_days_three_times_the_average_and_fifty_rupees() -> None:

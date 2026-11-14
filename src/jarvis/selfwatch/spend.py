@@ -6,7 +6,9 @@ Once a day (the first morning tick of the owner's local day) the month's total s
 `{prefix}selfwatch/spend` (`{owners: {uid: {"YYYY-MM-DD": inr}}}`, the newest `KEEP` days: today
 and 15 days back, so the average covers 14 whole days). A day's spend is its snapshot minus the
 day before's; on the 1st the month total starts again (`billing/meter.py` `month_of`), so it is
-that day's snapshot alone. A day with no snapshot the day before is no "day".
+that day's snapshot alone. After a missed snapshot (no morning tick that day) the difference is
+spread evenly over the days since the last one (or since the 1st, when the month began again),
+so the next day is still checked; the oldest snapshot, mid-month, has no day before it.
 
 A spike: today's figure is more than `factor` (3) times the average of the up to 14 days before
 it and at least `min_inr` (₹50); never before `HISTORY_MIN` (7) days of history. The alert says
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
@@ -46,15 +48,19 @@ class BillingLike(Protocol):
 
 
 def day_spends(snaps: Mapping[str, float]) -> list[tuple[str, float]]:
-    """(day, rupees spent that day), oldest first."""
+    """(day, rupees spent a day), oldest first; after a gap, the average over the gap."""
     out: list[tuple[str, float]] = []
     days = sorted(snaps)
     for prev, cur in zip([None, *days], days, strict=False):
         d = date.fromisoformat(cur)
-        if d.day == 1:
-            out.append((cur, max(0.0, snaps[cur])))
-        elif prev is not None and d - date.fromisoformat(prev) == timedelta(days=1):
-            out.append((cur, max(0.0, snaps[cur] - snaps[prev])))
+        p = date.fromisoformat(prev) if prev is not None else None
+        if prev is not None and p is not None and (p.year, p.month) == (d.year, d.month):
+            spent, over = snaps[cur] - snaps[prev], (d - p).days
+        elif d.day == 1 or p is not None:
+            spent, over = snaps[cur], d.day  # the month total began again on the 1st
+        else:
+            continue
+        out.append((cur, max(0.0, spent) / max(1, over)))
     return out
 
 

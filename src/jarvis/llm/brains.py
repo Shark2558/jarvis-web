@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from jarvis.config import LLMBackend, Settings
-from jarvis.llm.anthropic_provider import AnthropicProvider
 from jarvis.llm.base import LLMProvider
+from jarvis.llm.factory import anthropic_provider
 from jarvis.llm.fallback import FallbackBrain
 from jarvis.llm.gemini_provider import GeminiProvider
 from jarvis.llm.mock_provider import MockProvider
@@ -121,11 +121,7 @@ class BrainRegistry:
                 BrainSpec(
                     id=LLMBackend.ANTHROPIC.value,
                     label="Claude",
-                    provider=AnthropicProvider(
-                        s.anthropic_api_key.get_secret_value(),
-                        timeout_s=s.llm_timeout_s,
-                        max_retries=s.llm_max_retries,
-                    ),
+                    provider=anthropic_provider(s),  # R14 D9: `cache_history` from settings
                     tiers=tiers_for(s, LLMBackend.ANTHROPIC),
                 )
             )

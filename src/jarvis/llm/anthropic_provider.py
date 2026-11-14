@@ -1,10 +1,18 @@
 # src/jarvis/llm/anthropic_provider.py
-"""Claude implementation of LLMProvider. The only file that imports the `anthropic` SDK."""
+"""Claude implementation of LLMProvider. The only file that imports the `anthropic` SDK.
+
+R14 D9 (A1 choice (b), docs/plans/r14-hardening.md): built with `cache_history` (the setting, on
+by default, through `jarvis.llm.factory`), a call adds a second cache breakpoint on the last
+message block, so the next round of the SAME reply reads the history from the cache. The trailer
+is a system block before the messages, so the hint never reaches across turns. The stream path
+(one call a reply) keeps the system breakpoint only. Nothing in the shared interface changes.
+"""
 
 from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator
+from typing import Any, cast
 
 import anthropic
 from anthropic.types import (
@@ -64,47 +72,72 @@ _UNREACHABLE = (
 )
 
 
+EPHEMERAL: dict[str, str] = {"type": "ephemeral"}
+
+
 class AnthropicProvider:
     name = "anthropic"
     vision = True  # R11.1 D10: Claude reads JPEG and PNG message blocks
 
-    def __init__(self, api_key: str, *, timeout_s: float = 60.0, max_retries: int = 2) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        timeout_s: float = 60.0,
+        max_retries: int = 2,
+        cache_history: bool = False,
+    ) -> None:
         # The SDK retries transient errors with exponential backoff itself; we set the budget.
         self._client = anthropic.AsyncAnthropic(
             api_key=api_key, timeout=timeout_s, max_retries=max_retries
         )
+        self.cache_history = cache_history  # R14 D9: the history's breakpoint (the setting)
 
     # ---- helpers -------------------------------------------------------------------------
 
     @staticmethod
-    def _to_params(messages: list[ChatMessage]) -> list[MessageParam]:
-        out: list[MessageParam] = []
+    def _block(b: object) -> dict[str, Any] | None:
+        if isinstance(b, TextBlock):
+            return {"type": "text", "text": b.text}
+        if isinstance(b, ImageBlock):  # R11.1 D10: the owner's own attached picture
+            source = {"type": "base64", "media_type": b.media_type, "data": b.b64()}
+            return {"type": "image", "source": source}
+        if isinstance(b, ToolCall):
+            return {"type": "tool_use", "id": b.id, "name": b.name, "input": b.arguments}
+        if isinstance(b, ToolResultBlock):  # `trusted` is ours: never sent (base.py)
+            return {
+                "type": "tool_result",
+                "tool_use_id": b.tool_use_id,
+                "content": b.content,
+                "is_error": b.is_error,
+            }
+        return None
+
+    @classmethod
+    def _to_params(cls, messages: list[ChatMessage]) -> list[MessageParam]:
+        out: list[dict[str, Any]] = []
         for m in messages:
             if isinstance(m.content, str):
                 out.append({"role": m.role.value, "content": m.content})
                 continue
-            blocks: list = []
-            for b in m.content:
-                if isinstance(b, TextBlock):
-                    blocks.append({"type": "text", "text": b.text})
-                elif isinstance(b, ImageBlock):  # R11.1 D10: the owner's own attached picture
-                    source = {"type": "base64", "media_type": b.media_type, "data": b.b64()}
-                    blocks.append({"type": "image", "source": source})
-                elif isinstance(b, ToolCall):
-                    blocks.append(
-                        {"type": "tool_use", "id": b.id, "name": b.name, "input": b.arguments}
-                    )
-                elif isinstance(b, ToolResultBlock):
-                    blocks.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": b.tool_use_id,
-                            "content": b.content,
-                            "is_error": b.is_error,
-                        }
-                    )
+            blocks = [p for p in (cls._block(b) for b in m.content) if p is not None]
             out.append({"role": m.role.value, "content": blocks})
-        return out
+        return cast(list[MessageParam], out)
+
+    @staticmethod
+    def _mark_last(params: list[MessageParam]) -> None:
+        """R14 D9: a cache breakpoint on the last message's last non-empty block. Every plain
+        string goes out as one text block, so a later round's prefix is byte-for-byte the same
+        as this one's. `params` are this call's own copies."""
+        for p in params:
+            msg = cast(dict[str, Any], p)
+            if isinstance(msg["content"], str) and msg["content"]:
+                msg["content"] = [{"type": "text", "text": msg["content"]}]
+        content = cast(dict[str, Any], params[-1])["content"] if params else ""
+        for block in reversed(content if isinstance(content, list) else []):
+            if block.get("type") != "text" or block.get("text"):
+                block["cache_control"] = EPHEMERAL
+                return
 
     @staticmethod
     def _tool_params(tools: list[ToolSpec] | None) -> list[ToolParam] | None:
@@ -188,12 +221,16 @@ class AnthropicProvider:
         max_tokens: int,
         effort: Effort | None,
         tools: list[ToolSpec] | None = None,
-    ) -> dict:
-        kw: dict = {
+        history_hint: bool = False,
+    ) -> dict[str, Any]:
+        params = self._to_params(messages)
+        if history_hint and self.cache_history:
+            self._mark_last(params)
+        kw: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
             "system": self._system_blocks(system, system_dynamic),
-            "messages": self._to_params(messages),
+            "messages": params,
         }
         if effort is not None:
             kw["output_config"] = {"effort": effort.value}
@@ -226,6 +263,7 @@ class AnthropicProvider:
                     max_tokens=max_tokens,
                     effort=effort,
                     tools=tools,
+                    history_hint=True,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain

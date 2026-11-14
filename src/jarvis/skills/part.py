@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 from jarvis.billing.fx import DEFAULT_RATE
 from jarvis.billing.ledger import LEDGER_DAYS, TokenLedgerStore, ai_parts_note
-from jarvis.hardening.ports import HardeningContext, HardeningPart
+from jarvis.hardening.ports import HardeningContext, HardeningPart, VitalsReader
 from jarvis.logging import get_logger
 from jarvis.privacy.sources import GOOGLE_ENC, SEC_ACTIVITY, CallbackSource, Look, Spec
 from jarvis.skills.offer import SkillOffer
@@ -39,7 +39,7 @@ LEDGER_OFF: Final = "the token ledger is switched off"
 NO_DOCS: Final = "the token ledger needs the document store"
 VITALS_ID: Final = "ai_parts"
 PRIVACY_ID: Final = "token_ledger"
-_COUNTED = "counted from this month's model calls"
+_COUNTED = "counted from this month's chat replies"  # only the brain records (review LOW-1)
 _OFF_NOTE = "The token ledger is switched off in the settings."
 _UNREAD_NOTE = "The token ledger can't be read just now."
 
@@ -60,7 +60,7 @@ async def _rate(ctx: HardeningContext) -> float:
     return float(got) if got and got > 0 else DEFAULT_RATE
 
 
-def _vitals(ctx: HardeningContext, store: TokenLedgerStore | None, on: bool) -> Any:
+def _vitals(ctx: HardeningContext, store: TokenLedgerStore | None, on: bool) -> VitalsReader:
     async def read(uid: str, now: datetime, tz: ZoneInfo) -> Sequence[OwnItem]:
         if store is None or not on:
             note = _OFF_NOTE if store is not None else NO_DOCS.capitalize() + "."
@@ -86,9 +86,9 @@ def _privacy(store: TokenLedgerStore) -> CallbackSource:
             PRIVACY_ID,
             SEC_ACTIVITY,
             "Where the AI money goes",
-            "Per day: how many AI calls JARVIS made, their token counts, how many characters "
-            "each part of the prompt had, the tools offered and the skills opened. Counts only: "
-            "never a word of what was said.",
+            "Per day: how many AI calls JARVIS's chat replies made, their token counts, how many "
+            "characters each part of the prompt had, the tools offered and the skills opened. "
+            "Counts only: never a word of what was said.",
             "days",
             f"{LEDGER_DAYS} days",
             GOOGLE_ENC,

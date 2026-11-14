@@ -83,6 +83,8 @@ async def test_the_vitals_item_says_where_the_money_goes_in_rupees(settings: Set
     (item,) = await part.vitals[0](UID, now, KOLKATA)
     assert item.provider.id == "ai_parts" and item.base[0] == "ok"
     assert item.provider.note.startswith("No AI calls")
+    # code review LOW-1: only the brain's calls are counted; the item says so in its words
+    assert "chat replies" in item.base[1] and "chat replies" in item.provider.note
     off = settings.model_copy(update={"token_ledger_enabled": False})
     (quiet,) = await skills_part.build(_ctx(off, docs)).vitals[0](UID, now, KOLKATA)
     assert quiet.base[0] == "unknown" and "off" in quiet.provider.note

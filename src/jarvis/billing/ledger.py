@@ -19,7 +19,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 from zoneinfo import ZoneInfo
 
-from jarvis.llm.base import ChatMessage, ImageBlock, ToolCall, ToolResultBlock
+from jarvis.core.window import block_chars, message_chars
+from jarvis.llm.base import ChatMessage, ToolResultBlock
 from jarvis.llm.pricing import PRICES
 from jarvis.recall.retrieval import HEADING
 from jarvis.storage.docs import Delete, Docs, DocTx, Query
@@ -46,6 +47,7 @@ PART_WORDS: Mapping[str, str] = {
     "replies": "replies",
 }
 OPEN_TOOL: Final = "skills_open"
+NOTE_MAX: Final = 300  # = vitals.models.NOTE_MAX (a test keeps them equal)
 _MEMORY_MARK = "\n\n" + HEADING
 _MTOK = 1_000_000
 
@@ -62,28 +64,24 @@ NO_LEDGER: Final = NoLedger()
 class CallCounts:
     calls: int
     cold_calls: int
-    tokens: dict[str, int]
-    chars: dict[str, int]
+    tokens: Mapping[str, int]
+    chars: Mapping[str, int]
     tools_offered: int
     skills_opened: int
-    usd: dict[str, float]
+    usd: Mapping[str, float]
 
 
 def _message_chars(messages: Sequence[ChatMessage]) -> tuple[int, int]:
-    """(history, tool results) characters; a picture counts nothing here."""
-    history = results = 0
-    for m in messages:
-        if isinstance(m.content, str):
-            history += len(m.content)
-            continue
-        for b in m.content:
-            if isinstance(b, ToolResultBlock):
-                results += len(b.content)
-            elif isinstance(b, ToolCall):
-                history += len(b.name) + len(json.dumps(b.arguments, ensure_ascii=False))
-            elif not isinstance(b, ImageBlock):
-                history += len(b.text)
-    return history, results
+    """(history, tool results) characters, counted as the window counts them (`core.window`:
+    a picture counts nothing), so the two can never drift apart."""
+    results = sum(
+        block_chars(b)
+        for m in messages
+        if not isinstance(m.content, str)
+        for b in m.content
+        if isinstance(b, ToolResultBlock)
+    )
+    return sum(message_chars(m) for m in messages) - results, results
 
 
 def _tools_chars(tools: Sequence[ToolSpec]) -> int:
@@ -160,11 +158,11 @@ class MonthLedger:
     days: int = 0
     calls: int = 0
     cold_calls: int = 0
-    tokens: dict[str, int] = field(default_factory=lambda: dict.fromkeys(TOKENS, 0))
-    chars: dict[str, int] = field(default_factory=lambda: dict.fromkeys(INPUT_PARTS, 0))
+    tokens: Mapping[str, int] = field(default_factory=lambda: dict.fromkeys(TOKENS, 0))
+    chars: Mapping[str, int] = field(default_factory=lambda: dict.fromkeys(INPUT_PARTS, 0))
     tools_offered: int = 0
     skills_opened: int = 0
-    usd: dict[str, float] = field(default_factory=lambda: dict.fromkeys(PARTS, 0.0))
+    usd: Mapping[str, float] = field(default_factory=lambda: dict.fromkeys(PARTS, 0.0))
 
     @property
     def usd_total(self) -> float:
@@ -260,7 +258,8 @@ class TokenLedgerStore:
     async def _prune(self, uid: str, now: datetime) -> int:
         cutoff = (now - timedelta(days=LEDGER_DAYS)).strftime("%Y-%m-%d")
         rows = await self._docs.query(self.query_for(uid))
-        old = [i for i, d in rows if isinstance(d.get("day"), str) and d["day"] < cutoff]
+        # strictly after the cutoff: today and the 89 days before it (code review LOW-3)
+        old = [i for i, d in rows if isinstance(d.get("day"), str) and d["day"] <= cutoff]
         if old:
             await self._docs.write([Delete(f"{self._col}/{i}") for i in old])
         return len(old)
@@ -280,20 +279,29 @@ class TokenLedgerStore:
 
 
 def ai_parts_note(month: MonthLedger, rate: float) -> str:
-    """The Vitals line "Where the AI money goes this month", in ₹ (≤ 300 characters)."""
+    """The Vitals line "Where the AI money goes this month", in ₹, at most `NOTE_MAX` characters
+    (the smallest parts are left out first). Only the brain's calls reach the ledger (its record
+    slot), so it says "chat replies": recall, the brief and the helpers aren't in it (R14 code
+    review LOW-1)."""
     if month.calls == 0:
-        return "No AI calls counted this month yet."
-    parts = sorted(PARTS, key=lambda p: month.usd[p], reverse=True)
-    shown = ", ".join(f"{PART_WORDS[p]} ₹{month.usd[p] * rate:,.2f}" for p in parts)
+        return "No AI calls from chat replies counted this month yet."
+    head = f"Chat replies this month ≈ ₹{month.usd_total * rate:,.2f}: "
     share = round(month.cache_share() * 100)
     tail = f" · {month.calls:,} calls, {share} % of the input read from the cache."
-    return f"This month ≈ ₹{month.usd_total * rate:,.2f}: {shown}{tail}"
+    shown: list[str] = []
+    for p in sorted(PARTS, key=lambda p: month.usd[p], reverse=True):
+        part = f"{PART_WORDS[p]} ₹{month.usd[p] * rate:,.2f}"
+        if len(head) + len(", ".join([*shown, part])) + len(tail) > NOTE_MAX:
+            break
+        shown.append(part)
+    return head + ", ".join(shown) + tail
 
 
 __all__ = [
     "COLLECTION",
     "INPUT_PARTS",
     "LEDGER_DAYS",
+    "NOTE_MAX",
     "NO_LEDGER",
     "PARTS",
     "PART_WORDS",

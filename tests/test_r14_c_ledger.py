@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from r14_fakes_c import UID, called, owner, specs
@@ -18,6 +19,7 @@ from jarvis.billing.ledger import (
     ai_parts_note,
     counts_of,
 )
+from jarvis.core.window import message_chars
 from jarvis.llm.base import ChatMessage, Completion, Role, TextBlock, ToolCall, Usage
 from jarvis.recall.retrieval import HEADING
 from jarvis.skills.ports import LedgerCall
@@ -25,6 +27,7 @@ from jarvis.storage.docs import MemoryDocs
 
 SECRET = "PLANTED-SECRET-WORD"
 NOW = datetime(2026, 11, 14, 20, 0, tzinfo=UTC)  # 01:30 on the 15th in Kolkata
+KOLKATA = ZoneInfo("Asia/Kolkata")
 TRAILER = "Local time: 15 Nov 01:30. Turn 3." + "\n\n" + HEADING + "\n- [f1] (owner) likes tea"
 
 
@@ -120,15 +123,32 @@ async def test_days_older_than_ninety_go_when_a_new_day_starts() -> None:
     await _store(docs).record(_call())  # a second call of the same day
     after = {i for i, _ in await docs.query(_store(docs).query_for(UID))}
     assert len(after) == 2 and before - after == {
-        f"{UID}_{(NOW - timedelta(days=d)).astimezone(_tz()).strftime('%Y%m%d')}"
-        for d in (LEDGER_DAYS + 5, LEDGER_DAYS + 1)
+        f"{UID}_{_day(d)}" for d in (LEDGER_DAYS + 5, LEDGER_DAYS + 1)
     }
 
 
-def _tz():  # type: ignore[no-untyped-def]
-    from zoneinfo import ZoneInfo
+def _day(days_back: int) -> str:
+    return (NOW - timedelta(days=days_back)).astimezone(KOLKATA).strftime("%Y%m%d")
 
-    return ZoneInfo("Asia/Kolkata")
+
+async def test_exactly_ninety_days_are_kept() -> None:
+    """Code review LOW-3: the day exactly 90 days back survived (91 documents); the privacy
+    row says 90 days, so today and the 89 days before it are kept."""
+    docs = MemoryDocs()
+    for days in (LEDGER_DAYS, LEDGER_DAYS - 1):
+        await _store(docs, NOW - timedelta(days=days)).record(_call())
+    await _store(docs).record(_call())
+    kept = {i for i, _ in await docs.query(_store(docs).query_for(UID))}
+    assert kept == {f"{UID}_{_day(d)}" for d in (LEDGER_DAYS - 1, 0)}
+
+
+def test_the_ledger_counts_a_message_as_the_window_does() -> None:
+    """Python review L4: one way to count a message's characters (`core.window`), so the
+    ledger's history and tool results add up to what the window counted."""
+    call = _call()
+    got = counts_of(call)
+    sent = sum(message_chars(m) for m in call.messages)
+    assert got.chars["history"] + got.chars["tool_results"] == sent
 
 
 async def test_the_month_sums_only_this_months_days() -> None:
@@ -148,6 +168,21 @@ async def test_the_vitals_words_say_where_the_money_goes_in_rupees() -> None:
         await _store(docs).record(_call(_completion(cost=0.05)))
     month = await _store(docs).month(UID)
     note = ai_parts_note(month, 95.24)
-    assert note.startswith("This month ≈ ₹14.29") and "₹" in note and "$" not in note
+    assert note.startswith("Chat replies this month ≈ ₹14.29") and "$" not in note  # review LOW-1
     assert "3 calls" in note and len(note) <= 300
     assert ai_parts_note(await _store(MemoryDocs()).month(UID), 95.24).startswith("No AI calls")
+
+
+def test_the_vitals_words_always_fit_the_vitals_note() -> None:
+    """The note is a Vitals note (at most `vitals.models.NOTE_MAX` characters, or the item
+    can't be built): with very large sums the smallest parts are left out, never the total."""
+    from jarvis.billing.ledger import NOTE_MAX as LEDGER_NOTE_MAX
+    from jarvis.billing.ledger import MonthLedger
+    from jarvis.vitals.models import NOTE_MAX
+
+    assert LEDGER_NOTE_MAX == NOTE_MAX
+
+    huge = MonthLedger(month="2026-11", calls=123_456, usd=dict.fromkeys(PARTS, 1_234_567.0))
+    note = ai_parts_note(huge, 95.24)
+    assert len(note) <= NOTE_MAX and note.startswith("Chat replies this month ≈ ₹82")
+    assert "123,456 calls" in note

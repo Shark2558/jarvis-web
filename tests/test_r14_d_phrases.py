@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from r14_fakes_d import D12_ROWS
 
 from jarvis.belongings.service import clean_fields
 from jarvis.groceries.tools import parse_items, parse_names
@@ -35,47 +36,7 @@ def _tool(text: str) -> tuple[str | None, dict[str, Any]]:
     return call.tool, call.arguments
 
 
-ROWS: list[tuple[str, str, dict[str, Any]]] = [
-    ("add milk and eggs to my grocery list", "grocery_add",
-     {"items": [{"name": "milk"}, {"name": "eggs"}]}),
-    ("Jarvis, put bread on the shopping list please", "grocery_add",
-     {"items": [{"name": "bread"}]}),
-    ("what's on my shopping list?", "grocery_list", {}),
-    ("show me my grocery list", "grocery_list", {}),
-    ("remove milk from my grocery list", "grocery_remove", {"items": ["milk"]}),
-    ("tick off 2 kg rice and eggs from the groceries", "grocery_remove",
-     {"items": ["rice", "eggs"]}),
-    ("what's expiring in my vault", "vault_expiring", {}),
-    ("which documents expire soon?", "vault_expiring", {}),
-    ("where did I put my passport", "belongings_where", {"item": "passport"}),
-    ("where are my spare keys?", "belongings_where", {"item": "spare keys"}),
-    ("I kept the keys in the drawer", "belongings_put", {"item": "keys", "place": "the drawer"}),
-    ("I've put my passport under the blue file.", "belongings_put",
-     {"item": "passport", "place": "under the blue file"}),
-    ("is the house armed", "home_status", {}),
-    ("home status", "home_status", {}),
-    ("arm the alarm", "home_arm", {"mode": "away"}),
-    ("arm the house for the night", "home_arm", {"mode": "night"}),
-    ("where's my parcel", "gmail_track_packages", {}),
-    ("where are my orders?", "gmail_track_packages", {}),
-    ("check my email", "gmail_inbox_summary", {}),
-    ("any new mail?", "gmail_inbox_summary", {}),
-    ("what did I delete", "deleted_list", {}),
-    ("show recently deleted", "deleted_list", {}),
-    ("what do you remember about Lekha", "memory_search", {"query": "Lekha"}),
-    ("search your memory for the plumber's visit", "memory_search",
-     {"query": "the plumber's visit"}),
-    ("when was my last backup", "vitals_backups", {}),
-    ("are my backups ok?", "vitals_backups", {}),
-    ("test my backup", "vitals_drill_start", {}),
-    ("run a restore drill", "vitals_drill_start", {}),
-    ("book a plumber for tomorrow morning", "maint_service_request",
-     {"job": "plumber", "when": "tomorrow morning"}),
-    ("get an electrician to fix the fan on Saturday", "maint_service_request",
-     {"job": "electrician", "problem": "fix the fan", "when": "Saturday"}),
-    ("I need an AC repair to look at the bedroom AC", "maint_service_request",
-     {"job": "ac", "problem": "look at the bedroom AC"}),
-]  # fmt: skip
+ROWS = D12_ROWS
 
 
 @pytest.mark.parametrize(("text", "tool", "args"), ROWS)

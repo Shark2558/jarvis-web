@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -13,46 +12,26 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from test_r14_d_phrases import ROWS
+from r14_fakes_d import CARDS, D12_ROWS, WRITES, Seen, fake_tool
 
 from jarvis.api import create_app
 from jarvis.config import Settings
-from jarvis.core.guardrails import ActionRisk, ConfirmationGate
+from jarvis.core.guardrails import ConfirmationGate
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.offline import phrases_r14 as p14
 from jarvis.offline.rules import NO_AI_LINE, route_no_ai
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
-from jarvis.tools.base import Tool
 
 NOW = datetime(2026, 11, 14, 16, 5, tzinfo=ZoneInfo("Asia/Kolkata"))
-WRITES = frozenset({"grocery_add", "grocery_remove", "belongings_put", "home_arm"})
-CARDS = frozenset({"vitals_drill_start"})  # R2 with `ask_when`: always a card (Part A's)
-
-
-@dataclass
-class Seen:
-    calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
-
-
-def _fake(name: str, seen: Seen) -> Tool:
-    async def run(a: dict[str, Any]) -> dict[str, Any]:
-        seen.calls.append((name, dict(a)))
-        return {"message": f"{name} answered"}
-
-    write = name in WRITES or name in CARDS
-    return Tool(
-        name, f"fake {name}", {"type": "object", "properties": {}},
-        ActionRisk.REVERSIBLE if write else ActionRisk.READ_ONLY, run,
-        ask_when=(lambda _a: True) if name in CARDS else None,
-    )  # fmt: skip
+ROWS = D12_ROWS
 
 
 @pytest.fixture
 async def rig(settings: Settings) -> AsyncIterator[tuple[FastAPI, AsyncClient, MockProvider, Seen]]:
     seen, reg = Seen(), ToolRegistry()
     for name in sorted({tool for _, tool, _ in ROWS}):
-        reg.register(_fake(name, seen))
+        reg.register(fake_tool(name, seen))
     gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
     provider = MockProvider()
     s = settings.model_copy(update={"brain_mode": "none", "max_input_chars": 2_000})

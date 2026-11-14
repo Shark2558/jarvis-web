@@ -2,10 +2,13 @@
 """Claude implementation of LLMProvider. The only file that imports the `anthropic` SDK.
 
 R14 D9 (A1 choice (b), docs/plans/r14-hardening.md): built with `cache_history` (the setting, on
-by default, through `jarvis.llm.factory`), a call adds a second cache breakpoint on the last
-message block, so the next round of the SAME reply reads the history from the cache. The trailer
-is a system block before the messages, so the hint never reaches across turns. The stream path
-(one call a reply) keeps the system breakpoint only. Nothing in the shared interface changes.
+by default, through `jarvis.llm.factory`), a call WITH TOOLS adds a second cache breakpoint on the
+last message block, so the next round of the SAME reply reads the history from the cache. The
+trailer is a system block before the messages, so the hint never reaches across turns. A call
+without tools (the one-shot callers: recall, the brief, the helpers; a final no-tools round, whose
+prefix differs anyway) and the stream path (one call a reply) keep the system breakpoint only: a
+cache write there would never be read (R14 code review MEDIUM-1). Nothing in the shared interface
+changes.
 """
 
 from __future__ import annotations
@@ -266,7 +269,7 @@ class AnthropicProvider:
             max_tokens=max_tokens,
             effort=effort,
             tools=tools,
-            history_hint=True,
+            history_hint=bool(tools),  # only a tool round is ever followed by a second call
         )
         msg = await self._create(kw, model)
         completion = self._completion(msg, model, int((time.perf_counter() - t0) * 1000))

@@ -102,11 +102,28 @@ async def test_without_the_hint_there_is_one_breakpoint_as_before() -> None:
     assert _marks(sent[0]) == ["system:0"]
 
 
+async def test_a_call_without_tools_keeps_the_system_breakpoint_only() -> None:
+    """Code review MEDIUM-1: one-shot callers (recall, the brief, the helpers) never call again
+    with the same prefix, and a call without tools can't read a cache written with them: the
+    second breakpoint would be a cache write (1.25x) never read."""
+    sent: list[dict[str, Any]] = []
+    await _provider(sent, cache_history=True).complete(
+        system="PERSONA", messages=ROUND, model="m", max_tokens=9
+    )
+    assert _marks(sent[0]) == ["system:0"]
+    assert sent[0]["messages"][0]["content"] == "read example.com"  # as before R14
+    sent.clear()
+    await _provider(sent, cache_history=True).complete(
+        system="PERSONA", messages=ROUND, model="m", max_tokens=9, tools=[]
+    )
+    assert _marks(sent[0]) == ["system:0"]
+
+
 async def test_a_plain_last_message_becomes_one_marked_text_block() -> None:
     sent: list[dict[str, Any]] = []
     msgs = [ChatMessage(role=Role.USER, content="hello")]
     await _provider(sent, cache_history=True).complete(
-        system="P", messages=msgs, model="m", max_tokens=9
+        system="P", messages=msgs, model="m", max_tokens=9, tools=[TOOL]
     )
     last = sent[0]["messages"][-1]["content"]
     assert last == [{"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}]
@@ -117,13 +134,13 @@ async def test_the_mark_goes_on_the_last_non_empty_block() -> None:
     sent: list[dict[str, Any]] = []
     msgs = [ChatMessage(role=Role.USER, content=[TextBlock(text="look"), TextBlock(text="")])]
     await _provider(sent, cache_history=True).complete(
-        system="P", messages=msgs, model="m", max_tokens=9
+        system="P", messages=msgs, model="m", max_tokens=9, tools=[TOOL]
     )
     assert _marks(sent[0]) == ["system:0", "message:0:0"]
     sent.clear()
     empty = [ChatMessage(role=Role.USER, content=[TextBlock(text="")])]
     await _provider(sent, cache_history=True).complete(
-        system="P", messages=empty, model="m", max_tokens=9
+        system="P", messages=empty, model="m", max_tokens=9, tools=[TOOL]
     )
     assert _marks(sent[0]) == ["system:0"]  # an empty text block can never carry one
 

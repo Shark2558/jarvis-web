@@ -265,11 +265,11 @@ class TokenLedgerStore:
             await self._docs.write([Delete(f"{self._col}/{i}") for i in old])
         return len(old)
 
-    async def month(self, uid: str) -> MonthLedger:
-        """This month (his time zone) summed over its days."""
+    async def month(self, uid: str, now: datetime | None = None) -> MonthLedger:
+        """The month holding `now` (default: the clock's), in his time zone, summed by day."""
         if not safe_id(uid):
             raise ValueError("invalid user id")
-        month = self._local().strftime("%Y-%m")
+        month = (now or self._clock()).astimezone(self._tz).strftime("%Y-%m")
         rows = await self._docs.query(Query(self._col, where=("month_key", f"{uid}_{month}")))
         return _month_of([d for _, d in rows], month)
 

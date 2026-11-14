@@ -2,7 +2,7 @@
   "version": 1,
   "about": "R14 D11: the skill register (docs/plans/r14-hardening.md). Every tool is filed under one group of one of the 11 skills by its name: an exact name wins over a family (a pattern with *). 'words' choose the turn's tools (D9): a word matches at the start of a word in his message (three letters or fewer: the whole word, or with an s). 'core' is offered on every turn. 'telegram_open' names the read tools Telegram answers (every other read is refused there by a telegram/rules.py pattern). 'no_ai' names the tools No-AI mode reaches. 'planned' names tools another R14 part is building, so this list may name them before they exist.",
   "core": ["skills_open", "reminder_add", "calendar_list_events", "memory_search"],
-  "planned": ["vitals_backups", "vitals_drill_start", "maint_service_request"],
+  "planned": [],
   "telegram_open": [
     "calendar_free_slots", "calendar_list_events", "family_free_slots", "gmail_track_packages",
     "grocery_list", "list_tasks", "tasks_list", "reminders_list", "memory_search",
@@ -63,7 +63,7 @@
         },
         {
           "id": "household",
-          "tools": ["chore_*", "maint_*"],
+          "tools": ["chore_*", "maint_*", "maint_service_request"],
           "words": ["chore", "clean", "laundry", "dishes", "sweep", "mop", "maintenance", "servic", "repair", "plumber", "electrician", "carpenter", "ac", "filter", "upkeep", "purifier", "geyser", "pest", "leak", "safai", "kapde", "bartan", "mistri", "kaamwali"]
         },
         {

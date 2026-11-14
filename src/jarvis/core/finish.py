@@ -36,6 +36,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
+from jarvis.backup.names import START as DRILL_START
 from jarvis.billing import BudgetError
 from jarvis.config import Settings
 from jarvis.core.brain_types import _ReplyMeta
@@ -61,8 +62,15 @@ RETRY = (
 COMPLETE = frozenset({"end_turn", "tool_use", "stop", "stop_sequence"})
 # Tools whose result's `message` is ONE sentence written by code alone: counts and JARVIS's own
 # words, never a title or anything a file or a mail said (`series.batch_result`, `series.cards`).
+# R14 I1 (INTEGRATION-A #5): the restore drill card's fixed lines (`backup.drill`, `backup.tools`).
 SAID_BY_CODE = frozenset(
-    {"calendar_create_events", "calendar_undo_events", "series_checkin", "series_reschedule"}
+    {
+        "calendar_create_events",
+        "calendar_undo_events",
+        "series_checkin",
+        "series_reschedule",
+        DRILL_START,
+    }
 )
 SAID_MAX = 400
 

@@ -392,6 +392,34 @@ async def test_the_drill_route_makes_the_same_card_in_his_conversation(settings:
         assert bad.status_code == 422
 
 
+async def test_with_the_ai_off_the_approved_drill_card_says_its_own_line(
+    settings: Settings,
+) -> None:
+    """INTEGRATION-A #5 (I1): with no model to narrate, the reply to the approved card is the
+    drill's own fixed line (`finish.SAID_BY_CODE`), never "Done: <the card>"."""
+    async with running(settings.model_copy(update={"brain_mode": "none"})) as (_, client):
+        chat = await client.post("/v1/chat", json={"message": "hello"})
+        sid = chat.json()["session_id"]
+        r = await client.post("/v1/backup/drill", json={"session_id": sid}, headers=CSRF)
+        assert r.status_code == 202, r.text
+        ok = await client.post(
+            f"/v1/approvals/{r.json()['approval_id']}/approve",
+            json={"session_id": sid},
+            headers=CSRF,
+        )
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["reply"] == NO_FIRESTORE_LINE
+
+
+def test_the_drill_cards_line_is_jarviss_own_words() -> None:
+    from jarvis.core import finish
+    from jarvis.tools.gateway import GatewayOutcome, GatewayResult
+
+    ran = GatewayResult(GatewayOutcome.EXECUTED, result={"message": NO_FIRESTORE_LINE})
+    assert finish.said_by_code(START, ran) == NO_FIRESTORE_LINE
+    assert finish.said_by_code(SHOW, ran) is None  # the status tool's answer is said by the model
+
+
 async def test_the_drill_route_is_rate_limited_per_owner(settings: Settings) -> None:
     async with running(settings) as (_, client):
         chat = await client.post("/v1/chat", json={"message": "hello"})

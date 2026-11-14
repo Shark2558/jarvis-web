@@ -127,6 +127,13 @@ TELEGRAM_SAFE = frozenset(
         "youtube_own_channel",
         "research_person",
         "people_open_profiles",
+        # R14 I1 (INTEGRATION-A #2, C D, D #2): Part A's backups' own facts (set up or not, the
+        # last copy's time, the count, the size, a rupee estimate, the last drill's result), like
+        # vitals_show; Part C's register words (labels, abouts, tool names; no side effect);
+        # Part D's prepared service request in his words (never books or sends)
+        "vitals_backups",
+        "skills_open",
+        "maint_service_request",
     }
 )
 # R11 I1: the helpers' reads that stay off Telegram (telegram.rules.PRIVATE_PATTERNS): amounts and

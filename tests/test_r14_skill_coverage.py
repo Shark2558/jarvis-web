@@ -16,8 +16,8 @@ from jarvis.skills.ids import SKILL_IDS, SKILL_LABELS
 from jarvis.skills.registry import SkillRegister, load_catalogue
 
 ROOT = Path(__file__).resolve().parents[1]
-# R14's own open reads: Part C's `skills_open` here, Part A's `vitals_backups` and Part D's
-# `maint_service_request` when they are built (the guard's TELEGRAM_SAFE gains them at I1)
+# R14's own open reads (Part C's `skills_open`, Part A's `vitals_backups`, Part D's
+# `maint_service_request`): built, so I1 named them in the guard's TELEGRAM_SAFE
 R14_OPEN = frozenset({"skills_open", "vitals_backups", "maint_service_request"})
 
 
@@ -42,7 +42,29 @@ async def test_the_registers_open_reads_agree_with_the_telegram_guard() -> None:
     register = SkillRegister(load_catalogue())
     cards = register.cards(gw.registry)
     open_reads = {c.name for c in cards if c.risk == "R1" and c.telegram == "open"}
-    assert open_reads - R14_OPEN == set(TELEGRAM_SAFE), sorted(open_reads ^ set(TELEGRAM_SAFE))
+    assert open_reads == set(TELEGRAM_SAFE), sorted(open_reads ^ set(TELEGRAM_SAFE))
+    assert R14_OPEN <= open_reads
+
+
+async def test_the_planned_list_names_no_tool_that_is_built() -> None:
+    """I1: every R14 part is built, so a tool still listed as `planned` would hide a rename
+    from the stale-name check (`SkillRegister.problems`)."""
+    gw = await linked_gateway()
+    register = SkillRegister(load_catalogue())
+    built = {s.name for s in gw.registry.specs()}
+    assert not register.catalogue.planned & built, sorted(register.catalogue.planned & built)
+
+
+async def test_the_service_request_is_filed_under_task_with_the_house_jobs() -> None:
+    """INTEGRATION-D Needs I1 #3 (plan D2): Task & Productivity, the household group, which
+    his words "plumber" and "electrician" offer."""
+    gw = await linked_gateway()
+    register = SkillRegister(load_catalogue())
+    assert "maint_service_request" in {s.name for s in gw.registry.specs()}
+    group = register.group_of("maint_service_request")
+    assert register.skill_of("maint_service_request") == "task"
+    assert group is not None and group.id == "household"
+    assert {"plumber", "electrician"} <= set(group.words)
 
 
 async def test_no_skill_holds_so_many_tools_that_one_word_offers_too_many() -> None:

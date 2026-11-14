@@ -66,6 +66,7 @@ async def test_reads_are_cached_three_seconds_per_instance(docs: FlakyDocs) -> N
     assert await here.get(UID) is None
     reads = docs.reads
     state = await there.set(UID, "bk_0123456789abcdef", now=T0)
+    reads += 1  # R14 D13 (2): `set` reads the mark it keeps, in its own transaction
     tick.t += 2.9
     assert await here.get(UID) is None and docs.reads == reads  # cached
     tick.t += 0.2

@@ -51,6 +51,8 @@ dev = [
     "mypy>=1.10",
     "pyyaml>=6",
     "shellcheck-py>=0.10",
+    # R14 D17: coverage measured in CI (Python 3.12); pytest-cov MIT, coverage.py Apache-2.0
+    "pytest-cov>=7",
 ]
 # R3: the home bridge on the owner's laptop (deploy/home/bridge.Dockerfile), never the cloud
 # image: Frigate's events over MQTT. aiomqtt BSD-3-Clause (paho-mqtt EPL-2.0 OR BSD-3-Clause).

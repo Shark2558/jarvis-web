@@ -27,7 +27,15 @@ jobs:
       - if: matrix.python == '3.12'
         run: pip install -e ".[dev,homebridge]"
       - run: ruff check src tests evals
-      - run: pytest -q
+      - if: matrix.python == '3.11'
+        run: pytest -q
+      # R14 D17: coverage on 3.12 only (the 3.11 job is not slowed); the total goes to the job
+      # summary and fails only below the committed floor (scripts/coverage_floor.txt), a ratchet
+      # towards ECC's 80 %
+      - if: matrix.python == '3.12'
+        run: pytest -q --cov=jarvis --cov-report=term-missing:skip-covered --cov-report=json:coverage.json
+      - if: matrix.python == '3.12'
+        run: python scripts/coverage_floor.py --json coverage.json --summary "$GITHUB_STEP_SUMMARY"
       - run: python evals/phase0/run.py --mock   # plumbing only; real gate runs on demand
       # R6 D2-D5: the build book builds from this commit, byte-identical twice, with no personal
       # data, no unlisted secret-shaped string, every package in a layer and every flow step real

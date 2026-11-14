@@ -3,14 +3,16 @@
 # observer, the real alert policy and storm (the ring counter).
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
 from r14_fakes_b import TWO_AM, UID, BrokenDocs, FlakyJob, build_world
 
-from jarvis.selfwatch.jobs import CLOCK_NAME, DAILY_NAME, Watch
-from jarvis.ticks import FAILED_COUNT, JobOutcome
+from jarvis.selfwatch.jobs import CLOCK_NAME, DAILY_NAME, Job, Watch
+from jarvis.ticks import FAILED_COUNT, JobOutcome, run_jobs
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -230,3 +232,47 @@ async def test_errors_from_just_before_midnight_count_for_their_own_day() -> Non
         w.watch.errors.handle(rec)
     await w.watch.clock_job.run((UID,))
     assert w.ring.kinds() == ["errors_piling"]
+
+
+# ---- time shares (silent review M4) --------------------------------------------------------------
+async def _hangs(owners, now, me):  # type: ignore[no-untyped-def]
+    await asyncio.sleep(60)
+    return 0, True
+
+
+def _job(w, budget: float, *steps):  # type: ignore[no-untyped-def]
+    return Job(CLOCK_NAME, budget, w.watch, steps)
+
+
+async def test_a_hung_step_starves_neither_the_others_nor_the_ledger() -> None:
+    w = build_world()
+    seen: list[str] = []
+
+    async def after(owners, now, me):  # type: ignore[no-untyped-def]
+        seen.append(me)
+        return 0, True
+
+    w.watch.observe(JobOutcome("watchdog", "web", "failed", 0.0))
+    job = _job(w, 1.0, w.watch.load, _hangs, after)
+    got = await run_jobs((job,), (UID,), clock="watchdog", total_budget_s=50.0)
+    assert got == {CLOCK_NAME: "failed"}  # its own step failed, never "timed_out"
+    assert seen == [CLOCK_NAME] and job.last[FAILED_COUNT] == 1
+    stored = await w.docs.get("jarvis_selfwatch/jobs")
+    assert stored is not None and "web" in stored["jobs"]  # the ledger was kept
+
+
+async def test_the_ledger_is_kept_even_when_the_job_is_cut_from_outside() -> None:
+    w = build_world()
+    w.watch.observe(JobOutcome("watchdog", "web", "failed", 0.0))
+    job = _job(w, 10.0, w.watch.load, _hangs)
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.2):  # what the tick had left was less than the budget
+            await job.run((UID,))
+    stored = await w.docs.get("jarvis_selfwatch/jobs")
+    assert stored is not None and "web" in stored["jobs"]
+
+
+def test_the_brief_is_checked_before_the_errors_are_written() -> None:
+    names = build_world().watch.clock_job.step_names
+    assert names.index("report_jobs") < names.index("errors_step")  # the incident said first
+    assert names.index("briefs_step") < names.index("errors_step")

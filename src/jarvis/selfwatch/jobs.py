@@ -10,7 +10,11 @@ the once-only claims) and the tick observer (`observe`, synchronous, never raise
 - `selfwatch_daily` (the morning tick, after the other jobs): the morning clock's stamp and the
   5-minute clock's check, the job streaks, and once a day the spend snapshot and the sweeps.
 
-Each step stands alone: one that fails is logged as a class name and counted under `failed`
+Each step stands alone and has a fair share of the time left (`ticks.time_left()`, else the
+job's budget): what is left before `STEPS_SHARE` of it, split over the steps still to run, so
+one that hangs is cut and the rest still run; the ledger is then written in the slice kept for
+it (`FLUSH_SHARE`), in a `finally`, even when the tick cuts the job from outside.
+One that fails or is cut is logged as a class name and counted under `failed`
 (the job's own streak, which the OTHER job reports: a selfwatch job never reports itself), and
 the rest still run. Job failures go out as ONE `job_failing` naming every job in a streak, at
 most one an hour per owner (`JOB_ALERT_EVERY`), each streak once; errors piling up are held
@@ -24,6 +28,7 @@ that reached nobody is raised again by the next run.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -40,7 +45,7 @@ from jarvis.selfwatch.errors import ErrorCounter
 from jarvis.selfwatch.ledger import JobLedger, Streak, Told
 from jarvis.selfwatch.spend import BillingLike, SpendWatch
 from jarvis.storage.docs import Docs
-from jarvis.ticks import FAILED_COUNT, JobOutcome
+from jarvis.ticks import FAILED_COUNT, JobOutcome, time_left
 from jarvis.undo.store import owner_ok
 
 log = get_logger(__name__)
@@ -51,6 +56,8 @@ CLOCK_BUDGET_S = 10.0  # it runs first in the watchdog's 50 s (a healthy run tak
 DAILY_BUDGET_S = 25.0
 JOB_ALERT_EVERY = timedelta(hours=1)  # A6: one aggregated `job_failing` an hour per owner
 ERRORS_HELD = timedelta(hours=6)  # errors wait this long after a job alert, not all its streak
+STEPS_SHARE = 0.85  # of the job's time, for its steps
+FLUSH_SHARE = 0.10  # for writing the ledger (the rest is spare)
 Done = tuple[int, bool]  # (alerts sent, whether the step's documents were kept)
 Step = Callable[[Sequence[str], datetime, str], Awaitable[Done]]
 
@@ -98,16 +105,16 @@ class Watch:
         )
         self.deploys = DeployWatch(revision=s.cloud_run_revision, version=version, prefix=p)
         self._day_done: str | None = None
-        self.clock_job = _Job(CLOCK_NAME, CLOCK_BUDGET_S, self, self._clock_steps())
-        self.daily_job = _Job(DAILY_NAME, DAILY_BUDGET_S, self, self._daily_steps())
+        self.clock_job = Job(CLOCK_NAME, CLOCK_BUDGET_S, self, self._clock_steps())
+        self.daily_job = Job(DAILY_NAME, DAILY_BUDGET_S, self, self._daily_steps())
 
     def _clock_steps(self) -> tuple[Step, ...]:
         return (
             self.load,
             self.watchdog_beat,
+            self.report_jobs,  # an incident's job alert first: its errors are then held
+            self.briefs_step,  # before the errors: never the one a slow write starves
             self.errors_step,
-            self.report_jobs,
-            self.briefs_step,
             self.deploy_step,
         )
 
@@ -124,28 +131,49 @@ class Watch:
             return
 
     async def run_steps(
-        self, me: str, owners: Sequence[str], steps: Sequence[Step]
+        self, me: str, owners: Sequence[str], steps: Sequence[Step], budget_s: float
     ) -> dict[str, int]:
         now = self.now()
         owners = tuple(u for u in owners if isinstance(u, str) and owner_ok(u))
         counts = {"owners": len(owners), "told": 0, FAILED_COUNT: 0}
-        for step in steps:
-            try:
-                told, kept = await step(owners, now, me)
-            except Exception as exc:  # noqa: BLE001 - one step never stops the others
-                log.warning(
-                    "selfwatch step failed",
-                    extra={"job": me, "step": step.__name__, "error": type(exc).__name__},
-                )
-                told, kept = 0, False
-            counts["told"] += told
-            counts[FAILED_COUNT] += int(not kept)
+        clock = asyncio.get_running_loop().time
+        left = time_left()
+        total = budget_s if left is None else max(0.0, min(left, budget_s))
+        end = clock() + total * STEPS_SHARE
         try:
-            await self.ledger.flush(self.docs)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("selfwatch ledger not kept", extra={"error": type(exc).__name__})
-            counts[FAILED_COUNT] += 1
+            for i, step in enumerate(steps):
+                share = (end - clock()) / (len(steps) - i)
+                told, kept = await self._step(step, owners, now, me, share)
+                counts["told"] += told
+                counts[FAILED_COUNT] += int(not kept)
+        finally:  # also when the tick cuts the job from outside
+            counts[FAILED_COUNT] += int(not await self._flush(total * FLUSH_SHARE))
         return counts
+
+    async def _step(
+        self, step: Step, owners: Sequence[str], now: datetime, me: str, share: float
+    ) -> Done:
+        extra = {"job": me, "step": getattr(step, "__name__", "step")}
+        if share <= 0:
+            log.warning("selfwatch step cut: no time left", extra=extra)
+            return 0, False
+        try:
+            async with asyncio.timeout(share):
+                return await step(owners, now, me)
+        except TimeoutError:
+            log.warning("selfwatch step cut at its share of the time", extra=extra)
+        except Exception as exc:  # noqa: BLE001 - one step never stops the others
+            log.warning("selfwatch step failed", extra={**extra, "error": type(exc).__name__})
+        return 0, False
+
+    async def _flush(self, limit_s: float) -> bool:
+        try:
+            async with asyncio.timeout(max(limit_s, 0.05)):
+                await self.ledger.flush(self.docs)
+        except Exception as exc:  # noqa: BLE001 - kept dirty for the next run
+            log.warning("selfwatch ledger not kept", extra={"error": type(exc).__name__})
+            return False
+        return True
 
     # ---- the steps: each answers (alerts sent, documents kept) ---------------------------------
     async def load(self, owners: Sequence[str], now: datetime, me: str) -> Done:
@@ -295,7 +323,7 @@ def _text(e: Event) -> str:
     return texts.clock_back(e.clock)
 
 
-class _Job:
+class Job:
     """A `ticks.TickJob` running the watch's steps."""
 
     def __init__(self, name: str, budget_s: float, watch: Watch, steps: Sequence[Step]) -> None:
@@ -303,18 +331,25 @@ class _Job:
         self._watch, self._steps = watch, tuple(steps)
         self.last: dict[str, int] = {}
 
+    @property
+    def step_names(self) -> list[str]:
+        return [getattr(step, "__name__", "step") for step in self._steps]
+
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
-        self.last = await self._watch.run_steps(self.name, owners, self._steps)
+        self.last = await self._watch.run_steps(self.name, owners, self._steps, self.budget_s)
         return self.last
 
 
 __all__ = [
     "CLOCK_BUDGET_S",
+    "FLUSH_SHARE",
+    "STEPS_SHARE",
     "CLOCK_NAME",
     "DAILY_BUDGET_S",
     "DAILY_NAME",
     "ERRORS_HELD",
     "JOB_ALERT_EVERY",
+    "Job",
     "Watch",
     "job_alerts",
 ]

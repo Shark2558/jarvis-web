@@ -171,6 +171,12 @@ are still wholly scratch, by design. The hook never blocked an edit of itself.
 5. **The `needles` eval (the plan's "Needles (I1)") is not built**: the brief's item 9 names A–D;
    it stays I0's passing stub, so the runner reports `needles:not_built_yet`. The Workshop decides
    whether it is a merge gate.
+6. **The restore-drill card is approved in the console only** (the Workshop's decision on the
+   integrated security review's M4): `core.guardrails.CONSOLE_ONLY_TOOLS = {vitals_drill_start}`;
+   Telegram never offers it Approve/Decline buttons, however short its words (157 characters, under
+   the 240 that get one tap), says plainly that it waits in the console under Approvals, raises the
+   usual "approval waiting" alert, and refuses an old or forged button for it
+   (`tests/test_r14_i1_telegram_drill.py`).
 
 ## 10. What can't be verified here
 

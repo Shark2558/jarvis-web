@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 
 from jarvis.billing import BudgetReached
 from jarvis.core.channel import telegram_turn
-from jarvis.core.guardrails import ActionRisk, InputRejected
+from jarvis.core.guardrails import CONSOLE_ONLY_TOOLS, ActionRisk, InputRejected
 from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval
 from jarvis.llm.base import LLMError
 from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
@@ -75,6 +75,12 @@ UNAVAILABLE = "The AI service is busy or unavailable right now. Please try again
 TOO_SLOW = "That took too long, Sir. Please try again, or use the console."
 FAILED = "Something went wrong on my side. Please try again."
 CONSOLE_ONLY = "Approve in the console: this one can't be approved from Telegram."
+# R14 I1 (security review M4, the Workshop's decision): a card of `CONSOLE_ONLY_TOOLS` (the
+# restore drill) never gets buttons here, however short; it waits under Approvals
+CONSOLE_APPROVES = (
+    "Approve it in the console, under Approvals: this one is never approved from Telegram. "
+    "Waiting: "
+)
 GONE = "That request was already handled or has expired."
 OTHER_CONVERSATION = "That request belongs to another conversation. Open the console to handle it."
 WAITING = "Waiting in the console for your approval (and passkey): "
@@ -461,6 +467,10 @@ class TelegramService:
     async def _propose(self, uid: str, link: TelegramLink, cards: list[PendingApproval]) -> None:
         for card in cards:
             label = _label(card.tool)
+            if card.tool in CONSOLE_ONLY_TOOLS:  # however short: the console's alone
+                await self._say(link.chat_id, CONSOLE_APPROVES + label)
+                await self.alerts.send(uid, ALERT_TEXT["approval_waiting"], kind="approval_waiting")
+                continue
             if card.tool_risk == ActionRisk.REVERSIBLE.value and _fits(card.summary):
                 await self._say(
                     link.chat_id,
@@ -508,6 +518,9 @@ class TelegramService:
             R3_REFUSAL and action.tool_risk is not ActionRisk.REVERSIBLE
         ):  # R3 or unknown: never here
             await self._say(chat.id, CONSOLE_ONLY)
+            return
+        if action.tool in CONSOLE_ONLY_TOOLS:  # an old or forged button: never here either
+            await self._say(chat.id, CONSOLE_APPROVES + _label(action.tool))
             return
         try:
             with telegram_turn():

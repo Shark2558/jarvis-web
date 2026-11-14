@@ -13,7 +13,7 @@ def _flat(rule: str) -> str:
 
 
 def test_persona_is_p11_0_after_r5() -> None:
-    assert p.PERSONA_VERSION == "p7.0"
+    assert p.PERSONA_VERSION == "p14.0"
 
 
 def test_voice_rule_keeps_answer_first_and_the_sixty_word_default() -> None:

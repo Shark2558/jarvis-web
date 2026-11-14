@@ -15,7 +15,7 @@ def _flat(rule: str) -> str:
 def test_persona_is_p11_0_after_r4() -> (
     None
 ):  # R4 I1: p4.9; R5: p5.0; R5.1: p5.1; R6: p6.0; R11: p11.0
-    assert p.PERSONA_VERSION == "p7.0"
+    assert p.PERSONA_VERSION == "p14.0"
 
 
 @pytest.mark.parametrize("name", ["VITALS_RULE", "SYSTEMS_RULE", "CONNECTORS_RULE", "PEOPLE_RULE"])

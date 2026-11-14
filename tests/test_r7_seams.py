@@ -872,7 +872,7 @@ def test_the_r7_suite_is_gated_in_run_all_mock() -> None:
 
 # ---- 19 · the persona: I1 made it p7.0 (D26; tests/test_r7_i1_persona.py) ----------------------
 def test_the_persona_version_is_r7s_after_i1() -> None:
-    assert PERSONA_VERSION == "p7.0"  # I1 (D26); nothing compares it
+    assert PERSONA_VERSION == "p14.0"  # I1 (D26); nothing compares it
 
 
 # ---- 21 · Telegram's private patterns -----------------------------------------------------------

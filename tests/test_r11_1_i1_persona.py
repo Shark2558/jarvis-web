@@ -13,7 +13,7 @@ def _flat(text: str) -> str:
 
 
 def test_the_release_has_one_persona_version() -> None:
-    assert p.PERSONA_VERSION == "p7.0"  # R7's I1 moved it on (tests/test_r7_i1_persona.py)
+    assert p.PERSONA_VERSION == "p14.0"  # R7's I1 moved it on (tests/test_r7_i1_persona.py)
     src = p.__file__
     with open(src, encoding="utf-8") as fh:
         text = fh.read()

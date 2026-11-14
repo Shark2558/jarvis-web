@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -640,8 +641,26 @@ def test_the_set_up_waits_for_yes(tmp_path: Path) -> None:
 
 
 # ---- the persona waits for I1; the brief for the builders ----------------------------------------
-def test_the_persona_is_left_alone_until_i1() -> None:
-    assert PERSONA_VERSION == "p7.0"  # p14.0 comes at I1 (D14)
+def _offer_bullets(prompt: str) -> list[str]:
+    """Each persona bullet ("- ..." to the next bullet or a blank line) about an offered tool."""
+    bullets = re.findall(r"^- .*?(?=^- |^\s*$|\Z)", prompt, flags=re.M | re.S)
+    return [" ".join(b.split()) for b in bullets if "offered" in b]
+
+
+def test_the_persona_opens_a_skill_while_the_offer_is_on_by_default() -> None:
+    """R14 C code review MEDIUM-2 (INTEGRATION-C "Needs I1" A4): with `tool_offer` "by_skill" by
+    default, every persona bullet about a tool that isn't offered sends the model to skills_open
+    first (persona p14.0, D14)."""
+    from jarvis.core.prompts import WIT_IDS, build_system_prompt
+
+    if Settings.model_fields["tool_offer"].default != "by_skill":
+        return  # the kill switch is the default: nothing to keep in step
+    for wit in WIT_IDS:
+        bullets = _offer_bullets(build_system_prompt(honorific="Sir", wit=wit))
+        assert len(bullets) >= 5, bullets  # the rules, web, Drive, the tools rule, Maps/YouTube
+        stale = [b[:70] for b in bullets if "skills_open" not in b]
+        assert not stale, f"{wit}: {stale}"
+    assert PERSONA_VERSION == "p14.0"
 
 
 def test_the_common_brief_names_the_contract_the_guards_and_the_hook() -> None:

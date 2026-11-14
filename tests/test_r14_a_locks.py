@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import ast
+import asyncio
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from r14_fakes_a import PROJECT, SNAP
@@ -15,6 +18,7 @@ from r14_fakes_a_sdk import FakeAdminClient, FakeFirestoreClient, google_error, 
 
 from jarvis.backup.ports import DRILL_DB, LiveTargetRefused
 from jarvis.backup.readonly import ReadOnly, read_only
+from jarvis.storage import firestore_admin
 from jarvis.storage.docs import Docs, MemoryDocs, Query, Set
 from jarvis.storage.firestore_admin import FirestoreAdmin
 from jarvis.storage.firestore_walk import FirestoreWalk
@@ -213,3 +217,59 @@ def test_every_google_call_of_the_adapters_passes_drill_target_first(module: str
     text = (SRC / "storage" / f"{module}.py").read_text(encoding="utf-8")
     assert "drill_target(" in text
     assert "jarvis.storage.firestore_docs" not in text
+
+
+# ---- every Google call has a deadline (review follow-up python M3) ---------------------------
+def test_a_call_gets_its_own_deadline_or_what_the_tick_has_left() -> None:
+    assert firestore_admin.call_limit(lambda: None) == firestore_admin.CALL_S  # outside a tick
+    assert firestore_admin.call_limit(lambda: 300.0) == firestore_admin.CALL_S
+    assert firestore_admin.call_limit(lambda: 9.0) == 9.0 - firestore_admin.SPARE_S
+    assert firestore_admin.call_limit(lambda: 0.5) == firestore_admin.MIN_CALL_S
+
+
+async def test_a_google_admin_call_that_hangs_is_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(firestore_admin, "MIN_CALL_S", 0.05)
+
+    class Hung(FakeAdminClient):
+        async def list_backups(self, *, parent: str) -> object:
+            await asyncio.sleep(30)
+            return None
+
+    admin = FirestoreAdmin(project=PROJECT, live="(default)", client=Hung(), time_left=lambda: 0)
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        await admin.list_backups()
+    assert time.monotonic() - started < 2
+
+
+async def test_the_drill_reader_cuts_off_a_hang_and_says_no_permission_plainly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(firestore_admin, "MIN_CALL_S", 0.05)
+
+    class _Agg:
+        def __init__(self, group: str) -> None:
+            self.group = group
+
+        async def get(self) -> None:
+            if self.group == "hung":
+                await asyncio.sleep(30)
+            raise google_error("PermissionDenied", "no read permission for this account")
+
+    class _Group:
+        def __init__(self, group: str) -> None:
+            self.group = group
+
+        def count(self, alias: str = "n") -> _Agg:
+            return _Agg(self.group)
+
+    class Odd(FakeFirestoreClient):
+        def collection_group(self, group: str) -> Any:
+            return _Group(group)
+
+    walk = FirestoreWalk(project=PROJECT, live="(default)", client=Odd(), time_left=lambda: 0)
+    with pytest.raises(TimeoutError):
+        await walk.count("hung")
+    with pytest.raises(PermissionError) as got:
+        await walk.count("turns")
+    assert "account" not in str(got.value)

@@ -1,8 +1,8 @@
 # evals/r14/backup.py
 """R14 eval, Part A's suite (`backup`, BUILT): backups and the restore drill (docs/plans/
 r14-hardening.md D3, D4, "Per item" A), on in-memory fakes only: nothing calls Google and nothing
-is spent (`tests/r14_fakes_a.py`: the live database, its backups and the drill copy in memory; the
-real adapters run against recording fake SDK clients).
+is spent (`tests/r14_fakes_a.py`: the live database, its backups and the drill copy in memory;
+`tests/r14_fakes_a_sdk.py`: the recording fake SDK clients the real adapters run against).
 
 Cases: a whole drill passes on fakes and deletes its copy; a missing document fails the count; a
 changed key fails; a restamped copy (a restore that stamps a new `update_time`) still compares on
@@ -39,7 +39,6 @@ from r14_fakes_a import (  # noqa: E402
     SNAP,
     UID,
     FakeAdmin,
-    FakeAdminClient,
     FakeWalk,
     RecordingNotifier,
     World,
@@ -47,6 +46,7 @@ from r14_fakes_a import (  # noqa: E402
     seed_rest,
     seed_vault,
 )
+from r14_fakes_a_sdk import FakeAdminClient  # noqa: E402
 
 from jarvis.backup import canary, verify  # noqa: E402
 from jarvis.backup.drill import Drill, DrillDeps  # noqa: E402
@@ -83,8 +83,11 @@ class Clock:
         return self.at
 
 
+NO_ENV_FILE: dict[str, Any] = {"_env_file": None}  # pydantic-settings' own init argument
+
+
 def _settings(**kw: Any) -> Settings:
-    return Settings(_env_file=None, user_timezone="Asia/Kolkata", **kw)
+    return Settings(**NO_ENV_FILE, user_timezone="Asia/Kolkata", **kw)
 
 
 async def _world(**kw: Any) -> World:
@@ -186,11 +189,10 @@ async def _no_live_write(view: View, keys: verify.Keys) -> list[str]:
     for name in ("write", "transaction"):
         if hasattr(held, name):
             out.append(f"the verifier's live side has {name}")
-    try:
-        await held.write([Set(f"{PREFIX}planted/x", {"x": 1})])
+    write = getattr(held, "write", None)  # deliberately looked for: a ReadOnlyDocs has none
+    if write is not None:
+        await write([Set(f"{PREFIX}planted/x", {"x": 1})])
         out.append("a write through the verifier's live side went through")
-    except AttributeError:
-        pass
     start = len(rig.world.live.log)
     await rig.run()
     own = {f"{PREFIX}backup_drill", f"{PREFIX}backup_drills", f"{PREFIX}backup_status"}

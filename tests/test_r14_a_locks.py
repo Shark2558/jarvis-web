@@ -10,13 +10,8 @@ import ast
 from pathlib import Path
 
 import pytest
-from r14_fakes_a import (
-    PROJECT,
-    SNAP,
-    FakeAdminClient,
-    FakeFirestoreClient,
-    sdk_backup,
-)
+from r14_fakes_a import PROJECT, SNAP
+from r14_fakes_a_sdk import FakeAdminClient, FakeFirestoreClient, google_error, sdk_backup
 
 from jarvis.backup.ports import DRILL_DB, LiveTargetRefused
 from jarvis.backup.readonly import ReadOnly, read_only
@@ -105,11 +100,9 @@ async def test_a_gone_drill_copy_reads_as_none_and_protection_is_seen() -> None:
 
 
 async def test_googles_no_permission_becomes_a_plain_permission_error() -> None:
-    from google.api_core.exceptions import PermissionDenied
-
     class Denied(FakeAdminClient):
         async def list_backups(self, *, parent: str) -> object:
-            raise PermissionDenied("no backups permission for this account")
+            raise google_error("PermissionDenied", "no backups permission for this account")
 
     admin = FirestoreAdmin(project=PROJECT, live="(default)", client=Denied())
     with pytest.raises(PermissionError) as got:

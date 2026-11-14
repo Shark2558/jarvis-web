@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
 from r14_fakes_a import (
     IST,
     OTHER_KEY,
@@ -67,9 +68,9 @@ class Rig:
         self.clock.at += dt.timedelta(**kw)
 
 
-def test_the_jobs_are_tick_jobs_with_their_planned_names() -> None:
+def test_the_jobs_are_tick_jobs_with_their_planned_names(settings: Settings) -> None:
     world = World()
-    job = Rig(Settings(_env_file=None), world).job
+    job = Rig(settings, world).job
     assert isinstance(job, TickJob) and job.name == "backup_canary" and 0 < job.budget_s <= 60
     drill_job = BackupDrillJob(None)
     assert isinstance(drill_job, TickJob) and drill_job.name == "backup_drill"
@@ -182,7 +183,9 @@ async def test_a_key_change_is_told_until_every_copy_has_the_new_key(settings: S
     assert rig.sent.kinds().count(("backup_problem", "key_changed")) == 8  # 7-day copies + 1
 
 
-async def test_a_failing_canary_still_lets_the_alerts_run(settings: Settings) -> None:
+async def test_a_failing_canary_still_lets_the_alerts_run(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
     world = World()
     world.snapshot()
     rig = Rig(settings, world, keys=ring())
@@ -191,14 +194,14 @@ async def test_a_failing_canary_still_lets_the_alerts_run(settings: Settings) ->
     async def broken(*_: object) -> bool:
         raise RuntimeError("a bad canary document")
 
-    rig.canaries.write = broken  # type: ignore[method-assign]
+    monkeypatch.setattr(rig.canaries, "write", broken)
     rig.later(hours=settings.backup_max_age_h)
     got = await rig.job.run(OWNERS)
     assert got["failed"] == 1 and rig.sent.kinds() == [("backup_problem", "stale")]
 
 
 async def test_a_failing_list_still_tells_stale_from_the_stored_status(
-    settings: Settings,
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     world = World()
     world.snapshot()
@@ -208,7 +211,7 @@ async def test_a_failing_list_still_tells_stale_from_the_stored_status(
     async def down() -> list[object]:
         raise RuntimeError("Google's admin endpoint is down")
 
-    rig.admin.list_backups = down  # type: ignore[method-assign]
+    monkeypatch.setattr(rig.admin, "list_backups", down)
     rig.later(hours=settings.backup_max_age_h)
     got = await run_jobs((rig.job,), OWNERS)
     assert got == {"backup_canary": "failed"}  # counted, so Part B sees a streak
@@ -230,14 +233,16 @@ async def test_without_a_key_or_firestore_it_still_runs(settings: Settings) -> N
     assert got["failed"] == 0 and got["canary"] == 0
 
 
-async def test_storage_trouble_is_a_job_failure(settings: Settings) -> None:
+async def test_storage_trouble_is_a_job_failure(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
     world = World()
     rig = Rig(settings, world, keys=ring())
 
     async def broken(*_: object) -> None:
         raise RuntimeError("firestore down")
 
-    world.live.write = broken  # type: ignore[method-assign]
+    monkeypatch.setattr(world.live, "write", broken)
     assert await run_jobs((rig.job,), OWNERS) == {"backup_canary": "failed"}
 
 

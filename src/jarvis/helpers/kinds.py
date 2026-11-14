@@ -110,9 +110,10 @@ COLLECTIONS: Mapping[str, tuple[str, ...]] = MappingProxyType(
     }
 )
 
-# The console's sub-tabs, one per part (D19), in order
-TABS: Mapping[PartName, str] = MappingProxyType(
-    {"today": "Today", "house": "Home", "nudges": "Nudges", "kitchen": "Kitchen"}
+# The console's sub-tabs, one per part (D19), in order; R7 I0 seam 12: a fifth, "Watch" (R7 Part
+# D's watch days and sleep), that is NOT an R11 part (no gate, no jobs, no rows here)
+TABS: Mapping[str, str] = MappingProxyType(
+    {"today": "Today", "house": "Home", "nudges": "Nudges", "kitchen": "Kitchen", "watch": "Watch"}
 )
 
 

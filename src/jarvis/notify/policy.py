@@ -45,6 +45,7 @@ DAYTIME_RING_KINDS = frozenset(
         "nudge_free_time",
         "nudge_focus",
         "series_checkin",  # R11.1 D6: asked every time; held at night, never dropped
+        "sos_contact_left",  # R7 D20: an emergency contact sent /stop; held at night
     }
 )
 # R11 D5: nudges are only worth hearing when they are due; in quiet hours they are dropped (feed

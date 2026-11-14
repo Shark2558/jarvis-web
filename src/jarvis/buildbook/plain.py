@@ -193,6 +193,12 @@ ALERT_WORDS: Mapping[str, str] = MappingProxyType(
         "weather_note": "A minor weather note",
         "series_checkin": "A planned session: did it happen?",
         "faces_to_name": "New faces to name from my photo folder",
+        # R7 (docs/plans/r7-mobile.md D25)
+        "sos_sent": "An SOS was sent",
+        "phone_linked": "A phone was linked to JARVIS",
+        "sos_contact_left": "An emergency contact left",
+        "phone_unlinked": "A phone was unlinked",
+        "watch_stale": "The watch has not synced for a day",
     }
 )
 
@@ -217,6 +223,10 @@ PURPOSE_WORDS: Mapping[str, str] = MappingProxyType(
         "wellbeing": "the water and activity log",
         "alerts_place": "the place for weather and disaster alerts",
         "kitchen": "the pantry, diet and saved recipes",
+        # R7
+        "watch": "the watch's daily steps, heart rate and sleep",
+        "sos": "the emergency contacts",
+        "vision": "the camera results you kept",
     }
 )
 

@@ -117,6 +117,7 @@ SUITES = [
     # a picture researched and a person never identified, Vitals and GitHub); each part's negative
     # controls must make the suite fail
     ("r11_1 (gated)", [sys.executable, str(HERE / "r11_1" / "run.py"), "--mock"], True),
+    ("r7 (gated)", [sys.executable, str(HERE / "r7" / "run.py"), "--mock"], True),
 ]
 
 

@@ -117,6 +117,13 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("spend_month", R1, {"kitchen"}),
     ("kitchen_settings", R2, {"kitchen"}),
     ("calendar_kitchen_blocks", R2, {"calendar_change"}),
+    # R7 I0 (docs/plans/r7-mobile.md D25): camera results, watch and sleep, the SOS set-up
+    ("vision_results", R1, {"vision"}),
+    ("watch_today", R1, {"watch"}),
+    ("sleep_last_night", R1, {"watch"}),
+    ("sleep_note", R2, {"watch"}),
+    ("sos_status", R1, {"sos"}),
+    ("sos_send", R3, set()),  # never a tool (D19): no row could ever allow it
     ("memory_search", R1, set()),  # unknown to every group: the risk default applies
     ("brand_new_tool", R3, set()),
 ]
@@ -293,6 +300,10 @@ RISK_OF = {
     # R11.1 I0
     "plans": [R1, R2],
     "pictures": [R1],
+    # R7 I0
+    "vision": [R1],
+    "watch": [R1, R2],
+    "sos": [R1],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -344,6 +355,10 @@ TOOL_OF = {
     # R11.1 I0
     "plans": "series_list",
     "pictures": "picture_research",
+    # R7 I0
+    "vision": "vision_results",
+    "watch": "sleep_note",
+    "sos": "sos_status",
 }
 
 

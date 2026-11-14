@@ -78,7 +78,9 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
 # R6: a build book seal over the storage limit fails every run until the owner raises it (he is
 # told once) and a sweep retries its deletes by itself: neither may 503 the watchdog
 # R11 D3: the helpers' 5-minute clock rides here too; its reminders never fail the laptop check
-ADVISORY_JOBS = frozenset({"health_check", "book_seal", "book_sweep", "helpers_clock"})
+ADVISORY_JOBS = frozenset(
+    {"health_check", "book_seal", "book_sweep", "helpers_clock", "mobile_clock"}
+)
 
 
 class OfflineJob:

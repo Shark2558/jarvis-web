@@ -18,12 +18,15 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "api": "L1",
         "cli": "L1",
         "telegram": "L1",
+        "mobile": "L1",  # R7 I0: the phone parts' contract and the phone's signed request
+        "phone": "L1",  # R7 C: the linked phone, its signed door, the app lock
         # L2 Input Processing: speech, documents, vision at the edge
         "voice": "L2",
         "documents": "L2",
         "faces": "L2",
         "understand": "L2",  # R11.1 B: what was heard, and what it is understood as
         "facegroups": "L2",  # R11.1 C: unnamed face groups from the laptop (ids and counts only)
+        "vision": "L2",  # R7 B: the on-device vision engine's results (never a frame)
         # L3 Context & Orchestration: sessions, long-term memory, scheduled work, undo
         "memory": "L3",
         "recall": "L3",
@@ -46,6 +49,8 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "helpers": "L5",  # R11: the free proactive helpers (one package, four parts)
         "series": "L5",  # R11.1 A: a followed plan of sessions (check-ins, re-planning)
         "picture": "L5",  # R11.1 D: research a picture of a thing, place, label or logo
+        "watch": "L5",  # R7 D: watch days and sleep (Health & Wellbeing, the 11th skill)
+        "sos": "L5",  # R7 D: emergency SOS (Security Advisor)
         # L6 Integration & Tools
         "tools": "L6",
         "integrations": "L6",

@@ -1,0 +1,24 @@
+/* src/jarvis/api/static/console-r7-share.css -- R7 Part A (docs/plans/r7-mobile.md D0, D15): placement only for the
+   share tray. It is the console's own bottom sheet (.sheet, .sheet-in) holding Integrations-style cards (.integ,
+   .ihead, .istate) with the console's buttons (.btn) and notes (.bnote, .bfine): every colour, font, radius and
+   shadow comes from those classes; nothing new is drawn here. */
+
+/* ---- the sheet: one column, a readable width on a desktop ----------------------------------------------------- */
+.r7s .sheet-in{display:flex;flex-direction:column}
+.r7s .r7s-lead{margin:0 4px}
+.r7s .r7s-note{margin-top:0}
+.r7s .r7s-sent{margin:0 4px}
+@media (min-width: 900px){
+  .sheet.r7s{width:min(620px,calc(100vw - 24px))}
+}
+
+/* ---- the items ------------------------------------------------------------------------------------------------- */
+.r7s .r7s-list{display:flex;flex-direction:column;gap:8px}
+.r7s .r7s-list > .bfine{margin:0 4px}
+.r7s .r7s-item .ihead{align-items:flex-start}
+.r7s .r7s-name{min-width:0;overflow-wrap:anywhere}
+
+/* ---- each item's buttons: two to a row, the brain's "can't see" line on a row of its own ----------------------- */
+.r7s .r7s-acts{flex-wrap:wrap;margin-top:10px}
+.r7s .r7s-acts .btn{flex:1 1 calc(50% - 4px);min-width:0;height:auto;min-height:44px;padding:8px 12px;line-height:1.25}
+.r7s .r7s-acts .btn.r7s-wide{flex-basis:100%}

@@ -35,7 +35,10 @@ HTML_SINKS = (
 
 def test_csp_adds_only_the_youtube_nocookie_frame_source() -> None:
     worker = "; worker-src 'self'"  # R3 I0 (D11): the notifications' service worker
-    assert CONSOLE_CSP == BEFORE + "; frame-src https://www.youtube-nocookie.com" + worker
+    manifest = "; manifest-src 'self'"  # R7 I0 (D3): the installable console's manifest
+    assert (
+        CONSOLE_CSP == BEFORE + "; frame-src https://www.youtube-nocookie.com" + worker + manifest
+    )
     assert "youtube.com" not in CONSOLE_CSP.replace("youtube-nocookie.com", "")
     assert "child-src" not in CONSOLE_CSP and "img-src 'self' data:;" in CONSOLE_CSP
 
@@ -99,7 +102,10 @@ async def test_media_panel_dock_tab_sits_behind_more_on_a_phone(client: AsyncCli
     names = re.findall(r'<button class="dk(?: wide)?" type="button" data-open="(\w+)"', dock)
     # R6.1 D7: console-dock.js folds the last tabs behind More when they don't fit (a phone's eight)
     assert "media" in names and names.index("media") >= 7  # past the seven a phone shows
-    assert 'data-sheet-open="media"' in html
+    dock_js = (await client.get("/static/console-dock.js")).text
+    assert (
+        "    media: '" in dock_js
+    )  # R7 I0 seam 10: its More-sheet entry is built by console-dock.js
     # no iframe in the page itself: one exists only after the owner presses Play
     assert "<iframe" not in html
     deck = (await client.get("/static/console-deck.js")).text

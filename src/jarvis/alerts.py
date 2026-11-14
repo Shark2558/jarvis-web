@@ -11,6 +11,7 @@ R3 (docs/plans/r3-home-camera.md D10, D12): the home kinds, and two keywords eve
 in to; held in memory, never stored, logged or audited). A sink that can't do either ignores it.
 R11 (docs/plans/r11-free-helpers.md D5): thirteen helper kinds; `R11_ALERT_KINDS` lists them.
 R11.1 (docs/plans/r11-1-observations.md): two more; `R11_1_ALERT_KINDS` lists them.
+R7 (docs/plans/r7-mobile.md D25): five more; `R7_ALERT_KINDS` lists them.
 """
 
 from __future__ import annotations
@@ -71,6 +72,15 @@ AlertKind = Literal[
     # nudge); "new faces to name" from the home laptop's photo folder is info (feed only).
     "series_checkin",
     "faces_to_name",
+    # R7 (docs/plans/r7-mobile.md D5, D19, D20, D25): an SOS was sent and a phone was linked are
+    # "urgent" (they ring at night) with no off switch (notify.models.NO_SWITCH), and no Telegram
+    # cap may drop an SOS notice (notify.telegram_out.NO_CAP_KINDS); an emergency contact left is
+    # an "important" daytime ring; a phone unlinked and "the watch has not synced" are info.
+    "sos_sent",
+    "phone_linked",
+    "sos_contact_left",
+    "phone_unlinked",
+    "watch_stale",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",
@@ -142,12 +152,20 @@ R11_ALERT_KINDS: tuple[AlertKind, ...] = (
     "weather_note",
 )
 R11_1_ALERT_KINDS: tuple[AlertKind, ...] = ("series_checkin", "faces_to_name")
+R7_ALERT_KINDS: tuple[AlertKind, ...] = (
+    "sos_sent",
+    "phone_linked",
+    "sos_contact_left",
+    "phone_unlinked",
+    "watch_stale",
+)
 
 
 __all__ = [
     "HOME_ALERT_KINDS",
     "R11_1_ALERT_KINDS",
     "R11_ALERT_KINDS",
+    "R7_ALERT_KINDS",
     "AlertKind",
     "AlertResult",
     "AlertSink",

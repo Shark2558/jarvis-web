@@ -170,8 +170,10 @@ async def test_today_and_generate_shapes(gc: AsyncClient) -> None:
         "home",  # R3: null until wired and something happened overnight
         "vitals",  # R4: null until the board has a red / amber line or a spend line
         "helpers",  # R11: null until a helper has a line today
+        "sleep",  # R7 I0 seam 23: null until Part D's day builder keeps a night
         "sections_status",
     }
+    assert b["data"]["sleep"] is None
     assert set(b["data"]["calendar"]) == {"today", "clashes", "free_blocks", "tomorrow_first"}
     assert set(b["data"]["inbox"]) == {
         "total",

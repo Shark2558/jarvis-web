@@ -57,6 +57,7 @@ def _google_console(browser: Any, server_url: str, token: str) -> tuple[Console,
             route.fulfill(status=423, content_type="application/json", body=LOCKED)
 
     c.ctx.route("**/v1/**", bearer)  # the later routes win where they overlap
+    c.ctx.route("**/app/status", bearer)  # R7 Part A: the share tray asks it after sign-in
     c.ctx.route("**/console/config", config)
     c.ctx.route("**/auth/me", who)
     c.page.goto(server_url + "/")

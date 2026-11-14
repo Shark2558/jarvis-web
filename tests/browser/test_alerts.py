@@ -5,7 +5,8 @@
 # shown as text, a 390 px phone with no sideways scroll. /v1/notify* and /v1/push* are answered by
 # the test (page.route); the console is the real one, with I1's tags and console-sw.js served
 # from APP_ASSETS.
-# 0 JS errors and 0 CSP reports throughout.
+# 0 JS errors and 0 CSP reports throughout. R7 (Part A): the worker's click target is a panel
+# (`/?open=<panel>`); tests/browser/test_r7_a_links.py covers the Talk action and the hand-over.
 from __future__ import annotations
 
 import json
@@ -33,13 +34,16 @@ KEYS = [
     "weather_warning", "breach_notice", "nudge_standup", "nudge_hydrate", "nudge_activity",
     "nudge_free_time", "nudge_focus", "weather_note",
     "series_checkin", "faces_to_name",  # R11.1 I0
+    "sos_sent", "phone_linked", "sos_contact_left", "phone_unlinked", "watch_stale",  # R7 I0
 ]  # fmt: skip
-FIXED = {"home_intruder", "home_hazard", "home_summary"}
+# no switch (notify.models.NO_SWITCH): R7 I0 added an SOS sent and a phone linked
+FIXED = {"home_intruder", "home_hazard", "home_summary", "sos_sent", "phone_linked"}
 LEVEL = {"home_intruder": "urgent", "home_hazard": "urgent", "home_summary": "urgent",
          "home_greeting": "info", "home_online": "info", "offline_on": "info",
          "offline_off": "info", "brief_ready": "info",
          "disaster_alert": "urgent", "weather_note": "info",
-         "faces_to_name": "info"}  # fmt: skip
+         "faces_to_name": "info", "sos_sent": "urgent", "phone_linked": "urgent",
+         "phone_unlinked": "info", "watch_stale": "info"}  # fmt: skip
 VAPID = "B" + "A" * 86
 # a real-looking (but fake) subscription the stubbed push manager returns
 SUB = {
@@ -378,7 +382,8 @@ def test_the_worker_shows_the_template_text_and_ignores_junk(
               new Function('self', __SRC__)(self);
               const json = (d) => { if (d === 'bad') throw new Error('x'); return d; };
               const ev = (d) => ({ data: { json: () => json(d) }, waitUntil: (p) => p });
-              const good = { kind: 'home_intruder', text: 'Someone at the Gate.', url: '/#home' };
+              const good = { kind: 'home_intruder', text: 'Someone at the Gate.',
+                url: '/?open=home' };
               await handlers.push(ev(good));
               await handlers.push(ev({ kind: 'x', text: 'ok', url: 'https://evil.example/' }));
               await handlers.push(ev('bad'));
@@ -386,7 +391,9 @@ def test_the_worker_shows_the_template_text_and_ignores_junk(
               return shown;
             }""".replace("__SRC__", json.dumps((STATIC / "console-sw.js").read_text()))
         )
-        assert out[0][1]["body"] == "Someone at the Gate." and out[0][1]["data"]["url"] == "/#home"
+        assert out[0][1]["body"] == "Someone at the Gate."
+        assert out[0][1]["data"]["url"] == "/?open=home"  # R7 D8: the panel it is about
+        assert out[0][1]["tag"] == "home_intruder"  # phone-contract.md 6: the app's channels
         assert out[1][1]["data"]["url"] == "/"  # a foreign address is never a click target
         assert out[2][1]["body"] == "JARVIS has something for you."
         assert out[3][1]["data"]["url"] == "/"  # a protocol-relative address is not a path

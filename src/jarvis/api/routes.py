@@ -112,6 +112,7 @@ class BrainInfo(BaseModel):
     default: bool
     trains_on_content: bool
     tools_allowed: bool
+    sees_pictures: bool  # R7 D12: only such a brain is offered "Ask the AI about this photo"
     warning: str
     models: dict[str, str]
 
@@ -127,6 +128,7 @@ async def list_brains(brain: Brain = Depends(_brain)) -> list[BrainInfo]:
             default=b.id == reg.default.id,
             trains_on_content=b.trains_on_content,
             tools_allowed=b.tools_allowed,
+            sees_pictures=b.sees_pictures,
             warning=b.warning,
             models={t.value: m for t, m in b.tiers.items()},
         )

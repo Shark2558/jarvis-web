@@ -150,5 +150,19 @@ class DocShowLock:
             self._cache.pop(uid, None)  # read it again next time
         return lifted
 
+    async def end_sessions(self, uid: str, *, before: float) -> None:
+        """R7 D21 "Sign out everywhere": every cookie session of `uid` issued before `before`
+        stops counting (the same mark as a Resume's, kept beside any lock in the same document;
+        a mark never moves back). This instance sees it at once, the others within `CACHE_S`."""
+
+        async def work(tx: DocTx) -> View:
+            raw = await tx.get(self._path(uid)) or {}
+            lock, mark = self._parse(raw)
+            after = before if mark is None else max(mark, before)
+            tx.set(self._path(uid), {**raw, AFTER: after})
+            return lock, after
+
+        self._cache[uid] = (await self._docs.transaction(work), self._clock())
+
 
 __all__ = ["AFTER", "CACHE_S", "UNREADABLE", "DocShowLock"]

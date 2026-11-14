@@ -85,6 +85,8 @@ def repo(tmp_path: Path) -> Repo:
 
 
 def test_the_release_label_is_the_highest_release_plan(repo: Repo, tmp_path: Path) -> None:
+    # with no src/jarvis/__init__.py (this fixture): the highest plan, as before R7 I0 seam 2; with
+    # one, its version names the release (tests/test_r7_seams.py)
     assert plans.release_label(repo) == "R5.1"
     (tmp_path / "docs" / "plans" / "r12-big.md").write_text("# R12\n", encoding="utf-8")
     again = Repo.from_dir(tmp_path, sha="c" * 40, committed_at=COMMIT_DATE)
@@ -205,10 +207,12 @@ def test_planted_personal_data_is_scrubbed_and_leaks_without_the_scrub(tmp_path:
 def test_the_real_plans_parse(tmp_path: Path) -> None:
     r = Repo.from_git(ROOT)
     read = plans.read_plans(r, default_scrubber())
-    # R11.1's plan is the newest since R11.1 I0 (R11's before it); R6's own decisions are still read
-    assert read[0].path == "docs/plans/r11-1-observations.md" and read[0].label == "R11.1"
+    # R7 I0 seam 2: the release is named from the repository's own version (7.0.0 -> R7) and its
+    # plan comes first, though R11.1's plan has the higher number; R6's own decisions are still read
+    assert read[0].path == "docs/plans/r7-mobile.md" and read[0].label == "R7"
+    assert read[1].path == "docs/plans/r11-1-observations.md"
     r6 = next(d for d in plans.decisions(read) if d.plan == "docs/plans/r6-build-book.md")
     assert len(r6.decisions) == 17 and r6.decisions[0].startswith("D1 · Deterministic")
     assert any(f.release == "R6" for f in plans.fit_rows(read))
     lims = plans.limitations(read)
-    assert lims[0].release == "R11.1" and 0 < len(lims) <= MAX_LIMITATIONS  # the newest first
+    assert lims[0].release == "R7" and 0 < len(lims) <= MAX_LIMITATIONS  # this release's first

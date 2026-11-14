@@ -1,0 +1,37 @@
+/* src/jarvis/api/static/console-r7-sos.css -- R7 Part D (docs/plans/r7-mobile.md D0): placement only for the SOS
+   sheet, the Emergency SOS card and Helpers -> Watch. Existing tokens and classes (.bdialog, .integ, .btn, .minput,
+   .sacts, .snote, .hp-*); no new colours, fonts, radii or shadows. Every target is at least 44 px. */
+
+/* the sheet: the hold button and Cancel run the full width; the SMS and call links sit as buttons */
+.sos-sheet .sacts{flex-wrap:wrap}
+.sos-sheet .btn,.sos-card .btn,.sos-link{min-height:44px;height:auto}
+.sos-hold{flex:1 1 100%;min-height:64px}
+.sos-test,.sos-safe{flex:1 1 140px}
+.sos-cancel{display:block;width:100%;min-height:64px;margin-top:12px}
+.sos-link{display:inline-flex;align-items:center;justify-content:center;flex:1 1 auto;padding:0 14px;text-decoration:none}
+.sos-links .sos-link{flex:1 1 100%}
+.sos-close{display:block;width:100%;margin-top:14px}
+.sos-place{margin-top:6px}
+.sos-say{min-height:3em}
+.sos-row{margin:6px 0 0;overflow-wrap:anywhere}
+.sos-result:empty,.sos-links:empty{display:none}
+
+/* the card: a field is its label above its input; a contact is its words, then its buttons */
+.sos-card .sos-field{display:block;margin:10px 0 0}
+.sos-card .sos-field > .snote{display:block;margin:0 0 4px}
+.sos-input{height:44px}
+.sos-small{flex:none;padding:0 14px;margin-top:8px}
+.sos-contact{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 10px;padding:8px 0;border-top:1px solid var(--line-2)}
+.sos-contact .btxt{flex:1 1 180px;min-width:0}
+.sos-contact .btxt b,.sos-contact .btxt small{display:block;overflow-wrap:anywhere}
+.sos-contact .sacts{margin-top:0}
+.sos-contact .sos-small{margin-top:0}
+.sos-linkbox{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.sos-linkbox .sos-input{flex:1 1 220px;min-width:0}
+.sos-linkbox .sos-small{margin-top:0}
+.sos-open{display:block;width:100%;margin-top:12px}
+
+/* Helpers -> Watch: two time fields side by side, 44 px; Save sits on its own */
+.hp-watch .wt-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.hp-watch .wt-time{height:44px}
+.hp-watch .wt-save{flex:none;min-height:44px;padding:0 18px}

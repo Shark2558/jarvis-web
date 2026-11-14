@@ -162,6 +162,7 @@ def test_cards_are_grouped_and_hostile_text_stays_text(browser: Any) -> None:
         "What JARVIS remembers",
         "Settings and safety",
         "Faces",
+        "This device",  # R7 Part C: the app lock's switch, drawn by console-r7-lock.js
     ]
     assert "Not built yet. Nothing is stored." in page.locator("#pv-faces").inner_text()
     assert page.locator("#pv-faces button").count() == 0

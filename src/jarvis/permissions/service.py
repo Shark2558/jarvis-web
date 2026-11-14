@@ -58,7 +58,9 @@ from jarvis.permissions.groups import (
 from jarvis.permissions.models import (
     BOOK_LOCK_TARGET,
     BOOK_OPEN_TARGET,
+    DEVICE_UNLOCK_TARGET,
     HOME_DISARM_TARGET,
+    PHONE_LINK_TARGET,
     TARGET_PATTERN,
     TARGETED_PURPOSES,
     ChallengeRequest,
@@ -146,6 +148,8 @@ _EXACT_TARGETS = {
     "home_disarm": _DISARM_TARGET,
     "book_open": re.compile(BOOK_OPEN_TARGET),
     "book_resume": re.compile(BOOK_LOCK_TARGET),
+    "phone_link": re.compile(PHONE_LINK_TARGET),  # R7 D5
+    "device_unlock": re.compile(DEVICE_UNLOCK_TARGET),  # R7 D21
 }
 NEEDS_TARGET = "That passkey check has to name what it is for."
 

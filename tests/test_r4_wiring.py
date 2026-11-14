@@ -46,7 +46,8 @@ R4_ROUTES = (
     "/v1/settings/brain-mode",
 )
 
-R11_JOBS = ("helpers_clock", "helpers_daily")  # R11 I0: on every tick, no key needed
+# R11 I0: on every tick, no key needed; R7's own two after them (I1 fixer)
+R11_JOBS = ("helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily")
 
 
 @dataclass

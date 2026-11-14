@@ -6,6 +6,12 @@ not known here). Single common words such as "stop" are never hints: they would 
 speech. ``COMMAND_HINTS`` is every multi-word phrase the router understands (the table in
 ``console-voice-commands.js``; ``tests/test_r5_seams.py`` keeps the two in step). Sending them all
 is the caller's choice. No ``boost`` is set (D16).
+
+R7 (docs/plans/r7-mobile.md D11, D19, I0 seam 13): ``R7_PHRASES`` are the multi-word phrases of the
+two local commands R7's parts register through ``JarvisVoiceCommands.register`` (``camera.off``:
+Part B, locks this device's camera, never touches the home burglar camera; ``sos.open``: Part D,
+only OPENS the SOS screen, which still needs his hold). Nothing here turns a camera on. They are
+hints too. The single word "SOS" is understood by the router but is never a hint.
 """
 
 from __future__ import annotations
@@ -74,3 +80,37 @@ COMMAND_HINTS: tuple[str, ...] = (
     "list audio devices",
     "which speaker are you using",
 )
+
+# R7 D11 ("Jarvis, cameras off" in twenty phrasings) and D19 ("Jarvis, SOS" only opens the screen)
+R7_PHRASES: dict[str, tuple[str, ...]] = {
+    "camera.off": (
+        "cameras off",
+        "camera off",
+        "stop the camera",
+        "stop the cameras",
+        "turn off the camera",
+        "turn the camera off",
+        "turn off the cameras",
+        "switch off the camera",
+        "switch the camera off",
+        "switch off the cameras",
+        "close the camera",
+        "shut the camera",
+        "shut off the camera",
+        "kill the camera",
+        "disable the camera",
+        "lock the camera",
+        "put the camera off",
+        "no more camera",
+        "stop looking",
+        "stop watching me",
+    ),
+    "sos.open": (
+        "open sos",
+        "emergency sos",
+        "open emergency sos",
+        "open the sos screen",
+        "show the sos screen",
+    ),
+}
+COMMAND_HINTS = (*COMMAND_HINTS, *(p for phrases in R7_PHRASES.values() for p in phrases))

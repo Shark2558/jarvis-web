@@ -84,6 +84,10 @@ SAMPLES: dict[str, tuple[str, list[ActionRisk]]] = {
     # R11.1 I0: the study-plan and picture-research rows
     "plans": ("series_list", [R1, R2]),
     "pictures": ("picture_research", [R1]),
+    # R7 I0 (docs/plans/r7-mobile.md D25): camera results, watch and sleep, the SOS set-up
+    "vision": ("vision_results", [R1]),
+    "watch": ("sleep_note", [R1, R2]),
+    "sos": ("sos_status", [R1]),
 }
 OUTCOME = {
     Effect.ALLOW: GatewayOutcome.EXECUTED,

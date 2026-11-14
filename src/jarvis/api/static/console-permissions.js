@@ -127,8 +127,10 @@
     // R2: a passkey check for vault_unlock / privacy_delete / privacy_export, bound to `target` (a category and its rev, a bin id)
     // R3: home_disarm, bound to "<home_id>:<arm rev>" (the Home panel's Disarm)
     // R6: book_open, bound to the audience ("owner" | "guest"); book_resume, bound to the lock id ("bl_<12 hex>")
+    // R7: phone_link, bound to the link code's id ("pl_<12 hex>"); device_unlock, to the session ("ss_<24>")
     prove: (purpose, target) => {
-      if (!['vault_unlock', 'privacy_delete', 'privacy_export', 'home_disarm', 'book_open', 'book_resume'].includes(purpose)) return Promise.reject(plain(FAILED));
+      if (!['vault_unlock', 'privacy_delete', 'privacy_export', 'home_disarm', 'book_open', 'book_resume',
+        'phone_link', 'device_unlock'].includes(purpose)) return Promise.reject(plain(FAILED));
       return prove(target == null || target === '' ? { purpose } : { purpose, target: String(target) });
     },
     message: (e) => errText(e),

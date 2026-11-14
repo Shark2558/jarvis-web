@@ -1,0 +1,58 @@
+{
+  "id": "/",
+  "name": "JARVIS",
+  "short_name": "JARVIS",
+  "description": "Your personal assistant: talk, alerts, the camera and sharing into JARVIS.",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "start_url": "/?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#04070D",
+  "background_color": "#04070D",
+  "prefer_related_applications": false,
+  "icons": [
+    {"src": "/static/icons/jarvis-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icons/jarvis-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icons/jarvis-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {
+      "name": "Talk to JARVIS",
+      "short_name": "Talk",
+      "description": "Opens JARVIS with the mic button ready. Tap it to talk.",
+      "url": "/?source=app&do=talk",
+      "icons": [{"src": "/static/icons/talk-96.png", "sizes": "96x96", "type": "image/png"}]
+    },
+    {
+      "name": "Camera",
+      "short_name": "Camera",
+      "description": "Opens the Camera panel. The camera starts only when you tap it.",
+      "url": "/?source=app&do=look",
+      "icons": [{"src": "/static/icons/look-96.png", "sizes": "96x96", "type": "image/png"}]
+    },
+    {
+      "name": "Emergency SOS",
+      "short_name": "SOS",
+      "description": "Opens the SOS screen. Nothing is sent until you hold the button.",
+      "url": "/?source=app&do=sos",
+      "icons": [{"src": "/static/icons/sos-96.png", "sizes": "96x96", "type": "image/png"}]
+    }
+  ],
+  "share_target": {
+    "action": "/app/share/in",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": ["image/jpeg", "image/png", "image/webp", "application/pdf", ".jpg", ".jpeg", ".png", ".webp", ".pdf"]
+        }
+      ]
+    }
+  }
+}

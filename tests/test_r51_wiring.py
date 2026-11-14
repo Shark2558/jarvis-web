@@ -101,6 +101,8 @@ async def test_without_a_home_the_health_job_rides_the_tick_only(settings: Setti
             "health_check",
             "helpers_clock",  # R11 I0
             "helpers_daily",
+            "mobile_clock",  # R7's own two, after R11's
+            "mobile_daily",
         ]
         assert app.state.health_job is app.state.tick_jobs[1]
 

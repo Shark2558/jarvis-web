@@ -1,0 +1,88 @@
+// src/jarvis/api/static/console-r7.js -- R7 I0 (docs/plans/r7-mobile.md "The I0 seams" 10, 25): the one line
+// console.html gains for R7's modules. This module loads the parts' modules and their stylesheets itself, so no
+// builder edits console.html:
+//   console-r7-send.js      I0  the one door that sends a picture: Ask, Vault, Attach, "Pictures sent today"
+//   console-vision.js       I0  the vision engine's port (core); B fills its tasks
+//   console-r7-links.js     A   launch addresses (?do=talk|look|sos|shared, ?open=<panel>): open a screen, never act
+//   console-r7-share.js     A   the share tray (items wait on the phone until a press)
+//   console-camera.js       B   the camera's one door and hard off switch
+//   console-camera-panel.js B   the Camera panel (Look, Results, Cameras)
+//   console-r7-phone.js     C   Integrations -> Phone app (link, unlink, sign out everywhere)
+//   console-r7-lock.js      C   the app lock's unlock cover (console.js fires jarvis:device-locked)
+//   console-r7-sos.js       D   the SOS sheet and Integrations -> Emergency SOS
+// (Helpers -> Watch, console-helpers-watch.js, is loaded by the Helpers frame.) Each part's stylesheet may only
+// place things: existing tokens and classes, no new colours, fonts, radii or shadows (plan D0), at most 150
+// lines. No build step; CSP script-src 'self' and style-src 'self'; textContent only. A module asks the server
+// NOTHING before sign-in (BRIEF-COMMON.md): it waits for jarvis:ready.
+//   window.JarvisMobile  { mk(tag, cls, text) -> element, api(path, opts) -> Promise<json>,
+//                          part(name, obj) -> obj   a part publishes what others may call,
+//                          parts                    {send, vision, links, share, camera, panel, phone, lock, sos},
+//                          when(iso, withTime)      "12 Nov, 14:05" (or "12 Nov"), '' for anything that is not a date }
+const PARTS = ['send', 'vision', 'links', 'share', 'camera', 'panel', 'phone', 'lock', 'sos'];
+const parts = {};
+
+function mk(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+// the console's own transport (auth, X-Requested-With); a part never calls fetch itself
+function api(path, opts) {
+  const con = window.JarvisConsole;
+  if (!con || typeof con.api !== 'function') return Promise.reject(new Error('The console is still starting.'));
+  return con.api(path, opts);
+}
+
+function part(name, obj) {
+  if (PARTS.includes(name) && obj && typeof obj === 'object' && !parts[name]) parts[name] = obj;
+  return obj;
+}
+
+// ONE date shape for every R7 screen ("12 Nov, 14:05"), whatever the browser's own locale (a US one would say
+// "Nov 12, 02:05 PM"); the same words as the brief and the server. Anything that is not a date reads as ''.
+const WHEN_TIME = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+const WHEN_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+function when(iso, withTime) {
+  if (!(typeof iso === 'string' && iso && iso.length <= 40) && !(iso instanceof Date)) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return (withTime ? WHEN_TIME : WHEN_DATE).format(d);
+}
+
+window.JarvisMobile = { mk, api, part, parts, when };
+
+for (const href of ['/static/console-r7-share.css', '/static/console-camera.css',
+  '/static/console-r7-phone.css', '/static/console-r7-sos.css']) {
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = href;
+  document.head.append(css);
+}
+// A part whose file cannot load is said so, plainly: a console line, and a card (or a note) where the part would
+// have been ("... could not load"); the other parts still start. Existing classes only (D0).
+const MODULES = [
+  ['console-r7-send.js', 'The picture door', '', () => import('./console-r7-send.js')], ['console-vision.js', 'The vision engine', '', () => import('./console-vision.js')],
+  ['console-r7-links.js', 'Launch addresses', '', () => import('./console-r7-links.js')], ['console-r7-share.js', 'The share tray', '', () => import('./console-r7-share.js')],
+  ['console-camera.js', 'The camera', 'camera', () => import('./console-camera.js')], ['console-camera-panel.js', 'Camera', 'camera', () => import('./console-camera-panel.js')],
+  ['console-r7-phone.js', 'Phone app', 'integrations', () => import('./console-r7-phone.js')], ['console-r7-lock.js', 'The unlock cover', '', () => import('./console-r7-lock.js')],
+  ['console-r7-sos.js', 'Emergency SOS', 'integrations', () => import('./console-r7-sos.js')],
+];
+function noLoad(file, label, where, err) {
+  console.warn('JARVIS: ' + file + ' could not load (' + (err && err.message ? err.message : 'unknown') + ').');
+  const words = label + ' could not load, Sir. Reload the page to try again.';
+  if (where === 'camera') {
+    const body = document.getElementById('cameraBody');
+    if (body && !body.querySelector('.r7-noload')) body.append(mk('p', 'bnote r7-noload', words));
+  } else if (where === 'integrations') {
+    const host = document.getElementById('integrations');
+    if (!host || !host.parentNode) return;
+    const head = mk('div', 'ihead');
+    head.append(mk('b', '', label), mk('span', 'istate', 'Could not load'));
+    const card = mk('section', 'integ r7-noload');
+    card.append(head, mk('div', 'inote', words));
+    host.parentNode.insertBefore(card, host.nextSibling);
+  }
+}
+for (const [file, label, where, load] of MODULES) load().catch((err) => noLoad(file, label, where, err));

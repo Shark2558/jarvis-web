@@ -102,3 +102,48 @@ async def test_an_oversized_reply_is_refused() -> None:
 
 async def test_the_token_is_not_in_the_clients_repr() -> None:
     assert TOKEN not in repr(FakeBot().client())
+
+
+# ---- R7 D19 (Part D): the SOS map pin ----------------------------------------------------------
+async def test_send_location_posts_the_pin_in_the_body_never_in_the_address(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    bot = FakeBot()
+    with caplog.at_level(logging.DEBUG):
+        await bot.client().send_location(42, -1.234567, -23.456789, accuracy_m=20)
+    assert bot.paths == [f"/bot{TOKEN}/sendLocation"]  # the address holds no coordinate
+    assert bot.of("sendLocation") == [
+        {"chat_id": 42, "latitude": -1.234567, "longitude": -23.456789, "horizontal_accuracy": 20}
+    ]
+    assert "1.234567" not in caplog.text and "23.456789" not in caplog.text
+
+
+async def test_send_location_caps_the_accuracy_at_telegrams_limit_and_drops_a_bad_one() -> None:
+    bot = FakeBot()
+    c = bot.client()
+    await c.send_location(42, 1.0, 2.0, accuracy_m=5000)
+    await c.send_location(42, 1.0, 2.0, accuracy_m=None)
+    await c.send_location(42, 1.0, 2.0, accuracy_m=-3)
+    sent = bot.of("sendLocation")
+    assert sent[0]["horizontal_accuracy"] == 1500
+    assert "horizontal_accuracy" not in sent[1] and "horizontal_accuracy" not in sent[2]
+
+
+@pytest.mark.parametrize(("lat", "lon"), [(91.0, 0.0), (0.0, 181.0), (float("nan"), 0.0)])
+async def test_send_location_refuses_an_impossible_place_before_any_call(
+    lat: float, lon: float
+) -> None:
+    bot = FakeBot()
+    with pytest.raises(TelegramError) as ei:
+        await bot.client().send_location(42, lat, lon)
+    assert bot.calls == [] and "sendLocation" in str(ei.value)
+    assert not any(ch.isdigit() for ch in str(ei.value))  # no coordinate in the words
+
+
+async def test_a_failed_pin_names_the_method_only(caplog: pytest.LogCaptureFixture) -> None:
+    bot = FakeBot()
+    bot.fail.add("sendLocation")
+    with caplog.at_level(logging.DEBUG), pytest.raises(TelegramError) as ei:
+        await bot.client().send_location(42, -1.234567, -23.456789)
+    assert "sendLocation" in str(ei.value) and "VENDOR" not in str(ei.value)
+    assert "1.234567" not in caplog.text + str(ei.value)

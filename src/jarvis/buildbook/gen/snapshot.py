@@ -28,7 +28,7 @@ from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-from jarvis.buildbook.gen.libs import licence_from_text
+from jarvis.buildbook.gen.libs import VISION_DIR, licence_from_text
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import SECRET_SHAPES
 from jarvis.buildbook.model import MIB, SNAPSHOT_CAP_BYTES, ZIP_STAMP
@@ -39,7 +39,11 @@ THIRD_PARTY = "THIRD_PARTY.json"
 LARGE_BYTES = MIB  # a file over 1 MB is left out (listed)
 OWN = "JARVIS's own"
 VENDORED_DIRS = ("src/jarvis/api/static/vendor/", "src/jarvis/api/static/wakeword/")
-BINARY_SUFFIXES = (".onnx", ".wasm", ".wav", ".woff2", ".png", ".jpg", ".pdf", ".zip")
+BINARY_SUFFIXES: tuple[str, ...] = (
+    *(".onnx", ".wasm", ".wav", ".woff2", ".png", ".jpg", ".pdf", ".zip"),
+    *(".jar", ".ttf", ".task", ".tflite", ".gz", ".webp"),  # R7: Android and vision files
+)
+ANDROID_BUILD = re.compile(r"^android/(?:.+/)?build/")  # R7: an Android build output is never read
 # the home kit's skip rules (home/kit.py), copied so the generator imports nothing from the app;
 # tests/test_book_gen_snapshot.py keeps them equal
 KIT_SKIP_NAMES = frozenset(
@@ -86,6 +90,8 @@ def left_out(repo: Repo, rel: str) -> str | None:
     name, parts = rel.rsplit("/", 1)[-1], rel.split("/")
     if rel.startswith(VENDORED_DIRS):
         return "vendored"
+    if ANDROID_BUILD.match(rel):
+        return "build output"
     if any(p in KIT_SKIP_PARTS for p in parts) or name in KIT_SKIP_NAMES:
         return "home kit skip rule"
     if name.endswith(KIT_SKIP_SUFFIXES):
@@ -97,9 +103,30 @@ def left_out(repo: Repo, rel: str) -> str | None:
     return None
 
 
+def _manifest_licence(repo: Repo, folder: str, name: str) -> str | None:
+    """I1: a vision file's licence as its release's MANIFEST.json names it (the licence files sit
+    one folder up, beside the release folders); None when the manifest does not name one."""
+    try:
+        files = json.loads(repo.text(f"{folder}/MANIFEST.json") or "{}").get("files") or {}
+    except (ValueError, AttributeError):
+        return None
+    entry = files.get(name) if isinstance(files, dict) else None
+    named = entry.get("licence") if isinstance(entry, dict) else None
+    if not (isinstance(named, str) and _LICENCE_FILE.match(named)):
+        return None
+    text = repo.text(f"{folder.rsplit('/', 1)[0]}/{named}")
+    return licence_from_text(text) if text else None
+
+
 def _licence(repo: Repo, rel: str) -> str:
-    """The licence of the licence file beside a left-out file (matched by name), else our own."""
+    """The licence of the licence file beside a left-out file (matched by name), else our own;
+    a vision file's comes from its release's MANIFEST.json."""
     folder, name = rel.rsplit("/", 1) if "/" in rel else ("", rel)
+    parent = folder.rsplit("/", 1)[0] if "/" in folder else ""
+    if parent.endswith("/" + VISION_DIR.rstrip("/")) and name != "MANIFEST.json":
+        named = _manifest_licence(repo, folder, name)
+        if named:
+            return named
     prefix = f"{folder}/" if folder else ""
     beside = [f for f in repo.under(prefix) if "/" not in f[len(prefix) :]]
     found = {f: _LICENCE_FILE.match(f[len(prefix) :]) for f in beside}
@@ -180,6 +207,7 @@ def build(repo: Repo, fakes: Fakes, *, cap: int = SNAPSHOT_CAP_BYTES) -> Snapsho
 __all__ = [
     "FAKES_FILE",
     "Fakes",
+    "ANDROID_BUILD",
     "KIT_SKIP_NAMES",
     "KIT_SKIP_PARTS",
     "KIT_SKIP_SUFFIXES",

@@ -10,7 +10,7 @@
 //       and, from 5 rupees up, the line above Send with the two tiers; the owner chooses, then it is sent. An
 //       estimate that failed (unavailable, an error, an odd answer) asks "Couldn't estimate the cost; send anyway?"
 //   shrink(file) -> file   a picture made smaller in the browser before upload (longest side and weight from
-//       GET /v1/input; a canvas re-draw, which also drops camera and location data)
+//       GET /v1/input; a canvas re-draw, which also drops camera and location data; R7 I1: every picture sent to the brain, attached or shared in is redrawn; one that cannot be is refused)
 //   folder(fileList) -> {blob, name, count, left}   a picked folder's readable files as ONE stored zip
 //   limits() -> what GET /v1/input said (accept list, files a message, megabytes); console-attach.js is told
 //   hints() -> this turn's recognition hints, for console-voice-phrases.js
@@ -20,7 +20,7 @@ const F = window.JarvisFixes;
 const $ = (id) => document.getElementById(id);
 const TIERS = ['fast', 'balanced', 'strong'];
 const ARCHIVES = ['.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.jar', '.iso'];
-const PICTURE = /\.(png|jpe?g)$/i;
+const PICTURE = /\.(png|jpe?g|webp)$/i; // R7 I0 seam 25: a shared WebP is redrawn as a JPEG
 const JPEG_TRIES = [0.85, 0.7, 0.55, 0.4];
 let large = Object.freeze({ chars: 40000, sheets: 3, rows: 2000, pictures: 2 }); // GET /v1/input says (estimate.py)
 const UNDERSTAND_WAIT_MS = 8000;
@@ -173,29 +173,39 @@ async function cost(o) {
 }
 
 // ---- pictures: made smaller here, before they leave the browser -----------------------------------------------
-function drawn(bmp, w, h) {
+function drawn(bmp, w, h, white = true) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
   if (!g) return null;
-  g.fillStyle = 'white'; g.fillRect(0, 0, w, h); // a see-through PNG becomes a JPEG on white
+  if (white) { g.fillStyle = 'white'; g.fillRect(0, 0, w, h); } // a see-through PNG becomes a JPEG on white
   g.drawImage(bmp, 0, 0, w, h);
   return c;
 }
+const blobOf = (c, type, q) => new Promise(resolve => c.toBlob(resolve, type, q));
+/** R7 I1 (EXIF): every picture sent to the brain, attached to a message or shared into JARVIS is redrawn here before it leaves, so no camera or location data travels with it: a PNG
+ *  small enough stays a lossless PNG (its chunks dropped), anything else becomes a JPEG (never the original). A picture
+ *  that cannot be redrawn returns null (it must NOT go as it is); a file that is not a picture comes back unchanged. */
 async function shrink(file) {
-  if (!file || !PICTURE.test(file.name || '') || typeof createImageBitmap !== 'function') return file;
+  if (!file || !PICTURE.test(file.name || '')) return file;
+  if (typeof createImageBitmap !== 'function') return null;
   let bmp = null;
-  try { bmp = await createImageBitmap(file); } catch (_) { return file; } // not a picture this browser can read: the server says so
+  try { bmp = await createImageBitmap(file); } catch (_) { return null; }
   const side = limits.picture_side, most = limits.picture_max_kb * 1024;
   const scale = Math.min(1, side / Math.max(bmp.width, bmp.height, 1));
-  if (scale === 1 && file.size <= most) { if (bmp.close) bmp.close(); return file; } // small enough already
-  const c = drawn(bmp, Math.max(1, Math.round(bmp.width * scale)), Math.max(1, Math.round(bmp.height * scale)));
-  if (bmp.close) bmp.close();
-  if (!c) return file;
-  for (const q of JPEG_TRIES) {
-    const blob = await new Promise(resolve => c.toBlob(resolve, 'image/jpeg', q));
-    if (blob && blob.size <= most) return new File([blob], String(file.name).replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
+  if (scale === 1 && /\.png$/i.test(file.name)) {
+    const p = drawn(bmp, w, h, false), png = p ? await blobOf(p, 'image/png') : null;
+    if (png && png.size <= most) { if (bmp.close) bmp.close(); return new File([png], String(file.name), { type: 'image/png' }); }
   }
-  return file;
+  const c = drawn(bmp, w, h);
+  if (bmp.close) bmp.close();
+  if (!c) return null;
+  let last = null;
+  for (const q of JPEG_TRIES) {
+    last = await blobOf(c, 'image/jpeg', q);
+    if (last && last.size <= most) break;
+  }
+  return last ? new File([last], String(file.name).replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }) : null; // too big still: the server says so
 }
 
 // ---- a folder: its readable files as one stored (uncompressed) zip ----------------------------------------------
@@ -255,11 +265,13 @@ async function folder(list) {
   if (!keep.length) throw new Error('Nothing in this folder is a kind JARVIS reads.');
   if (keep.length > limits.folder_max_files) throw new Error(`This folder has ${keep.length} files JARVIS could read; it reads up to ${limits.folder_max_files} from one folder.`);
   let total = 0;
-  for (const e of keep) {
+  for (const e of keep.slice()) {
     const small = await shrink(e.file);
+    if (!small) { keep.splice(keep.indexOf(e), 1); left.push(`${e.file.name} (could not be prepared on this device, so it was left out)`); continue; }
     if (small !== e.file) { e.path = e.path.replace(/\.[^./]+$/, '') + '.jpg'; e.file = small; }
     total += e.file.size;
   }
+  if (!keep.length) throw new Error('Nothing in this folder could be prepared on this device.');
   if (total > limits.file_mb * 1024 * 1024) throw new Error(`This folder's readable files are ${sizeText(total)} together; one folder may be ${limits.file_mb} MB. Attach fewer files.`);
   return { blob: await pack(keep), name, count: keep.length, left };
 }

@@ -65,6 +65,12 @@ PURPOSES: tuple[str, ...] = (
     "wellbeing",
     "alerts_place",
     "kitchen",
+    # R7 (docs/plans/r7-mobile.md D17, D20, D12): a watch day's steps, heart rate and sleep (a
+    # health record), the emergency contacts and their Telegram ids (and, as a MAC domain, the
+    # hash of a join word: `mac("sos", word)`), and the camera results he chose to keep
+    "watch",
+    "sos",
+    "vision",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

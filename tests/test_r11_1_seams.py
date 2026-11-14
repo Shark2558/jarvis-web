@@ -70,7 +70,7 @@ def _lines(path: Path) -> int:
 
 
 def test_the_version_is_eleven_point_one() -> None:
-    assert jarvis.__version__ == "11.1.1"  # R11.1 hotfix 1 (was 11.1.0)
+    assert jarvis.__version__ == "7.0.0"  # R7 I0 (11.1.1 at R11.1 hotfix 1; nothing compares it)
 
 
 # ---- settings -----------------------------------------------------------------------------------
@@ -115,7 +115,8 @@ def test_a_setting_outside_its_range_is_refused(field: str, bad: int) -> None:
 def test_two_kinds_make_thirty_eight() -> None:
     every = get_args(AlertKind)
     assert R11_1_ALERT_KINDS == ("series_checkin", "faces_to_name")
-    assert len(every) == len(set(every)) == 38 and set(DEFAULT_URGENCY) == set(every)
+    # R7 I0 added five (tests/test_r7_seams.py): 43
+    assert len(every) == len(set(every)) == 43 and set(DEFAULT_URGENCY) == set(every)
     assert DEFAULT_URGENCY["series_checkin"] == "important"
     assert DEFAULT_URGENCY["faces_to_name"] == "info"
     # "did the session happen?" is asked every time: it rings by day and is HELD at night,
@@ -135,7 +136,7 @@ def test_the_held_summary_and_the_alerts_card_know_both_kinds() -> None:
 # ---- permission rows ----------------------------------------------------------------------------
 def test_two_rows_make_forty_six_and_sit_before_maps() -> None:
     ids = [g.id for g in GROUPS]
-    assert len(ids) == len(set(ids)) == 46
+    assert len(ids) == len(set(ids)) == 49  # R7 I0: + 3 after Camera (tests/test_r7_seams.py)
     assert ids[ids.index("kitchen") + 1 : ids.index("maps")] == ["plans", "pictures"]
     plans, pictures = get_group("plans"), get_group("pictures")
     assert plans is not None and pictures is not None
@@ -241,7 +242,8 @@ def test_the_line_budgets_leave_the_builders_room() -> None:
     assert _lines(SRC / "tools" / "gateway.py") <= 760  # no part may grow it
     # guard 750; R11.1 I1 made it 731 (the brief's governed inbox read, the one turn guard)
     assert _lines(SRC / "api" / "app.py") <= 735
-    assert _lines(STATIC / "console.html") <= 795  # guard < 800: 798 at R11, 795 at R11.1
+    # guard < 800: 798 at R11, 795 at R11.1, 782 at R7 I0 (console-dock.js builds the More sheet)
+    assert _lines(STATIC / "console.html") <= 782
 
 
 # ---- the four parts -----------------------------------------------------------------------------
@@ -351,7 +353,8 @@ def test_the_four_confirm_dialogs_kept_every_id_when_their_lines_were_joined() -
 # ---- the guide and the evals --------------------------------------------------------------------
 def test_the_guide_has_the_r11_1_card() -> None:
     guide = GUIDE.read_text(encoding="utf-8")
-    card = guide[guide.index("#### C61 · ") : guide.index("### Layer 6")]
+    start = guide.index("#### C61 · ")  # R7 I0 put C64 and C65 after it in Layer 5
+    card = guide[start : guide.index("\n#### ", start + 1)]
     for needle in (
         "`src/jarvis/fixes/`",
         "`src/jarvis/series/`",

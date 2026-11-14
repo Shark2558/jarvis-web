@@ -497,6 +497,48 @@ class Settings(BaseSettings):
     mail_summary_max_reads: int = Field(
         default=30, ge=5, le=100, description="Unread messages the inbox summary reads at most"
     )
+    # R7 (docs/plans/r7-mobile.md D25): the phone, the watch, SOS and the phone camera. Every
+    # feature stays off in effect until its first use: no phone is linked, no contact has joined.
+    mobile_enabled: bool = Field(
+        default=True, description="The phone app's server side: manifest, phone link, door (D3-D6)"
+    )
+    phone_link_max: int = Field(default=3, ge=1, le=3, description="Phones that may be linked")
+    phone_clock_skew_s: int = Field(
+        default=120, ge=30, le=300, description="How far a signed phone request's time may be off"
+    )
+    watch_enabled: bool = Field(
+        default=True, description="Daily watch summaries from Health Connect (D17)"
+    )
+    watch_keep_days: int = Field(
+        default=400, ge=30, le=800, description="Days a sealed watch day is kept"
+    )
+    sos_enabled: bool = Field(
+        default=True, description="Emergency SOS (D19); nothing is sent until a contact joins"
+    )
+    sos_max_contacts: int = Field(default=5, ge=1, le=5, description="Emergency contacts")
+    sos_per_hour: int = Field(default=3, ge=1, le=10, description="Real SOS sends an hour")
+    sos_per_day: int = Field(default=10, ge=1, le=50, description="Real SOS sends a day")
+    sos_test_per_hour: int = Field(
+        default=3, ge=1, le=10, description="Test SOS and 'I'm safe' an hour (their own budget)"
+    )
+    sos_test_per_day: int = Field(
+        default=10, ge=1, le=50, description="Test SOS and 'I'm safe' a day (their own budget)"
+    )
+    sos_countdown_s: int = Field(
+        default=10, ge=5, le=30, description="The tile's and shortcut's SOS countdown"
+    )
+    vision_enabled: bool = Field(
+        default=True, description="The Camera panel's kept results (frames never leave a device)"
+    )
+    vision_keep_days: int = Field(
+        default=90, ge=1, le=365, description="Days a kept camera result is kept"
+    )
+    app_lock_minutes: int = Field(
+        default=5, ge=1, le=60, description="Minutes away before the phone app asks for a passkey"
+    )
+    app_share_enabled: bool = Field(
+        default=True, description="JARVIS in Android's share sheet (the share tray, D15)"
+    )
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")

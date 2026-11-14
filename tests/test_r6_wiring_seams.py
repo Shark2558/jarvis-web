@@ -210,7 +210,9 @@ def test_the_deck_has_the_book_dock_button_panel_and_more_sheet_item() -> None:
         '<section class="panel card" id="p-book" data-panel="book" aria-labelledby="t-book" hidden>'
         in html
     )
-    assert '<h2 id="t-book">Book</h2>' in html and 'data-sheet-open="book"' in html
+    assert '<h2 id="t-book">Book</h2>' in html
+    # R7 I0 seam 10: the More sheet's entry is built by console-dock.js from the dock
+    assert "    book: '" in (STATIC / "console-dock.js").read_text(encoding="utf-8")
     assert html.index('src="/static/console-book-reader.js"') < html.index(
         'src="/static/console-book.js"'
     )
@@ -223,11 +225,13 @@ def test_the_deck_has_the_book_dock_button_panel_and_more_sheet_item() -> None:
 def test_api_hops_to_the_show_on_a_423() -> None:
     js = (STATIC / "console.js").read_text(encoding="utf-8")
     body = js[js.index("async function api(path") : js.index("async function raw(path")]
-    assert "if (r.status === 423) showLocked();" in body
+    # R7 I0 seam 14: a 423 is read by its error code (show_locked: the show; device_locked: a cover)
+    assert "if (r.status === 423) await lockedBy(r);" in body
     assert body.index("r.status === 423") < body.index("if (!r.ok)")
     raw = js[js.index("async function raw(path") : js.index("function showLocked()")]
-    assert "if (r.status === 423) showLocked();" in raw
+    assert "if (r.status === 423) await lockedBy(r);" in raw
     hop = js[js.index("function showLocked()") : js.index("// ---- sign-in gate")]
+    assert "async function lockedBy(r)" in hop and "showLocked(); }" in hop
     # SEC-2: replace, so no Back entry returns to the console page
     assert "location.replace('/book/show')" in hop and "throw err" in hop
 

@@ -1,8 +1,10 @@
 # src/jarvis/buildbook/gen/plans.py
 """R6 D2, D4: what the generator reads from `docs/plans/*.md` (text only; scrubbed first, D3).
 
-- `release_label`: from the highest `r<N>[-<M>]-*.md` plan ("R6", "R5.1"); "R0" with none.
-- `read_plans`: every plan, newest first (release plans by number, then phase slices by slice).
+- `release_label`: from the repository's own version (`src/jarvis/__init__.py`: "7.0.0" -> "R7",
+  "11.1.0" -> "R11.1"; R7 I0 seam 2), else from the highest `r<N>[-<M>]-*.md` plan; "R0" with none.
+- `read_plans`: every plan, this release's first, then newest first (release plans by number,
+  then phase slices by slice): the decisions and the limitations follow that order.
 - `decisions`: each plan's title and its D-headings, once each, in any of the three styles the
   plans use (`**D1 · Title.**`, `### D1 · Title`, `- **D1 — Title.**`), as "D1 · Title".
 - `fit_rows`: the release plans' "Architecture fit" / "How it fits the architecture" tables.
@@ -18,7 +20,7 @@ from dataclasses import dataclass
 
 from jarvis.buildbook.gen.code import clip
 from jarvis.buildbook.gen.fallback import RELEASE_PLAN as _RELEASE
-from jarvis.buildbook.gen.fallback import label_of
+from jarvis.buildbook.gen.fallback import VERSION_FILE, label_from_version, label_of, version_of
 from jarvis.buildbook.gen.repo import Repo
 from jarvis.buildbook.gen.scrub import Scrubber
 from jarvis.buildbook.model import MAX_LIMITATIONS
@@ -68,14 +70,26 @@ def _order(path: str) -> tuple[int, int, int, str]:
     return (0, 0, 0, name)
 
 
-def plan_paths(repo: Repo) -> tuple[str, ...]:
+def _by_number(repo: Repo) -> tuple[str, ...]:
     found = (p for p in repo.under(PLANS) if p.endswith(".md") and p.count("/") == 2)
     return tuple(sorted(found, key=_order, reverse=True))
 
 
 def release_label(repo: Repo) -> str:
-    labelled = [p for p in plan_paths(repo) if label_of(p)]
+    named = label_from_version(version_of(repo.text(VERSION_FILE)))
+    if named is not None:
+        return named
+    labelled = [p for p in _by_number(repo) if label_of(p)]
     return label_of(labelled[0]) if labelled else "R0"
+
+
+def plan_paths(repo: Repo) -> tuple[str, ...]:
+    """Every plan: this release's own first, then the rest newest first."""
+    ordered, label = _by_number(repo), release_label(repo)
+    return (
+        *(p for p in ordered if label_of(p) == label),
+        *(p for p in ordered if label_of(p) != label),
+    )
 
 
 def plain_md(text: str) -> str:

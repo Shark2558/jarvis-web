@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/xml/shortcuts.xml - R7 D9, D19: long-press the icon. Talk and Camera
+     go through the second launcher, which adds one allowed word (do=talk readies the mic button
+     and never starts the microphone; do=look opens the Camera panel with the camera off). SOS
+     opens the native SOS screen with its 10-second countdown; Set-up opens the set-up screen. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_tile_talk"
+        android:shortcutDisabledMessage="@string/shortcut_disabled"
+        android:shortcutId="talk"
+        android:shortcutLongLabel="@string/shortcut_talk_long"
+        android:shortcutShortLabel="@string/shortcut_talk">
+        <intent
+            android:action="io.github.shark2558.jarvis.action.TALK"
+            android:targetClass="io.github.shark2558.jarvis.shell.ScreenLauncherActivity"
+            android:targetPackage="io.github.shark2558.jarvis" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_core_ring_mono"
+        android:shortcutDisabledMessage="@string/shortcut_disabled"
+        android:shortcutId="look"
+        android:shortcutLongLabel="@string/shortcut_look_long"
+        android:shortcutShortLabel="@string/shortcut_look">
+        <intent
+            android:action="io.github.shark2558.jarvis.action.LOOK"
+            android:targetClass="io.github.shark2558.jarvis.shell.ScreenLauncherActivity"
+            android:targetPackage="io.github.shark2558.jarvis" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_tile_sos"
+        android:shortcutDisabledMessage="@string/shortcut_disabled"
+        android:shortcutId="sos"
+        android:shortcutLongLabel="@string/shortcut_sos_long"
+        android:shortcutShortLabel="@string/shortcut_sos">
+        <intent
+            android:action="io.github.shark2558.jarvis.action.SOS"
+            android:targetClass="io.github.shark2558.jarvis.sos.SosActivity"
+            android:targetPackage="io.github.shark2558.jarvis" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutDisabledMessage="@string/shortcut_disabled"
+        android:shortcutId="setup"
+        android:shortcutLongLabel="@string/shortcut_setup_long"
+        android:shortcutShortLabel="@string/shortcut_setup">
+        <intent
+            android:action="io.github.shark2558.jarvis.action.SETUP"
+            android:targetClass="io.github.shark2558.jarvis.link.SetupActivity"
+            android:targetPackage="io.github.shark2558.jarvis" />
+    </shortcut>
+</shortcuts>

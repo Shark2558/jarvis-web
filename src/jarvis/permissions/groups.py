@@ -35,6 +35,10 @@ R11 D16: six rows for the helpers (bills, bill_pay, household, nudges, outdoor, 
 R4 block; `bill_pay` is the only irreversible one.
 
 R11.1: two rows after them: `plans` (series_*, R2) and `pictures` (picture_*, R1).
+R7 (docs/plans/r7-mobile.md D25): three rows right after Camera, before Vitals (R11.1 pins its two
+between Kitchen and Maps, and Maps and YouTube stay last): `vision` (vision_*, R1), `watch`
+(watch_* and sleep_*, R2: the typed sleep note is the one write) and `sos` (sos_status, R1: no
+tool ever sends an SOS).
 """
 
 from __future__ import annotations
@@ -404,6 +408,34 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "switch it on.",
         R1,
         (_m("camera_*"), _m("faces_*")),
+    ),
+    # R7 (docs/plans/r7-mobile.md D12, D18, D19): the camera results he kept, his watch and sleep,
+    # and the SOS set-up. Sending an SOS is never a tool (his hold and countdown confirm it).
+    PermissionGroup(
+        "vision",
+        "Camera results",
+        "Read the camera results you kept",
+        "Numbers, labels and read text you pressed Keep on. JARVIS never sees a camera frame.",
+        R1,
+        (_m("vision_*", R1),),
+    ),
+    PermissionGroup(
+        "watch",
+        "Watch and sleep",
+        "Your steps, heart rate and sleep, and a sleep time you type",
+        "Daily sums from your watch or phone through Health Connect, kept encrypted. Estimates, "
+        "never a diagnosis.",
+        R2,
+        (_m("watch_*", R1, R2), _m("sleep_*", R1, R2)),
+    ),
+    PermissionGroup(
+        "sos",
+        "Emergency SOS",
+        "See your SOS set-up",
+        "Who your emergency contacts are and when an SOS was last sent. JARVIS can never send "
+        "one: only your hold and countdown do.",
+        R1,
+        (_m("sos_status", R1),),
     ),
     # R4 (docs/plans/r4-vitals-health-people.md "New tools"): vitals, self-health, people research
     # and the own-account connectors (after Camera, before Maps — Maps and YouTube stay last). None

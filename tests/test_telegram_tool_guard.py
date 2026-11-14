@@ -101,6 +101,9 @@ TELEGRAM_SAFE = frozenset(
         "weather_now",
         "disaster_status",  # SACHET's public warnings for his district (fenced as outside text)
         "nudge_status",
+        # R7 D19 (Part D): the brain's one SOS tool: counts and times only, never a name or a
+        # number, and how he sends an SOS himself (it can never send one)
+        "sos_status",
         "freetime_list",
         "freetime_suggest",
         "pantry_list",
@@ -189,6 +192,7 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         r4=r4_parts(google, docs, ring),  # R4: vitals, systems check, connectors (Photos), people
         r11=r11_parts(google, ring),  # R11 I1: every helper part's tools
         r111=r111_tools(google, docs),  # R11.1 I1: every observation part's tools
+        r7=r7_tools(google, docs),  # R7 I0 seam 21: every mobile part's tools, as the app builds
     )
 
 
@@ -205,6 +209,20 @@ def r4_parts(google: Any, docs: Any, ring: Keyring) -> R4Parts:
         ),
         people=PeopleService(FakeSearcher([]), FakeModel(), mode=fixed_mode("ai")),
     )
+
+
+def r7_tools(google: Any, docs: Any) -> tuple[Any, ...]:
+    """The four R7 server parts built through the real wiring on fakes (none has a tool at I0;
+    Part B's `vision_*` and Part D's `watch_*` / `sleep_*` / `sos_status` arrive here)."""
+    from jarvis.api.r7_wiring import build_parts, mobile_tools
+    from jarvis.mobile.ports import MobileContext
+    from jarvis.tools.audit import AuditLog
+
+    state = {"google": google}
+    ctx = MobileContext(
+        s=get_settings(), docs=docs, audit=AuditLog(), state=state.get, notifier=lambda: None
+    )
+    return mobile_tools(build_parts(ctx))
 
 
 def r111_tools(google: Any, docs: Any) -> tuple[Any, ...]:
@@ -492,6 +510,33 @@ async def test_every_r111_part_read_is_registered_and_classified() -> None:
     assert await denied_on_telegram(list(R111_PRIVATE)) == set(R111_PRIVATE)
     assert await denied_on_telegram(sorted(r111 & homes)) == r111 & homes
     assert await denied_on_telegram(["series_list", "series_checkin"]) == set()
+
+
+# R7 (docs/plans/r7-mobile.md D18, I0 seam 21): the watch, sleep and kept camera results are his
+# own health numbers and what his camera read: private on Telegram. The brain's one SOS tool,
+# `sos_status`, names no contact and no place, so it stays answerable there.
+R7_PLANNED_PRIVATE = (
+    "sleep_last_night",
+    "sleep_week",
+    "watch_today",
+    "sleep_note",
+    "vision_results",
+)
+
+
+async def test_every_r7_part_read_is_registered_and_private_on_telegram() -> None:
+    """The list comes from the BUILT registry (R11.1's integrated security review H2), so a part
+    that adds a read the patterns miss turns this red; the planned names are checked too."""
+    gw = await linked_gateway()
+    tools = every_tool(gw)
+    r7 = {t.name: t.risk for t in r7_tools(None, MemoryDocs())}
+    assert set(r7) <= set(tools)  # every part's tools are really there, as the app builds them
+    private = {n for n in r7 if n != "sos_status"}
+    assert await denied_on_telegram(sorted(private), r7) == private
+    assert await denied_on_telegram(list(R7_PLANNED_PRIVATE)) == set(R7_PLANNED_PRIVATE)
+    assert await denied_on_telegram(["sos_status"]) == set()
+    every_r7_read = {n for n, r in tools.items() if n.startswith(("watch_", "sleep_", "vision_"))}
+    assert await denied_on_telegram(sorted(every_r7_read), tools) == every_r7_read
 
 
 async def test_every_face_home_or_photo_tool_of_the_built_registry_waits_for_the_home_switch() -> (

@@ -8,6 +8,9 @@
 // R11.1 D20: "Inbox by kind" from brief.data.inbox.groups / .withheld / .exact / .failed (the whole
 // inbox, by Gmail's own categories; what could not be read is said); a brief whose inbox carries
 // none of them shows no such section.
+// R7 D18 (I1): "Last night" from brief.data.sleep (the pinned SleepLine {minutes, start, end,
+// source}): ONE fixed line, "Sleep: 6 h 40 min, 23:50 to 06:30 \u00b7 from your watch". Only in this
+// console's brief: the e-mailed copy and Telegram never carry it. A line of the wrong shape is dropped.
 (() => {
   'use strict';
   const MAX_ITEMS = 5;
@@ -166,6 +169,21 @@
     return s;
   }
 
+  /** R7 D18 "Last night": one line, the night's length and times and where it came from. */
+  const SLEEP_FROM = { watch: 'from your watch', phone: 'from your phone', app: 'from another health app', typed: 'typed by you' };
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  function sleep(v) {
+    const n = obj(v);
+    if (!n || !Number.isInteger(n.minutes) || n.minutes < 0 || n.minutes > 1440) return null;
+    if (!HHMM.test(n.start) || !HHMM.test(n.end) || !Object.prototype.hasOwnProperty.call(SLEEP_FROM, n.source)) return null;
+    const h = Math.floor(n.minutes / 60), m = n.minutes % 60;
+    const long = h && m ? h + ' h ' + m + ' min' : (h ? h + ' h' : m + ' min');
+    const s = section('sleep', 'Last night', ''), ul = mk('ul', 'bpark');
+    ul.append(mk('li', '', 'Sleep: ' + long + ', ' + n.start + ' to ' + n.end + ' \u00b7 ' + SLEEP_FROM[n.source]));
+    s.append(ul);
+    return s;
+  }
+
   /** R11.1 D20 "Inbox by kind": Gmail's own categories counted (labels are JARVIS's own words), and
    *  how many messages are not listed because they look like a code or a bank message. Drawn only
    *  when the brief's inbox carries `groups` / `withheld`. */
@@ -194,7 +212,7 @@
   /** The sections this brief carries, in display order (an absent one is simply left out). */
   function render(data) {
     const d = obj(data) || {};
-    return [inboxKinds(d.inbox), deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home), vitals(d.vitals), helpers(d.helpers)].filter(Boolean);
+    return [inboxKinds(d.inbox), deliveries(d.deliveries), family(d.family), documents(d.vault), home(d.home), vitals(d.vitals), helpers(d.helpers), sleep(d.sleep)].filter(Boolean);
   }
 
   window.JarvisBriefSections = Object.freeze({ render });

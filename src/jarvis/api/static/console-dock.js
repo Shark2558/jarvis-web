@@ -36,6 +36,49 @@
   const sep = dock.querySelector('.sep');
   // the first tab after the separator: while none of those shows, the separator is hidden too
   const afterSep = sep ? tabs.findIndex((t) => sep.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING) : -1;
+
+  // R7 I0 (seam 10): the More sheet's entries are built HERE from the dock, as the page had them (same
+  // order, words and markup): every tab after Chat and Brief, with its own icon and name and one line
+  // on what the panel is for. A tab with no line gets no entry (tests keep the list complete).
+  const DESCRIBE = {
+    approvals: 'Anything that sends, pays or can\'t be undone, waiting for your yes',
+    activity: 'Every tool JARVIS used, from its tamper-checked log',
+    history: 'Your past conversations, to reopen or delete',
+    memory: 'What JARVIS remembers about you, to correct or forget',
+    integrations: 'Your linked Google account, alerts and the systems check',
+    vault: 'Your ID documents and their expiry reminders',
+    things: 'Where you keep your passport, keys and papers',
+    notes: 'Notes, voice memos and saved links',
+    privacy: 'Everything JARVIS keeps about you, with export and delete',
+    home: 'Arm the burglar alarm, the camera\'s feed and history',
+    faces: 'People JARVIS may recognise at home, with their consent',
+    vitals: 'Reply speed, this month\'s spend and your limit',
+    connectors: 'GitHub, your YouTube channel and Google Photos',
+    people: 'Public figures and work due-diligence, profiles open in your browser',
+    book: 'How JARVIS is built, sealed in your vault with each release',
+    voice: 'JARVIS\'s voice, speed and wit; how this device listens',
+    media: 'Play the videos and music JARVIS found for you',
+    construct: 'The rotating hologram',
+    helpers: 'Bills, chores, weather and alerts, nudges and the kitchen',
+    camera: 'Look at a photo or the live picture, on this device', // R7
+  };
+  function buildSheet() {
+    const close = $('moreClose'), into = close ? close.parentNode : null;
+    if (!into) return;
+    tabs.slice(2).forEach((tab) => {
+      const id = tab.dataset.open, icon = tab.querySelector('svg'), words = DESCRIBE[id];
+      if (!words || !icon) return;
+      const item = document.createElement('button');
+      item.className = 'sheet-item'; item.type = 'button'; item.dataset.sheetOpen = id;
+      const span = document.createElement('span'), name = document.createElement('b'), small = document.createElement('small');
+      name.textContent = tab.getAttribute('aria-label') || (tab.querySelector('span') || tab).textContent.trim();
+      small.textContent = words;
+      span.append(name, small);
+      item.append(icon.cloneNode(true), span);
+      into.insertBefore(item, close);
+    });
+  }
+  if (sheet) buildSheet();
   const entries = new Map(sheet ? [...sheet.querySelectorAll('[data-sheet-open]')].map((b) => [b.dataset.sheetOpen, b]) : []);
 
   if (!sheet || typeof sheet.showModal !== 'function') { // no <dialog>: nothing folds, the dock wraps

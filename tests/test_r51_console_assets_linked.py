@@ -43,6 +43,21 @@ NOT_IN_PAGE = {
     "console-r111-files.css": ("console-r111.js", "'/static/console-r111-files.css'"),
     "console-r111-photos.css": ("console-r111.js", "'/static/console-r111-photos.css'"),
     "console-r111-look.css": ("console-r111.js", "'/static/console-r111-look.css'"),
+    # R7 I0: the loader console-r7.js (one line in the page) brings the parts' modules and styles
+    "console-r7-send.js": ("console-r7.js", "import('./console-r7-send.js')"),
+    "console-vision.js": ("console-r7.js", "import('./console-vision.js')"),
+    "console-r7-links.js": ("console-r7.js", "import('./console-r7-links.js')"),
+    "console-r7-share.js": ("console-r7.js", "import('./console-r7-share.js')"),
+    "console-camera.js": ("console-r7.js", "import('./console-camera.js')"),
+    "console-camera-panel.js": ("console-r7.js", "import('./console-camera-panel.js')"),
+    "console-r7-phone.js": ("console-r7.js", "import('./console-r7-phone.js')"),
+    "console-r7-lock.js": ("console-r7.js", "import('./console-r7-lock.js')"),
+    "console-r7-sos.js": ("console-r7.js", "import('./console-r7-sos.js')"),
+    "console-r7-share.css": ("console-r7.js", "'/static/console-r7-share.css'"),
+    "console-camera.css": ("console-r7.js", "'/static/console-camera.css'"),
+    "console-r7-phone.css": ("console-r7.js", "'/static/console-r7-phone.css'"),
+    "console-r7-sos.css": ("console-r7.js", "'/static/console-r7-sos.css'"),
+    "console-helpers-watch.js": ("console-helpers.js", "import('./console-helpers-watch.js')"),
 }
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {

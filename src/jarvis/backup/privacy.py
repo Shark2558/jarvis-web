@@ -26,7 +26,10 @@ WHERE = (
     "stay sealed by JARVIS inside them"
 )
 NOT_SET_UP = "Not set up: no copies are kept."
-SET_UP = "A monthly restore drill opens the newest copy in a throw-away database, then deletes it."
+SET_UP = (
+    "A monthly restore drill opens the newest copy in a throw-away database, then deletes it. "
+    "Its name, jarvis-drill, is the drill's: JARVIS deletes any database by that name."
+)
 
 
 class BackupsPrivacy:

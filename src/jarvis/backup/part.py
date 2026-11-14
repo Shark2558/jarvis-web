@@ -34,7 +34,10 @@ from jarvis.backup.vitals import vitals_reader
 from jarvis.config import SessionBackend, Settings
 from jarvis.hardening.ports import HardeningContext, HardeningPart
 from jarvis.keyring import Keyring
+from jarvis.logging import get_logger
 from jarvis.vitals.models import zone_of
+
+log = get_logger(__name__)
 
 READY = "ready"
 NO_FIRESTORE = "off: not on Firestore"
@@ -73,7 +76,9 @@ def _rate(ctx: HardeningContext) -> Callable[[], Awaitable[float]]:
         fx = getattr(ctx.state("billing"), "fx", None)
         try:
             return float((await fx.rate()).inr_per_usd) if fx is not None else ctx.s.usd_inr_rate
-        except Exception:  # noqa: BLE001 - FxRates never raises; the configured rate otherwise
+        except Exception as exc:  # noqa: BLE001 - the configured rate, said: the cap uses it
+            log.warning("backup costs: the live rate failed, the configured rate is used",
+                        extra={"error": type(exc).__name__})  # fmt: skip
             return ctx.s.usd_inr_rate
 
     return rate

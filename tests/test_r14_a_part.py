@@ -293,6 +293,24 @@ def test_the_set_up_note_says_about_four_rupees_at_100_mb() -> None:
     assert "about ₹4 a month at 100 MB" in NOT_SET_UP_NOTE and "₹5" not in NOT_SET_UP_NOTE
 
 
+async def test_a_live_rate_that_fails_falls_back_to_the_setting_and_says_so(
+    settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    class Fx:
+        async def rate(self) -> object:
+            raise RuntimeError("the rate source is down")
+
+    billing = type("Billing", (), {"fx": Fx()})()
+    world = World()
+    ctx = HardeningContext(s=settings, docs=world.live, audit=None, state={"billing": billing}.get)
+    part = backup_part.build_with(
+        ctx, admin=FakeAdmin(world), walk=lambda: FakeWalk(world), keys=ring(), clock=lambda: NOW
+    )
+    with caplog.at_level("WARNING"):
+        assert await _desk(part).rate() == settings.usd_inr_rate
+    assert any("rate" in r.getMessage() for r in caplog.records)
+
+
 # ---- Privacy ----------------------------------------------------------------------------------
 async def test_the_backups_privacy_row(settings: Settings) -> None:
     world = World()
@@ -306,6 +324,7 @@ async def test_the_backups_privacy_row(settings: Settings) -> None:
     await _desk(part).status.refresh(FakeAdmin(world))
     view = await row.describe(UID)
     assert view.count == 1 and "7 days" in view.retention and "delete" in view.what
+    assert "jarvis-drill" in view.note  # the name is the drill's: a database by it is deleted
     assert await row.export(UID) is None and await row.delete(UID) == 0
 
 

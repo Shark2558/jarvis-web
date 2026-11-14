@@ -20,7 +20,13 @@ PROJECT = "proj-example"
 SA = f"serviceAccount:jarvis-run@{PROJECT}.iam.gserviceaccount.com"
 FAKE = """#!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
+echo "prompts=${CLOUDSDK_CORE_DISABLE_PROMPTS:-}" >> "$FAKE_LOG"
+if [ -n "${FAKE_READ_STDIN:-}" ]; then
+  IFS= read -r line || true
+  echo "stdin=$line" >> "$FAKE_LOG"
+fi
 [ -n "${FAKE_FAIL:-}" ] && exit 1
+if [ -n "${FAKE_FAIL_ON:-}" ]; then case "$*" in *"$FAKE_FAIL_ON"*) exit 1 ;; esac; fi
 case "$*" in
   "config get-value project"*) echo "${FAKE_PROJECT:-}" ;;
   *"backups schedules list"*) printf '%s' "${FAKE_SCHEDULES:-}" ;;
@@ -30,6 +36,14 @@ case "$*" in
 esac
 exit 0
 """
+DAILY = (
+    '[{"name": "projects/proj-example/databases/(default)/backupSchedules/s1", '
+    '"retention": "604800s", "dailyRecurrence": {}}]'
+)
+WEEKLY = (
+    '[{"name": "projects/proj-example/databases/(default)/backupSchedules/s2", '
+    '"retention": "86400s", "weeklyRecurrence": {"day": "MONDAY"}}]'
+)
 GRANTED = (
     "roles/datastore.restoreAdmin\\t\\n"
     "roles/datastore.backupSchedulesViewer\\t\\n"
@@ -38,21 +52,26 @@ GRANTED = (
 )
 
 
-def _run(tmp_path: Path, args: list[str], *, answer: str = "", **env: str) -> tuple[str, str]:
+def _env(tmp_path: Path, **env: str) -> dict[str, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     gcloud = bin_dir / "gcloud"
     gcloud.write_text(FAKE, encoding="utf-8")
     gcloud.chmod(gcloud.stat().st_mode | stat.S_IEXEC)
-    log = tmp_path / "calls.log"
-    full = {
+    (tmp_path / "calls.log").unlink(missing_ok=True)
+    return {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
-        "FAKE_LOG": str(log),
+        "FAKE_LOG": str(tmp_path / "calls.log"),
         "FAKE_PROJECT": PROJECT,
         "BIND_SLEEP": "0",
         **env,
     }
+
+
+def _run(tmp_path: Path, args: list[str], *, answer: str = "", **env: str) -> tuple[str, str]:
+    full = _env(tmp_path, **env)
+    log = tmp_path / "calls.log"
     done = subprocess.run(
         ["bash", str(SCRIPT), *args], input=answer, capture_output=True, text=True, env=full,
         check=False, timeout=60,
@@ -64,7 +83,8 @@ def _run(tmp_path: Path, args: list[str], *, answer: str = "", **env: str) -> tu
 @pytest.mark.parametrize("answer", ["", "no\n", "yes\n", "YES please\n", " YES\n"])
 def test_nothing_changes_without_a_typed_yes(tmp_path: Path, answer: str) -> None:
     out, calls = _run(tmp_path, [], answer=answer)
-    assert "₹5" in out and "₹40" in out and "₹2" in out and "₹100" in out
+    assert "₹4" in out and "₹40" in out and "₹2" in out and "₹100" in out and "₹5" not in out
+    assert "jarvis-drill" in out  # the name is the drill's: a database by it is deleted
     assert "Nothing was changed" in out
     for verb in ("create", "update", "add-iam-policy-binding"):
         assert verb not in calls, verb
@@ -100,9 +120,30 @@ def test_yes_turns_backups_on_with_the_least_access(tmp_path: Path) -> None:
 
 
 def test_a_schedule_already_there_is_kept(tmp_path: Path) -> None:
-    sched = f"projects/{PROJECT}/databases/(default)/backupSchedules/s1"
-    _, calls = _run(tmp_path, [], answer="YES\n", FAKE_SCHEDULES=sched, FAKE_GRANTS=GRANTED)
-    assert "backups schedules create" not in calls
+    out, calls = _run(tmp_path, [], answer="YES\n", FAKE_SCHEDULES=DAILY, FAKE_GRANTS=GRANTED)
+    assert "backups schedules create" not in calls and "Backups: on, kept 7 days" in out
+
+
+def test_a_schedule_that_is_not_daily_for_7_days_is_never_called_on(tmp_path: Path) -> None:
+    out, calls = _run(tmp_path, [], answer="YES\n", FAKE_SCHEDULES=WEEKLY, FAKE_GRANTS=GRANTED)
+    assert "backups schedules create" not in calls  # his schedule is kept, and named
+    assert "Backups: on, but not daily kept 7 days" in out
+    out, _ = _run(tmp_path, ["--status"], FAKE_SCHEDULES=WEEKLY)
+    assert "Backups: on, but not daily kept 7 days" in out
+
+
+def test_the_clean_up_grant_comes_before_the_restore_grant(tmp_path: Path) -> None:
+    _, calls = _run(tmp_path, [], answer="YES\n", FAKE_GRANTS=GRANTED)
+    binds = [c for c in calls.splitlines() if "add-iam-policy-binding" in c]
+    assert "jarvisDrillCleanup" in binds[0] and "restoreAdmin" in binds[1]
+
+
+def test_without_the_clean_up_grant_no_restore_is_granted(tmp_path: Path) -> None:
+    out, calls = _run(
+        tmp_path, [], answer="YES\n", FAKE_FAIL_ON="roles/jarvisDrillCleanup --condition"
+    )
+    assert "roles/datastore.restoreAdmin" not in calls  # a copy it couldn't delete: never made
+    assert "Drill access: could not" in out
 
 
 def test_a_step_google_refuses_says_could_not_and_changes_nothing_else(tmp_path: Path) -> None:
@@ -111,11 +152,10 @@ def test_a_step_google_refuses_says_could_not_and_changes_nothing_else(tmp_path:
 
 
 def test_status_only_reads_and_says_what_is_on(tmp_path: Path) -> None:
-    sched = f"projects/{PROJECT}/databases/(default)/backupSchedules/s1"
     out, calls = _run(
         tmp_path,
         ["--status"],
-        FAKE_SCHEDULES=sched,
+        FAKE_SCHEDULES=DAILY,
         FAKE_PROTECTION="DELETE_PROTECTION_ENABLED",
         FAKE_GRANTS=GRANTED,
     )
@@ -133,6 +173,29 @@ def test_status_before_the_set_up_or_when_gcloud_fails_still_exits_zero(
     assert "Backups:" in out and "Backups: on" not in out
     for verb in ("create", "update", "delete", "add-iam-policy-binding"):
         assert verb not in calls, verb
+
+
+def test_status_says_when_gcloud_itself_failed(tmp_path: Path) -> None:
+    out, _ = _run(tmp_path, ["--status"], FAKE_FAIL_ON="firestore", FAKE_GRANTS=GRANTED)
+    assert "Backups: could not read" in out and "Delete protection: could not read" in out
+    out, _ = _run(tmp_path, ["--status"], FAKE_FAIL_ON="get-iam-policy")
+    assert "Drill access: could not read" in out
+
+
+def test_status_never_lets_gcloud_prompt_or_read_what_he_types(tmp_path: Path) -> None:
+    done = subprocess.run(
+        ["bash", str(SCRIPT), "--status"], input="typed by him\n", capture_output=True,
+        text=True, check=False, timeout=60, env=_env(tmp_path, FAKE_READ_STDIN="1"),
+    )  # fmt: skip
+    calls = (tmp_path / "calls.log").read_text(encoding="utf-8")
+    assert done.returncode == 0 and "stdin=typed" not in calls
+    assert "prompts=1" in calls and "prompts=\n" not in calls
+
+
+@pytest.mark.parametrize("odd", ["-rf", "--impersonate-service-account=x", "a b", "UPPER-1"])
+def test_an_odd_project_id_is_never_passed_to_gcloud(tmp_path: Path, odd: str) -> None:
+    out, calls = _run(tmp_path, ["--status"], FAKE_PROJECT=odd)
+    assert "could not read the project" in out and "get-iam-policy" not in calls
 
 
 def test_an_unknown_argument_is_refused(tmp_path: Path) -> None:

@@ -131,7 +131,7 @@
         {
           "id": "vitals",
           "tools": ["vitals_*"],
-          "words": ["vitals", "api key", "key", "keys", "quota", "allowance", "credits", "usage", "token", "backup", "drill", "restore drill"]
+          "words": ["vitals", "api key", "key", "keys", "quota", "allowance", "credits", "usage", "token", "backup", "drill", "restore drill", "ai cost", "ai money", "ai spend", "ai bill", "ai pe", "ai ka", "ai par", "claude cost", "claude bill", "claude ka", "spent on claude", "database", "db size", "db", "clocks", "clock running", "jarvis healthy", "you healthy", "health of jarvis", "jarvis health", "jarvis's health"]
         },
         {
           "id": "systems",

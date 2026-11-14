@@ -114,6 +114,14 @@ LABELLED: tuple[tuple[str, str], ...] = (
     ("Where has my laptop charger been over time?", "belongings_history"),
     ("Show my vitals", "vitals_show"),
     ("Add my OpenAI key to vitals, it expires next March", "vitals_set_key"),
+    # I1 follow-up (code review M2): his questions about JARVIS itself (D8)
+    ("How much did AI cost this month?", "vitals_show"),
+    ("Where does the AI money go?", "vitals_show"),
+    ("How big is the database?", "vitals_show"),
+    ("Is JARVIS healthy?", "vitals_show"),
+    ("Are the clocks running?", "vitals_show"),
+    ("How much have I spent on Claude?", "vitals_show"),
+    ("kitna kharcha hua AI pe?", "vitals_show"),
     ("Run a systems check", "systems_check"),
     ("Is everything working okay with you?", "systems_check"),
     ("Connect my GitHub account", "connect_github"),
@@ -174,6 +182,21 @@ LABELLED: tuple[tuple[str, str], ...] = (
 )
 
 
+# Written at I1's review follow-ups BEFORE the words for M2 were chosen, and never tuned on:
+# reported (`offer:held_out`, its `note`), not gated; C's own 24 held-out messages are in
+# INTEGRATION-C (87.5 %).
+HELD_OUT: tuple[tuple[str, str], ...] = (
+    ("What's the size of my data in Firestore?", "vitals_show"),
+    ("Claude ka bill kitna aaya?", "vitals_show"),
+    ("Are your background jobs running on time?", "vitals_show"),
+    ("How many tokens did you use today?", "vitals_show"),
+    ("Show me where my AI money is going", "vitals_show"),
+    ("How much space is the database using?", "vitals_show"),
+    ("Did last night's backup work?", "vitals_backups"),
+    ("What does JARVIS cost me to run each month?", "vitals_show"),
+)
+
+
 class Controls(NamedTuple):  # not a dataclass: run.py loads this file outside sys.modules
     no_words: bool = False
     content_only_window: bool = False
@@ -230,6 +253,16 @@ def _recall_and_size(c: Controls, specs: list[ToolSpec]) -> list[dict[str, Any]]
         _case("recall", recall_fail),
         _case("size", [f"average {size:.1f} tools > {SIZE_BAR:.0f}"] if size > SIZE_BAR else []),
     ]
+
+
+def _held_out(c: Controls, specs: list[ToolSpec]) -> dict[str, Any]:
+    """Recall on messages never tuned on: a report line (`note`), never a failure."""
+    register = _register(c)
+    misses = [f"{tool} <- {text!r}" for text, tool in HELD_OUT
+              if tool not in _offered(register, specs, text)]  # fmt: skip
+    hit = len(HELD_OUT) - len(misses)
+    note = f"held-out recall {hit}/{len(HELD_OUT)} ({hit / len(HELD_OUT):.1%}); missed: {misses}"
+    return {**_case("held_out", []), "note": note}
 
 
 def _rounds(specs: list[ToolSpec]) -> list[dict[str, Any]]:
@@ -310,7 +343,7 @@ async def _hint(c: Controls) -> list[dict[str, Any]]:
 
 async def _cases(c: Controls) -> list[dict[str, Any]]:
     specs = await _specs()
-    out = _recall_and_size(c, specs) + _rounds(specs) + _fail_safe(specs)
+    out = _recall_and_size(c, specs) + [_held_out(c, specs)] + _rounds(specs) + _fail_safe(specs)
     return out + _window(c) + await _ledger() + await _hint(c)
 
 

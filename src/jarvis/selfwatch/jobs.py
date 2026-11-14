@@ -105,6 +105,8 @@ class Watch:
         )
         self.deploys = DeployWatch(revision=s.cloud_run_revision, version=version, prefix=p)
         self._day_done: str | None = None
+        self.observer_failures = 0  # outcomes the observer could not read (shown in the status)
+        self._observer_logged = 0
         self.clock_job = Job(CLOCK_NAME, CLOCK_BUDGET_S, self, self._clock_steps())
         self.daily_job = Job(DAILY_NAME, DAILY_BUDGET_S, self, self._daily_steps())
 
@@ -127,8 +129,8 @@ class Watch:
             at = self.now()
             self.ledger.observe(outcome.name, outcome.outcome, at)
             self.clocks.seen(outcome.clock, at)
-        except Exception:  # noqa: BLE001 - watching a job never stops it, nor logs about it
-            return
+        except Exception:  # noqa: BLE001 - watching a job never stops it: counted, logged later
+            self.observer_failures += 1
 
     async def run_steps(
         self, me: str, owners: Sequence[str], steps: Sequence[Step], budget_s: float
@@ -136,6 +138,10 @@ class Watch:
         now = self.now()
         owners = tuple(u for u in owners if isinstance(u, str) and owner_ok(u))
         counts = {"owners": len(owners), "told": 0, FAILED_COUNT: 0}
+        if self.observer_failures > self._observer_logged:
+            new = self.observer_failures - self._observer_logged
+            log.warning("selfwatch observer could not read job outcomes", extra={"count": new})
+            self._observer_logged = self.observer_failures
         clock = asyncio.get_running_loop().time
         left = time_left()
         total = budget_s if left is None else max(0.0, min(left, budget_s))

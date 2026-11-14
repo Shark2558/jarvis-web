@@ -3,6 +3,7 @@
 # and a new version live (once per revision).
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -57,6 +58,16 @@ async def test_a_failed_brief_is_missed_too_and_a_ready_one_never() -> None:
 async def test_a_brief_that_is_off_is_never_missed() -> None:
     assert await _check(FakeBrief(due_at=None)).missed(UID, ist(16, 9, 0)) is None
     assert await _check(None).missed(UID, ist(16, 9, 0)) is None
+
+
+async def test_no_brief_service_is_logged_once_never_silent(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="jarvis.selfwatch.brief_check")
+    check = _check(None)
+    for _ in range(3):
+        assert await check.missed(UID, ist(16, 9, 0)) is None
+    assert len([r for r in caplog.records if "no brief service" in r.getMessage()]) == 1
 
 
 async def test_the_brief_is_read_rarely_not_every_five_minutes() -> None:

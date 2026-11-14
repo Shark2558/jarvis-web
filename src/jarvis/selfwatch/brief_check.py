@@ -18,6 +18,10 @@ from datetime import datetime, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
+from jarvis.logging import get_logger
+
+log = get_logger(__name__)
+
 MISSED = frozenset({"none", "failed"})  # a stale "generating" claim already reads as failed
 
 
@@ -55,6 +59,7 @@ class BriefCheck:
         self._grace = grace
         self._tz = tz
         self._days: dict[str, _Day] = {}
+        self._quiet = False  # "no brief service" already logged
 
     def _waiting(self, uid: str, now: datetime) -> bool:
         """Nothing to read now: today is settled, or its time plus the grace hasn't come."""
@@ -69,7 +74,12 @@ class BriefCheck:
         """(the day, the local time it was due by) when today's brief was missed; else None.
         Raises when the brief can't be read (the job counts it)."""
         svc = self._brief()
-        if svc is None or self._waiting(uid, now):
+        if svc is None:
+            if not self._quiet:
+                log.warning("selfwatch brief check waits: no brief service")
+                self._quiet = True
+            return None
+        if self._waiting(uid, now):
             return None
         view = await svc.today(uid)
         tz = _zone(view.tz, self._tz)

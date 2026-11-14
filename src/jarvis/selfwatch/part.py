@@ -18,7 +18,7 @@ Without a document store (never in the app) it watches in memory only.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -42,7 +42,7 @@ def vitals_of(watch: Watch) -> tuple[VitalsReader, ...]:
 
 
 def watch_of(ctx: HardeningContext) -> Watch:
-    def late(name: str) -> Any:
+    def late(name: str) -> Callable[[], Any]:
         return lambda: ctx.state(name)
 
     return Watch(

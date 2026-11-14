@@ -215,6 +215,18 @@ async def test_the_jobs_answer_counts_and_the_observer_never_raises() -> None:
     assert got["owners"] == 1
     w.watch.observe(object())  # type: ignore[arg-type]
     w.watch.observe(JobOutcome("watchdog", "x" * 500, "failed", 0.0))
+    assert w.watch.observer_failures == 1  # silent review L2: counted, never silent
+
+
+async def test_an_observer_that_failed_is_logged_once_by_the_next_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    w = build_world()
+    caplog.set_level(logging.WARNING, logger="jarvis.selfwatch.jobs")
+    w.watch.observe(object())  # type: ignore[arg-type]
+    await w.watch.clock_job.run((UID,))
+    await w.watch.clock_job.run((UID,))
+    assert len([r for r in caplog.records if "observer" in r.getMessage()]) == 1
 
 
 def test_the_watch_reads_its_settings() -> None:

@@ -206,3 +206,29 @@ def test_settled_drops_are_the_ones_home_settles_too() -> None:
     from jarvis.home.watchdog import OWNER_SETTLED
 
     assert texts.SETTLED == OWNER_SETTLED
+
+
+async def test_what_a_send_logs_from_a_task_or_a_thread_is_left_out_too() -> None:
+    from jarvis.selfwatch.errors import ErrorCounter
+
+    quiet = logging.getLogger("jarvis.notify.r14_b_test")
+    h = ErrorCounter(tz=__import__("zoneinfo").ZoneInfo("Asia/Kolkata"))
+    quiet.addHandler(h)
+
+    class LogsElsewhere:
+        async def notify(self, *a: object, **k: object) -> object:
+            async def in_task() -> None:
+                quiet.error("from a task the send started")
+
+            await asyncio.create_task(in_task())
+            await asyncio.to_thread(quiet.error, "from a thread the send started")
+            return None  # not a Delivery: reached nobody
+
+    try:
+        teller = texts.Teller(lambda: LogsElsewhere(), Told(MemoryDocs()))  # type: ignore[arg-type, return-value]
+        await teller.tell((UID,), "job_failing", "c", "x", NOON)
+        assert h.pending() == {}  # code review L3: SENDING crosses tasks and to_thread
+        quiet.error("not while sending")
+        assert sum(h.pending().popitem()[1]["hours"].values()) == 1
+    finally:
+        quiet.removeHandler(h)

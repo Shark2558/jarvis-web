@@ -90,13 +90,24 @@ async def test_the_status_names_and_counts_only() -> None:
     await w.watchdog(FlakyJob("vault_reminders"))
     logging.getLogger("jarvis.x")  # nothing logged: zero errors
     got = await Status(w.watch).view()
-    assert set(got) == {"clocks", "jobs", "errors_today", "deploy", "version"}
+    assert set(got) == {"clocks", "jobs", "errors_today", "unrecorded", "deploy", "version"}
+    assert got["unrecorded"] == {"errors": 0, "outcomes": 0}
     assert got["clocks"]["watchdog"] is not None and got["clocks"]["tick"] is None
     assert got["jobs"] == [
         {"name": "vault_reminders", "runs": 2, "since": got["jobs"][0]["since"], "told": False}
     ]
     assert got["errors_today"] == 0 and got["version"] == "14.0.0"
     assert "secret" not in str(got)
+
+
+async def test_the_status_shows_what_the_handler_and_the_observer_could_not_count() -> None:
+    w = build_world()
+    rec = logging.LogRecord("jarvis.web", logging.ERROR, __file__, 1, "x", (), None)
+    rec.created = float("nan")
+    w.watch.errors.handle(rec)
+    w.watch.observe(object())  # type: ignore[arg-type]
+    got = await Status(w.watch).view()
+    assert got["unrecorded"] == {"errors": 1, "outcomes": 1}  # silent review L1, L2
 
 
 async def test_the_status_says_what_it_can_with_the_store_down() -> None:

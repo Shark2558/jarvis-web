@@ -1,0 +1,302 @@
+{
+  "version": 1,
+  "about": "R14 D11: the skill register (docs/plans/r14-hardening.md). Every tool is filed under one group of one of the 11 skills by its name: an exact name wins over a family (a pattern with *). 'words' choose the turn's tools (D9): a word matches at the start of a word in his message (three letters or fewer: the whole word, or with an s). 'core' is offered on every turn. 'telegram_open' names the read tools Telegram answers (every other read is refused there by a telegram/rules.py pattern). 'no_ai' names the tools No-AI mode reaches. 'planned' names tools another R14 part is building, so this list may name them before they exist.",
+  "core": ["skills_open", "reminder_add", "calendar_list_events", "memory_search"],
+  "planned": ["vitals_backups", "vitals_drill_start", "maint_service_request"],
+  "telegram_open": [
+    "calendar_free_slots", "calendar_list_events", "family_free_slots", "gmail_track_packages",
+    "grocery_list", "list_tasks", "tasks_list", "reminders_list", "memory_search",
+    "whatsapp_draft", "maps_search", "maps_route", "youtube_search", "youtube_my_playlists",
+    "youtube_playlist", "web_read", "web_search", "home_status", "home_disarm", "focus_now",
+    "pending_list", "chore_list", "maint_list", "maint_starters", "weather_now",
+    "disaster_status", "nudge_status", "sos_status", "freetime_list", "freetime_suggest",
+    "pantry_list", "recipe_list", "recipe_suggest", "nutrition_of", "series_list", "vitals_show",
+    "systems_check", "connect_github", "github_profile", "github_repos", "github_activity",
+    "connect_youtube", "youtube_own_channel", "research_person", "people_open_profiles",
+    "skills_open", "vitals_backups", "maint_service_request"
+  ],
+  "no_ai": [
+    "kb_add_note", "kb_search", "reminder_add", "reminders_list", "tasks_list",
+    "calendar_list_events", "calendar_kitchen_blocks", "research_person", "people_open_profiles",
+    "systems_check", "vitals_show", "bill_list", "bill_paid", "bill_pay_prepare", "breach_status",
+    "chore_done", "chore_list", "contacts_birthdays", "disaster_status", "focus_now",
+    "pending_list", "freetime_add", "freetime_done", "freetime_list", "freetime_remove",
+    "freetime_suggest", "kitchen_settings", "maint_done", "maint_list", "nudge_activity_checkin",
+    "nudge_resume", "nudge_set", "nudge_snooze", "nudge_standup_log", "nudge_status",
+    "nudge_stop", "nudge_water_log", "nutrition_of", "pantry_add", "pantry_list",
+    "pantry_remove", "recipe_list", "recipe_suggest", "sleep_last_night", "sleep_note",
+    "sleep_week", "watch_today", "sos_status", "spend_month", "weather_now", "series_checkin",
+    "series_list", "series_reschedule", "grocery_add", "grocery_list", "grocery_remove",
+    "vault_expiring", "belongings_where", "belongings_put", "home_status", "home_arm",
+    "gmail_track_packages", "gmail_inbox_summary", "deleted_list", "memory_search",
+    "vitals_backups", "vitals_drill_start", "maint_service_request"
+  ],
+  "skills": [
+    {
+      "id": "task",
+      "about": "Your calendar, reminders, to-dos, groceries, family events, chores, home upkeep and Recently deleted.",
+      "groups": [
+        {
+          "id": "calendar",
+          "tools": ["calendar_*"],
+          "words": ["calendar", "meeting", "meet", "event", "appointment", "schedule", "agenda", "busy", "am i free", "are we free", "free at", "free on", "free tomorrow", "free today", "free this", "free slot", "slot", "invite", "reschedule", "postpone", "cancel", "sync", "block", "what's on", "whats on", "on my plate", "diary", "kal ka", "aaj ka", "mulakat", "milna hai"]
+        },
+        {
+          "id": "reminders",
+          "tools": ["reminder_*", "reminders_list"],
+          "words": ["remind", "reminder", "alarm", "wake me", "forget to", "let me forget", "yaad dila"]
+        },
+        {
+          "id": "todo",
+          "tools": ["tasks_list", "task_*", "list_tasks"],
+          "words": ["task", "to-do", "todo", "to do", "checklist", "tick off", "mark done", "kaam"]
+        },
+        {
+          "id": "groceries",
+          "tools": ["grocery_*"],
+          "words": ["grocer", "shopping", "buy", "milk", "eggs", "bread", "vegetable", "fruit", "sabzi", "saman", "doodh", "atta", "kharid"]
+        },
+        {
+          "id": "family",
+          "tools": ["family_*"],
+          "words": ["family", "wife", "husband", "kids", "children", "son", "daughter", "mom", "mum", "dad", "mother", "father", "parents", "school", "biwi", "bachch", "beta", "beti", "mummy", "papa", "ghar wal"]
+        },
+        {
+          "id": "household",
+          "tools": ["chore_*", "maint_*"],
+          "words": ["chore", "clean", "laundry", "dishes", "sweep", "mop", "maintenance", "servic", "repair", "plumber", "electrician", "carpenter", "ac", "filter", "upkeep", "purifier", "geyser", "pest", "leak", "safai", "kapde", "bartan", "mistri", "kaamwali"]
+        },
+        {
+          "id": "deleted",
+          "tools": ["deleted_*"],
+          "words": ["delete", "restore", "undo", "bring back", "bring it back", "recover", "wapas"]
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "about": "Web search, maps, people research, memory, notes, your documents and Drive, pictures, weather and where you kept things.",
+      "groups": [
+        {
+          "id": "web",
+          "tools": ["web_*"],
+          "words": ["search", "look up", "lookup", "google", "news", "latest", "find out", "internet", "online", "website", "web", "page", "article", "wikipedia", "price of", "who won", "score", "khabar"]
+        },
+        {
+          "id": "maps",
+          "tools": ["maps_*"],
+          "words": ["near me", "nearby", "nearest", "near", "route", "directions", "how far", "distance", "map", "maps", "traffic", "restaurant", "cafe", "hotel", "hospital", "pharmacy", "petrol", "atm", "get to", "drive to", "kitna door", "rasta"]
+        },
+        {
+          "id": "people",
+          "tools": ["research_person", "people_*"],
+          "words": ["research", "profile", "linkedin", "background on", "who is", "look into"]
+        },
+        {
+          "id": "memory",
+          "tools": ["memory_*"],
+          "words": ["remember", "memory", "forget", "recall", "you know about", "do you know", "did i tell", "yaad rakh", "bhool"]
+        },
+        {
+          "id": "notes",
+          "tools": ["kb_*"],
+          "words": ["note", "jot", "write down", "bookmark", "link", "knowledge", "likh lo", "likh do"]
+        },
+        {
+          "id": "documents",
+          "tools": ["doc_*", "drive_*"],
+          "words": ["document", "doc", "docs", "file", "pdf", "drive", "attachment", "attached", "folder", "spreadsheet", "sheet", "contract", "resume", "report", "kagaz"]
+        },
+        {
+          "id": "pictures",
+          "tools": ["picture_*"],
+          "words": ["picture", "photo", "image", "pic", "pics", "screenshot", "what is this", "what's this", "tasveer", "foto"]
+        },
+        {
+          "id": "outdoor",
+          "tools": ["weather_now", "disaster_status"],
+          "words": ["weather", "rain", "umbrella", "temperature", "hot", "cold", "forecast", "humid", "cyclone", "flood", "earthquake", "disaster", "heatwave", "storm", "barish", "baarish", "mausam", "garmi", "thand"]
+        },
+        {
+          "id": "belongings",
+          "tools": ["belongings_*"],
+          "words": ["where did i put", "where did i keep", "where did i leave", "where is my", "where are my", "where's my", "where has my", "where was my", "things", "i kept", "i put", "i left", "i placed", "drawer", "cupboard", "belongings", "kahan rakh", "rakh diya", "rakha"]
+        }
+      ]
+    },
+    {
+      "id": "code",
+      "about": "JARVIS's own health: Vitals and keys, the systems check, backups and the restore drill, GitHub, your YouTube channel and the skill register.",
+      "groups": [
+        {
+          "id": "vitals",
+          "tools": ["vitals_*"],
+          "words": ["vitals", "api key", "key", "keys", "quota", "allowance", "credits", "usage", "token", "backup", "drill", "restore drill"]
+        },
+        {
+          "id": "systems",
+          "tools": ["systems_check"],
+          "words": ["system", "health check", "status", "working", "broken", "down", "error", "diagnos", "uptime", "are you ok"]
+        },
+        {
+          "id": "github",
+          "tools": ["connect_github", "github_*"],
+          "words": ["github", "repo", "commit", "pull request", "code", "coding", "git"]
+        },
+        {
+          "id": "channel",
+          "tools": ["connect_youtube", "youtube_own_channel"],
+          "words": ["my channel", "youtube channel", "subscriber", "connect youtube", "my uploads"]
+        },
+        {
+          "id": "register",
+          "tools": ["skills_open"],
+          "words": ["skill", "what can you do", "capabilit", "abilities"]
+        }
+      ]
+    },
+    {
+      "id": "decision",
+      "about": "What to focus on now, from everything pending, ranked by fixed rules.",
+      "groups": [
+        {
+          "id": "focus",
+          "tools": ["focus_now", "pending_list"],
+          "words": ["focus", "priorit", "what should i do", "what next", "what's next", "do next", "pending", "overdue", "important", "urgent", "kya karu", "pehle kya"]
+        }
+      ]
+    },
+    {
+      "id": "communication",
+      "about": "Mail, parcels, contacts and WhatsApp drafts (you send them).",
+      "groups": [
+        {
+          "id": "email",
+          "tools": ["gmail_*"],
+          "words": ["email", "e-mail", "mail", "inbox", "gmail", "reply", "draft", "send", "unread", "newsletter", "wrote to me", "chitthi"]
+        },
+        {
+          "id": "parcels",
+          "tools": ["gmail_track_packages"],
+          "words": ["parcel", "package", "delivery", "delivered", "order", "shipment", "shipped", "courier", "tracking", "track my", "amazon", "flipkart", "myntra", "dabba"]
+        },
+        {
+          "id": "contacts",
+          "tools": ["contacts_*"],
+          "words": ["contact", "phone number", "number of", "birthday", "address of", "ka number", "janamdin"]
+        },
+        {
+          "id": "whatsapp",
+          "tools": ["whatsapp_*"],
+          "words": ["whatsapp", "text him", "text her", "message him", "message her", "msg", "message to", "tell him", "tell her", "ping", "bata do", "bol do"]
+        }
+      ]
+    },
+    {
+      "id": "finance",
+      "about": "Bills, payments prepared for you to approve (JARVIS never pays), and grocery spend.",
+      "groups": [
+        {
+          "id": "bills",
+          "tools": ["bill_*"],
+          "words": ["bill", "pay", "paid", "payment", "due", "electricity", "rent", "emi", "upi", "recharge", "broadband", "credit card", "invoice", "bijli", "kiraya", "bhugtan", "paise"]
+        },
+        {
+          "id": "spend",
+          "tools": ["spend_month"],
+          "words": ["spend", "spent", "spending", "expense", "budget", "how much did i", "cost me", "kharcha"]
+        }
+      ]
+    },
+    {
+      "id": "learning",
+      "about": "Study plans and other followed plans: sessions, check-ins and new dates. Explaining needs no tool.",
+      "groups": [
+        {
+          "id": "plans",
+          "tools": ["series_*"],
+          "words": ["study", "plan", "course", "lesson", "session", "syllabus", "learn", "revision", "exam", "practice", "check in", "check-in", "skipped", "padhai"]
+        }
+      ]
+    },
+    {
+      "id": "creative",
+      "about": "Ideas for your free time, YouTube videos and playlists. Writing and ideas need no tool.",
+      "groups": [
+        {
+          "id": "freetime",
+          "tools": ["freetime_*"],
+          "words": ["free time", "spare time", "bored", "boring", "hobby", "hobbies", "something to do", "idea", "weekend", "leisure", "relax", "fun", "time pass"]
+        },
+        {
+          "id": "videos",
+          "tools": ["youtube_*"],
+          "words": ["youtube", "video", "playlist", "song", "music", "gaana", "gaane"]
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "about": "The house alarm, camera history and faces, breach notices and your vault's documents.",
+      "groups": [
+        {
+          "id": "alarm",
+          "tools": ["home_status", "home_arm", "home_disarm"],
+          "words": ["alarm", "arm", "armed", "disarm", "house", "home status", "home safe", "home secure", "intruder", "lock", "door", "away mode", "ghar"]
+        },
+        {
+          "id": "camera",
+          "tools": ["camera_*", "faces_*", "photos_import", "photos_import_*"],
+          "words": ["camera", "cctv", "who came", "visitor", "doorbell", "face", "recogni", "someone at", "import photos", "photos import", "google photos"]
+        },
+        {
+          "id": "breach",
+          "tools": ["breach_status"],
+          "words": ["breach", "hacked", "hack", "leak", "password", "pwned", "compromised", "phishing", "scam", "suspicious", "security"]
+        },
+        {
+          "id": "vault",
+          "tools": ["vault_*"],
+          "words": ["vault", "passport", "licence", "license", "insurance", "aadhaar", "pan card", "rc", "puc", "certificate", "warranty", "expir", "renew", "kagzat"]
+        }
+      ]
+    },
+    {
+      "id": "automation",
+      "about": "Your home devices: lights, fans and plugs (the alarm is Security Advisor's).",
+      "groups": [
+        {
+          "id": "devices",
+          "tools": ["home_devices", "home_control"],
+          "words": ["light", "fan", "fans", "switch on", "switch off", "turn on", "turn off", "plug", "device", "smart", "tv", "chalu", "band karo", "jala do", "bujha do"]
+        }
+      ]
+    },
+    {
+      "id": "health",
+      "about": "Water and stand-up nudges, sleep and the watch, SOS, meals, recipes and nutrition.",
+      "groups": [
+        {
+          "id": "nudges",
+          "tools": ["nudge_*"],
+          "words": ["water", "drink", "hydrat", "stand up", "standup", "stretch", "nudge", "activity", "walk", "take a break", "posture", "paani"]
+        },
+        {
+          "id": "watch",
+          "tools": ["sleep_*", "watch_*"],
+          "words": ["sleep", "slept", "nap", "watch", "heart", "pulse", "steps", "fitness", "workout", "neend", "soya"]
+        },
+        {
+          "id": "sos",
+          "tools": ["sos_*"],
+          "words": ["sos", "emergency", "help me", "danger", "unsafe", "panic"]
+        },
+        {
+          "id": "kitchen",
+          "tools": ["pantry_*", "kitchen_*", "recipe_*", "nutrition_*", "calendar_kitchen_blocks"],
+          "words": ["recipe", "cook", "dinner", "lunch", "breakfast", "meal", "food", "eat", "pantry", "kitchen", "nutrition", "calorie", "protein", "diet", "ingredient", "khana", "nashta", "dal", "roti", "pakana"]
+        }
+      ]
+    }
+  ]
+}

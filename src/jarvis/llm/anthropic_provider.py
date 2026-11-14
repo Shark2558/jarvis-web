@@ -1,13 +1,27 @@
 # src/jarvis/llm/anthropic_provider.py
-"""Claude implementation of LLMProvider. The only file that imports the `anthropic` SDK."""
+"""Claude implementation of LLMProvider. The only file that imports the `anthropic` SDK.
+
+R14 D9 (A1 choice (b), docs/plans/r14-hardening.md): built with `cache_history` (the setting, on
+by default, through `jarvis.llm.factory`), a call WITH TOOLS adds a second cache breakpoint on the
+last message block, so the next round of the SAME reply reads the history from the cache. The
+trailer is a system block before the messages, so the hint never reaches across turns. A call
+without tools (the one-shot callers: recall, the brief, the helpers; a final no-tools round, whose
+prefix differs anyway) and the stream path (one call a reply) keep the system breakpoint only: a
+cache write there would never be read (R14 code review MEDIUM-1). Nothing in the shared interface
+changes.
+"""
 
 from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator
+from typing import Any
 
 import anthropic
 from anthropic.types import (
+    Base64ImageSourceParam,
+    ImageBlockParam,
+    Message,
     MessageParam,
     RawContentBlockDeltaEvent,
     RawMessageDeltaEvent,
@@ -15,11 +29,17 @@ from anthropic.types import (
     TextBlockParam,
     TextDelta,
     ToolParam,
+    ToolResultBlockParam,
     ToolUseBlock,
+    ToolUseBlockParam,
 )
 from anthropic.types import TextBlock as AnthropicTextBlock
 
 from jarvis.llm.base import (
+    AUTH_REFUSED,
+    BUSY,
+    NO_ANSWER,
+    UNREACHABLE,
     ChatMessage,
     Completion,
     Effort,
@@ -29,6 +49,7 @@ from jarvis.llm.base import (
     LLMOutOfCredit,
     LLMTransientError,
     LLMUnreachable,
+    Role,
     StreamUsage,
     TextBlock,
     ToolCall,
@@ -60,47 +81,84 @@ _UNREACHABLE = (
 )
 
 
+BlockParam = TextBlockParam | ImageBlockParam | ToolUseBlockParam | ToolResultBlockParam
+
+
+def _mark(blocks: list[BlockParam]) -> None:
+    """R14 D9: the breakpoint on the last non-empty block (an empty text block can't carry one)."""
+    for block in reversed(blocks):
+        if block["type"] == "text" and not block["text"]:
+            continue
+        block["cache_control"] = {"type": "ephemeral"}
+        return
+
+
+def _message(role: Role, content: str | list[BlockParam]) -> MessageParam:
+    if role is Role.ASSISTANT:
+        return {"role": "assistant", "content": content}
+    return {"role": "user", "content": content}
+
+
 class AnthropicProvider:
     name = "anthropic"
     vision = True  # R11.1 D10: Claude reads JPEG and PNG message blocks
 
-    def __init__(self, api_key: str, *, timeout_s: float = 60.0, max_retries: int = 2) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        timeout_s: float = 60.0,
+        max_retries: int = 2,
+        cache_history: bool = False,
+    ) -> None:
         # The SDK retries transient errors with exponential backoff itself; we set the budget.
         self._client = anthropic.AsyncAnthropic(
             api_key=api_key, timeout=timeout_s, max_retries=max_retries
         )
+        self.cache_history = cache_history  # R14 D9: the history's breakpoint (the setting)
 
     # ---- helpers -------------------------------------------------------------------------
 
     @staticmethod
-    def _to_params(messages: list[ChatMessage]) -> list[MessageParam]:
-        out: list[MessageParam] = []
-        for m in messages:
-            if isinstance(m.content, str):
-                out.append({"role": m.role.value, "content": m.content})
-                continue
-            blocks: list = []
-            for b in m.content:
-                if isinstance(b, TextBlock):
-                    blocks.append({"type": "text", "text": b.text})
-                elif isinstance(b, ImageBlock):  # R11.1 D10: the owner's own attached picture
-                    source = {"type": "base64", "media_type": b.media_type, "data": b.b64()}
-                    blocks.append({"type": "image", "source": source})
-                elif isinstance(b, ToolCall):
-                    blocks.append(
-                        {"type": "tool_use", "id": b.id, "name": b.name, "input": b.arguments}
-                    )
-                elif isinstance(b, ToolResultBlock):
-                    blocks.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": b.tool_use_id,
-                            "content": b.content,
-                            "is_error": b.is_error,
-                        }
-                    )
-            out.append({"role": m.role.value, "content": blocks})
-        return out
+    def _block(b: object) -> BlockParam | None:
+        if isinstance(b, TextBlock):
+            return {"type": "text", "text": b.text}
+        if isinstance(b, ImageBlock):  # R11.1 D10: the owner's own attached picture
+            source: Base64ImageSourceParam = {
+                "type": "base64",
+                "media_type": b.media_type,
+                "data": b.b64(),
+            }
+            return {"type": "image", "source": source}
+        if isinstance(b, ToolCall):
+            return {"type": "tool_use", "id": b.id, "name": b.name, "input": b.arguments}
+        if isinstance(b, ToolResultBlock):  # `trusted` is ours: never sent (base.py)
+            return {
+                "type": "tool_result",
+                "tool_use_id": b.tool_use_id,
+                "content": b.content,
+                "is_error": b.is_error,
+            }
+        return None
+
+    @classmethod
+    def _content(cls, m: ChatMessage, *, as_blocks: bool) -> str | list[BlockParam]:
+        if isinstance(m.content, str):
+            text: TextBlockParam = {"type": "text", "text": m.content}
+            return [text] if as_blocks and m.content else m.content
+        return [p for p in (cls._block(b) for b in m.content) if p is not None]
+
+    @classmethod
+    def _to_params(
+        cls, messages: list[ChatMessage], *, mark_last: bool = False
+    ) -> list[MessageParam]:
+        """This call's own copies of `messages`. With `mark_last` (R14 D9) every plain string goes
+        out as one text block, so a later round's prefix is byte-for-byte the same as this one's,
+        and the last message's last non-empty block carries the cache breakpoint."""
+        contents = [cls._content(m, as_blocks=mark_last) for m in messages]
+        if mark_last and contents and isinstance(contents[-1], list):
+            _mark(contents[-1])
+        return [_message(m.role, c) for m, c in zip(messages, contents, strict=True)]
 
     @staticmethod
     def _tool_params(tools: list[ToolSpec] | None) -> list[ToolParam] | None:
@@ -151,17 +209,32 @@ class AnthropicProvider:
 
     @classmethod
     def _translate(cls, exc: Exception) -> LLMError:
+        """Our error class with FIXED words (R14 D9): the vendor's message is read here only to
+        tell a low credit balance apart, and never passed on, chained or logged."""
         if isinstance(exc, anthropic.AuthenticationError | anthropic.PermissionDeniedError):
-            return LLMAuthError(str(exc))
+            return LLMAuthError(AUTH_REFUSED)
         if cls._out_of_credit(exc):
-            return LLMOutOfCredit()  # fixed words: the vendor's text stays here
+            return LLMOutOfCredit()
         if isinstance(exc, _UNREACHABLE) or (
             isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500
         ):
-            return LLMUnreachable(str(exc))
+            return LLMUnreachable(UNREACHABLE)
         if isinstance(exc, _TRANSIENT):
-            return LLMTransientError(str(exc))
-        return LLMError(str(exc))
+            return LLMTransientError(BUSY)
+        return LLMError(NO_ANSWER)
+
+    @classmethod
+    def _failed(cls, exc: Exception, model: str) -> LLMError:
+        """The translated error, logged with our class, the original's class name (`cause`, so
+        a bug in our own call is told apart from an outage) and the HTTP status: never its words.
+        Raise it AFTER the `except` block, so not even `__context__` holds the vendor's exception
+        (its response, its body, its request)."""
+        err = cls._translate(exc)
+        status = exc.status_code if isinstance(exc, anthropic.APIStatusError) else None
+        cause = type(exc).__name__
+        extra = {"model": model, "error": type(err).__name__, "cause": cause, "status": status}
+        log.error("llm call failed", extra=extra)
+        return err
 
     def _kwargs(
         self,
@@ -173,12 +246,14 @@ class AnthropicProvider:
         max_tokens: int,
         effort: Effort | None,
         tools: list[ToolSpec] | None = None,
-    ) -> dict:
-        kw: dict = {
+        history_hint: bool = False,
+    ) -> dict[str, Any]:
+        params = self._to_params(messages, mark_last=history_hint and self.cache_history)
+        kw: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
             "system": self._system_blocks(system, system_dynamic),
-            "messages": self._to_params(messages),
+            "messages": params,
         }
         if effort is not None:
             kw["output_config"] = {"effort": effort.value}
@@ -201,24 +276,42 @@ class AnthropicProvider:
         tools: list[ToolSpec] | None = None,
     ) -> Completion:
         t0 = time.perf_counter()
-        try:
-            msg = await self._client.messages.create(
-                **self._kwargs(
-                    system=system,
-                    system_dynamic=system_dynamic,
-                    messages=messages,
-                    model=model,
-                    max_tokens=max_tokens,
-                    effort=effort,
-                    tools=tools,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy below
-            err = self._translate(exc)
-            log.error("llm call failed", extra={"model": model, "error": type(err).__name__})
-            raise err from exc
+        kw = self._kwargs(
+            system=system,
+            system_dynamic=system_dynamic,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            effort=effort,
+            tools=tools,
+            history_hint=bool(tools),  # only a tool round is ever followed by a second call
+        )
+        msg = await self._create(kw, model)
+        completion = self._completion(msg, model, int((time.perf_counter() - t0) * 1000))
+        log.info(
+            "llm call",
+            extra={
+                "model": msg.model,
+                "in_tok": completion.usage.input_tokens,
+                "out_tok": completion.usage.output_tokens,
+                "cache_read": completion.usage.cache_read_tokens,
+                "latency_ms": completion.latency_ms,
+                "cost_usd": completion.cost_usd,
+                "stop": msg.stop_reason,
+            },
+        )
+        return completion
 
-        latency_ms = int((time.perf_counter() - t0) * 1000)
+    async def _create(self, kw: dict[str, Any], model: str) -> Message:
+        failed: LLMError
+        try:
+            created: Message = await self._client.messages.create(**kw)  # no stream: a Message
+            return created
+        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain
+            failed = self._failed(exc, model)
+        raise failed  # outside the except block: no __context__ (security review LOW-1)
+
+    def _completion(self, msg: Message, model: str, latency_ms: int) -> Completion:
         text = "".join(b.text for b in msg.content if isinstance(b, AnthropicTextBlock))
         calls = [
             ToolCall(
@@ -228,7 +321,7 @@ class AnthropicProvider:
             if isinstance(b, ToolUseBlock)
         ]
         usage = self._usage(msg.usage)
-        completion = Completion(
+        return Completion(
             text=text,
             tool_calls=calls,
             model=msg.model,
@@ -238,19 +331,6 @@ class AnthropicProvider:
             latency_ms=latency_ms,
             cost_usd=cost_usd(model, usage),
         )
-        log.info(
-            "llm call",
-            extra={
-                "model": msg.model,
-                "in_tok": usage.input_tokens,
-                "out_tok": usage.output_tokens,
-                "cache_read": usage.cache_read_tokens,
-                "latency_ms": latency_ms,
-                "cost_usd": completion.cost_usd,
-                "stop": msg.stop_reason,
-            },
-        )
-        return completion
 
     async def stream(
         self,
@@ -266,25 +346,27 @@ class AnthropicProvider:
         """Text deltas; the exact usage goes into `usage` as it arrives: input + cache counts on
         `message_start`, the cumulative output (and any revised input) on `message_delta`. A
         reader that leaves early keeps the opening counts (the caller estimates the rest)."""
+        kw = self._kwargs(
+            system=system,
+            system_dynamic=system_dynamic,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            effort=effort,
+        )
+        failed: LLMError | None = None
         try:
-            async with self._client.messages.stream(
-                **self._kwargs(
-                    system=system,
-                    system_dynamic=system_dynamic,
-                    messages=messages,
-                    model=model,
-                    max_tokens=max_tokens,
-                    effort=effort,
-                )
-            ) as stream:
+            async with self._client.messages.stream(**kw) as stream:
                 async for event in stream:
                     if isinstance(event, RawContentBlockDeltaEvent):
                         if isinstance(event.delta, TextDelta) and event.delta.text:
                             yield event.delta.text
                     elif usage is not None:
                         self._note_usage(event, usage)
-        except Exception as exc:  # noqa: BLE001
-            raise self._translate(exc) from exc
+        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain
+            failed = self._failed(exc, model)
+        if failed is not None:
+            raise failed  # outside the except block: no __context__ (security review LOW-1)
 
     @staticmethod
     def _note_usage(event: object, sink: StreamUsage) -> None:

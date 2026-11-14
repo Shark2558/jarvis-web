@@ -20,7 +20,6 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from jarvis.config import LLMBackend, Settings
-from jarvis.llm.anthropic_provider import AnthropicProvider
 from jarvis.llm.base import (
     ChatMessage,
     Completion,
@@ -266,7 +265,7 @@ class ModelRouter:
             raise exc
         log.warning(
             "tier degraded after transient error",
-            extra={"from": current.value, "to": nxt.value, "error": str(exc)[:200]},
+            extra={"from": current.value, "to": nxt.value, "error": type(exc).__name__},
         )
         return nxt
 
@@ -375,13 +374,9 @@ def build_provider(s: Settings) -> LLMProvider:
     if s.llm_backend is LLMBackend.MOCK:
         return MockProvider()
     if s.llm_backend is LLMBackend.ANTHROPIC:
-        if s.anthropic_api_key is None:
-            raise RuntimeError("JARVIS_ANTHROPIC_API_KEY is not set")
-        return AnthropicProvider(
-            s.anthropic_api_key.get_secret_value(),
-            timeout_s=s.llm_timeout_s,
-            max_retries=s.llm_max_retries,
-        )
+        from jarvis.llm.factory import anthropic_provider
+
+        return anthropic_provider(s)  # R14 D9: with `cache_history` from the settings
     if s.llm_backend is LLMBackend.GEMINI:
         if s.gemini_api_key is None:
             raise RuntimeError("JARVIS_GEMINI_API_KEY is not set")

@@ -50,7 +50,8 @@ def test_hinglish_words_choose_their_groups_too() -> None:
 def test_short_words_match_whole_words_only() -> None:
     offer = _offer()
     assert "home_control" in names(offer(ctx("switch the tv off"), SPECS))
-    assert "home_control" not in names(_offer()(ctx("the tvs are fine"), SPECS))
+    assert "home_control" in names(_offer()(ctx("are both tvs off?"), SPECS))  # a plural s
+    assert "home_control" not in names(_offer()(ctx("the tvos update is out"), SPECS))
     assert "bill_list" in names(_offer()(ctx("pay the rent"), SPECS))
     assert "bill_list" not in names(_offer()(ctx("payload of the request"), SPECS))
 
@@ -145,5 +146,6 @@ def test_the_words_table_matches_word_starts() -> None:
     words = Words(("remind", "ac", "near me"))
     assert words.search("Please REMIND me") and words.search("reminders?")
     assert words.search("is the AC on") and not words.search("accurate")
+    assert words.search("two acs") and not words.search("acsr")
     assert words.search("anything near   me") and not words.search("unremind")
     assert not Words(()).search("anything")

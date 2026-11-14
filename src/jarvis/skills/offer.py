@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 HISTORY_TURNS: Final = 3
 STICKY_MAX_TOOLS: Final = 40  # a sticky set past this starts afresh (a long busy session)
-SHORT_WORD: Final = 3  # words this short match a whole word only ("ac", "tv", "pay")
+SHORT_WORD: Final = 3  # words this short match a whole word, or with an s ("ac", "tv", "emi")
 OPEN_TOOL: Final = "skills_open"
 _EDGE = r"(?<![a-z0-9])"
 
@@ -47,7 +47,7 @@ def offer_all(ctx: OfferContext | None, specs: Sequence[ToolSpec]) -> list[ToolS
 
 def _word_pattern(word: str) -> str:
     body = r"\s+".join(re.escape(part) for part in word.split())
-    tail = r"(?![a-z0-9])" if len(word) <= SHORT_WORD else ""
+    tail = r"s?(?![a-z0-9])" if len(word) <= SHORT_WORD else ""  # "emi" and "emis", never "email"
     return _EDGE + body + tail
 
 

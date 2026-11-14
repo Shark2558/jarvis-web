@@ -11,7 +11,7 @@ Telegram classes, cards and audit all apply) or a fixed line. No model, ever.
     remove milk from my grocery list                   grocery_remove(items)
     what's expiring in my vault                        vault_expiring
     where did I put my passport                        belongings_where(item)
-    I kept the keys in the drawer                      belongings_put(item, place)
+    I kept / put the keys in the drawer                belongings_put(item, place)
     is the house armed / home status                   home_status
     arm the alarm (for the night)                      home_arm(mode)
     disarm the alarm                                   a fixed line: never a tool (Home panel only)
@@ -25,7 +25,10 @@ Telegram classes, cards and audit all apply) or a fixed line. No model, ever.
     what can you do (without the AI)                   a fixed list: the 11 skills, what works
 
 `ROUTERS` are separate functions, so the wiring puts them into No-AI mode one at a time (one that
-does not fit never drops the others); parcels come before "where is my ..." things.
+does not fit never drops the others); parcels come before "where is my ..." things. A thing is
+never a person, a place, a ride or money ("where are the kids", "I left the house at 9"); a bare
+"time" or "date" is a topic, not the clock; a service ask with a phone number or a link gets the
+refusal line with no call. Day and month names are fixed English words (no server locale).
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ from datetime import datetime
 from typing import Any
 
 from jarvis.groceries.items import NAME_MAX, UNIT_ALIASES
+from jarvis.helpers.house.service_request import CONTACT_REFUSAL, has_contact
 from jarvis.offline.rules import NoAICall, NoAIRoute
 from jarvis.skills.ids import SKILL_IDS, SKILL_LABELS
 
@@ -79,7 +83,7 @@ def _p(body: str) -> re.Pattern[str]:
     return re.compile(_LEAD + r"(?:" + body + r")" + _END, _I)
 
 
-def _one(tool: str, **args: Any) -> NoAIRoute:
+def _call(tool: str, **args: Any) -> NoAIRoute:
     return NoAIRoute((NoAICall(tool, dict(args)),))
 
 
@@ -89,7 +93,7 @@ def _line(text: str) -> str:
 
 def _simple(pattern: re.Pattern[str], tool: str) -> Router:
     def route(text: str, now: datetime) -> NoAIRoute | None:
-        return _one(tool) if pattern.match(_line(text)) else None
+        return _call(tool) if pattern.match(_line(text)) else None
 
     route.__name__ = route.__qualname__ = f"r14_{tool}"
     return route
@@ -128,7 +132,7 @@ def _item(name: str) -> dict[str, Any]:
 def groceries(text: str, now: datetime) -> NoAIRoute | None:
     one = _line(text)
     if G_SHOW.match(one):
-        return _one("grocery_list")
+        return _call("grocery_list")
     add, remove = G_ADD.match(one), G_REMOVE.match(one)
     found = add or remove
     if found is None:
@@ -141,8 +145,8 @@ def groceries(text: str, now: datetime) -> NoAIRoute | None:
     if any(len(n) > NAME_MAX for n in names):
         return NoAIRoute(reply=TOO_LONG)
     if add is not None:
-        return _one("grocery_add", items=[_item(n) for n in names])
-    return _one("grocery_remove", items=[_item(n)["name"] for n in names])
+        return _call("grocery_add", items=[_item(n) for n in names])
+    return _call("grocery_remove", items=[_item(n)["name"] for n in names])
 
 
 # ---- the vault, parcels, the inbox, Recently deleted, backups ----------------------------------
@@ -183,33 +187,44 @@ DRILL = _p(
 
 
 # ---- things: where they are, where they went --------------------------------------------------
-_NOT_THINGS = frozenset(
+_NOT_THINGS = frozenset(  # any of these words: someone else's question (parcels, the calendar)
     "parcel parcels package packages order orders delivery deliveries courier meeting meetings "
     "appointment appointments event events".split()
+)
+_NOT_A_THING = frozenset(  # the last word: a person, a place, a ride or money, never a thing
+    "kid kids child children son sons daughter daughters baby wife husband mom mum mother dad "
+    "father parents family friend friends brother sister boss guest guests maid driver toilet "
+    "bathroom washroom restroom loo house home office job work school college hospital station "
+    "airport bus train flight cab taxi uber ola auto ride metro refund salary money payment "
+    "pension bonus turn".split()
 )
 WHERE = _p(
     r"where(?:'s|\s+is|\s+are|\s+did\s+i\s+(?:put|keep|leave|store)|\s+do\s+i\s+keep"
     r"|\s+have\s+i\s+(?:put|kept))\s+" + _MY + _THING
 )
 PUT = _p(
-    r"i(?:'ve|\s+have)?\s+(?:kept|put|placed|left|stored|moved|hid|hidden)\s+" + _MY + _THING
+    r"i(?:'ve|\s+have)?\s+(?:kept|put|placed|stored|hid|hidden)\s+" + _MY + _THING
     + r"\s+(?P<prep>in|inside|on\s+top\s+of|on|under|behind|at|with|near|beside|next\s+to)\s+"
     r"(?P<place>\S.{0,79}?)"
 )  # fmt: skip
+
+
+def _a_thing(item: str) -> bool:
+    words = item.casefold().split()
+    head = words[-1].removesuffix("'s").rstrip("'") if words else ""
+    return not _NOT_THINGS.intersection(words) and head not in _NOT_A_THING
 
 
 def things(text: str, now: datetime) -> NoAIRoute | None:
     one = _line(text)
     if (m := WHERE.match(one)) is not None:
         item = " ".join(m["item"].split())
-        if _NOT_THINGS.intersection(item.casefold().split()):
-            return None  # a parcel or a meeting is someone else's question
-        return _one("belongings_where", item=item)
-    if (m := PUT.match(one)) is None:
+        return _call("belongings_where", item=item) if _a_thing(item) else None
+    if (m := PUT.match(one)) is None or not _a_thing(m["item"]):
         return None
     prep = " ".join(m["prep"].casefold().split())
     place = m["place"].strip(" .")
-    return _one(
+    return _call(
         "belongings_put",
         item=" ".join(m["item"].split()),
         place=place if prep == "in" else f"{prep} {place}",
@@ -238,9 +253,9 @@ def home(text: str, now: datetime) -> NoAIRoute | None:
     if DISARM.match(one):
         return NoAIRoute(reply=DISARM_LINE)  # D12: disarm never routes, not even to home_disarm
     if HOME_STATUS.match(one):
-        return _one("home_status")
+        return _call("home_status")
     if (m := ARM.match(one)) is not None:
-        return _one("home_arm", mode="night" if m["night"] else "away")
+        return _call("home_arm", mode="night" if m["night"] else "away")
     return None
 
 
@@ -251,12 +266,15 @@ MEMORY = _p(
 )
 TIME = _p(
     r"what(?:'s|\s+is)\s+the\s+time(?:\s+now)?|what\s+time\s+is\s+it(?:\s+now)?"
-    r"|tell\s+me\s+the\s+time|(?:the\s+|current\s+)?time(?:\s+now)?"
-)
+    r"|tell\s+me\s+the\s+time|(?:the|current)\s+time(?:\s+now)?|time\s+now"
+)  # never a bare "time": a topic, not the clock
 DATE = _p(
     r"what(?:'s|\s+is)\s+(?:the\s+date|today'?s\s+date)(?:\s+today)?"
-    r"|what\s+(?:day|date)\s+is\s+(?:it|today)(?:\s+today)?|(?:today'?s\s+)?date(?:\s+today)?"
+    r"|what\s+(?:day|date)\s+is\s+(?:it|today)(?:\s+today)?|today'?s\s+date|date\s+today"
 )
+DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August",
+          "September", "October", "November", "December")  # fmt: skip
 ABILITIES = _p(
     r"what\s+(?:can|could)\s+you\s+do(?:\s+(?:without|with\s+no)\s+(?:the\s+)?ai|\s+offline"
     r"|\s+now|\s+for\s+me)?|what\s+works\s+(?:without|with\s+no)\s+(?:the\s+)?ai"
@@ -269,7 +287,7 @@ def memory(text: str, now: datetime) -> NoAIRoute | None:
     if m is None:
         return None
     query = (m["q"] or m["q2"] or "").strip(" .?!")
-    return _one("memory_search", query=query) if query else None
+    return _call("memory_search", query=query) if query else None
 
 
 def clock(text: str, now: datetime) -> NoAIRoute | None:
@@ -278,7 +296,8 @@ def clock(text: str, now: datetime) -> NoAIRoute | None:
         zone = now.strftime("%Z")
         return NoAIRoute(reply=f"It's {now:%H:%M}{f' ({zone})' if zone else ''}, Sir.")
     if DATE.match(one):
-        return NoAIRoute(reply=f"Today is {now:%A}, {now.day} {now:%B %Y}, Sir.")
+        day, month = DAYS[now.weekday()], MONTHS[now.month - 1]
+        return NoAIRoute(reply=f"Today is {day}, {now.day} {month} {now.year}, Sir.")
     return None
 
 
@@ -301,10 +320,14 @@ _WHEN = (
     r"(?:(?:for|on|at|by|this|next)\s+)?(?:today|tonight|tomorrow|this|next|mon|tue|wed|thu|fri"
     r"|sat|sun|\d{1,2}(?::\d{2})?\s*(?:am|pm))[\w\s:]{0,30}?"
 )
+_NOT_A_PROBLEM = (  # a time is never read as the problem ("for 5 pm", "for Saturday")
+    r"(?!(?:today|tonight|tomorrow|this|next|on|at)\b|\d{1,2}(?::\d{2})?\s*(?:am|pm)\b"
+    r"|(?:mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?|sun)(?:day)?\b)"
+)
 SERVICE = _p(
     r"(?:book|get|call|find|arrange|hire|i\s+need)(?:\s+me)?\s+(?:a|an)\s+"
     r"(?P<job>" + "|".join(p for p, _ in _JOBS) + r")"
-    r"(?:\s+(?:to|for)\s+(?P<problem>(?!(?:today|tonight|tomorrow|this|next|on|at)\b)\S.{0,199}?))?"
+    r"(?:\s+(?:to|for)\s+(?P<problem>" + _NOT_A_PROBLEM + r"\S.{0,199}?))?"
     r"(?:\s+(?P<when>" + _WHEN + r"))?"
 )
 _LEADING = re.compile(r"^(?:for|on|at|by)\s+", _I)
@@ -319,6 +342,8 @@ def service(text: str, now: datetime) -> NoAIRoute | None:
     m = SERVICE.match(_line(text))
     if m is None:
         return None
+    if has_contact(" ".join(x for x in (m["problem"], m["when"]) if x)):
+        return NoAIRoute(reply=CONTACT_REFUSAL)  # the tool would refuse it: no call, no audit
     args: dict[str, Any] = {"job": _job(m["job"])}
     if m["problem"]:
         args["problem"] = m["problem"].strip(" .")

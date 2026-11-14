@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from r14_fakes_a import (
     BACKUP_NAME,
+    IST,
     OTHER_KEY,
     PREFIX,
     RESTAMP_FIELD,
@@ -48,7 +49,9 @@ async def _world(*, vault: bool = True, **kw: object) -> World:
     if vault:
         await seed_vault(world.live, keys)
     await seed_rest(world.live)
-    await canary.CanaryStore(world.live, prefix=PREFIX).write(keys, SNAP - dt.timedelta(hours=2))
+    await canary.CanaryStore(world.live, prefix=PREFIX, zone=IST).write(
+        keys, SNAP - dt.timedelta(hours=2)
+    )
     world.snapshot()
     return world
 
@@ -98,7 +101,9 @@ async def test_an_unknown_sub_collection_fails_closed() -> None:
     world = World()
     await seed_rest(world.live)
     await world.live.write([Set(f"{PREFIX}notes/n1/mystery/m1", {"at": "x"})])
-    await canary.CanaryStore(world.live, prefix=PREFIX).write(ring(), SNAP - dt.timedelta(hours=1))
+    await canary.CanaryStore(world.live, prefix=PREFIX, zone=IST).write(
+        ring(), SNAP - dt.timedelta(hours=1)
+    )
     world.snapshot()
     p = await _run(_job(world))
     assert verify.outcome(p) == ("failed", "count_mismatch")
@@ -114,7 +119,9 @@ async def test_a_copy_without_the_days_canary_fails() -> None:
     world = World()
     await seed_vault(world.live, ring())
     await seed_rest(world.live)
-    await canary.CanaryStore(world.live, prefix=PREFIX).write(ring(), SNAP - dt.timedelta(hours=30))
+    await canary.CanaryStore(world.live, prefix=PREFIX, zone=IST).write(
+        ring(), SNAP - dt.timedelta(hours=30)
+    )
     world.snapshot()
     p = await _run(_job(world))
     assert verify.outcome(p) == ("failed", "canary_missing")

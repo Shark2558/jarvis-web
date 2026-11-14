@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 from r14_fakes_a import (
@@ -33,6 +34,7 @@ from jarvis.backup.status import (
 from jarvis.storage.docs import MemoryDocs
 
 NOW = dt.datetime(2026, 11, 14, 5, 30, tzinfo=dt.UTC)
+IST = ZoneInfo("Asia/Kolkata")
 
 
 class Clock:
@@ -59,7 +61,7 @@ def test_a_canary_opens_only_with_the_key_that_sealed_it() -> None:
 
 async def test_the_canary_is_written_once_a_day_and_kept_thirty_days() -> None:
     docs = MemoryDocs()
-    store = canary.CanaryStore(docs, prefix=PREFIX)
+    store = canary.CanaryStore(docs, prefix=PREFIX, zone=IST)
     keys = ring()
     for back in (40, 31, 30, 1):
         old = NOW - dt.timedelta(days=back)
@@ -75,8 +77,18 @@ async def test_the_canary_is_written_once_a_day_and_kept_thirty_days() -> None:
     assert await store.key_changed(ring(OTHER_KEY), "20261114") is True
 
 
+async def test_the_canary_day_is_his_day_not_utcs() -> None:
+    store = canary.CanaryStore(MemoryDocs(), prefix=PREFIX, zone=IST)
+    keys = ring()
+    before = dt.datetime(2026, 11, 13, 23, 59, tzinfo=dt.UTC)  # 05:29 on the 14th in Kolkata
+    assert await store.write(keys, before) is True
+    assert await store.write(keys, before + dt.timedelta(minutes=2)) is False  # 05:31: same day
+    assert [d for d, _ in await store.all()] == ["20261114"]
+    assert store.today(before) == "20261114"
+
+
 async def test_no_canary_before_means_no_key_change() -> None:
-    store = canary.CanaryStore(MemoryDocs(), prefix=PREFIX)
+    store = canary.CanaryStore(MemoryDocs(), prefix=PREFIX, zone=IST)
     assert await store.key_changed(ring(), "20261114") is False
 
 
@@ -91,8 +103,8 @@ def test_the_costs_in_rupees() -> None:
 
 # ---- the status -----------------------------------------------------------------------------
 def _service(docs: MemoryDocs, clock: Clock) -> BackupStatusService:
-    return BackupStatusService(docs, DrillLog(docs, prefix=PREFIX, clock=clock), prefix=PREFIX,
-                               clock=clock)  # fmt: skip
+    log = DrillLog(docs, prefix=PREFIX, clock=clock, zone=IST)
+    return BackupStatusService(docs, log, prefix=PREFIX, clock=clock, zone=IST)
 
 
 async def test_before_the_set_up_the_facts_say_not_set_up() -> None:
@@ -129,9 +141,9 @@ async def test_the_status_keeps_the_newest_ready_backup_and_when_the_schedule_wa
 
 async def test_the_facts_carry_the_last_drills_result() -> None:
     docs, clock = MemoryDocs(), Clock()
-    log = DrillLog(docs, prefix=PREFIX, clock=clock)
+    log = DrillLog(docs, prefix=PREFIX, clock=clock, zone=IST)
     await log.record(DrillResult(outcome="failed", reason="count_mismatch", at=NOW))
-    status = BackupStatusService(docs, log, prefix=PREFIX, clock=clock)
+    status = BackupStatusService(docs, log, prefix=PREFIX, clock=clock, zone=IST)
     got = await status.facts()
     assert got.drill == "failed: count_mismatch" and got.drill_at == NOW
     await log.record(DrillResult(outcome="passed", at=NOW + dt.timedelta(days=30)))
@@ -140,9 +152,20 @@ async def test_the_facts_carry_the_last_drills_result() -> None:
     assert (await status.facts()).drill == "skipped: no vault"
 
 
+async def test_a_drill_result_is_kept_under_his_month_not_utcs() -> None:
+    docs = MemoryDocs()
+    log = DrillLog(docs, prefix=PREFIX, clock=Clock(), zone=IST)
+    await log.record(DrillResult(outcome="passed", at=dt.datetime(2026, 11, 3, 1, tzinfo=dt.UTC)))
+    first = dt.datetime(2026, 11, 30, 23, 30, tzinfo=dt.UTC)  # 05:00 on 1 Dec in Kolkata
+    await log.record(DrillResult(outcome="failed", reason="over_cap", at=first))
+    months = dict(await log.results())
+    assert months["202611"].outcome == "passed"  # November's real result is kept
+    assert months["202612"].reason == "over_cap"
+
+
 async def test_drill_results_are_kept_thirteen_months() -> None:
     docs = MemoryDocs()
-    log = DrillLog(docs, prefix=PREFIX, clock=Clock())
+    log = DrillLog(docs, prefix=PREFIX, clock=Clock(), zone=IST)
     start = dt.datetime(2025, 9, 1, tzinfo=dt.UTC)
     for n in range(15):
         at = (start + dt.timedelta(days=31 * n)).replace(day=1)
@@ -167,6 +190,18 @@ async def test_a_problem_is_told_once_a_cause_a_day_and_the_claim_comes_first() 
         ("backup_problem", "stale"),
     ]
     assert all(m == TEXTS[s.subject or ""] for _, s, m in sent.sent)
+
+
+async def test_once_a_day_is_his_day_not_utcs() -> None:
+    # the morning tick runs 04:00-11:30 in Kolkata; UTC midnight (05:30 there) is inside it
+    docs, clock = MemoryDocs(), Clock(dt.datetime(2026, 11, 13, 22, 45, tzinfo=dt.UTC))  # 04:15
+    status, sent = _service(docs, clock), RecordingNotifier()
+    teller = Teller(status, lambda: sent)
+    assert await teller.problem((UID,), "stale") == 1
+    clock.at = dt.datetime(2026, 11, 14, 0, 15, tzinfo=dt.UTC)  # 05:45 the same morning
+    assert await teller.problem((UID,), "stale") == 0
+    clock.at = dt.datetime(2026, 11, 14, 22, 45, tzinfo=dt.UTC)  # 04:15 the next morning
+    assert await teller.problem((UID,), "stale") == 1
 
 
 async def test_the_left_over_copy_is_told_weekly() -> None:

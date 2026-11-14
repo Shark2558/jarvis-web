@@ -1,7 +1,7 @@
 # src/jarvis/backup/canary.py
 """The backups' daily canary (docs/plans/r14-hardening.md D4 "Canary"; data model).
 
-    {prefix}backup_canary/{yyyymmdd}   {hash, sealed, fp, v, at}       kept 30 days
+    {prefix}backup_canary/{yyyymmdd}   {hash, sealed, fp, v, at}       kept 30 days (his day)
 
 `hash` is the SHA-256 of a fresh random 32-byte nonce; `sealed` is that nonce sealed with the
 keyring purpose `backup_probe` (AAD `backup_canary/{yyyymmdd}/v1`); `fp` is the key's fingerprint,
@@ -89,9 +89,14 @@ def when(doc: Doc) -> dt.datetime | None:
 class CanaryStore:
     """The daily canary on the live store (one document a day, the last 30 days)."""
 
-    def __init__(self, docs: Docs, *, prefix: str = "jarvis_") -> None:
+    def __init__(self, docs: Docs, *, zone: dt.tzinfo, prefix: str = "jarvis_") -> None:
         self._d = docs
+        self._zone = zone
         self._col = f"{prefix}{COLLECTION}"
+
+    def today(self, now: dt.datetime) -> str:
+        """His day (the owner's zone), the one convention of Part A's day keys."""
+        return day_key(now.astimezone(self._zone))
 
     def path(self, day: str) -> str:
         return f"{self._col}/{day}"
@@ -101,7 +106,7 @@ class CanaryStore:
 
     async def write(self, keys: Keyring, now: dt.datetime) -> bool:
         """Today's canary, once (True when written now)."""
-        day = day_key(now)
+        day = self.today(now)
         if await self._d.get(self.path(day)) is not None:
             return False
         try:
@@ -122,7 +127,7 @@ class CanaryStore:
         return opens(keys, found[1], found[0]) == "key"
 
     async def prune(self, now: dt.datetime) -> int:
-        oldest = day_key(now - dt.timedelta(days=KEEP_DAYS))
+        oldest = self.today(now - dt.timedelta(days=KEEP_DAYS))
         old = [d for d, _ in await self.all() if d < oldest]
         if old:
             await self._d.write([Delete(self.path(d)) for d in old])

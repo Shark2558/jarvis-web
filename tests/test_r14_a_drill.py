@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from r14_fakes_a import (
     GIB,
+    IST,
     PREFIX,
     SNAP,
     UID,
@@ -36,7 +37,7 @@ from jarvis.backup.drill import (
     Drill,
     DrillDeps,
 )
-from jarvis.backup.log import DrillLog
+from jarvis.backup.log import DrillLog, DrillResult
 from jarvis.backup.ports import DRILL_DB
 from jarvis.backup.readonly import read_only
 from jarvis.backup.status import BackupStatusService, Teller
@@ -61,8 +62,10 @@ class Rig:
     def __init__(self, world: World, clock: Clock, s: Settings, **kw: Any) -> None:
         self.world, self.clock, self.sent = world, clock, RecordingNotifier()
         self.admin = FakeAdmin(world)
-        self.log = DrillLog(world.live, prefix=PREFIX, clock=clock)
-        self.status = BackupStatusService(world.live, self.log, prefix=PREFIX, clock=clock)
+        self.log = DrillLog(world.live, prefix=PREFIX, clock=clock, zone=IST)
+        self.status = BackupStatusService(
+            world.live, self.log, prefix=PREFIX, clock=clock, zone=IST
+        )
         self.walks: list[FakeWalk] = []
 
         def walk() -> FakeWalk:
@@ -110,7 +113,9 @@ async def _world(**kw: Any) -> World:
     world = World(**kw)
     await seed_vault(world.live, ring())
     await seed_rest(world.live)
-    await canary.CanaryStore(world.live, prefix=PREFIX).write(ring(), SNAP - dt.timedelta(hours=2))
+    await canary.CanaryStore(world.live, prefix=PREFIX, zone=IST).write(
+        ring(), SNAP - dt.timedelta(hours=2)
+    )
     world.snapshot()
     return world
 
@@ -185,6 +190,19 @@ async def test_a_backup_over_the_cap_is_refused_before_any_restore(s: Settings) 
     last = await rig.log.last_result()
     assert last is not None and (last.outcome, last.reason) == ("failed", "over_cap")
     assert rig.sent.kinds() == [("backup_problem", "drill_failed")]
+    assert (await rig.log.state()).auto_month == "202612"
+
+
+async def test_a_refusal_at_five_on_the_first_is_his_new_months_result(s: Settings) -> None:
+    world = await _world()
+    world.backups[-1] = replace(world.backups[-1], size_bytes=6 * GIB)
+    first = dt.datetime(2026, 11, 30, 23, 30, tzinfo=dt.UTC)  # 05:00 on 1 Dec in Kolkata
+    rig = await _rig(s, world=world, at=first)
+    november = DrillResult(outcome="passed", at=dt.datetime(2026, 11, 2, 1, tzinfo=dt.UTC))
+    await rig.log.record(november)
+    assert await rig.tick() == "refused"
+    months = dict(await rig.log.results())
+    assert months["202611"] == november and months["202612"].reason == "over_cap"
     assert (await rig.log.state()).auto_month == "202612"
 
 

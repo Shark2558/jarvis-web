@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 
 from r14_fakes_a import (
+    IST,
     OTHER_KEY,
     PREFIX,
     SNAP,
@@ -47,9 +48,11 @@ class Rig:
             RecordingNotifier(),
         )
         self.admin = FakeAdmin(world)
-        log = DrillLog(world.live, prefix=PREFIX, clock=self.clock)
-        self.status = BackupStatusService(world.live, log, prefix=PREFIX, clock=self.clock)
-        self.canaries = canary.CanaryStore(world.live, prefix=PREFIX)
+        log = DrillLog(world.live, prefix=PREFIX, clock=self.clock, zone=IST)
+        self.status = BackupStatusService(
+            world.live, log, prefix=PREFIX, clock=self.clock, zone=IST
+        )
+        self.canaries = canary.CanaryStore(world.live, prefix=PREFIX, zone=IST)
         self.job = BackupCanaryJob(
             s=s,
             canaries=self.canaries,

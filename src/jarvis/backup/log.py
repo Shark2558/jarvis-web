@@ -9,10 +9,11 @@ drill's state and results. The checks (`verify`, `walk_checks`, `vault_probe`) n
                                      manual request and this month's manual drills, the month the
                                      scheduled drill ran, when a drill copy was first seen and
                                      last deleted
-    {prefix}backup_drills/{yyyymm}   DrillResult: passed | failed | skipped, a reason code, the
-                                     counts, the collections, samples and vault items compared,
-                                     whether a vault file opened and the canary held, the minutes
-                                     and the rupee estimate; the latest of the month; 13 months
+    {prefix}backup_drills/{yyyymm}   DrillResult (his month): passed | failed | skipped, a
+                                     reason code, the counts, the collections, samples and vault
+                                     items compared, whether a vault file opened and the canary
+                                     held, the minutes and the rupee estimate; the latest of the
+                                     month; 13 months
 
 Counts, ids and reason codes only: no document content, no vault text, no key. A state document
 that can't be read is treated as idle (the drill's clean-up still asks Google whether a copy
@@ -121,12 +122,22 @@ def _state_of(doc: Doc | None) -> DrillState:
 
 class DrillLog:
     def __init__(
-        self, docs: Docs, *, prefix: str = "jarvis_", clock: Callable[[], dt.datetime] = _now
+        self,
+        docs: Docs,
+        *,
+        zone: dt.tzinfo,
+        prefix: str = "jarvis_",
+        clock: Callable[[], dt.datetime] = _now,
     ) -> None:
         self._d = docs
+        self._zone = zone
         self._state = f"{prefix}{STATE_COLLECTION}/{STATE_ID}"
         self._results = f"{prefix}{RESULTS_COLLECTION}"
         self._clock = clock
+
+    def month_of(self, at: dt.datetime) -> str:
+        """His month (the owner's zone), as the drill's limits count it."""
+        return month_key(at.astimezone(self._zone))
 
     def _doc(self, state: DrillState) -> Doc:
         stamped = state.model_copy(update={"updated_at": self._clock()})
@@ -152,7 +163,7 @@ class DrillLog:
     async def record(self, result: DrillResult) -> None:
         """The month's result (the latest drill of the month), then the oldest past 13 go."""
         await self._d.write(
-            [Set(f"{self._results}/{month_key(result.at)}", result.model_dump(mode="json"))]
+            [Set(f"{self._results}/{self.month_of(result.at)}", result.model_dump(mode="json"))]
         )
         months = [m for m, _ in await self.results()]
         old = months[:-KEEP_MONTHS]

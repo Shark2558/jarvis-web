@@ -34,6 +34,7 @@ from jarvis.backup.vitals import vitals_reader
 from jarvis.config import SessionBackend, Settings
 from jarvis.hardening.ports import HardeningContext, HardeningPart
 from jarvis.keyring import Keyring
+from jarvis.vitals.models import zone_of
 
 READY = "ready"
 NO_FIRESTORE = "off: not on Firestore"
@@ -95,10 +96,10 @@ def build_with(
     if ctx.docs is None:
         return HardeningPart("backup", ready=NO_STORE)
     s, docs, prefix = ctx.s, ctx.docs, ctx.s.firestore_prefix
-    now = clock or _clock(ctx)
+    now, zone = clock or _clock(ctx), zone_of(s.user_timezone)
     ring = keys
-    drill_log = DrillLog(docs, prefix=prefix, clock=now)
-    status = BackupStatusService(docs, drill_log, prefix=prefix, clock=now)
+    drill_log = DrillLog(docs, prefix=prefix, clock=now, zone=zone)
+    status = BackupStatusService(docs, drill_log, prefix=prefix, clock=now, zone=zone)
     teller = Teller(status, ctx.notifier)
     rate = _rate(ctx)
     drill = None
@@ -108,7 +109,8 @@ def build_with(
                          prefix=prefix)  # fmt: skip
         drill = Drill(deps)
     desk = BackupDesk(s=s, status=status, log=drill_log, drill=drill, rate=rate)
-    canary_job = BackupCanaryJob(s=s, canaries=CanaryStore(docs, prefix=prefix), status=status,
+    canaries = CanaryStore(docs, prefix=prefix, zone=zone)
+    canary_job = BackupCanaryJob(s=s, canaries=canaries, status=status,
                                  teller=teller, admin=admin, ring=ring, clock=now)  # fmt: skip
     ready = NO_FIRESTORE if admin is None else (READY if ring is not None else NO_KEY)
     return HardeningPart(

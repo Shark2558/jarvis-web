@@ -147,10 +147,13 @@ def _newest(backups: Sequence[BackupInfo]) -> tuple[BackupInfo | None, BackupInf
     return (ready[-1] if ready else None), (filled[-1] if filled else None)
 
 
-def _due(last: dt.datetime | None, now: dt.datetime, weekly: bool) -> bool:
+def _due(last: dt.datetime | None, now: dt.datetime, weekly: bool, zone: dt.tzinfo) -> bool:
+    """Weekly, or once a day on HIS day: UTC midnight (05:30 in Kolkata) is inside the tick."""
     if last is None:
         return True
-    return now - last >= WEEKLY if weekly else now.date() != last.date()
+    if weekly:
+        return now - last >= WEEKLY
+    return now.astimezone(zone).date() != last.astimezone(zone).date()
 
 
 class BackupStatusService:
@@ -161,10 +164,12 @@ class BackupStatusService:
         docs: Docs,
         drill_log: DrillLog,
         *,
+        zone: dt.tzinfo,
         prefix: str = "jarvis_",
         clock: Callable[[], dt.datetime] = _now,
     ) -> None:
         self._d = docs
+        self._zone = zone
         self._log = drill_log
         self._path = f"{prefix}{STATUS_COLLECTION}/{STATUS_ID}"
         self._clock = clock
@@ -218,7 +223,7 @@ class BackupStatusService:
 
         async def run(tx: DocTx) -> bool:
             doc = _doc_of(await tx.get(self._path))
-            if not _due(doc.told.get(cause), now, weekly):
+            if not _due(doc.told.get(cause), now, weekly, self._zone):
                 return False
             told = {**doc.told, cause: now}
             tx.set(self._path, doc.model_copy(update={"told": told}).model_dump(mode="json"))

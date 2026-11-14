@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Callable, Sequence
 
-from jarvis.backup.canary import CanaryStore, day_key
+from jarvis.backup.canary import CanaryStore
 from jarvis.backup.drill import Drill
 from jarvis.backup.ports import BackupAdmin
 from jarvis.backup.status import BackupStatusService, StatusDoc, Teller
@@ -55,7 +55,7 @@ class BackupCanaryJob:
         """(1 when today's canary was written now, whether the key changed)."""
         if self._ring is None:
             return 0, False
-        changed = await self._canaries.key_changed(self._ring, day_key(now))
+        changed = await self._canaries.key_changed(self._ring, self._canaries.today(now))
         written = await self._canaries.write(self._ring, now)
         await self._canaries.prune(now)
         return int(written), changed

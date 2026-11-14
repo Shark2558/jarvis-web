@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 from r14_fakes_a import (  # noqa: E402
+    IST,
     OTHER_KEY,
     PREFIX,
     PROJECT,
@@ -90,7 +91,9 @@ async def _world(**kw: Any) -> World:
     world = World(**kw)
     await seed_vault(world.live, ring())
     await seed_rest(world.live)
-    await canary.CanaryStore(world.live, prefix=PREFIX).write(ring(), SNAP - dt.timedelta(hours=2))
+    await canary.CanaryStore(world.live, prefix=PREFIX, zone=IST).write(
+        ring(), SNAP - dt.timedelta(hours=2)
+    )
     world.snapshot()
     return world
 
@@ -104,8 +107,10 @@ class Rig:
     ) -> None:  # fmt: skip
         self.world, self.clock, self.sent = world, Clock(DAY1), RecordingNotifier()
         self.admin = FakeAdmin(world)
-        self.log = DrillLog(world.live, prefix=PREFIX, clock=self.clock)
-        self.status = BackupStatusService(world.live, self.log, prefix=PREFIX, clock=self.clock)
+        self.log = DrillLog(world.live, prefix=PREFIX, clock=self.clock, zone=IST)
+        self.status = BackupStatusService(
+            world.live, self.log, prefix=PREFIX, clock=self.clock, zone=IST
+        )
 
         async def rate() -> float:
             return 95.24
@@ -223,9 +228,10 @@ async def _empty_stats(view: View, keys: verify.Keys) -> list[str]:
 async def _stale_once(view: View, keys: verify.Keys) -> list[str]:
     world, clock, sent = World(), Clock(SNAP + dt.timedelta(hours=40)), RecordingNotifier()
     world.snapshot()
-    status = BackupStatusService(world.live, DrillLog(world.live, prefix=PREFIX), prefix=PREFIX,
-                                 clock=clock)  # fmt: skip
-    job = BackupCanaryJob(s=_settings(), canaries=canary.CanaryStore(world.live, prefix=PREFIX),
+    log = DrillLog(world.live, prefix=PREFIX, zone=IST)
+    status = BackupStatusService(world.live, log, prefix=PREFIX, clock=clock, zone=IST)
+    canaries = canary.CanaryStore(world.live, prefix=PREFIX, zone=IST)
+    job = BackupCanaryJob(s=_settings(), canaries=canaries,
                           status=status, teller=Teller(status, lambda: sent),
                           admin=FakeAdmin(world), ring=ring(), clock=clock)  # fmt: skip
     for _ in range(4):

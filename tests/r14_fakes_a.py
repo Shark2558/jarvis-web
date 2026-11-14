@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from jarvis.backup.ports import DRILL_DB, BackupInfo, DatabaseInfo, drill_target
 from jarvis.keyring import Keyring
@@ -23,6 +24,7 @@ from jarvis.vault.models import FileRef, Item, VaultIndex
 from jarvis.vault.store import VaultStore
 
 PREFIX = "jarvis_"
+IST = ZoneInfo("Asia/Kolkata")  # the owner's zone (Settings.user_timezone's default)
 UID = "owner-1"
 GIB = 1024**3
 SNAP = dt.datetime(2026, 11, 14, 3, 0, tzinfo=dt.UTC)  # the backup's point in time
@@ -396,6 +398,7 @@ class FakeFirestoreClient:
 __all__ = [
     "BACKUP_NAME",
     "GIB",
+    "IST",
     "OTHER_KEY",
     "PREFIX",
     "PROJECT",

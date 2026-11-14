@@ -102,6 +102,20 @@ def test_the_real_adapters_are_made_only_for_firestore(settings: Settings) -> No
     assert backup_part.admin_for(s.model_copy(update={"firestore_project": None})) is None
 
 
+async def test_the_part_counts_days_and_months_on_his_clock(settings: Settings) -> None:
+    clock = {"at": dt.datetime(2026, 11, 13, 22, 45, tzinfo=dt.UTC)}  # 04:15 in Kolkata
+    world = World()
+    part = backup_part.build_with(
+        _ctx(settings, world.live), admin=FakeAdmin(world), walk=lambda: FakeWalk(world),
+        keys=ring(), clock=lambda: clock["at"],
+    )  # fmt: skip
+    desk = _desk(part)
+    assert await desk.status.claim("stale")
+    clock["at"] = dt.datetime(2026, 11, 14, 0, 15, tzinfo=dt.UTC)  # 05:45, the same morning
+    assert not await desk.status.claim("stale")
+    assert desk.log.month_of(dt.datetime(2026, 11, 30, 23, 30, tzinfo=dt.UTC)) == "202612"
+
+
 # ---- the tools --------------------------------------------------------------------------------
 async def test_the_two_tools_and_the_drill_card(settings: Settings) -> None:
     world = World()

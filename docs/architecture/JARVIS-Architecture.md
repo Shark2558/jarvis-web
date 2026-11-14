@@ -1,14 +1,15 @@
-Version v7.0.2 · 13 Nov 2026, 23:00 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v14.0.1 · 14 Nov 2026, 15:30 IST · Release R14 · Status: Current · Owner: 🛠 Mark XVIII
 
 # JARVIS Architecture & Technology Guide
 
-This guide was checked against JARVIS's real code. This is edition v7.0.2 of the guide (the first
+This guide was checked against JARVIS's real code. This is edition v14.0.1 of the guide (the first
 edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
-program at version v7.0.0: release R6.1 as built, release R11, the free proactive helpers (card
-C60), release R11.1, your observations fixed (card C61), both live, and release R7 (the phone app,
-the watch, SOS and the phone camera; cards C62 to C65), built and joined on one branch, not yet
-deployed (the version number goes down from 11.1 on purpose, as nothing compares it). Anything
-that is planned but not built yet is marked PLANNED.
+program at version v14.0.0: release R6.1 as built, release R11, the free proactive helpers (card
+C60), release R11.1, your observations fixed (card C61), and release R7 (the phone app, the watch,
+SOS and the phone camera; cards C62 to C65), all live, and release R14, "Free hardening" (backups
+and a restore drill, self-health, cheaper replies and the skill register; cards C66 to C68), whose
+joins are built and whose parts are PLANNED (the version number goes down from 11.1 at R7 on
+purpose, as nothing compares it). Anything that is planned but not built yet is marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -170,9 +171,9 @@ silently go stale. Figure 2 in section 4 draws it.
 | L2 Input Processing | Turns speech, files and camera sightings into text and facts. | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent |
 | L3 Context & Orchestration | Keeps the conversation, long-term memory, the clock that wakes JARVIS, and the undo bin. | C09 Conversations, C10 Long-term memory, C11 Scheduler ticks and watchdog, C12 Recently deleted |
 | L4 Core Reasoning Engine | The brain: one loop that reads context, asks a model, calls tools and checks every step. | C13 Brain core loop, C14 Persona and prompts, C15 Guardrails and trust, C16 Brain router and LLM layer, C17 Brain switch, No-AI and offline mode, C18 Approval cards and Approve all |
-| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11) |
+| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11), C68 Skill register and the turn's tools (R14, PLANNED) |
 | L6 Integration & Tools | The doors to outside services and the house, all through one gateway. | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail and mail read aloud, C32 To-dos, C33 Contacts, C34 Drive folders, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history |
-| L7 Data & Persistence | Where things are kept, and how much of each free allowance is used. | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger |
+| L7 Data & Persistence | Where things are kept, and how much of each free allowance is used. | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger, C66 Backups and restore drill (R14, PLANNED) |
 | L8 Response & Output | How JARVIS tells you things: alerts, browser notifications, the Activity log. | C45 Alerts port, C46 Alert policy, C47 Web Push, C48 Activity log |
 | X Cross-cutting | Settings, logs, keys, permissions, privacy, costs, health, the build book, delivery and quality. | C49 Configuration, C50 Logging, C51 Keyring, C52 Permissions and passkeys, C53 Privacy dashboard, C54 Costs in ₹ and the monthly limit, C55 Vitals, C56 Systems check, C57 Build book, C58 Delivery, C59 Evals and the visual gate |
 
@@ -743,6 +744,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | A refused or failed send still opens the SMS screen and the 112 button; the phone uses the numbers it keeps whatever the answer. With no contact SOS stays off. A real SOS has its own budget (3 an hour, 10 a day), separate from tests and "I'm safe", so tests never block it; a press that reached nobody gives its slot back; when the limits can't be read a real SOS still goes. `sos_sent` has no off switch and no quiet hours, storm control or Telegram cap drops it. | |
 | Since | R7 (v7.0.0): I0 the Telegram hook, Parts D and E the send and the screens, I1 the joins |
 
+#### C68 · Skill register and the turn's tools (R14, PLANNED)
+
+| Field | Value |
+|---|---|
+| Name | Skill register and the turn's tools (R14, PLANNED) |
+| What it does | PLANNED (R14 Parts C and D; I0 built the joins). Every tool is filed under one of the 11 skills (data: the skills catalogue, a JSON file), with its risk, permission row and Telegram class; a test stops a tool that isn't filed. Each reply then sends only the tools the turn's skills need (his words, the last 3 turns, the sticky set, a small core, `skills_open` for the rest) instead of all ~135, old tool results from earlier turns are shortened, and the Anthropic provider caches the conversation within a reply; a token ledger counts where the money goes (counts only). "all" (`tool_offer`) restores sending every tool. The brain has two slots for it (`Brain.slots`: the offer and the ledger); an offer that breaks sends every tool. Part D adds No-AI pass 2 (groceries, vault expiry, belongings, home status, parcels, inbox, recently deleted, the time, memory, backups, "what can you do") and the home-service request (`maint_service_request`: prepares the text and gives the booking site's address; never books or pays). | |
+| Layer | L5 Skills & Capabilities (L3/L4 for the offer and the window) |
+| Skill | Code & DevOps; Finance & Analytics (the ledger) |
+| Where in the code | `src/jarvis/skills/` (I0: `ids.py` the 11 ids and labels, `ports.py` `BrainSlots`, `OfferContext`, `LedgerCall`, `offer.py` `offer_all`, `part.py` the stub; PLANNED: the catalogue (data), the register and the `skills_open` tool), `src/jarvis/billing/ledger.py` (a no-op at I0), `src/jarvis/core/brain.py` (the two slots), `src/jarvis/api/skills.py` (`GET /v1/skills`, `GET /v1/costs/ledger`, stubs), `src/jarvis/offline/phrases_r14.py` and `offline/r14_part.py` (Part D, stubs); eval `evals/r14/offer.py`, `evals/r14/noai.py` | |
+| Depends on | C13 Brain core loop; C16 Brain router and LLM layer; C28 Tool gateway and audit; C52 Permissions and passkeys; C17 Brain switch, No-AI and offline mode; C54 Costs in ₹ and the monthly limit |
+| Data it keeps | PLANNED: `token_ledger/{uid}_{yyyymmdd}` (calls, cold calls, tokens and characters by part, tools offered, skills opened; counts only; 90 days). | |
+| Outside services | None |
+| Cost (₹ a month) | ₹0 to run; saves an estimated ≈ ₹1,460 a month at 20 replies a day (≈ 45 % a reply), measured by the ledger |
+| When it fails | A tool the offer missed: `skills_open` adds its skill for the next round; an offer that crashes sends every tool; a ledger write that fails is logged and the reply goes on; a brain that trains on content still gets no tools. | |
+| Since | R14 (v14.0.0): I0 the ids, the ports and the brain's two slots |
+
 ### Layer 6 — Integration & Tools
 
 #### C28 · Tool gateway and audit
@@ -1019,6 +1036,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | A counter that can't be read stops the call rather than risking paid use. Google may count per billing account: the deploy script warns when other projects share it. |
 | Since | Slice 12 (v0.12.0) |
 
+#### C66 · Backups and restore drill (R14, PLANNED)
+
+| Field | Value |
+|---|---|
+| Name | Backups and restore drill (R14, PLANNED) |
+| What it does | PLANNED (R14 Part A; I0 built the joins only). After the owner's one-time step (`deploy/backup_setup.sh`, which shows the cost lines and waits for YES), Firestore makes its own daily copy of the database and keeps each for 7 days; delete protection is turned on for the live database. Every morning JARVIS writes a canary (a random value sealed with the live key) and reads the list of backups; once a month (and when he approves the "test my backup" card, at most 2 a month, never with Approve all) it restores the newest filled copy into a throw-away database `jarvis-drill`, counts every collection, checks the canary opens with the live key, opens one vault item and compares samples on JARVIS's own fields, then deletes the copy. Its code can't write the live database: the verifier reads both sides through a read-only port, the adapters refuse any database but `jarvis-drill` before any call, and JARVIS refuses to start with the live database named `jarvis-drill`. Not in the copy: the laptop's pictures and face library, Secret Manager, his Google account data; the backups and the key share one project, so the drill proves recovery from a bad write or delete, not from losing the project or the key. Until the set-up, Vitals says "Backups: not set up" and nothing alerts. | |
+| Layer | L7 Data & Persistence (cross-cut operations) |
+| Skill | Code & DevOps |
+| Where in the code | `src/jarvis/backup/` (I0: `ports.py` with `DRILL_DB`, `drill_target`, `ReadOnlyDocs`, `BackupAdmin`, `DrillWalk`, `BackupFacts`, `BackupStatus`; `part.py` the stub), `src/jarvis/api/backup.py` (`GET /v1/backup`, `POST /v1/backup/drill`, stubs), `deploy/backup_setup.sh` (I0: `--status` read only, the set-up waits for YES); PLANNED: the admin and drill-reader adapters in storage/, and the canary, read-only port, drill, checks, vault probe, result log, status, tools and jobs in backup/; eval `evals/r14/backup.py` | |
+| Depends on | C41 Document store; C51 Keyring (`backup_probe`); C42 Document vault (its read path); C11 Scheduler ticks and watchdog; C55 Vitals; C46 Alert policy |
+| Data it keeps | PLANNED: `backup_canary/{yyyymmdd}` (nonce hash, sealed nonce, key fingerprint; 30 days), `backup_status/current` (schedule seen, the newest backup's time, size and count), `backup_drill/current` (the drill's state), `backup_drills/{yyyymm}` (each result and counts; 13 months). Google keeps the copies themselves, 7 days. | |
+| Outside services | Firestore (its backup schedule, restore and the throw-away database) |
+| Cost (₹ a month) | ≈ ₹4.9 at 100 MB (copies ₹2.0, a drill's restore ₹1.9, counts ≈ ₹0), ≈ ₹39 at 1 GB; a copy left over ₹1.4 (100 MB) to ₹14 (1 GB) a month; ₹0 until the one-time step |
+| When it fails | PLANNED: no schedule or no permission → "not set up" (no alert before the set-up has run once); a copy whose stats are empty is never restored; a slow restore or check resumes at the next tick; a drill that fails anywhere stores "failed" with a reason and still deletes the copy, whatever the switches say; a copy older than 2 days rings `backup_problem` once and weekly after; nothing compared is a failure, never a pass. | |
+| Since | R14 (v14.0.0): I0 the ports, the stubs and the set-up script's two modes |
+
 ### Layer 8 — Response & Output
 
 #### C45 · Alerts port
@@ -1262,6 +1295,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Cost (₹ a month) | ₹0 for mock evals; a real run shows its ₹ estimate first and needs you to type YES |
 | When it fails | No key: the real gate is skipped with a notice, never failed. A failing pull-request check (the tests, the emulator, the browser and visual gate) blocks the merge. The real-model gate runs on main after the merge and only reports: it does not stop a deploy. |
 | Since | Phase 0; visual gate R5.1 (v5.1.0) |
+
+#### C67 · Self-health watch (R14, PLANNED)
+
+| Field | Value |
+|---|---|
+| Name | Self-health watch (R14, PLANNED) |
+| What it does | PLANNED (R14 Part B; I0 built the joins). JARVIS watches itself on the clocks it already has and says so in fixed words: background jobs failing again and again (one message an hour at most, naming them all), a clock that stopped, the morning brief not made, errors piling up, a day's AI spend far above normal (after a week of history), a new version live. These are important daytime rings, held at night, with a cap of their own (one per kind and subject per 30 minutes, at most 3 an hour), so they never crowd out an approval; "recovered" is feed only. Each job's outcome (ok, failed, timed out, skipped for time) reaches it from the tick and the 5-minute route (`ticks` observer); a skip never counts. The 5-minute clock (`app.state.clock_jobs`: self-health first, the systems check, the helpers' and R7's clocks) runs for the brief's owners with Home on or off. If both clocks stop it cannot speak up; the Vitals board shows "Clocks stopped since …". | |
+| Layer | X Cross-cutting (observability; L8 for the alerts) |
+| Skill | Code & DevOps |
+| Where in the code | `src/jarvis/selfwatch/` (I0: `ports.py`, the outcome and the context flag; `part.py` the stub), `src/jarvis/hardening/` (I0: the four parts' contract `ports.py`), `src/jarvis/ticks.py` (the outcomes to the observer), `src/jarvis/api/tick_wiring.py` (the tick jobs, the one 5-minute clock, `finish_wiring`), `src/jarvis/api/r14_wiring.py` (the parts' join, the observer, the errors handler once), `src/jarvis/api/selfwatch.py` (`GET /v1/selfwatch`, a stub), `src/jarvis/api/r14_status.py` (`GET /v1/r14`), `notify/storm.py` (`SELF_KINDS`); eval `evals/r14/selfwatch.py` | |
+| Depends on | C11 Scheduler ticks and watchdog; C46 Alert policy; C54 Costs in ₹ and the monthly limit; C55 Vitals; C56 Systems check; C66 (the backups' facts) |
+| Data it keeps | PLANNED: `selfwatch/jobs`, `selfwatch/clocks`, `selfwatch/deploy`, `selfwatch/spend` (streaks, clock stamps, revision, daily month totals), `selfwatch_errors/{yyyymmdd}` (counts by hour and logger name; 14 days), `selfwatch_told/{uid}_{key}` (once-only claims; 30 days). Names and counts only, never a log message. | |
+| Outside services | None |
+| Cost (₹ a month) | ₹0 (about 600 reads and 300 writes a day, inside the free quota) |
+| When it fails | PLANNED: a handler that fails never logs itself; the claim is written before the send and a failed send is no job failure, so it never alarms about itself; its own job is watched by the other clock; nothing about backups before the set-up. | |
+| Since | R14 (v14.0.0): I0 the observer, the shared clock, the soft cap and the nine alert kinds |
 
 ## 4. Diagrams
 
@@ -2090,3 +2139,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v11.1.3 | 12 Nov 2026, 17:23 IST | R11.1 | R11.1 I1 after the integrated reviews: C61's picture guard as built (strict unless the picture is known to show nobody; YouTube, Maps and a research's context behind it too) | 🛠 Mark XV |
 | v7.0.1 | 13 Nov 2026, 16:05 IST | R7 | R7 I0 (the joins for 'Mobile, watch and phone camera'): cards C62 Phone app and the phone's door, C63 Camera and vision engine, C64 Watch and sleep, C65 Emergency SOS (PLANNED, with what I0 built); the Mobile departure as a Trusted Web Activity; four technology rows (phone app, Android build pins, vision on the device, Health Connect); the R7 collections and key purposes; the roadmap, decisions log and glossary corrected; C01's Camera tab; the program version v7.0.0 (the number goes down on purpose) | 🛠 Mark XVI |
 | v7.0.2 | 13 Nov 2026, 23:00 IST | R7 | R7 I1: cards C62 Phone app and the phone's door, C63 Camera and vision engine, C64 Watch and sleep, C65 Emergency SOS from PLANNED to built, each with its files, routes, collections, the `r7_dev` cookie, the browser-only stores (Cache Storage `jarvis-share-v1`, the camera-off switch), jobs, privacy rows and outside service; the camera button beside the paperclip not built; the brief's sleep line (watch, phone, another health app, typed); page 1, the Mobile row, the R7 collections, roadmap and glossary no longer say planned | 🛠 Mark XVII |
+| v14.0.1 | 14 Nov 2026, 15:30 IST | R14 | R14 I0 (the joins for 'Free hardening'): cards C66 Backups and restore drill, C67 Self-health watch, C68 Skill register and the turn's tools (PLANNED, with what I0 built: the four parts' contract `hardening/ports.py`, the backup, self-health and skills ports, the tick observer, the one 5-minute clock for the brief's owners `api/tick_wiring.py`, the brain's two slots, the stub routes and the set-up script's two modes, every planned collection named); the L5 and L7 rows; this edition line | 🛠 Mark XVIII |

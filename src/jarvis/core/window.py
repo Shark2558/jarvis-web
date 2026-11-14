@@ -23,16 +23,25 @@ R14 D9 ("Count tool results in the history", docs/plans/r14-hardening.md):
   provider's cache keeps its prefix. The start is decided on the stored (uncut) sizes, which never
   change, so it never moves back when a result is cut later (R14 review M3); what is sent is the
   cut window, so it is never over a cap either.
+
+R14 I1 follow-up (integrated security review M3): a reply written with the AI off from tool
+results (`model` is `NO_AI_MODEL`, `tool_derived`) shows other people's words, a mail's subject
+and sender, a parcel's merchant, as plain sentences, as the owner should see them. Sent as it is,
+a returning model would read an attacker's subject as its own earlier words. So, for every brain,
+such a turn is sent whole inside an outside-content fence (`tools.external.wrap_external`, its
+content defused) whose id comes from the turn's id: the same text every time, so the provider's
+cache prefix holds. What is stored, and what he sees, stay plain; the fence counts in the budget.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from typing import Final
 
 from jarvis.core.fixed_lines import is_fixed
-from jarvis.core.models import Turn
+from jarvis.core.models import NO_AI_MODEL, Turn
 from jarvis.llm.base import (
     ChatMessage,
     ContentBlock,
@@ -42,6 +51,7 @@ from jarvis.llm.base import (
     ToolCall,
     ToolResultBlock,
 )
+from jarvis.tools.external import wrap_external
 
 KEEP_FULL_ROUNDS: Final = 2  # the most recent tool rounds whose results are sent whole
 DEFAULT_TOOL_RESULT_CHARS: Final = 2_000  # = Settings.history_tool_result_chars' default
@@ -49,12 +59,26 @@ SHORTENED: Final = "… [shortened]"
 DROP_TO: Final = 0.7  # a window over a cap drops old turns down to this share of it
 _HEADER_START = "[untrusted tool output"
 _STATUS_START = '{"status"'  # the gateway's own answer when a call did not run (gateway.py)
+NO_AI_SOURCE: Final = "a reply JARVIS gave with the AI off, from tool results that may quote others"
 
 Content = str | list[ContentBlock]
 
 
 def _filler(t: Turn) -> bool:
     return t.role is Role.ASSISTANT and not t.blocks and is_fixed(t.content)
+
+
+def _quotes_tools(t: Turn) -> bool:
+    """A reply said with the AI off from tool results (it may show other people's words)."""
+    return t.role is Role.ASSISTANT and not t.blocks and t.tool_derived and t.model == NO_AI_MODEL
+
+
+def _text(t: Turn) -> str:
+    """A text turn as it is sent: a No-AI reply from tools fenced, with a fixed id."""
+    if not _quotes_tools(t):
+        return t.content
+    fid = hashlib.sha256(f"no-ai:{t.id}".encode()).hexdigest()[:6]
+    return wrap_external(t.content, source=NO_AI_SOURCE, fid=fid)
 
 
 def block_chars(b: MessageBlock) -> int:
@@ -76,7 +100,7 @@ def message_chars(m: ChatMessage) -> int:
 
 def _stored_chars(t: Turn) -> int:
     """A turn's size as stored (before any cut): fixed for good, so the start never moves back."""
-    return sum(block_chars(b) for b in t.blocks) if t.blocks else len(t.content)
+    return sum(block_chars(b) for b in t.blocks) if t.blocks else len(_text(t))
 
 
 def shorten(block: ToolResultBlock, limit: int) -> ToolResultBlock:
@@ -104,7 +128,7 @@ def _contents(turns: Sequence[Turn], tool_result_chars: int) -> list[Content]:
     out: list[Content] = []
     for i, t in enumerate(turns):
         if not t.blocks:
-            out.append(t.content)
+            out.append(_text(t))
         elif i in old:
             out.append(
                 [

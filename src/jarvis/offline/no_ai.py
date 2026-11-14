@@ -17,7 +17,14 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jarvis.config import Settings
-from jarvis.core.models import ChatRequest, ChatResponse, PendingApproval, Session, Turn
+from jarvis.core.models import (
+    NO_AI_MODEL,
+    ChatRequest,
+    ChatResponse,
+    PendingApproval,
+    Session,
+    Turn,
+)
 from jarvis.core.rounds import Rounds
 from jarvis.documents.service import DocumentService, save_owner_turn
 from jarvis.llm.base import Role, ToolCall, Usage
@@ -134,9 +141,6 @@ async def run_no_ai(
             if res.outcome is not GatewayOutcome.EXECUTED or _stopped(res.result):
                 break  # a refused or waiting step ends the chain (no URLs after a refusal)
     return NoAIResult("\n".join(lines), len(ran), pending, cards, tuple(ran), tuple(results))
-
-
-NO_AI_MODEL = "no-ai"
 
 
 def _owner_now(s: Settings) -> datetime:

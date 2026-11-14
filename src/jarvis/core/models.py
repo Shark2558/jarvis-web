@@ -29,6 +29,12 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+# The `model` of a reply written with the AI off (R4 D7, `offline.no_ai`). Such a reply made from
+# tool results may quote other people's words as plain text, so the window sends it fenced
+# (`core.window`, R14 I1 follow-up: integrated security review M3).
+NO_AI_MODEL = "no-ai"
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:20]}"
 

@@ -217,14 +217,7 @@ class GeminiProvider:
                 effort=effort,
                 thinking=thinking,
             )
-            try:
-                resp = await self._client.post(
-                    self._url(model, "generateContent"), headers=self._headers(), json=body
-                )
-            except httpx.TimeoutException:
-                raise LLMUnreachable("Gemini request timed out") from None
-            except httpx.TransportError as exc:
-                raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from None
+            resp = await self._send(model, body)
             if (
                 resp.status_code == 400
                 and thinking
@@ -237,6 +230,16 @@ class GeminiProvider:
             data: dict[str, Any] = resp.json()
             return data
         raise AssertionError("unreachable")
+
+    async def _send(self, model: str, body: dict[str, Any]) -> httpx.Response:
+        failed: LLMUnreachable
+        try:
+            return await self._client.post(
+                self._url(model, "generateContent"), headers=self._headers(), json=body
+            )
+        except httpx.TransportError as exc:  # a timeout is one too
+            failed = _unreachable(exc, "request")
+        raise failed  # outside the except block: no __context__ (R14 security review LOW-1)
 
     async def stream(
         self,
@@ -256,6 +259,7 @@ class GeminiProvider:
             max_tokens=max_tokens,
             effort=effort,
         )
+        failed: LLMUnreachable | None = None
         try:
             async with self._client.stream(
                 "POST",
@@ -278,7 +282,15 @@ class GeminiProvider:
                     text = self._text((cand.get("content") or {}).get("parts") or [])
                     if text:
                         yield text
-        except httpx.TimeoutException:
-            raise LLMUnreachable("Gemini stream timed out") from None
-        except httpx.TransportError as exc:
-            raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from None
+        except httpx.TransportError as exc:  # a timeout is one too
+            failed = _unreachable(exc, "stream")
+        if failed is not None:
+            raise failed  # outside the except block: no __context__ (R14 security review LOW-1)
+
+
+def _unreachable(exc: httpx.TransportError, what: str) -> LLMUnreachable:
+    """Fixed words for a Gemini request that got no answer: the class name, never the httpx
+    error itself (its request carries the key header)."""
+    if isinstance(exc, httpx.TimeoutException):
+        return LLMUnreachable(f"Gemini {what} timed out")
+    return LLMUnreachable(f"Gemini connection error: {type(exc).__name__}")

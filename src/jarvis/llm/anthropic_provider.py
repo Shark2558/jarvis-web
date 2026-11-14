@@ -16,6 +16,7 @@ from typing import Any, cast
 
 import anthropic
 from anthropic.types import (
+    Message,
     MessageParam,
     RawContentBlockDeltaEvent,
     RawMessageDeltaEvent,
@@ -204,10 +205,14 @@ class AnthropicProvider:
 
     @classmethod
     def _failed(cls, exc: Exception, model: str) -> LLMError:
-        """The translated error, logged with its class and HTTP status only."""
+        """The translated error, logged with our class, the original's class name (`cause`, so
+        a bug in our own call is told apart from an outage) and the HTTP status: never its words.
+        Raise it AFTER the `except` block, so not even `__context__` holds the vendor's exception
+        (its response, its body, its request)."""
         err = cls._translate(exc)
         status = exc.status_code if isinstance(exc, anthropic.APIStatusError) else None
-        extra = {"model": model, "error": type(err).__name__, "status": status}
+        cause = type(exc).__name__
+        extra = {"model": model, "error": type(err).__name__, "cause": cause, "status": status}
         log.error("llm call failed", extra=extra)
         return err
 
@@ -253,23 +258,42 @@ class AnthropicProvider:
         tools: list[ToolSpec] | None = None,
     ) -> Completion:
         t0 = time.perf_counter()
-        try:
-            msg = await self._client.messages.create(
-                **self._kwargs(
-                    system=system,
-                    system_dynamic=system_dynamic,
-                    messages=messages,
-                    model=model,
-                    max_tokens=max_tokens,
-                    effort=effort,
-                    tools=tools,
-                    history_hint=True,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain
-            raise self._failed(exc, model) from None
+        kw = self._kwargs(
+            system=system,
+            system_dynamic=system_dynamic,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            effort=effort,
+            tools=tools,
+            history_hint=True,
+        )
+        msg = await self._create(kw, model)
+        completion = self._completion(msg, model, int((time.perf_counter() - t0) * 1000))
+        log.info(
+            "llm call",
+            extra={
+                "model": msg.model,
+                "in_tok": completion.usage.input_tokens,
+                "out_tok": completion.usage.output_tokens,
+                "cache_read": completion.usage.cache_read_tokens,
+                "latency_ms": completion.latency_ms,
+                "cost_usd": completion.cost_usd,
+                "stop": msg.stop_reason,
+            },
+        )
+        return completion
 
-        latency_ms = int((time.perf_counter() - t0) * 1000)
+    async def _create(self, kw: dict[str, Any], model: str) -> Message:
+        failed: LLMError
+        try:
+            created: Message = await self._client.messages.create(**kw)  # no stream: a Message
+            return created
+        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain
+            failed = self._failed(exc, model)
+        raise failed  # outside the except block: no __context__ (security review LOW-1)
+
+    def _completion(self, msg: Message, model: str, latency_ms: int) -> Completion:
         text = "".join(b.text for b in msg.content if isinstance(b, AnthropicTextBlock))
         calls = [
             ToolCall(
@@ -279,7 +303,7 @@ class AnthropicProvider:
             if isinstance(b, ToolUseBlock)
         ]
         usage = self._usage(msg.usage)
-        completion = Completion(
+        return Completion(
             text=text,
             tool_calls=calls,
             model=msg.model,
@@ -289,19 +313,6 @@ class AnthropicProvider:
             latency_ms=latency_ms,
             cost_usd=cost_usd(model, usage),
         )
-        log.info(
-            "llm call",
-            extra={
-                "model": msg.model,
-                "in_tok": usage.input_tokens,
-                "out_tok": usage.output_tokens,
-                "cache_read": usage.cache_read_tokens,
-                "latency_ms": latency_ms,
-                "cost_usd": completion.cost_usd,
-                "stop": msg.stop_reason,
-            },
-        )
-        return completion
 
     async def stream(
         self,
@@ -317,17 +328,17 @@ class AnthropicProvider:
         """Text deltas; the exact usage goes into `usage` as it arrives: input + cache counts on
         `message_start`, the cumulative output (and any revised input) on `message_delta`. A
         reader that leaves early keeps the opening counts (the caller estimates the rest)."""
+        kw = self._kwargs(
+            system=system,
+            system_dynamic=system_dynamic,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            effort=effort,
+        )
+        failed: LLMError | None = None
         try:
-            async with self._client.messages.stream(
-                **self._kwargs(
-                    system=system,
-                    system_dynamic=system_dynamic,
-                    messages=messages,
-                    model=model,
-                    max_tokens=max_tokens,
-                    effort=effort,
-                )
-            ) as stream:
+            async with self._client.messages.stream(**kw) as stream:
                 async for event in stream:
                     if isinstance(event, RawContentBlockDeltaEvent):
                         if isinstance(event.delta, TextDelta) and event.delta.text:
@@ -335,7 +346,9 @@ class AnthropicProvider:
                     elif usage is not None:
                         self._note_usage(event, usage)
         except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain
-            raise self._failed(exc, model) from None
+            failed = self._failed(exc, model)
+        if failed is not None:
+            raise failed  # outside the except block: no __context__ (security review LOW-1)
 
     @staticmethod
     def _note_usage(event: object, sink: StreamUsage) -> None:

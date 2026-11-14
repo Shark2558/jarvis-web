@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Final
 
 import httpx
 
@@ -43,6 +43,9 @@ from jarvis.logging import get_logger
 log = get_logger(__name__)
 
 _STOP = {"stop": "end_turn", "length": "max_tokens", "tool_calls": "tool_use"}
+
+
+_NOT_JSON: Final = object()
 
 
 class OpenAICompatProvider:
@@ -145,6 +148,15 @@ class OpenAICompatProvider:
             f"{self._base}/chat/completions", headers=self._headers(), json=body
         )
 
+    async def _send(self, body: dict[str, Any]) -> httpx.Response:
+        """`_post`, a request that got no answer as our error with fixed words."""
+        failed: LLMUnreachable
+        try:
+            return await self._post(body)
+        except httpx.TransportError as exc:  # a timeout is one too
+            failed = _unreachable(exc, "OpenAI-compatible request timed out")
+        raise failed  # outside the except block: no __context__ (R14 security review LOW-1)
+
     # ---- response handling ---------------------------------------------------------------
 
     def _raise_for_status(self, resp: httpx.Response) -> None:
@@ -163,6 +175,22 @@ class OpenAICompatProvider:
         if code in (408, 429):
             raise LLMTransientError(BUSY)
         raise LLMError(NO_ANSWER)
+
+    def _answer(self, resp: httpx.Response) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The body and its first choice; any other answer is our error with fixed words."""
+        self._raise_for_status(resp)
+        try:
+            data = resp.json()
+        except ValueError:  # HTML from a reverse proxy, wrong base URL, …
+            data = _NOT_JSON  # raised below, outside the except: the decoder holds the body
+        if data is _NOT_JSON:
+            raise LLMError("OpenAI-compatible server returned non-JSON (check base URL)")
+        if not isinstance(data, dict):
+            raise LLMError("OpenAI-compatible server returned an unexpected body")
+        choices = data.get("choices") or []
+        if not choices:
+            raise LLMError("OpenAI-compatible server returned no answer (empty choices)")
+        return data, choices[0]
 
     @staticmethod
     def _tool_calls(message: dict[str, Any]) -> list[ToolCall]:
@@ -213,23 +241,7 @@ class OpenAICompatProvider:
             max_tokens=max_tokens,
             tools=tools,
         )
-        try:
-            resp = await self._post(body)
-        except httpx.TimeoutException:
-            raise LLMUnreachable("OpenAI-compatible request timed out") from None
-        except httpx.TransportError as exc:
-            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from None
-        self._raise_for_status(resp)
-        try:
-            data = resp.json()
-        except ValueError as exc:  # HTML from a reverse proxy, wrong base URL, …
-            raise LLMError("OpenAI-compatible server returned non-JSON (check base URL)") from exc
-        if not isinstance(data, dict):
-            raise LLMError("OpenAI-compatible server returned an unexpected body")
-        choices = data.get("choices") or []
-        if not choices:
-            raise LLMError("OpenAI-compatible server returned no answer (empty choices)")
-        choice = choices[0]
+        data, choice = self._answer(await self._send(body))
         message = choice.get("message") or {}
         usage = self._usage(data.get("usage") or {})
         latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -240,7 +252,7 @@ class OpenAICompatProvider:
             model=model,
             provider=self.name,
             usage=usage,
-            stop_reason=_STOP.get(reason, reason),
+            stop_reason=_STOP.get(reason, reason) if isinstance(reason, str) else None,
             latency_ms=latency_ms,
             cost_usd=cost_usd(model, usage),
         )
@@ -275,6 +287,7 @@ class OpenAICompatProvider:
             tools=None,
             stream=True,
         )
+        failed: LLMUnreachable | None = None
         try:
             async with self._client.stream(
                 "POST", f"{self._base}/chat/completions", headers=self._headers(), json=body
@@ -296,7 +309,15 @@ class OpenAICompatProvider:
                     text = delta.get("content")
                     if text:
                         yield text
-        except httpx.TimeoutException:
-            raise LLMUnreachable("OpenAI-compatible stream timed out") from None
-        except httpx.TransportError as exc:
-            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from None
+        except httpx.TransportError as exc:  # a timeout is one too
+            failed = _unreachable(exc, "OpenAI-compatible stream timed out")
+        if failed is not None:
+            raise failed  # outside the except block: no __context__ (R14 security review LOW-1)
+
+
+def _unreachable(exc: httpx.TransportError, timed_out: str) -> LLMUnreachable:
+    """Fixed words for a request that got no answer: the class name, never the httpx error
+    itself (its request carries the key header)."""
+    if isinstance(exc, httpx.TimeoutException):
+        return LLMUnreachable(timed_out)
+    return LLMUnreachable(f"connection error: {type(exc).__name__}")

@@ -67,11 +67,17 @@ def _refused(_: httpx2.Request) -> httpx2.Response:
 def _clean(err: BaseException, caplog: pytest.LogCaptureFixture) -> None:
     assert str(err) in FIXED_ERROR_WORDS, str(err)
     assert VENDOR not in str(err) and KEY not in str(err)
-    assert err.__cause__ is None or VENDOR not in str(err.__cause__)
+    _unchained(err)
     for record in caplog.records:
         assert VENDOR not in record.getMessage()
         assert VENDOR not in str(record.__dict__), record.__dict__
         assert KEY not in str(record.__dict__)
+
+
+def _unchained(err: BaseException) -> None:
+    """Security review LOW-1: `raise ... from None` inside `except` still leaves the vendor's
+    exception (its response, body and request headers) on `__context__`; nothing may hold it."""
+    assert err.__cause__ is None and err.__context__ is None, repr(err.__context__)
 
 
 ANTHROPIC_CASES = [
@@ -93,8 +99,7 @@ async def test_anthropic_errors_carry_fixed_words_only(
         await _anthropic(_vendor(status, kind)).complete(
             system="s", messages=MSGS, model="m", max_tokens=5
         )
-    _clean(got.value, caplog)
-    assert got.value.__cause__ is None and got.value.__suppress_context__  # no vendor chain
+    _clean(got.value, caplog)  # no vendor chain: neither __cause__ nor __context__
 
 
 async def test_anthropic_unreachable_and_its_stream_carry_fixed_words(
@@ -161,6 +166,86 @@ async def test_the_laptop_brain_inherits_the_fixed_words(caplog: pytest.LogCaptu
     with pytest.raises(LLMAuthError) as got:
         await local.complete(system="s", messages=MSGS, model="m", max_tokens=5)
     _clean(got.value, caplog)
+
+
+def _timeout(_: httpx.Request) -> httpx.Response:
+    raise httpx.ReadTimeout(VENDOR)
+
+
+def _no_route(_: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError(VENDOR)
+
+
+@pytest.mark.parametrize("handler", [_timeout, _no_route], ids=["timeout", "transport"])
+@pytest.mark.parametrize("build", [_gemini, _compat], ids=["gemini", "openai_compat"])
+async def test_an_unreachable_http_vendor_leaves_no_exception_behind(
+    build: Callable[[Handler], Any], handler: Handler
+) -> None:
+    """LOW-1 for the two HTTP providers: httpx's error holds the request (and its key header)."""
+    with pytest.raises(LLMUnreachable) as got:
+        await build(handler).complete(system="s", messages=MSGS, model="m", max_tokens=5)
+    _unchained(got.value)
+    assert VENDOR not in str(got.value)
+    with pytest.raises(LLMUnreachable) as streamed:
+        async for _ in build(handler).stream(system="s", messages=MSGS, model="m", max_tokens=5):
+            pass
+    _unchained(streamed.value)
+
+
+async def test_a_non_json_answer_leaves_no_response_text_behind() -> None:
+    """LOW-1, same rule: `JSONDecodeError.doc` is the whole response body (a proxy's page)."""
+
+    def html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=f"<html>{VENDOR}</html>")
+
+    with pytest.raises(LLMError, match="non-JSON") as got:
+        await _compat(html).complete(system="s", messages=MSGS, model="m", max_tokens=5)
+    _unchained(got.value)
+
+
+class _Raises:
+    """`messages.create` / `messages.stream` that fail with our own bug, not the vendor's."""
+
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    async def create(self, **_: Any) -> Any:
+        raise self.exc
+
+    def stream(self, **_: Any) -> Any:
+        raise self.exc
+
+
+@pytest.mark.parametrize("path", ["complete", "stream"])
+async def test_a_failure_log_names_the_cause_class_without_its_words(
+    path: str, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Python review M2: a programming error must be told apart from an outage in the log
+    (`cause` = the original class name), and its message is never logged."""
+    caplog.set_level(logging.DEBUG)
+    p = _anthropic(_vendor(200, "unused"))
+    monkeypatch.setattr(p._client, "messages", _Raises(TypeError(VENDOR)))
+    with pytest.raises(LLMError) as got:
+        if path == "complete":
+            await p.complete(system="s", messages=MSGS, model="m", max_tokens=5)
+        else:
+            async for _ in p.stream(system="s", messages=MSGS, model="m", max_tokens=5):
+                pass
+    _clean(got.value, caplog)
+    (failed,) = [r for r in caplog.records if r.getMessage() == "llm call failed"]
+    assert failed.__dict__["cause"] == "TypeError" and failed.__dict__["error"] == "LLMError"
+
+
+async def test_a_vendor_failure_log_names_the_vendors_class(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(LLMAuthError):
+        await _anthropic(_vendor(401, "authentication_error")).complete(
+            system="s", messages=MSGS, model="m", max_tokens=5
+        )
+    (failed,) = [r for r in caplog.records if r.getMessage() == "llm call failed"]
+    assert failed.__dict__["cause"] == "AuthenticationError" and failed.__dict__["status"] == 401
 
 
 class _Flaky:

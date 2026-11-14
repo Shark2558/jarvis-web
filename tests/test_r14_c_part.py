@@ -170,3 +170,49 @@ async def test_a_tool_the_offer_left_out_still_meets_every_gateway_check(
         assert mine and "executed" not in {e.outcome for e in mine}  # audited, refused or a card
         second = [t.name for t in provider.calls[1].tools or []]
         assert "bill_payee_set" in second  # the replayed call names it: the provider knows it
+
+
+class _Broken:
+    async def month(self, uid: str, now: Any = None) -> Any:
+        raise RuntimeError("store down: PLANTED-DETAIL")
+
+    async def inr(self, usd: float) -> float:
+        raise RuntimeError("fx down")
+
+
+async def test_an_unreadable_ledger_says_so_without_detail(
+    settings: Settings, monkeypatch: Any
+) -> None:
+    async with _app(settings, MockProvider()) as (app, client):
+        store = app.state.r14_parts["skills"].services["ledger_view"]
+        monkeypatch.setattr(store, "month", _Broken().month)
+        app.state.billing = _Broken()
+        r = await client.get("/v1/costs/ledger")
+        assert r.status_code == 503 and r.json()["error"] == "ledger_unreadable"
+        assert "PLANTED-DETAIL" not in r.text
+
+
+async def test_the_vitals_item_is_unknown_when_the_ledger_cannot_be_read(
+    settings: Settings, monkeypatch: Any
+) -> None:
+    docs = MemoryDocs()
+    part = skills_part.build(_ctx(settings, docs, {"billing": _Broken()}))
+    store = part.services["ledger"]
+    now = datetime(2026, 11, 14, 9, 0, tzinfo=UTC)
+    (ok,) = await part.vitals[0](UID, now, KOLKATA)  # a broken rate falls back to the default
+    assert ok.base[0] == "ok"
+    monkeypatch.setattr(store, "month", _Broken().month)
+    (item,) = await part.vitals[0](UID, now, KOLKATA)
+    assert item.base[0] == "unknown" and "PLANTED" not in item.provider.note
+    nodocs = skills_part.build(_ctx(settings, None))
+    (none,) = await nodocs.vitals[0](UID, now, KOLKATA)
+    assert none.base[0] == "unknown" and "document store" in none.provider.note
+
+
+async def test_before_the_part_is_built_the_routes_answer_their_ready_word(
+    settings: Settings,
+) -> None:
+    async with _app(settings, MockProvider()) as (app, client):
+        app.state.r14_parts = {}
+        for route in ("/v1/skills", "/v1/costs/ledger"):
+            assert (await client.get(route)).json() == {"part": "skills", "ready": "not built yet"}

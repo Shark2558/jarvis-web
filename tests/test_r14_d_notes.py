@@ -1,6 +1,7 @@
 # tests/test_r14_d_notes.py -- R14 D13 (4): `GET /v1/notes/export` leaves an audit line (agent
 # `privacy`, the count only, never a note's words) BEFORE the file goes out; when the audit chain
-# can't be written the export is refused (503, nothing sent). Before R14 the export left no trace.
+# can't be written, or there is none (tools off), the export is refused (503, nothing sent).
+# Before R14 the export left no trace.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -14,7 +15,7 @@ from kb_fakes import Rig, build_rig
 from pydantic import SecretStr
 from starlette.middleware.sessions import SessionMiddleware
 
-from jarvis.api.notes import EXPORT_AUDIT_TOOL, install_notes
+from jarvis.api.notes import EXPORT_AUDIT_TOOL, NO_CHAIN, install_notes
 from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.audit import AuditLog
@@ -87,9 +88,12 @@ async def test_an_export_the_audit_cannot_record_is_refused(settings: Settings, 
         assert "flowerpot" not in r.text and "content-disposition" not in r.headers
 
 
-async def test_without_an_audit_chain_the_export_still_answers(
-    settings: Settings, rig: Rig
-) -> None:
-    async for c in _client(settings, rig, None):  # tools switched off: there is no chain
+async def test_without_an_audit_chain_the_export_is_refused(settings: Settings, rig: Rig) -> None:
+    """Security review L1, decided: fail closed as the vault does. With the tools switched off
+    there is no chain to write to, so nothing is sent, and the words say why plainly."""
+    async for c in _client(settings, rig, None):
         await _two_notes(c)
-        assert (await c.get("/v1/notes/export")).status_code == 200
+        r = await c.get("/v1/notes/export")
+        assert r.status_code == 503 and r.json()["error"] == "export_unaudited"
+        assert r.json()["detail"] == NO_CHAIN and "tools" in NO_CHAIN
+        assert "flowerpot" not in r.text and "content-disposition" not in r.headers

@@ -16,7 +16,8 @@ POST   /v1/notes/{id}/fetch       {confirm_credit: true} -> NoteView with the pa
                                   of the month's web credits. 409 web_off / allowance, 422 bad_url.
 GET    /v1/notes/export           JSON attachment jarvis-notes-YYYY-MM-DD.json. Audited FIRST (R14
                                   D13 (4): agent `privacy`, the count only); 503 export_unaudited
-                                  when the audit chain can't be written (nothing is sent).
+                                  when the audit chain can't be written or there is none (tools
+                                  off): nothing is sent.
 POST   /v1/notes/import           {data} (<= 2 MB, filter applied) -> {added, skipped}
 """
 
@@ -53,6 +54,10 @@ router = APIRouter(prefix="/v1/notes", dependencies=[Depends(require_auth)])
 EXPORT_AUDIT_AGENT, EXPORT_AUDIT_TOOL = "privacy", "notes_export"
 UNAUDITED = (
     "The export couldn't be recorded in the audit log just now, so nothing was sent. Try again."
+)
+NO_CHAIN = (
+    "Exports are recorded in the audit log, which is off while JARVIS's tools are switched off, "
+    "so nothing was sent."
 )
 
 
@@ -176,14 +181,15 @@ async def fetch_note(
     return NoteView.of(await svc.fetch(uid, note_id))
 
 
-async def _audit_export(request: Request, count: int) -> bool:
+async def _audit_export(request: Request, count: int) -> str | None:
     """R14 D13 (4): one line on the app's audit chain (the gateway's), the count only, before the
-    file goes out. False when the chain is there but the line could not be written. With no chain
-    (tools switched off) there is nothing to write to: logged, and the export answers."""
+    file goes out. None when written; else why nothing may be sent: the chain could not be
+    written (`UNAUDITED`), or there is none (tools switched off: `NO_CHAIN`; fail closed, as the
+    vault does)."""
     gw = getattr(request.app.state, "gateway", None)
     if gw is None:
-        log.warning("no audit chain for a notes export", extra={"count": count})
-        return True
+        log.error("no audit chain: a notes export is refused", extra={"count": count})
+        return NO_CHAIN
     try:
         await gw.audit.append(
             agent=EXPORT_AUDIT_AGENT,
@@ -195,8 +201,8 @@ async def _audit_export(request: Request, count: int) -> bool:
         )
     except Exception as exc:  # noqa: BLE001 - an export nobody can see later is not sent
         log.error("AUDIT WRITE FAILED for a notes export", extra={"error": type(exc).__name__})
-        return False
-    return True
+        return UNAUDITED
+    return None
 
 
 @router.get("/export")
@@ -205,8 +211,9 @@ async def export_notes(
 ) -> Response:
     data = await svc.export(uid)
     notes = data.get("notes")
-    if not await _audit_export(request, len(notes) if isinstance(notes, list) else 0):
-        raise NotesError(503, "export_unaudited", UNAUDITED)
+    refused = await _audit_export(request, len(notes) if isinstance(notes, list) else 0)
+    if refused is not None:
+        raise NotesError(503, "export_unaudited", refused)
     name = f"jarvis-notes-{datetime.now(UTC):%Y-%m-%d}.json"
     return Response(
         content=json.dumps(data, ensure_ascii=False, indent=2),

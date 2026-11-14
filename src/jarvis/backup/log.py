@@ -91,6 +91,7 @@ class Run(_Frozen):
     inr: float | None = None
     operation: str | None = None
     polls: int = 0
+    errors: int = 0  # checks that raised in a row (a drill ends after 3)
     progress: dict[str, Any] = Field(default_factory=dict)
     result: DrillResult | None = None
 

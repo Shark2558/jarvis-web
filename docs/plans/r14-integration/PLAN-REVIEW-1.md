@@ -1,4 +1,4 @@
-Version v14.0.1 · 14 Nov 2026, 13:32 IST · Release R14 · Status: Current · Owner: 🛠 Mark XVIII
+Version v14.0.2 · 14 Nov 2026, 14:35 IST · Release R14 · Status: Current · Owner: 🛠 Mark XVIII
 
 # R14 plan review 1 (fresh context, 14 Nov 2026)
 
@@ -250,8 +250,61 @@ Nothing blocks I0, and every question has a safe default, in ₹. Changes:
 
 **Not ready until A1, A2, A3, A4, A5, A6, A7 and A8 are written in.** The B lines also need correcting and the C seams adding to the I0 list. The owner isn't needed for any of it.
 
+## Addressed in v14.0.2 (the plan `r14-hardening.md` v14.0.2, Status Ready)
+
+Written in by the R14 I0 integrator (🛠 Mark XVIII) on `r14-i0`. Every figure in ₹ was recomputed at
+`billing/fx.py`'s `DEFAULT_RATE` ₹95.24 (the live rate is read daily; the drill's cap check uses it).
+"D4" etc. are the plan's decisions in v14.0.2.
+
+**A (blocking): all eight settled.**
+
+| Item | Where in v14.0.2 | How |
+|---|---|---|
+| A1 cross-turn cache | D9 "Cache within the reply", D10, D16, I0 decision 1 | Choice (b): the trailer stays before the messages (no prompt-shape change, no eval rerun); the cross-turn claim is dropped. The Anthropic provider applies `cache_history` itself (a second breakpoint on the last message block), so there is no third brain slot. D10 reworked with its own parameters and the 135-tool prefix (≈ 20,700 tokens): after a pause ₹5.89 → ₹3.10 (₹2.91 with the hint off), within 5 minutes ₹1.16 → ₹1.22 (₹1.04 hint off), one tool ₹7.48 → ₹3.98, two tools ₹9.49 → ₹4.89; the mix ₹5.42 → ₹2.99 (≈ 45 %; the hint is neutral at the mix and wins from 2 calls up). The window drops in chunks (70 %) and shortens a result once, at the start of a turn, so the prefix never moves within one. Choice (a) is deferred (≈ ₹70 a month) |
+| A2 vacuous drill | D4 "start", "verifying" | Empty `stats` or `document_count == 0` is "not yet" (never start). Checks (3) and (4) compare on the app's own fields (`rev` and `updated_at` for the vault, each collection's own time field), store how many were compared; zero compared is "failed: nothing compared" when live has any; no vault is "skipped: no vault". Counts by `count()` aggregations per collection group (≈ ₹0). Control: a comparison keyed on `update_time` with restamped copies must not pass |
+| A3 clean-up and leftover cost | D4 "cleanup", "Drill", data model | Clean-up runs whenever `jarvis-drill` exists, whatever the switches; `get_database` decides; delete protection off first (the custom role has `.update`); the 5-minute id reuse means the restore waits for the next tick. Leftover ≈ ₹1.4 a month at 100 MB, ≈ ₹14 at 1 GiB; alert once, then weekly. One drill at a time; `backup_drill_manual_per_month` 2 (0–4); the card is `bulk_ok=False` |
+| A4 spending before YES | D0, D4, D13, owner steps 4 and 6, seam 6 | The deploy calls only `backup_setup.sh --status` (read only, exit 0; I0's test greps that it never runs `create`, `update`, `delete` or `add-iam-policy-binding`). The cost line is the range ("about ₹5 at 100 MB, about ₹40 at 1 GB; a drill about ₹2"); Vitals shows the real figure after the first copy. The TTL policy is out (fact 10); Part D corrects `people/cache.py:6–7` |
+| A5 the locks | Summary 1, D4 "Unable to write live", risks | Reworded: "its code can't write". `ReadOnlyDocs` on both sides; the import test; lock 5 (`Settings` refuses `firestore_database == "jarvis-drill"`, built at I0); `jarvisDrillCleanup` (get, getMetadata, update, delete) on `jarvis-drill` only instead of a conditioned `datastore.owner`; the runbook names the id to avoid and clears `backup_drill/current` |
+| A6 storm, starvation, loops | D5, D6, seam 2, seam 7 | One aggregated `job_failing` an hour per owner; R14's own soft table `SELF_KINDS` (3 an hour in all, one per kind and subject per 30 minutes), `SOFT_URGENT_KINDS` unchanged; the observer carries `ok` / `failed` / `timed_out` / `skipped`, a skip never counts; `selfwatch_clock` first on both 5-minute paths; the claim before the send, a failed send is no job failure, neither selfwatch job watches itself, the notify/telegram records during a selfwatch send are skipped. No `backup_problem` before the set-up has run once (a schedule seen, `backup_status/current`). The spike is today's snapshot minus yesterday's (the 1st: today's), after 7 days. Eval cases: an outage → at most 1 ring; a skip → no `job_failing` (each with a control) |
+| A7 Home-off owners | D7, seam 7 | `app.state.clock_jobs` runs every 5-minute advisory job for the brief's owners (`BriefService.owners`, read late) on both paths; I0's test: Home off → `health_check` and `selfwatch_clock` run for the configured owner at 02:00 |
+| A8 collisions | D3, D5, D8, D2, Part split, seams 6, 7, 10, I0 decisions 2 and 3 | No console file is shared: R14's Vitals lines are ordinary Vitals items through one server slot (`OwnSources.r14`), the drill button is dropped (deferred; "test my backup" brings the card), the Privacy panel's "Backups" row is Part A's server-sent privacy source. A alone produces the backup kinds and the size; B reads `backup.ports.BackupStatus`. No third brain slot (A1). The booking site's address is text (no new card kind; deferred) |
+
+**B (stale or wrong facts): every line corrected against the code on `5db4f05`.** Re-checked by grep
+and by reading each line: prices are `llm/pricing.py:30` (fact 11); 135 tools, 54,868 / 61,515
+characters, top 20 % = 37.7 % (fact 11, summary 3); the ₹0.17 and "about ₹100 a month" figures are the
+Phase 0 run (D8); all four error classes in three providers and the router's log (fact 13, D9); the two
+UPI constants (fact 13, D13 item 6, Part D); the TTL line (fact 10, D13); the "D19 runbook" (D4, D15);
+the version pins `test_about.py:24`, `test_r11_1_seams.py:73`, `test_r7_seams.py:110` and the persona in
+19 test files (D14, seam 1); the alert-kind pins plus `test_r51_seams.py:45`, `test_r51_int_notify.py:47`,
+`test_r7_a_push.py:43` (fact 5, seam 2); the keyring pin `test_r7_seams.py:292` (fact 6); the tick-list
+pins `test_r11_wiring.py:294–295`, `test_r7_seams.py:436` (seam 7); after a pause and within 5 minutes
+(D10); 14 days ≈ ₹6.9 (owner question 2); 1 GiB ≈ ₹39 with `count()` (per-item table); the STARTERS pin
+`test_r11_b_chores.py:152` (D1). One more stale fact found at I0: the guide's cards C61–C65 already
+exist (R11.1, R7), so R14's are **C66–C68** (fact 16, D15, seam 8).
+
+**C (missing seams): all twelve joined to the I0 list.** C1 → seam 2 (`TARGETS`, `ALERT_WORDS`, the
+soft table, the pins); C2 → seams 3 and 7; C3 → seam 9; C4 → seam 4 (`linked_gateway` `r14=`); C5 →
+data model, seam 7 (`r14_privacy_sources`: `token_ledger`, `selfwatch_told` listed, counts only); C6 →
+seam 7 (the handler from Part B's `services["log_handler"]`, once, on the root logger; the observer
+passed to `run_jobs`; `R14_JOB_NAMES` in `hardening/ports.py`); C7 → no third slot (A1), `BackupStatus`
+in seam 6; C8 → seam 10 (no Vitals or Privacy hook needed: both server-sent; the CSP unchanged); C9 →
+seam 5; C10 → seam 6; C11 → D4 and seam 4 (`bulk_ok=False`; the `vitals_change` hint names the
+drill); C12 → the per-item table's controls (window counting, the hint, the outage storm, the skip,
+the vacuous drill).
+
+**D (notes): taken.** Google's terms as confirmed and the two things not on the pages (Google's terms
+table); the ₹ table (per-item table, D4, owner questions); the live rate in the cap check (D4); the
+inline-tools beta and `defer_loading` as optional, Anthropic-only (D9); the offer narrows only, and
+every tool a replayed `tool_use` names is offered (D9); a shortened result keeps its flags (D9); the
+confirm-before-commit list, including the drill's cost line in the set-up (owner step 4); "preferred
+time" ≤ 40 characters (D2); OpenID Connect's `auth_time` (D13); the armed `home_offline` test (D13);
+the anchored phrases (D12); the data-safety limit (D3, C66), the runbook lines (D4); the async admin
+client, the drill route's rate limit, the Vitals index left in place (D4, D13). E: owner questions 1–3
+reworded, "no reminders about backups until you run the step" added to question 1.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v14.0.1 | 14 Nov 2026, 13:32 IST | R14 | First edition: fresh-context review of `r14-hardening.md` v14.0.1 on `b45e43c`. A1–A8 blocking: the cross-turn cache, the drill's vacuous checks and empty stats, the drill's clean-up and leftover cost, spending before YES and the billed TTL, the locks said honestly plus a config lock, the self-health storm and starvation, D7's missing owners, and the split's collisions. B: 54 claims sampled (51 right, 4 of them incomplete; 3 wrong). C: 12 seams. D: Google's terms and the ₹ figures recomputed at ₹95.24. E: the owner's questions | 🛠 Mark XVIII |
+| v14.0.2 | 14 Nov 2026, 14:35 IST | R14 | "Addressed in v14.0.2": where and how the plan v14.0.2 (Status Ready) settles A1–A8, the B lines (and one more found at I0: cards C66–C68), the C seams and the D notes | 🛠 Mark XVIII |

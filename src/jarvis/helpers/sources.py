@@ -12,6 +12,9 @@ timeout of at most `OUTSIDE_TIMEOUT_S` and a response cap. No key, no secret, no
 - USDA FoodData Central (D, D15): CC0; used only when the bundled nutrition subset is built
   (`scripts/kitchen_fdc_subset.py`), never at run time.
 - UPI (A, D7): the NPCI deep-link scheme JARVIS writes for the owner to open; it calls nothing.
+  `MAX_UPI_AMOUNT_PAISE` is the CEILING of a prepared payment (R14 D13 (6)): the cap in force is
+  the deploy-time setting `bill_pay_cap_inr`, which can only be lower
+  (`helpers.today.models.pay_cap_paise`).
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ MAX_CAP_BYTES = 256 * 1024
 FDC_ATTRIBUTION = "USDA FoodData Central (public domain)"
 
 UPI_PAY_SCHEME = "upi://pay"
-MAX_UPI_AMOUNT_PAISE = 1_00_000 * 100  # D7: ₹1,00,000 per prepared payment
+MAX_UPI_AMOUNT_PAISE = 1_00_000 * 100  # D7: ₹1,00,000, the ceiling; `bill_pay_cap_inr` may lower it
 
 __all__ = [
     "FDC_ATTRIBUTION",

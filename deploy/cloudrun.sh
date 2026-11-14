@@ -426,15 +426,9 @@ IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --co
     *) echo "  Note: the conversation-list index could not be created yet (JARVIS works without it):"
        printf '  %s\n' "$IDX_OUT" | tail -2 ;;
   esac
-# R4 A (W15): the Vitals board lists an owner's tracked keys by label (equality + order_by on
-# another field needs a composite index). Until it is built the board says "unavailable".
-IDX_OUT="$(gcloud firestore indexes composite create --database='(default)' --collection-group=jarvis_vitals_providers \
-  --field-config=field-path=user_id,order=ascending --field-config=field-path=label,order=ascending \
-  --async --quiet 2>&1)" || case "$IDX_OUT" in
-    *already*exists*|*ALREADY_EXISTS*) ;;
-    *) echo "  Note: the Vitals index could not be created yet (the Vitals board waits for it):"
-       printf '  %s\n' "$IDX_OUT" | tail -2 ;;
-  esac
+# R14 D13: the Vitals board's composite index is no longer made (R5.1 D2 sorts the tracked keys in
+# the app). One made by an earlier deploy stays and does no harm; deleting it is optional and free.
+# No TTL policy is set either: TTL deletes are billed and the app deletes what expires itself.
 # R2 D1: the vault's, notes' and things' encrypted blobs are never searched, so keep them out of the
 # single-field indexes (saves free storage). NON-FATAL: a failure changes nothing else.
 VAULT_INDEX_FAILED=no
@@ -695,6 +689,20 @@ if setup_home_watchdog; then
   HOME_JOBS_FOUND="$(gcloud scheduler jobs list --location "$REGION" --format='value(name)' 2>/dev/null | wc -l | tr -d ' ')"
 else echo "  HOME: laptop-offline alerts are off (re-run this script)."
 fi
+
+# R14 D4, D13: what the backups look like now. READ ONLY: `--status` never creates a schedule, a
+# binding or protection and never spends anything (the set-up, with its YES, is the owner's own
+# one-time step). NON-FATAL: a failed status check changes nothing else.
+backup_status_note() {
+  local out
+  echo "  Backups (looked at only; the deploy never changes them):"
+  if out="$(bash deploy/backup_setup.sh --status 2>&1)"; then
+    printf '%s\n' "$out" | sed 's/^/    /'
+  else
+    echo "    could not check the backups just now (nothing was changed; JARVIS works)."
+  fi
+}
+backup_status_note || true
 
 say "DONE. Open JARVIS at:  $BASE_URL"
 if [ "$BRIEF_CLOCK_OK" = yes ]; then

@@ -1,4 +1,4 @@
-Version v14.0.2 · 15 Nov 2026, 00:50 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
+Version v14.0.3 · 15 Nov 2026, 04:50 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
 
 # R14 — I1 notes (the four parts joined)
 
@@ -233,9 +233,95 @@ finding with its outcome. Every code change was test first (the test seen failin
 | Browser files that touch chat, Telegram, No-AI, approvals and the visual gate (`JARVIS_BROWSER_TESTS=1`; `test_ui_audit`, `test_r14_d_console`, `test_console`, `test_telegram`, `test_approve_all`, `test_systems_check`, `test_offline`; `fix-browser.log`) | **189 passed, 1 failed**: `test_approve_all.py::…leaves_the_other[phone]` read the list's count straight after the bar hid; the bar hides once fewer than two cards can be batched, which can be before the list has re-rendered (load only: 9 of 9 alone). Fixed in the test (it waits for the list to settle); re-run: 3 passed five times, once under two busy loops. No console file changed in R14's follow-ups; the whole browser suite is CI's |
 | Sizes | `app.py` 727 (≤ 735), `gateway.py` 760 (≤ 760), `brain.py` 713 (≤ 741), `console.html` 782 (≤ 782), largest `console*.js` 769 (≤ 800); `said.py` 323, `core/window.py` 221, `telegram/service.py` 547, the hook 748, `evals/r14/needles*.py` 385 / 350 / 287 |
 
+## 13. Hotfix 1 (v14.0.1, branch `hotfix-v14.0.1`; logs `/tmp/r14-logs/hf-*.log`)
+
+**What failed.** main's CI run 43638045254, the push of the R14 merge `529c06f`: `test (3.11)`
+3 failed, 15,907 passed (`test (3.12)` was cancelled), so nothing deployed. Two cases of
+`test_claude_guard.py` ("guard: blocked a push from main") and
+`test_recall_ops.py::test_a_500_fact_import_is_not_quadratic` (8.88 s against a 3.0 s limit).
+All three had passed on the pull request's run 43631442524.
+
+**Cause 1, the branch.** On a push to `main` the checkout is ON branch `main`, so the hook rightly
+blocks a bare `git -c push.negotiate=true push` judged there; a pull request's checkout is a
+detached merge ref, so it passed. The tests used the checkout itself (`ROOT`) as the folder.
+Reproduced in a throw-away clone on `main` below `/tmp`: **16 failed**, the 2 of CI and 14
+`rm -rf` cases whose place was `ROOT` (a second dependence: a checkout below `/tmp` may lose
+anything). Two more found by reading: `~` and `$HOME` came from the runner's HOME, and a caller's
+`GIT_DIR` (pytest run from a git hook) would decide the branch. The rest of the suite reads no
+branch: `test_r14_i1_join` and `test_r7_e_gradle` run `git ls-files` (the same on a detached HEAD
+and in a linked worktree), the build book's and `test_markdy_export`'s git tests use their own
+repos.
+
+**Fix 1, tests only (the hook is right and unchanged).** A bare push is judged only in throw-away
+repos whose branch the test chooses: it passes on `r14-x`, on a detached HEAD, in a linked
+worktree on `r14-x` (in `.claude/worktrees/`) of a repo on `main`, and in their subfolders; the
+same six spellings are **blocked** on `main`, `master`, a linked worktree on `main` and their
+subfolders; `git -C` and `cd` are judged where the push runs. The pin:
+`test_only_the_bare_pushes_depend_on_the_branch` gives every other listed command (the
+Workshop's, both briefs') the same verdict on `main` and on `r14-x`, so a new bare push in a list
+fails on every run, not only on main's. `ROOT` is never a folder (CI's place, by name, stands for
+"a checkout outside `/tmp`"); every hook run gets HOME `/home/claude` and no `GIT_*` variable.
+Mutants: the hook's main check removed fails 8 tests; a bare push added to the allowed list fails
+the pin (on `main` and on `r14-x`); the `GIT_*` scrub removed fails its test. 303 -> 317 cases.
+
+**Cause 2, the clock (not R14).** The import costs the same at R7 and R14:
+
+| Measured (3.11, this machine) | R7 `5db4f05` | R14 `529c06f` |
+|---|---|---|
+| 500 facts alone, median of 5 (fresh / all duplicates) | 0.164 s / 0.149 s | 0.164 s / 0.152 s |
+| The test inside the whole suite (wall / CPU) | 0.406 s / 0.403 s | 0.410 s / 0.403 s |
+| gc-tracked objects at that test; peak RSS | 13.1 M; 4.38 GB | 12.9 M; 4.27 GB |
+| One full collection at that point | **8.15 s** | **7.56 s** |
+
+A full collection that starts inside the timed window is charged to it: 0.4 s + one pass is CI's
+8.9 s; where the pass lands is chance (the pull request's run missed it). Reproduced by hand on a
+6.4 M-object heap that keeps growing: 2 of 120 old-style windows held a full pass (0.70 s, 0.81 s
+against at most 0.27 s), none of the new ones. What fills the heap: FastAPI 0.162's callable
+caches (`fastapi.dependencies.models`, `lru_cache` of 4,096 entries each) keep each test app's
+dependency closures, and through them the apps (`health_router.<locals>.last` -> `LiveHealth` ->
+`FastAPI`): 541 k `Dependant`, 115 k `TypeAdapter` objects. The same at R7; not changed here.
+
+**Fix 2, both measures, no wall clock.** (a) CPU time with the collector paused, best of three,
+500 facts against 100, fresh and all-duplicate: the growth must stay under 12 (linear 5x,
+quadratic ~25x; measured 3.0 to 6.3 idle and with the other CPU busy, 3.11 and 3.12), with 3.0 s
+of CPU as a backstop. (b) An operation count, deterministic: the duplicate checks' `norm_key`,
+`token_set` and `jaccard` calls for 80 and 400 facts (below 500, so the second import checks every
+fact: at 500 active it has no room and checks none) go 640 -> 3,200 (5.0x). Mutants: a quadratic
+`DupIndex.find` that re-tokenises (HIGH 2 itself) fails both (5.5 s of CPU); one that scans every
+stored fact through the token memo grows 24.5x (19,680 -> 482,400) and fails the count, which the
+old test passed and a timing ratio cannot see (4.5x to 8.2x, the same as linear at 500).
+
+**Version.** `__version__` 14.0.1 (pyproject reads it); the book is still **R14** (a minor of 0
+is dropped); the 4 pins it moved: `test_about`, `test_r14_seams`, `test_r7_seams`,
+`test_r11_1_seams`. No file under `tests/browser` shows `14.0.0`.
+
+**Checks.**
+
+| Check | Result |
+|---|---|
+| Unit suite, Python 3.11, whole, in a throw-away clone of `1b82ea3` checked out as `main` below `/tmp` (CI's push condition, and the `/tmp` one) (`hf-unit-311-on-main.log`) | **15,944 passed, 133 skipped, 0 failed** (16:28) |
+| Unit suite, Python 3.12, whole, with coverage, in this worktree (`hf-unit-312.log`) | **15,943 passed, 134 skipped, 0 failed** (25:11); coverage **95.50 %**, `scripts/coverage_floor.py` passes at the floor 95 |
+| `ruff check` / `ruff format --check` (src tests evals scripts) | clean (1,745 files) |
+| `mypy src` (`hf-mypy.log`) | **1 error**, the baseline `memory/redis_store.py:67` (772 files) |
+| `evals/run_all_mock.py` on 3.12 (`hf-evals-mock.log`) | **ALL MOCK EVALS: PASS** (42 suites); `r14` 108/108, its control fails it |
+| `scripts/arch_coverage.py` | OK: 65 packages and modules, 90 console modules, 2 Scheduler jobs, 30 outside services, 106 collections |
+| `scripts/check_doc_versions.py` | all 28 documents pass (these notes v14.0.3) |
+| `scripts/check_pr_title.py "v14.0.1 · R14 hotfix 1 — tests that don't depend on the branch · Mark XIX"` | OK |
+| `python -m jarvis.buildbook.gen --check` | the book is **R14** (`1b82ea3`): book.json 182,037 bytes, two builds byte-identical |
+| `tests/browser`: files that show `14.0.0` | none |
+
+**Needs a follow-up (not in this hotfix).** Other wall-clock limits carry the same exposure to a
+full collection: `test_memory_api.py::test_a_500_fact_round_trip_is_fast_and_identical` (1.0 s,
+the same 500 facts through the API, earlier in the run), `test_documents_extract.py` (0.5 s and
+2.0 s), `test_draft_recipients.py` (0.05 s), `test_packages_redos.py`, `test_r51b_fixes.py` and
+`test_r4_i2_tick_deadline.py`. Clearing FastAPI's callable caches after each test (or not keeping
+the apps) would shrink the 4.3 GB heap and every full pass with it; two whole suites at once
+were killed for memory on this 7 GB machine.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v14.0.1 | 14 Nov 2026, 21:30 IST | R14 | First edition: the four merges (no conflicts), every Needs I1 item with its outcome and commit, the defects found at the join (No-AI's JSON answers of the real tools, the drill card's line, the offer's effect on two pins, the errors handler outliving its app, the window's setting), every pin changed and why, the hook fix, the docs, the checks with their numbers, the sizes, the decisions taken, what can't be verified | 🛠 Mark XIX |
 | v14.0.2 | 15 Nov 2026, 00:50 IST | R14 | The integrated review follow-ups (section 11): each finding with its outcome, test and commit (the hook's globs and wrappers, the fenced No-AI turn, the drill card console only, the needles eval built, the Vitals words, the route limits, the notes to the model, the guide's count, the links); LOW-1 as verify live; decisions 5 and 6; the checks after the follow-ups | 🛠 Mark XIX |
+| v14.0.3 | 15 Nov 2026, 04:50 IST | R14 | Hotfix 1 (section 13): what failed on main's CI run after the merge, the two causes (the checkout's branch and place; a full collection inside a wall-clock window, not R14), the fixes (branch-free guard tests with a pin, the import judged by growth and by an operation count), the version 14.0.1 and its pins, the checks, the follow-ups | 🛠 Mark XIX |

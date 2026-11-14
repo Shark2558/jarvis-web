@@ -152,7 +152,9 @@ class DocShowLock:
         """Lift `uid`'s lock if it is `lock_id`; with `signed_out_before`, every owner's cookie
         sessions issued before it stop counting (in the same transaction). An earlier mark stays
         and never moves back (R14 D13 (2)): without `signed_out_before` the lock goes and the
-        mark is kept; with it, the later of the two counts."""
+        mark is kept; with it, the later of the two counts. This owner's own document must parse:
+        a malformed one raises `LockUnreadable` here as on every read (never read leniently, which
+        would drop his own mark); only another owner's mark is lenient (`_mark_of`)."""
         others = [o for o in self._owners if o != uid] if signed_out_before is not None else []
 
         async def work(tx: DocTx) -> tuple[bool, float | None]:

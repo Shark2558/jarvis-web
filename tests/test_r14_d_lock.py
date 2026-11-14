@@ -79,3 +79,13 @@ async def test_another_owners_unreadable_document_never_blocks_a_resume() -> Non
     state = await lock.set(UID, BK, now=T0)
     assert await lock.lift(UID, state.id, signed_out_before=MARK) is True
     assert await DocShowLock(docs).valid_after(OTHER) == MARK  # healed with the new mark
+
+
+async def test_his_own_malformed_mark_is_never_read_leniently_by_a_lift() -> None:
+    """Python review L1, declined on purpose: a lenient read here would drop his own mark (the
+    hole D13 (2) closes). His own malformed document fails closed, as every read of it does."""
+    docs = FlakyDocs()
+    await docs.write([Set(PATH, {"id": "lk_x", AFTER: "not a time"})])
+    with pytest.raises(LockUnreadable):
+        await DocShowLock(docs).lift(UID, "lk_x")
+    assert await docs.get(PATH) == {"id": "lk_x", AFTER: "not a time"}  # nothing changed

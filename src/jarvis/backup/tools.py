@@ -21,7 +21,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from jarvis.backup.drill import NOT_SET_UP_LINE, Drill
+from jarvis.backup.drill import Drill
 from jarvis.backup.log import DrillLog, DrillResult
 from jarvis.backup.status import (
     REASON_WORDS,
@@ -46,6 +46,18 @@ NOT_SET_UP_SAID = (
     "on: bash deploy/backup_setup.sh in Cloud Shell."
 )
 NO_COPY_SAID = "Backups are on, Sir; Google hasn't made the first copy yet."
+NO_FIRESTORE_LINE = (
+    "This server doesn't keep JARVIS's data in Google's Firestore, Sir, so there are no Google "
+    "backups to test."
+)
+
+
+OVERDUE = dt.timedelta(days=40)  # the drill is monthly: an older pass no longer says much
+WITH_YEAR = dt.timedelta(days=180)
+
+
+def _utc_now() -> dt.datetime:
+    return dt.datetime.now(dt.UTC)
 
 
 def when_words(at: dt.datetime, tz: dt.tzinfo) -> str:
@@ -53,12 +65,27 @@ def when_words(at: dt.datetime, tz: dt.tzinfo) -> str:
     return f"{local.day} {local:%b}, {local:%H:%M}"
 
 
-def drill_words(last: DrillResult | None, tz: dt.tzinfo) -> str:
+def day_words(at: dt.datetime, tz: dt.tzinfo, now: dt.datetime) -> str:
+    """ "3 Aug", with the year once it is more than half a year ago."""
+    local = at.astimezone(tz)
+    day = f"{local.day} {local:%b}"
+    return f"{day} {local.year}" if now - at > WITH_YEAR else day
+
+
+def overdue(last: DrillResult, now: dt.datetime) -> bool:
+    return last.outcome == "passed" and now - last.at > OVERDUE
+
+
+def drill_words(last: DrillResult | None, tz: dt.tzinfo, now: dt.datetime) -> str:
     if last is None:
         return "No restore drill has run yet."
-    on = f"{last.at.astimezone(tz).day} {last.at.astimezone(tz):%b}"
+    on = day_words(last.at, tz, now)
+    if overdue(last, now):
+        return f"The last restore drill passed on {on}, and the next one is overdue."
     if last.outcome == "passed":
         return f"The last restore drill passed on {on}."
+    if last.outcome == "skipped" and last.reason == "switched_off":
+        return f"The last restore drill on {on} was skipped: the drill is switched off."
     if last.outcome == "skipped":
         return f"The last restore drill on {on} was skipped: there was no vault to open."
     why = REASON_WORDS.get(last.reason or "unknown", REASON_WORDS["unknown"])
@@ -72,6 +99,8 @@ class BackupDesk:
     log: DrillLog
     drill: Drill | None
     rate: Callable[[], Awaitable[float]]
+    keyed: bool = True  # a token key: without it no canary and no drill
+    clock: Callable[[], dt.datetime] = _utc_now
 
     async def month_inr(self, doc: StatusDoc) -> float | None:
         if not doc.size_bytes:
@@ -83,13 +112,12 @@ class BackupDesk:
         tz = zone_of(self.s.user_timezone)
         if not doc.set_up:
             return NOT_SET_UP_SAID
+        drill = drill_words(last, tz, self.clock())
         if doc.newest_at is None:
-            return f"{NO_COPY_SAID} {drill_words(last, tz)}"
+            return f"{NO_COPY_SAID} {drill}"
         cost = f", about {rupees(inr)} a month" if inr is not None else ""
         copy = f"Your last backup is from {when_words(doc.newest_at, tz)}, Sir"
-        return (
-            f"{copy}; Google keeps each copy {RETENTION_DAYS} days{cost}. {drill_words(last, tz)}"
-        )
+        return f"{copy}; Google keeps each copy {RETENTION_DAYS} days{cost}. {drill}"
 
     async def summary(self) -> dict[str, Any]:
         doc, last = await self.status.doc(), await self.log.last_result()
@@ -104,12 +132,14 @@ class BackupDesk:
             "month_inr": inr,
             "drill": last.words if last is not None else None,
             "drill_at": last.at.isoformat() if last is not None else None,
+            "drill_expected": last.expected if last is not None else None,
+            "drill_counted": last.counted if last is not None else None,
             "drill_running": state.phase != "idle" or state.requested_at is not None,
             "spoken": self._spoken(doc, last, inr),
         }
 
     async def request(self) -> str:
-        return NOT_SET_UP_LINE if self.drill is None else await self.drill.request()
+        return NO_FIRESTORE_LINE if self.drill is None else await self.drill.request()
 
 
 def card_text(s: Settings) -> str:
@@ -158,4 +188,17 @@ def backup_tools(desk: BackupDesk) -> tuple[Tool, ...]:
     )
 
 
-__all__ = ["ASKED", "SHOW", "SHOWN", "START", "BackupDesk", "backup_tools", "card_text"]
+__all__ = [
+    "ASKED",
+    "NO_FIRESTORE_LINE",
+    "OVERDUE",
+    "SHOW",
+    "SHOWN",
+    "START",
+    "BackupDesk",
+    "backup_tools",
+    "card_text",
+    "day_words",
+    "drill_words",
+    "overdue",
+]

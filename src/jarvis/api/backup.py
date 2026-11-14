@@ -4,7 +4,8 @@
 part's desk from `app.state.r14_parts["backup"].services["backup"]` per request.
 
 GET  /v1/backup        {part, ready, set_up, schedule, last_copy, copies, size_mb, documents,
-                       month_inr, drill, drill_at, drill_running, spoken}: counts and times only
+                       month_inr, drill, drill_at, drill_expected, drill_counted, drill_running,
+                       spoken}: counts and times only
                        (`tools.BackupDesk.summary`, what `vitals_backups` says)
 POST /v1/backup/drill  {session_id} -> 202 {status: "awaiting", approval_id, card, detail}: the
                        SAME card as "test my backup" (`vitals_drill_start` through the gateway,

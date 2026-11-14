@@ -31,10 +31,12 @@ from jarvis.api import r14_wiring as wiring
 from jarvis.backup import part as backup_part
 from jarvis.backup.log import DrillResult
 from jarvis.backup.privacy import BackupsPrivacy
-from jarvis.backup.tools import SHOW, START, BackupDesk
+from jarvis.backup.tools import NO_FIRESTORE_LINE, SHOW, START, BackupDesk
+from jarvis.backup.vitals import NOT_SET_UP_NOTE
 from jarvis.config import Settings
 from jarvis.core.guardrails import ActionRisk, AskReason, PendingAction
 from jarvis.hardening.ports import VITALS_IDS, HardeningContext, HardeningPart
+from jarvis.keyring import Keyring
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.storage.docs import MemoryDocs
@@ -42,6 +44,7 @@ from jarvis.tools.context import tool_context
 
 TZ = ZoneInfo("Asia/Kolkata")
 NOW = SNAP + dt.timedelta(hours=3)
+KEYED = ring()
 CSRF = {"X-Requested-With": "JARVIS"}
 
 
@@ -50,12 +53,14 @@ def _ctx(s: Settings, docs: MemoryDocs | None) -> HardeningContext:
     return HardeningContext(s=s, docs=docs, audit=None, state=state.get)
 
 
-def _built(s: Settings, world: World, *, admin: bool = True) -> HardeningPart:
+def _built(
+    s: Settings, world: World, *, admin: bool = True, keys: Keyring | None = KEYED
+) -> HardeningPart:
     return backup_part.build_with(
         _ctx(s, world.live),
         admin=FakeAdmin(world) if admin else None,
         walk=lambda: FakeWalk(world),
-        keys=ring(),
+        keys=keys,
         clock=lambda: NOW,
     )
 
@@ -221,6 +226,71 @@ async def test_vitals_says_skipped_for_no_vault(settings: Settings) -> None:
     items = await _items(part)
     assert items["backup_drill"].base[0] == "amber"
     assert items["db_size"].provider.used == pytest.approx(921.6, abs=0.1)
+
+
+async def _after_set_up(settings: Settings, **kw: Any) -> tuple[HardeningPart, BackupDesk]:
+    world = World()
+    world.snapshot(document_count=11)
+    part = _built(settings, world, **kw)
+    desk = _desk(part)
+    await desk.status.refresh(FakeAdmin(world))
+    return part, desk
+
+
+async def _spoken(part: HardeningPart) -> str:
+    with tool_context(f"{UID}:s1"):
+        said = await part.tools[0].run({})
+    return str(said["spoken"])
+
+
+async def test_a_pass_older_than_forty_days_is_overdue_and_an_old_one_has_its_year(
+    settings: Settings,
+) -> None:
+    part, desk = await _after_set_up(settings)
+    await desk.log.record(DrillResult(outcome="passed", at=NOW - dt.timedelta(days=41)))
+    item = (await _items(part))["backup_drill"]
+    assert item.base == ("amber", "is overdue") and "4 Oct" in item.provider.note
+    assert "overdue" in await _spoken(part)
+    part, desk = await _after_set_up(settings)
+    await desk.log.record(DrillResult(outcome="passed", at=NOW - dt.timedelta(days=200)))
+    assert "28 Apr 2026" in (await _items(part))["backup_drill"].provider.note
+
+
+async def test_a_drill_skipped_because_it_was_switched_off_says_so(settings: Settings) -> None:
+    part, desk = await _after_set_up(settings)
+    await desk.log.record(DrillResult(outcome="skipped", reason="switched_off", at=NOW))
+    item = (await _items(part))["backup_drill"]
+    assert item.base == ("unknown", "was skipped: switched off")
+    assert "vault" not in item.provider.note and "switched off" in await _spoken(part)
+
+
+async def test_a_count_mismatch_shows_both_counts(settings: Settings) -> None:
+    part, desk = await _after_set_up(settings)
+    failed = DrillResult(
+        outcome="failed", reason="count_mismatch", at=NOW, expected=1_204, counted=1_198
+    )
+    await desk.log.record(failed)
+    note = (await _items(part))["backup_drill"].provider.note
+    assert "1,204" in note and "1,198" in note
+    summary = await desk.summary()
+    assert (summary["drill_expected"], summary["drill_counted"]) == (1_204, 1_198)
+
+
+async def test_without_a_key_vitals_says_the_drill_cannot_run(settings: Settings) -> None:
+    part, _ = await _after_set_up(settings, keys=None)
+    item = (await _items(part))["backup_drill"]
+    assert item.base[0] == "amber" and "key" in item.base[1]
+
+
+async def test_off_firestore_the_drill_card_says_why_not_set_up(settings: Settings) -> None:
+    part = _built(settings, World(), admin=False)
+    with tool_context(f"{UID}:s1", confirmed=True):
+        ran = await part.tools[1].run({})
+    assert ran["message"] == NO_FIRESTORE_LINE and "Firestore" in ran["message"]
+
+
+def test_the_set_up_note_says_about_four_rupees_at_100_mb() -> None:
+    assert "about ₹4 a month at 100 MB" in NOT_SET_UP_NOTE and "₹5" not in NOT_SET_UP_NOTE
 
 
 # ---- Privacy ----------------------------------------------------------------------------------

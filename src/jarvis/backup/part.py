@@ -108,7 +108,8 @@ def build_with(
                          status=status, teller=teller, ring=ring, rate=rate, clock=now,
                          prefix=prefix)  # fmt: skip
         drill = Drill(deps)
-    desk = BackupDesk(s=s, status=status, log=drill_log, drill=drill, rate=rate)
+    desk = BackupDesk(s=s, status=status, log=drill_log, drill=drill, rate=rate,
+                      keyed=ring is not None, clock=now)  # fmt: skip
     canaries = CanaryStore(docs, prefix=prefix, zone=zone)
     canary_job = BackupCanaryJob(s=s, canaries=canaries, status=status,
                                  teller=teller, admin=admin, ring=ring, clock=now)  # fmt: skip

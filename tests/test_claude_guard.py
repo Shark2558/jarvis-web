@@ -99,9 +99,67 @@ def test_the_workshops_normal_commands_pass(command: str) -> None:
 
 @pytest.mark.parametrize("command", BLOCKED)
 def test_dangerous_commands_are_blocked_with_one_line(command: str) -> None:
-    got = _bash(command)
+    got = _bash(command, cwd=MAIN)  # the main checkout's own place (it need not exist here)
     assert got.returncode == 2, command
     assert got.stderr.strip() and len(got.stderr.strip().splitlines()) == 1
+
+
+# R14 I1 (builder A's finding): the Workshop's worktrees live under /home/claude/wt/ (and in a
+# checkout's .claude/worktrees/), so a relative `rm -rf src` there resolved under an allowed root
+# and passed. Inside a worktree only the worktree itself and its scratch folders may go, never
+# its tracked content, and never the worktree the command stands in.
+MAIN = Path("/home/claude/jarvis-web")
+WORKTREE = Path("/home/claude/wt/r14-x")
+NESTED = MAIN / ".claude" / "worktrees" / "r14-y"
+IN_A_CHECKOUT = [
+    "rm -rf src",
+    "rm -rf tests",
+    "rm -rf .git",
+    "rm -r -f docs",
+    "rm -Rf docs/plans",
+    "rm --recursive --force evals",
+    "rm -rf .claude/worktrees",
+    "rm -rf /tmp/ok src",
+    "ls; rm -rf ../{self}",  # the checkout it stands in, by a parent path
+    "cd src && rm -rf ../tests",
+    "rm -rf {self}/src",
+    "rm -rf build/../src",  # normalised before it is judged
+    "rm -rf .",
+    "rm -rf *",
+]
+
+
+@pytest.mark.parametrize("where", [MAIN, WORKTREE, NESTED, ROOT], ids=str)
+@pytest.mark.parametrize("command", IN_A_CHECKOUT)
+def test_a_checkouts_own_content_is_never_removed_from_inside_it(where: Path, command: str) -> None:
+    line = command.format(self=where.name if "../" in command else where)
+    got = _bash(line, cwd=where)
+    assert got.returncode == 2, (line, str(where))
+    assert len(got.stderr.strip().splitlines()) == 1
+
+
+@pytest.mark.parametrize(
+    ("where", "command"),
+    [
+        (WORKTREE, "rm -rf build"),
+        (WORKTREE, "rm -rf build/lib dist/jarvis-14.0.0"),
+        (WORKTREE, "rm -rf tmp/run1 .tmp"),
+        (WORKTREE, "cd src && rm -rf build"),
+        (WORKTREE, "rm -rf /home/claude/wt/r14-z"),  # another worktree, the whole of it
+        (WORKTREE, "cd .. && rm -rf r14-z"),
+        (WORKTREE, "rm -rf .claude/worktrees/inner"),  # a worktree inside it, the whole of it
+        (WORKTREE, "rm -rf /tmp/r14-logs/wheel"),
+        (NESTED, "rm -rf dist"),
+        (NESTED, "rm -rf ../r14-z"),
+        (MAIN, "rm -rf build"),
+        (MAIN, "rm -rf .claude/worktrees/r14-y"),
+        (MAIN, "rm -rf /home/claude/wt/r14-x"),
+    ],
+    ids=str,
+)
+def test_a_worktree_itself_and_its_scratch_can_still_be_removed(where: Path, command: str) -> None:
+    got = _bash(command, cwd=where)
+    assert got.returncode == 0, (command, got.stderr)
 
 
 def _git(base: Path, branch: str) -> Path:

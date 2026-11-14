@@ -10,9 +10,12 @@ Blocked:
   or `master` (a refspec, a delete, or a bare push while that branch is checked out)
 - `git reset --hard` onto a remote ref (`origin/...`, `upstream/...`, `refs/remotes/...`,
   `@{u}`, `FETCH_HEAD`); `git branch -D` / `--delete` of `main` or `master`
-- `rm` with both recursive and force flags on anything outside `/tmp/`, `/home/claude/wt/`,
-  `.claude/worktrees/`, `build/` and `dist/` (never `/`, `~`, `src`, `tests`, `.git`, nor a path
-  the hook cannot read, such as `$HOME/x`)
+- `rm` with both recursive and force flags on anything but what is below `/tmp/`, a whole
+  worktree (`/home/claude/wt/<name>` or a checkout's `.claude/worktrees/<name>`) or a scratch
+  folder (`build`, `dist`, `tmp`, `.tmp`) of the current folder or of a worktree; never a
+  worktree's own content (`src`, `tests`, `.git`, ...), never the worktree the command stands in,
+  never `/`, `~`, nor a path the hook cannot read, such as `$HOME/x` (R14 I1: a relative
+  `rm -rf src` inside a worktree resolved under an allowed root and passed)
 - writes and edits to `.env*` files, key files (`*.pem`, `*.key`, `id_ed25519`, ...) or content
   holding a private key block; a shell redirect into a `.env*` file
 - edits that switch checks off in lint / type / format configs (`[tool.ruff]`, `[tool.mypy]`,
@@ -43,8 +46,10 @@ except ImportError:  # pragma: no cover - an older python: the config checks are
 
 RULE = "the GateGuard rule in CLAUDE.md: stop and report, never work around it"
 PROTECTED_BRANCHES = frozenset({"main", "master"})
-SAFE_ROOTS = ("/tmp", "/home/claude/wt")
-SAFE_UNDER_CWD = ("build", "dist", ".claude/worktrees")
+SCRATCH_ROOT = "/tmp"  # anything below it may go
+WORKTREES = "/home/claude/wt"  # the Workshop's worktrees: each one whole, or its scratch
+WORKTREE_MARKER = "/.claude/worktrees/"  # a checkout's own worktrees: the same
+SCRATCH = frozenset({"build", "dist", "tmp", ".tmp"})  # folders no checkout tracks
 OPERATORS = frozenset({";", "&&", "||", "|", "&", "(", ")", "|&"})
 REDIRECTS = frozenset({">", ">>", "&>", ">|"})
 WRAPPERS = frozenset({"sudo", "command", "time", "nice", "nohup", "xargs", "env", "exec"})
@@ -124,6 +129,22 @@ def _strictly_under(path: str, root: str) -> bool:
     return path != root and path.startswith(root.rstrip("/") + "/")
 
 
+def _at_or_under(path: str, root: str) -> bool:
+    return path == os.path.normpath(root) or _strictly_under(path, root)
+
+
+def _worktree_of(path: str) -> tuple[str, list[str]] | None:
+    """(the innermost worktree holding `path`, the parts of `path` below it), or None."""
+    head, marker, tail = path.rpartition(WORKTREE_MARKER)
+    if marker and tail:
+        name, *rest = tail.split("/")
+        return head + marker + name, rest
+    if _strictly_under(path, WORKTREES):
+        name, *rest = path[len(WORKTREES) + 1 :].split("/")
+        return f"{WORKTREES}/{name}", rest
+    return None
+
+
 def _rm_target_ok(raw: str, cwd: str) -> bool:
     if raw in ("~",) or raw.startswith("~/") or raw.startswith("~"):
         return False
@@ -132,12 +153,17 @@ def _rm_target_ok(raw: str, cwd: str) -> bool:
     path = _resolve(raw, cwd)
     if path == "/":
         return False
-    if any(_strictly_under(path, root) for root in SAFE_ROOTS):
+    if _strictly_under(path, SCRATCH_ROOT):
         return True
-    if any(_strictly_under(path, os.path.join(cwd, sub)) for sub in SAFE_UNDER_CWD):
+    if any(_at_or_under(path, os.path.join(cwd, sub)) for sub in SCRATCH):
         return True
-    marker = "/.claude/worktrees/"
-    return marker in path and bool(path.split(marker, 1)[1].strip("/"))
+    tree = _worktree_of(path)
+    if tree is None:
+        return False
+    root, rest = tree
+    if not rest:  # a whole worktree, but never the one this command stands in
+        return not _at_or_under(os.path.normpath(cwd), root)
+    return rest[0] in SCRATCH  # its build, dist or tmp folder; never its tracked content
 
 
 def _check_rm(words: list[str], cwd: str) -> None:
@@ -164,7 +190,8 @@ def _check_rm(words: list[str], cwd: str) -> None:
     for t in targets:
         if not _rm_target_ok(t, cwd):
             raise Blocked(
-                f"guard: blocked `rm -rf {t}` (outside /tmp, worktrees, build, dist); {RULE}"
+                f"guard: blocked `rm -rf {t}` (only /tmp, a whole worktree or build, dist, tmp);"
+                f" {RULE}"
             )
 
 

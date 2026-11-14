@@ -8,7 +8,8 @@ R1 (read): `chore_list`, `maint_list`, `maint_starters`, `weather_now`, `disaste
 `maint_done`. Nothing here is R3, sends anything to anyone, or sets his place (the Home tab
 does, typed by him). R14 D2 (row 102): `maint_service_request` (R1) only writes a home-service
 request and gives the booking site's address as text (`service_request.py`): it never books, pays,
-sends or opens anything. The rota and upkeep answers are his own words (`trusted_output`);
+sends or opens anything, and its result is not his own data (it holds the model's words: what he
+did not type is fenced). The rota and upkeep answers are his own words (`trusted_output`);
 `disaster_status` carries SACHET's own words fenced as EXTERNAL CONTENT (so the round is outside
 content and later writes ask). The cached weather summary is numbers JARVIS checked.
 On a Telegram turn (a cloud chat) `weather_now` and `disaster_status` leave out his district
@@ -343,8 +344,7 @@ def _upkeep_tools(t: HouseTools) -> tuple[Tool, ...]:
             R1,
             service_mod.service_request,
             agent=AGENT,
-            check=service_mod.check_request,
-            trusted_output=True,
+            check=service_mod.check_request,  # never trusted_output: the model's words (M2)
         ),
     )
 

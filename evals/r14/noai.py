@@ -29,6 +29,7 @@ from jarvis.core.models import ChatRequest  # noqa: E402
 from jarvis.helpers.house.service_request import CONTACT_REFUSAL, service_request  # noqa: E402
 from jarvis.offline.phrases_r14 import ABILITIES_LINE, DISARM_LINE, ROUTERS  # noqa: E402
 from jarvis.offline.rules import NO_AI_LINE, NoAIRouter  # noqa: E402
+from jarvis.tools.taint import context_trust  # noqa: E402
 
 PART = "noai"
 BUILT = True
@@ -72,7 +73,9 @@ async def _fixed(n: int, text: str, line: str) -> dict[str, Any]:
 
 
 async def _no_contact() -> dict[str, Any]:
-    out = await service_request({"job": "plumber", "problem": "the kitchen tap drips"})
+    said = "book a plumber, the kitchen tap drips"  # his typed words: the request keeps them plain
+    with context_trust(untrusted=False, owner_text=said):
+        out = await service_request({"job": "plumber", "problem": "the kitchen tap drips"})
     failures = [] if not any(c.isdigit() for c in out["request"]) else ["digits in the request"]
     failures += [] if out["booked"] is False and out["paid"] is False else ["it booked or paid"]
     try:

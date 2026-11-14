@@ -1,4 +1,4 @@
-Version v14.0.1 · 14 Nov 2026, 17:00 IST · Release R14 · Status: Current · Owner: 🛠 Mark XVIII
+Version v14.0.2 · 14 Nov 2026, 18:40 IST · Release R14 · Status: Current · Owner: 🛠 Mark XVIII
 
 # R14 — I0 notes (the joins for "Free hardening")
 
@@ -66,7 +66,7 @@ the hook's cases; the missing floor and CI steps).
    `vitals_drill_start`, `maint_service_request`, `skills_open` (no row); the `vitals` hint names the
    backups, `vitals_change` the drill (a card, about ₹2, at most 2 a month); a test pins the four as
    open on Telegram; `TOOL_NOUNS` and `R7_PARTS_TOOLS` gained the nouns and the planned tools.
-5. **Settings** (`config.py` 656 → 719): the twenty of seam 5 with their ranges; `cloud_run_revision`
+5. **Settings** (`config.py` 656 → 722): the twenty of seam 5 with their ranges; `cloud_run_revision`
    reads Cloud Run's own `K_REVISION`; `Settings` refuses `firestore_database = "jarvis-drill"`
    (D4 lock 5).
 6. **The contract and the stubs**: `jarvis.hardening.ports` (`HardeningPart`, `HardeningContext`,
@@ -148,10 +148,55 @@ no cost, Vitals says "Backups: not set up", and nothing alerts about backups.
 
 ## 6. The checks (in order, one at a time; 2 CPUs)
 
-Being run; the results follow in v14.0.2 of this file.
+| Check | Result |
+|---|---|
+| Unit suite, Python 3.12, whole, with coverage (`--cov=jarvis`) at `1c6ec2f` | 14,910 passed, 132 skipped, **6 failed**, all pins of this release, fixed in `38441a1` (below); the six files re-run green (162 passed) |
+| **Coverage** (statements of `jarvis`, that run) | **95.33 %** (65,954 of 69,187), 15.3 points above the 80 % target: floor `scripts/coverage_floor.txt` = **95**; `scripts/coverage_floor.py` on that report: pass |
+| Unit suite, Python 3.11, whole, at `38441a1` | 14,916 passed, 131 skipped, 1 failed (my own floor test still bounded the floor at 80; fixed in `874f59f`, its file re-run green) |
+| Unit suite, Python 3.12, whole, at `874f59f` (final) | **14,916 passed, 132 skipped, 0 failed** |
+| `ruff check src tests evals scripts`, `ruff format --check` | clean (1,658 files) |
+| `mypy src` | 9 errors: exactly the 9 of the baseline (`core/window.py`, `llm/anthropic_provider.py`, `memory/redis_store.py`) |
+| `evals/run_all_mock.py` | ALL MOCK EVALS: PASS; the phase0 smoke fails by design (8 of its cases); `r14 (gated)` 14/14 with its contract control failing the suite |
+| `scripts/check_doc_versions.py` | 28 documents pass |
+| `scripts/arch_coverage.py` | OK: 65 packages and modules, 90 console modules, 2 Scheduler jobs, 30 outside services, 99 collections |
+| `python -m jarvis.buildbook.gen --check` | the book is "R14" (`38441a1`); two builds byte-identical |
+| Markdy (`scripts/markdy_export.py --check`) | not run: no diagram changed |
+| Browser: `tests/browser/test_alerts.py` (the only console file touched: `console-alerts.js`) | 12 passed (the first run found the browser fake serving 43 kinds: it now serves all 54 rows' kinds) |
+| Browser: `test_ui_audit.py -k integrations` (the Alerts card's panel) | 4 passed |
+| New browser tests | none (so nothing to run with the optional libraries blocked) |
+
+The six 3.12 failures, each a pin or a real slip of this release, fixed at the cause:
+
+1. Three R14 Vitals impacts ("If this fails / fills / grows") could not be spoken by the
+   briefing, which reads only the "If this stops: " and "If this runs out: " leads
+   (`health/briefing.py` `_LEADS`; `test_r51_i1_seams.py`): reworded to those leads.
+2. The book's two real-repository pins (`test_book_gen_determinism.py`, `test_book_gen_plans.py`):
+   R7 → R14, this release's plan first.
+3. The Vitals board's "every built-in item shows" pin (`test_r51b_vitals_seams.py`): R14's items
+   come only from R14's parts, so the pin covers the built-in ids.
+
+What only CI, the parts or the owner can prove: CI's coverage step on its own runners (the same
+`.[dev,homebridge]` set as here, so about the same total; a drop of more than 0.33 points fails the
+floor and would show at once on the first push); every Google call (D4, the plan's "What can't be
+verified"); the hook inside a real Claude Code session (`$CLAUDE_PROJECT_DIR` set by the harness;
+tested here by running the script as the hook does, on stdin).
+
+## 7. Sizes after I0
+
+| File | Lines | Guard |
+|---|---|---|
+| `src/jarvis/api/app.py` | 726 | ≤ 735 (was 735) |
+| `src/jarvis/tools/gateway.py` | 760 | ≤ 760 (unchanged) |
+| `src/jarvis/api/static/console.html` | 782 | ≤ 782 (unchanged) |
+| `src/jarvis/api/static/console-alerts.js` | 462 | ≤ 800 |
+| `src/jarvis/core/brain.py` | 710 | ≤ 741 |
+| `src/jarvis/config.py` | 722 | < 800 |
+| `src/jarvis/notify/storm.py` | 366 | < 800 |
+| new modules (`hardening`, `backup`, `selfwatch`, `skills`, the wiring) | ≤ 260 each | ≤ 400 |
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v14.0.1 | 14 Nov 2026, 17:00 IST | R14 | First edition: the base, the stale lines found at I0 (cards C66–C68, the version file, the nouns, the observer, the Vitals slot, the clock sites), what I0 built for each of the 12 seams, the decisions taken, the owner's position | 🛠 Mark XVIII |
+| v14.0.2 | 14 Nov 2026, 18:40 IST | R14 | The checks and their numbers (coverage 95.33 %, floor 95), the six pins and slips the 3.12 run found and their fixes, the one the 3.11 run found, the browser and book checks, the sizes after I0 | 🛠 Mark XVIII |

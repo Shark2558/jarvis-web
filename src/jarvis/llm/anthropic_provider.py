@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator
-from typing import Any, cast
+from typing import Any
 
 import anthropic
 from anthropic.types import (
+    Base64ImageSourceParam,
+    ImageBlockParam,
     Message,
     MessageParam,
     RawContentBlockDeltaEvent,
@@ -27,7 +29,9 @@ from anthropic.types import (
     TextBlockParam,
     TextDelta,
     ToolParam,
+    ToolResultBlockParam,
     ToolUseBlock,
+    ToolUseBlockParam,
 )
 from anthropic.types import TextBlock as AnthropicTextBlock
 
@@ -45,6 +49,7 @@ from jarvis.llm.base import (
     LLMOutOfCredit,
     LLMTransientError,
     LLMUnreachable,
+    Role,
     StreamUsage,
     TextBlock,
     ToolCall,
@@ -76,7 +81,22 @@ _UNREACHABLE = (
 )
 
 
-EPHEMERAL: dict[str, str] = {"type": "ephemeral"}
+BlockParam = TextBlockParam | ImageBlockParam | ToolUseBlockParam | ToolResultBlockParam
+
+
+def _mark(blocks: list[BlockParam]) -> None:
+    """R14 D9: the breakpoint on the last non-empty block (an empty text block can't carry one)."""
+    for block in reversed(blocks):
+        if block["type"] == "text" and not block["text"]:
+            continue
+        block["cache_control"] = {"type": "ephemeral"}
+        return
+
+
+def _message(role: Role, content: str | list[BlockParam]) -> MessageParam:
+    if role is Role.ASSISTANT:
+        return {"role": "assistant", "content": content}
+    return {"role": "user", "content": content}
 
 
 class AnthropicProvider:
@@ -100,11 +120,15 @@ class AnthropicProvider:
     # ---- helpers -------------------------------------------------------------------------
 
     @staticmethod
-    def _block(b: object) -> dict[str, Any] | None:
+    def _block(b: object) -> BlockParam | None:
         if isinstance(b, TextBlock):
             return {"type": "text", "text": b.text}
         if isinstance(b, ImageBlock):  # R11.1 D10: the owner's own attached picture
-            source = {"type": "base64", "media_type": b.media_type, "data": b.b64()}
+            source: Base64ImageSourceParam = {
+                "type": "base64",
+                "media_type": b.media_type,
+                "data": b.b64(),
+            }
             return {"type": "image", "source": source}
         if isinstance(b, ToolCall):
             return {"type": "tool_use", "id": b.id, "name": b.name, "input": b.arguments}
@@ -118,30 +142,23 @@ class AnthropicProvider:
         return None
 
     @classmethod
-    def _to_params(cls, messages: list[ChatMessage]) -> list[MessageParam]:
-        out: list[dict[str, Any]] = []
-        for m in messages:
-            if isinstance(m.content, str):
-                out.append({"role": m.role.value, "content": m.content})
-                continue
-            blocks = [p for p in (cls._block(b) for b in m.content) if p is not None]
-            out.append({"role": m.role.value, "content": blocks})
-        return cast(list[MessageParam], out)
+    def _content(cls, m: ChatMessage, *, as_blocks: bool) -> str | list[BlockParam]:
+        if isinstance(m.content, str):
+            text: TextBlockParam = {"type": "text", "text": m.content}
+            return [text] if as_blocks and m.content else m.content
+        return [p for p in (cls._block(b) for b in m.content) if p is not None]
 
-    @staticmethod
-    def _mark_last(params: list[MessageParam]) -> None:
-        """R14 D9: a cache breakpoint on the last message's last non-empty block. Every plain
-        string goes out as one text block, so a later round's prefix is byte-for-byte the same
-        as this one's. `params` are this call's own copies."""
-        for p in params:
-            msg = cast(dict[str, Any], p)
-            if isinstance(msg["content"], str) and msg["content"]:
-                msg["content"] = [{"type": "text", "text": msg["content"]}]
-        content = cast(dict[str, Any], params[-1])["content"] if params else ""
-        for block in reversed(content if isinstance(content, list) else []):
-            if block.get("type") != "text" or block.get("text"):
-                block["cache_control"] = EPHEMERAL
-                return
+    @classmethod
+    def _to_params(
+        cls, messages: list[ChatMessage], *, mark_last: bool = False
+    ) -> list[MessageParam]:
+        """This call's own copies of `messages`. With `mark_last` (R14 D9) every plain string goes
+        out as one text block, so a later round's prefix is byte-for-byte the same as this one's,
+        and the last message's last non-empty block carries the cache breakpoint."""
+        contents = [cls._content(m, as_blocks=mark_last) for m in messages]
+        if mark_last and contents and isinstance(contents[-1], list):
+            _mark(contents[-1])
+        return [_message(m.role, c) for m, c in zip(messages, contents, strict=True)]
 
     @staticmethod
     def _tool_params(tools: list[ToolSpec] | None) -> list[ToolParam] | None:
@@ -231,9 +248,7 @@ class AnthropicProvider:
         tools: list[ToolSpec] | None = None,
         history_hint: bool = False,
     ) -> dict[str, Any]:
-        params = self._to_params(messages)
-        if history_hint and self.cache_history:
-            self._mark_last(params)
+        params = self._to_params(messages, mark_last=history_hint and self.cache_history)
         kw: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,

@@ -88,6 +88,13 @@ class Settings(BaseSettings):
         default=None, description="Where the app is reachable, e.g. https://jarvis.onrender.com"
     )
     session_cookie_max_age_s: int = 12 * 60 * 60
+    # R14 D13 (1), the Workshop's decision (INTEGRATION-D 6.1): a re-sign-in asks Google for
+    # auth_time; a present one is checked strictly, a missing one is stale only with this on
+    reauth_requires_auth_time: bool = Field(
+        default=False,
+        description="A re-sign-in counts only if Google's ID token carries auth_time (switch "
+        "on only after Google's Session age claims is on; off: the moment it completed)",
+    )
 
     @field_validator("owner_emails", mode="before")
     @classmethod

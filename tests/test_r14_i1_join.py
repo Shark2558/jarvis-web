@@ -101,3 +101,20 @@ def test_every_runtime_data_file_ships_in_the_wheel() -> None:
     files = [f for f in tracked.stdout.split() if not f.endswith((".py", ".md"))]
     assert "src/jarvis/skills/catalogue.json" in files
     assert [f for f in files if not _ships(f, data)] == []
+
+
+def test_the_reauth_setting_is_a_real_field_off_by_default(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """INTEGRATION-D "Needs I1" 5 (D13 (1), the Workshop's decision): `reauth_requires_auth_time`
+    is a typed `Settings` field, default False (a missing `auth_time` counts as before R14), set
+    on the service as JARVIS_REAUTH_REQUIRES_AUTH_TIME, and `api/auth.py` reads the field."""
+    from jarvis.api import auth
+
+    field = Settings.model_fields["reauth_requires_auth_time"]
+    assert field.default is False and field.annotation is bool
+    monkeypatch.setenv("JARVIS_REAUTH_REQUIRES_AUTH_TIME", "true")
+    on = Settings(_env_file=None, env="dev")
+    assert on.reauth_requires_auth_time is True and auth.requires_auth_time(on) is True
+    assert auth.requires_auth_time(settings) is False
+    assert "getattr" not in Path(auth.__file__).read_text(encoding="utf-8")

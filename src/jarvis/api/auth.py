@@ -60,7 +60,6 @@ REAUTH_CLAIMS = json.dumps({"id_token": {"auth_time": {"essential": True}}}, sep
 AUTH_TIME_MISSING = "auth_time_missing"
 AUTH_TIME_OLD = "auth_time_old"
 AUTH_TIME_FUTURE = "auth_time_future"
-REQUIRES_AUTH_TIME = "reauth_requires_auth_time"  # a Settings field from I1 (default False)
 
 
 def _now() -> float:
@@ -180,9 +179,9 @@ def fresh_sign_in_left(request: Request, s: Settings) -> int | None:
 
 
 def requires_auth_time(s: Settings) -> bool:
-    """The owner's `reauth_requires_auth_time` (only a real True counts). I1 adds the field to
-    `Settings`; until then it is read here, default False."""
-    return getattr(s, REQUIRES_AUTH_TIME, False) is True
+    """The owner's `reauth_requires_auth_time` (`Settings`, default False; only a real True
+    counts)."""
+    return s.reauth_requires_auth_time is True
 
 
 def _reauth_at(

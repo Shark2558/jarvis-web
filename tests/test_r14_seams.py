@@ -658,20 +658,26 @@ def test_the_r14_runner_passes_and_its_contract_control_fails_it() -> None:
     assert run.returncode == 0, run.stdout + run.stderr
     report = json.loads((ROOT / "evals" / "r14" / "report.json").read_text(encoding="utf-8"))
     ids = {r["id"] for r in report["results"]}
-    # I1: A, B, C and D are built, each with its cases and a control that fails it
+    # I1: A, B, C, D and the needles are built, each with its cases and a control that fails it
     for case in (
         "backup:drill_passes_on_fakes",
         "selfwatch:three_failures_one_alert",
         "offer:recall",
         "noai:row01_grocery_add",
+        "needles:day_ran",
+        "needles:logs",
+        "needles:noai_subject_reaches_the_model_fenced",
     ):
         assert case in ids, case
-    assert not any(i.endswith(":not_built_yet") for i in ids if not i.startswith("needles:"))
+    assert not any(i.endswith(":not_built_yet") for i in ids)  # a stub never reads as green
     assert all(r["passed"] for r in report["results"])
     control = report["negative_control"]
-    assert control["suite_failed"] is True
-    for part in ("contract", "backup", "selfwatch", "offer", "noai"):
+    assert control["suite_failed"] is True and control["parts_not_built"] == []
+    for part in ("contract", "backup", "selfwatch", "offer", "noai", "needles"):
         assert control["failed_cases"][part], part
+    assert control["failed_cases"]["needles"] == [  # exactly the three leaking writers
+        "needles:documents_backup", "needles:documents_ledger", "needles:documents_selfwatch",
+    ]  # fmt: skip
 
 
 def test_the_r14_suite_is_gated_in_run_all_mock() -> None:

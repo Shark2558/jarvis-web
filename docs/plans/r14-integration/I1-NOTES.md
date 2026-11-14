@@ -168,9 +168,9 @@ are still wholly scratch, by design. The hook never blocked an edit of itself.
 4. **The hook also refuses removing the worktree you stand in** (what the case
    `ls; rm -rf ../jarvis-web` means from inside a checkout), and allows `build`/`dist`/`tmp`
    themselves.
-5. **The `needles` eval (the plan's "Needles (I1)") is not built**: the brief's item 9 names A–D;
-   it stays I0's passing stub, so the runner reports `needles:not_built_yet`. The Workshop decides
-   whether it is a merge gate.
+5. **The `needles` eval (the plan's "Needles (I1)") is built** after the integrated review (M5):
+   it is part of the gated R14 runner, and the runner now fails any part still a stub (see
+   "Integrated review follow-ups").
 6. **The restore-drill card is approved in the console only** (the Workshop's decision on the
    integrated security review's M4): `core.guardrails.CONSOLE_ONLY_TOOLS = {vitals_drill_start}`;
    Telegram never offers it Approve/Decline buttons, however short its words (157 characters, under

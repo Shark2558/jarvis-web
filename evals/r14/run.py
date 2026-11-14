@@ -12,7 +12,9 @@ part so each builder fills only its own:
                      window counts blocks; the ledger sums
     noai.py       D  every D12 row routes with zero provider calls; generative asks keep NO_AI_LINE
     needles.py    I1 a planted plaintext, nonce, key, exception text or prompt word reaches no
-                     document, log line, audit detail or alert
+                     document, log line, audit detail or alert (one simulated day; nine needle
+                     classes, five forms each; a positive control per sink; three leaking
+                     writers fail exactly the three document cases)
     contract.py   I0 (BUILT) the parts' contract: every part builds through the real wiring and
                      owns only its tools, jobs and services; a stray part is refused. Its control
                      takes the contract check away: the refusals then fail
@@ -25,9 +27,11 @@ Every part file exposes:
     async def control() -> dict           {"name", "suite_failed", "failed_cases"}: the part's
                                           cases re-run with its negative control applied
 
-An unbuilt part reports one passing case "<part>:not_built_yet" and is not asked for a control.
-The suite passes when every case passes AND every BUILT part's control made that part fail (a
-suite that cannot fail proves nothing). Gated in `make eval-mock` (evals/run_all_mock.py) from I0.
+An unbuilt part reports one case "<part>:not_built_yet" and is not asked for a control. Since
+I1's review follow-ups (every part built) the runner marks such a case failed: a stub never
+reads as green (security review M5). The suite passes when every case passes AND every BUILT
+part's control made that part fail (a suite that cannot fail proves nothing). Gated in
+`make eval-mock` (evals/run_all_mock.py) from I0.
 """
 
 from __future__ import annotations
@@ -76,7 +80,10 @@ async def run_parts(parts: tuple[str, ...]) -> tuple[list[dict[str, Any]], dict[
         if module is None:
             results.append(_missing(part))
             continue
-        results.extend(await module.cases())
+        got = await module.cases()
+        if not module.BUILT:  # a stub's own word is never a pass
+            got = [{**c, "passed": False, "failures": ["not built"]} for c in got]
+        results.extend(got)
         if module.BUILT:
             controls[part] = await module.control()
     return results, controls

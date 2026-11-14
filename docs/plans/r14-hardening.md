@@ -1,10 +1,10 @@
-Version v14.0.2 · 14 Nov 2026, 14:30 IST · Release R14 · Status: Ready · Owner: 🛠 Mark XVIII
+Version v14.0.3 · 14 Nov 2026, 19:30 IST · Release R14 · Status: Ready · Owner: 🛠 Mark XIX
 
 # Release R14 — Free hardening (`v14.0.0`)
 
 **Phase:** 7 (evals, hardening, cost), pulled forward by the owner (build order of 14 Nov: free and
 pending items first). **Type:** free to build; backups add a small Google charge that starts only when
-the owner runs his one-time step (about ₹5 a month at 100 MB of data, about ₹40 at 1 GB). No new paid
+the owner runs his one-time step (about ₹4 a month at 100 MB of data, about ₹40 at 1 GB). No new paid
 service, no new secret, no new Cloud Scheduler job. **Branches:** I0 `r14-i0` (from `main` @ `5db4f05`,
 R7 live, v7.0.0) → parts `r14-a` … `r14-d` → integration `r14-i1` → PR `v14.0.0 · R14 Free hardening ·
 Mark XVIII`. Every commit carries `JARVIS-Version: v14.0.0` and `JARVIS-Mark: XVIII`. Read on `5db4f05`;
@@ -19,7 +19,7 @@ and the D notes) and is Ready for I0.
    opens the newest copy in a separate, throw-away database, checks that nothing is missing and that
    it can still unlock one of your locked documents, then deletes the throw-away copy. Its code can't
    write to your real database while it does this, and nothing it holds can delete that database.
-   Cost: about ₹5 a month at 100 MB, about ₹40 a month if your data ever fills Google's free 1 GB.
+   Cost: about ₹4 a month at 100 MB, about ₹40 a month if your data ever fills Google's free 1 GB.
    JARVIS shows the real figure after the first copy.
 2. **JARVIS watches itself and tells you when something is wrong**: background jobs failing again
    and again (one message an hour at most, naming them all), its clock stopping, the morning brief
@@ -460,7 +460,15 @@ only lower, not a console control), read by both constants' users (fact 13); (7)
 the Home-off clock (D7). Deploy: stop creating the unneeded Vitals index (the one already made stays;
 deleting it is optional and free); **no TTL policy** (fact 10): Part D corrects the docstring at
 `people/cache.py:6–7` instead. The deploy calls only `deploy/backup_setup.sh --status` (read only,
-D4).
+D4). **(1) is met only partly** (the Workshop's decision, 14 Nov 2026, 17:40 IST, built by Part D,
+the setting added at I1): Google puts `auth_time` in the ID token only when the app is published and
+verified, "Session age claims" is switched on (Google Auth Platform → Settings → Advanced) and the
+request asks for it with `claims={"id_token":{"auth_time":{"essential":true}}}`; `max_age` alone is
+not documented to produce it, so "missing = stale" would lock the owner out of passkey set-up, the
+passkey reset, the build book and Privacy exports. A re-sign-in now asks for the claim; a present
+`auth_time` is checked strictly; a missing one counts as before R14 unless the new setting
+`reauth_requires_auth_time` (default off; `JARVIS_REAUTH_REQUIRES_AUTH_TIME`) is on. Switching it on
+is an optional owner step, only after one re-sign-in's log line says `auth_time=present`.
 
 **D14 · Version and persona.** `__version__ = "14.0.0"` at I0 (`src/jarvis/__init__.py`,
 `pyproject.toml`; pins `test_about.py:24`, `test_r11_1_seams.py:73`, `test_r7_seams.py:110`); the
@@ -496,8 +504,11 @@ fast) before every Bash, Edit, Write and MultiEdit call. It reads the hook's JSO
 one line) only clearly dangerous actions: a force push (`--force`, `-f`, `--force-with-lease`,
 `--mirror`, a `+refspec`) or a push to `main` / `master` (a refspec, a delete, or a bare push while
 that branch is checked out); `git reset --hard` onto a remote ref; deleting `main`; `rm` with
-recursive and force flags outside `/tmp/`, `/home/claude/wt/`, `.claude/worktrees/`, `build/` and
-`dist/` (never `/`, `~`, `src`, `tests`, `.git`, nor a path it can't read such as `$HOME/x`); writes
+recursive and force flags on anything but what is below `/tmp/`, a whole worktree
+(`/home/claude/wt/<name>` or `.claude/worktrees/<name>`, never the one the command stands in) or a
+scratch folder (`build`, `dist`, `tmp`, `.tmp`) of the current folder or of a worktree (never `/`,
+`~`, a worktree's own `src`, `tests`, `.git`, nor a path it can't read such as `$HOME/x`; I1 closed
+builder A's finding that a relative `rm -rf src` inside a worktree passed); writes
 to `.env*` and key files, a private key block, a shell redirect into `.env*`; edits that switch a
 check off in `[tool.ruff]`, `[tool.mypy]`, `ruff.toml`, `.ruff.toml`, `mypy.ini` or `setup.cfg`'s
 lint sections (more ignores or excludes, fewer selected rules, a strictness flag turned off, an
@@ -551,7 +562,7 @@ are listed with no export or delete (counts only); "Backups" (Google's copies, 7
 
 | Item | Layer · skill | Failure modes and handling | Security and privacy | Tests and eval (negative control) | ₹ a month |
 |---|---|---|---|---|---|
-| A Backups + drill | L7, cross-cut ops · Code & DevOps | No schedule / no permission → Vitals "not set up", no alert before the set-up; stats empty → "not yet"; restore slow → resumes next tick; verify over budget → resumes; delete fails → retried, alert after 2 days then weekly; key changed → canary fails, drill "failed: key"; nothing compared → "failed" | D4's five locks; plaintext only hashed in memory; drill copy deleted the same morning | `evals/r14/backup.py`: passes on fakes; a missing document fails the count; a changed key fails; a live write is refused; a `(default)` target is refused before the call; a stale backup alerts once; empty stats never start. **Controls:** `ReadOnlyDocs` swapped for the writable store → "no live write" fails; a comparison keyed on `update_time` with restamped copies → "nothing compared" → the drill must not pass | ≈ ₹4.9 at 100 MB (backups 7 × 0.1 GiB × ₹2.86 = ₹2.0; a restore ₹1.9; counts ≈ ₹0; samples ≈ ₹0); ≈ ₹39 at 1 GiB (₹20.0 + ₹19.05); a left-over copy ₹1.4 (100 MB) to ₹14 (1 GiB) a month |
+| A Backups + drill | L7, cross-cut ops · Code & DevOps | No schedule / no permission → Vitals "not set up", no alert before the set-up; stats empty → "not yet"; restore slow → resumes next tick; verify over budget → resumes; delete fails → retried, alert after 2 days then weekly; key changed → canary fails, drill "failed: key"; nothing compared → "failed" | D4's five locks; plaintext only hashed in memory; drill copy deleted the same morning | `evals/r14/backup.py`: passes on fakes; a missing document fails the count; a changed key fails; a live write is refused; a `(default)` target is refused before the call; a stale backup alerts once; empty stats never start. **Controls:** `ReadOnlyDocs` swapped for the writable store → "no live write" fails; a comparison keyed on `update_time` with restamped copies → "nothing compared" → the drill must not pass | ≈ ₹3.8 at 100 MB (backups 7 × 0.0977 GiB × ₹2.86 = ₹1.95; a restore ₹1.86; counts ≈ ₹0; samples ≈ ₹0; "about ₹4" where a round figure is shown); ≈ ₹39 at 1 GiB (₹20.0 + ₹19.05); a left-over copy ₹1.4 (100 MB) to ₹14 (1 GiB) a month |
 | B Self-health | cross-cut observability, L8 · Code & DevOps | A handler that fails never logs itself; writes batched every 5 min; both clocks dead → Vitals line only | Logger names and counts only; alert text fixed | `evals/r14/selfwatch.py`: 3 failures → one alert, recovery → one info, clock gap, brief missed at time + 60, 31 errors an hour, spike, revision, nothing rings at 02:00, a whole-Firestore outage → at most 1 ring. **Controls:** streak counting off → "once per streak" fails; aggregation off → more than 1 ring; the outcome ignored → `job_failing` on a skip | ₹0 (≈ 600 reads, 300 writes a day) |
 | C Cost + register | L3/L4, L5 · Code & DevOps, Finance & Analytics | Offer misses a tool → `skills_open`; offer crashes → all tools; ledger write fails → logged, reply unaffected | Counts only; vendor text never leaves `jarvis.llm` | `evals/r14/offer.py`: 120 labelled messages, needed tool offered in ≥ 98 %, average ≤ 30 tools; constant tools across rounds; window counts blocks; ledger sums. **Controls:** the words table emptied (no sticky, no history) → recall < 98 %; counting off → a long tool session exceeds `session_max_chars`; the hint off → one breakpoint in the mock's record | saves ≈ ₹1,460 at 20 replies a day (D10) |
 | D No-AI 2, rows 101/102, fixes | L3, L5, L6 · per row | A phrase that doesn't match → pass 1 → fixed line | Disarm never routes; service text has no address or phone; each fix has its own test | `evals/r14/noai.py`: every row of D12 routes with zero provider calls; generative asks keep `NO_AI_LINE`. **Control:** R14 phrases off → their cases fail | ₹0 |
@@ -685,11 +696,11 @@ I0) in its part module; `api/r14_wiring.py` leaves out a part that breaks the co
 
 ## Needs the owner (safe defaults; none blocks the build)
 
-1. **Turn on backups** (about ₹5 a month at 100 MB, about ₹40 at 1 GB): nothing changes until you run
+1. **Turn on backups** (about ₹4 a month at 100 MB, about ₹40 at 1 GB): nothing changes until you run
    the one-time step below; until then Vitals says "Backups: not set up", and JARVIS sends no
    reminders about backups.
 2. **How long to keep each copy:** 7 days (default). Longer costs more and keeps deleted things
-   longer (14 days ≈ ₹7 a month instead of ≈ ₹5 at 100 MB).
+   longer (14 days ≈ ₹6 a month instead of ≈ ₹4 at 100 MB).
 3. **Monthly restore drill** on the 1st, automatic, at most ₹100 a drill (default yes), and at most 2
    manual drills a month, about ₹2 each at today's likely size.
 4. **Google's "any charge" e-mail** (₹1 budget) will arrive each month once backups cost money.
@@ -712,7 +723,7 @@ I0) in its part module; `api/r14_wiring.py` leaves out a part that breaks the co
 2. Type `cd ~/jarvis-web && git pull` and press Enter (if the folder is missing:
    `git clone https://github.com/Shark2558/jarvis-web && cd jarvis-web`).
 3. Type `bash deploy/backup_setup.sh` and press Enter.
-4. Read the cost lines it shows ("about ₹5 a month at 100 MB, about ₹40 at 1 GB; a monthly drill
+4. Read the cost lines it shows ("about ₹4 a month at 100 MB, about ₹40 at 1 GB; a monthly drill
    about ₹2 at 100 MB, never over ₹100"), then type **YES** to go on. Anything else stops it with
    nothing changed.
 5. Wait for "Backups: on, kept 7 days · Delete protection: on · Drill access: on". If a line says
@@ -741,6 +752,12 @@ re-sign-in (D13 item 1 refuses when it doesn't); the Urban Company address; the 
   conditioned custom role).
 - **Writes to `(default)` rest on code alone** (`datastore.user` is unconditioned): `ReadOnlyDocs`
   on both sides, the id check before any call, the import test, the start-up lock.
+- **Honest limit (A #8, security LOW-2):** `roles/datastore.restoreAdmin` is project-wide and
+  unconditioned: jarvis-run may restore any backup into any NEW database id (a cost, never an
+  overwrite: a restore can't target a database that exists). jarvis-run already has
+  `roles/datastore.user` on the live database, so the live database's safety rests on the code locks
+  (D4's five), not on IAM. A condition on the restore grant would have to name the database the
+  restore creates, which nobody here can try against Google.
 - **Privacy promise changes**: deleted data lives up to 7 days in backups (D3); said everywhere.
 - **Key loss** makes every backup useless: the deploy never rotates the key (tested); the canary
   catches a changed key within a day. The key and the backups share a project (D3).
@@ -769,3 +786,4 @@ re-sign-in (D13 item 1 refuses when it doesn't); the Urban Company address; the 
 |---|---|---|---|---|
 | v14.0.1 | 14 Nov 2026, 13:40 IST | R14 | First edition: summary for the owner, the workbook rows 101/102/109–112 read from his sheet, code facts with file:line, Google's terms, D0–D16 (backups and a drill that can't write live, self-health, the token ledger and free cost wins with ₹ before/after, the skill register, No-AI pass 2, rows 101/102, the leftovers taken and deferred), data model, per-item evals with negative controls, the A–D split, the I0 seam list, owner questions and one-time steps, what can't be verified, risks, sources | 🛠 Mark XVIII |
 | v14.0.2 | 14 Nov 2026, 14:30 IST | R14 | The owner's scope addition (14 Nov, 13:45 IST, "add them") written in at I0: D17 coverage measured (95.33 % at I0, floor 95) and ratcheted in CI on 3.12, D18 a GateGuard hook for the coding agents (seam 12); seam 4's nouns corrected (TOOL_NOUNS only). Plan review 1 written in; Status Ready. A1: cache within the reply only (choice (b)), the provider applies the hint, D10 reworked at ₹95.24 (₹5.42 → ₹2.99 a reply, ≈ 45 %). A2: empty stats never start a drill, comparisons on the app's own fields, `count()` aggregations, "nothing compared" fails. A3: clean-up whatever the switches say, `get_database` decides, delete protection off first, the 5-minute wait, the left-over cost and a weekly alert, 2 manual drills, `bulk_ok=False`. A4: the deploy runs only `backup_setup.sh --status`, the cost line is a range, no TTL policy. A5: the locks said honestly, `ReadOnlyDocs` on both sides, an import test, lock 5 in `Settings`, a custom role. A6: one aggregated `job_failing` an hour, R14's own soft table (3 an hour), outcomes with skips, `selfwatch_clock` first, no loops, no backup alert before the set-up, the spike from daily differences after 7 days. A7: the clock jobs run for the brief's owners. A8: Vitals and Privacy server-sent (no console change), A alone produces the backup kinds and size (`BackupStatus`), no third brain slot, the booking address as text. B: 14 lines corrected (prices `:30`; 135 tools; the ₹0.17 reading; all four error classes and the router log; the two UPI constants; the TTL; the runbook; the version, kind, keyring and tick-list pins; 14-day and 1 GiB costs; the STARTERS pin) and one found at I0 (cards C61–C65 are taken: C66–C68). C: the 12 seams joined to the I0 list. D notes taken: the tool-use names in the offer, shortened results keep their flags, the async admin client, the rate limit, the Vitals index stays, the data-safety limit and the runbook lines. Decisions taken at I0 listed | 🛠 Mark XVIII |
+| v14.0.3 | 14 Nov 2026, 19:30 IST | R14 | I1 (🛠 Mark XIX): the backups' cost corrected from ≈ ₹4.9 to ≈ ₹3.8 at 100 MB ("about ₹4" wherever a round figure is shown, as the set-up script prints; 14 days ≈ ₹6), D13 (1) met only partly with the Workshop's reason and the optional setting `reauth_requires_auth_time`, D18's rm rule as I1 rebuilt it (a whole worktree or its scratch, never its content or the one it stands in), the honest limit of the project-wide `restoreAdmin` grant (A #8) | 🛠 Mark XIX |

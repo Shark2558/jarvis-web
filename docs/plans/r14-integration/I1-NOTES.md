@@ -1,4 +1,4 @@
-Version v14.0.2 · 14 Nov 2026, 23:40 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
+Version v14.0.2 · 15 Nov 2026, 00:50 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
 
 # R14 — I1 notes (the four parts joined)
 
@@ -215,9 +215,27 @@ finding with its outcome. Every code change was test first (the test seen failin
 | Security LOW-5: no per-route limit on the four status reads | Fixed: each 30 a minute per owner (`api/r14_status.read_limited`, per process like the drill route's), a 429 with `no-store` and `Retry-After` | `tests/test_r14_i1_route_limits.py` (4) | `7a055d5` |
 | Security LOW-6: detail notes | No change needed (the reviewer: fine); the needles eval keeps the backup name out of logs, alerts and routes, and documents the code-only logger-name rule (50 kept) | the needles eval | `284f3d0` |
 
+## 12. Checks after the follow-ups (logs `/tmp/r14-logs/fix-*.log`)
+
+| Check | Result |
+|---|---|
+| Unit suite, Python 3.12, whole, with coverage, at `7a055d5` (`fix-unit-312.log`; `d42d64c` after it changed docs and a test comment only) | **15,928 passed, 134 skipped, 0 failed** (25:43) |
+| **Coverage** (statements of `jarvis`, 3.12; `scripts/coverage_floor.py`) | **95.50 %** (69,966 of 73,260); pass at the floor 95 |
+| Unit suite, Python 3.11, whole, at `d42d64c` (`fix-unit-311.log`) | **15,929 passed, 133 skipped, 0 failed** (15:58) |
+| `ruff check` / `ruff format --check` (src tests evals scripts) | clean (1,745 files) |
+| `mypy src` (`fix-mypy.log`) | **1 error**, the baseline `memory/redis_store.py:67` (772 files) |
+| `evals/run_all_mock.py` on 3.11 (`fix-evals.log`) | **ALL MOCK EVALS: PASS** (42 suites); phase0's smoke fails its same 8 cases by design; `r14 (gated)` **108/108**: backup 14, selfwatch 13, offer 10 (held-out note 5/8), noai 41, needles 21, contract 9; the combined control fails the suite, each part failing its own cases (needles exactly `documents_backup`, `documents_ledger`, `documents_selfwatch`); also 108/108 on 3.12 |
+| `scripts/arch_coverage.py` | OK: 65 packages and modules, 90 console modules, 2 Scheduler jobs, 30 outside services, 106 collections |
+| `scripts/check_doc_versions.py` | all 28 documents pass (plan v14.0.4, guide v14.0.3, these notes v14.0.2) |
+| `scripts/markdy_export.py --check` (on a `/tmp` export of `d42d64c`, after `npm ci`) | 14 diagrams, 0 problems |
+| `scripts/check_pr_title.py "v14.0.0 · R14 Free hardening · Mark XVIII–XIX"` | OK |
+| `python -m jarvis.buildbook.gen --check`, twice | the book is **R14** (`d42d64c`): book.json 182,037 bytes, source.zip 7,791,652 bytes; each run's two builds byte-identical, and the two runs' outputs identical (`cmp`) |
+| Browser files that touch chat, Telegram, No-AI, approvals and the visual gate (`JARVIS_BROWSER_TESTS=1`; `test_ui_audit`, `test_r14_d_console`, `test_console`, `test_telegram`, `test_approve_all`, `test_systems_check`, `test_offline`; `fix-browser.log`) | **189 passed, 1 failed**: `test_approve_all.py::…leaves_the_other[phone]` read the list's count straight after the bar hid; the bar hides once fewer than two cards can be batched, which can be before the list has re-rendered (load only: 9 of 9 alone). Fixed in the test (it waits for the list to settle); re-run: 3 passed five times, once under two busy loops. No console file changed in R14's follow-ups; the whole browser suite is CI's |
+| Sizes | `app.py` 727 (≤ 735), `gateway.py` 760 (≤ 760), `brain.py` 713 (≤ 741), `console.html` 782 (≤ 782), largest `console*.js` 769 (≤ 800); `said.py` 323, `core/window.py` 221, `telegram/service.py` 547, the hook 748, `evals/r14/needles*.py` 385 / 350 / 287 |
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v14.0.1 | 14 Nov 2026, 21:30 IST | R14 | First edition: the four merges (no conflicts), every Needs I1 item with its outcome and commit, the defects found at the join (No-AI's JSON answers of the real tools, the drill card's line, the offer's effect on two pins, the errors handler outliving its app, the window's setting), every pin changed and why, the hook fix, the docs, the checks with their numbers, the sizes, the decisions taken, what can't be verified | 🛠 Mark XIX |
-| v14.0.2 | 14 Nov 2026, 23:40 IST | R14 | The integrated review follow-ups (section 11): each finding with its outcome, test and commit (the hook's globs and wrappers, the fenced No-AI turn, the drill card console only, the needles eval built, the Vitals words, the route limits, the notes to the model, the guide's count, the links); LOW-1 as verify live; decisions 5 and 6; the checks after the follow-ups | 🛠 Mark XIX |
+| v14.0.2 | 15 Nov 2026, 00:50 IST | R14 | The integrated review follow-ups (section 11): each finding with its outcome, test and commit (the hook's globs and wrappers, the fenced No-AI turn, the drill card console only, the needles eval built, the Vitals words, the route limits, the notes to the model, the guide's count, the links); LOW-1 as verify live; decisions 5 and 6; the checks after the follow-ups | 🛠 Mark XIX |

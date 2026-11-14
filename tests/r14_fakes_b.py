@@ -8,12 +8,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from jarvis.config import Settings
 from jarvis.notify.models import NotifySettings
 from jarvis.notify.policy import decide
 from jarvis.notify.ports import Delivery, Signal
 from jarvis.notify.storm import Storm
+from jarvis.selfwatch.jobs import Watch
 from jarvis.selfwatch.ports import SENDING
 from jarvis.storage.docs import Docs, DocTx, MemoryDocs, Op, Query
+from jarvis.ticks import run_jobs
 
 UID = "owner-1"
 OTHER = "owner-2"
@@ -156,18 +159,79 @@ def memory_docs() -> MemoryDocs:
     return MemoryDocs()
 
 
+class FlakyJob:
+    """A tick job that fails (raises) while `failing` is set, else answers ok."""
+
+    def __init__(self, name: str, *, failing: bool = True, budget_s: float = 5.0) -> None:
+        self.name, self.budget_s, self.failing = name, budget_s, failing
+
+    async def run(self, owners: Sequence[str]) -> dict[str, int]:
+        if self.failing:
+            raise RuntimeError(f"{self.name}: secret backend words")
+        return {"done": 1}
+
+
+def settings(**kw: Any) -> Settings:
+    return Settings(_env_file=None, **kw)
+
+
+@dataclass
+class BWorld:
+    """Part B's watch on fakes: memory documents, the ring counter, a settable clock."""
+
+    watch: Watch
+    ring: RingCounter
+    clock: Clock
+    docs: Docs
+    brief: FakeBrief
+    billing: FakeBilling
+
+    async def watchdog(self, *jobs: Any) -> dict[str, str]:
+        """One 5-minute run: `selfwatch_clock` first, then `jobs`, the observer listening."""
+        got = await run_jobs(
+            (self.watch.clock_job, *jobs), self.brief.owners, observer=self.watch.observe,
+            clock="watchdog", total_budget_s=50.0,
+        )  # fmt: skip
+        return dict(got)
+
+    async def tick(self, *jobs: Any) -> dict[str, str]:
+        """One morning tick: `jobs`, then `selfwatch_daily` (R14's daily jobs come last)."""
+        got = await run_jobs(
+            (*jobs, self.watch.daily_job), self.brief.owners, observer=self.watch.observe
+        )
+        return dict(got)
+
+
+def build_world(
+    *, now: datetime = NOON, docs: Docs | None = None, version: str = "14.0.0", **kw: Any
+) -> BWorld:
+    clock = Clock(now)
+    ring = RingCounter(clock)
+    brief, billing = FakeBrief(), FakeBilling()
+    store = docs if docs is not None else MemoryDocs()
+    watch = Watch(
+        settings(**kw), store, notifier=lambda: ring, brief=lambda: brief,
+        billing=lambda: billing, now=clock, version=version,
+    )  # fmt: skip
+    return BWorld(watch, ring, clock, store, brief, billing)
+
+
 __all__ = [
     "NOON",
     "OTHER",
     "TWO_AM",
     "UID",
+    "BWorld",
     "BrokenDocs",
     "Clock",
     "FakeBilling",
     "FakeBrief",
     "FakeMonth",
     "FakeTodayView",
+    "FlakyJob",
     "RingCounter",
     "Sent",
+    "build_world",
     "memory_docs",
+    "settings",
 ]

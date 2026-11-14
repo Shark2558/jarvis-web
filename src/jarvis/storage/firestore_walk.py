@@ -12,7 +12,7 @@ copy costs about nothing; samples are bounded by the caller.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from jarvis.backup.ports import DRILL_DB, drill_target
@@ -63,7 +63,7 @@ class FirestoreWalk:
         data: Doc | None = snap.to_dict() if snap.exists else None
         return data
 
-    async def query(self, q: Any) -> list[tuple[str, Doc]]:
+    async def query(self, q: Any) -> list[tuple[str, Mapping[str, Any]]]:
         if not isinstance(q, Query):
             raise TypeError("a drill query takes a storage.docs.Query")
         ref: Any = self._c().collection(q.collection)

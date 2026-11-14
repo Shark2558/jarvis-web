@@ -21,12 +21,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
 
 from jarvis.backup.ports import DrillWalk, ReadOnlyDocs
-from jarvis.storage.docs import Doc, Query
+from jarvis.storage.docs import Query
 
 KNOWN_SUBCOLLECTIONS: tuple[str, ...] = (
     "turns",  # storage/sessions.py: {prefix}sessions/{sid}/turns
@@ -43,14 +43,14 @@ _RESERVED = re.compile(r"^__.*__$")
 SAMPLES_PER_COLLECTION = 20
 SKIP_SAMPLES = ("backup_drill", "backup_status")  # the drill writes these itself meanwhile
 TIME_FIELDS = ("updated_at", "updated", "at", "ts")
-TimeKey = Callable[[Doc], object]
+TimeKey = Callable[[Mapping[str, Any]], object]
 
 
 def activity_group(day: str) -> str | None:
     return f"d{day}" if _DAY.fullmatch(day) else None
 
 
-def own_time(doc: Doc) -> object:
+def own_time(doc: Mapping[str, Any]) -> object:
     """The document's own time field (the app's, never Firestore's), or None."""
     return next((doc[f] for f in TIME_FIELDS if doc.get(f) is not None), None)
 
@@ -63,7 +63,7 @@ def _plain(value: Any) -> str:
     return str(value)
 
 
-def content_hash(doc: Doc) -> str:
+def content_hash(doc: Mapping[str, Any]) -> str:
     kept = {k: v for k, v in doc.items() if not _RESERVED.match(str(k))}
     text = json.dumps(
         kept, sort_keys=True, default=_plain, ensure_ascii=False, separators=(",", ":")
@@ -98,7 +98,7 @@ async def compare_samples(
         if found is None or key(found) != stamp:
             continue  # changed or deleted since the snapshot: not comparable
         compared += 1
-        if content_hash(dict(copy)) != content_hash(dict(found)):
+        if content_hash(copy) != content_hash(found):
             return compared, True
     return compared, False
 

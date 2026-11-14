@@ -12,7 +12,7 @@ fixed: nothing can be added to it.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from jarvis.storage.docs import Doc, Docs, Query
@@ -33,10 +33,11 @@ class ReadOnly:
     async def get(self, path: str) -> Doc | None:
         return await self._get(path)
 
-    async def query(self, q: Any) -> list[tuple[str, Doc]]:
+    async def query(self, q: Any) -> list[tuple[str, Mapping[str, Any]]]:
         if not isinstance(q, Query):
             raise TypeError("a read-only query takes a storage.docs.Query")
-        return await self._query(q)
+        rows: list[tuple[str, Mapping[str, Any]]] = list(await self._query(q))
+        return rows
 
 
 def read_only(docs: Docs | ReadOnly) -> ReadOnly:

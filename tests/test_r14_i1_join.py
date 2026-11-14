@@ -54,8 +54,9 @@ async def test_the_brain_cuts_old_tool_results_to_the_setting_not_the_default(
 ) -> None:
     """INTEGRATION-C "Needs I1" B: `Brain._window_for` passes `history_tool_result_chars`, so an
     owner who lowers it gets it (without the join every old result was cut at 2,000)."""
-    from conftest import TIERS
+    from jarvis.llm.router import ModelTier
 
+    tiers = {tier: f"mock-{tier.value}" for tier in ModelTier}  # never `conftest`: two exist
     s = settings.model_copy(
         update={
             "session_max_turns": 40,
@@ -63,7 +64,7 @@ async def test_the_brain_cuts_old_tool_results_to_the_setting_not_the_default(
             "history_tool_result_chars": 600,
         }
     )
-    brain = Brain(router=ModelRouter(provider, TIERS), store=store, settings=s, gateway=gateway)
+    brain = Brain(router=ModelRouter(provider, tiers), store=store, settings=s, gateway=gateway)
     session = Session(user_id=UID, turns=_rounds(4, 5_000))
     await store.save(session)
     await brain.chat(ChatRequest(message="and now?", session_id=session.id, user_id=UID))

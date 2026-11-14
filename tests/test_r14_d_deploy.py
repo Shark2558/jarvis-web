@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import jarvis.people.cache as people_cache
@@ -45,18 +46,20 @@ def _status_block() -> str:
     return text[start : text.index("\n}\n", start) + 3]
 
 
-def _run_block(tmp_path: Path, exit_code: int) -> subprocess.CompletedProcess[str]:
+def _run_block(
+    tmp_path: Path, exit_code: int, *, extra: str = "", typed: str = "", timeout_s: str = "60"
+) -> subprocess.CompletedProcess[str]:
     (tmp_path / "deploy").mkdir()
     fake = tmp_path / "deploy" / "backup_setup.sh"
     fake.write_text(
         '#!/usr/bin/env bash\n[ "${1:-}" = --status ] || { echo SETUP-RAN; exit 9; }\n'
-        f'echo "Backups: not set up"\nexit {exit_code}\n',
+        f'{extra}echo "Backups: not set up"\nexit {exit_code}\n',
         encoding="utf-8",
     )
     body = f"set -euo pipefail\n{_status_block()}\nbackup_status_note\necho DEPLOY-GOES-ON\n"
     return subprocess.run(
         ["bash", "-c", body], cwd=tmp_path, capture_output=True, text=True, check=False,
-        env={**os.environ},
+        env={**os.environ, "BACKUP_STATUS_TIMEOUT_S": timeout_s}, input=typed, timeout=60,
     )  # fmt: skip
 
 
@@ -71,6 +74,24 @@ def test_a_failing_status_never_stops_the_deploy(tmp_path: Path) -> None:
     run = _run_block(tmp_path, 3)
     assert run.returncode == 0, run.stderr
     assert "DEPLOY-GOES-ON" in run.stdout and "could not" in run.stdout
+
+
+def test_a_status_check_that_hangs_is_cut_off(tmp_path: Path) -> None:
+    """Security review L2: once Part A's `--status` calls gcloud, a hang must not hold the
+    deploy: the call runs under `timeout` and the deploy goes on."""
+    started = time.monotonic()
+    run = _run_block(tmp_path, 0, extra="sleep 30\n", timeout_s="1")
+    assert time.monotonic() - started < 20
+    assert run.returncode == 0, run.stderr
+    assert "DEPLOY-GOES-ON" in run.stdout and "could not" in run.stdout
+
+
+def test_a_status_check_never_reads_what_he_types(tmp_path: Path) -> None:
+    """It reads /dev/null: a "YES" meant for the deploy can never answer a question in it."""
+    reader = 'if read -r said; then echo "READ:$said"; fi\n'
+    run = _run_block(tmp_path, 0, extra=reader, typed="YES\n")
+    assert run.returncode == 0, run.stderr
+    assert "READ:YES" not in run.stdout and "Backups: not set up" in run.stdout
 
 
 def test_no_ttl_policy_is_set_and_the_people_cache_says_so() -> None:

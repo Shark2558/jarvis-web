@@ -692,11 +692,15 @@ fi
 
 # R14 D4, D13: what the backups look like now. READ ONLY: `--status` never creates a schedule, a
 # binding or protection and never spends anything (the set-up, with its YES, is the owner's own
-# one-time step). NON-FATAL: a failed status check changes nothing else.
+# one-time step). NON-FATAL: a failed status check changes nothing else. Cut off after
+# BACKUP_STATUS_TIMEOUT_S seconds (default 60) and fed /dev/null, so a hang never holds the
+# deploy and nothing typed for the deploy can answer a question inside it.
 backup_status_note() {
-  local out
+  local out limit="${BACKUP_STATUS_TIMEOUT_S:-60}"
+  local run=(bash deploy/backup_setup.sh --status)
   echo "  Backups (looked at only; the deploy never changes them):"
-  if out="$(bash deploy/backup_setup.sh --status 2>&1)"; then
+  if command -v timeout >/dev/null 2>&1; then run=(timeout "$limit" "${run[@]}"); fi
+  if out="$("${run[@]}" </dev/null 2>&1)"; then
     printf '%s\n' "$out" | sed 's/^/    /'
   else
     echo "    could not check the backups just now (nothing was changed; JARVIS works)."

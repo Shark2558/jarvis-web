@@ -13,8 +13,9 @@ the once-only claims) and the tick observer (`observe`, synchronous, never raise
 Each step stands alone: one that fails is logged as a class name and counted under `failed`
 (the job's own streak, which the OTHER job reports: a selfwatch job never reports itself), and
 the rest still run. Job failures go out as ONE `job_failing` naming every job in a streak, at
-most one an hour per owner (`JOB_ALERT_EVERY`), each streak once; errors piling up are not said
-while a told streak is still going (the same incident, said once).
+most one an hour per owner (`JOB_ALERT_EVERY`), each streak once; errors piling up are held
+while a streak told in the last `ERRORS_HELD` (6 hours) is still going: those hours are that
+incident's, said once (`errors.Piles`); any other hour over the limit is said, even later.
 
 What an alert settles (a streak told, the hour's alert, an outage, a revision seen, a day's
 spend or brief done) is committed only when the teller says it is settled (`texts.Said`): one
@@ -49,6 +50,7 @@ DAILY_NAME = "selfwatch_daily"
 CLOCK_BUDGET_S = 10.0  # it runs first in the watchdog's 50 s (a healthy run takes milliseconds)
 DAILY_BUDGET_S = 25.0
 JOB_ALERT_EVERY = timedelta(hours=1)  # A6: one aggregated `job_failing` an hour per owner
+ERRORS_HELD = timedelta(hours=6)  # errors wait this long after a job alert, not all its streak
 Done = tuple[int, bool]  # (alerts sent, whether the step's documents were kept)
 Step = Callable[[Sequence[str], datetime, str], Awaitable[Done]]
 
@@ -86,6 +88,7 @@ class Watch:
         self.ledger = JobLedger(prefix=p)
         self.clocks = Clocks(prefix=p)
         self.errors = ErrorCounter(tz=self.tz, prefix=p)
+        self.piles = errs.Piles()
         self.told = Told(docs, prefix=p)
         self.teller = texts.Teller(notifier, self.told)
         grace = timedelta(minutes=s.selfwatch_brief_grace_min)
@@ -218,22 +221,25 @@ class Watch:
         return told, True
 
     async def errors_step(self, owners: Sequence[str], now: datetime, me: str) -> Done:
-        """The counts written; each day just written with an hour over the limit is said once
-        (a count from before midnight written after it still counts for its own day)."""
+        """The counts written; each day with an hour over the limit is said once, until its
+        alert is settled (a count from before midnight written after it counts for its day)."""
         try:
             written, kept = await self.errors.write_counts(self.docs), True
         except Exception as exc:  # noqa: BLE001 - the counts wait for the next run
             log.warning("selfwatch error counts not kept", extra={"error": type(exc).__name__})
             written, kept = self.errors.pending(), False
-        if self.ledger.has_told():  # the jobs' own errors: the same incident, said once
-            return 0, kept
-        told = 0
-        text = texts.errors_piling(self.errors_limit)
-        for day, doc in sorted(written.items()):
-            if errs.over(doc, self.errors_limit):
-                said = await self.teller.tell(owners, "errors_piling", f"errors:{day}", text, now)
-                told += said.sent
-        return told, kept
+        lost = self.errors.new_unrecorded()
+        if lost:
+            log.warning("selfwatch errors handler could not count records", extra={"count": lost})
+        held = self.ledger.has_told(since=now - ERRORS_HELD)  # the same incident, said once
+        self.piles.see(written, self.errors_limit, held=held)
+        told, text = 0, texts.errors_piling(self.errors_limit)
+        for day in [] if held else self.piles.owed():
+            said = await self.teller.tell(owners, "errors_piling", f"errors:{day}", text, now)
+            told += said.sent
+            if said.settled:
+                self.piles.settle(day)
+        return told, kept and not lost
 
     async def briefs_step(self, owners: Sequence[str], now: datetime, me: str) -> Done:
         told, kept = 0, True
@@ -307,6 +313,7 @@ __all__ = [
     "CLOCK_NAME",
     "DAILY_BUDGET_S",
     "DAILY_NAME",
+    "ERRORS_HELD",
     "JOB_ALERT_EVERY",
     "Watch",
     "job_alerts",

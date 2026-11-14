@@ -4,7 +4,8 @@
 # same day after a failure. End to end on fakes (the real run_jobs, policy and storm).
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -13,8 +14,9 @@ from r14_fakes_b import OTHER, UID, BWorld, FlakyJob, build_world
 from jarvis.notify.models import NotifySettings, QuietHours
 from jarvis.selfwatch import texts
 from jarvis.selfwatch.deploys import DeployWatch
-from jarvis.selfwatch.jobs import DAILY_NAME
+from jarvis.selfwatch.jobs import CLOCK_NAME, DAILY_NAME
 from jarvis.storage.docs import MemoryDocs
+from jarvis.ticks import FAILED_COUNT
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -222,3 +224,58 @@ async def test_one_owners_failed_write_never_loses_anothers_spike() -> None:
     assert set(got.spikes) == {UID} and got.failed  # python review M3
     again = await w.watch.spend.snapshot(docs, (UID, OTHER), w.clock())
     assert set(again.spikes) == {UID} and not again.failed  # the other owner kept now
+
+
+# ---- errors piling up (silent review M1, L1) -----------------------------------------------------
+def _errors(w: BWorld, n: int, name: str = "jarvis.vault.service") -> None:
+    for _ in range(n):
+        rec = logging.LogRecord(name, logging.ERROR, __file__, 1, "x", (), None)
+        rec.created = w.clock().timestamp()
+        w.watch.errors.handle(rec)
+
+
+async def test_errors_piling_that_reached_nobody_is_said_later_with_no_new_errors() -> None:
+    w = build_world()
+    w.ring.dead = True
+    _errors(w, 31)
+    await w.watch.clock_job.run((UID,))
+    w.ring.dead = False
+    await _runs(w, 7)
+    assert w.ring.took() == ["errors_piling"]
+
+
+async def test_a_job_told_hours_ago_no_longer_hides_other_errors() -> None:
+    w = build_world()
+    long_ago = w.clock() - timedelta(hours=7)
+    for _ in range(3):
+        w.watch.ledger.observe("web", "failed", long_ago)
+    w.watch.ledger.mark_told(["web"], long_ago)  # one job failing all day, told once
+    _errors(w, 31)
+    await w.watch.clock_job.run((UID,))
+    assert "errors_piling" in w.ring.took()
+
+
+async def test_an_incidents_own_errors_are_not_said_again_after_it_ends() -> None:
+    w = build_world()
+    job = FlakyJob("web")
+    await _runs(w, 4, job)  # told: job_failing
+    _errors(w, 40)
+    await w.watch.clock_job.run((UID,))  # held: the same incident
+    job.failing = False
+    await _runs(w, 4, job)
+    assert w.ring.took() == ["job_failing", "selfwatch_ok"]  # decision 1 kept
+    w.clock.now += timedelta(hours=1)  # errors still piling up after it, in a new hour
+    _errors(w, 31)
+    await w.watch.clock_job.run((UID,))
+    assert w.ring.took() == ["job_failing", "selfwatch_ok", "errors_piling"]
+
+
+async def test_records_the_handler_could_not_count_fail_the_step_once() -> None:
+    w = build_world()
+    rec = logging.LogRecord("jarvis.web", logging.ERROR, __file__, 1, "x", (), None)
+    rec.created = float("nan")
+    w.watch.errors.handle(rec)
+    assert (await w.watch.clock_job.run((UID,)))[FAILED_COUNT] == 1
+    assert (await w.watch.clock_job.run((UID,)))[FAILED_COUNT] == 0
+    assert (await w.watch.clock_job.run((UID,))).get("told") == 0
+    assert CLOCK_NAME == "selfwatch_clock"

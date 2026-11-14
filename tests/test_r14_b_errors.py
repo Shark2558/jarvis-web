@@ -77,6 +77,8 @@ def test_a_broken_record_never_raises_and_never_logs(caplog: pytest.LogCaptureFi
     h.handle(rec)  # must not raise
     assert h.broken and not caplog.records
     h.handleError(rec)  # the stdlib's "print a traceback" is switched off too
+    assert h.unrecorded == 2  # silent review L1: counted, so the job and the status can say so
+    assert h.new_unrecorded() == 2 and h.new_unrecorded() == 0
 
 
 async def test_counts_are_written_batched_and_merged_per_day() -> None:
@@ -136,3 +138,40 @@ def test_the_stdlib_flush_and_close_stay_harmless() -> None:
     h.flush()
     h.close()
     assert h.pending()[DAY]["hours"] == {"12": 1}
+
+
+def test_only_its_own_package_is_left_out_never_a_lookalike() -> None:
+    h = ErrorCounter(tz=IST)  # python review L2
+    _emit(h, "jarvis.selfwatch")
+    _emit(h, "jarvis.selfwatchfoo")
+    token = SENDING.set(True)
+    try:
+        _emit(h, "jarvis.notify")
+        _emit(h, "jarvis.notifyx")
+    finally:
+        SENDING.reset(token)
+    assert h.pending()[DAY]["loggers"] == {"jarvis.selfwatchfoo": 1, "jarvis.notifyx": 1}
+
+
+def test_the_hot_hours_are_those_over_the_limit() -> None:
+    assert errors.hot_hours({"hours": {"07": 31, "08": 30, "09": "x"}}, 30) == {"07"}
+    assert errors.hot_hours({}, 30) == set()
+
+
+def test_a_pile_seen_during_a_told_incident_is_never_owed_and_others_are() -> None:
+    piles = errors.Piles()
+    piles.see({DAY: {"hours": {"07": 40}}}, 30, held=True)  # the incident's own errors
+    piles.see({DAY: {"hours": {"07": 45}}}, 30, held=False)  # the same hour, after it
+    assert piles.owed() == []
+    piles.see({DAY: {"hours": {"07": 45, "09": 31}}}, 30, held=False)  # a new hour piles up
+    assert piles.owed() == [DAY]
+    piles.settle(DAY)
+    assert piles.owed() == []
+
+
+def test_the_piles_remember_a_week_at_most() -> None:
+    piles = errors.Piles()
+    for d in range(1, 20):
+        piles.see({f"202611{d:02d}": {"hours": {"07": 40}}}, 30, held=d % 2 == 0)
+    assert len(piles.owed()) <= errors.MAX_PENDING_DAYS
+    assert piles.owed()[-1] == "20261119"

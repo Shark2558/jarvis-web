@@ -133,9 +133,12 @@ class JobLedger:
                 self._streaks[name] = replace(s, told_at=at)
                 self.dirty = True
 
-    def has_told(self) -> bool:
-        """Whether a streak that was told is still going (its alert is still true)."""
-        return any(s.told_at is not None for s in self._streaks.values())
+    def has_told(self, since: datetime | None = None) -> bool:
+        """Whether a streak that was told (at or after `since`) is still going."""
+        return any(
+            s.told_at is not None and (since is None or s.told_at >= since)
+            for s in self._streaks.values()
+        )
 
     def recovered(self) -> bool:
         """Whether every told streak has ended (its all-clear not said yet)."""

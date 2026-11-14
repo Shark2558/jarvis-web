@@ -5,6 +5,8 @@
                                           email references) is sealed in `vip_blob` (keyring purpose
                                           `notify`, AAD `notify_vip/{uid}/v1`)
     {prefix}notify_held/{uid}             {items:[{kind, at, camera?}]}  <= 50, kinds and times only
+                                          (R14 D13 item 7: `held_drop` removes a kind that is no
+                                          longer true before the morning summary)
     {prefix}notify_rate/{uid}_{YYYYMMDDHH} {urgent, normal, push}  per hour
     {prefix}notify_rate/{uid}_{YYYYMMDD}   {urgent}             per day
 
@@ -15,7 +17,7 @@ carry plain words, never the cause's text.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -169,6 +171,30 @@ class NotifyStore:
             await self._d.transaction(fn)
         except Exception as exc:  # noqa: BLE001
             log.warning("held alerts not cleared", extra={"error": type(exc).__name__})
+            raise NotifyUnavailable(UNAVAILABLE) from None
+
+    async def held_drop(self, uid: str, kinds: Collection[str]) -> int:
+        """R14 D13 item 7: remove every held item of these kinds (a held alert that is no longer
+        true, such as "laptop offline" once it is back). Returns how many; other kinds stay."""
+        path = self._path("notify_held", uid)
+        drop = frozenset(kinds)
+
+        async def fn(tx: DocTx) -> int:
+            doc = await tx.get(path)
+            items = list((doc or {}).get("items") or [])
+            rest = [i for i in items if i.get("kind") not in drop]
+            if len(rest) == len(items):
+                return 0
+            if rest:
+                tx.set(path, {"items": rest})
+            else:
+                tx.delete(path)
+            return len(items) - len(rest)
+
+        try:
+            return await self._d.transaction(fn)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("held alerts not dropped", extra={"error": type(exc).__name__})
             raise NotifyUnavailable(UNAVAILABLE) from None
 
     async def held_owners(self) -> list[str]:

@@ -162,9 +162,6 @@ def test_the_tool_names_can_be_imported_by_the_guardrails_without_a_cycle() -> N
     assert done.stdout.strip() == "False"  # core/guardrails.py may import it at its top
 
 
-@pytest.mark.xfail(
-    strict=True, reason="Needs I1: core/guardrails.py NO_BULK_TOOLS (INTEGRATION-A, Needs I1 #1)"
-)
 def test_the_drill_card_is_never_part_of_approve_all() -> None:
     card = PendingAction(
         tool=START,

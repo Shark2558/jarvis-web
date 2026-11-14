@@ -22,6 +22,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from jarvis.backup.names import START as DRILL_START  # R14 D4: a leaf module, no import cycle
+
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -63,6 +65,8 @@ class AskReason(StrEnum):
 # Memory writes are never approved in bulk: a note planted by someone else's words must be read by
 # the owner one card at a time (slice 11 review MEDIUM-1).
 MEMORY_TOOL_PREFIX = "memory_"
+# R14 D4 (Part A): each restore drill costs a restore, so he approves each on its own card
+NO_BULK_TOOLS = frozenset({DRILL_START})
 
 
 class PendingAction(BaseModel):
@@ -103,10 +107,13 @@ class PendingAction(BaseModel):
     @property
     def bulk_ok(self) -> bool:
         """May Approve all run it? Never when it can't be undone (or its risk is unknown), never a
-        draft to an address the owner did not type, never a memory write — whatever its reason,
-        so also an old card without one. A calendar / reminder / to-do card made after reading a
-        mail stays one tap: "add these 5 events from the email"."""
+        draft to an address the owner did not type, never a memory write, never the restore
+        drill (R14 D4, `NO_BULK_TOOLS`) — whatever its reason, so also an old card without one.
+        A calendar / reminder / to-do card made after reading a mail stays one tap: "add these 5
+        events from the email"."""
         if self.irreversible or self.reason is AskReason.DRAFT_RECIPIENT:
+            return False
+        if self.tool in NO_BULK_TOOLS:
             return False
         return not self.tool.startswith(MEMORY_TOOL_PREFIX)
 

@@ -51,13 +51,16 @@ class Sent:
 @dataclass
 class RingCounter:
     """A notifier with the real policy (quiet hours, held kinds) and the real storm (R14's own
-    soft table): it records every alert and whether it would have rung. `fail` makes it raise."""
+    table), answering a `Delivery` as `NotifyService.notify` does: a storm cap is a `drop` with
+    the storm's reason; with `dead` set no channel takes it (a ring that reached nobody gives
+    its storm slot back). It records every alert and whether it rang. `fail` makes it raise."""
 
     clock: Callable[[], datetime]
     settings: NotifySettings = field(default_factory=NotifySettings)
     storm: Storm = field(default_factory=Storm)
     sent: list[Sent] = field(default_factory=list)
     fail: bool = False
+    dead: bool = False
 
     async def notify(
         self,
@@ -72,13 +75,22 @@ class RingCounter:
             raise RuntimeError("telegram said: secret vendor words")
         now = self.clock()
         decision = decide(signal, self.settings, now)
-        admitted = (
-            decision.action in ("ring", "silent")
-            and self.storm.admit(uid, signal, decision, now).admit
-        )
-        rang = admitted and decision.action == "ring"
+        if decision.action not in ("ring", "silent"):
+            self._record(uid, signal, message, rang=False)
+            return Delivery(action=decision.action, reason=decision.reason)
+        verdict = self.storm.admit(uid, signal, decision, now)
+        if not verdict.admit:
+            self._record(uid, signal, message, rang=False)
+            return Delivery(action="drop", reason=verdict.reason)
+        if self.dead:
+            self.storm.rollback(uid, signal, now)
+            self._record(uid, signal, message, rang=False)
+            return Delivery(action=decision.action, reason=decision.reason)
+        self._record(uid, signal, message, rang=decision.action == "ring")
+        return Delivery(action=decision.action, reason=decision.reason, telegram=True)
+
+    def _record(self, uid: str, signal: Signal, message: str, *, rang: bool) -> None:
         self.sent.append(Sent(uid, signal.kind, signal.subject, message, SENDING.get(), rang))
-        return Delivery(action=decision.action, reason=decision.reason, telegram=admitted)
 
     def kinds(self) -> list[str]:
         return [s.kind for s in self.sent]

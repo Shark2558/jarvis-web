@@ -165,7 +165,9 @@ class Watch:
                 text = texts.clock_stopped(e.clock, e.at)
             else:
                 text = texts.clock_back(e.clock)
-            told += await self.teller.tell(owners, e.kind, e.cause, text, now, subject=e.clock)
+            told += (
+                await self.teller.tell(owners, e.kind, e.cause, text, now, subject=e.clock)
+            ).sent
         return told, kept
 
     async def watchdog_beat(self, owners: Sequence[str], now: datetime, me: str) -> Done:
@@ -180,7 +182,8 @@ class Watch:
         told = 0
         if self.ledger.take_recovered():
             cause = f"jobs_back:{self.ledger.last_alert}"
-            told += await self.teller.tell(owners, "selfwatch_ok", cause, texts.jobs_back(), now)
+            said = await self.teller.tell(owners, "selfwatch_ok", cause, texts.jobs_back(), now)
+            told += said.sent
         failing = self.ledger.failing(self.streak, exclude=me)
         new = set(self.ledger.untold(self.streak, exclude=me))
         last = self.ledger.last_alert
@@ -193,7 +196,8 @@ class Watch:
                 continue
             cause = ",".join(_streak_id(n, streaks[n]) for n in fresh)
             text = texts.job_failing(group)
-            told += await self.teller.tell(owners, "job_failing", cause, text, now, subject=subject)
+            said = await self.teller.tell(owners, "job_failing", cause, text, now, subject=subject)
+            told += said.sent
             self.ledger.mark_told(fresh, now)
         self.ledger.last_alert = now
         self.ledger.dirty = True
@@ -213,7 +217,8 @@ class Watch:
         text = texts.errors_piling(self.errors_limit)
         for day, doc in sorted(written.items()):
             if errs.over(doc, self.errors_limit):
-                told += await self.teller.tell(owners, "errors_piling", f"errors:{day}", text, now)
+                said = await self.teller.tell(owners, "errors_piling", f"errors:{day}", text, now)
+                told += said.sent
         return told, kept
 
     async def briefs_step(self, owners: Sequence[str], now: datetime, me: str) -> Done:
@@ -228,7 +233,8 @@ class Watch:
             if got is not None:
                 day, by = got
                 text = texts.brief_missed(by)
-                told += await self.teller.tell((uid,), "brief_missed", f"brief:{day}", text, now)
+                said = await self.teller.tell((uid,), "brief_missed", f"brief:{day}", text, now)
+                told += said.sent
         return told, kept
 
     async def deploy_step(self, owners: Sequence[str], now: datetime, me: str) -> Done:
@@ -237,7 +243,8 @@ class Watch:
             return 0, True
         cause, version = got
         text = texts.deploy_changed(version)
-        return await self.teller.tell(owners, "deploy_changed", f"deploy:{cause}", text, now), True
+        said = await self.teller.tell(owners, "deploy_changed", f"deploy:{cause}", text, now)
+        return said.sent, True
 
     async def once_a_day(self, owners: Sequence[str], now: datetime, me: str) -> Done:
         """The first morning tick of the local day: the spend snapshot, then the sweeps."""
@@ -247,7 +254,8 @@ class Watch:
         told = 0
         for uid, inr in (await self.spend.snapshot(self.docs, owners, now)).items():
             text = texts.spend_spike(inr, self.factor)
-            told += await self.teller.tell((uid,), "spend_spike", f"spend:{day}", text, now)
+            said = await self.teller.tell((uid,), "spend_spike", f"spend:{day}", text, now)
+            told += said.sent
         await self.told.sweep(now)
         await self.errors.sweep(self.docs, now)
         self._day_done = day

@@ -12,6 +12,7 @@ import pytest
 from r14_fakes_b import TWO_AM, UID, BrokenDocs, FlakyJob, build_world
 
 from jarvis.selfwatch.jobs import CLOCK_NAME, DAILY_NAME, Job, Watch
+from jarvis.storage.docs import MemoryDocs
 from jarvis.ticks import FAILED_COUNT, JobOutcome, run_jobs
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -288,3 +289,50 @@ def test_the_brief_is_checked_before_the_errors_are_written() -> None:
     names = build_world().watch.clock_job.step_names
     assert names.index("report_jobs") < names.index("errors_step")  # the incident said first
     assert names.index("briefs_step") < names.index("errors_step")
+
+
+async def test_a_step_with_no_time_left_is_cut_and_counted() -> None:
+    w = build_world()
+    ran: list[str] = []
+
+    async def step(owners, now, me):  # type: ignore[no-untyped-def]
+        ran.append(me)
+        return 0, True
+
+    got = await _job(w, 0.0, step).run((UID,))
+    assert ran == [] and got[FAILED_COUNT] == 1
+
+
+class _DownAfterLoad(MemoryDocs):
+    down = False
+
+    async def write(self, ops):  # type: ignore[no-untyped-def]
+        if self.down:
+            raise RuntimeError("firestore: 503")
+        await super().write(ops)
+
+    async def transaction(self, fn):  # type: ignore[no-untyped-def]
+        if self.down:
+            raise RuntimeError("firestore: 503")
+        return await super().transaction(fn)
+
+
+async def test_a_ledger_or_error_counts_that_cannot_be_written_count_as_failed() -> None:
+    docs = _DownAfterLoad()
+    w = build_world(docs=docs)
+    await w.watch.clock_job.run((UID,))  # read: loaded
+    docs.down = True
+    w.watch.observe(JobOutcome("watchdog", "web", "failed", 0.0))
+    rec = logging.LogRecord("jarvis.web", logging.ERROR, __file__, 1, "x", (), None)
+    rec.created = w.clock().timestamp()
+    w.watch.errors.handle(rec)
+    got = await w.watch.clock_job.run((UID,))
+    assert got[FAILED_COUNT] >= 2 and w.watch.ledger.dirty  # the ledger and the counts
+    assert w.watch.errors.pending() != {}  # kept for the next run
+
+
+async def test_an_unreadable_brief_fails_the_step_and_the_rest_runs() -> None:
+    w = build_world()
+    w.brief.raises = True
+    got = await w.watch.clock_job.run((UID,))
+    assert got[FAILED_COUNT] == 1

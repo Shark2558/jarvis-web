@@ -299,3 +299,26 @@ async def test_two_claims_at_once_with_the_store_down_make_one() -> None:
     told = Told(_SlowBroken())
     got = await asyncio.gather(*(told.claim(UID, "job_failing", "c", T) for _ in range(3)))
     assert sorted(got) == [False, False, True]  # python review L4
+
+
+class _SlowDocs(MemoryDocs):
+    async def transaction(self, fn):  # type: ignore[no-untyped-def]
+        await asyncio.sleep(10)
+        return await super().transaction(fn)
+
+
+async def test_a_claim_cancelled_mid_transaction_is_not_kept() -> None:
+    told = Told(_SlowDocs())
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.01):
+            await told.claim(UID, "job_failing", "c", T)
+    told._docs = MemoryDocs()  # noqa: SLF001 - the store answers again
+    assert await told.claim(UID, "job_failing", "c", T)
+
+
+async def test_the_claims_kept_in_memory_are_bounded() -> None:
+    told = Told(BrokenDocs())
+    for i in range(ledger.MAX_MEMORY_CLAIMS + 10):
+        await told.claim(UID, "job_failing", f"c{i}", T + timedelta(seconds=i))
+    assert len(told._memory) <= ledger.MAX_MEMORY_CLAIMS  # noqa: SLF001
+    assert not await told.claim(UID, "job_failing", f"c{ledger.MAX_MEMORY_CLAIMS + 9}", T)

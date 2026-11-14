@@ -24,7 +24,7 @@ logged. The tick's writes are transactions that keep a request he made meanwhile
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -94,7 +94,7 @@ class Run(_Frozen):
     operation: str | None = None
     polls: int = 0
     errors: int = 0  # checks that raised in a row (a drill ends after 3)
-    progress: dict[str, Any] = Field(default_factory=dict)
+    progress: Mapping[str, Any] = Field(default_factory=dict)  # read only: a new Run to change
     result: DrillResult | None = None
 
 

@@ -138,6 +138,30 @@ async def test_the_two_tools_and_the_drill_card(settings: Settings) -> None:
     assert "aren't set up" in ran["message"]
 
 
+def test_the_tool_names_can_be_imported_by_the_guardrails_without_a_cycle() -> None:
+    import ast
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from jarvis.backup import names, tools
+
+    assert (tools.SHOW, tools.START) == (names.SHOW, names.START) == (SHOW, START)
+    source = Path(names.__file__).read_text(encoding="utf-8")
+    imports = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Import | ast.ImportFrom)]
+    assert [getattr(n, "module", None) for n in imports] == ["__future__"]
+    probe = (
+        "import sys, jarvis.backup.names; "
+        "print(any(m.startswith('jarvis.core') for m in sys.modules))"
+    )
+    env = {**os.environ, "PYTHONPATH": str(Path(names.__file__).resolve().parents[2])}
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True, env=env
+    )
+    assert done.stdout.strip() == "False"  # core/guardrails.py may import it at its top
+
+
 @pytest.mark.xfail(
     strict=True, reason="Needs I1: core/guardrails.py NO_BULK_TOOLS (INTEGRATION-A, Needs I1 #1)"
 )

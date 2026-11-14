@@ -133,10 +133,8 @@ def _salvaged(raw: Doc) -> StatusDoc:
 
 
 def _newest(backups: Sequence[BackupInfo]) -> tuple[BackupInfo | None, BackupInfo | None]:
-    ready = sorted(
-        (b for b in backups if b.state == "READY" and b.snapshot_time is not None),
-        key=lambda b: b.snapshot_time or dt.datetime.min,
-    )
+    timed = [(b.snapshot_time, b) for b in backups if b.state == "READY" and b.snapshot_time]
+    ready = [b for _, b in sorted(timed, key=lambda r: r[0])]  # aware times only, never mixed
     filled = [b for b in ready if b.stats_ready]
     return (ready[-1] if ready else None), (filled[-1] if filled else None)
 

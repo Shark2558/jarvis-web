@@ -23,6 +23,7 @@ from typing import Any
 
 from jarvis.backup.drill import Drill
 from jarvis.backup.log import DrillLog, DrillResult
+from jarvis.backup.names import SHOW, START
 from jarvis.backup.status import (
     REASON_WORDS,
     RETENTION_DAYS,
@@ -36,8 +37,6 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Tool
 from jarvis.vitals.models import zone_of
 
-SHOW = "vitals_backups"
-START = "vitals_drill_start"
 MIB = 1024 * 1024
 SHOWN = "Checked the backups"
 ASKED = "Asked for a restore drill"

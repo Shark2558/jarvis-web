@@ -29,7 +29,7 @@ def test_the_two_jobs_have_their_planned_names_and_budgets() -> None:
     w = build_world()
     assert (w.watch.clock_job.name, w.watch.daily_job.name) == (CLOCK_NAME, DAILY_NAME)
     assert CLOCK_NAME == "selfwatch_clock" and DAILY_NAME == "selfwatch_daily"
-    assert 0 < w.watch.clock_job.budget_s <= 15 and 0 < w.watch.daily_job.budget_s <= 30
+    assert 0 < w.watch.clock_job.budget_s <= 10 and 0 < w.watch.daily_job.budget_s <= 30
 
 
 async def test_three_failures_in_a_row_make_one_alert_and_it_stays_one() -> None:

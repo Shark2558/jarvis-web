@@ -31,7 +31,6 @@ log = get_logger(__name__)
 WATCHDOG_GAP = timedelta(minutes=20)
 TICK_BY = time(5, 0)
 ClockName = Literal["tick", "watchdog"]
-_CLOCKS = ("tick", "watchdog")
 
 
 @dataclass(frozen=True)
@@ -148,9 +147,10 @@ class Clocks:
 
     def seen(self, clock: str, at: datetime) -> None:
         """The observer's stamp: a job outcome from this clock proves it ran (sync, in memory)."""
-        if clock in _CLOCKS:
-            key = "tick" if clock == "tick" else "watchdog"
-            self.mine = replace(self.mine, **{key: _later(getattr(self.mine, key), at)})
+        if clock == "tick":
+            self.mine = replace(self.mine, tick=_later(self.mine.tick, at))
+        elif clock == "watchdog":
+            self.mine = replace(self.mine, watchdog=_later(self.mine.watchdog, at))
 
     async def update(
         self, docs: Docs, change: Callable[[ClockState], ClockState]

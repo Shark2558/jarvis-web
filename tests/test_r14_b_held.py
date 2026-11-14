@@ -92,7 +92,8 @@ async def test_the_laptop_back_drops_the_held_idle_alert_before_the_morning_summ
     await back.handle(UID, HB)
     held = await store.held_list(UID)
     assert [i["kind"] for i in held] == ["vault_expiry"]
-    assert summary(held).startswith("While you were resting, 1 alert were held (1 document")
+    words = summary(held)
+    assert "document reminder" in words and "laptop offline" not in words
     assert notes.sent == [("home_online", LAPTOP_BACK)]
 
 

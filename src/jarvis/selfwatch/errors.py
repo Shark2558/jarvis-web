@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -73,6 +74,7 @@ class ErrorCounter(logging.Handler):
         self._tz = tz
         self._coll = f"{prefix}selfwatch_errors"
         self._pending: Counts = {}
+        self._mu = threading.Lock()  # the counts between `emit` (any thread) and the writer
         self.broken = False
 
     @staticmethod
@@ -88,11 +90,11 @@ class ErrorCounter(logging.Handler):
                 return
             at = datetime.fromtimestamp(record.created, self._tz)
             day, hour = f"{at:%Y%m%d}", f"{at:%H}"
-            if day not in self._pending and len(self._pending) >= MAX_PENDING_DAYS:
-                return
             key = name if _NAME.fullmatch(name) else ""
             one = {"hours": {hour: 1}, "loggers": {key: 1} if key else {}, "other": 0 if key else 1}
-            self._pending[day] = _add(self._pending.get(day, {}), one)
+            with self._mu:
+                if day in self._pending or len(self._pending) < MAX_PENDING_DAYS:
+                    self._pending[day] = _add(self._pending.get(day, {}), one)
         except Exception:  # noqa: BLE001 - a handler that fails never logs itself
             self.broken = True
 
@@ -100,16 +102,16 @@ class ErrorCounter(logging.Handler):
         self.broken = True
 
     def pending(self) -> Counts:
-        with self.lock:
+        with self._mu:
             return {day: dict(doc) for day, doc in self._pending.items()}
 
     def _take(self) -> Counts:
-        with self.lock:
+        with self._mu:
             taken, self._pending = self._pending, {}
         return taken
 
     def _put_back(self, taken: Counts) -> None:
-        with self.lock:
+        with self._mu:
             for day, doc in taken.items():
                 self._pending[day] = _add(doc, self._pending.get(day, {}))
 

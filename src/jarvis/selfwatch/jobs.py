@@ -42,7 +42,7 @@ log = get_logger(__name__)
 
 CLOCK_NAME = "selfwatch_clock"
 DAILY_NAME = "selfwatch_daily"
-CLOCK_BUDGET_S = 15.0  # it runs first in the watchdog's 50 s
+CLOCK_BUDGET_S = 10.0  # it runs first in the watchdog's 50 s (a healthy run takes milliseconds)
 DAILY_BUDGET_S = 25.0
 JOB_ALERT_EVERY = timedelta(hours=1)  # A6: one aggregated `job_failing` an hour per owner
 Done = tuple[int, bool]  # (alerts sent, whether the step's documents were kept)

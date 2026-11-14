@@ -118,7 +118,8 @@ class SpendWatch:
 
         async def fn(tx: DocTx) -> dict[str, float] | None:
             doc: dict[str, Any] = await tx.get(self._path) or {}
-            owners = doc.get("owners") if isinstance(doc.get("owners"), dict) else {}
+            raw = doc.get("owners")
+            owners: dict[str, Any] = raw if isinstance(raw, dict) else {}
             mine = _series(owners.get(uid))
             if day in mine:
                 return None

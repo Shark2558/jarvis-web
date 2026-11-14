@@ -10,17 +10,25 @@ Cookie-authenticated writes must also carry `X-Requested-With: JARVIS` (CSRF def
 cross-site form cannot set custom headers, and we serve no CORS headers).
 
 Slice 10 D: `/auth/login?reauth=1` asks Google to authenticate the owner again (`max_age=0`)
-and remembers when that started. Only such a re-sign-in stamps `auth_at` in the cookie: the
-ID token's `auth_time`, which must not be older than the start (Google did not actually ask
-again → `/?reauth=stale`, nothing stamped) and must be there (R14 D13 (1): with `max_age` sent,
-OpenID Connect returns it, so a token without one is stale too) — and returns to
-`/?reauth=done`. For 5 minutes it lets THIS browser set up a first passkey or start the 24-hour
-passkey reset; it never removes a passkey or lowers protection by itself. An ordinary sign-in
-stamps nothing.
+and remembers when that started. Only such a re-sign-in stamps `auth_at` in the cookie and
+returns to `/?reauth=done`. For 5 minutes it lets THIS browser set up a first passkey or start the
+24-hour passkey reset; it never removes a passkey or lowers protection by itself. An ordinary
+sign-in stamps nothing.
+
+R14 D13 (1): the re-sign-in also asks for `auth_time` as an essential claim (`REAUTH_CLAIMS`).
+Google sends it only for a published, verified app whose "Session age claims" is switched on
+(Google Auth Platform, Settings, Advanced; off by default), so:
+  * `auth_time` there: it must not be older than the start nor in the future (Google did not
+    actually ask again → `/?reauth=stale`, nothing stamped);
+  * `auth_time` missing or not a number: stale only when the owner switched
+    `reauth_requires_auth_time` on (after Google's setting); otherwise the moment the re-sign-in
+    completed, as before R14.
+The log names the kind (`auth_time_missing`, `auth_time_old`, `auth_time_future`), never the token.
 """
 
 from __future__ import annotations
 
+import json
 import secrets
 import time
 from typing import Any
@@ -46,6 +54,13 @@ FRESH_SIGN_IN_S = 5 * 60
 REAUTH_MAX_AGE_S = 0  # OIDC max_age: Google must authenticate the owner again now
 REAUTH_FLOW_MAX_S = 10 * 60  # a re-sign-in started longer ago than this does not count
 AUTH_TIME_SKEW_S = 60  # Google's clock vs ours
+# OpenID Connect's `claims` request parameter: what Google needs (beside its own switch) to send
+# `auth_time`. Never `prompt=login`: it is not one of Google's documented `prompt` values.
+REAUTH_CLAIMS = json.dumps({"id_token": {"auth_time": {"essential": True}}}, separators=(",", ":"))
+AUTH_TIME_MISSING = "auth_time_missing"
+AUTH_TIME_OLD = "auth_time_old"
+AUTH_TIME_FUTURE = "auth_time_future"
+REQUIRES_AUTH_TIME = "reauth_requires_auth_time"  # a Settings field from I1 (default False)
 
 
 def _now() -> float:
@@ -164,17 +179,27 @@ def fresh_sign_in_left(request: Request, s: Settings) -> int | None:
     return max(0, int(FRESH_SIGN_IN_S - (_now() - at)))
 
 
-def _reauth_at(info: Any, started: float, now: float) -> float | None:
-    """When the owner authenticated in this re-sign-in, or None when Google did not confirm a
-    fresh one: its `auth_time` is before the re-sign-in began (it did not ask again), or missing
-    or not a number (R14 D13 (1): OpenID Connect sends `auth_time` whenever `max_age` is asked,
-    so its absence is never read as "now")."""
+def requires_auth_time(s: Settings) -> bool:
+    """The owner's `reauth_requires_auth_time` (only a real True counts). I1 adds the field to
+    `Settings`; until then it is read here, default False."""
+    return getattr(s, REQUIRES_AUTH_TIME, False) is True
+
+
+def _reauth_at(
+    info: Any, started: float, now: float, *, require_auth_time: bool = False
+) -> tuple[float | None, str]:
+    """(when the owner authenticated in this re-sign-in, or None when it is stale; the kind of
+    problem, "" when `auth_time` was there and fresh). `auth_time` older than the start (Google did
+    not ask again) or in the future: stale. Missing or not a number: stale only if
+    `require_auth_time`, else the moment it completed (`now`), as before R14."""
     at = info.get("auth_time") if hasattr(info, "get") else None
     if not isinstance(at, int | float) or isinstance(at, bool):
-        return None
-    if at < started - AUTH_TIME_SKEW_S or at > now + AUTH_TIME_SKEW_S:
-        return None
-    return float(min(at, now))
+        return (None if require_auth_time else now), AUTH_TIME_MISSING
+    if at < started - AUTH_TIME_SKEW_S:
+        return None, AUTH_TIME_OLD
+    if at > now + AUTH_TIME_SKEW_S:
+        return None, AUTH_TIME_FUTURE
+    return float(min(at, now)), ""
 
 
 def _reauth_started(request: Request, now: float) -> float | None:
@@ -190,6 +215,7 @@ async def login(request: Request, s: Settings = Depends(_settings), reauth: int 
     if reauth:
         request.session[SESSION_REAUTH_KEY] = _now()
         extra["max_age"] = REAUTH_MAX_AGE_S
+        extra["claims"] = REAUTH_CLAIMS
     return await _oauth(request).google.authorize_redirect(request, _callback_url(s), **extra)
 
 
@@ -220,12 +246,14 @@ async def callback(request: Request, s: Settings = Depends(_settings)) -> Any:
     if started is None:
         log.info("owner signed in")
         return RedirectResponse(url="/", status_code=302)
-    at = _reauth_at(info, started, now)
+    at, why = _reauth_at(info, started, now, require_auth_time=requires_auth_time(s))
     if at is None:
-        log.warning("re-sign-in refused: Google did not authenticate again")
+        log.warning(
+            "re-sign-in refused: Google did not confirm a fresh sign-in", extra={"reason": why}
+        )
         return RedirectResponse(url="/?reauth=stale", status_code=302)
     request.session[SESSION_AUTH_AT_KEY] = at
-    log.info("owner signed in again")
+    log.info("owner signed in again", extra={"auth_time": "missing" if why else "present"})
     return RedirectResponse(url="/?reauth=done", status_code=302)
 
 

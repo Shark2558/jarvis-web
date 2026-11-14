@@ -70,8 +70,8 @@ def _cli(c: AsyncClient) -> AsyncClient:
 
 
 def _fresh(claims: dict[str, Any]) -> dict[str, Any]:
-    """Google's ID token after `max_age=0` carries `auth_time` (OpenID Connect): now, unless the
-    test names one; `auth_time=None` leaves it out (R14 D13 (1): then nothing is fresh)."""
+    """Google's ID token carries `auth_time` once its Session age claims are on (R14 D13 (1)):
+    now, unless the test names one; `auth_time=None` leaves it out (the setting decides)."""
     out = {"auth_time": int(auth_mod._now()), **claims}
     return {k: v for k, v in out.items() if v is not None}
 
@@ -210,9 +210,11 @@ async def test_reauth_asks_google_again_and_only_it_stamps_the_window(
     r = await _google(gclient, reauth=False)
     assert r.headers["location"] == "/"
     assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0  # not stamped
-    r = await _google(gclient, auth_time=None)  # R14 D13 (1): no auth_time is never fresh
-    assert r.headers["location"] == "/?reauth=stale"
-    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 0
+    # R14 D13 (1): no auth_time from Google and `reauth_requires_auth_time` off (the default):
+    # the moment it completed, as before R14 (tests/test_r14_d_auth.py has the setting on)
+    r = await _google(gclient, auth_time=None)
+    assert r.headers["location"] == "/?reauth=done"
+    assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 300
     r = await _google(gclient)  # Google's auth_time: the moment it asked again
     assert r.headers["location"] == "/?reauth=done"
     assert (await gclient.get("/v1/permissions")).json()["fresh_sign_in_s"] == 300

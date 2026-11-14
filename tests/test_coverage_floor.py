@@ -62,9 +62,9 @@ def test_a_missing_report_is_an_error(tmp_path: Path) -> None:
     assert got.returncode == 2
 
 
-def test_the_committed_floor_is_a_whole_percentage_below_eighty() -> None:
+def test_the_committed_floor_is_a_whole_percentage_at_least_the_target() -> None:
     value = int(FLOOR.read_text(encoding="utf-8").strip())
-    assert 0 < value <= 80
+    assert 80 <= value <= 100  # I0 measured 95.33 % (plan D17): the ratchet keeps it there
 
 
 def test_ci_measures_coverage_on_312_only_and_checks_the_floor() -> None:

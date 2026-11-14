@@ -4,12 +4,26 @@
 # Edit, Write and MultiEdit call: it reads the hook's JSON on stdin and blocks (exit 2, one line
 # on stderr) only clearly dangerous actions; everything else passes untouched, and bad input is
 # allowed with a note, so the hook can never jam a session.
+#
+# R14 hotfix 1: these tests never depend on where they run. main's CI run after the R14 merge
+# checked out `main` itself, so a bare `git push` judged in the checkout was rightly blocked and
+# two tests failed (on a pull request's detached merge ref they had passed). A shell command's
+# verdict reads the machine in two ways only, and neither comes from the machine here:
+# - a bare `git push` (no refspec) asks git for the folder's branch: it is judged only in the
+#   throw-away repos of `places`, whose branches these tests choose (BARE_PUSHES), and
+#   `test_only_the_bare_pushes_depend_on_the_branch` keeps every other listed command branch-free;
+# - `~` and `$HOME` come from HOME, git's lookup from GIT_DIR and its kin: every run gets a fixed
+#   HOME and no GIT_* variable.
+# Every other rule reads the command's text alone, so the other places below are names (they need
+# not exist), never the checkout the tests run from: a checkout below /tmp may lose anything.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -17,22 +31,138 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / ".claude" / "hooks" / "guard.py"
 PRIVATE = "-----BEGIN " + "PRIVATE KEY-----"  # never written whole in this file
+HOME = "/home/claude"  # the Workshop's HOME, on every machine (`cd ~`, `$HOME`)
+CHECKOUT = Path("/home/runner/work/jarvis-web/jarvis-web")  # CI's place, by name only
+
+
+def _env() -> dict[str, str]:
+    """The hook's environment: the caller's, without git's own variables, with a fixed HOME."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return {**env, "HOME": HOME}
 
 
 def _run(payload: object, *, raw: str | None = None) -> subprocess.CompletedProcess[str]:
     text = raw if raw is not None else json.dumps(payload)
     return subprocess.run(
-        [sys.executable, str(GUARD)], input=text, capture_output=True, text=True, timeout=10
+        [sys.executable, str(GUARD)],
+        input=text,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=_env(),
     )
 
 
-def _bash(command: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+def _bash(command: str, cwd: Path = CHECKOUT) -> subprocess.CompletedProcess[str]:
     return _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(cwd)})
+
+
+def _git(*args: str) -> None:
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c",
+         "commit.gpgsign=false", *args],
+        check=True, capture_output=True, env=_env(),
+    )  # fmt: skip
+
+
+@dataclass(frozen=True)
+class Places:
+    """Throw-away repos whose current branch the tests choose (each has a `src` folder)."""
+
+    branch: Path  # on r14-x
+    detached: Path  # a detached HEAD: a pull request's merge ref in CI
+    linked: Path  # a linked worktree on r14-x (in .claude/worktrees/) of the repo on main
+    main: Path
+    master: Path
+    linked_main: Path  # a linked worktree on main of a repo on r14-y
+
+    def ordinary(self) -> list[Path]:
+        return [self.branch, self.branch / "src", self.detached, self.linked, self.linked / "src"]
+
+    def protected(self) -> list[Path]:
+        main, linked = self.main, self.linked_main
+        return [main, main / "src", self.master, linked, linked / "src"]
+
+
+def _repo(path: Path, branch: str) -> Path:
+    _git("init", "-q", "-b", branch, str(path))
+    _git("-C", str(path), "commit", "-q", "--allow-empty", "-m", "x")
+    return path
+
+
+@pytest.fixture(scope="module")
+def places(tmp_path_factory: pytest.TempPathFactory) -> Places:
+    base = tmp_path_factory.mktemp("places")
+    main, other = _repo(base / "main", "main"), _repo(base / "other", "r14-y")
+    detached = _repo(base / "detached", "r14-d")
+    _git("-C", str(detached), "checkout", "-q", "--detach")
+    linked, linked_main = main / ".claude" / "worktrees" / "r14-x", base / "linked-main"
+    _git("-C", str(main), "worktree", "add", "-q", "-b", "r14-x", str(linked))
+    _git("-C", str(other), "worktree", "add", "-q", "-b", "main", str(linked_main))
+    got = Places(
+        branch=_repo(base / "branch", "r14-x"),
+        detached=detached,
+        linked=linked,
+        main=main,
+        master=_repo(base / "master", "master"),
+        linked_main=linked_main,
+    )
+    for where in (got.branch, got.main, got.linked, got.linked_main):
+        (where / "src").mkdir()
+    return got
+
+
+# A push with no refspec pushes the current branch: blocked on main or master, nowhere else.
+BARE_PUSHES = [
+    "git -c push.negotiate=true push",
+    "git push",
+    "git push -q",
+    "git push origin",
+    "git push -u origin",
+    "git -c push.negotiate=true push --set-upstream origin",
+]
+
+
+@pytest.mark.parametrize("command", BARE_PUSHES)
+def test_a_bare_push_passes_on_an_ordinary_branch_wherever_it_is_checked_out(
+    places: Places, command: str
+) -> None:
+    for where in places.ordinary():
+        got = _bash(command, cwd=where)
+        assert got.returncode == 0, (command, str(where), got.stderr)
+
+
+@pytest.mark.parametrize("command", BARE_PUSHES)
+def test_the_same_bare_push_is_blocked_when_the_current_branch_is_main(
+    places: Places, command: str
+) -> None:
+    for where in places.protected():
+        got = _bash(command, cwd=where)
+        assert got.returncode == 2, (command, str(where))
+        assert got.stderr.startswith("guard: blocked a push from ma"), got.stderr
+        assert len(got.stderr.strip().splitlines()) == 1
+
+
+def test_a_bare_push_is_judged_where_it_runs_not_where_the_hook_was_called(
+    places: Places,
+) -> None:
+    assert _bash(f"git -C {places.main} push", cwd=places.branch).returncode == 2
+    assert _bash(f"cd {places.main} && git push", cwd=places.branch).returncode == 2
+    assert _bash(f"git -C {places.branch} push", cwd=places.main).returncode == 0
+    assert _bash(f"cd {places.linked} && git push", cwd=places.main).returncode == 0
+
+
+def test_the_callers_git_variables_never_reach_the_hook(
+    places: Places, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run from inside a git hook (GIT_DIR set to a repo on main), the verdict is the folder's."""
+    monkeypatch.setenv("GIT_DIR", str(places.main / ".git"))
+    assert _bash("git push", cwd=places.branch).returncode == 0
+    assert _bash("git push", cwd=places.main).returncode == 2
 
 
 ALLOWED = [
     "git status",
-    "git -c push.negotiate=true push",
     "git -c push.negotiate=true push -u origin r14-a",
     "git push origin r14-i0",
     "git worktree add /home/claude/wt/r14-a -b r14-a origin/r14-i0",
@@ -129,7 +259,7 @@ IN_A_CHECKOUT = [
 ]
 
 
-@pytest.mark.parametrize("where", [MAIN, WORKTREE, NESTED, ROOT], ids=str)
+@pytest.mark.parametrize("where", [MAIN, WORKTREE, NESTED, CHECKOUT], ids=str)
 @pytest.mark.parametrize("command", IN_A_CHECKOUT)
 def test_a_checkouts_own_content_is_never_removed_from_inside_it(where: Path, command: str) -> None:
     line = command.format(self=where.name if "../" in command else where)
@@ -398,31 +528,36 @@ def _brief_commands() -> list[str]:
     return found
 
 
-@pytest.mark.parametrize("where", [WORKTREE, MAIN, ROOT], ids=str)
+@pytest.mark.parametrize("where", [WORKTREE, MAIN, CHECKOUT], ids=str)
 def test_every_command_in_the_briefs_passes(where: Path) -> None:
     for command in _brief_commands() + WORKSHOP_BRIEF:
+        if command in BARE_PUSHES:
+            continue  # its verdict is the branch's: judged on known branches below
         got = _bash(command, cwd=where)
         assert got.returncode == 0, (command, got.stderr)
+
+
+def test_the_briefs_bare_pushes_pass_on_an_ordinary_branch(places: Places) -> None:
+    pushes = [c for c in _brief_commands() + WORKSHOP_BRIEF if c in BARE_PUSHES]
+    assert pushes  # the briefs push the branch they stand on
+    for command in pushes:
+        for where in places.ordinary():
+            got = _bash(command, cwd=where)
+            assert got.returncode == 0, (command, str(where), got.stderr)
+
+
+def test_only_the_bare_pushes_depend_on_the_branch(places: Places) -> None:
+    """The pin of this hotfix: any other listed command judged at a named place whose branch is
+    the machine's would pass or fail with the checkout (on main in CI's push runs)."""
+    for command in ALLOWED + _brief_commands() + WORKSHOP_BRIEF:
+        on_main = _bash(command, cwd=places.main).returncode
+        on_branch = _bash(command, cwd=places.branch).returncode
+        assert on_main == on_branch or command in BARE_PUSHES, command
 
 
 def test_the_docstring_says_it_is_a_guard_rail_not_a_sandbox() -> None:
     text = GUARD.read_text(encoding="utf-8")
     assert "guard rail for agents, not a sandbox" in " ".join(text.split())
-
-
-def _git(base: Path, branch: str) -> Path:
-    repo = base / f"repo-{branch}"
-    repo.mkdir(parents=True)
-    subprocess.run(["git", "init", "-q", "-b", branch, str(repo)], check=True)
-    return repo
-
-
-def test_a_bare_push_from_main_is_blocked_and_from_a_branch_passes(tmp_path: Path) -> None:
-    on_main, feature = _git(tmp_path, "main"), _git(tmp_path, "r14-a")
-    assert _bash("git -c push.negotiate=true push", cwd=on_main).returncode == 2
-    assert _bash(f"git -C {on_main} push", cwd=feature).returncode == 2
-    assert _bash("git -c push.negotiate=true push", cwd=feature).returncode == 0
-    assert _bash(f"cd {feature} && git push", cwd=on_main).returncode == 0
 
 
 def _edit(path: Path, old: str, new: str) -> subprocess.CompletedProcess[str]:

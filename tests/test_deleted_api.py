@@ -185,7 +185,9 @@ async def test_a_google_failure_is_plain_words_and_the_item_can_be_tried_again(r
 
 
 async def test_the_undo_tools_reach_the_model(rig: Rig) -> None:
-    await rig.c.post("/v1/chat", json={"message": "hello"})
+    # R14 D9 (I1): a turn is offered the tools its words name ("undo", "restore", "meeting"), so
+    # a bare "hello" no longer carries them; any other turn reaches them through skills_open
+    await rig.c.post("/v1/chat", json={"message": "undo that, restore my meeting"})
     names = {t.name for t in rig.provider.calls[-1].tools or []}
     assert {"deleted_list", "deleted_restore", "calendar_delete_event"} <= names
 

@@ -163,6 +163,14 @@ def install_log_handler(handler: logging.Handler | None) -> None:
         _INSTALLED.append(handler)
 
 
+def remove_log_handler(app: FastAPI) -> None:
+    """At shutdown (I1): this app's errors handler comes off the root logger, so an app that has
+    stopped never counts errors into its own state; another app's handler stays."""
+    handler = _parts(app).get("selfwatch", HardeningPart("selfwatch")).services.get("log_handler")
+    if handler in _INSTALLED:
+        install_log_handler(None)
+
+
 def install_r14_phrases(app: FastAPI) -> None:
     """Part D's phrases into the app's BrainMode once, ONE AT A TIME (as R11.1's and R7's): one
     that does not fit is an error in the log and never drops the others or stops the start."""
@@ -253,6 +261,7 @@ __all__ = [
     "build_parts",
     "check_part",
     "install_log_handler",
+    "remove_log_handler",
     "install_r14_phrases",
     "install_r14_routes",
     "install_services",

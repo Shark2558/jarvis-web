@@ -150,6 +150,9 @@ async def test_without_the_token_key_everything_is_off_with_plain_words(off: App
         "helpers_daily",
         "mobile_clock",  # R7's own two (I1 fixer), after R11's
         "mobile_daily",
+        "backup_canary",  # R14 I1: the parts' daily jobs come last, in PARTS order (A, then B)
+        "backup_drill",
+        "selfwatch_daily",
     ]
     assert st.notes_reason == NOT_CONFIGURED
     names = {s.name for s in st.gateway.registry.specs()}
@@ -252,7 +255,8 @@ async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> Non
     # book's seal and sweep too
     r2 = ["vault_reminders", "vault_chunks", "vault_unlocks"]
     r11 = ["helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily"]  # R11 I0; R7's own
-    assert names == [*r2, "vitals_poll", "health_check", "book_seal", "book_sweep", *r11]
+    r14 = ["backup_canary", "backup_drill", "selfwatch_daily"]  # R14 I1: A's two, B's one
+    assert names == [*r2, "vitals_poll", "health_check", "book_seal", "book_sweep", *r11, *r14]
     assert not RESERVED_JOB_NAMES & set(names)
     assert await run_jobs(on.app.state.tick_jobs, [UID]) == dict.fromkeys(names, "ok")
 

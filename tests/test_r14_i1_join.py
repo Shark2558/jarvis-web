@@ -133,3 +133,25 @@ def test_the_stale_sign_in_note_says_what_google_did_not_confirm(name: str, what
     assert f"Google didn't confirm a fresh sign-in, so {what}" in flat
     assert "switch on Session age claims in Google Auth Platform" in flat
     assert "or switch reauth_requires_auth_time off." in flat
+
+
+async def test_an_apps_errors_handler_comes_off_the_root_logger_when_it_shuts_down(
+    settings: Settings,
+) -> None:
+    """INTEGRATION-B 5.1 d, fixed at the cause: Part B's errors handler is installed on the
+    root logger at start-up; an app that has shut down must not keep counting errors into its
+    own (dead) state, so the lifespan takes it off. Before, every later test saw the handler of
+    the last app that ran, which made the R14 wiring test order-dependent."""
+    import logging
+
+    from fastapi import FastAPI
+
+    from jarvis.api import create_app
+    from jarvis.memory.inmemory import InMemorySessionStore as Store
+
+    root = logging.getLogger()
+    app: FastAPI = create_app(settings, provider=MockProvider(), store=Store())
+    async with app.router.lifespan_context(app):
+        handler = app.state.r14_parts["selfwatch"].services["log_handler"]
+        assert handler in root.handlers
+    assert handler not in root.handlers

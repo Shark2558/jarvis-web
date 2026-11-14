@@ -494,6 +494,7 @@ def _lifespan(
             await r7.wire_r7(app, s, docs, audit)  # R7: the same, for the four mobile parts
             await wire_r11(app, s, docs, audit)  # R11: the free proactive helpers (A-D)
             await r14.wire_r14(app, s, docs, audit)  # R14: backups, self-health, cost, No-AI 2
+            stack.callback(r14.remove_log_handler, app)  # R14 I1: its errors handler comes off
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()

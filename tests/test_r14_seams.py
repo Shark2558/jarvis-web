@@ -415,18 +415,28 @@ async def test_the_app_starts_with_four_parts_and_their_status_routes(settings: 
         parts = app.state.r14_parts
         assert list(parts) == list(PARTS)
         assert all(isinstance(p, HardeningPart) and p.name == n for n, p in parts.items())
-        assert all(p.ready == "not built yet" for p in parts.values())
+        # I1: all four parts are built; their words in the dev app (MemoryDocs, no Firestore)
+        built = {
+            "backup": "off: not on Firestore",  # A: the real adapters only on Firestore
+            "selfwatch": "on",  # B
+            "skills": "ready",  # C
+            "noai": "ready",  # D
+        }
+        assert {n: p.ready for n, p in parts.items()} == built
         for name, route in STATUS_ROUTE.items():
             r = await client.get(route)
             assert r.status_code == 200, name
-            assert r.json() == {"part": name, "ready": "not built yet"}
+            assert {k: r.json()[k] for k in ("part", "ready")} == {
+                "part": name,
+                "ready": built[name],
+            }
             assert r.headers["cache-control"] == "no-store"
         r = await client.get(R14_STATUS_ROUTE)
-        assert r.json() == {"parts": {n: "not built yet" for n in PARTS}}
+        assert r.json() == {"parts": built}
         ledger = await client.get("/v1/costs/ledger")
         assert ledger.status_code == 200 and ledger.json()["part"] == "skills"
-        drill = await client.post("/v1/backup/drill", headers={"X-Requested-With": "x"})
-        assert drill.status_code == 501 and drill.json()["error"] == "not_built"
+        drill = await client.post("/v1/backup/drill", json={}, headers={"X-Requested-With": "x"})
+        assert drill.status_code == 409 and drill.json()["error"] == "no_conversation"
         assert isinstance(app.state.brain.slots, BrainSlots)
 
 
@@ -565,7 +575,10 @@ def test_every_r14_vitals_item_has_fixed_words(pid: str) -> None:
 
 async def test_the_parts_privacy_rows_reach_the_dashboard(settings: Settings) -> None:
     async with running(settings) as (app, _):
-        assert wiring.r14_privacy_sources(app) == ()  # no part is built yet
+        # I1: A's "Backups" row, B's once-only claims, C's token ledger (D keeps nothing new)
+        ids = [s.id for s in wiring.r14_privacy_sources(app)]
+        assert ids == ["backups", "selfwatch_told", "token_ledger"]
+        assert set(ids) <= set(app.state.privacy.registry.ids())
 
 
 # ---- 8 · the guide's planned cards ---------------------------------------------------------------
@@ -588,10 +601,20 @@ def test_the_r14_runner_passes_and_its_contract_control_fails_it() -> None:
     assert run.returncode == 0, run.stdout + run.stderr
     report = json.loads((ROOT / "evals" / "r14" / "report.json").read_text(encoding="utf-8"))
     ids = {r["id"] for r in report["results"]}
-    for part in ("backup", "selfwatch", "offer", "noai", "needles"):
-        assert f"{part}:not_built_yet" in ids, part
+    # I1: A, B, C and D are built, each with its cases and a control that fails it
+    for case in (
+        "backup:drill_passes_on_fakes",
+        "selfwatch:three_failures_one_alert",
+        "offer:recall",
+        "noai:row01_grocery_add",
+    ):
+        assert case in ids, case
+    assert not any(i.endswith(":not_built_yet") for i in ids if not i.startswith("needles:"))
+    assert all(r["passed"] for r in report["results"])
     control = report["negative_control"]
-    assert control["suite_failed"] is True and control["failed_cases"]["contract"]
+    assert control["suite_failed"] is True
+    for part in ("contract", "backup", "selfwatch", "offer", "noai"):
+        assert control["failed_cases"][part], part
 
 
 def test_the_r14_suite_is_gated_in_run_all_mock() -> None:

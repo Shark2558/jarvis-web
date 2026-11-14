@@ -105,6 +105,9 @@ async def test_without_a_home_the_health_job_rides_the_tick_only(settings: Setti
             "helpers_daily",
             "mobile_clock",  # R7's own two, after R11's
             "mobile_daily",
+            "backup_canary",  # R14 I1: the parts' daily jobs, last (A's two, B's one)
+            "backup_drill",
+            "selfwatch_daily",
         ]
         assert app.state.health_job is app.state.tick_jobs[1]
 

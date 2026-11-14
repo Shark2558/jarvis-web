@@ -16,7 +16,9 @@
 from __future__ import annotations
 
 import json
+import struct
 import time
+import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -168,7 +170,15 @@ def test_text_reads_the_numbers_on_a_label_drawn_in_the_test(
         assert "125" in r["data"]["text"] and "500" in r["data"]["text"], r["data"]
         assert spy.pictures(before) == []
         got = spy.paths(before)
-        assert got and all(p.startswith("/static/vendor/vision/r7-1/") for p in got), got
+        assert any(p.startswith("/static/vendor/vision/r7-1/") for p in got), got
+        # The console's own background requests (GET /v1/input/hints, the session checks) may land
+        # during the look; they carry no picture (`pictures` above) and no more than a small form.
+        others = [
+            (m, "/" + u.split("/", 3)[-1], len(b))
+            for m, u, b in spy.reqs[before:]
+            if not ("/" + u.split("/", 3)[-1]).startswith("/static/vendor/vision/r7-1/")
+        ]
+        assert all(m == "GET" or size <= 4096 for m, _, size in others), others
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()
@@ -231,15 +241,36 @@ def _photo(c: Console, path: Path) -> None:
 
 
 def _png(tmp_path: Path) -> tuple[Path, bytes]:
-    from PIL import Image, ImageDraw
+    # Standard library only (CI's browser job has no Pillow): a white 480 x 320 picture with a
+    # black 6-pixel frame and a planted pixel pattern along the top row.
+    w, h = 480, 320
+    white, black, planted = b"\xff\xff\xff", b"\x00\x00\x00", b"\x52\x37\x50"
+    rows = []
+    for y in range(h):
+        row = bytearray()
+        for x in range(w):
+            if y == 0 and x % 2 == 0:
+                row += planted
+            elif 40 <= x <= 440 and 40 <= y <= 280 and (x < 46 or x > 434 or y < 46 or y > 274):
+                row += black
+            else:
+                row += white
+        rows.append(b"\x00" + bytes(row))
 
-    img = Image.new("RGB", (480, 320), "white")
-    ImageDraw.Draw(img).rectangle((40, 40, 440, 280), outline="black", width=6)
-    for x in range(0, 480, 2):  # a planted pixel pattern along the top row
-        img.putpixel((x, 0), (0x52, 0x37, 0x50))
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        crc = struct.pack(">I", zlib.crc32(kind + data))
+        return struct.pack(">I", len(data)) + kind + data + crc
+
+    header = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+    raw = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b"".join(rows), 6))
+        + chunk(b"IEND", b"")
+    )
     path = tmp_path / "label.png"
-    img.save(path)
-    return path, path.read_bytes()
+    path.write_bytes(raw)
+    return path, raw
 
 
 def test_a_photo_look_sends_nothing_and_ask_waits_for_a_seeing_brain(

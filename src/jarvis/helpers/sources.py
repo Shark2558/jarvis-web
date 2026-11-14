@@ -11,6 +11,9 @@ timeout of at most `OUTSIDE_TIMEOUT_S` and a response cap. No key, no secret, no
   state slugs exist beyond india / kerala / karnataka is for Part B to confirm.
 - USDA FoodData Central (D, D15): CC0; used only when the bundled nutrition subset is built
   (`scripts/kitchen_fdc_subset.py`), never at run time.
+- Urban Company (R14 D2, row 102): only its address, given to the owner AS TEXT in a prepared
+  service request (`maint_service_request`). JARVIS never calls it, books or pays: it has no
+  public API. The default booking site (owner question 10).
 - UPI (A, D7): the NPCI deep-link scheme JARVIS writes for the owner to open; it calls nothing.
   `MAX_UPI_AMOUNT_PAISE` is the CEILING of a prepared payment (R14 D13 (6)): the cap in force is
   the deploy-time setting `bill_pay_cap_inr`, which can only be lower
@@ -34,6 +37,9 @@ MAX_CAP_BYTES = 256 * 1024
 
 FDC_ATTRIBUTION = "USDA FoodData Central (public domain)"
 
+URBAN_COMPANY_NAME = "Urban Company"
+URBAN_COMPANY_URL = "https://www.urbancompany.com/"
+
 UPI_PAY_SCHEME = "upi://pay"
 MAX_UPI_AMOUNT_PAISE = 1_00_000 * 100  # D7: ₹1,00,000, the ceiling; `bill_pay_cap_inr` may lower it
 
@@ -51,4 +57,6 @@ __all__ = [
     "SACHET_NATIONAL_FEED",
     "SACHET_RSS_URL",
     "UPI_PAY_SCHEME",
+    "URBAN_COMPANY_NAME",
+    "URBAN_COMPANY_URL",
 ]

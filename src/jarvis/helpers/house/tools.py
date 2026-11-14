@@ -6,7 +6,9 @@
 R1 (read): `chore_list`, `maint_list`, `maint_starters`, `weather_now`, `disaster_status`,
 `breach_status`. R2 (his own lists, easy to change back): `chore_add`, `chore_done`, `maint_add`,
 `maint_done`. Nothing here is R3, sends anything to anyone, or sets his place (the Home tab
-does, typed by him). The rota and upkeep answers are his own words (`trusted_output`);
+does, typed by him). R14 D2 (row 102): `maint_service_request` (R1) only writes a home-service
+request and gives the booking site's address as text (`service_request.py`): it never books, pays,
+sends or opens anything. The rota and upkeep answers are his own words (`trusted_output`);
 `disaster_status` carries SACHET's own words fenced as EXTERNAL CONTENT (so the round is outside
 content and later writes ask). The cached weather summary is numbers JARVIS checked.
 On a Telegram turn (a cloud chat) `weather_now` and `disaster_status` leave out his district
@@ -21,6 +23,7 @@ from typing import Any
 
 from jarvis.core.channel import on_telegram
 from jarvis.core.guardrails import ActionRisk
+from jarvis.helpers.house import service_request as service_mod
 from jarvis.helpers.house import upkeep as upkeep_mod
 from jarvis.helpers.house import words
 from jarvis.helpers.house.models import (
@@ -333,6 +336,16 @@ def _upkeep_tools(t: HouseTools) -> tuple[Tool, ...]:
             "Marked home upkeep done",
         ),
         _r1("maint_starters", "Common upkeep items JARVIS can offer.", t.maint_starters),
+        Tool(
+            service_mod.TOOL,
+            service_mod.DESCRIPTION,
+            service_mod.SCHEMA,
+            R1,
+            service_mod.service_request,
+            agent=AGENT,
+            check=service_mod.check_request,
+            trusted_output=True,
+        ),
     )
 
 

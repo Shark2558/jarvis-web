@@ -45,6 +45,13 @@ _LOCK_KEYS = ("id", "bk", "since")
 View = tuple[ShowLockState | None, float | None]  # (the lock, sessions valid after)
 
 
+def _mark_of(doc: dict[str, Any] | None) -> float | None:
+    """Another owner's mark, read leniently: one that isn't a time is replaced by the new mark (as
+    before R14), so it never blocks this owner's Resume."""
+    after = (doc or {}).get(AFTER)
+    return None if isinstance(after, bool) or not isinstance(after, int | float) else float(after)
+
+
 def _later(mark: float | None, new: float | None) -> float | None:
     """A "sessions valid after" mark only ever moves forward."""
     if mark is None or new is None:
@@ -159,7 +166,7 @@ class DocShowLock:
             else:
                 tx.set(self._path(uid), {AFTER: mark})
             for other, doc in held:
-                theirs = _later(self._parse(doc)[1], signed_out_before)
+                theirs = _later(_mark_of(doc), signed_out_before)
                 tx.set(self._path(other), {**(doc or {}), AFTER: theirs})
             return True, mark
 

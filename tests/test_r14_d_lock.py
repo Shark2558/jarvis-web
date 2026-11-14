@@ -70,3 +70,12 @@ async def test_a_lock_is_never_set_over_a_document_it_cannot_read() -> None:
     docs.fail_reads = True
     with pytest.raises(RuntimeError):
         await DocShowLock(docs).set(UID, BK, now=T0)  # the guest show is then refused (NO_LOCK)
+
+
+async def test_another_owners_unreadable_document_never_blocks_a_resume() -> None:
+    docs = FlakyDocs()
+    await docs.write([Set(f"jarvis_book_lock/{OTHER}", {AFTER: "not a time"})])
+    lock = DocShowLock(docs, owners=(UID, OTHER))
+    state = await lock.set(UID, BK, now=T0)
+    assert await lock.lift(UID, state.id, signed_out_before=MARK) is True
+    assert await DocShowLock(docs).valid_after(OTHER) == MARK  # healed with the new mark

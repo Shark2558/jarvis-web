@@ -11,6 +11,7 @@ from google_fakes import FakeGoogle
 from pydantic import SecretStr
 from r51b_fakes import OwnRig, with_keys
 
+from jarvis.hardening.ports import VITALS_IDS
 from jarvis.health.models import HealthReport, HealthState, ProbeResult
 from jarvis.health.store import HealthStore
 from jarvis.home.store import HomeStore
@@ -63,9 +64,10 @@ async def test_real_classes_fill_every_item(connected: GoogleConnector) -> None:
     board = await rig.svc.board(UID)
 
     got = {v.provider.id: v for v in board.items}
-    assert OWN_IDS <= got.keys()
-    assert all(got[pid].status != "unknown" for pid in OWN_IDS), {
-        pid: (got[pid].status, got[pid].reason) for pid in OWN_IDS
+    built_in = OWN_IDS - set(VITALS_IDS)  # R14's items come from R14's parts (test_r14_seams)
+    assert built_in <= got.keys()
+    assert all(got[pid].status != "unknown" for pid in built_in), {
+        pid: (got[pid].status, got[pid].reason) for pid in built_in
     }
     assert got["github_token"].provider.note == "This token doesn't expire."
     assert got["home_link"].provider.note == "Last heartbeat just now."

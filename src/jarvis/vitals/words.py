@@ -66,12 +66,12 @@ WORDS: Mapping[str, tuple[str, str]] = {
         "Shell); otherwise wait for tomorrow's copy, and tell the Workshop if it stays.",
     ),
     "backup_drill": (
-        "If this fails: JARVIS can't prove that a copy would restore.",
+        "If this stops: JARVIS can't prove that a copy would restore.",
         'Say "test my backup" to run a drill again; if it fails twice, send the result to the '
         "Workshop.",
     ),
     "db_size": (
-        "If this fills: Google charges for the data above its free 1 GB.",
+        "If this runs out: Google charges for the data above its free 1 GB.",
         "Look at what JARVIS keeps in the Privacy panel and delete what you don't need.",
     ),
     "clocks": (
@@ -79,7 +79,7 @@ WORDS: Mapping[str, tuple[str, str]] = {
         "Open Cloud Scheduler in your Google project and check both JARVIS jobs are enabled.",
     ),
     "ai_parts": (
-        "If this grows: replies cost more than they need to.",
+        "If this stops: JARVIS can't show where the AI money goes; replies carry on.",
         "Nothing to do: JARVIS shows where the money goes; tell the Workshop if one part is large.",
     ),
     SPEND_ID: (

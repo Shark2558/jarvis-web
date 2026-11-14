@@ -475,6 +475,40 @@ Skill register and the turn's tools as PLANNED (every new collection named); I1 
 "No backups" (fact 9), adds "Restoring for real" to §8 (Part A's runbook, D4), the measured cost to
 §9 (D8), the change log and edition line.
 
+**D17 · Coverage measured, and ratcheted towards 80 %** (the owner, 14 Nov 2026, 13:45 IST: "add
+them"; ₹0; built at I0). Nothing measured coverage before R14 (no pytest-cov, nothing in CI), though
+the ECC rules set an 80 % target. `pytest-cov` (MIT; coverage.py Apache-2.0) joins the dev extra with
+a lower bound, like the other dev tools (`pytest-cov>=7`; dev tools are not in the lock or the
+licence table, which list the image's runtime packages). CI's unit job on Python 3.12 only runs
+`pytest -q --cov=jarvis --cov-report=term-missing:skip-covered --cov-report=json:coverage.json`;
+`scripts/coverage_floor.py` writes the total to the job summary and fails only when it drops below
+the committed floor `scripts/coverage_floor.txt` (a whole percentage that only goes up; the agents'
+hook refuses a lower one). The 3.11 job runs plain `pytest -q`, not slowed. **Measured at I0** on
+the whole 3.12 suite (14,910 tests, statement coverage of `jarvis`): **95.33 %** (65,954 of 69,187
+statements), 15.3 points above the 80 % target, so the floor is **95**: a ratchet that keeps it
+there (each part's new package must hold its own 80 %, BRIEF-COMMON). Branch coverage is not
+measured (a later choice).
+
+**D18 · A GateGuard hook for the coding agents** (the owner, same message; ₹0; built at I0). CLAUDE.md
+already said "No `rm -rf`, force-push, or edits to lint/format configs to make errors disappear", but
+nothing enforced it. `.claude/settings.json` runs `.claude/hooks/guard.py` (standard library only,
+fast) before every Bash, Edit, Write and MultiEdit call. It reads the hook's JSON and blocks (exit 2,
+one line) only clearly dangerous actions: a force push (`--force`, `-f`, `--force-with-lease`,
+`--mirror`, a `+refspec`) or a push to `main` / `master` (a refspec, a delete, or a bare push while
+that branch is checked out); `git reset --hard` onto a remote ref; deleting `main`; `rm` with
+recursive and force flags outside `/tmp/`, `/home/claude/wt/`, `.claude/worktrees/`, `build/` and
+`dist/` (never `/`, `~`, `src`, `tests`, `.git`, nor a path it can't read such as `$HOME/x`); writes
+to `.env*` and key files, a private key block, a shell redirect into `.env*`; edits that switch a
+check off in `[tool.ruff]`, `[tool.mypy]`, `ruff.toml`, `.ruff.toml`, `mypy.ini` or `setup.cfg`'s
+lint sections (more ignores or excludes, fewer selected rules, a strictness flag turned off, an
+`ignore_errors`, a section removed, a new `ruff.toml` / `mypy.ini`), and a lower
+`scripts/coverage_floor.txt`. Everything else passes untouched; unreadable input or an error inside
+the hook is allowed with a note, so it can never jam a session; a heredoc's body is data, not a
+command. CLAUDE.md and BRIEF-COMMON say a blocked action means stop and report, never work around
+it; every command in BRIEF-COMMON passes it (`tests/test_claude_guard.py`: a table of the Workshop's
+own commands and the blocked ones). Not a security boundary against a hostile agent (a determined one
+could spell a command another way); it stops the mistakes the rule names.
+
 **D16 · Deferred, with reasons.**
 
 | Item | Why not now |
@@ -578,8 +612,9 @@ I0) in its part module; `api/r14_wiring.py` leaves out a part that breaks the co
    `EXPECTED` gets `vitals_backups` (R1, vitals), `vitals_drill_start` (R2, vitals_change),
    `maint_service_request` (R1, household), `skills_open` (R1, no row: the risk default applies);
    the `vitals` and `vitals_change` hints name backups and the drill; `test_telegram_tool_guard.py`
-   classes them open and its `linked_gateway` gains `r14=`; `understand/words.py` nouns (backups,
-   drill, skills, service, request) and `TOOL_NOUNS`.
+   classes them open and its `linked_gateway` gains `r14=`; the nouns (backups, drill, skills,
+   service, request) join `TOOL_NOUNS` (`tests/test_r11_1_b_guard.py`; "start" and "open" are
+   already action words, so `understand/words.py` needs none).
 5. **Settings** (`config.py`): `selfwatch_enabled` (on), `selfwatch_fail_streak` 3 (2–10),
    `selfwatch_errors_per_hour` 30 (5–500), `selfwatch_brief_grace_min` 60 (15–240),
    `selfwatch_spike_factor` 3.0 (1.5–10), `selfwatch_spike_min_inr` 50 (10–1,000),
@@ -626,6 +661,10 @@ I0) in its part module; `api/r14_wiring.py` leaves out a part that breaks the co
 10. **Console:** only the Alerts card's rows (seam 2). The CSP stays as it is (pinned by four
     tests; R14 adds no script and no origin). `console.html` stays 782.
 11. `docs/plans/r14-integration/BRIEF-COMMON.md` and `I0-NOTES.md`.
+12. **Coverage and the hook** (D17, D18): `pytest-cov` in the dev extra, CI's 3.12 coverage step and
+    floor check (`scripts/coverage_floor.py`, `scripts/coverage_floor.txt`), `.claude/settings.json`,
+    `.claude/hooks/guard.py`, the CLAUDE.md line; tests `tests/test_coverage_floor.py`,
+    `tests/test_claude_guard.py`. They are tooling outside `src/jarvis`, so the guide needs no card.
 
 ## Decisions taken at I0 (v14.0.2; safe defaults, listed for the owner)
 
@@ -729,4 +768,4 @@ re-sign-in (D13 item 1 refuses when it doesn't); the Urban Company address; the 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v14.0.1 | 14 Nov 2026, 13:40 IST | R14 | First edition: summary for the owner, the workbook rows 101/102/109–112 read from his sheet, code facts with file:line, Google's terms, D0–D16 (backups and a drill that can't write live, self-health, the token ledger and free cost wins with ₹ before/after, the skill register, No-AI pass 2, rows 101/102, the leftovers taken and deferred), data model, per-item evals with negative controls, the A–D split, the I0 seam list, owner questions and one-time steps, what can't be verified, risks, sources | 🛠 Mark XVIII |
-| v14.0.2 | 14 Nov 2026, 14:30 IST | R14 | Plan review 1 written in; Status Ready. A1: cache within the reply only (choice (b)), the provider applies the hint, D10 reworked at ₹95.24 (₹5.42 → ₹2.99 a reply, ≈ 45 %). A2: empty stats never start a drill, comparisons on the app's own fields, `count()` aggregations, "nothing compared" fails. A3: clean-up whatever the switches say, `get_database` decides, delete protection off first, the 5-minute wait, the left-over cost and a weekly alert, 2 manual drills, `bulk_ok=False`. A4: the deploy runs only `backup_setup.sh --status`, the cost line is a range, no TTL policy. A5: the locks said honestly, `ReadOnlyDocs` on both sides, an import test, lock 5 in `Settings`, a custom role. A6: one aggregated `job_failing` an hour, R14's own soft table (3 an hour), outcomes with skips, `selfwatch_clock` first, no loops, no backup alert before the set-up, the spike from daily differences after 7 days. A7: the clock jobs run for the brief's owners. A8: Vitals and Privacy server-sent (no console change), A alone produces the backup kinds and size (`BackupStatus`), no third brain slot, the booking address as text. B: 14 lines corrected (prices `:30`; 135 tools; the ₹0.17 reading; all four error classes and the router log; the two UPI constants; the TTL; the runbook; the version, kind, keyring and tick-list pins; 14-day and 1 GiB costs; the STARTERS pin) and one found at I0 (cards C61–C65 are taken: C66–C68). C: the 12 seams joined to the I0 list. D notes taken: the tool-use names in the offer, shortened results keep their flags, the async admin client, the rate limit, the Vitals index stays, the data-safety limit and the runbook lines. Decisions taken at I0 listed | 🛠 Mark XVIII |
+| v14.0.2 | 14 Nov 2026, 14:30 IST | R14 | The owner's scope addition (14 Nov, 13:45 IST, "add them") written in at I0: D17 coverage measured (95.33 % at I0, floor 95) and ratcheted in CI on 3.12, D18 a GateGuard hook for the coding agents (seam 12); seam 4's nouns corrected (TOOL_NOUNS only). Plan review 1 written in; Status Ready. A1: cache within the reply only (choice (b)), the provider applies the hint, D10 reworked at ₹95.24 (₹5.42 → ₹2.99 a reply, ≈ 45 %). A2: empty stats never start a drill, comparisons on the app's own fields, `count()` aggregations, "nothing compared" fails. A3: clean-up whatever the switches say, `get_database` decides, delete protection off first, the 5-minute wait, the left-over cost and a weekly alert, 2 manual drills, `bulk_ok=False`. A4: the deploy runs only `backup_setup.sh --status`, the cost line is a range, no TTL policy. A5: the locks said honestly, `ReadOnlyDocs` on both sides, an import test, lock 5 in `Settings`, a custom role. A6: one aggregated `job_failing` an hour, R14's own soft table (3 an hour), outcomes with skips, `selfwatch_clock` first, no loops, no backup alert before the set-up, the spike from daily differences after 7 days. A7: the clock jobs run for the brief's owners. A8: Vitals and Privacy server-sent (no console change), A alone produces the backup kinds and size (`BackupStatus`), no third brain slot, the booking address as text. B: 14 lines corrected (prices `:30`; 135 tools; the ₹0.17 reading; all four error classes and the router log; the two UPI constants; the TTL; the runbook; the version, kind, keyring and tick-list pins; 14-day and 1 GiB costs; the STARTERS pin) and one found at I0 (cards C61–C65 are taken: C66–C68). C: the 12 seams joined to the I0 list. D notes taken: the tool-use names in the offer, shortened results keep their flags, the async admin client, the rate limit, the Vitals index stays, the data-safety limit and the runbook lines. Decisions taken at I0 listed | 🛠 Mark XVIII |

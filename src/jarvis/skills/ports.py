@@ -60,7 +60,8 @@ class BrainSlots:
         every = list(specs)
         if self.offer is None:
             return every
-        ctx = OfferContext(str(req.user_id), str(req.message), tuple(messages), get_trace_id())
+        uid, text = str(getattr(req, "user_id", "")), str(getattr(req, "message", "") or "")
+        ctx = OfferContext(uid, text, tuple(messages), get_trace_id())
         try:
             got = self.offer(ctx, every)
         except Exception as exc:  # noqa: BLE001 - an offer that breaks offers every tool

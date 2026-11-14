@@ -205,6 +205,18 @@ def _posted(page: Any, fake: FakeNotes, path: str, timeout_ms: int = 5000) -> li
     return fake.to("POST", path)
 
 
+def _patched(
+    page: Any, fake: FakeNotes, path: str, count: int = 1, timeout_ms: int = 5000
+) -> list[dict[str, Any]]:
+    """The PATCHes the fake saw, once there are `count` (the browser sends after the click
+    returns; R14 I1: the full browser run on 2 busy CPUs read the list before the send)."""
+    for _ in range(timeout_ms // 50):
+        if len(got := fake.to("PATCH", path)) >= count:
+            return got
+        page.wait_for_timeout(50)
+    return fake.to("PATCH", path)
+
+
 def clean(console: Console) -> None:
     assert console.csp_violations() == []
     assert console.errors == []
@@ -437,9 +449,9 @@ def test_editing_an_outside_note_asks_before_taking_it_as_mine(console: Console)
     page.locator("#nEdit-n_000000000001").click()
     page.locator("#neText").fill("Changed body")
     page.locator("#neSave").click()
-    assert "adopt" not in fake.to("PATCH", "/v1/notes/n_000000000001")[0]["body"]
+    assert "adopt" not in _patched(page, fake, "/v1/notes/n_000000000001")[0]["body"]
     page.locator("#nEdit-n_000000000001").click()
     page.locator("#neAdopt").check()
     page.locator("#neSave").click()
-    assert fake.to("PATCH", "/v1/notes/n_000000000001")[1]["body"]["adopt"] is True
+    assert _patched(page, fake, "/v1/notes/n_000000000001", count=2)[1]["body"]["adopt"] is True
     clean(console)

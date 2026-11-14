@@ -76,6 +76,8 @@ are tests of `api/auth.py`, so the edits follow D13 (1) (checked at the merge, k
 4. **B's errors handler outlived its app** (B 5.1 d): fixed at the cause (section 2).
 5. **The Brain ignored `history_tool_result_chars`** until C B was applied (2,000 whatever the
    setting said).
+6. **A browser test race** (`test_notes.py`, two reads of the fake's PATCH log without a wait), seen
+   only in the full run on 2 busy CPUs: fixed in the test (section 7).
 
 ## 4. Pins changed, and why (each only where behaviour truly changed)
 
@@ -137,9 +139,9 @@ are still wholly scratch, by design. The hook never blocked an edit of itself.
 | 4 | `scripts/markdy_export.py --check` (on an export of `1e3ac36` under `/tmp`, after `npm ci`: `tools/markdy/node_modules` is not git-ignored, so not installed in the worktree) | 14 diagrams, 0 problems |
 | 4 | `scripts/check_pr_title.py "v14.0.0 · R14 Free hardening · Mark XVIII–XIX"` | OK |
 | 4 | `python -m jarvis.buildbook.gen --check`, twice | the book is **R14** (`1e3ac36`): book.json 181,913 bytes, source.zip 7,747,781 bytes; each run's two builds byte-identical, and the two runs' outputs identical (`cmp`) |
-| 5 | Browser suite, whole (`i1-browser.log`) | BROWSER_RESULT |
-| 5 | New browser tests with the optional libraries blocked | BLOCKED_RESULT |
-| 6 | Screenshots (`scripts/ui_snapshots.py --out /tmp/r14-logs/i1-shots`) | SHOTS_RESULT |
+| 5 | Browser suite, whole (`i1-browser.log`) | **1,367 passed, 2 failed** in 97 min at `1e3ac36`, both load-only (each file re-run alone: 42 passed): `test_notes.py::test_editing_an_outside_note_asks_before_taking_it_as_mine` was a test race (it read the fake's PATCH log straight after the click; the same file's `_posted` helper waits for exactly this): fixed at the cause with a waiting `_patched` helper for both such reads (`test_notes.py` re-run: 15 passed); `test_media.py::test_keyboard_focus_stays_in_the_maps_section[desktop]` (focus on BODY right after Enter on Set Home and Work) could not be reproduced (alone, and 4 times under two busy loops: all passed) and its cause is not proven; `console-media.js` is untouched by R14 (section 10) |
+| 5 | New browser tests with the optional libraries blocked | `tests/browser/test_r14_d_console.py` (R14's only new browser file) with PIL, numpy, cv2, aiomqtt, paho, onnxruntime, scipy and pandas refused at import (a meta-path blocker): **4 passed** |
+| 6 | Screenshots (`scripts/ui_snapshots.py --out /tmp/r14-logs/i1-shots`) | **260 shots, 0 page errors, 0 failures** (`/tmp/r14-logs/i1-shots`); the layout checks find the same 12 screens with the same findings as `r14-i0`. Pixel diff against a fresh `r14-i0` set (`/tmp/r14-logs/i0-shots`) and a second I1 set as the noise floor: beyond noise only the Privacy panel's lower screens (R14's three server-sent rows, in the existing card style) and three capture-state differences (a sub-pixel shift, a focus glow, a button's transition), looked at side by side: **the look is unchanged** |
 | 7 | Sizes | section 8: every guard holds |
 | — | Wheel and sdist (C C) | both list `jarvis/skills/catalogue.json`; the register loads it from the unpacked wheel |
 
@@ -176,7 +178,9 @@ Every Google call (plan "What can't be verified"; INTEGRATION-A 10, B 7, C 6, D 
 voice evals on a real model for p14.0 (D14: real runs, keys); whether Google sends `auth_time` for
 this app; real token counts and ₹ by part (the ledger, after deploy); CI's coverage on its own
 runners (here 95.50 %); the hook inside a real Claude Code session (tested by running the script as
-the hook does).
+the hook does); the cause of the one unreproduced browser flake
+(`test_keyboard_focus_stays_in_the_maps_section[desktop]`, pre-R14 code), which CI's own browser job
+will show again if it is a real race.
 
 ## Change log
 

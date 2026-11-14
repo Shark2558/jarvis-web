@@ -266,7 +266,7 @@ class ModelRouter:
             raise exc
         log.warning(
             "tier degraded after transient error",
-            extra={"from": current.value, "to": nxt.value, "error": str(exc)[:200]},
+            extra={"from": current.value, "to": nxt.value, "error": type(exc).__name__},
         )
         return nxt
 

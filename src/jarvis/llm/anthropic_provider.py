@@ -20,6 +20,10 @@ from anthropic.types import (
 from anthropic.types import TextBlock as AnthropicTextBlock
 
 from jarvis.llm.base import (
+    AUTH_REFUSED,
+    BUSY,
+    NO_ANSWER,
+    UNREACHABLE,
     ChatMessage,
     Completion,
     Effort,
@@ -151,17 +155,28 @@ class AnthropicProvider:
 
     @classmethod
     def _translate(cls, exc: Exception) -> LLMError:
+        """Our error class with FIXED words (R14 D9): the vendor's message is read here only to
+        tell a low credit balance apart, and never passed on, chained or logged."""
         if isinstance(exc, anthropic.AuthenticationError | anthropic.PermissionDeniedError):
-            return LLMAuthError(str(exc))
+            return LLMAuthError(AUTH_REFUSED)
         if cls._out_of_credit(exc):
-            return LLMOutOfCredit()  # fixed words: the vendor's text stays here
+            return LLMOutOfCredit()
         if isinstance(exc, _UNREACHABLE) or (
             isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500
         ):
-            return LLMUnreachable(str(exc))
+            return LLMUnreachable(UNREACHABLE)
         if isinstance(exc, _TRANSIENT):
-            return LLMTransientError(str(exc))
-        return LLMError(str(exc))
+            return LLMTransientError(BUSY)
+        return LLMError(NO_ANSWER)
+
+    @classmethod
+    def _failed(cls, exc: Exception, model: str) -> LLMError:
+        """The translated error, logged with its class and HTTP status only."""
+        err = cls._translate(exc)
+        status = exc.status_code if isinstance(exc, anthropic.APIStatusError) else None
+        extra = {"model": model, "error": type(err).__name__, "status": status}
+        log.error("llm call failed", extra=extra)
+        return err
 
     def _kwargs(
         self,
@@ -213,10 +228,8 @@ class AnthropicProvider:
                     tools=tools,
                 )
             )
-        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy below
-            err = self._translate(exc)
-            log.error("llm call failed", extra={"model": model, "error": type(err).__name__})
-            raise err from exc
+        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain
+            raise self._failed(exc, model) from None
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
         text = "".join(b.text for b in msg.content if isinstance(b, AnthropicTextBlock))
@@ -283,8 +296,8 @@ class AnthropicProvider:
                             yield event.delta.text
                     elif usage is not None:
                         self._note_usage(event, usage)
-        except Exception as exc:  # noqa: BLE001
-            raise self._translate(exc) from exc
+        except Exception as exc:  # noqa: BLE001 — translated into our hierarchy, no chain
+            raise self._failed(exc, model) from None
 
     @staticmethod
     def _note_usage(event: object, sink: StreamUsage) -> None:

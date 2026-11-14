@@ -18,6 +18,10 @@ from typing import Any
 import httpx
 
 from jarvis.llm.base import (
+    AUTH_REFUSED,
+    BUSY,
+    NO_ANSWER,
+    UNREACHABLE,
     ChatMessage,
     Completion,
     Effort,
@@ -143,27 +147,22 @@ class OpenAICompatProvider:
 
     # ---- response handling ---------------------------------------------------------------
 
-    def _redact(self, text: str) -> str:
-        return text.replace(self._key, "***") if self._key else text
-
     def _raise_for_status(self, resp: httpx.Response) -> None:
-        if resp.status_code < 300:
+        """Our error class with FIXED words (R14 D9): the server's answer body is never read
+        into the error or a log line; the log says the HTTP status only."""
+        code = resp.status_code
+        if code < 300:
             return
-        if resp.status_code < 400:  # redirects are never followed: a wrong base URL
+        if code < 400:  # redirects are never followed: a wrong base URL
             raise LLMError("OpenAI-compatible server redirected (check base URL)")
-        try:
-            err = resp.json().get("error", {})
-            detail = str(err.get("message", err) if isinstance(err, dict) else err)[:300]
-        except Exception:  # noqa: BLE001
-            detail = ""
-        msg = self._redact(f"OpenAI-compatible HTTP {resp.status_code}: {detail}")
-        if resp.status_code in (401, 403):
-            raise LLMAuthError(msg)
-        if resp.status_code >= 500:
-            raise LLMUnreachable(msg)
-        if resp.status_code in (408, 429):
-            raise LLMTransientError(msg)
-        raise LLMError(msg)
+        log.warning("openai-compatible call failed", extra={"status": code})
+        if code in (401, 403):
+            raise LLMAuthError(AUTH_REFUSED)
+        if code >= 500:
+            raise LLMUnreachable(UNREACHABLE)
+        if code in (408, 429):
+            raise LLMTransientError(BUSY)
+        raise LLMError(NO_ANSWER)
 
     @staticmethod
     def _tool_calls(message: dict[str, Any]) -> list[ToolCall]:
@@ -216,10 +215,10 @@ class OpenAICompatProvider:
         )
         try:
             resp = await self._post(body)
-        except httpx.TimeoutException as exc:
-            raise LLMUnreachable("OpenAI-compatible request timed out") from exc
+        except httpx.TimeoutException:
+            raise LLMUnreachable("OpenAI-compatible request timed out") from None
         except httpx.TransportError as exc:
-            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from exc
+            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from None
         self._raise_for_status(resp)
         try:
             data = resp.json()
@@ -297,7 +296,7 @@ class OpenAICompatProvider:
                     text = delta.get("content")
                     if text:
                         yield text
-        except httpx.TimeoutException as exc:
-            raise LLMUnreachable("OpenAI-compatible stream timed out") from exc
+        except httpx.TimeoutException:
+            raise LLMUnreachable("OpenAI-compatible stream timed out") from None
         except httpx.TransportError as exc:
-            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from exc
+            raise LLMUnreachable(f"connection error: {type(exc).__name__}") from None

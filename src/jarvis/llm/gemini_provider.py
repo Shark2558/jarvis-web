@@ -19,6 +19,10 @@ from typing import Any
 import httpx
 
 from jarvis.llm.base import (
+    AUTH_REFUSED,
+    BUSY,
+    NO_ANSWER,
+    UNREACHABLE,
     ChatMessage,
     Completion,
     Effort,
@@ -121,21 +125,19 @@ class GeminiProvider:
     # ---- response handling ---------------------------------------------------------------
 
     def _raise_for_status(self, resp: httpx.Response) -> None:
-        if resp.status_code < 400:
+        """Our error class with FIXED words (R14 D9): Google's answer body is never read into
+        the error or a log line; the log says the HTTP status only."""
+        code = resp.status_code
+        if code < 400:
             return
-        try:
-            detail = str(resp.json().get("error", {}).get("message", ""))[:300]
-        except Exception:  # noqa: BLE001
-            detail = ""
-        detail = detail.replace(self._key, "***")
-        msg = f"Gemini HTTP {resp.status_code}: {detail}"
-        if resp.status_code in (401, 403):
-            raise LLMAuthError(msg)
-        if resp.status_code >= 500:
-            raise LLMUnreachable(msg)
-        if resp.status_code in (408, 429):
-            raise LLMTransientError(msg)
-        raise LLMError(msg)
+        log.warning("gemini call failed", extra={"status": code})
+        if code in (401, 403):
+            raise LLMAuthError(AUTH_REFUSED)
+        if code >= 500:
+            raise LLMUnreachable(UNREACHABLE)
+        if code in (408, 429):
+            raise LLMTransientError(BUSY)
+        raise LLMError(NO_ANSWER)
 
     @staticmethod
     def _text(parts: list[dict[str, Any]]) -> str:
@@ -219,10 +221,10 @@ class GeminiProvider:
                 resp = await self._client.post(
                     self._url(model, "generateContent"), headers=self._headers(), json=body
                 )
-            except httpx.TimeoutException as exc:
-                raise LLMUnreachable("Gemini request timed out") from exc
+            except httpx.TimeoutException:
+                raise LLMUnreachable("Gemini request timed out") from None
             except httpx.TransportError as exc:
-                raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from exc
+                raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from None
             if (
                 resp.status_code == 400
                 and thinking
@@ -276,7 +278,7 @@ class GeminiProvider:
                     text = self._text((cand.get("content") or {}).get("parts") or [])
                     if text:
                         yield text
-        except httpx.TimeoutException as exc:
-            raise LLMUnreachable("Gemini stream timed out") from exc
+        except httpx.TimeoutException:
+            raise LLMUnreachable("Gemini stream timed out") from None
         except httpx.TransportError as exc:
-            raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from exc
+            raise LLMUnreachable(f"Gemini connection error: {type(exc).__name__}") from None

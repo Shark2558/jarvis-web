@@ -7,7 +7,7 @@
 // API: GET/PUT /v1/permissions; POST /v1/passkeys/challenge {purpose, approval_id?, credential_id?};
 // POST /v1/passkeys/register/options {proof?}; POST /v1/passkeys/register {challenge_id, credential,
 // label}; POST /v1/passkeys/{id}/remove {proof}; POST /v1/passkeys/reset; POST /v1/passkeys/reset/cancel
-// {proof}. Re-sign-in: /auth/login?reauth=1 → /?reauth=done (or =stale: Google didn't ask again).
+// {proof}. Re-sign-in: /auth/login?reauth=1 → /?reauth=done (or =stale: Google didn't confirm a fresh sign-in).
 // Lowering protection always takes a passkey; a fresh Google sign-in only sets up the FIRST passkey or
 // starts the 24-hour reset, which shows as a banner at the top of the Approvals panel until it's over.
 // Exposes window.JarvisPasskey {supported(), approve(approvalId)  -> proof, prove(purpose, target)  -> proof,
@@ -401,7 +401,7 @@
     Deck.open('approvals', { focus: true });
     expand(true, false);
     if (how === 'done') note('ok', 'Signed in again. For the next 5 minutes you can set up your first passkey or start a passkey reset here.');
-    else note('bad', 'Google didn\'t ask you to sign in again, so this didn\'t count. Sign out of Google in this browser, then try again.');
+    else note('bad', 'Google didn\'t confirm a fresh sign-in, so this didn\'t count. Sign out of Google in this browser, then try again. If it happens every time, Google isn\'t sending the sign-in time: switch on Session age claims in Google Auth Platform, or switch reauth_requires_auth_time off.');
   }
   async function ready() {
     S.signedIn = true; S.data = undefined; S.error = '';

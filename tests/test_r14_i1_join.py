@@ -118,3 +118,18 @@ def test_the_reauth_setting_is_a_real_field_off_by_default(
     assert on.reauth_requires_auth_time is True and auth.requires_auth_time(on) is True
     assert auth.requires_auth_time(settings) is False
     assert "getattr" not in Path(auth.__file__).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("name", "what"), [("console-permissions.js", "this didn"), ("console-book.js", "the book")]
+)
+def test_the_stale_sign_in_note_says_what_google_did_not_confirm(name: str, what: str) -> None:
+    """INTEGRATION-D "Needs I1" 6 (D13 (1)): "stale" now also means Google sent no sign-in time,
+    so the note says Google didn't confirm a fresh sign-in and how to stop it happening every
+    time. Text only: the look never changes."""
+    js = (ROOT / "src" / "jarvis" / "api" / "static" / name).read_text(encoding="utf-8")
+    flat = js.replace("\\u2019", "'").replace("\\'", "'")
+    assert "Google didn't ask you to sign in again" not in flat
+    assert f"Google didn't confirm a fresh sign-in, so {what}" in flat
+    assert "switch on Session age claims in Google Auth Platform" in flat
+    assert "or switch reauth_requires_auth_time off." in flat

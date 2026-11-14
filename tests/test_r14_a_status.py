@@ -31,6 +31,7 @@ from jarvis.backup.status import (
     monthly_inr,
     restore_inr,
 )
+from jarvis.notify.ports import Delivery, Signal
 from jarvis.storage.docs import MemoryDocs
 
 NOW = dt.datetime(2026, 11, 14, 5, 30, tzinfo=dt.UTC)
@@ -215,23 +216,81 @@ async def test_the_left_over_copy_is_told_weekly() -> None:
     assert await teller.problem((UID,), "copy_left") == 1
 
 
-async def test_a_failed_send_is_no_failure_and_is_not_sent_again_that_day() -> None:
-    class Broken(RecordingNotifier):
-        async def notify(self, *a: object, **k: object) -> object:  # type: ignore[override]
-            raise RuntimeError("telegram down")
+class Answers(RecordingNotifier):
+    """A notifier whose deliveries are scripted (None: it raises)."""
 
+    def __init__(self, *answers: Delivery | None) -> None:
+        super().__init__()
+        self.answers = list(answers)
+
+    async def notify(self, uid: str, signal: Signal, message: str, **_: object) -> Delivery:
+        self.sent.append((uid, signal, message))
+        answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+        if answer is None:
+            raise RuntimeError("telegram down")
+        return answer
+
+
+DROPPED = Delivery(action="drop", reason="self_cap")  # the storm's cap
+NO_CHANNEL = Delivery(action="ring", reason="important", telegram=False, push=0)
+
+
+@pytest.mark.parametrize("answer", [None, DROPPED, NO_CHANNEL])
+async def test_an_alert_that_reached_nobody_gives_its_claim_back(answer: Delivery | None) -> None:
     docs, clock = MemoryDocs(), Clock()
-    teller = Teller(_service(docs, clock), lambda: Broken())
-    assert await teller.problem((UID,), "stale") == 0
+    failing = Answers(answer)
+    assert await Teller(_service(docs, clock), lambda: failing).problem((UID,), "stale") == 0
     ok = RecordingNotifier()
-    teller = Teller(_service(docs, clock), lambda: ok)
-    assert await teller.problem((UID,), "stale") == 0 and ok.sent == []  # claimed before the send
+    clock.at += dt.timedelta(minutes=30)  # the next tick
+    assert await Teller(_service(docs, clock), lambda: ok).problem((UID,), "stale") == 1
+    assert await Teller(_service(docs, clock), lambda: ok).problem((UID,), "stale") == 0
+
+
+async def test_a_send_that_keeps_failing_is_tried_three_times_a_day() -> None:
+    docs, clock = MemoryDocs(), Clock(dt.datetime(2026, 11, 13, 22, 30, tzinfo=dt.UTC))  # 04:00
+    failing = Answers(DROPPED)
+    teller = Teller(_service(docs, clock), lambda: failing)
+    for _ in range(5):
+        assert await teller.problem((UID,), "copy_left") == 0
+        clock.at += dt.timedelta(minutes=30)
+    assert len(failing.sent) == 3  # bounded: three tries on his day
+    clock.at += dt.timedelta(days=1)
+    await teller.problem((UID,), "copy_left")
+    assert len(failing.sent) == 4  # the weekly cause is not lost for a week
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        Delivery(action="drop", reason="switched_off"),  # he switched the kind off
+        Delivery(action="drop", reason="feed_only"),  # the home feed lists it
+        Delivery(action="hold", reason="quiet_hours"),  # held for the morning summary
+        Delivery(action="silent", reason="info", push=1),
+    ],
+)
+async def test_where_he_chose_it_to_go_counts_as_told(answer: Delivery) -> None:
+    docs, clock = MemoryDocs(), Clock()
+    teller = Teller(_service(docs, clock), lambda: Answers(answer))
+    assert await teller.problem((UID,), "stale") == 1
+    assert await teller.problem((UID,), "stale") == 0
+
+
+async def test_each_drill_result_is_told_once_even_two_the_same_day() -> None:
+    docs, clock = MemoryDocs(), Clock()
+    sent = RecordingNotifier()
+    teller = Teller(_service(docs, clock), lambda: sent)
+    assert await teller.failed((UID,), "count_mismatch", run="202612010000") == 1
+    clock.at += dt.timedelta(hours=2)  # he asks for another, which fails too
+    assert await teller.failed((UID,), "count_mismatch", run="202612010200") == 1
+    assert await teller.failed((UID,), "count_mismatch", run="202612010200") == 0
+    assert await teller.passed((UID,), run="202612010400") == 1
+    assert sent.kinds().count(("backup_problem", "drill_failed")) == 2
 
 
 async def test_no_notifier_means_nothing_is_sent_and_nothing_breaks() -> None:
     teller = Teller(_service(MemoryDocs(), Clock()), lambda: None)
     assert await teller.problem((UID,), "stale") == 0
-    assert await teller.passed((UID,)) == 0
+    assert await teller.passed((UID,), run="r1") == 0
 
 
 async def test_a_passed_drill_is_an_info_line_and_a_failure_names_its_reason_in_fixed_words() -> (
@@ -240,8 +299,8 @@ async def test_a_passed_drill_is_an_info_line_and_a_failure_names_its_reason_in_
     docs, clock = MemoryDocs(), Clock()
     sent = RecordingNotifier()
     teller = Teller(_service(docs, clock), lambda: sent)
-    assert await teller.passed((UID,)) == 1
-    assert await teller.failed((UID,), "count_mismatch") == 1
+    assert await teller.passed((UID,), run="r1") == 1
+    assert await teller.failed((UID,), "count_mismatch", run="r2") == 1
     assert sent.kinds() == [("backup_ok", "drill"), ("backup_problem", "drill_failed")]
     failed = sent.sent[1][2]
     assert "count" in failed and len(failed) <= 300

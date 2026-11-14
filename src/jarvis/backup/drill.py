@@ -98,6 +98,11 @@ def _newest_filled(backups: Sequence[BackupInfo]) -> BackupInfo | None:
     return max(ready, key=lambda b: b.snapshot_time or dt.datetime.min) if ready else None
 
 
+def run_key(at: dt.datetime) -> str:
+    """A drill's own name for its told-once mark: when it started (or was refused), UTC."""
+    return at.astimezone(dt.UTC).strftime("%Y%m%d%H%M%S")
+
+
 def _short_id(name: str) -> str:
     return name.rsplit("/", 1)[-1][:200]
 
@@ -162,7 +167,7 @@ class Drill:
     async def _refuse(self, st: DrillState, owners: Sequence[str], result: DrillResult) -> str:
         await self.d.log.record(result)
         await self.d.log.save(self._consumed(st, result.at))
-        await self.d.teller.failed(owners, result.reason)
+        await self.d.teller.failed(owners, result.reason, run=run_key(result.at))
         return "refused"
 
     async def _start(self, st: DrillState, owners: Sequence[str], now: dt.datetime) -> str:
@@ -307,9 +312,9 @@ class Drill:
         run = run.model_copy(update={"result": result})
         st = await self.d.log.save(st.model_copy(update={"phase": "cleanup", "run": run}))
         if outcome == "passed":
-            await self.d.teller.passed(owners)
+            await self.d.teller.passed(owners, run=run_key(run.started_at))
         elif outcome == "failed":
-            await self.d.teller.failed(owners, reason)
+            await self.d.teller.failed(owners, reason, run=run_key(run.started_at))
         log.info("restore drill ended", extra={"outcome": outcome, "reason": reason or ""})
         return await self._cleanup(st, owners)
 

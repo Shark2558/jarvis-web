@@ -15,22 +15,27 @@ before the owner's one-time step Google refuses (`PermissionError`) and the stat
 up" with nothing told. The costs are in rupees at the live rate (S2 prices, read 14 Nov 2026).
 
 `Teller`: alerts only through the app's notifier, fixed templates, no names, no amounts; the
-claim is written BEFORE the send (a failed send is never sent again that day and never fails a
-job); once per cause a day, the left-over drill copy weekly.
+claim is written BEFORE the send, once per cause on his day (the left-over drill copy weekly,
+each drill's result once). A send that reached nobody (it raised, the storm's cap dropped it, or
+no channel took it) gives its claim back, so a later tick tries again, at most `MAX_TRIES` times
+on his day; it never fails a job. Where he chose it to go counts as told: a kind he switched
+off, the home feed, a hold for the morning summary.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable, Mapping, Sequence
-from typing import Final
+from dataclasses import dataclass
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from jarvis.alerts import AlertKind
 from jarvis.backup.log import DrillLog
 from jarvis.backup.ports import NOT_SET_UP, BackupAdmin, BackupFacts, BackupInfo
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Notifier, Signal
+from jarvis.notify.ports import Delivery, Notifier, Signal
 from jarvis.storage.docs import Doc, Docs, DocTx, Set
 
 log = get_logger(__name__)
@@ -44,6 +49,10 @@ STORED_USD_PER_GIB_HOUR: Final = 0.000205479  # S2: a named database's data (no 
 HOURS_PER_MONTH: Final = 730
 RETENTION_DAYS: Final = 7  # the set-up's schedule: daily, kept 7 days
 WEEKLY: Final = dt.timedelta(days=7) - dt.timedelta(hours=1)  # a tick may come a little early
+MAX_TRIES: Final = 3  # sends that reached nobody, per cause on his day
+KEEP_ONCE: Final = dt.timedelta(days=40)  # a drill result's "told once" mark
+DELIBERATE: Final = frozenset({"switched_off", "feed_only"})  # his choice, not a lost alert
+Every = Literal["day", "week", "once"]
 
 TEXTS: Mapping[str, str] = {
     "stale": (
@@ -110,6 +119,13 @@ def left_over_inr(size_bytes: int, rate: float) -> float:
     return round(size_bytes / GIB * STORED_USD_PER_GIB_HOUR * HOURS_PER_MONTH * rate, 2)
 
 
+class Tries(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    day: str = Field(max_length=8)  # his day, yyyymmdd
+    n: int = 0
+
+
 class StatusDoc(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
@@ -121,7 +137,8 @@ class StatusDoc(BaseModel):
     size_bytes: int | None = None
     document_count: int | None = None
     copies: int = 0
-    told: dict[str, dt.datetime] = Field(default_factory=dict)
+    told: Mapping[str, dt.datetime] = Field(default_factory=dict)
+    tries: Mapping[str, Tries] = Field(default_factory=dict)
 
     @property
     def set_up(self) -> bool:
@@ -147,13 +164,40 @@ def _newest(backups: Sequence[BackupInfo]) -> tuple[BackupInfo | None, BackupInf
     return (ready[-1] if ready else None), (filled[-1] if filled else None)
 
 
-def _due(last: dt.datetime | None, now: dt.datetime, weekly: bool, zone: dt.tzinfo) -> bool:
-    """Weekly, or once a day on HIS day: UTC midnight (05:30 in Kolkata) is inside the tick."""
+def _due(last: dt.datetime | None, now: dt.datetime, every: Every, zone: dt.tzinfo) -> bool:
+    """Once, weekly, or once a day on HIS day: UTC midnight (05:30 in Kolkata) is in the tick."""
     if last is None:
         return True
-    if weekly:
+    if every == "once":
+        return False
+    if every == "week":
         return now - last >= WEEKLY
     return now.astimezone(zone).date() != last.astimezone(zone).date()
+
+
+def _kept(told: Mapping[str, dt.datetime], now: dt.datetime) -> dict[str, dt.datetime]:
+    """The told marks, without a drill result's once-mark past `KEEP_ONCE`."""
+    return {k: v for k, v in told.items() if not (k.startswith("drill:") and now - v > KEEP_ONCE)}
+
+
+@dataclass(frozen=True)
+class Claim:
+    """A cause claimed at `at`; `before` is the mark it replaced (given back on a lost send)."""
+
+    cause: str
+    at: dt.datetime
+    before: dt.datetime | None
+
+
+def reached(delivery: object) -> bool:
+    """Did the alert reach him, or go where he chose (off, the feed, held for the morning)?"""
+    if not isinstance(delivery, Delivery):
+        return False
+    if delivery.action == "hold":
+        return True
+    if delivery.action == "drop":
+        return delivery.reason in DELIBERATE
+    return delivery.telegram or delivery.push > 0
 
 
 class BackupStatusService:
@@ -217,19 +261,46 @@ class BackupStatusService:
             drill_at=last.at if last is not None else None,
         )
 
-    async def claim(self, cause: str, *, weekly: bool = False) -> bool:
-        """Once per cause a day (weekly for the left-over copy), written before any send."""
-        now = self._clock()
+    def _day(self, at: dt.datetime) -> str:
+        return at.astimezone(self._zone).strftime("%Y%m%d")
 
-        async def run(tx: DocTx) -> bool:
+    async def claim(self, cause: str, *, every: Every = "day") -> Claim | None:
+        """Written before any send; None when it is not due (or tried enough on his day)."""
+        now = self._clock()
+        day = self._day(now)
+
+        async def run(tx: DocTx) -> Claim | None:
             doc = _doc_of(await tx.get(self._path))
-            if not _due(doc.told.get(cause), now, weekly, self._zone):
-                return False
-            told = {**doc.told, cause: now}
-            tx.set(self._path, doc.model_copy(update={"told": told}).model_dump(mode="json"))
-            return True
+            before, tried = doc.told.get(cause), doc.tries.get(cause)
+            spent = tried is not None and tried.day == day and tried.n >= MAX_TRIES
+            if spent or not _due(before, now, every, self._zone):
+                return None
+            told = {**_kept(doc.told, now), cause: now}
+            tries = {k: v for k, v in doc.tries.items() if v.day == day}
+            update = {"told": told, "tries": tries}
+            tx.set(self._path, doc.model_copy(update=update).model_dump(mode="json"))
+            return Claim(cause, now, before)
 
         return await self._d.transaction(run)
+
+    async def release(self, claim: Claim) -> None:
+        """The send reached nobody: the claim goes back and the try counts (`MAX_TRIES`)."""
+        day = self._day(claim.at)
+
+        async def run(tx: DocTx) -> None:
+            doc = _doc_of(await tx.get(self._path))
+            told = dict(doc.told)
+            if told.get(claim.cause) == claim.at:  # still ours: give it back
+                told.pop(claim.cause)
+                if claim.before is not None:
+                    told[claim.cause] = claim.before
+            old = doc.tries.get(claim.cause)
+            n = old.n + 1 if old is not None and old.day == day else 1
+            tries = {**doc.tries, claim.cause: Tries(day=day, n=n)}
+            update = {"told": told, "tries": tries}
+            tx.set(self._path, doc.model_copy(update=update).model_dump(mode="json"))
+
+        await self._d.transaction(run)
 
 
 class Teller:
@@ -240,54 +311,72 @@ class Teller:
         self._notifier = notifier
 
     async def problem(self, owners: Sequence[str], cause: str) -> int:
-        weekly = cause == "copy_left"
-        return await self._tell(owners, "backup_problem", cause, TEXTS[cause], weekly=weekly)
+        every: Every = "week" if cause == "copy_left" else "day"
+        return await self._tell(owners, "backup_problem", cause, TEXTS[cause], every=every)
 
-    async def failed(self, owners: Sequence[str], reason: str | None) -> int:
+    async def failed(self, owners: Sequence[str], reason: str | None, *, run: str) -> int:
+        """One drill's failure, told once (`run` names the drill: two the same day are two)."""
         why = REASON_WORDS.get(reason or "unknown", REASON_WORDS["unknown"])
         text = FAILED_TEXT.format(why=why)
-        return await self._tell(owners, "backup_problem", "drill_failed", text)
+        return await self._tell(
+            owners, "backup_problem", "drill_failed", text, every="once", key=f"drill:{run}"
+        )
 
-    async def passed(self, owners: Sequence[str]) -> int:
-        return await self._tell(owners, "backup_ok", "drill", TEXTS["drill_ok"], key="drill_ok")
+    async def passed(self, owners: Sequence[str], *, run: str) -> int:
+        return await self._tell(
+            owners, "backup_ok", "drill", TEXTS["drill_ok"], every="once", key=f"drill:{run}"
+        )
 
     async def _tell(
         self,
         owners: Sequence[str],
-        kind: str,
+        kind: AlertKind,
         subject: str,
         text: str,
         *,
-        weekly: bool = False,
+        every: Every,
         key: str | None = None,
     ) -> int:
+        """How many owners it reached; a send that reached nobody gives its claim back."""
         notifier = self._notifier()
         if notifier is None or not owners:
             return 0
-        if not await self._status.claim(key or subject, weekly=weekly):
+        claim = await self._status.claim(key or subject, every=every)
+        if claim is None:
             return 0
-        sent = 0
+        signal = Signal(source="system", kind=kind, subject=subject)
+        told = 0
         for uid in owners:
-            try:
-                signal = Signal(source="system", kind=kind, subject=subject)  # type: ignore[arg-type]
-                await notifier.notify(uid, signal, text)
-                sent += 1
-            except Exception as exc:  # noqa: BLE001 - a failed send is no job failure
-                log.warning("a backup alert was not sent", extra={"error": type(exc).__name__})
-        return sent
+            told += await _send(notifier, uid, signal, text)
+        if told == 0:
+            log.error("a backup alert reached nobody: a later tick tries again",
+                      extra={"subject": subject})  # fmt: skip
+            await self._status.release(claim)
+        return told
+
+
+async def _send(notifier: Notifier, uid: str, signal: Signal, text: str) -> int:
+    try:
+        return int(reached(await notifier.notify(uid, signal, text)))
+    except Exception as exc:  # noqa: BLE001 - a failed send is no job failure; tried again
+        log.warning("a backup alert was not sent", extra={"error": type(exc).__name__})
+        return 0
 
 
 __all__ = [
     "FAILED_TEXT",
     "GIB",
+    "MAX_TRIES",
     "REASON_WORDS",
     "RETENTION_DAYS",
     "STATUS_COLLECTION",
     "TEXTS",
     "BackupStatusService",
+    "Claim",
     "StatusDoc",
     "Teller",
     "left_over_inr",
     "monthly_inr",
+    "reached",
     "restore_inr",
 ]

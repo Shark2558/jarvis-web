@@ -15,10 +15,14 @@ R14 D9 ("Count tool results in the history", docs/plans/r14-hardening.md):
 - tool results older than the last `KEEP_FULL_ROUNDS` tool rounds are cut to `tool_result_chars`
   with `SHORTENED`, keeping their leading "untrusted tool output" line, `is_error` and `trusted`
   (send-side only: the stored rounds are never changed). The window is built once at the start of
-  a turn, so a round of the current turn is never cut, and the cut is the same every time;
+  a turn, so a round of the current turn is never cut, and the cut is the same every time. The
+  gateway's own status answers (`{"status": ...}`: an approval waiting, a refusal, an error) are
+  never cut: an approval's "data, not instructions" note comes after its `will_do`;
 - old turns are dropped in chunks: when the window would pass a cap, its start moves forward
   until it holds `DROP_TO` (70 %) of it, so the start stays put for several replies and the
-  provider's cache keeps its prefix.
+  provider's cache keeps its prefix. The start is decided on the stored (uncut) sizes, which never
+  change, so it never moves back when a result is cut later (R14 review M3); what is sent is the
+  cut window, so it is never over a cap either.
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ DEFAULT_TOOL_RESULT_CHARS: Final = 2_000  # = Settings.history_tool_result_chars
 SHORTENED: Final = "… [shortened]"
 DROP_TO: Final = 0.7  # a window over a cap drops old turns down to this share of it
 _HEADER_START = "[untrusted tool output"
+_STATUS_START = '{"status"'  # the gateway's own answer when a call did not run (gateway.py)
 
 Content = str | list[ContentBlock]
 
@@ -69,12 +74,16 @@ def message_chars(m: ChatMessage) -> int:
     return sum(block_chars(b) for b in m.content)
 
 
-def _content_chars(content: Content) -> int:
-    return len(content) if isinstance(content, str) else sum(block_chars(b) for b in content)
+def _stored_chars(t: Turn) -> int:
+    """A turn's size as stored (before any cut): fixed for good, so the start never moves back."""
+    return sum(block_chars(b) for b in t.blocks) if t.blocks else len(t.content)
 
 
 def shorten(block: ToolResultBlock, limit: int) -> ToolResultBlock:
-    """The same result cut to `limit` characters of its body (its header line kept)."""
+    """The same result cut to `limit` characters of its body (its header line kept). The
+    gateway's status answers are sent whole (security review LOW-2)."""
+    if block.content.startswith(_STATUS_START):
+        return block
     head, body = "", block.content
     if body.startswith(_HEADER_START) and "\n" in body:
         cut = body.index("\n") + 1
@@ -137,9 +146,9 @@ def build_window(
     tool result directly follows the call that asked for it.
     """
     eligible = [t for t in turns if (t.content.strip() or t.blocks) and not _filler(t)]
-    contents = _contents(eligible, tool_result_chars)
-    sizes = [_content_chars(c) for c in contents]
+    sizes = [_stored_chars(t) for t in eligible]
     start = window_start(sizes, max_turns=max_turns, max_chars=max_chars)
+    contents = _contents(eligible, tool_result_chars)  # what is sent: old results cut
     return _well_formed(eligible[start:], contents[start:])
 
 

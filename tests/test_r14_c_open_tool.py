@@ -42,7 +42,8 @@ def test_the_tool_is_a_read_with_the_eleven_skills_in_its_schema() -> None:
     assert tool.name == "skills_open" and tool.risk is ActionRisk.READ_ONLY
     assert tool.input_schema["properties"]["skill"]["enum"] == list(SKILL_IDS)
     assert tool.input_schema["required"] == ["skill"]
-    assert all(sid in tool.description for sid in SKILL_IDS)
+    assert all(f"{sid}: " in tool.description for sid in SKILL_IDS)
+    assert "groceries" in tool.description and "bills" in tool.description.lower()
     assert tool.trusted_output and tool.activity_words == OPEN_WORDS
     assert len(tool.description) < 2_000  # it rides on every turn: keep it short
 

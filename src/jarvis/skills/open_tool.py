@@ -30,7 +30,8 @@ _LEAD = (
 
 
 def _description(register: SkillRegister) -> str:
-    return _LEAD + "; ".join(f"{s.id} ({s.label})" for s in register.catalogue.skills) + "."
+    """The lead and each skill's id with what it holds (the register's own words)."""
+    return _LEAD + " ".join(f"{s.id}: {s.about}" for s in register.catalogue.skills)
 
 
 def _check(args: dict[str, Any]) -> None:

@@ -150,3 +150,23 @@ async def test_the_privacy_dashboard_lists_the_ledger_row(settings: Settings) ->
         body = (await client.get("/v1/privacy")).json()
         row = next(x for x in body["categories"] if x["id"] == "token_ledger")
         assert row["delete"] == "none" and row["export"] is False and row["count"] == 0
+
+
+async def test_a_tool_the_offer_left_out_still_meets_every_gateway_check(
+    settings: Settings,
+) -> None:
+    from jarvis.llm.base import ToolCall
+
+    provider = MockProvider()
+    args = {"bill": "rent", "upi": "landlord@okhdfcbank"}
+    call = ToolCall(id="c1", name="bill_payee_set", arguments=args)
+    provider.script_tool_calls([call], "Noted, Sir.")
+    async with _app(settings, provider) as (app, client):
+        r = await client.post("/v1/chat", json={"message": "what's the weather like?"})
+        assert r.status_code == 200, r.text
+        assert "bill_payee_set" not in [t.name for t in provider.calls[0].tools or []]
+        tail = await app.state.gateway.audit.tail(20)
+        mine = [e for e in tail.entries if e.tool == "bill_payee_set"]
+        assert mine and "executed" not in {e.outcome for e in mine}  # audited, refused or a card
+        second = [t.name for t in provider.calls[1].tools or []]
+        assert "bill_payee_set" in second  # the replayed call names it: the provider knows it

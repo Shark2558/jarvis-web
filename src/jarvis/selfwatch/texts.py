@@ -128,6 +128,12 @@ class Teller:
         self._told = told
         self._tries: dict[str, tuple[int, datetime]] = {}  # claim key -> (failed tries, next)
         self._quiet = False  # "no notifier" already logged
+        self.given_up = 0  # alerts no channel took after MAX_TRIES (shown in the status)
+
+    @property
+    def waiting(self) -> int:
+        """Alerts that reached nobody and wait to be tried again."""
+        return len(self._tries)
 
     async def tell(
         self,
@@ -174,6 +180,7 @@ class Teller:
         extra = {"kind": kind, "reason": reason, "tries": tries + 1}
         if tries + 1 >= MAX_TRIES:
             self._tries.pop(key, None)
+            self.given_up += 1
             log.warning("selfwatch alert given up", extra=extra)
             return 0, True  # the claim stands
         self._remember(key, tries + 1, now + RETRY_EVERY)

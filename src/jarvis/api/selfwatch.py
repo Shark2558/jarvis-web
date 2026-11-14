@@ -4,8 +4,8 @@
 
 GET /v1/selfwatch   {part, ready, clocks: {tick, watchdog, tick_outage, watchdog_outage},
                     jobs: [{name, runs, since, told}], errors_today, unrecorded: {errors,
-                    outcomes}, deploy: {revision, version, at}, version}: names, counts and
-                    times only. With the part off
+                    outcomes}, alerts: {waiting, given_up}, deploy: {revision, version, at},
+                    version}: names, counts and times only. With the part off
                     (or left out) only {part, ready}; a view that fails answers
                     {part, ready, unavailable: true} (its error is a class name in the log).
 """

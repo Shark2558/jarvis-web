@@ -22,6 +22,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.privacy.ports import CategoryView, PrivacySource
 from jarvis.selfwatch import part as part_mod
+from jarvis.selfwatch import texts
 from jarvis.selfwatch.clocks import ClockState
 from jarvis.selfwatch.errors import ErrorCounter
 from jarvis.selfwatch.jobs import CLOCK_NAME, DAILY_NAME
@@ -90,8 +91,11 @@ async def test_the_status_names_and_counts_only() -> None:
     await w.watchdog(FlakyJob("vault_reminders"))
     logging.getLogger("jarvis.x")  # nothing logged: zero errors
     got = await Status(w.watch).view()
-    assert set(got) == {"clocks", "jobs", "errors_today", "unrecorded", "deploy", "version"}
+    assert set(got) == {
+        "clocks", "jobs", "errors_today", "unrecorded", "alerts", "deploy", "version"
+    }  # fmt: skip
     assert got["unrecorded"] == {"errors": 0, "outcomes": 0}
+    assert got["alerts"] == {"waiting": 0, "given_up": 0}
     assert got["clocks"]["watchdog"] is not None and got["clocks"]["tick"] is None
     assert got["jobs"] == [
         {"name": "vault_reminders", "runs": 2, "since": got["jobs"][0]["since"], "told": False}
@@ -108,6 +112,17 @@ async def test_the_status_shows_what_the_handler_and_the_observer_could_not_coun
     w.watch.observe(object())  # type: ignore[arg-type]
     got = await Status(w.watch).view()
     assert got["unrecorded"] == {"errors": 1, "outcomes": 1}  # silent review L1, L2
+
+
+async def test_the_status_shows_alerts_waiting_to_be_tried_again_and_given_up() -> None:
+    w = build_world()
+    w.ring.dead = True
+    await w.watch.teller.tell((UID,), "job_failing", "a", "x", w.clock())
+    for _ in range(texts.MAX_TRIES):
+        await w.watch.teller.tell((UID,), "brief_missed", "b", "x", w.clock())
+        w.clock.advance(minutes=30)
+    got = (await Status(w.watch).view())["alerts"]
+    assert got == {"waiting": 1, "given_up": 1}  # silent review H1: never silently lost
 
 
 async def test_the_status_says_what_it_can_with_the_store_down() -> None:

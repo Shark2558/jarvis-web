@@ -5,7 +5,8 @@ and times only.
 - `Status.view()`: the body of `GET /v1/selfwatch` (owner-only, `no-store`): the two clocks'
   last runs and open outages, the jobs in a streak (name, runs in a row, since, told), today's
   error count, what the errors handler and the tick observer could not count (`unrecorded`),
-  the live revision and version as stored, this process's version.
+  the alerts no channel took (`alerts`: waiting to be tried again, given up), the live
+  revision and version as stored, this process's version.
 - `ToldPrivacy`: the privacy row `selfwatch_told` (data model: listed, no export, no delete):
   how many self-health alerts were already sent to him (kind and time, 30 days), and the daily
   AI-spend totals the spend check compares. No message text is kept, so there is nothing more
@@ -76,6 +77,7 @@ class Status:
             "jobs": jobs,
             "errors_today": await self._errors_today(now),
             "unrecorded": {"errors": w.errors.unrecorded, "outcomes": w.observer_failures},
+            "alerts": {"waiting": w.teller.waiting, "given_up": w.teller.given_up},
             "deploy": await self._deploy(),
             "version": w.version,
         }

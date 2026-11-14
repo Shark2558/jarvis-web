@@ -75,7 +75,7 @@ class Watch:
         now: Callable[[], datetime] = _utcnow,
     ) -> None:
         p = s.firestore_prefix
-        self.docs, self.now, self.version = docs, now, version
+        self.docs, self.now, self.version, self.prefix = docs, now, version, p
         self.tz = ZoneInfo(s.user_timezone)
         self.streak, self.errors_limit = s.selfwatch_fail_streak, s.selfwatch_errors_per_hour
         self.factor = s.selfwatch_spike_factor

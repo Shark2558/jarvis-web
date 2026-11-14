@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import importlib.util
+import struct
 import sys
 import zlib
 from pathlib import Path
@@ -38,10 +39,29 @@ def _rows(raw: bytes) -> list[bytes]:
 
 
 def test_the_committed_icons_are_exactly_what_the_script_draws(tmp_path: Path) -> None:
+    # The pixels, not the compressed bytes: zlib's output differs between zlib builds (GitHub's
+    # Python 3.12 links zlib-ng), while the picture is the same everywhere.
     assert [i.name for i in ICON_SCRIPT.ICONS] == list(shell.ICONS)
     assert ICON_SCRIPT.main(["--out", str(tmp_path)]) == 0
     for name in shell.ICONS:
-        assert (tmp_path / name).read_bytes() == (ICONS / name).read_bytes(), name
+        drawn = ICON_SCRIPT.decoded((tmp_path / name).read_bytes())
+        assert drawn == ICON_SCRIPT.decoded((ICONS / name).read_bytes()), name
+
+
+def test_the_check_ignores_how_the_pixels_were_compressed(tmp_path: Path) -> None:
+    # The same picture compressed by another zlib (here: another level) is not "changed".
+    for icon in ICON_SCRIPT.ICONS:
+        header = struct.pack(">IIBBBBB", icon.size, icon.size, 8, 2, 0, 0, 0)
+        body = zlib.compress(bytes(ICON_SCRIPT.pixels(icon)), 1)
+        raw = (
+            b"\x89PNG\r\n\x1a\n"
+            + ICON_SCRIPT._chunk(b"IHDR", header)
+            + ICON_SCRIPT._chunk(b"IDAT", body)
+            + ICON_SCRIPT._chunk(b"IEND", b"")
+        )
+        assert raw != ICON_SCRIPT.png(icon)
+        (tmp_path / icon.name).write_bytes(raw)
+    assert ICON_SCRIPT.main(["--check", "--out", str(tmp_path)]) == 0
 
 
 def test_a_changed_icon_is_caught_by_the_check(tmp_path: Path) -> None:

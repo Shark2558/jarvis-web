@@ -10,8 +10,9 @@ inner arcs, the glow, the nucleus and its dot) in the Workshop theme's two accen
 surface's background `#04070D`. The three shortcut icons (Talk, Camera, SOS) are the console's own
 mic and camera strokes and a plain warning mark, on the same background. Every shape is drawn here
 from its distance field (one pixel of anti-aliasing), so no third-party artwork or brand logo is
-used and the output is byte-for-byte the same on every machine (PNG without a time chunk, fixed
-zlib level). Standard library only.
+used and the pixels are the same on every machine (PNG without a time chunk). The compressed bytes
+depend on the zlib build (GitHub's Python 3.12 links zlib-ng), so `--check` and the test compare the
+header and the decoded pixels, not the file's bytes. Standard library only.
 """
 
 from __future__ import annotations
@@ -313,6 +314,31 @@ def png(icon: Icon) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunks
 
 
+def decoded(raw: bytes) -> tuple[bytes, bytes]:
+    """(IHDR data, raw pixel rows) of a PNG this script writes; zlib-version independent."""
+    if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("not a PNG")
+    header, pixels, at = b"", bytearray(), 8
+    while at + 8 <= len(raw):
+        (length,) = struct.unpack(">I", raw[at : at + 4])
+        kind, data = raw[at + 4 : at + 8], raw[at + 8 : at + 8 + length]
+        if kind == b"IHDR":
+            header = data
+        elif kind == b"IDAT":
+            pixels += data
+        at += 12 + length
+    return header, zlib.decompress(bytes(pixels))
+
+
+def _same(path: Path, raw: bytes) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        return decoded(path.read_bytes()) == decoded(raw)
+    except (ValueError, zlib.error, struct.error):
+        return False
+
+
 def icon_named(name: str) -> Icon:
     for icon in ICONS:
         if icon.name == name:
@@ -329,7 +355,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for icon in ICONS:
         raw, path = png(icon), args.out / icon.name
         if args.check:
-            if not path.is_file() or path.read_bytes() != raw:
+            if not _same(path, raw):
                 stale.append(icon.name)
             continue
         path.parent.mkdir(parents=True, exist_ok=True)

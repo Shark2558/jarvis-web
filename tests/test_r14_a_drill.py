@@ -339,6 +339,14 @@ async def test_he_can_ask_for_a_drill_at_most_twice_a_month(s: Settings) -> None
     assert await rig.drill.request() == REQUESTED  # a new month
 
 
+async def test_a_drill_he_asked_for_counts_as_the_months_drill(s: Settings) -> None:
+    rig = await _rig(s, at=dt.datetime(2026, 12, 10, 3, 0, tzinfo=dt.UTC))
+    assert await rig.drill.request() == REQUESTED
+    await rig.until_idle()
+    assert (await rig.log.state()).auto_month == "202612"
+    assert await rig.tick() == "idle"  # no second restore the same month
+
+
 async def test_no_manual_drill_before_the_set_up_or_when_switched_off(s: Settings) -> None:
     rig = await _rig(s, set_up=False)
     assert await rig.drill.request() == NOT_SET_UP_LINE

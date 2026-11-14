@@ -5,7 +5,8 @@ machine in `{prefix}backup_drill/current` (`backup.log`), one step per morning t
 
 - idle: due on `backup_drill_day` from 05:00 his time (a month whose day was missed runs at the
   next morning tick), or after he approved the `vitals_drill_start` card (`request`: at most
-  `backup_drill_manual_per_month` a month; one drill at a time). Nothing is asked of Google
+  `backup_drill_manual_per_month` a month; one drill at a time). Any drill that starts is the
+  month's drill: the scheduled one doesn't follow it in the same month. Nothing is asked of Google
   before the set-up has been seen (no schedule ever seen: "not set up").
 - start: the newest READY backup whose stats are FILLED with a document count over 0 (empty
   stats: "not yet", never start); refused (a "failed: over_cap" result, nothing restored) when
@@ -154,9 +155,9 @@ class Drill:
         return await self._cleanup(await self.d.log.save(st), owners, found)
 
     def _consumed(self, st: DrillState, now: dt.datetime) -> DrillState:
-        if st.requested_at is not None:
-            return st.model_copy(update={"requested_at": None})
-        return st.model_copy(update={"auto_month": month_key(self._local(now))})
+        """Any drill that starts (or is refused) is this month's: no second restore follows."""
+        month = month_key(self._local(now))
+        return st.model_copy(update={"requested_at": None, "auto_month": month})
 
     async def _refuse(self, st: DrillState, owners: Sequence[str], result: DrillResult) -> str:
         await self.d.log.record(result)

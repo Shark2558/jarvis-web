@@ -5,7 +5,8 @@ An item is due `every` days or months after its last-done day (a month-end date 
 plus 3 months is 28 Feb). `UpkeepJob` (`maint_due`, the 5-minute clock) sends `maintenance_due`
 at 09:00 his time on the lead day ("Home upkeep: AC service is due on 17 Nov.") and on the due day
 ("Home upkeep due today: AC service."), each once (a claim per item, due day and which one;
-released when no channel took it). `STARTERS` is offered in the tab, never added by itself.
+released when no channel took it). `STARTERS` is offered in the tab, never added by itself
+(R14 D1 adds "Car service", every 6 months).
 """
 
 from __future__ import annotations
@@ -33,6 +34,10 @@ STARTERS: tuple[dict[str, object], ...] = (
     {"label": "AC service", "every": 180, "unit": "days"},
     {"label": "Fire-extinguisher check", "every": 365, "unit": "days"},
     {"label": "Gas pipe check", "every": 365, "unit": "days"},
+    # R14 D1 (row 101): the connected car is "not possible yet" (its maker offers other apps no
+    # way in); its papers (RC, insurance, PUC) already live in the vault with expiry reminders,
+    # and a service reminder every 6 months is offered here. By kilometres needs the car's data.
+    {"label": "Car service", "every": 180, "unit": "days"},
 )
 
 

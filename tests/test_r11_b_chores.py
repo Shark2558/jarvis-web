@@ -148,8 +148,10 @@ def test_the_starter_list_is_offered_never_added() -> None:
     labels = [s["label"] for s in upkeep.STARTERS]
     assert labels == [
         "Water-purifier filter", "AC service", "Fire-extinguisher check", "Gas pipe check",
+        "Car service",  # R14 D1 (row 101): every 6 months; the car's papers are in the vault
     ]  # fmt: skip
-    assert [s["every"] for s in upkeep.STARTERS] == [90, 180, 365, 365]
+    assert [s["every"] for s in upkeep.STARTERS] == [90, 180, 365, 365, 180]
+    assert {s["unit"] for s in upkeep.STARTERS} == {"days"}
 
 
 async def test_upkeep_reminds_at_09_00_on_the_lead_day_and_the_due_day_once_each() -> None:

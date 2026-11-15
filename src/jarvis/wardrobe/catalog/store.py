@@ -31,15 +31,8 @@ from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Create, Delete, Docs, DocTx, Op, Set
 from jarvis.wardrobe.catalog import fold as folding
-from jarvis.wardrobe.catalog.sealed import (
-    VERSION,
-    Sealer,
-    aad_index,
-    aad_log,
-    check_owner,
-    check_piece,
-    dumps,
-)
+from jarvis.wardrobe.catalog.logs import PAGE, LogPages
+from jarvis.wardrobe.catalog.sealed import VERSION, Sealer, aad_index, check_owner, dumps
 from jarvis.wardrobe.model import Event, Piece, WardrobeView, new_id
 from jarvis.wardrobe.ports import (
     ChangeObserver,
@@ -56,7 +49,6 @@ from jarvis.wardrobe.states import State
 
 log = get_logger(__name__)
 
-PAGE = 200  # events a log page
 UNAVAILABLE = "JARVIS couldn't open your wardrobe just now. Try again in a minute."
 UNSAVED = "JARVIS couldn't save that to your wardrobe just now. Try again in a minute."
 FULL = "Your wardrobe list is full: archive or remove a few pieces first."
@@ -107,9 +99,11 @@ class CatalogStore:
     ) -> None:
         self.docs, self._now, self._p = docs, now, prefix
         self.sealer = Sealer(keyring)
+        self.logs = LogPages(self.sealer, prefix)
         self.max_pieces, self.index_max_bytes = max_pieces, index_max_bytes
         self._writer: ReviewWriter | None = None
         self._observers: tuple[ChangeObserver, ...] = ()
+        self.desk: Any = None  # Part A's own services (`part.Desk`), set once by `build`
 
     def bind(
         self,
@@ -122,12 +116,16 @@ class CatalogStore:
     def now(self) -> datetime:
         return self._now()
 
+    @property
+    def prefix(self) -> str:
+        return self._p
+
     # ---- paths ---------------------------------------------------------------------------------
     def index_path(self, uid: str) -> str:
         return f"{self._p}wardrobe/{check_owner(uid)}"
 
     def page_path(self, uid: str, pid: str, n: int) -> str:
-        return f"{self._p}wardrobe_log/{check_owner(uid)}_{check_piece(pid)}_{n}"
+        return self.logs.path(uid, pid, n)
 
     # ---- the index -----------------------------------------------------------------------------
     def _open_index(self, uid: str, doc: Mapping[str, Any] | None) -> WardrobeView:
@@ -159,23 +157,14 @@ class CatalogStore:
             raise WardrobeUnavailable(UNAVAILABLE) from None
 
     # ---- the log -------------------------------------------------------------------------------
-    def _open_page(self, uid: str, pid: str, n: int, doc: Mapping[str, Any] | None) -> list[Event]:
-        if doc is None:
-            raise ValueError("a log page is missing")
-        raw = self.sealer.open("wardrobe", aad_log(uid, pid, n), doc.get("blob"))
-        return [Event.model_validate(x) for x in raw]
-
     async def _read_log(
         self, get: Callable[[str], Awaitable[Any]], uid: str, p: Piece
     ) -> list[Event]:
-        out: list[Event] = []
         try:
-            for n in range((p.events + PAGE - 1) // PAGE):
-                out += self._open_page(uid, p.id, n, await get(self.page_path(uid, p.id, n)))
+            return await self.logs.read(get, uid, p)
         except Exception as exc:  # noqa: BLE001 - a page that can't be opened: never written
             log.warning("wardrobe log unreadable", extra={"reason": type(exc).__name__})
             raise WardrobeUnavailable(UNAVAILABLE) from None
-        return out
 
     async def events(self, uid: str, pid: str) -> list[Event]:
         """The piece's whole log as stored (the backup and the pilot read it)."""
@@ -190,29 +179,25 @@ class CatalogStore:
         marks = folding.fold(events).marks
         return tuple(HistoryItem(e, marks[e.id]) for e in sorted(events, key=Event.sort_key))
 
-    def _page_ops(self, uid: str, pid: str, log_: list[Event], first_new: int) -> list[Op]:
-        stamp = self._now().isoformat()
-        ops: list[Op] = []
-        for n in range(first_new // PAGE, (len(log_) + PAGE - 1) // PAGE):
-            page = [e.to_json() for e in log_[n * PAGE : (n + 1) * PAGE]]
-            blob = self.sealer.seal("wardrobe", aad_log(uid, pid, n), page)
-            body = {"v": VERSION, "kid": self.sealer.kid, "n": len(page), "blob": blob}
-            ops.append(Set(self.page_path(uid, pid, n), {**body, "updated_at": stamp}))
-        return ops
-
-    def drop_log_ops(self, uid: str, p: Piece) -> list[Op]:
-        return [Delete(self.page_path(uid, p.id, n)) for n in range((p.events + PAGE - 1) // PAGE)]
-
     # ---- the commit (D4.4) ---------------------------------------------------------------------
     async def transact(
-        self, uid: str, fn: Callable[[WardrobeView, DocTx], Awaitable[Commit]]
+        self,
+        uid: str,
+        fn: Callable[[WardrobeView, DocTx], Awaitable[Commit]],
+        *,
+        index: Callable[[WardrobeView], WardrobeView] | None = None,
+        needed: Sequence[ReviewNeeded] = (),
     ) -> Committed:
+        """`index` (A's own, beyond the contract): a change to the index's other records (a
+        place's baseline, a pair) in the same commit; `needed`: entries to ask B's writer for
+        with no event (the sweep: a hold without its entry, D4.4)."""
         result: dict[str, Any] = {}
 
         async def work(tx: DocTx) -> None:
             result.clear()
             view = await self._open_tx(uid, tx)
-            result.update(await self._fold_in(uid, view, tx, await fn(view, tx)))
+            commit = await fn(view, tx)
+            result.update(await self._fold_in(uid, view, tx, commit, (index, tuple(needed))))
 
         await self._commit(work)
         await self._tell(result["changes"])
@@ -297,16 +282,23 @@ class CatalogStore:
             raise Refused(too_many(self.max_pieces))
 
     async def _fold_in(
-        self, uid: str, view: WardrobeView, tx: DocTx, commit: Commit
+        self,
+        uid: str,
+        view: WardrobeView,
+        tx: DocTx,
+        commit: Commit,
+        more: tuple[Callable[[WardrobeView], WardrobeView] | None, tuple[ReviewNeeded, ...]],
     ) -> dict[str, Any]:
-        now = self._now()
-        w = _Work(pieces=dict(view.pieces))
+        now, (index, asked) = self._now(), more
+        w = _Work(pieces=dict(view.pieces), needed=list(asked))
         self._take_records(w, commit.records, now)
         await self._append(w, uid, tx, commit.events)
         for pid in w.new:
             self._refold(w, uid, pid, now)
         self._check_cap(view, w.pieces)
         fresh = view.model_copy(update={"pieces": w.pieces, "rev": view.rev + 1, "updated_at": now})
+        if index is not None:
+            fresh = index(fresh).model_copy(update={"pieces": w.pieces, "rev": fresh.rev})
         writes: list[Op] = list(commit.extra)
         if w.needed and self._writer is not None:
             writes += list(await self._writer.entries(uid, fresh, tx, tuple(w.needed)))
@@ -321,7 +313,7 @@ class CatalogStore:
         tx.set(self.index_path(uid), self._seal_index(uid, fresh))
         for pid, added in w.new.items():
             log_ = w.logs[pid]
-            for op in self._page_ops(uid, pid, log_, len(log_) - len(added)):
+            for op in self.logs.writes(uid, pid, log_, len(log_) - len(added), self._now()):
                 apply_op(tx, op)
         for op in writes:
             apply_op(tx, op)

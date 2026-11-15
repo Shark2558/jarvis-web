@@ -700,3 +700,141 @@ def test_the_book_still_reads_r7s_vision_versions_beside_the_wardrobe_release() 
     found = _manifest_versions(Repo.from_git(ROOT))
     assert found.get("manifest:tesseract.js") == "7.0.0"
     assert found.get("manifest:zxing-wasm") == "3.1.6"
+
+
+# ---- 13 · the skill register (D18) ---------------------------------------------------------------
+def test_the_register_files_the_18_planned_tools_in_three_groups() -> None:
+    from jarvis.skills.registry import SkillRegister, load_catalogue
+    from jarvis.wardrobe.ports import NO_AI_TOOLS, TOOL_OWNER
+
+    reg = SkillRegister(load_catalogue())
+    cat = reg.catalogue
+    assert set(TOOL_OWNER) <= cat.planned  # I1 empties `planned` (test_r14_skill_coverage.py)
+    assert NO_AI_TOOLS <= cat.no_ai and not set(TOOL_OWNER) & set(cat.telegram_open)
+    for tool in TOOL_OWNER:
+        assert len(reg.filed(tool)) == 1, tool
+    skill = {t: reg.skill_of(t) for t in TOOL_OWNER}
+    assert {skill[t] for t in TOOL_OWNER if t.startswith(("wardrobe_", "laundry_"))} == {"task"}
+    assert {skill[t] for t in TOOL_OWNER if t.startswith(("outfit_", "wear_"))} == {"decision"}
+    groups = {g.id: g for g in cat.groups}
+    assert {"wardrobe", "laundry", "outfits"} <= set(groups)
+    for word in ("shirt", "kurta", "sock", "belt"):
+        assert word in groups["wardrobe"].words, word
+    for word in ("laundry", "dhobi", "dry clean", "iron"):
+        assert word in groups["laundry"].words, word
+    for word in ("outfit", "wear", "dress code", "pehen"):
+        assert word in groups["outfits"].words, word
+
+
+def test_a_pattern_may_wait_for_a_planned_tool_but_not_for_nothing() -> None:
+    from jarvis.skills.registry import SkillRegister, load_catalogue
+    from jarvis.tools.registry import ToolRegistry
+
+    problems = SkillRegister(load_catalogue()).problems(ToolRegistry())
+    assert not any("wardrobe_*" in p or "laundry_*" in p or "outfit_*" in p for p in problems)
+    assert not any("wear_*" in p for p in problems)
+
+
+# ---- 15 · the eval runner, staged (M11) ----------------------------------------------------------
+def _runner() -> object:
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("r13_run", ROOT / "evals" / "r13" / "run.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_r13_runner_passes_staged_and_its_contract_control_fails_it() -> None:
+    import json
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    run = subprocess.run(
+        [sys.executable, str(ROOT / "evals" / "r13" / "run.py"), "--mock"],
+        capture_output=True, text=True, env=env, timeout=300, check=False,
+    )  # fmt: skip
+    assert run.returncode == 0, run.stdout + run.stderr
+    report = json.loads((ROOT / "evals" / "r13" / "report.json").read_text(encoding="utf-8"))
+    ids = {r["id"] for r in report["results"]}
+    assert {f"contract:{p}_builds" for p in ("catalog", "laundry", "styling", "phone")} <= ids
+    assert "contract:refuses_another_parts_tool" in ids
+    control = report["negative_control"]
+    assert control["suite_failed"] is True and control["failed_cases"]["contract"]
+    assert control["stubs_pass"] is True  # I0 to I1
+
+
+def test_the_gate_is_staged_until_i1_and_a_stub_fails_once_it_flips() -> None:
+    import asyncio
+
+    runner = _runner()
+    assert runner.STUBS_PASS is True  # type: ignore[attr-defined]  # I1 sets False and this pins it
+    results, _ = asyncio.run(runner.run_parts(("catalog",), stubs_pass=False))  # type: ignore[attr-defined]
+    assert [(r["id"], r["passed"]) for r in results] == [("catalog:not_built_yet", False)]
+
+
+def test_the_r13_suite_is_gated_in_run_all_mock() -> None:
+    text = _text(ROOT / "evals" / "run_all_mock.py")
+    line = next(x for x in text.splitlines() if '"r13 (gated)"' in x)
+    assert 'HERE / "r13" / "run.py"' in line and line.rstrip().endswith("True),")
+
+
+# ---- 15 · the fake server Part D builds against (H5) ---------------------------------------------
+async def test_the_fake_server_answers_every_route_with_its_model(settings: object) -> None:
+    from httpx import ASGITransport, AsyncClient
+    from r13_fake_server import fake_app, fake_state
+    from r13_fakes import PILOT
+
+    from jarvis.memory.inmemory import InMemorySessionStore
+    from jarvis.wardrobe import http
+
+    store, clock = await fake_state()
+    app = fake_app(store, clock, settings=settings, store=InMemorySessionStore())
+    shirt = PILOT[0].id
+    paths = {"{id}": shirt, "{tool}": "wardrobe_find"}
+    bodies: dict[str, object] = {
+        "/v1/wardrobe/scan": {
+            "events": [{"client_id": "scan-00000001", "piece": shirt, "kind": "deposited"}]
+        },
+        "/v1/wardrobe/fingerprints": {"piece": shirt, "view": "front", "model": "mnv2-int8-1",
+                                      "v": "A" * 1708},
+        "/v1/wardrobe/labels": {"code": "abcd2345", "piece": shirt},
+        "/v1/wardrobe/tools/{tool}": {"arguments": {}},
+        "/v1/outfits/settings": {"calendar": None},
+    }  # fmt: skip
+    query = {
+        "/v1/wardrobe/photos": f"?piece={shirt}&view=front",
+        "/v1/wardrobe/tag": f"?piece={shirt}",
+    }
+    query["/v1/wardrobe/tag/estimate"] = f"?piece={shirt}"
+    jpeg = b"\xff\xd8\xff\xe0" + b"0" * 64
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            for method, path, _, req, reply, _ in http.ROUTES:
+                url = path
+                for k, v in paths.items():
+                    url = url.replace(k, v)
+                url += query.get(path, "")
+                kw: dict[str, object] = {}
+                if req == "image/jpeg":
+                    kw = {"content": jpeg, "headers": {"content-type": "image/jpeg"}}
+                elif req == "application/octet-stream":
+                    kw = {"content": b"JWB1-fake"}
+                elif path in bodies:
+                    kw = {"json": bodies[path]}
+                if method == "DELETE" or path == "/v1/wardrobe/photos/{id}":
+                    url = url.replace(shirt, "wh_" + "0" * 11 + "1")
+                got = await c.request(method, url, **kw)  # type: ignore[arg-type]
+                if path == "/v1/wardrobe/photos/{id}" and method == "GET":
+                    assert got.status_code in (200, 404), path
+                    continue
+                assert got.status_code == 200, (method, path, got.text)
+                if isinstance(reply, type):
+                    reply.model_validate(got.json())  # exactly the contract's shape
+                else:
+                    assert got.headers["content-type"].startswith(str(reply)), path

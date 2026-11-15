@@ -1,15 +1,16 @@
-Version v14.0.3 · 14 Nov 2026, 23:10 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
+Version v13.0.1 · 15 Nov 2026, 19:10 IST · Release R13 · Status: Current · Owner: 🛠 Mark XXI
 
 # JARVIS Architecture & Technology Guide
 
-This guide was checked against JARVIS's real code. This is edition v14.0.3 of the guide (the first
+This guide was checked against JARVIS's real code. This is edition v13.0.1 of the guide (the first
 edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
-program at version v14.0.0: release R6.1 as built, release R11, the free proactive helpers (card
-C60), release R11.1, your observations fixed (card C61), and release R7 (the phone app, the watch,
-SOS and the phone camera; cards C62 to C65), all live, and release R14, "Free hardening" (backups
-and a restore drill, self-health, cheaper replies and the skill register; cards C66 to C68),
-built and joined, not yet deployed (the version number goes down from 11.1 at R7 on purpose, as
-nothing compares it). Anything that is planned but not built yet is marked PLANNED.
+program at version v13.0.0: release R6.1 as built, release R11, the free proactive helpers (card
+C60), release R11.1, your observations fixed (card C61), release R7 (the phone app, the watch,
+SOS and the phone camera; cards C62 to C65) and release R14, "Free hardening" (backups and a
+restore drill, self-health, cheaper replies and the skill register; cards C66 to C68), all live,
+and release R13, "Wardrobe & laundry, phone first" (cards C69 to C71), whose joins are built and
+whose parts are PLANNED (the version number goes down from 14.0.2 to 13.0.0 on purpose, as nothing
+compares it). Anything that is planned but not built yet is marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -173,7 +174,7 @@ silently go stale. Figure 2 in section 4 draws it.
 | L2 Input Processing | Turns speech, files and camera sightings into text and facts. | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent |
 | L3 Context & Orchestration | Keeps the conversation, long-term memory, the clock that wakes JARVIS, and the undo bin. | C09 Conversations, C10 Long-term memory, C11 Scheduler ticks and watchdog, C12 Recently deleted |
 | L4 Core Reasoning Engine | The brain: one loop that reads context, asks a model, calls tools and checks every step. | C13 Brain core loop, C14 Persona and prompts, C15 Guardrails and trust, C16 Brain router and LLM layer, C17 Brain switch, No-AI and offline mode, C18 Approval cards and Approve all |
-| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11), C68 Skill register and the turn's tools (R14) |
+| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11), C68 Skill register and the turn's tools (R14), C69 Wardrobe catalog and the ledger, C70 Laundry, C71 Outfits (R13, PLANNED) |
 | L6 Integration & Tools | The doors to outside services and the house, all through one gateway. | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail and mail read aloud, C32 To-dos, C33 Contacts, C34 Drive folders, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history |
 | L7 Data & Persistence | Where things are kept, and how much of each free allowance is used. | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger, C66 Backups and restore drill (R14) |
 | L8 Response & Output | How JARVIS tells you things: alerts, browser notifications, the Activity log. | C45 Alerts port, C46 Alert policy, C47 Web Push, C48 Activity log |
@@ -762,6 +763,54 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | The catalogue can't be read: the part is left out and every tool is offered; the offer raises: every tool; a tool the offer missed: `skills_open` adds its skill for the next round; a ledger write fails: logged, the reply goes on; the ledger can't be read: Vitals "unknown", the route 503; a No-AI answer whose shape isn't known: the generic line. | |
 | Since | R14 (v14.0.0): I0 the ids, the ports and the brain's two slots; Parts C and D built it; I1 joined it (persona p14.0, the window's setting, the catalogue as package data, the No-AI words) |
 
+#### C69 · Wardrobe catalog and the ledger (R13, PLANNED)
+
+| Field | Value |
+|---|---|
+| Name | Wardrobe catalog and the ledger (R13, PLANNED) |
+| What it does | PLANNED (R13 Part A; I0 built the joins). Every piece he owns gets its own id (`wi_` + 12 hex): each shirt, each sock and each shoe; a pair of socks or shoes is two pieces plus one pair, a kurta set its pieces plus one set; places (Drawer 2, Shoe rack, the basket), small numbered QR labels for identical copies (`jw1:` + 8 characters, only his own labels count), counts by category (owned, ready, pairs and sets complete) and search ("where is my black belt", Things answering when the wardrobe has none). A piece is always in one of the workbook's 10 states (`wardrobe/states.py`: Ready is the only eligible one). Its history is an ordered, append-only ledger: each event carries its capture time corrected by the phone's send time, a retry or a second record of the same movement changes nothing, an old event can't undo a newer verified one, a refused move asks for a check without holding the piece, an unverified one holds it with its review entry in the same commit (`WardrobeStore.transact`, held to one conformance test). Photos are a press, a crop and a seal (never a private piece's; a person or face check on the phone first); merge, archive and restore are cards (never Approve all); remove waits 30 days in Recently deleted (`wardrobe_item`, "A wardrobe piece"); a sealed wardrobe backup (up to 25 MB) is checked before it is restored, in chunks, twice adding nothing twice. Optional AI tagging of a saved, non-private piece: off by default, its ₹ shown first, at most ₹30 a month. | |
+| Layer | L5 Skills & Capabilities (L7 for the sealed index and ledger) |
+| Skill | Task & Productivity |
+| Where in the code | `src/jarvis/wardrobe/` (I0: `ports.py` the four parts' contract and the store's `transact` contract, `states.py` the 10 states and their transitions, `model.py` the records with short keys, `redact.py` each sink's view, `http.py` (with `http_views.py`, `http_parts.py`) every route's models; the stub parts `src/jarvis/wardrobe/catalog/`, `src/jarvis/wardrobe/laundry/`, `src/jarvis/wardrobe/styling/`, `src/jarvis/wardrobe/phone/`), `src/jarvis/api/r13_wiring.py` (the one join, the restore's body cap), `src/jarvis/api/r13_status.py` (`GET /v1/r13`), `src/jarvis/api/wardrobe.py` (Part A's routes, a stub), `scripts/wardrobe_assets.py` and `vendor/vision/r13-1/` (the three on-device models, pinned); PLANNED: `wardrobe/catalog/` (store, fold, search, counts, places, labels, photos, fingerprints, tagging, backup, restore, merge, undo, tools, jobs); eval `evals/r13/catalog.py`, the ledger's `tests/test_r13_fold_conformance.py` | |
+| Depends on | C41 Document store; C51 Keyring (`wardrobe`, `wardrobe_photos`); C28 Tool gateway and audit; C12 Recently deleted; C63 Camera and vision engine; C24 Things; C54 Costs in ₹ and the monthly limit |
+| Data it keeps | PLANNED: `wardrobe/{uid}` (the sealed index: pieces, pairs, sets, places, labels, his settings, the month's tagging ₹; at most 900 KB), `wardrobe_log/{uid}_{piece}_{page}` (each piece's events, 200 a page, append-only), `wardrobe_photo/{uid}_{photo}` (a cleaned 512-px JPEG of a non-private piece, sealed), `wardrobe_fp/{uid}_{shard}` (fingerprints, 200 a shard, sealed), `wardrobe_restore/{uid}` (a checked restore's token and counts, 1 hour). | |
+| Outside services | None (the optional AI tagging uses the brain that sees pictures, C16) |
+| Cost (₹ a month) | ₹0 (≈ 15–20 MB in the first year, inside Firestore's free 1 GiB); AI tagging only if he switches it on: ≈ ₹0.01 a photo, at most ₹30 |
+| When it fails | PLANNED: no token key → the wardrobe is off, never in clear; an index that can't be read is never overwritten; a change past 900 KB or 400 pieces is refused in plain words; a photo that isn't a clean JPEG of the right size is refused; a restore whose seal, schema or token fails writes nothing, and a cut restore runs again without duplicates. | |
+| Since | R13 (v13.0.0): I0 the contract, the states table, the records, the HTTP contract and the pinned models |
+
+#### C70 · Laundry (R13, PLANNED)
+
+| Field | Value |
+|---|---|
+| Name | Laundry (R13, PLANNED) |
+| What it does | PLANNED (R13 Part B; I0 built the joins). The basket, a wash load (only the pieces confirmed in it), drying, pressing and outside laundry or dry-cleaning (his label for the shop, a bag reference, a due date, "overdue" and "short delivery"), pieces coming back in parts, a sock whose partner is missing, and a review queue for every hold, conflict and pending deposit ("Which of these went into the basket?"). Phone form of the checkpoints: "To laundry" and "Back clean" in Camera → Wardrobe, or a tap or a sentence; a fixed camera can feed the same events later. JARVIS prepares and reminds; it never orders, pays, calls or messages a shop: there is no tool that could. Alerts: `laundry_overdue` (important, by day) and `wardrobe_review` (feed only), fixed words. | |
+| Layer | L5 Skills & Capabilities |
+| Skill | Task & Productivity |
+| Where in the code | `src/jarvis/wardrobe/laundry/` (I0: `part.py`, the stub), `src/jarvis/api/laundry.py` (Part B's routes, a stub); its review writer joins A's store in `api/r13_wiring.py`; PLANNED: flows, review, writer, holds, loads, providers, blind periods, history, tools and jobs; eval `evals/r13/laundry.py` | |
+| Depends on | C69 Wardrobe catalog and the ledger (the store's `transact`); C46 Alert policy; C28 Tool gateway and audit |
+| Data it keeps | PLANNED: `wardrobe_laundry/{uid}` (open loads and outside batches; closed ones 90 days), `wardrobe_review/{uid}` (open review entries, at most 100; resolved ones 30 days), `wardrobe_told/{uid}_{key}` (once-only claims, keys starting `laundry_`; 30 days). | |
+| Outside services | None |
+| Cost (₹ a month) | ₹0 |
+| When it fails | PLANNED: an ambiguous name → a review entry and holds, never a guess; a step on a piece not in that load is refused; a batch with no due date never alerts; a hold always has its entry (one commit; A's daily sweep repairs one left without). | |
+| Since | R13 (v13.0.0): I0 the joins (the review writer in A's commit) |
+
+#### C71 · Outfits (R13, PLANNED)
+
+| Field | Value |
+|---|---|
+| Name | Outfits (R13, PLANNED) |
+| What it does | PLANNED (R13 Part C; I0 built the joins). "What should I wear tomorrow" by fixed rules that explain themselves (`styling/rules.json`): slots, dress codes, event rules (a formal meeting, Diwali, Holi with "okay to stain" pieces only, a rainy day), colour pairing and rewear defaults; a primary look and up to two alternatives, each with its reasons, the actual piece ids, its compromises and any gap with a next action ("press the white shirt", "collect from the dry-cleaner tomorrow"). Plans and reservations; several events in a day with a declared shared base; wearing a piece ("I'm wearing it", "done for today") makes one wear and is never treated as a change. Tomorrow in his own timezone; the one calendar he picks (only the fields he picks, a title never stored); tomorrow's weather for his R11 place. Alerts: `outfit_ready` (the evening before) and `outfit_changed` (a planned piece went to the laundry), important by day, fixed words. Helpers → Wardrobe and Camera → Wardrobe (Part D) are the panels of all three parts. The AI stylist stays in R17. | |
+| Layer | L5 Skills & Capabilities (L3 for plans and their refresh) |
+| Skill | Decision Support |
+| Where in the code | `src/jarvis/wardrobe/styling/` and `src/jarvis/wardrobe/phone/` (I0: `part.py`, the stubs), `src/jarvis/api/outfits.py` (Part C's routes, a stub); the console's `console-helpers-wardrobe.js`, `console-wardrobe-pieces.js`, `console-wardrobe-scan.js` (the second named pixel panel) and `console-wardrobe.css` (I0 stubs), the Camera panel's Wardrobe sub-tab, the door's `wardrobe()` and `tag()` (`console-r7-send.js`); PLANNED: rules, engine, plans, reservations, refresh, calendar, outlook, wear, preferences, tools, jobs, and Part D's No-AI sentences; evals `evals/r13/styling.py`, `evals/r13/phone.py`, `evals/r13/e2e.py`, `evals/r13/needles.py`, `evals/r13/contract.py` (I0, built) | |
+| Depends on | C69 Wardrobe catalog and the ledger; C30 Calendar and reminders (the governed background read); C60 Helpers (R11's weather); C17 Brain switch, No-AI and offline mode; C46 Alert policy |
+| Data it keeps | PLANNED: `wardrobe_plans/{uid}` (plans, reservations, shared bases, his rule words and preferences; 90 days after the event), `wardrobe_cal/{uid}` (the last calendar read: event fingerprints, times, the dress code found, never a title), `wardrobe_outlook/{uid}` (today's and tomorrow's weather summary), `wardrobe_told/{uid}_{key}` (once-only claims, keys starting `styling_`). | |
+| Outside services | Google Calendar (the one calendar he picks, through the governed read); Open-Meteo (through R11's helper code, about 2 calls a day) |
+| Cost (₹ a month) | ₹0 (one Calendar read an hour at most, two Open-Meteo calls a day) |
+| When it fails | PLANNED: no calendar or not "Allow" → manual plans only, said in Settings; no weather → "Weather unknown: I assumed indoors"; no complete look → the gap and a next action; a cancelled event → a draft, no alert; a rules file that fails its check → the part is "setup failed" and the others run. | |
+| Since | R13 (v13.0.0): I0 the joins, the console's sub-tabs (stubs) and the two named pixel panels |
+
 ### Layer 6 — Integration & Tools
 
 #### C28 · Tool gateway and audit
@@ -1159,7 +1208,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Keyring (one key per purpose) |
-| What it does | Derives a separate key for each kind of data from the one token key in Secret Manager, so a key for notes can never open the vault. Purposes: `vault`, `vault_index`, `notes`, `belongings`, `tickets`, `home`, `home_feed`, `faces`, `webpush`, `notify`, `connectors`, `book_index`, `book_session`, from R11 `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (C60), and one raw secret `webpush_vapid`. |
+| What it does | Derives a separate key for each kind of data from the one token key in Secret Manager, so a key for notes can never open the vault. Purposes: `vault`, `vault_index`, `notes`, `belongings`, `tickets`, `home`, `home_feed`, `faces`, `webpush`, `notify`, `connectors`, `book_index`, `book_session`, from R11 `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (C60), from R7 `watch`, `sos` and `vision`, from R14 `backup_probe` (C66), from R13 `wardrobe` and `wardrobe_photos` (C69, PLANNED), and one raw secret `webpush_vapid`. |
 | Layer | X Cross-cutting |
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/keyring.py`, `src/jarvis/integrations/vault.py` (the AES-256-GCM cipher) |
@@ -2198,3 +2247,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v14.0.1 | 14 Nov 2026, 15:30 IST | R14 | R14 I0 (the joins for 'Free hardening'): cards C66 Backups and restore drill, C67 Self-health watch, C68 Skill register and the turn's tools (PLANNED, with what I0 built: the four parts' contract `hardening/ports.py`, the backup, self-health and skills ports, the tick observer, the one 5-minute clock for the brief's owners `api/tick_wiring.py`, the brain's two slots, the stub routes and the set-up script's two modes, every planned collection named); the L5 and L7 rows; this edition line | 🛠 Mark XVIII |
 | v14.0.2 | 14 Nov 2026, 19:20 IST | R14 | R14 I1: cards C66, C67 and C68 from PLANNED to built (the backups and the drill with its five locks and ≈ ₹3.8 at 100 MB, not ₹4.9; the self-health watch's seven kinds, two jobs, retries and the laptop-back drop; the register, the turn's tools with measured recall and size, the window, the ledger's scope, No-AI pass 2 with the real tools' words, the home-service request, the car); page 1, sections 6.6, 8 (backups and "Restoring for real"), 9 (backups, the ledger) and 10; the D11 relabel; this edition line | 🛠 Mark XIX |
 | v14.0.3 | 14 Nov 2026, 23:10 IST | R14 | After R14's integrated review: C66 the drill card is approved in the console only (`CONSOLE_ONLY_TOOLS`, never Telegram's buttons); C68 139 tools, the Vitals words, recall on 129 and a second held-out set; the status reads' per-owner limit on C66, C67, C68; this edition line | 🛠 Mark XIX |
+| v13.0.1 | 15 Nov 2026, 19:10 IST | R13 | R13 I0 (the joins for 'Wardrobe & laundry, phone first'): cards C69 Wardrobe catalog and the ledger, C70 Laundry, C71 Outfits (PLANNED, with what I0 built: the contract `wardrobe/ports.py`, the states table, the records, the redaction views, the HTTP contract, `api/r13_wiring.py`, the console's two Wardrobe sub-tabs as stubs, the second named pixel panel, the pinned on-device models; every planned collection named); the L5 row; C51's key purposes; this edition line (the program version 13.0.0, lower on purpose) | 🛠 Mark XXI |

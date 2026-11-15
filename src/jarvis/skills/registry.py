@@ -237,11 +237,12 @@ class SkillRegister:
         tools = _tools(registry)
         names = {t.name for t in tools}
         out = [p for t in tools for p in self._tool_problems(t)]
+        known = names | self.catalogue.planned  # R13 I0: a pattern may wait for a planned tool
         for g in self.catalogue.groups:
             out += [
                 f"pattern {p} ({g.skill}/{g.id}) matches nothing"
                 for p in g.patterns
-                if not any(fnmatchcase(n, p) for n in names)
+                if not any(fnmatchcase(n, p) for n in known)
             ]
         lists = {"core": set(self.catalogue.core), "telegram_open": self.catalogue.telegram_open}
         lists["no_ai"] = self.catalogue.no_ai

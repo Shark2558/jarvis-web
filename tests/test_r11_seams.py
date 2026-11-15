@@ -55,9 +55,9 @@ KEY = bytes(range(1, 33))
 
 
 def test_the_version_is_eleven() -> None:
-    # 11.x at R11; R7 I0 made it 7.0.0 (nothing compares it, D26), R14 I0 14.0.0; the exact
-    # number: test_about.py
-    assert jarvis.__version__.startswith("14.")
+    # 11.x at R11; R7 I0 made it 7.0.0 (nothing compares it, D26), R14 I0 14.0.0, R6.2 6.2.0;
+    # the exact number: test_about.py
+    assert jarvis.__version__.startswith("6.2.")
 
 
 # ---- alert kinds (D5) ---------------------------------------------------------------------------

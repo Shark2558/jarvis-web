@@ -501,14 +501,17 @@ class VoiceService:
         *,
         owner_phrases: bool = True,
         turn_hints: tuple[str, ...] = (),
+        public_hints: tuple[str, ...] = (),
     ) -> TranscriptView:
         """`owner_phrases=False`: the base hints only (R6: a build book guest's question must not
         be biased toward the owner's own words). `turn_hints` (R11.1 D9): this turn's hints,
-        already cleaned and capped by the caller; they sit between the base list and his words."""
+        already cleaned and capped by the caller; they sit between the base list and his words.
+        `public_hints` (R6.2): words that hold nothing of the owner's (the build book's own
+        vocabulary), so they go along for a guest too, before any turn hint."""
         audio = parse_wav(blob)
         engines = self._require("stt")
         owner = (await self.settings_of(uid)).phrases if owner_phrases else ()  # never raises
-        turn = turn_hints if owner_phrases else ()
+        turn = (*public_hints, *turn_hints) if owner_phrases else public_hints
         hints = self.hints_for(owner, turn)
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …

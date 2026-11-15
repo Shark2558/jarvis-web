@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from jarvis.buildbook import guard
+from jarvis.buildbook import guard, hear
 from jarvis.buildbook.closing import Closing, Sweeping
 from jarvis.buildbook.lines import LINES
 from jarvis.buildbook.model import (
@@ -111,6 +111,7 @@ class BookService:
         self._guest_ok: tuple[str, str | None] | None = None  # (release id, refusal)
         self._spoken: dict[str, int] = {}  # per instance: a guest can't spend the voice budget
         self._heard: dict[str, int] = {}
+        self.words = hear.BookWords(source)  # R6.2: the book's own words for a spoken question
 
     # ---- words, audit, status (buildbook/telling.py) --------------------------------------------
     async def record_open(

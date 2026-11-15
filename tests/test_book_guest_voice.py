@@ -43,8 +43,10 @@ class Ears:
     async def aclose(self) -> None:
         return None
 
-    async def transcribe(self, uid: str, blob: bytes, *, owner_phrases: bool = True) -> Any:
-        self.asked.append(owner_phrases)
+    async def transcribe(
+        self, uid: str, blob: bytes, *, owner_phrases: bool = True, public_hints: Any = ()
+    ) -> Any:
+        self.asked.append(owner_phrases)  # R6.2: the book's own words go along for both
 
         class Heard:
             text = "how does voice work"
@@ -70,5 +72,10 @@ async def test_the_hear_route_drops_the_owners_words_for_a_guest(settings: Setti
                 h = {**book((await open_book(c, auth, audience))["token"])}
                 h["Content-Type"] = "audio/wav"
                 r = await c.post("/v1/book/show/hear", content=out.getvalue(), headers=h)
-                assert r.status_code == 200 and r.json() == {"text": "how does voice work"}
+                assert r.status_code == 200 and r.json() == {
+                    "text": "how does voice work",
+                    "heard": "how does voice work",
+                    "changed": False,
+                    "no_speech": False,
+                }  # R6.2: {text, heard, changed, no_speech}
         assert ears.asked == [True, False]

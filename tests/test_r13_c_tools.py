@@ -130,7 +130,7 @@ async def test_sty12_changing_the_shoes_keeps_shirt_trousers_and_watch() -> None
     plan = await _plan(w, day="tomorrow", code="business_casual")
     before = {
         p["slot"]: p["ids"] for p in (await ok(w, "outfit_plans"))["plans"][0]["look"]["pieces"]
-    }  # noqa: E501
+    }
     got = await ok(w, "outfit_plan", action="change", plan=plan, slot="shoes")
     after = {p["slot"]: p["ids"] for p in got["plan"]["look"]["pieces"]}
     assert after["shoes"] != before["shoes"]
@@ -155,7 +155,7 @@ async def test_sty14_reserved_shoes_appear_for_their_event_and_conflict_for_a_se
     )
     moved = await ok(
         w, "outfit_plan", action="transfer", plan=second, from_plan=first, piece=N.shoe_l
-    )  # noqa: E501
+    )
     assert N.shoe_l in _ids(moved["plan"]["look"])
     left = (await ok(w, "outfit_plans"))["plans"][0]
     assert N.shoe_l not in _ids(left["look"])
@@ -172,11 +172,11 @@ async def test_sty13_a_meeting_and_an_evening_function_share_a_declared_base() -
     assert {N.trousers, N.watch} <= set(_ids(look))
     assert any(
         r.startswith("Reused from your 10:00 event:") and N.trousers in r for r in look["reasons"]
-    )  # noqa: E501
+    )
     assert any(r.startswith("Change for this one:") for r in look["reasons"])
     refused = await ok(
         w, "outfit_plan", action="share", plan=evening, from_plan=meeting, pieces=[N.shirt_white]
-    )  # noqa: E501
+    )
     assert refused["refused"] is True and "goes to the laundry after a wear" in refused["message"]
     await ok(w, "wear_log", action="start", plan=meeting)  # "I'm wearing it"
     pieces = await w.pieces()
@@ -188,7 +188,7 @@ async def test_sty13_a_meeting_and_an_evening_function_share_a_declared_base() -
     assert w.notifier.sent == []  # wearing never alerts
 
 
-# ---- STY-17 one wear ------------------------------------------------------------------------------
+# ---- STY-17 one wear -----------------------------------------------------------------------------
 async def test_sty17_saving_a_plan_changes_no_wear_count_and_start_then_done_is_one_wear() -> None:
     w = await world(at=ist(2026, 11, 17, 8, 0))
     plan = await _plan(w, day="today", occasion="meeting", start="10:00", end="12:00")

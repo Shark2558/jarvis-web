@@ -55,7 +55,7 @@ def _occasion(rules: Rules, occasion: Any) -> str | None:
             return found
     raise PlanRefused(
         "That occasion isn't one JARVIS knows: a meeting, a festival, Holi, sport or a function."
-    )  # noqa: E501
+    )
 
 
 def apply(prefs: Prefs, rules: Rules, args: dict[str, Any]) -> tuple[Prefs, str]:
@@ -74,14 +74,14 @@ def apply(prefs: Prefs, rules: Rules, args: dict[str, Any]) -> tuple[Prefs, str]
         piece, occ = args.get("piece"), _occasion(rules, args.get("occasion"))
         if not isinstance(piece, str):
             raise PlanRefused("Name the piece by its id.")
-        rest = tuple(e for e in prefs.excluded if not (e.piece == piece and e.occasion == occ))
+        kept = tuple(e for e in prefs.excluded if not (e.piece == piece and e.occasion == occ))
         where = f"for {occ}" if occ else "from every look"
         if action == "include":
-            return prefs.model_copy(update={"excluded": rest}), f"{piece} is back {where}."
-        if len(rest) >= MAX_EXCLUDED:
+            return prefs.model_copy(update={"excluded": kept}), f"{piece} is back {where}."
+        if len(kept) >= MAX_EXCLUDED:
             raise PlanRefused(f"You have {MAX_EXCLUDED} exclusions: remove one first.")
-        new = Exclusion(piece=piece, occasion=occ)
-        return prefs.model_copy(update={"excluded": (*rest, new)}), f"{piece} is left out {where}."  # noqa: E501
+        out = (*kept, Exclusion(piece=piece, occasion=occ))
+        return prefs.model_copy(update={"excluded": out}), f"{piece} is left out {where}."
     colour = args.get("value")
     if action in ("like", "avoid") and colour in COLOURS:
         likes = tuple(c for c in prefs.likes if c != colour)
@@ -93,7 +93,7 @@ def apply(prefs: Prefs, rules: Rules, args: dict[str, Any]) -> tuple[Prefs, str]
         word = str(colour).replace("_", " ")
         return prefs.model_copy(
             update={"likes": likes, "avoids": avoids}
-        ), f"Noted: you {action} {word}."  # noqa: E501
+        ), f"Noted: you {action} {word}."
     raise PlanRefused("Say never, allow, exclude, include, like, avoid or code.")
 
 
@@ -105,7 +105,7 @@ def set_code(doc: StylingDoc, rules: Rules, plan_id: Any, code: Any) -> StylingD
         raise PlanRefused("That isn't one of the dress codes.")
     fixed = plan.model_copy(
         update={"code": code, "tentative": False, "picks": tuple(p for p in plan.picks if p.locked)}
-    )  # noqa: E501
+    )
     return doc.put(fixed)
 
 

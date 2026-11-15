@@ -23,6 +23,7 @@ import re
 from collections.abc import Sequence
 from datetime import datetime, time, tzinfo
 
+from jarvis.storage.docs import DocTx
 from jarvis.wardrobe.model import COLOURS, TYPES, Event, Evidence, Piece, WardrobeView, new_id
 from jarvis.wardrobe.ports import Commit, Committed, WardrobeStore
 from jarvis.wardrobe.styling import texts
@@ -45,8 +46,9 @@ CLOSE_ID = "wclose-{piece}-{day}"
 
 
 def _event(p: Piece, kind: str, now: datetime, *, via: str, **extra: object) -> Event:
+    client = extra.pop("client_id", None) or f"wear-{new_id('we')[3:19]}"
     return Event.model_validate(
-        {"id": new_id("we"), "client_id": extra.pop("client_id", None) or f"wear-{new_id('we')[3:19]}",  # noqa: E501
+        {"id": new_id("we"), "client_id": client,
          "piece": p.id, "kind": kind, "at": now, "recorded": now, "source": "tap", "via": via,
          "verified": True, "evidence": Evidence.model_validate({"how": "owner"}), **extra}
     )  # fmt: skip
@@ -69,10 +71,10 @@ def done_events(
 
 
 async def commit(store: WardrobeStore, uid: str, events: tuple[Event, ...]) -> Committed:
-    async def fn(view: WardrobeView, tx: object) -> Commit:
+    async def fn(view: WardrobeView, tx: DocTx) -> Commit:
         return Commit(events=events)
 
-    return await store.transact(uid, fn)  # type: ignore[arg-type]
+    return await store.transact(uid, fn)
 
 
 # ---- his words ----------------------------------------------------------------------------------
@@ -108,16 +110,17 @@ def resolve(view: WardrobeView, query: str) -> tuple[list[str], str]:
             return (
                 [],
                 f'I couldn\'t find "{part.strip()[:40]}" in your wardrobe: tap it {texts.WHERE}.',
-            )  # noqa: E501
+            )
         if len(units) > 1:
             choices = [
                 f"{texts.ids_words(u)} ({texts.unit_words([view.pieces[i] for i in u])})"
                 for u in units[:5]
-            ]  # noqa: E501
+            ]
             return (
                 [],
-                f"Which one: {', '.join(choices[:-1])} or {choices[-1]}? Say its colour, or tap it {texts.WHERE}.",
-            )  # noqa: E501
+                f"Which one: {', '.join(choices[:-1])} or {choices[-1]}? Say its colour, or tap "
+                f"it {texts.WHERE}.",
+            )
         out += [i for i in units[0] if i not in out]
     return out, ""
 
@@ -142,7 +145,7 @@ async def closing_events(
         history = await store.history(uid, p.id)
         starts = [
             h.event.at for h in history if h.event.kind == "wear_started" and h.mark == "applied"
-        ]  # noqa: E501
+        ]
         if starts and max(starts) < midnight:
             cid = CLOSE_ID.format(piece=p.id[3:], day=local.date().strftime("%Y%m%d"))
             out.append(
@@ -155,7 +158,7 @@ async def closing_events(
                     plan=p.wear,
                     client_id=cid,
                 )
-            )  # noqa: E501
+            )
     return tuple(out)
 
 

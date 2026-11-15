@@ -20,8 +20,8 @@ from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import MAX_RESULT_PIECES
 from jarvis.wardrobe.styling import texts
 from jarvis.wardrobe.styling.engine import LookOut
-from jarvis.wardrobe.styling.service import NO_EVENT, Answer, Here
 from jarvis.wardrobe.styling.rules import Rules
+from jarvis.wardrobe.styling.service import NO_EVENT, Answer, Here
 
 SEE = f"See this look {texts.WHERE}."
 
@@ -37,7 +37,7 @@ def look_dict(view: WardrobeView, look: LookOut, *, budget: int) -> tuple[dict[s
         return {"pieces": [], "reasons": [SEE], "compromises": [], "gaps": list(look.gaps)}, 0
     pieces = [
         {"slot": p.slot, "ids": list(p.pieces), "words": _words(view, p.pieces)} for p in look.picks
-    ]  # noqa: E501
+    ]
     out = {"pieces": pieces, "reasons": list(look.reasons), "compromises": list(look.compromises),
            "gaps": list(look.gaps)}  # fmt: skip
     return out, n
@@ -100,7 +100,7 @@ def message(view: WardrobeView, ans: Answer, rules: Rules, here: Here) -> str:
 # ---- the panel (GET /v1/outfits) -----------------------------------------------------------
 def slot_picks(
     view: WardrobeView, look: LookOut, *, show_private: bool
-) -> tuple[http.SlotPick, ...]:  # noqa: E501
+) -> tuple[http.SlotPick, ...]:
     out = []
     for p in look.picks:
         for pid in p.pieces:
@@ -111,7 +111,7 @@ def slot_picks(
                 texts.private_view_words(piece)
                 if piece.private and show_private
                 else texts.piece_words(piece)
-            )  # noqa: E501
+            )
             out.append(http.SlotPick(slot=p.slot, piece=pid, words=words, locked=p.locked))
     return tuple(out)
 

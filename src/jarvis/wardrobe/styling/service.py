@@ -22,7 +22,7 @@ from datetime import date, datetime, time, timedelta, tzinfo
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
 from jarvis.wardrobe.styling import reserve, texts
-from jarvis.wardrobe.styling.engine import Ask, LookOut, Suggestion, suggest
+from jarvis.wardrobe.styling.engine import Ask, LookOut, Pick, Suggestion, suggest
 from jarvis.wardrobe.styling.outlook import Outlook, Weather
 from jarvis.wardrobe.styling.plans import (
     Plan,
@@ -40,6 +40,7 @@ OCCASION_WORDS = {
     "function": "a function",
 }  # fmt: skip
 NO_EVENT = "no event planned"
+Skip = dict[str, frozenset[str]]
 _HHMM = 5
 
 
@@ -119,7 +120,7 @@ class Styling:
     # ---- asks and looks ---------------------------------------------------------------------
     async def ask(
         self, uid: str, here: Here, doc: StylingDoc, *, day: date, code: str,
-        occasion: str | None, plan: Plan | None = None, skip: dict[str, frozenset[str]] | None = None,  # noqa: E501
+        occasion: str | None, plan: Plan | None = None, skip: Skip | None = None,
     ) -> tuple[Ask, Weather]:  # fmt: skip
         span = reserve.window(plan, here.zone) if plan is not None and plan.starts else None
         weather = await self.outlook.weather(uid, day, span, here.zone)
@@ -148,18 +149,18 @@ class Styling:
         """A plan's look now (a worn one: what was worn)."""
         ask, weather = await self.ask(
             uid, here, doc, day=plan.day, code=plan.code, occasion=plan.occasion, plan=plan
-        )  # noqa: E501
+        )
         if plan.worn:
             picks = tuple(_pick(p) for p in plan.picks)
             worn = LookOut(
                 picks, (f"Worn for {self.phrase(plan, plan.occasion, here.zone) or 'this plan'}.",)
-            )  # noqa: E501
+            )
             return Answer(plan.day, plan.code, ask.for_words, Suggestion(worn), weather, plan)
         got = suggest(view, ask, self.rules)
         primary = self._shared_words(doc, plan, got.primary, view, here.zone)
         return Answer(
             plan.day, plan.code, ask.for_words, Suggestion(primary, got.alternatives), weather, plan
-        )  # noqa: E501
+        )
 
     async def fresh(
         self, uid: str, here: Here, doc: StylingDoc, view: WardrobeView, *, day: date,
@@ -179,7 +180,7 @@ class Styling:
         reused = ", ".join(
             f"{texts.unit_words([view.pieces[i] for i in p.pieces])} ({texts.ids_words(p.pieces)})"
             for p in units
-        )  # noqa: E501
+        )
         change = [self.rules.slot_words_of(p.slot) for p in look.picks if p not in units]
         lines = (
             f"Reused from {reserve.held_words(source, zone)}: {reused}.",
@@ -216,7 +217,7 @@ class Styling:
             occasion=plan.occasion,
             plan=plan,
             skip=skip,
-        )  # noqa: E501
+        )
         look = suggest(view, ask, self.rules).primary
         picks = tuple(PlanPick(slot=p.slot, pieces=p.pieces, locked=p.locked) for p in look.picks)
         return plan.model_copy(update={"picks": picks, "needs": (), "updated_at": here.now})
@@ -226,9 +227,7 @@ class Styling:
         return await self.plans.change(uid, lambda d: fn(d).pruned(here.today))
 
 
-def _pick(p: PlanPick) -> object:
-    from jarvis.wardrobe.styling.engine import Pick
-
+def _pick(p: PlanPick) -> Pick:
     return Pick(p.slot, p.pieces, p.locked)
 
 

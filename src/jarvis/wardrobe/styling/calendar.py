@@ -67,7 +67,7 @@ def event_fields(fields: tuple[str, ...]) -> str:
     wanted = ["id", "status", "updated", "start", "end"]
     wanted += [
         name for flag, name in (("title", "summary"), ("location", "location")) if flag in fields
-    ]  # noqa: E501
+    ]
     return f"items({','.join(wanted)})"
 
 
@@ -251,7 +251,8 @@ def sync(
     zone: tzinfo, now: datetime,
 ) -> tuple[StylingDoc, list[str]]:  # fmt: skip
     """(the plans after this read, the ids of plans made or edited: their looks to pick)."""
-    seen, touched = {e.k for e in entries}, []
+    seen = {e.k for e in entries}
+    touched: list[str] = []
     for e in entries:
         plan = doc.by_event(e.k)
         if plan is None or plan.manual:
@@ -265,8 +266,8 @@ def sync(
     for plan in doc.plans:
         if plan.manual or plan.event is None or plan.cancelled or plan.event in seen:
             continue
-        s, e = window(plan, zone)
-        if start <= s and e <= end:  # the read covered its window: it is gone (cancelled)
+        opens, closes = window(plan, zone)
+        if start <= opens and closes <= end:  # the read covered its window: it is gone
             doc = doc.put(plan.model_copy(update={"cancelled": True, "updated_at": now}))
     return doc, touched
 
@@ -276,7 +277,7 @@ def manual_from_now(doc: StylingDoc, now: datetime) -> StylingDoc:
     plans = tuple(
         p.model_copy(update={"manual": True, "updated_at": now}) if not p.manual else p
         for p in doc.plans
-    )  # noqa: E501
+    )
     return doc.model_copy(update={"plans": plans})
 
 

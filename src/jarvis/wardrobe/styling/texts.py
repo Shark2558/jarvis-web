@@ -17,7 +17,9 @@ from jarvis.wardrobe.redact import PRIVATE_WORDS, fixed_words, type_words
 from jarvis.wardrobe.states import STATE_WORDS, State
 
 WEATHER_UNKNOWN = "Weather unknown: I assumed indoors."
-PLURAL_TYPES = frozenset({"trousers", "chinos", "jeans", "shorts", "joggers", "briefs", "boxers"})
+PLURAL_TYPES = frozenset(
+    {"trousers", "chinos", "jeans", "shorts", "joggers", "underpants", "briefs", "boxers"}
+)
 WHERE = "in Helpers, Wardrobe"
 OFF_NO_KEY = "Outfits are off: JARVIS has no token key to seal your plans."
 OFF_NO_STORE = "Outfits are off: no storage is set up."
@@ -105,7 +107,8 @@ def unit_words(pieces: Sequence[Piece]) -> str:
 def private_view_words(p: Piece) -> str:
     """His own panel with "Show private basics" on: the colour and type of a private piece."""
     colour = (p.colour or "").replace("_", " ")
-    return " ".join(w for w in ("a", colour, type_words(p)) if w)
+    article = "" if p.type in PLURAL_TYPES else "a"
+    return " ".join(w for w in (article, colour, type_words(p)) if w)
 
 
 def never_words(feature: str, value: str) -> str:

@@ -119,8 +119,12 @@ def _rain_in(d: DayOutlook, span: tuple[datetime, datetime] | None, zone: tzinfo
 
 class Outlook:
     def __init__(
-        self, ctx: WardrobeContext, fetcher: Fetcher | None, sealed: SealedDoc[OutlookDoc], rules: Rules
-    ) -> None:  # fmt: skip
+        self,
+        ctx: WardrobeContext,
+        fetcher: Fetcher | None,
+        sealed: SealedDoc[OutlookDoc],
+        rules: Rules,
+    ) -> None:
         self._ctx, self._fetcher, self.sealed, self._rules = ctx, fetcher, sealed, rules
 
     async def point(self, uid: str) -> tuple[float, float] | None:
@@ -149,7 +153,7 @@ class Outlook:
         slot, place = slot_of(now, zone), _place_key(point)
         if doc.place == place and (
             doc.slot == slot or (doc.failed_at and now - doc.failed_at < RETRY)
-        ):  # noqa: E501
+        ):
             return "not_due"
         tz = getattr(zone, "key", str(zone))
         try:
@@ -187,7 +191,10 @@ class Outlook:
         hot = d.t_max is not None and d.t_max >= self._rules.hot_c
         cold = d.t_max is not None and d.t_max <= self._rules.cold_c
         if hours:
-            at = f"{hours[0]:02d}:00"
+            first = hours[0]
+            while first - 1 in d.rain_hours:  # the start of the rain that reaches the plan
+                first -= 1
+            at = f"{first:02d}:00"
             return Weather(True, True, at, hot, cold, f"{HOME}: rain likely from {at}.")
         up = f", up to {d.t_max:.0f}°C" if d.t_max is not None else ""
         return Weather(True, False, None, hot, cold, f"{HOME}: no rain expected{up}.")

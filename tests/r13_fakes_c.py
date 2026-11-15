@@ -234,6 +234,24 @@ class World:
         await self.store.transact(UID, fn)
 
 
+def app_of(w: World) -> Any:
+    """A bare app with C's router, its part, the gateway's audit chain, auth as the owner."""
+    from fastapi import FastAPI
+
+    from jarvis.api.auth import require_auth
+    from jarvis.api.identity import current_user
+    from jarvis.api.outfits import router
+
+    app = FastAPI()
+    app.state.settings = w.ctx.s
+    app.state.r13_parts = {"styling": w.part}
+    app.state.gateway = w.gw
+    app.include_router(router)
+    app.dependency_overrides[require_auth] = lambda: None
+    app.dependency_overrides[current_user] = lambda: UID
+    return app
+
+
 def settings(**over: Any) -> Settings:
     return Settings(_env_file=None, **over)  # type: ignore[call-arg]
 
@@ -308,6 +326,7 @@ __all__ = [
     "RecordingNotifier",
     "Rules",
     "World",
+    "app_of",
     "forecast",
     "gevent",
     "ist",

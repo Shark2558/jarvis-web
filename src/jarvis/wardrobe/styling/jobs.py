@@ -54,7 +54,7 @@ class OutfitClock:
             try:
                 await self._owner(uid, n)
             except Exception as exc:  # noqa: BLE001 - one owner never blocks another
-                log.warning("outfit_clock failed for an owner", extra={"error": type(exc).__name__})  # noqa: E501
+                log.warning("outfit_clock failed for an owner", extra={"error": type(exc).__name__})
                 n.add("failed")
         return n.done("ready_sent", "plans_made", "weather")
 
@@ -87,7 +87,7 @@ class OutfitClock:
         entries = self.calendar.entries(uid, cal, items)
         await self.calendar.sealed.change(
             uid, lambda _: CalDoc(read_at=here.now, start=span[0], end=span[1], entries=entries)
-        )  # noqa: E501
+        )
         synced, touched = sync(doc, entries, span, here.zone, here.now)
         view = await self.s.view(uid)
         if view is not None:
@@ -118,7 +118,7 @@ class OutfitClock:
                 await notifier.notify(uid, Signal(source="nudge", kind="outfit_ready"), words)
                 n.add("ready_sent")
             except Exception as exc:  # noqa: BLE001 - claimed; "can't send" is a result
-                log.warning("outfits: outfit_ready not sent", extra={"error": type(exc).__name__})  # noqa: E501
+                log.warning("outfits: outfit_ready not sent", extra={"error": type(exc).__name__})
 
     def _ready_due(self, plan: Plan, here: Here) -> bool:
         """A calendar plan, not cancelled or worn, from the evening before until it starts."""

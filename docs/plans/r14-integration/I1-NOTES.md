@@ -1,4 +1,4 @@
-Version v14.0.3 · 15 Nov 2026, 04:50 IST · Release R14 · Status: Current · Owner: 🛠 Mark XIX
+Version v14.0.4 · 15 Nov 2026, 12:40 IST · Release R14 · Status: Current · Owner: 🛠 Mark XX
 
 # R14 — I1 notes (the four parts joined)
 
@@ -318,6 +318,67 @@ the same 500 facts through the API, earlier in the run), `test_documents_extract
 the apps) would shrink the 4.3 GB heap and every full pass with it; two whole suites at once
 were killed for memory on this 7 GB machine.
 
+## 14. Hotfix 2 (v14.0.2, branch `hotfix-v14.0.2`; logs `/tmp/r14-logs/hf2-*.log`, 🛠 Mark XX)
+
+**What failed.** main's CI run 43670985281 (ci #122), the push of hotfix 1's merge `4ac1db2`:
+`test (3.11)` 1 failed, 15,924 passed (`test (3.12)` was cancelled), so nothing deployed and R7
+stayed live. The test: `tests/test_r14_i1_noai_real.py::test_recently_deleted_is_said_in_words`
+expected `… thing “A thing you noted”, 2026-11-14.` and got `2026-11-15.`. It had passed on the
+pull requests' runs ci #119 and ci #121 (both on 14 Nov). Reproduced in the workspace before
+GitHub access returned: the whole 3.11 suite on `4ac1db2` checked out as `main`, 1 failed,
+15,923 passed (`ci122-repro-311.log`).
+
+**Cause: a date bomb in the test.** `tests/belongings_fakes.py::things()` built
+`UndoBin(DeletedStore(docs))` with its default clock (`undo/service.py`, `utcnow`), while the
+expected sentence pinned the day the test was written; from 15 Nov 00:00 UTC the deletion was
+stamped with another day. The product is right: `offline/said.py` cuts the date from the bin
+entry's `deleted_at`.
+
+**The sweep for others.** The whole 3.11 suite with the clock moved to 16 Nov 2026, 09:00 IST
+(`time-machine` in a plugin outside the repo, `sweep-16nov.log`): 2 failed, 15,922 passed — the
+same test, and `test_r11_1_c_bridge_trouble.py::test_a_file_still_being_copied_waits_and_is_read_once_it_settles`,
+an artefact of the shift (file times on disk come from the real clock, so a fresh file looked a
+day old). Then the Things and undo files at 20 Dec 2026, 1 Mar 2027 and 29 Feb 2028: one more,
+`test_where_a_thing_is_and_where_he_put_it_are_said_in_words` asserted `(noted on 2026-`, which
+fails from 1 Jan 2027.
+
+**Fix, tests only.** `things()` takes an optional `clock`, passed to both `BelongingsService` (its
+`_stamp`, the "noted on" day) and `UndoBin` (`keep`, `recent`, `get`: the deletion's day and the
+30-day window read the same clock); without it both read the real clock, as before, for the 9
+other files (45 call sites) that use the kit. Both tests pass `NOW.astimezone(dt.UTC)` (14 Nov,
+16:05 IST) and assert their sentences whole, day included. A fresh code review (the repo's
+`code-reviewer` and `python-reviewer` roles) approved, 0 critical / 0 high / 0 medium; its LOW 1
+(the `startswith` on "noted on 2026-" would hide a lost clock until 2027) is fixed in `643e3c8`,
+its LOW 2 (the first commit's message says ten other users; there are nine) is corrected here.
+The store's own `_now` fills only the stored record's `updated_at`, which no sentence reads.
+
+**Version** `__version__` 14.0.2 and the four pins hotfix 1 moved (`test_about.py`,
+`test_r11_1_seams.py`, `test_r14_seams.py`, `test_r7_seams.py`). The `14.0.1` strings in
+`test_r14_b_jobs.py` and `test_r14_b_brief_spend_deploy.py` are sample data, not pins.
+
+**Checks.**
+
+| Check | Result |
+|---|---|
+| The two tests, today and with the clock at 16 Nov, 20 Dec 2026, 1 Mar 2027, 2 Jan 2027 and 29 Feb 2028 (with the Things and undo files: 190 tests) | all pass; main's version of the file fails both tests at 2027 (the reviewer's control) |
+| Unit suite, Python 3.11, whole, at `5932c0f` (`hf2-unit-311.log`) | **15,924 passed, 143 skipped, 0 failed** (14:12) |
+| Unit suite, Python 3.12, whole, with coverage, at `643e3c8` (`hf2-unit-312.log`) | **15,943 passed, 134 skipped, 0 failed** (25:23); coverage **95.50 %**, `scripts/coverage_floor.py` passes at the floor 95 |
+| `ruff check` / `ruff format --check` | clean (1,745 files) |
+| `mypy src` | **1 error**, the baseline `memory/redis_store.py:67` (772 files) |
+| `evals/run_all_mock.py` | **ALL MOCK EVALS: PASS**; `r14` 108/108, its control fails it |
+| `scripts/check_doc_versions.py`, `scripts/arch_coverage.py` | all 28 documents pass (these notes v14.0.4); arch coverage OK (65 packages and modules, 90 console modules, 2 Scheduler jobs, 30 outside services, 106 collections) |
+| `scripts/check_pr_title.py "v14.0.2 · R14 hotfix 2 — tests that read today's date · Mark XX"` | OK |
+| `python -m jarvis.buildbook.gen --check` | the book is **R14** (`643e3c8`): book.json 182,037 bytes, two builds byte-identical |
+
+**Needs a follow-up (not in this hotfix).**
+- "Recently deleted" with the AI off shows the bin entry's **UTC** date (`offline/said.py`
+  `_deleted`, `deleted_at[:10]`), so between 00:00 and 05:30 IST it names the day before. The
+  owner's zone (`config.user_timezone`) would have to reach the No-AI sentence layer: a signature
+  change for the next release.
+- A whole-suite clock sweep before each release (the plugin is ten lines) would catch the next
+  date bomb before main does.
+- Hotfix 1's follow-ups (the wall-clock limits above) still stand.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -325,3 +386,4 @@ were killed for memory on this 7 GB machine.
 | v14.0.1 | 14 Nov 2026, 21:30 IST | R14 | First edition: the four merges (no conflicts), every Needs I1 item with its outcome and commit, the defects found at the join (No-AI's JSON answers of the real tools, the drill card's line, the offer's effect on two pins, the errors handler outliving its app, the window's setting), every pin changed and why, the hook fix, the docs, the checks with their numbers, the sizes, the decisions taken, what can't be verified | 🛠 Mark XIX |
 | v14.0.2 | 15 Nov 2026, 00:50 IST | R14 | The integrated review follow-ups (section 11): each finding with its outcome, test and commit (the hook's globs and wrappers, the fenced No-AI turn, the drill card console only, the needles eval built, the Vitals words, the route limits, the notes to the model, the guide's count, the links); LOW-1 as verify live; decisions 5 and 6; the checks after the follow-ups | 🛠 Mark XIX |
 | v14.0.3 | 15 Nov 2026, 04:50 IST | R14 | Hotfix 1 (section 13): what failed on main's CI run after the merge, the two causes (the checkout's branch and place; a full collection inside a wall-clock window, not R14), the fixes (branch-free guard tests with a pin, the import judged by growth and by an operation count), the version 14.0.1 and its pins, the checks, the follow-ups | 🛠 Mark XIX |
+| v14.0.4 | 15 Nov 2026, 12:40 IST | R14 | Hotfix 2 (section 14): what failed on main's CI run after hotfix 1 (a date bomb in `test_r14_i1_noai_real.py`: the bin's real clock against a pinned 14 Nov), the clock sweep (one more, from 2027), the fix (the kit's optional clock; both sentences asserted whole), the fresh review, the version 14.0.2 and its pins, the checks, the follow-ups | 🛠 Mark XX |

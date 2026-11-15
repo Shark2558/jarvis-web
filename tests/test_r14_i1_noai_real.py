@@ -100,7 +100,8 @@ async def test_what_expires_in_the_vault_is_said_in_words() -> None:
 
 
 async def test_where_a_thing_is_and_where_he_put_it_are_said_in_words() -> None:
-    box = things()
+    # R14 hotfix 2: the service reads NOW, so the day in the sentence holds whenever the test runs
+    box = things(clock=lambda: NOW.astimezone(dt.UTC))
     gw = _gw(belongings_tools(box.svc))
     none = await _say(gw, THINGS_UID, "where did I put my passport", "belongings_where")
     assert none == NOT_NOTED
@@ -109,7 +110,7 @@ async def test_where_a_thing_is_and_where_he_put_it_are_said_in_words() -> None:
     moved = await _say(gw, THINGS_UID, "I've put my keys under the blue file.", "belongings_put")
     assert moved == "Noted, Sir. Your keys: under the blue file (before: the drawer)."
     where = await _say(gw, THINGS_UID, "where are my keys?", "belongings_where")
-    assert where.startswith("Your keys: under the blue file (noted on 2026-")
+    assert where == "Your keys: under the blue file (noted on 2026-11-14)."
 
 
 async def test_the_parcels_are_said_in_words() -> None:
@@ -132,7 +133,9 @@ async def test_the_inbox_summary_is_said_in_words() -> None:
 
 
 async def test_recently_deleted_is_said_in_words() -> None:
-    box = things()
+    # R14 hotfix 2: the bin reads NOW, so the day in the sentence never depends on the day the
+    # test runs (with the real clock this failed from 15 Nov on: main's run ci #122)
+    box = things(clock=lambda: NOW.astimezone(dt.UTC))
     gw = _gw([*undo_tools(box.undo), *belongings_tools(box.svc)])
     none = await _say(gw, THINGS_UID, "what did I delete", "deleted_list")
     assert none == "Nothing was deleted in the last 30 days, Sir."

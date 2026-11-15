@@ -107,7 +107,7 @@ def _text(path: Path) -> str:
 
 # ---- 1, 2 · the version and the build book's release name --------------------------------------
 def test_the_version_is_seven() -> None:
-    assert jarvis.__version__ == "14.0.1"  # R14 hotfix 1 (7.0.0 at R7 I0); nothing compares (D26)
+    assert jarvis.__version__ == "14.0.2"  # R14 hotfix 2 (7.0.0 at R7 I0); nothing compares (D26)
 
 
 def _repo(tmp_path: Path, version: str | None) -> Repo:

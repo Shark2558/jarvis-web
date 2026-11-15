@@ -96,6 +96,11 @@ R7_PARTS_TOOLS = (
     "vision_results",
     # R14 I0 seam 4: the tools Parts A, C and D will register
     *("vitals_backups", "vitals_drill_start", "skills_open", "maint_service_request"),
+    # R13 I0 seam 4: the 18 tools Parts A, B and C will register (docs/plans/r13-wardrobe.md)
+    *("wardrobe_find", "wardrobe_count", "wardrobe_add", "wardrobe_edit", "wardrobe_places"),
+    *("wardrobe_merge", "wardrobe_retire", "wardrobe_remove", "laundry_status", "laundry_move"),
+    *("laundry_review", "laundry_correct", "laundry_send_out", "outfit_suggest", "outfit_plans"),
+    *("outfit_plan", "outfit_prefs", "wear_log"),
 )
 TOOL_NOUNS = frozenset(
     "activity bill birthdays breach calendar checkin chore contacts disaster doc focus freetime "
@@ -107,7 +112,9 @@ TOOL_NOUNS = frozenset(
     # R7 I0: the watch, sleep, SOS and camera-results tools' nouns
     "sleep last night week watch today sos vision results "
     # R14 I0: the backups, the drill, the skill register and the home-service request
-    "backups drill skills service request".split()
+    "backups drill skills service request "
+    # R13 I0: the wardrobe, laundry and outfit tools' nouns (their verbs are action words)
+    "wardrobe piece laundry outfit plan plans label places prefs out".split()
 )
 
 

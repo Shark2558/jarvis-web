@@ -27,19 +27,23 @@ UNDO_ID = re.compile(r"del_[0-9a-f]{20}")
 # R2 D8: vault documents, notes and things are soft-deleted inside their own encrypted stores; the
 # bin entry holds only `snapshot = {ref: <item id>}` under a generic title. Their restore clears the
 # tombstone in place (same id, so no "new copy" wording) and their purge hard-deletes the item.
-Kind = Literal["event", "task", "vault_item", "note", "thing"]
-KINDS: tuple[Kind, ...] = ("event", "task", "vault_item", "note", "thing")
+# R13 D16 (docs/plans/r13-wardrobe.md): a wardrobe piece is kept in place too, under the fixed
+# title "A wardrobe piece" (the bin is Firestore, in clear); restored, it lands in "Missing or in
+# review"; its photos, fingerprints and log go only when the entry is purged.
+Kind = Literal["event", "task", "vault_item", "note", "thing", "wardrobe_item"]
+KINDS: tuple[Kind, ...] = ("event", "task", "vault_item", "note", "thing", "wardrobe_item")
 KIND_WORDS: dict[str, str] = {
     "event": "event",
     "task": "to-do",
     "vault_item": "vault document",
     "note": "note",
     "thing": "thing",
+    "wardrobe_item": "wardrobe piece",
 }
-IN_PLACE_KINDS: frozenset[str] = frozenset({"vault_item", "note", "thing"})
+IN_PLACE_KINDS: frozenset[str] = frozenset({"vault_item", "note", "thing", "wardrobe_item"})
 # "Remove now" for these can't be brought back: the caller asks for a passkey (purpose
 # `privacy_delete`, target = the bin id) where passkeys are in force.
-PASSKEY_PURGE_KINDS: frozenset[str] = frozenset({"vault_item", "note", "thing"})
+PASSKEY_PURGE_KINDS: frozenset[str] = frozenset({"vault_item", "note", "thing", "wardrobe_item"})
 # The line an approval card for an undo-able delete carries (a tainted round, the 11th delete).
 CARD_LINE = f"Kept in Recently deleted for {RETENTION_DAYS} days: you can undo it."
 

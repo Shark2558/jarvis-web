@@ -77,7 +77,10 @@ async def _rules(store: TelegramStore) -> list[PolicyRule]:
 
 
 def test_the_personal_group_is_the_vault_notes_and_things() -> None:
-    assert set(PERSONAL_PATTERNS) == {"vault_*", "kb_*", "belongings_*"}
+    # R13 D18: the wardrobe's four families joined them (tests/test_r13_seams.py)
+    assert set(PERSONAL_PATTERNS) == {"vault_*", "kb_*", "belongings_*"} | {
+        *("wardrobe_*", "laundry_*", "outfit_*", "wear_*")
+    }
     assert not set(PERSONAL_PATTERNS) & set(PRIVATE_PATTERNS)
     assert "Telegram" in PERSONAL_REFUSAL and "console" in PERSONAL_REFUSAL
 

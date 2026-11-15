@@ -54,6 +54,10 @@ DAYTIME_RING_KINDS = frozenset(
         "spend_spike",
         "deploy_changed",
         "backup_problem",
+        # R13 D19: the wardrobe's three important kinds; held at night, never dropped
+        "outfit_ready",
+        "outfit_changed",
+        "laundry_overdue",
     }
 )
 # R11 D5: nudges are only worth hearing when they are due; in quiet hours they are dropped (feed

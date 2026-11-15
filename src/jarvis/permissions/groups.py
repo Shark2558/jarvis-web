@@ -39,6 +39,9 @@ R7 (docs/plans/r7-mobile.md D25): three rows right after Camera, before Vitals (
 between Kitchen and Maps, and Maps and YouTube stay last): `vision` (vision_*, R1), `watch`
 (watch_* and sleep_*, R2: the typed sleep note is the one write) and `sos` (sos_status, R1: no
 tool ever sends an SOS).
+R13 (docs/plans/r13-wardrobe.md D18): three R2 rows after Pictures, before Maps and YouTube (which
+stay last), in one "Wardrobe" section: `wardrobe` (wardrobe_*), `laundry` (laundry_*) and
+`outfits` (outfit_*, wear_*; its calendar read also obeys the Calendar row, D13).
 """
 
 from __future__ import annotations
@@ -572,6 +575,35 @@ GROUPS: tuple[PermissionGroup, ...] = (
         "a person from a picture.",
         R1,
         (_m("picture_*"),),
+    ),
+    # R13 (docs/plans/r13-wardrobe.md D18): the wardrobe. Merge, archive and restore are cards
+    # whatever the row says (`ask_when`, never Approve all); remove is undo-able for 30 days.
+    PermissionGroup(
+        "wardrobe",
+        "Wardrobe",
+        "Your wardrobe: pieces, places, labels, pairs and sets",
+        "Each piece you own, where it is and its QR label; photos are sealed and only yours. "
+        "Merging, archiving and restoring a piece always ask first.",
+        R2,
+        (_m("wardrobe_*"),),
+    ),
+    PermissionGroup(
+        "laundry",
+        "Wardrobe",
+        "Laundry: the basket, loads, drying, outside laundry",
+        "JARVIS keeps track and reminds you; it never orders, pays, calls or messages a "
+        "laundry shop.",
+        R2,
+        (_m("laundry_*"),),
+    ),
+    PermissionGroup(
+        "outfits",
+        "Wardrobe",
+        "Outfits: suggestions, plans, reservations and what you wore",
+        "Outfits from your ready pieces by fixed rules. Reading the one calendar you pick "
+        "also obeys the Calendar row.",
+        R2,
+        (_m("outfit_*"), _m("wear_*")),
     ),
     PermissionGroup(  # slice 12 D8 (D3)
         "maps",

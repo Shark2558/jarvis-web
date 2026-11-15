@@ -162,8 +162,8 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     # R6 added book_sealed/book_seal_failed/book_session_closed (20 -> 23)
     # R11 added the thirteen helper kinds (23 -> 36; tests/test_r11_seams.py) and R11.1 two more
     # (36 -> 38; tests/test_r11_1_seams.py), R7 five (38 -> 43; tests/test_r7_seams.py), R14
-    # nine (43 -> 52; tests/test_r14_seams.py)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 52
+    # nine (43 -> 52; tests/test_r14_seams.py), R13 four (52 -> 56; tests/test_r13_seams.py)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 56
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:
@@ -867,6 +867,9 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         "sos",
         "vision",
         "backup_probe",  # R14: the backup canary's sealed nonce (tests/test_r14_seams.py)
+        # R13: the wardrobe, and its photos and fingerprints (tests/test_r13_seams.py)
+        "wardrobe",
+        "wardrobe_photos",
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):
@@ -909,8 +912,9 @@ ROWS = {
 def test_five_rows_sit_after_things_and_before_maps() -> None:
     ids = [g.id for g in GROUPS]
     # R4 added 5 rows (vitals, vitals_change, systems, people, connectors); R11 added 6 (D16);
-    # R11.1 added 2 (plans, pictures); R7 3 (vision, watch, sos) after Camera
-    assert len(ids) == 49
+    # R11.1 added 2 (plans, pictures); R7 3 (vision, watch, sos) after Camera; R13 3 (wardrobe,
+    # laundry, outfits) after Pictures
+    assert len(ids) == 52
     at = ids.index("belongings")
     assert ids[at + 1 : at + 6] == list(ROWS)  # the five R3 rows still sit right after Things
     # R4's rows sit after the R3 block; Maps and YouTube stay last
@@ -948,9 +952,9 @@ def test_home_secure_never_offers_allow_and_a_patch_can_name_every_row() -> None
     assert validate_choices({"home_secure": "deny", "camera": "ask"})["camera"] is Effect.ASK
     every = {gid: "ask" for gid in group_ids()}
     assert PermissionsPatch(groups=every).groups == every
-    PermissionsPatch(groups={f"g{i}": "ask" for i in range(51)})  # R7: 49 rows, two to spare
+    PermissionsPatch(groups={f"g{i}": "ask" for i in range(54)})  # R13: 52 rows, two to spare
     with pytest.raises(ValidationError):
-        PermissionsPatch(groups={f"g{i}": "ask" for i in range(52)})
+        PermissionsPatch(groups={f"g{i}": "ask" for i in range(55)})
 
 
 def test_home_disarm_is_a_targeted_purpose() -> None:

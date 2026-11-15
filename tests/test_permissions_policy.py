@@ -129,6 +129,25 @@ EXPECTED: list[tuple[str, ActionRisk, set[str]]] = [
     ("vitals_drill_start", R2, {"vitals_change"}),
     ("maint_service_request", R1, {"household"}),
     ("skills_open", R1, set()),  # no row: the risk default (R1, no side effect) applies
+    # R13 I0 (docs/plans/r13-wardrobe.md D18, seam 4): three rows, the 18 tools' planned names
+    ("wardrobe_find", R1, {"wardrobe"}),
+    ("wardrobe_count", R1, {"wardrobe"}),
+    ("wardrobe_add", R2, {"wardrobe"}),
+    ("wardrobe_edit", R2, {"wardrobe"}),
+    ("wardrobe_places", R2, {"wardrobe"}),
+    ("wardrobe_merge", R2, {"wardrobe"}),
+    ("wardrobe_retire", R2, {"wardrobe"}),
+    ("wardrobe_remove", R2, {"wardrobe"}),
+    ("laundry_status", R1, {"laundry"}),
+    ("laundry_move", R2, {"laundry"}),
+    ("laundry_review", R2, {"laundry"}),
+    ("laundry_correct", R2, {"laundry"}),
+    ("laundry_send_out", R2, {"laundry"}),
+    ("outfit_suggest", R1, {"outfits"}),
+    ("outfit_plans", R1, {"outfits"}),
+    ("outfit_plan", R2, {"outfits"}),
+    ("outfit_prefs", R2, {"outfits"}),
+    ("wear_log", R2, {"outfits"}),
     ("memory_search", R1, set()),  # unknown to every group: the risk default applies
     ("brand_new_tool", R3, set()),
 ]
@@ -309,6 +328,10 @@ RISK_OF = {
     "vision": [R1],
     "watch": [R1, R2],
     "sos": [R1],
+    # R13 I0
+    "wardrobe": [R1, R2],
+    "laundry": [R1, R2],
+    "outfits": [R1, R2],
 }
 TOOL_OF = {
     "calendar_read": "calendar_list_events",
@@ -364,6 +387,10 @@ TOOL_OF = {
     "vision": "vision_results",
     "watch": "sleep_note",
     "sos": "sos_status",
+    # R13 I0
+    "wardrobe": "wardrobe_edit",
+    "laundry": "laundry_move",
+    "outfits": "wear_log",
 }
 
 

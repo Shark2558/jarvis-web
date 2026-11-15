@@ -68,6 +68,11 @@
     ['backup_problem', 'A backup or the restore drill has a problem'],
     ['selfwatch_ok', 'JARVIS has recovered'],
     ['backup_ok', 'The monthly restore drill passed'],
+    // R13 D19: the wardrobe (alerts open Helpers; the words never name a piece)
+    ['outfit_ready', 'Tomorrow\'s outfit is ready'],
+    ['outfit_changed', 'A piece of a planned outfit changed'],
+    ['laundry_overdue', 'Laundry at a shop is overdue or came back short'],
+    ['wardrobe_review', 'Wardrobe pieces wait for a quick check'],
   ];
   const LEVEL = { urgent: 'Urgent', important: 'Important', info: 'Just so you know' };
   const S = { data: undefined, vip: [], devices: [], error: '', loadedAt: 0, loading: null, busy: false, key: '' };

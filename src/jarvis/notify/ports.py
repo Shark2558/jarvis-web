@@ -117,6 +117,11 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "backup_problem": "important",
         "selfwatch_ok": "info",
         "backup_ok": "info",
+        # R13 D19: the wardrobe rings by day (held at night); its review queue is feed only
+        "outfit_ready": "important",
+        "outfit_changed": "important",
+        "laundry_overdue": "important",
+        "wardrobe_review": "info",
     }
 )
 _FEED: dict[str, FeedDecision] = {

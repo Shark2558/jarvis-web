@@ -38,6 +38,7 @@ KEYS = [
     "health_fault", "vitals_critical",  # R14 I0: R5.1's two systems rings gained their rows
     "job_failing", "clock_stopped", "brief_missed", "errors_piling", "spend_spike",  # R14 I0
     "deploy_changed", "backup_problem", "selfwatch_ok", "backup_ok",
+    "outfit_ready", "outfit_changed", "laundry_overdue", "wardrobe_review",  # R13 I0
 ]  # fmt: skip
 # no switch (notify.models.NO_SWITCH): R7 I0 added an SOS sent and a phone linked
 FIXED = {"home_intruder", "home_hazard", "home_summary", "sos_sent", "phone_linked"}
@@ -48,7 +49,7 @@ LEVEL = {"home_intruder": "urgent", "home_hazard": "urgent", "home_summary": "ur
          "faces_to_name": "info", "sos_sent": "urgent", "phone_linked": "urgent",
          "phone_unlinked": "info", "watch_stale": "info",
          "health_fault": "urgent", "vitals_critical": "urgent",
-         "selfwatch_ok": "info", "backup_ok": "info"}  # fmt: skip
+         "selfwatch_ok": "info", "backup_ok": "info", "wardrobe_review": "info"}  # fmt: skip
 VAPID = "B" + "A" * 86
 # a real-looking (but fake) subscription the stubbed push manager returns
 SUB = {

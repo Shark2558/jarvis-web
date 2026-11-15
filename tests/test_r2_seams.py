@@ -382,8 +382,9 @@ def test_new_kinds_have_words_and_an_in_place_restore() -> None:
     for k in NEW_KINDS:
         assert k in KINDS and k in KIND_WORDS
     assert KIND_WORDS["event"] == "event" and KIND_WORDS["task"] == "to-do"
-    assert IN_PLACE_KINDS == frozenset(NEW_KINDS)
-    assert PASSKEY_PURGE_KINDS == frozenset(NEW_KINDS)
+    # R13 D16: a wardrobe piece is kept in place too (tests/test_r13_seams.py)
+    assert IN_PLACE_KINDS == frozenset(NEW_KINDS) | {"wardrobe_item"}
+    assert PASSKEY_PURGE_KINDS == frozenset(NEW_KINDS) | {"wardrobe_item"}
     ref = UndoRef.from_result({"undo_id": "del_" + "a" * 20, "kind": "note"})
     assert ref is not None and ref.kind == "note"
     assert UndoRef.from_result({"undo_id": "del_" + "a" * 20, "kind": "face"}) is None
@@ -572,8 +573,9 @@ ROWS = {
 
 def test_five_rows_sit_between_drive_and_maps() -> None:
     ids = [g.id for g in GROUPS]
-    # R4 I0: + 5 Vitals..Connectors rows; R11 I0: + 6 helper rows (D16); R11.1 I0: + 2; R7 I0: + 3
-    assert len(ids) == 49
+    # R4 I0: + 5 Vitals..Connectors rows; R11 I0: + 6 helper rows (D16); R11.1 I0: + 2; R7 I0: + 3;
+    # R13 I0: + 3 (the wardrobe rows, tests/test_r13_seams.py)
+    assert len(ids) == 52
     at = ids.index("drive")
     assert ids[at + 1 : at + 6] == list(ROWS) and ids.index("maps") > at + 5
     assert ids[-1] == "youtube"

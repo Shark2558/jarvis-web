@@ -53,6 +53,8 @@ def test_production_on_cloud_run_starts(settings: Settings) -> None:
 def test_a_laptop_keeps_dev_and_token_mode(settings: Settings) -> None:
     assert settings.cloud_run_service is None and settings.auth_mode is AuthMode.TOKEN
     settings.require_prod_invariants()  # dev, token mode, no K_SERVICE: starts as before
+    empty = settings.model_copy(update={"cloud_run_service": ""})  # Cloud Run never sets it empty
+    empty.require_prod_invariants()
 
 
 def test_the_refusal_comes_before_anything_is_built(settings: Settings) -> None:

@@ -96,7 +96,7 @@
       if (!r) throw new Error('The answer came back in a shape this page doesn\u2019t know.');
       row('jarvis', r.reply, r.refused ? 'refused' : '');
       if (r.left !== null) S.left = r.left;
-      S.busy = false; leftWords(); $('shQ').focus();
+      S.busy = false; leftWords(); micState(); $('shQ').focus();
       const sh = Show();
       if (sh && r.id) await sh.say(r.id, r.reply);
       if (gen !== S.gen) return;
@@ -116,7 +116,7 @@
   const micWords = (code) => { const A = AU(); return A && typeof A.words === 'function' ? A.words(code) : HEAR.caught; };
   /** At rest: an old browser says so; "Mic off" says so and offers the way back; else the line is clear. */
   function micState() {
-    const A = AU(), off = !!(S.canRec && A && A.locked());
+    const A = AU(), off = !!(S.canRec && A && A.locked()) && S.left !== 0; // out of questions: no way back needed
     $('shMicOn').hidden = !off;
     hearLine(!S.canRec ? micWords('unsupported') : off ? HEAR.off : '');
   }

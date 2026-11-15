@@ -671,7 +671,7 @@ class Settings(BaseSettings):
     def _refuse_dev_on_cloud_run(self) -> None:
         """R6.2 (G11, decision 6): Cloud Run sets K_SERVICE on every service; dev-only settings
         (the laptop's shortcuts, token sign-in) never start there. Names settings, never values."""
-        if self.cloud_run_service is None:
+        if not self.cloud_run_service:  # Cloud Run never sets it empty
             return
         if self.env == "dev":
             raise RuntimeError(

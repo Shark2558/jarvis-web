@@ -122,6 +122,10 @@ def _typing_still_works(c: Console, fake: FakeBook) -> None:
     c.page.locator("#shQ").fill("How is the vault built?")
     c.page.locator("#shSend").click()
     c.page.locator("#shThread .row.user .bubble", has_text="How is the vault built?").wait_for()
+    for _ in range(100):  # the row shows before the request reaches the stub: wait for it
+        if len(fake.to("POST", "/v1/book/show/ask")) == before + 1:
+            break
+        c.page.wait_for_timeout(50)
     assert len(fake.to("POST", "/v1/book/show/ask")) == before + 1
 
 
@@ -219,7 +223,12 @@ def test_the_owner_is_told_when_a_spoken_question_was_charged(
 # ---- 2-4b: the microphone refuses -----------------------------------------------------------------
 @pytest.mark.parametrize(
     ("name", "code"),
-    [("NotAllowedError", "blocked"), ("NotFoundError", "no_mic"), ("NotReadableError", "busy")],
+    [
+        ("NotAllowedError", "blocked"),  # 2e: Chrome's Block (and Windows' switch)
+        ("NotSupportedError", "failed"),  # 2: what headless Chromium says for a denial
+        ("NotFoundError", "no_mic"),
+        ("NotReadableError", "busy"),
+    ],
 )
 def test_a_microphone_that_refuses_says_why(
     browser: Any, server_url: str, token: str, name: str, code: str
@@ -315,6 +324,27 @@ def test_mic_off_set_while_listening_stops_and_sends_nothing(
         c.page.wait_for_timeout(500)
         assert fake.to("POST", "/v1/book/show/hear") == []
         _typing_still_works(c, fake)
+        _clean(c)
+    finally:
+        c.close()
+
+
+def test_mic_off_offers_no_way_back_once_the_questions_run_out(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _questions(browser, server_url, token, LOCKED)
+    fake.ask_answers = [FakeBook.reply(left=0)]  # the session's last question
+    try:
+        on = c.page.locator("#shMicOn")
+        assert on.is_visible()
+        c.page.locator("#shQ").fill("How is the vault built?")
+        c.page.locator("#shSend").click()
+        c.page.wait_for_function(
+            "() => document.getElementById('shLeft').textContent === '0 questions left'"
+        )
+        assert on.is_hidden()  # nothing left to ask: no button beside "No more questions"
+        assert c.page.locator("#shFinish").is_visible()
+        assert c.page.evaluate("window.JarvisAudio.locked()") is True  # still off: untouched
         _clean(c)
     finally:
         c.close()

@@ -31,9 +31,10 @@ SESSION = view("owner")  # the live owner book session that asks (D9)
 async def test_settings_default_to_the_safe_choices() -> None:
     s = await BookSettingsStore(MemoryDocs()).get(UID)
     assert s == BookSettings()
-    assert (s.creator_name, s.show_voice, s.talk_on, s.allow_training_brain) == (
+    assert (s.creator_name, s.show_voice, s.listening, s.talk_on, s.allow_training_brain) == (
         "",
-        "cloud",
+        "browser",  # R6.2 owner decision 4: the browser's voice and listening, Rs 0
+        "browser",
         True,
         False,
     )
@@ -43,9 +44,9 @@ async def test_a_partial_update_keeps_the_rest_and_persists() -> None:
     docs = MemoryDocs()
     store = BookSettingsStore(docs)
     got = await store.update(UID, BookSettingsPatch(creator_name="  Akash   Das ", talk_on=False))
-    assert got.creator_name == "Akash Das" and got.talk_on is False and got.show_voice == "cloud"
-    got = await store.update(UID, BookSettingsPatch(show_voice="browser"))
-    assert got.creator_name == "Akash Das" and got.show_voice == "browser"
+    assert got.creator_name == "Akash Das" and got.talk_on is False and got.show_voice == "browser"
+    got = await store.update(UID, BookSettingsPatch(show_voice="cloud", confirm_cost=True))
+    assert got.creator_name == "Akash Das" and got.show_voice == "cloud"
     assert await BookSettingsStore(docs).get(UID) == got
     assert await BookSettingsStore(docs).get(OTHER) == BookSettings()
     assert set(docs._data[f"jarvis_book_settings/{UID}"]) >= {

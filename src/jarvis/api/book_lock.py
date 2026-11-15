@@ -73,6 +73,7 @@ ALLOWED: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/v1/book/show/lock"),  # I1: the show learns the lock (and its id) without a token
         ("POST", "/v1/book/show/speak"),
         ("POST", "/v1/book/show/hear"),
+        ("POST", "/v1/book/show/heard"),  # R6.2 decision 4: the browser's words, corrected
         ("POST", "/v1/book/show/ask"),
         ("POST", "/v1/book/show/beat"),
         ("POST", "/v1/book/close"),

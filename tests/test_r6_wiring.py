@@ -149,7 +149,8 @@ async def test_the_book_rows_are_in_the_privacy_panel_and_faces_stays_last(
 # ---- one name for each Book setting (B's store, C's reader, D's switches) ----------------------
 def test_one_name_for_each_book_setting() -> None:
     assert set(r6.SETTINGS_KEYS) == set(BookSettings.model_fields)
-    assert set(r6.SETTINGS_KEYS) == set(BookSettingsPatch.model_fields)
+    # + the one-time confirmation of a switch to the cloud (R6.2 decision 4), never stored
+    assert set(r6.SETTINGS_KEYS) | {"confirm_cost"} == set(BookSettingsPatch.model_fields)
     js = READER.read_text(encoding="utf-8")
     switches = set(re.findall(r"sw\('([a-z_]+)'", js))
     assert switches and switches <= set(r6.SETTINGS_KEYS), switches

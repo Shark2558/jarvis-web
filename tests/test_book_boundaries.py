@@ -35,7 +35,7 @@ C_MODULES = [
     )
 ] + [
     SRC / "api" / f"{n}.py"
-    for n in ("book_show", "book_lock", "book_show_access", "book_show_wiring")
+    for n in ("book_show", "book_show_hear", "book_lock", "book_show_access", "book_show_wiring")
 ]
 LANE_FORBIDDEN = (
     "jarvis.core.brain",

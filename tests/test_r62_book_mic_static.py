@@ -76,3 +76,27 @@ def test_the_show_page_has_the_status_line_and_the_switch_on_button() -> None:
     mic = re.search(r'<button class="icon-btn sh-mic" id="shMic"[^>]*>', html)
     assert mic and 'aria-describedby="shHear"' in mic.group(0)
     assert html.index('id="shMicOn"') < html.index('id="shFinish"')
+
+
+def test_the_book_listens_only_through_the_shared_recogniser() -> None:
+    """Decision 4: the browser's recogniser comes from JarvisAudio.recognizer() (the one
+    constructor, which the "Mic off" lock refuses and aborts); the Book never builds its own."""
+    talk, voice, capture = (
+        _read("console-book-talk.js"),
+        _read("console-book-voice.js"),
+        _read("console-voice-capture.js"),
+    )
+    for name, text in (("talk", talk), ("voice", voice)):
+        assert "SpeechRecognition" not in text, name
+    assert ".recognizer()" in voice and "lang = 'en-IN'" in voice
+    assert capture.count("new R()") == 1 and "canRecognise" in capture
+    table = _words_table(capture)
+    for code in ("rec_unsupported", "rec_refused", "rec_network", "rec_language", "rec_stopped"):
+        assert re.search(rf"\b{code}:", table) and "Type your question" in table, code
+
+
+def test_the_switch_is_pointed_to_for_the_owner_only_and_never_flipped_by_the_page() -> None:
+    talk = _read("console-book-talk.js")
+    m = re.search(r"const recWords = \(code\) => (.*?);\n", talk)
+    assert m and "S.owner" in m.group(1), "the pointer to the switch is the owner's only"
+    assert "/v1/book/settings" not in talk  # the show never changes the setting by itself

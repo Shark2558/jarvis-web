@@ -141,6 +141,14 @@ class BudgetUnavailable(BudgetError):
         return NOTE_UNAVAILABLE
 
 
+class FreeAllowanceUsed(BudgetError):
+    """A free-only voice call (R6.2 decision 4: a build book guest's cloud listening) the free
+    allowance no longer covers: refused, never priced (→ 503 in the Book's own words)."""
+
+    def __init__(self) -> None:
+        super().__init__("This month's free allowance doesn't cover it, so nothing was sent.")
+
+
 # ---- views ------------------------------------------------------------------------------------
 
 
@@ -287,6 +295,15 @@ class Billing:
                     "voice."
                 ),
             )
+
+    async def ensure_free(self, *, key: str, units: float, free_units: float) -> None:
+        """Free-only (R6.2 decision 4): the call goes ahead only while the deployment's free
+        allowance still covers `units`, whatever the limit; never a priced call.
+        FreeAllowanceUsed when it doesn't; BudgetUnavailable when the counter can't be read."""
+        used = (await self.allowance((key,))).used(key)
+        if used + units > free_units:
+            log.info("free allowance used up; a free-only voice call refused", extra={"key": key})
+            raise FreeAllowanceUsed()
 
     # ---- metering ------------------------------------------------------------------------------
 
@@ -460,6 +477,7 @@ __all__ = [
     "BudgetError",
     "BudgetReached",
     "BudgetUnavailable",
+    "FreeAllowanceUsed",
     "RateView",
     "UsageView",
     "build_billing",

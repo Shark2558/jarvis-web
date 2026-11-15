@@ -70,3 +70,31 @@ def test_the_message_names_settings_only_never_a_value(settings: Settings) -> No
     with pytest.raises(RuntimeError) as got:
         s.require_prod_invariants()
     assert "secret-looking-service-name" not in str(got.value)
+
+
+# ---- security review 1, L3: JARVIS_ENV is one of the known values, checked at start-up ----------
+@pytest.mark.parametrize(
+    ("raw", "env"), [("Dev", "dev"), (" prod", "prod"), ("STAGING ", "staging")]
+)
+def test_the_environment_is_read_plainly(
+    monkeypatch: pytest.MonkeyPatch, raw: str, env: str
+) -> None:
+    monkeypatch.setenv("JARVIS_ENV", raw)
+    assert Settings(_env_file=None).env == env
+
+
+@pytest.mark.parametrize("raw", ["production", "development", "", "dev prod"])
+def test_an_unknown_environment_never_starts(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+    monkeypatch.setenv("JARVIS_ENV", raw)
+    with pytest.raises(ValueError, match="JARVIS_ENV must be dev, staging or prod"):
+        Settings(_env_file=None)
+
+
+def test_a_differently_written_dev_on_cloud_run_is_still_dev(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Before L3, "Dev" passed the guard's dev check (it compared exactly "dev")."""
+    monkeypatch.setenv("JARVIS_ENV", "Dev")
+    monkeypatch.setenv("K_SERVICE", "jarvis")
+    with pytest.raises(RuntimeError, match="JARVIS_ENV=dev.*Cloud Run"):
+        Settings(_env_file=None).require_prod_invariants()

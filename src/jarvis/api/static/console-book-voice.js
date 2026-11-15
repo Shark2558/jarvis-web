@@ -2,16 +2,20 @@
 // prefetched, a Web Audio queue, the browser voice on 402/503/a decode error, level() for the Core.
 // say(lineId, text) resolves when the line's audio ends: the cloud voice (the server speaks ITS text for that line id,
 // a beat id, a fixed line's key or a reply id; decoded by Web Audio, so no media element and no CSP change), else the
-// browser's speechSynthesis (from the first 402 / 503 / decode error on, for the rest of the show), else -- sound off,
+// browser's speechSynthesis (R6.2 decision 4: the default, Rs 0; with the cloud voice, from the first 402 / 503 / decode
+// error on, for the rest of the show), else -- sound off,
 // or no voice at all -- captions only: 330 ms a word + 800 ms. Pause, resume and stop work in every mode, also while a
 // line's audio is still being fetched: it then waits, paused, and starts on resume (never late, never by itself).
 // record: a spoken question (<= 15 s, 16 kHz PCM16 WAV) through the console's capture worklet, for POST /v1/book/show/hear;
 // start() rejects with JarvisAudio's .code ('mic_off', 'blocked', 'no_mic', 'busy', 'failed', 'unsupported'), frames() counts.
+// listen (R6.2 decision 4, the default): a spoken question in THIS browser's own recogniser, through the shared
+// JarvisAudio.recognizer() (the only speech recogniser JARVIS builds; the mic lock refuses and aborts it), en-IN, one
+// utterance, 15 s at most; start(done) throws its .code, and done({text, error}) is called once, at its end.
 // The microphone opens only from a tap; a cancel or the close while it is still starting (the permission prompt, the
 // worklet) wins: the stream is stopped and nothing is recorded. Nothing is stored; dispose() stops and closes
 // everything (the page calls it at the close, D14).
 // No build step; CSP script-src 'self'; textContent only; ASCII source; <= 400 lines.
-// window.JarvisBookVoice = {start(voice), say, prefetch, pause, resume, stop, mute, level, state, dispose, record}
+// window.JarvisBookVoice = {start(voice), say, prefetch, pause, resume, stop, mute, level, state, dispose, record, listen}
 (() => {
   'use strict';
   const ID = /^(s\d{2}b\d{2}|[a-z_]{2,20}|r_[0-9a-f]{12})$/;
@@ -24,7 +28,7 @@
 
   /** Called from the Begin click (a user gesture), so the AudioContext may start. */
   function start(voice) {
-    S.mode = voice === 'browser' ? 'browser' : 'cloud';
+    S.mode = voice === 'cloud' ? 'cloud' : 'browser'; // R6.2 decision 4: the cloud voice only when the owner chose it
     if (S.ctx || S.closed) return;
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -202,7 +206,7 @@
   function state() { return S.closed ? 'closed' : S.ctx ? S.ctx.state : 'none'; }
   function dispose() {
     if (S.closed) return;
-    stop(); rec.cancel();
+    stop(); rec.cancel(); listen.cancel();
     S.closed = true; S.cache.clear();
     const sp = synth(); try { if (sp) sp.cancel(); } catch (_) {}
     if (S.ctx) { try { S.ctx.close(); } catch (_) {} }
@@ -251,5 +255,40 @@
     };
   })();
 
-  window.JarvisBookVoice = Object.freeze({ start, say, prefetch, pause, resume, stop, mute, level, state, dispose, record: rec });
+  // ---- a spoken question in this browser's own recogniser (R6.2 decision 4: the default, Rs 0) ----------------------
+  const listen = (() => {
+    let cur = null;
+    const A = () => window.JarvisAudio || null;
+    const supported = () => { const a = A(); return !!(a && typeof a.canRecognise === 'function' && a.canRecognise()); };
+    function finish(me) {
+      if (cur !== me) return;
+      cur = null; clearTimeout(me.timer);
+      const done = me.done; me.done = null;
+      if (done) done({ text: me.text.replace(/\s+/g, ' ').trim(), error: me.error });
+    }
+    /** true: listening now; false: already listening or closed. Throws .code 'mic_off' / 'unsupported' / 'failed'. */
+    function begin(done) {
+      const a = A();
+      if (!a || cur || S.closed) return false;
+      const r = a.recognizer(); // the mic lock and a browser without one throw here
+      const me = { r, text: '', error: '', done };
+      r.lang = 'en-IN'; r.interimResults = false; r.continuous = false; r.maxAlternatives = 1;
+      r.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i += 1) { if (e.results[i].isFinal) me.text += ' ' + e.results[i][0].transcript; } };
+      r.onerror = (e) => { me.error = String((e && e.error) || 'failed'); };
+      r.onend = () => finish(me);
+      cur = me;
+      me.timer = setTimeout(() => { try { r.stop(); } catch (_) { finish(me); } }, MAX_REC_S * 1000);
+      try { r.start(); } catch (_) { cur = null; clearTimeout(me.timer); throw Object.assign(new Error('failed'), { code: 'failed' }); }
+      return true;
+    }
+    return {
+      supported,
+      start: begin,
+      stop() { if (cur) { try { cur.r.stop(); } catch (_) { finish(cur); } } }, // its last words, then its end
+      cancel() { const me = cur; cur = null; if (!me) return; clearTimeout(me.timer); me.done = null; try { me.r.abort(); } catch (_) {} },
+      active: () => !!cur,
+    };
+  })();
+
+  window.JarvisBookVoice = Object.freeze({ start, say, prefetch, pause, resume, stop, mute, level, state, dispose, record: rec, listen });
 })();

@@ -188,7 +188,7 @@ async def test_bad_arguments_fail_fast_and_refusals_are_plain_words() -> None:
     nothing = await r.tool("laundry_move", step="basket")
     assert nothing.outcome is GatewayOutcome.ERROR
     number = await r.tool(
-        "laundry_send_out", action="send", pieces=[BLAZER], shop="Call 98470 12345"
+        "laundry_send_out", action="send", pieces=[BLAZER], shop="Call 12345 67890"
     )
     assert number.outcome is GatewayOutcome.ERROR and "phone number" in (number.error or "")
     refused = await r.tool("laundry_move", step="drying", pieces=[TEE])

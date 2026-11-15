@@ -89,7 +89,7 @@ async def test_a_piece_that_is_not_in_the_batch_is_refused() -> None:
 
 @pytest.mark.parametrize(
     "label",
-    ["Shop 98470 12345", "98470-12345 cleaners", "call 9847012345", "x" * 41, "", "   "],
+    ["Shop 12345 67890", "11111-22222 cleaners", "call 1234567890", "x" * 41, "", "   "],
 )
 def test_a_shop_label_never_holds_a_phone_number_and_stays_short(label: str) -> None:
     with pytest.raises(Refused):

@@ -143,15 +143,17 @@ class LifeTools:
         return await guarded(work)
 
 
+MERGE_SCHEMA = {"type": "object", "required": ["keep", "merge"],
+                "properties": {"keep": PIECE, "merge": PIECE}}  # fmt: skip
+RETIRE_SCHEMA = {"type": "object", "required": ["piece", "action"], "properties": {
+    "piece": PIECE, "action": {"enum": ["archive", "restore"]},
+    "condition": {"enum": list(CONDITIONS)}}}  # fmt: skip
+ONE_SCHEMA = {"type": "object", "required": ["piece"], "properties": {"piece": PIECE}}
+
+
 def life_tools(desk: Any) -> list[Tool]:
     api = LifeTools(desk)
-    r2 = ActionRisk.REVERSIBLE
-    merge = {"type": "object", "required": ["keep", "merge"],
-             "properties": {"keep": PIECE, "merge": PIECE}}  # fmt: skip
-    retire = {"type": "object", "required": ["piece", "action"], "properties": {
-        "piece": PIECE, "action": {"enum": ["archive", "restore"]},
-        "condition": {"enum": list(CONDITIONS)}}}  # fmt: skip
-    one = {"type": "object", "required": ["piece"], "properties": {"piece": PIECE}}
+    r2, merge, retire, one = ActionRisk.REVERSIBLE, MERGE_SCHEMA, RETIRE_SCHEMA, ONE_SCHEMA
     return [
         Tool(
             "wardrobe_merge",

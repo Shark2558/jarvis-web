@@ -28,10 +28,10 @@ from typing import Any
 from jarvis.keyring import KEY_ID
 from jarvis.storage.docs import DocTx, Op, Set
 from jarvis.wardrobe.catalog.backup import MAGIC, VERSION, aad_line
-from jarvis.wardrobe.catalog.photos import PhotoVault
+from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PhotoVault
 from jarvis.wardrobe.catalog.store import CatalogStore
 from jarvis.wardrobe.http import RestoreCheck, RestoreCounts, RestoreDone
-from jarvis.wardrobe.model import Event, Piece, WardrobeView
+from jarvis.wardrobe.model import PHOTO_ID, Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import Commit, Refused
 
 CHUNK = 50
@@ -87,11 +87,13 @@ def parse(store: CatalogStore, uid: str, body: bytes) -> Parsed:
 
 
 def _take(out: Parsed, kind: str, d: Any) -> None:
+    """One line of the file; a photo or a shard must be his, a shard number in range."""
+    uid = out.view.uid
     if kind == "log":
         out.logs[str(d["p"])] = [Event.model_validate(e) for e in d["e"]]
-    elif kind == "photo":
+    elif kind == "photo" and PHOTO_ID.match(str(d["id"])) and d["doc"].get("owner") == uid:
         out.photos[str(d["id"])] = dict(d["doc"])
-    elif kind == "fp":
+    elif kind == "fp" and 0 <= int(d["n"]) < MAX_SHARDS and d["doc"].get("owner") == uid:
         out.prints[int(d["n"])] = dict(d["doc"])
     else:
         raise ValueError("line")

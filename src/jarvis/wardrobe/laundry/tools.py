@@ -32,7 +32,7 @@ from jarvis.wardrobe.laundry.cards import fence, shown
 from jarvis.wardrobe.laundry.flows import Desk, Done
 from jarvis.wardrobe.laundry.store import LaundryUnavailable, Origin
 from jarvis.wardrobe.model import WardrobeView
-from jarvis.wardrobe.ports import MAX_RESULT_PIECES, Refused
+from jarvis.wardrobe.ports import MAX_RESULT_PIECES, SPOKEN_OK, Refused
 
 AGENT = "laundry"
 
@@ -216,64 +216,36 @@ class LaundryAPI:
 
 def laundry_tools(desk: Desk) -> list[Tool]:
     api = LaundryAPI(desk)
-    s = checks.SCHEMAS
+    r1, r2 = ActionRisk.READ_ONLY, ActionRisk.REVERSIBLE
+    rows = (
+        ("laundry_status", r1, api.status, checks.check_status, None, texts.LOOKED),
+        ("laundry_move", r2, api.move, checks.check_move, api.preview_move, texts.MOVED),
+        ("laundry_review", r2, api.review, checks.check_review, api.preview_review, texts.CHECKED),
+        (
+            "laundry_correct",
+            r2,
+            api.correct,
+            checks.check_correct,
+            api.preview_correct,
+            texts.STRUCK,
+        ),
+        ("laundry_send_out", r2, api.send_out, checks.check_send, api.preview_send, texts.OUTSIDE),
+    )
     return [
         Tool(
-            "laundry_status",
-            checks.DESCRIPTIONS["laundry_status"],
-            s["laundry_status"],
-            ActionRisk.READ_ONLY,
-            api.status,
-            check=checks.check_status,
-            may_vouch=True,
-            activity_words=texts.LOOKED,
+            name,
+            checks.DESCRIPTIONS[name],
+            checks.SCHEMAS[name],
+            risk,
+            run,
             agent=AGENT,
-        ),
-        Tool(
-            "laundry_move",
-            checks.DESCRIPTIONS["laundry_move"],
-            s["laundry_move"],
-            ActionRisk.REVERSIBLE,
-            api.move,
-            check=checks.check_move,
-            preview=api.preview_move,
-            spoken_ok=True,
-            activity_words=texts.MOVED,
-            agent=AGENT,
-        ),
-        Tool(
-            "laundry_review",
-            checks.DESCRIPTIONS["laundry_review"],
-            s["laundry_review"],
-            ActionRisk.REVERSIBLE,
-            api.review,
-            check=checks.check_review,
-            preview=api.preview_review,
-            activity_words=texts.CHECKED,
-            agent=AGENT,
-        ),
-        Tool(
-            "laundry_correct",
-            checks.DESCRIPTIONS["laundry_correct"],
-            s["laundry_correct"],
-            ActionRisk.REVERSIBLE,
-            api.correct,
-            check=checks.check_correct,
-            preview=api.preview_correct,
-            activity_words=texts.STRUCK,
-            agent=AGENT,
-        ),
-        Tool(
-            "laundry_send_out",
-            checks.DESCRIPTIONS["laundry_send_out"],
-            s["laundry_send_out"],
-            ActionRisk.REVERSIBLE,
-            api.send_out,
-            check=checks.check_send,
-            preview=api.preview_send,
-            activity_words=texts.OUTSIDE,
-            agent=AGENT,
-        ),
+            check=check,
+            preview=preview,
+            may_vouch=risk is r1,  # a read vouches per result (D18); a write never does
+            spoken_ok=name in SPOKEN_OK,  # laundry_move only (the contract's list)
+            activity_words=words,
+        )
+        for name, risk, run, check, preview, words in rows
     ]
 
 

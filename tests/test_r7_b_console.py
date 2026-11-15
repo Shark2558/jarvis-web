@@ -10,6 +10,9 @@
 #     cache); their label lists are the server schema's
 #   - the panel sends a picture only through I0's one door, asks only /v1/vision, and its strings
 #     reach the page by textContent; the stylesheet only places things (<= 150 lines)
+#   - R13 Part D (docs/plans/r13-wardrobe.md D8, INTEGRATION-D.md): the engine holds NINE tasks,
+#     R7's five and the wardrobe's four (embed, colour, person, face), all registered before the
+#     seal; the four load only from BASE13 (jarvis.vision.assets.WARDROBE_RELEASE)
 from __future__ import annotations
 
 import hashlib
@@ -206,9 +209,12 @@ def test_the_guard_passes_ordinary_use_case_code(fine: str) -> None:
     assert use_case_problems(CLEAN_USE_CASE + "\n" + fine) == [], fine
 
 
-def test_the_engine_is_sealed_after_its_five_tasks() -> None:
+NINE = ["text", "code", "objects", "pose", "quality", "embed", "colour", "person", "face"]
+
+
+def test_the_engine_is_sealed_after_its_nine_tasks() -> None:
     out = run_dom("sealed")
-    assert out["before"] == ["text", "code", "objects", "pose", "quality"]
+    assert out["before"] == NINE  # R7's five, then R13's four (D8), then the seal
     assert out["added"] is False and out["after"] == out["before"]
 
 
@@ -232,7 +238,7 @@ def test_the_tasks_load_only_jarvis_own_files() -> None:
     assert "workerBlobURL: false" in tasks and "cacheMethod: 'none'" in tasks
     assert "gzip: false" in tasks and "locateFile" in tasks
     assert "https://" not in js and "http://" not in js and "jsdelivr" not in js
-    named = set(re.findall(r"BASE \+ '([A-Za-z0-9._-]+)'", tasks))
+    named = set(re.findall(r"\bBASE \+ '([A-Za-z0-9._-]+)'", tasks))  # R7's BASE, not ORT_BASE
     named |= {assets.POSE_MODEL, assets.OBJECT_MODEL}
     # the worker reads eng.traineddata from langPath, the core its .wasm beside itself
     assert "langPath: BASE," in tasks
@@ -242,7 +248,25 @@ def test_the_tasks_load_only_jarvis_own_files() -> None:
     assert f"POSE_MODEL = '{assets.POSE_MODEL}'" in tasks
     assert f"OBJECT_MODEL = '{assets.OBJECT_MODEL}'" in tasks
     for fetched in re.findall(r"fetch\(([^,)]+)", tasks):
-        assert fetched.startswith("BASE + "), fetched  # a task fetches only its own model file
+        assert fetched.startswith(("BASE + ", "BASE13 + ")), fetched  # only its own model file
+
+
+def test_the_wardrobe_tasks_load_only_their_own_release() -> None:
+    js = read(VISION)
+    tasks = js[js.index(PART_B) :]
+    assert f"const BASE13 = '/static/vendor/vision/{assets.WARDROBE_RELEASE}/';" in tasks
+    assert tasks.count("fetch(BASE13 + ") == 1  # model13(): one fetch, BASE13 only
+    named = dict(re.findall(r"const (EMBED|FACE|PERSON)_MODEL = '([A-Za-z0-9._-]+)';", tasks))
+    want = {k.upper(): v[0] for k, v in assets.WARDROBE_FILES.items() if v}
+    assert named == want
+    assert assets.WARDROBE_FILES["colour"] == () and "id: 'colour', v: 1, input: 'photo'" in tasks
+    assert "const ORT_BASE = '/static/vendor/ort-1.30.0/';" in tasks
+    # the wake word's own settings: one module URL, one thread, no proxy, its folder
+    env = "o.env.wasm.numThreads = 1; o.env.wasm.proxy = false; o.env.wasm.wasmPaths = ORT_BASE;"
+    assert env in tasks
+    wake = read("console-wakeword.js")
+    assert "const ORT_BASE = '/static/vendor/ort-1.30.0/';" in wake
+    assert "import(ORT_BASE + 'ort.wasm.min.mjs')" in wake
 
 
 def test_the_label_lists_are_the_server_schemas() -> None:
@@ -261,6 +285,10 @@ def test_each_task_registers_through_the_port() -> None:
     )
     for task in ("text", "code", "objects", "pose", "quality"):
         assert f"id: '{task}', v: 1, input: 'both'" in js, task
+    assert "[embedTask, colourTask, personTask, faceTask].forEach((t) => register(t));" in js
+    for task in ("embed", "colour", "person", "face"):  # R13: run on one photo, never streamed
+        assert f"id: '{task}', v: 1, input: 'photo'" in js, task
+    assert js.index("[embedTask, colourTask") < js.index("sealRegistry();\n")
     assert "rate: 15" in js and "rate: 5" in js  # pose <= 15 a second, objects <= 5 (D13)
 
 
@@ -335,7 +363,8 @@ def test_a_failed_media_import_is_not_kept_and_a_failed_script_is_removed() -> N
     mp = js[js.index("const mp = () =>") : js.index("// ---- the tasks ----")]
     assert ".catch(() => { mediapipe = null;" in mp
     assert "removeChild(s)" in js and "scripts.delete(src)" in js  # no second <script> on a retry
-    assert js.count("load: guard(") == 4  # a load says only "not installed" or "could not load"
+    # a load says only "not installed" or "could not load": R7's four and R13's three models
+    assert js.count("load: guard(") == 7
     assert "window.addEventListener('pagehide', unload)" in js and "terminate()" in js
 
 

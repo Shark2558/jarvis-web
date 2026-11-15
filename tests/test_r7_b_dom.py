@@ -158,10 +158,17 @@ def test_an_answer_outside_its_schema_is_dropped() -> None:
     assert out["got"][0]["r"]["data"] == {}
 
 
-def test_the_engine_lists_the_five_tasks() -> None:
+def test_the_engine_lists_the_nine_tasks() -> None:
+    # R7's five, and R13 Part D's four wardrobe tasks, photo-only (INTEGRATION-D.md)
     tasks = {t["id"]: t for t in run_dom("engine", probe={"n": 1})["tasks"]}
-    assert {"text", "code", "objects", "pose", "quality"} <= set(tasks)
+    assert set(tasks) - {"probe"} == {"text", "code", "objects", "pose", "quality"} | {
+        "embed",
+        "colour",
+        "person",
+        "face",
+    }
     assert {tasks[t]["input"] for t in ("text", "code", "objects", "pose", "quality")} == {"both"}
+    assert {tasks[t]["input"] for t in ("embed", "colour", "person", "face")} == {"photo"}
 
 
 def test_a_live_run_sends_no_picture_and_keep_sends_the_result_alone() -> None:

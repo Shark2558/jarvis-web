@@ -376,6 +376,31 @@ def test_mic_off_offers_no_way_back_once_the_questions_run_out(
         c.close()
 
 
+def test_a_typed_question_while_listening_stops_the_microphone(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """Code review 1, H1: a typed question wins; the recording is dropped and nothing goes to /hear."""
+    c, fake = _questions(browser, server_url, token)
+    try:
+        c.page.locator("#shMic").click()
+        c.page.wait_for_function(PRESSED.format("true"))
+        c.page.locator("#shQ").fill("How is the vault built?")
+        c.page.locator("#shQ").press("Enter")
+        c.page.locator("#shThread .row.user .bubble", has_text="How is the vault built?").wait_for()
+        assert c.page.locator("#shMic").get_attribute("aria-pressed") == "false"
+        assert c.page.evaluate("window.JarvisBookVoice.record.active()") is False
+        c.page.wait_for_function("() => !document.getElementById('shQ').disabled")
+        c.page.wait_for_timeout(500)
+        assert len(fake.to("POST", "/v1/book/show/ask")) == 1
+        assert fake.to("POST", "/v1/book/show/hear") == []
+        c.page.locator("#shQ").fill("my next typed draft")
+        c.page.wait_for_timeout(300)
+        assert c.page.locator("#shQ").input_value() == "my next typed draft"
+        _clean(c)
+    finally:
+        c.close()
+
+
 # ---- 5c, 9c: the microphone opens but sends no sound ----------------------------------------------------
 def test_a_microphone_that_sends_no_sound_says_so(
     browser: Any, server_url: str, token: str

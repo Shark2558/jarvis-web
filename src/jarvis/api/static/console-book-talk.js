@@ -88,6 +88,7 @@
   async function ask() {
     const text = $('shQ').value.replace(/\s+/g, ' ').trim().slice(0, MAX_Q);
     if (!text || S.busy || S.left === 0) return;
+    if (S.recording) stopRec(true); // code review 1, H1: a typed question wins; the recording is dropped, nothing sent
     S.busy = true; $('shQ').value = ''; row('user', text); leftWords(); micState();
     const gen = S.gen; // the panel closed (Finish, End, the close) while waiting: drop what comes back
     const thinking = row('jarvis', '', 'pending'); thinking.firstChild.classList.add('typing');

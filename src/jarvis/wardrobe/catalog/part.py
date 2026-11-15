@@ -16,9 +16,10 @@ is read from the app while `build` runs; the bin, the brains and billing are rea
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
+from jarvis.wardrobe.catalog.backup import Backup
 from jarvis.wardrobe.catalog.counts import Tally
 from jarvis.wardrobe.catalog.data import CatalogData
 from jarvis.wardrobe.catalog.jobs import WardrobeSweep
@@ -28,9 +29,11 @@ from jarvis.wardrobe.catalog.merge import Merge
 from jarvis.wardrobe.catalog.photos import PhotoVault
 from jarvis.wardrobe.catalog.pilot import PilotCounts
 from jarvis.wardrobe.catalog.places import Places
+from jarvis.wardrobe.catalog.restore import Restore
 from jarvis.wardrobe.catalog.search import Search
 from jarvis.wardrobe.catalog.service import CatalogService
 from jarvis.wardrobe.catalog.store import CatalogStore
+from jarvis.wardrobe.catalog.tagging import Tagging
 from jarvis.wardrobe.catalog.tools import read_tools
 from jarvis.wardrobe.catalog.tools_life import life_tools
 from jarvis.wardrobe.catalog.tools_write import write_tools
@@ -61,7 +64,9 @@ class Desk:
     bin: CatalogBin
     pilot: PilotCounts
     data: CatalogData
-    extra: dict[str, Any] = field(default_factory=dict)  # tagging, backup, restore
+    tagging: Tagging
+    backup: Backup
+    restore: Restore
 
 
 def _store(ctx: WardrobeContext) -> CatalogStore:
@@ -73,7 +78,7 @@ def _store(ctx: WardrobeContext) -> CatalogStore:
     )  # fmt: skip
 
 
-def build_desk(ctx: WardrobeContext) -> Desk:
+def build_desk(ctx: WardrobeContext, *, eyes: Any = None) -> Desk:
     s, store = ctx.s, _store(ctx)
     vault = PhotoVault(
         store, side=s.wardrobe_photo_side, max_kb=s.wardrobe_photo_max_kb,
@@ -90,17 +95,21 @@ def build_desk(ctx: WardrobeContext) -> Desk:
         Labels(store), Search(store), views, views.tally, vault, merge,
         CatalogBin(store, vault, merge, lambda: ctx.state("undo")), PilotCounts(store),
         CatalogData(store, vault),
+        Tagging(store, vault, state=ctx.state, zone=ctx.zone, cap_inr=s.wardrobe_ai_tag_month_inr,
+                rate=s.usd_inr_rate, eyes=eyes),
+        Backup(store, vault, max_mb=s.wardrobe_backup_max_mb), Restore(store, vault),
     )  # fmt: skip
     store.desk = desk
     return desk
 
 
-def build(ctx: WardrobeContext) -> WardrobePart:
+def build(ctx: WardrobeContext, *, eyes: Any = None) -> WardrobePart:
+    """`eyes`: a stand-in for `BrainEyes` (tests); the app's is built late from its state."""
     if ctx.docs is None:
         return WardrobePart("catalog", ready=OFF_NO_DOCS)
     if ctx.keyring is None:
         return WardrobePart("catalog", ready=OFF_NO_KEY)
-    desk = build_desk(ctx)
+    desk = build_desk(ctx, eyes=eyes)
     tools = (*read_tools(desk), *write_tools(desk), *life_tools(desk))
     sweep = WardrobeSweep(desk.store, ctx.zone, close=ctx.s.wardrobe_wear_close)
     return WardrobePart(

@@ -75,8 +75,6 @@ def catalog(
     state: dict[str, Any] = {}
     undo = UndoBin(DeletedStore(docs), clock=clock)
     state["undo"] = undo
-    if eyes is not None:
-        state["brain_eyes"] = eyes
 
     async def zone(uid: str) -> ZoneInfo:
         return ZoneInfo("Asia/Kolkata")
@@ -90,7 +88,7 @@ def catalog(
         zone=zone,
         state=state.get,
     )
-    part = build(ctx)
+    part = build(ctx, eyes=eyes)
     found = part.services.get("bin")
     if found is not None:
         undo.register("wardrobe_item", found, found)

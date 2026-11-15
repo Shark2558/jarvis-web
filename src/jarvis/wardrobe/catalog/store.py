@@ -187,17 +187,20 @@ class CatalogStore:
         *,
         index: Callable[[WardrobeView], WardrobeView] | None = None,
         needed: Sequence[ReviewNeeded] = (),
+        as_stored: bool = False,
     ) -> Committed:
         """`index` (A's own, beyond the contract): a change to the index's other records (a
         place's baseline, a pair) in the same commit; `needed`: entries to ask B's writer for
-        with no event (the sweep: a hold without its entry, D4.4)."""
+        with no event (the sweep: a hold without its entry, D4.4); `as_stored`: the events were
+        settled before (a restore, D17): kept exactly, still deduplicated and re-folded."""
         result: dict[str, Any] = {}
 
         async def work(tx: DocTx) -> None:
             result.clear()
             view = await self._open_tx(uid, tx)
             commit = await fn(view, tx)
-            result.update(await self._fold_in(uid, view, tx, commit, (index, tuple(needed))))
+            more = (index, tuple(needed), as_stored)
+            result.update(await self._fold_in(uid, view, tx, commit, more))
 
         await self._commit(work)
         await self._tell(result["changes"])
@@ -229,7 +232,9 @@ class CatalogStore:
                 fresh = fresh.model_copy(update={"created_at": now})
             w.pieces[rec.id] = fresh
 
-    async def _append(self, w: _Work, uid: str, tx: DocTx, events: Sequence[Event]) -> None:
+    async def _append(
+        self, w: _Work, uid: str, tx: DocTx, events: Sequence[Event], as_stored: bool
+    ) -> None:
         now = self._now()
         for raw in events:
             p = w.pieces.get(raw.piece)
@@ -243,7 +248,7 @@ class CatalogStore:
             ):
                 w.marks[raw.id] = "known"
                 continue
-            e = folding.settle(raw, now, known)
+            e = raw if as_stored else folding.settle(raw, now, known)
             known.append(e)
             w.new.setdefault(e.piece, []).append(e)
 
@@ -287,12 +292,12 @@ class CatalogStore:
         view: WardrobeView,
         tx: DocTx,
         commit: Commit,
-        more: tuple[Callable[[WardrobeView], WardrobeView] | None, tuple[ReviewNeeded, ...]],
+        more: tuple[Callable[[WardrobeView], WardrobeView] | None, tuple[ReviewNeeded, ...], bool],
     ) -> dict[str, Any]:
-        now, (index, asked) = self._now(), more
+        now, (index, asked, as_stored) = self._now(), more
         w = _Work(pieces=dict(view.pieces), needed=list(asked))
         self._take_records(w, commit.records, now)
-        await self._append(w, uid, tx, commit.events)
+        await self._append(w, uid, tx, commit.events, as_stored)
         for pid in w.new:
             self._refold(w, uid, pid, now)
         self._check_cap(view, w.pieces)

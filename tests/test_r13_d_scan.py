@@ -426,7 +426,8 @@ function scene(rects) {
 const navy = () => [28, 36, 78], stripes = (x) => (x % 3 === 0 ? [240, 240, 236] : [28, 36, 78]);
 console.log(JSON.stringify({
   striped: boxesOf(scene([[20, 10, 16, 30, stripes]]), W, H).length,
-  apart: boxesOf(scene([[4, 8, 12, 30, navy], [40, 8, 14, 20, navy]]), W, H).map((b) => Math.round(b.x * 64)),
+  apart: boxesOf(scene([[4, 8, 12, 30, navy], [40, 8, 14, 20, navy]]), W, H)
+    .map((b) => Math.round(b.x * 64)),
   bare: boxesOf(scene([]), W, H),
   speck: boxesOf(scene([[30, 20, 1, 1, navy]]), W, H).length,
 }));
@@ -443,5 +444,6 @@ def test_the_split_finds_one_box_a_piece_and_the_whole_frame_when_bare() -> None
     assert run.returncode == 0, run.stderr
     got = json.loads(run.stdout)
     assert got["striped"] == 1  # light stripes are closed over: one shirt, one box
-    assert len(got["apart"]) == 2 and got["apart"][0] < got["apart"][1]  # laid apart: two, left first
-    assert got["bare"] == [{"x": 0, "y": 0, "w": 1, "h": 1}] and got["speck"] == 1  # a speck is not a piece
+    # two laid apart: two boxes, left first; a bare surface: the whole frame; a speck: no piece
+    assert len(got["apart"]) == 2 and got["apart"][0] < got["apart"][1]
+    assert got["bare"] == [{"x": 0, "y": 0, "w": 1, "h": 1}] and got["speck"] == 1

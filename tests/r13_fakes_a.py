@@ -8,6 +8,7 @@
 #   jpeg(w, h, extra)              a structurally valid baseline JPEG of that size (no pixels)
 #   fp(seed)                       a 1,708-character base64 fingerprint (1,280 uint8)
 #   FakeEyes                       `BrainEyes.look` stand-in: records the call, answers JSON
+#   gateway(cat), call(...), approve(...)   a real Gateway over the part's tools, and its cards
 #
 # Every clock is FIXED (`r13_fakes.FixedClock`, `ist`); nothing here reads the real one.
 from __future__ import annotations
@@ -145,15 +146,52 @@ class _Glance:
     model: str
 
 
+SCOPE = f"{UID}:sess_1"
+
+
+def gateway(cat: Catalog, rules: list[Any] | None = None) -> Any:
+    from jarvis.core.guardrails import ConfirmationGate
+    from jarvis.tools.audit import AuditLog
+    from jarvis.tools.gateway import Gateway
+    from jarvis.tools.policy import Policy
+    from jarvis.tools.registry import ToolRegistry
+
+    reg = ToolRegistry()
+    for tool in cat.part.tools:
+        reg.register(tool)
+    return Gateway(registry=reg, policy=Policy(rules), gate=ConfirmationGate(), audit=AuditLog())
+
+
+async def call(gw: Any, name: str, **args: Any) -> Any:
+    from jarvis.llm.base import ToolCall
+
+    return await gw.execute(ToolCall(id="c", name=name, arguments=args), scope=SCOPE)
+
+
+async def approve(gw: Any, asked: Any) -> Any:
+    """Approve the card `asked` left, exactly as he saw it."""
+    from jarvis.llm.base import ToolCall
+    from jarvis.tools.gateway import GatewayOutcome
+
+    assert asked.outcome is GatewayOutcome.AWAITING_CONFIRMATION and asked.pending is not None
+    card = asked.pending
+    again = ToolCall(id="c", name=card.tool, arguments=card.arguments)
+    return await gw.execute(again, confirmation_id=card.id, scope=SCOPE)
+
+
 __all__ = [
     "OTHER",
+    "SCOPE",
     "ROOT",
     "UID",
     "Catalog",
     "FakeEyes",
+    "approve",
+    "call",
     "catalog",
     "conformance_store",
     "fp",
+    "gateway",
     "jpeg",
     "ring",
     "settings",

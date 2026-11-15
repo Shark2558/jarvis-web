@@ -8,41 +8,17 @@ from typing import Any
 
 import pytest
 from r13_fakes import UID, ev
-from r13_fakes_a import Catalog, catalog, jpeg
+from r13_fakes_a import Catalog, approve, call, catalog, gateway, jpeg
 
-from jarvis.core.guardrails import NO_BULK_TOOLS, ActionRisk, ConfirmationGate
-from jarvis.llm.base import ToolCall
+from jarvis.core.guardrails import NO_BULK_TOOLS, ActionRisk
 from jarvis.tools import Effect, PolicyRule
-from jarvis.tools.audit import AuditLog
 from jarvis.tools.external import FENCE_END
-from jarvis.tools.gateway import Gateway, GatewayOutcome, GatewayResult
-from jarvis.tools.policy import Policy
-from jarvis.tools.registry import ToolRegistry
+from jarvis.tools.gateway import GatewayOutcome
 from jarvis.tools.taint import context_trust
 from jarvis.undo.models import RestoreStatus
 from jarvis.wardrobe.catalog.edits import NewPiece
 from jarvis.wardrobe.ports import Commit
 from jarvis.wardrobe.redact import BIN_TITLE
-
-SCOPE = f"{UID}:sess_1"
-
-
-def gateway(cat: Catalog, rules: list[PolicyRule] | None = None) -> Gateway:
-    reg = ToolRegistry()
-    for tool in cat.part.tools:
-        reg.register(tool)
-    return Gateway(registry=reg, policy=Policy(rules), gate=ConfirmationGate(), audit=AuditLog())
-
-
-async def call(gw: Gateway, name: str, **args: Any) -> GatewayResult:
-    return await gw.execute(ToolCall(id="c", name=name, arguments=args), scope=SCOPE)
-
-
-async def approve(gw: Gateway, asked: GatewayResult) -> GatewayResult:
-    assert asked.outcome is GatewayOutcome.AWAITING_CONFIRMATION and asked.pending is not None
-    card = asked.pending
-    again = ToolCall(id="c", name=card.tool, arguments=card.arguments)
-    return await gw.execute(again, confirmation_id=card.id, scope=SCOPE)
 
 
 @pytest.fixture

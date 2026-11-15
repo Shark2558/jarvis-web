@@ -169,8 +169,11 @@ class WriteTools:
 
     async def _links(self, pid: str, a: dict[str, Any]) -> None:
         if "label_code" in a:
-            code = str(a["label_code"])
-            await self.d.labels.assign(uid(), code, pid if code else None)
+            code = str(a["label_code"] or "")
+            if code:
+                await self.d.labels.assign(uid(), code, pid)
+            elif (worn := (await self.d.store.view(uid())).pieces[pid].label_code) is not None:
+                await self.d.labels.assign(uid(), worn, None)  # "" frees the label it wears
         if a.get("unpair"):
             await self.d.links.unpair(uid(), pid)
         if a.get("pair_with"):

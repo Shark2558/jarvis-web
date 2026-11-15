@@ -108,6 +108,21 @@ VENDORED: dict[str, tuple[str, str, str, str]] = {
     ),
     # I1 (INTEGRATION-B 2): the barcode reader inside zxing-wasm's .wasm; no version of its own
     "vendor/vision/LICENSE-zxing-cpp.txt": ("zxing-cpp", "", "vendored", "vision"),
+    # R13 D8 (I0): the wardrobe's on-device models under vendor/vision/r13-1/ (the ONNX Model Zoo
+    # at a pinned commit; NOTICE-wardrobe-models.txt beside them says what was cut)
+    "vendor/vision/LICENSE-onnx-models.txt": (
+        "ONNX Model Zoo: MobileNet v2 (cut) for the wardrobe",
+        "",
+        "model",
+        "vision",
+    ),
+    "vendor/vision/LICENSE-ultraface.txt": ("UltraFace face detector", "", "model", "vision"),
+    "vendor/vision/LICENSE-tensorflow-models.txt": (
+        "SSD-MobileNetV1: MIT (ONNX Model Zoo), TensorFlow's weights (Apache-2.0)",
+        "",
+        "model",
+        "vision",
+    ),
 }
 VISION_DIR = "vendor/vision/"
 MANIFEST_PREFIX = "manifest:"
@@ -245,20 +260,25 @@ def _release_order(path: str) -> tuple[tuple[int, ...], str]:
 
 
 def _manifest_versions(repo: Repo) -> dict[str, str]:
-    """{"manifest:<package>": version} from the newest vision release's MANIFEST.json: each file's
-    `source` is `npm:<package>@<version>/...` or a raw.githubusercontent.com address whose
-    repository and tag stand for the package and its version (I1)."""
+    """{"manifest:<package>": version} from the vision releases' MANIFEST.json files, the newest
+    first (R13 I0: the wardrobe's `r13-1` sits beside R7's `r7-1` and names none of its
+    packages): each file's `source` is `npm:<package>@<version>/...` or a raw.githubusercontent.com
+    address whose repository and tag stand for the package and its version (I1)."""
     prefix = STATIC + VISION_DIR
     manifests = sorted(
         (f for f in repo.under(prefix) if f.endswith("/MANIFEST.json")), key=_release_order
     )
-    if not manifests:
-        return {}
-    try:
-        files = json.loads(repo.text(manifests[-1]) or "{}").get("files") or {}
-    except (ValueError, AttributeError):
-        return {}
     found: dict[str, str] = {}
+    for manifest in reversed(manifests):
+        _versions_of(repo.text(manifest), found)
+    return found
+
+
+def _versions_of(text: str | None, found: dict[str, str]) -> None:
+    try:
+        files = json.loads(text or "{}").get("files") or {}
+    except (ValueError, AttributeError):
+        return
     for entry in files.values() if isinstance(files, dict) else ():
         source = entry.get("source") if isinstance(entry, dict) else None
         m = (
@@ -268,7 +288,6 @@ def _manifest_versions(repo: Repo) -> dict[str, str]:
         )
         if m:
             found.setdefault(MANIFEST_PREFIX + m.group(1), m.group(2))
-    return found
 
 
 def _vendored(repo: Repo) -> list[Library]:

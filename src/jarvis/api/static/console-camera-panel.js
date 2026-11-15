@@ -17,7 +17,7 @@ const panel = document.getElementById('p-camera');
 const host = document.getElementById('cameraBody');
 const meta = document.getElementById('cameraMeta');
 const P = '/v1/vision';
-const TABS = [['look', 'Look'], ['results', 'Results'], ['cameras', 'Cameras']];
+const TABS = [['look', 'Look'], ['results', 'Results'], ['cameras', 'Cameras'], ['wardrobe', 'Wardrobe']]; // R13: a mode's pane
 const TASKS = [['text', 'Read text'], ['code', 'Read a code (QR or barcode)'], ['quality', 'Light and sharpness'],
   ['objects', 'Everyday things'], ['pose', 'Body points']];
 const STREAMED = ['objects', 'pose', 'quality']; // live at a capped rate; text and codes are read on demand
@@ -169,7 +169,20 @@ function choose(id) {
     panes[t].hidden = !on;
   });
   if (S.tab === 'results') loadResults();
+  if (S.tab === 'wardrobe') stopLive(); else stopModes(); // one pixel panel at a time (R13 D9)
 }
+// R13 I0 (docs/plans/r13-wardrobe.md D9, seam 12): Camera -> Wardrobe is a mode a named pixel panel module
+// (console-wardrobe-scan.js) mounts here: register(id, {mount(host, P), stop()}); it stops whenever its tab or
+// this panel goes away. Only 'wardrobe', once; P is this panel's own builders.
+const MODES = {};
+function stopModes() { Object.values(MODES).forEach((m) => { try { m.stop(); } catch (_) {} }); }
+window.JarvisCameraModes = Object.freeze({ register(id, mode) {
+  if (id !== 'wardrobe' || MODES[id] || !mode || typeof mode.mount !== 'function' || typeof mode.stop !== 'function') return false;
+  MODES[id] = mode;
+  try { mode.mount(panes[id], Object.freeze({ mk, button, field, say, signedIn })); } catch (_) { panes[id].replaceChildren(mk('p', 'snote', DIDNT)); }
+  return true;
+} });
+document.dispatchEvent(new CustomEvent('jarvis:camera-modes'));
 
 // ---- what can run here ----------------------------------------------------------------------------------------------
 function whyNot(task) {
@@ -444,7 +457,7 @@ function hidden() { return !panel || panel.hidden || !panel.getClientRects().len
 document.addEventListener('jarvis:panel', (e) => {
   const d = (e && e.detail) || {};
   if (d.id === 'camera' && d.open) { loadStatus(); if (S.tab === 'results') loadResults(); }
-  setTimeout(() => { if (hidden()) { stopLive(); clear(); } }, 0); // closed, or hidden behind another tab on a phone
+  setTimeout(() => { if (hidden()) { stopLive(); stopModes(); clear(); } }, 0); // closed, or hidden behind another tab on a phone
 });
 document.addEventListener('jarvis:ready', () => { if (!hidden()) loadStatus(); });
 document.addEventListener('jarvis:camera', () => {

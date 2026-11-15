@@ -7,6 +7,7 @@
 # runner's staged gate, the model files' manifest, the size guards and "no real clock".
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import get_args
 
@@ -219,3 +220,483 @@ def test_an_r13_setting_outside_its_range_is_refused(field: str, bad: object) ->
 
 def test_config_stays_under_its_guard() -> None:
     assert _lines(SRC / "config.py") < 800
+
+
+# ---- 9 · the parts' contract (wardrobe/ports.py) -------------------------------------------------
+def test_the_four_parts_and_what_each_owns() -> None:
+    from jarvis.alerts import R13_ALERT_KINDS as KINDS
+    from jarvis.wardrobe import ports
+
+    assert ports.PARTS == ("catalog", "laundry", "styling", "phone")
+    assert set(ports.TOOL_OWNER) == set(TOOLS13) and len(ports.TOOL_OWNER) == 18
+    for tool, part in ports.TOOL_OWNER.items():
+        assert ports.tool_allowed(part, tool), tool
+        assert not any(ports.tool_allowed(p, tool) for p in ports.PARTS if p != part), tool
+    assert not ports.tool_allowed("catalog", "wardrobe_shout")  # a family word alone is not enough
+    assert set(ports.ROUTE_PREFIX) == set(ports.COLLECTIONS) == set(ports.PARTS)
+    assert ports.R13_JOB_NAMES == ("wardrobe_sweep", "laundry_daily", "outfit_clock")
+    assert ports.CLOCK_JOB_NAMES == {"outfit_clock"} and set(ports.JOB_OWNER) == {
+        *ports.R13_JOB_NAMES
+    }
+    assert set(ports.KIND_OWNER) == set(KINDS)
+    assert {ports.KIND_OWNER[k] for k in ("outfit_ready", "outfit_changed")} == {"styling"}
+    assert ports.CARD_ALWAYS == {"wardrobe_merge", "wardrobe_retire"} <= NO_BULK_TOOLS
+    assert ports.QUERY_TOOLS == ports.SPOKEN_OK == {"laundry_move", "wear_log"}
+    assert ports.R13_STATUS_ROUTE == "/v1/r13" and ports.MAX_RESULT_PIECES == 20
+
+
+def test_every_planned_collection_is_named_and_flat() -> None:
+    from jarvis.wardrobe.ports import COLLECTIONS
+
+    every = {c for cs in COLLECTIONS.values() for c in cs}
+    assert every == {
+        *("wardrobe", "wardrobe_log", "wardrobe_photo", "wardrobe_fp", "wardrobe_restore"),
+        *("wardrobe_laundry", "wardrobe_review", "wardrobe_plans", "wardrobe_cal"),
+        *("wardrobe_outlook", "wardrobe_told"),
+    }
+    guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
+    for name in every:
+        assert f"`{name}/" in guide, name  # the guide's cards C69-C71 name every one
+
+
+def test_the_context_carries_the_one_clock_and_his_zone() -> None:
+    from dataclasses import fields
+
+    from jarvis.wardrobe.ports import WardrobeContext
+
+    names = {f.name for f in fields(WardrobeContext)}
+    assert {"now", "zone", "state", "notifier", "reads", "outside", "store"} <= names
+
+
+# ---- 9 · the states table (D3) -------------------------------------------------------------------
+def test_the_ten_states_and_only_ready_is_eligible() -> None:
+    from jarvis.wardrobe import states as st
+
+    assert len(st.STATES) == 10 and st.STATE_WORDS["review"] == "Missing or in review"
+    assert [s for s in st.STATES if st.eligible(s)] == ["ready"]
+    assert st.owned("in_laundry") and not st.owned("archived")  # laundry stays owned (INV-14)
+
+
+@pytest.mark.parametrize(
+    ("kind", "current", "to", "want"),
+    [
+        ("registered", None, None, "ready"),
+        ("wear_started", "ready", None, "in_use"),
+        ("wear_done", "in_use", None, "in_laundry"),
+        ("wear_done", "in_use", "ready", "ready"),  # the rewear rule: a belt
+        ("deposited", "in_use", None, "in_laundry"),
+        ("load_started", "in_laundry", None, "washing"),
+        ("dried", "washing", None, "drying"),
+        ("needs_prep", "drying", None, "needs_prep"),
+        ("returned", "needs_prep", None, "ready"),
+        ("sent_out", "in_laundry", None, "with_provider"),
+        ("received", "with_provider", "needs_prep", "needs_prep"),
+        ("damaged", "ready", None, "needs_repair"),
+        ("repaired", "needs_repair", None, "ready"),
+        ("archived", "ready", None, "archived"),
+        ("restored", "archived", None, "review"),
+    ],
+)
+def test_each_rows_transition(kind: str, current: str | None, to: str | None, want: str) -> None:
+    from jarvis.wardrobe import states as st
+
+    assert st.allowed(kind, current), (kind, current)  # type: ignore[arg-type]
+    assert st.target_of(kind, current, to=to) == want  # type: ignore[arg-type]
+
+
+def test_the_table_refuses_what_the_workbook_does() -> None:
+    from jarvis.wardrobe import states as st
+
+    assert not st.allowed("load_started", "ready") and not st.allowed("dried", "in_laundry")
+    assert not st.allowed("returned", "with_provider") and not st.allowed("restored", "ready")
+    assert st.target_of("wear_done", "in_use", to="washing") is None  # not one of its choices
+    assert st.target_of("released", "review", back_to="drying") == "drying"
+    assert st.target_of("found", "review", back_to=None) == "ready"
+
+
+def test_pairs_and_sets_are_wearable_only_when_complete() -> None:
+    from jarvis.wardrobe.states import wearable_pair, wearable_set
+
+    assert wearable_pair(["ready", "ready"]) and not wearable_pair(["ready", "in_laundry"])
+    whole, alone = wearable_set([("ready", True), ("in_laundry", False)])
+    assert (whole, alone) == (False, (0,))  # the kurta can go alone; its set can't (INV-12)
+
+
+# ---- 9 · the records (D2) and the redaction views (D10) ------------------------------------------
+def test_records_round_trip_through_short_keys() -> None:
+    from jarvis.wardrobe.model import Piece
+
+    p = Piece.model_validate(
+        {"id": "wi_" + "1" * 12, "category": "tops", "type": "shirt", "label": "ഷർട്ട്",
+         "colour": "navy", "size": {"v": "40", "ok": True}, "features": {"sleeve": "long"}}
+    )  # fmt: skip
+    stored = p.to_json()
+    assert {"i", "c", "t", "l", "co", "sz", "f"} <= set(stored) and "id" not in stored
+    assert Piece.model_validate(stored) == p
+    with pytest.raises(ValidationError):
+        Piece.model_validate({**stored, "f": {"sleeve": "puffed"}})  # fixed lists only
+    with pytest.raises(ValidationError):
+        Piece.model_validate({**stored, "i": "wi_short"})
+
+
+def test_a_maximal_piece_stays_small_with_short_keys() -> None:
+    from jarvis.wardrobe.model import CARE_WORDS, Piece
+
+    p = Piece.model_validate(
+        {"id": "wi_" + "f" * 12, "category": "tops", "type": "shirt", "label": "ഷ" * 60,
+         "colour": "light_blue", "second": "navy", "pattern": "checked",
+         "locked": ("colour", "pattern"), "features": {"sleeve": "long", "collar": "spread"},
+         "size": {"v": "40 SLIM", "ok": True}, "brand": {"v": "A" * 30, "ok": False},
+         "fabric": [{"v": "cotton", "ok": True}], "care": [{"v": c} for c in CARE_WORDS[:8]],
+         "formality": 4, "occasions": ("work", "formal"), "weather": ("warm",),
+         "place": "wl_" + "1" * 8, "label_code": "abcdefgh", "photos": ["wh_" + "2" * 12] * 3,
+         "wears": 120, "events": 400}
+    )  # fmt: skip
+    import json
+
+    raw = json.dumps(p.to_json(), ensure_ascii=False).encode()
+    assert len(raw) < 1_300  # 600 of them stay under the 900 KB guard before sealing (M9)
+
+
+def test_the_qr_reader_takes_only_jarvis_own_labels() -> None:
+    from jarvis.wardrobe.model import label_code_of
+
+    assert label_code_of("jw1:abcd2345") == "abcd2345"
+    for foreign in ("https://example.com", "jw1:ABCD2345", "jw1:abcd23456", "jw2:abcd2345", ""):
+        assert label_code_of(foreign) is None, foreign
+
+
+def test_a_private_piece_is_count_only_outside_his_panel() -> None:
+    from jarvis.wardrobe import redact
+    from jarvis.wardrobe.model import Piece
+
+    vest = Piece.model_validate(
+        {"id": "wi_" + "3" * 12, "category": "base", "type": "vest", "label": "My old vest",
+         "colour": "black", "private": True}
+    )  # fmt: skip
+    shirt = Piece.model_validate(
+        {"id": "wi_" + "4" * 12, "category": "tops", "type": "shirt", "label": "Office blue",
+         "colour": "navy", "size": {"v": "40"}, "care": [{"v": "hand_wash", "ok": True}]}
+    )  # fmt: skip
+    for sink in redact.SINKS:
+        shown = str(redact.view(vest, sink))
+        assert ("My old vest" in shown) is (sink == "panel"), sink
+    assert redact.alert_words(vest) == redact.card_words(vest).split(" (")[0] == "a private basic"
+    assert redact.card_words(vest, 17) == "a private basic (No. 17)"
+    assert redact.alert_words(shirt) == "a navy shirt" and "Office" not in redact.card_words(shirt)
+    model = redact.model_view(shirt)
+    assert "size" not in model and model["care"] == ["hand_wash"]  # unverified never reaches it
+    assert redact.bin_title(shirt) == redact.bin_title(vest) == "A wardrobe piece"
+    custom = shirt.model_copy(update={"type": "lungi_fancy"})
+    assert redact.alert_words(custom) == "a navy piece"  # his own type words stay his
+
+
+# ---- 9 · the HTTP contract (wardrobe/http.py, H5) ------------------------------------------------
+def test_every_planned_route_has_its_models_under_its_parts_prefix() -> None:
+    from jarvis.wardrobe import http
+    from jarvis.wardrobe.ports import ROUTE_PREFIX
+
+    planned = {
+        ("GET", "/v1/wardrobe"), ("GET", "/v1/wardrobe/pieces/{id}"),
+        ("POST", "/v1/wardrobe/scan"), ("POST", "/v1/wardrobe/photos"),
+        ("DELETE", "/v1/wardrobe/photos/{id}"), ("GET", "/v1/wardrobe/photos/{id}"),
+        ("GET", "/v1/wardrobe/fingerprints"), ("POST", "/v1/wardrobe/fingerprints"),
+        ("POST", "/v1/wardrobe/tag"), ("GET", "/v1/wardrobe/tag/estimate"),
+        ("GET", "/v1/wardrobe/labels.svg"), ("POST", "/v1/wardrobe/labels"),
+        ("GET", "/v1/wardrobe/backup"), ("POST", "/v1/wardrobe/restore/check"),
+        ("POST", "/v1/wardrobe/restore"), ("GET", "/v1/wardrobe/pilot"),
+        ("POST", "/v1/wardrobe/tools/{tool}"), ("GET", "/v1/laundry"),
+        ("GET", "/v1/laundry/review"), ("GET", "/v1/outfits"), ("GET", "/v1/outfits/calendars"),
+        ("PUT", "/v1/outfits/settings"), ("GET", "/v1/r13"),
+    }  # fmt: skip
+    assert {(m, p) for m, p, *_ in http.ROUTES} == planned
+    for _, path, part, req, reply, errors in http.ROUTES:
+        if part in ROUTE_PREFIX:
+            assert any(path.startswith(x) for x in ROUTE_PREFIX[part]), path  # type: ignore[index]
+        for model in (req, reply):
+            if isinstance(model, type):
+                assert model.model_config.get("extra") == "forbid", (path, model)
+        assert 401 in errors and 429 in errors, path
+
+
+def test_the_scan_request_bounds_what_a_phone_sends() -> None:
+    from jarvis.wardrobe.http import EventIn, FingerprintIn, ScanRequest
+
+    one = {"client_id": "scan-0001", "piece": "wi_" + "5" * 12, "kind": "deposited"}
+    assert ScanRequest.model_validate({"events": [one]}).events[0].source == "tap"
+    for bad in ({"events": []}, {"events": [one] * 51}, {"events": [{**one, "note": "x" * 121}]}):
+        with pytest.raises(ValidationError):
+            ScanRequest.model_validate(bad)
+    with pytest.raises(ValidationError):
+        EventIn.model_validate({**one, "picture": "...."})  # nothing else rides along
+    with pytest.raises(ValidationError):
+        FingerprintIn.model_validate(
+            {"piece": one["piece"], "view": "front", "model": "x", "v": ""}
+        )
+
+
+# ---- 11 · the vision contract and the pixel panels (D8, D9, H6, M7) ------------------------------
+def test_the_wardrobe_tasks_are_checked_but_never_kept() -> None:
+    from jarvis.vision.results import TASKS, WARDROBE_TASKS, parse_result
+
+    assert TASKS == ("text", "code", "objects", "pose", "quality")  # the kept-results enum
+    assert WARDROBE_TASKS == ("embed", "colour", "person", "face")
+    base = {"v": 1, "at": 1763000000, "ms": 70, "device": "phone", "ok": True}
+    base["quality"] = {"light": 0.5, "sharp": 0.7}
+    embed = {
+        **base,
+        "task": "embed",
+        "data": {"v": "A" * 1708, "dims": 1280, "model": "mnv2-int8-1"},
+    }
+    assert parse_result(embed) is None  # never a kept vision result
+    assert parse_result(embed, wardrobe=True) is not None
+    assert (
+        parse_result({**embed, "data": {**embed["data"], "v": "A" * 1709}}, wardrobe=True) is None
+    )
+    colour = {
+        **base,
+        "task": "colour",
+        "data": {"name": "multicolour", "second": "navy", "share": 0.4},
+    }
+    assert parse_result(colour, wardrobe=True) is not None
+    face = {**base, "task": "face", "data": {"found": True, "count": 21, "boxes": []}}
+    assert parse_result(face, wardrobe=True) is None  # at most 20
+
+
+def test_vision_assets_know_the_wardrobe_release() -> None:
+    from jarvis.vision import assets
+
+    assert assets.WARDROBE_RELEASE == "r13-1"
+    five = assets.installed({})
+    assert set(five) == {"text", "code", "objects", "pose", "quality"}  # R7's answer unchanged
+    both = assets.installed({}, {assets.EMBED_INT8: "application/octet-stream"})
+    assert both["embed"] and both["colour"] and not both["face"] and not both["person"]
+    assert assets.installed({}, {assets.EMBED_FP32: "x"})["embed"]  # the fallback, if vendored
+
+
+PANELS = ("console-camera-panel.js", "console-wardrobe-scan.js")  # the two that may see pixels
+ENGINE = ("console-vision.js", "console-camera.js")  # the port and the camera's own door
+# the drawing modules that use canvas APIs on their OWN canvases (never a camera frame)
+DRAWING = ("console-fx.js", "console-3d.js", "console-r111-files.js")
+PIXEL_APIS = ("drawImage", "getImageData", "toBlob", "createImageBitmap", "captureStream")
+_CALLS = re.compile(
+    r"(?:JarvisVision|Vis\(\)|parts\s*\.\s*vision)\s*\.\s*(?:run|stream)\s*\("
+    r"|(?:JarvisCamera|Cam\(\)|parts\s*\.\s*camera)\s*\.\s*(?:frame|photo)\s*\("
+)
+
+
+def _code(path: Path) -> str:
+    return re.sub(r"//[^\n]*|/\*.*?\*/", "", _text(path), flags=re.S)  # comments say the rules
+
+
+@pytest.mark.parametrize("path", sorted(STATIC.glob("console*.js")), ids=lambda p: p.name)
+def test_only_the_two_named_panels_take_pixels(path: Path) -> None:
+    if path.name in (*PANELS, *ENGINE):
+        return
+    code = _code(path)
+    assert not _CALLS.search(code), path.name
+    assert "JarvisCamera" not in code, path.name
+    if path.name not in DRAWING:
+        for api in PIXEL_APIS:
+            assert api not in code, (path.name, api)
+
+
+def test_the_scan_module_keeps_the_camera_panels_rules() -> None:
+    code = _code(STATIC / "console-wardrobe-scan.js")
+    for bad in ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "localStorage"):
+        assert bad not in code, bad
+    for bad in ("sessionStorage", "indexedDB", "innerHTML", "outerHTML", "insertAdjacentHTML"):
+        assert bad not in code, bad
+    for call in re.findall(r"(?:JarvisConsole\.api|M\.api)\(\s*([^,)]+)", code):
+        assert call.strip().startswith(("'/v1/wardrobe", "'/v1/laundry", "P")), call
+    sends = set(re.findall(r"door\.(\w+)\(", code))
+    assert sends <= {"wardrobe", "tag"}, sends
+    assert _text(STATIC / "console-wardrobe-scan.js").isascii()
+    assert "JarvisCameraModes" in code and "register('wardrobe'" in code
+
+
+def test_the_door_is_the_only_caller_of_the_wardrobes_picture_routes() -> None:
+    for path in STATIC.glob("console*.js"):
+        code = _code(path)
+        if path.name == "console-r7-send.js":
+            assert "'/v1/wardrobe/photos?piece='" in code and "'/v1/wardrobe/tag?piece='" in code
+            assert "wardrobe, tag," in code
+            continue
+        for route in ("/v1/wardrobe/photos", "/v1/wardrobe/tag"):
+            assert f"'{route}" not in code, (path.name, route)
+
+
+def test_the_camera_panel_mounts_one_wardrobe_mode_and_stops_it() -> None:
+    js = _text(STATIC / "console-camera-panel.js")
+    assert "['wardrobe', 'Wardrobe']" in js and "window.JarvisCameraModes = Object.freeze(" in js
+    assert "if (id !== 'wardrobe' || MODES[id]" in js
+    assert "stopLive(); stopModes(); clear();" in js  # the panel hidden: the mode stops too
+    assert "if (S.tab === 'wardrobe') stopLive(); else stopModes();" in js
+
+
+# ---- 12 · the console's joins (D1) ---------------------------------------------------------------
+def test_console_html_is_byte_identical_to_r14s() -> None:
+    import hashlib
+
+    got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
+    assert got == "9f4c0c68f45e46fe150e65e182f4d2ba1132eb556b3ddee0ba3491e4c85450a2"  # 9a8392b
+    assert _lines(STATIC / "console.html") == 782
+
+
+def test_helpers_gains_a_console_only_wardrobe_tab() -> None:
+    from jarvis.helpers import kinds
+
+    js = _text(STATIC / "console-helpers.js")
+    assert "['wardrobe', 'Wardrobe']" in js and "import('./console-helpers-wardrobe.js')" in js
+    assert list(kinds.TABS) == [*kinds.PARTS, "watch"]  # helpers/kinds.py TABS stays five
+    tab = _text(STATIC / "console-helpers-wardrobe.js")
+    assert "H.register('wardrobe'" in tab and "import('./console-wardrobe-pieces.js')" in tab
+
+
+def test_the_new_console_files_are_served_and_loaded_by_code() -> None:
+    from jarvis.api.console import APP_ASSETS
+
+    names = ("console-helpers-wardrobe.js", "console-wardrobe-pieces.js")
+    names += ("console-wardrobe-scan.js", "console-wardrobe.css")
+    loader = _text(STATIC / "console-r7.js")
+    for name in names:
+        assert name in APP_ASSETS and (STATIC / name).is_file(), name
+        assert name not in _text(STATIC / "console.html"), name
+    assert "import('./console-wardrobe-scan.js')" in loader
+    assert "'/static/console-wardrobe.css'" in loader
+
+
+def test_the_wardrobe_css_only_places_things() -> None:
+    css = re.sub(r"/\*.*?\*/", "", _text(STATIC / "console-wardrobe.css"), flags=re.S)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(", css)  # no colour literal
+    for prop in re.findall(
+        r"(?:color|background|font(?:-family)?|box-shadow|border-radius)\s*:\s*([^;]+)", css
+    ):
+        assert prop.strip().startswith("var(--"), prop
+    assert _lines(STATIC / "console-wardrobe.css") <= 200
+
+
+# ---- size guards and "no real clock" -------------------------------------------------------------
+def test_the_size_guards_hold() -> None:
+    assert _lines(SRC / "api" / "app.py") <= 735
+    assert _lines(SRC / "tools" / "gateway.py") == 760
+    assert _lines(SRC / "core" / "brain.py") <= 741
+    for path in STATIC.glob("console*.js"):
+        assert _lines(path) <= 800, path.name
+    assert _lines(STATIC / "console-camera-panel.js") <= 483
+    assert _lines(STATIC / "console-r7-send.js") <= 130
+    assert _lines(STATIC / "console-helpers.js") <= 238
+    new_css = [p for p in STATIC.glob("console-wardrobe*.css")]
+    assert sum(_lines(p) for p in new_css) <= 300
+    for path in (SRC / "wardrobe").rglob("*.py"):
+        assert _lines(path) <= 400, path.name
+    assert _lines(SRC / "api" / "r13_wiring.py") <= 400
+
+
+_CLOCK = re.compile(r"datetime\.now\(|date\.today\(|time\.time\(|utcnow|datetime\.today\(")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [*sorted((SRC / "wardrobe").rglob("*.py")), *sorted(SRC.glob("offline/phrases_r13.py"))],
+    ids=lambda p: str(p.relative_to(SRC)),
+)
+def test_nothing_under_wardrobe_reads_the_real_clock(path: Path) -> None:
+    assert not _CLOCK.search(_text(path)), path  # ctx.now() only (D15)
+
+
+def test_the_wiring_files_have_their_slots() -> None:
+    app_py = _text(SRC / "api" / "app.py")
+    for needle in (
+        "import jarvis.api.r13_wiring as r13",
+        "await r13.wire_r13(app, s, docs, audit)",
+        "r13=r13.r13_tools(app.state.r13_parts)",
+        "**r13.BODY_CAPS,",
+        "r13.install_r13_routes(app)",
+    ):
+        assert app_py.count(needle) == 1, needle
+    assert app_py.index("await r14.wire_r14(") < app_py.index("await r13.wire_r13(")
+    assert app_py.index("await r13.wire_r13(") < app_py.index("_wire_gateway(app, s, inj")
+    personal = _text(SRC / "api" / "personal.py")
+    assert personal.index("*r13_privacy_sources(app)") < personal.index(
+        "*home_privacy_sources(app)"
+    )
+    from jarvis.home.watchdog import ADVISORY_JOBS
+    from jarvis.offline.phrases_r14 import WITHOUT_AI
+
+    assert "outfit_clock" in ADVISORY_JOBS
+    assert "your wardrobe: where a piece is, laundry, today's outfit" in WITHOUT_AI
+
+
+# ---- 11 · the model files: the script's pins, the manifest, the licences (D8, M8, M15) -----------
+VISION = STATIC / "vendor" / "vision"
+R13_1 = VISION / "r13-1"
+
+
+def _assets_script() -> object:
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "wardrobe_assets", ROOT / "scripts" / "wardrobe_assets.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_wardrobe_release_matches_the_scripts_pins() -> None:
+    script = _assets_script()
+    assert script.problems() == []  # type: ignore[attr-defined]
+    import json
+
+    manifest = json.loads((R13_1 / "MANIFEST.json").read_text(encoding="utf-8"))
+    files = manifest["files"]
+    assert set(files) == {"mobilenetv2-int8-embed.onnx", "version-RFB-320.onnx"} | {
+        "ssd_mobilenet_v1_12-int8.onnx"
+    }  # the fp32 fallback is not vendored unless needed
+    embed = files["mobilenetv2-int8-embed.onnx"]
+    assert embed["sha256"].startswith("c32ba47c") and embed["quant"]["zero_point"] == 0
+    assert embed["selfcheck"]["sha256"].startswith("e5b53d7e") and embed["model"] == "mnv2-int8-1"
+    assert "section 4" in embed["changes"]
+    ssd = files["ssd_mobilenet_v1_12-int8.onnx"]
+    assert ssd["licence"] == (
+        "MIT (ONNX Model Zoo); weights from the TensorFlow Object Detection API (Apache-2.0)"
+    )
+    assert manifest["fallback"]["mobilenetv2-fp32-embed.onnx"]["sha256"].startswith("d0049881")
+    total = sum(int(e["bytes"]) for e in files.values())
+    assert total < 14 * 1024 * 1024  # about 13.2 MB (plan "Risks": repository size)
+
+
+def test_the_route_serves_the_wardrobe_files_and_the_tasks_are_installed() -> None:
+    from jarvis.api import console
+    from jarvis.vision import assets
+
+    console.vision_files.cache_clear()
+    served13 = console.vision_files(assets.WARDROBE_RELEASE)
+    got = assets.installed(console.vision_files(assets.RELEASE), served13)
+    assert all(got[t] for t in ("embed", "colour", "person", "face"))
+
+
+def test_every_wardrobe_licence_is_apache_or_mit_and_the_book_knows_it() -> None:
+    from jarvis.buildbook.gen.libs import VENDORED, licence_from_text
+
+    for name, want in (
+        ("LICENSE-onnx-models.txt", "Apache-2.0"),
+        ("LICENSE-ultraface.txt", "MIT"),
+        ("LICENSE-tensorflow-models.txt", "Apache-2.0"),
+    ):
+        assert licence_from_text(_text(VISION / name)) == want, name
+        assert f"vendor/vision/{name}" in VENDORED, name
+    notice = _text(VISION / "NOTICE-wardrobe-models.txt")
+    assert "MODIFIED" in notice and "non-commercial" in notice
+
+
+def test_the_book_still_reads_r7s_vision_versions_beside_the_wardrobe_release() -> None:
+    from jarvis.buildbook.gen.libs import _manifest_versions
+
+    found = _manifest_versions(Repo.from_git(ROOT))
+    assert found.get("manifest:tesseract.js") == "7.0.0"
+    assert found.get("manifest:zxing-wasm") == "3.1.6"

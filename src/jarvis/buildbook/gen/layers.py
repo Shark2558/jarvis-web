@@ -52,6 +52,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "watch": "L5",  # R7 D: watch days and sleep (Health & Wellbeing, the 11th skill)
         "sos": "L5",  # R7 D: emergency SOS (Security Advisor)
         "skills": "L5",  # R14 C: the skill register and the turn's tools
+        "wardrobe": "L5",  # R13: the wardrobe and laundry, phone first (Task & Productivity)
         # L6 Integration & Tools
         "tools": "L6",
         "integrations": "L6",

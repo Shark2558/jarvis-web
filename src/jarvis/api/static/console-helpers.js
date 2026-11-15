@@ -12,7 +12,8 @@
   const panel = document.getElementById('p-helpers');
   const host = panel && panel.querySelector('.pbody');
   if (!host) return;
-  const TABS = [['today', 'Today'], ['house', 'Home'], ['nudges', 'Nudges'], ['kitchen', 'Kitchen'], ['watch', 'Watch']]; // R7: Watch (Part D)
+  const TABS = [['today', 'Today'], ['house', 'Home'], ['nudges', 'Nudges'], ['kitchen', 'Kitchen'], ['watch', 'Watch'], // R7: Watch (Part D)
+    ['wardrobe', 'Wardrobe']]; // R13: Wardrobe (Part D; console-only, helpers/kinds.py TABS stays five)
   const TAB_KEY = 'jarvis_helpers_tab';
   const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
   const store = {
@@ -187,6 +188,7 @@
   import('./console-helpers-nudges.js').catch(failed('nudges'));
   import('./console-helpers-kitchen.js').catch(failed('kitchen'));
   import('./console-helpers-watch.js').catch(failed('watch')); // R7 I0 seam 12: not an R11 part
+  import('./console-helpers-wardrobe.js').catch(failed('wardrobe')); // R13 I0 seam 12: not an R11 part
 
   document.addEventListener('jarvis:panel', (e) => {
     const d = e.detail || {};

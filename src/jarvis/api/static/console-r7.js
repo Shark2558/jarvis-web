@@ -10,7 +10,8 @@
 //   console-r7-phone.js     C   Integrations -> Phone app (link, unlink, sign out everywhere)
 //   console-r7-lock.js      C   the app lock's unlock cover (console.js fires jarvis:device-locked)
 //   console-r7-sos.js       D   the SOS sheet and Integrations -> Emergency SOS
-// (Helpers -> Watch, console-helpers-watch.js, is loaded by the Helpers frame.) Each part's stylesheet may only
+//   console-wardrobe-scan.js R13 D  Camera -> Wardrobe (the second pixel panel, D9), and console-wardrobe.css
+// (Helpers -> Watch and Wardrobe are loaded by the Helpers frame.) Each part's stylesheet may only
 // place things: existing tokens and classes, no new colours, fonts, radii or shadows (plan D0), at most 150
 // lines. No build step; CSP script-src 'self' and style-src 'self'; textContent only. A module asks the server
 // NOTHING before sign-in (BRIEF-COMMON.md): it waits for jarvis:ready.
@@ -54,7 +55,7 @@ function when(iso, withTime) {
 window.JarvisMobile = { mk, api, part, parts, when };
 
 for (const href of ['/static/console-r7-share.css', '/static/console-camera.css',
-  '/static/console-r7-phone.css', '/static/console-r7-sos.css']) {
+  '/static/console-r7-phone.css', '/static/console-r7-sos.css', '/static/console-wardrobe.css']) { // R13: the Wardrobe tabs' places
   const css = document.createElement('link');
   css.rel = 'stylesheet';
   css.href = href;
@@ -68,6 +69,7 @@ const MODULES = [
   ['console-camera.js', 'The camera', 'camera', () => import('./console-camera.js')], ['console-camera-panel.js', 'Camera', 'camera', () => import('./console-camera-panel.js')],
   ['console-r7-phone.js', 'Phone app', 'integrations', () => import('./console-r7-phone.js')], ['console-r7-lock.js', 'The unlock cover', '', () => import('./console-r7-lock.js')],
   ['console-r7-sos.js', 'Emergency SOS', 'integrations', () => import('./console-r7-sos.js')],
+  ['console-wardrobe-scan.js', 'Camera, Wardrobe', 'camera', () => import('./console-wardrobe-scan.js')], // R13 D: a pixel panel
 ];
 function noLoad(file, label, where, err) {
   console.warn('JARVIS: ' + file + ' could not load (' + (err && err.message ? err.message : 'unknown') + ').');

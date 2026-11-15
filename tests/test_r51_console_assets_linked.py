@@ -58,6 +58,17 @@ NOT_IN_PAGE = {
     "console-r7-phone.css": ("console-r7.js", "'/static/console-r7-phone.css'"),
     "console-r7-sos.css": ("console-r7.js", "'/static/console-r7-sos.css'"),
     "console-helpers-watch.js": ("console-helpers.js", "import('./console-helpers-watch.js')"),
+    # R13 I0 (docs/plans/r13-wardrobe.md seam 12): the Helpers frame, the tab and the R7 loader
+    "console-helpers-wardrobe.js": (
+        "console-helpers.js",
+        "import('./console-helpers-wardrobe.js')",
+    ),
+    "console-wardrobe-pieces.js": (
+        "console-helpers-wardrobe.js",
+        "import('./console-wardrobe-pieces.js')",
+    ),
+    "console-wardrobe-scan.js": ("console-r7.js", "import('./console-wardrobe-scan.js')"),
+    "console-wardrobe.css": ("console-r7.js", "'/static/console-wardrobe.css'"),
 }
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {

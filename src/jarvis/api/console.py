@@ -170,6 +170,11 @@ APP_ASSETS: dict[str, str] = {
     "console-r7-sos.js": _JS,  # D: the SOS sheet and Integrations -> Emergency SOS
     "console-r7-sos.css": "text/css",
     "console-helpers-watch.js": _JS,  # D: Helpers -> Watch (loaded by console-helpers.js)
+    # R13 I0 (docs/plans/r13-wardrobe.md seam 12; stubs at I0, Part D's from then on)
+    "console-helpers-wardrobe.js": _JS,  # Helpers -> Wardrobe (loaded by console-helpers.js)
+    "console-wardrobe-pieces.js": _JS,  # its Pieces section (loaded by console-helpers-wardrobe.js)
+    "console-wardrobe-scan.js": _JS,  # Camera -> Wardrobe, a pixel panel (loaded by console-r7.js)
+    "console-wardrobe.css": "text/css",  # the Wardrobe tabs' places only (loaded by console-r7.js)
 }
 
 # Self-hosted OFL fonts (licences beside them).

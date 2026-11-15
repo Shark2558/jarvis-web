@@ -1,0 +1,4 @@
+/* src/jarvis/api/static/console-wardrobe.css -- R13 Part D (docs/plans/r13-wardrobe.md D1): where the Wardrobe tabs
+   place things (Helpers -> Wardrobe, Camera -> Wardrobe), loaded by console-r7.js. It only places: no colour, font,
+   radius or shadow of its own (a value is a var(--...) token; tests/test_r13_seams.py), at most 200 lines.
+   I0 stub: nothing to place yet. */

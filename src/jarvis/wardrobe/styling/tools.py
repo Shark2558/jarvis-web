@@ -219,7 +219,7 @@ class StylingTools:
         if isinstance(got, dict):
             return got
         uid, here, doc, view = got
-        pieces, why = self._pieces(doc, view, args)
+        pieces, why = await self._pieces(uid, here, doc, view, args)
         store = self.s.ctx.store()
         if why or store is None:
             return _refused(why or texts.NOT_READY_YET)
@@ -248,9 +248,11 @@ class StylingTools:
         more = " and more" if len(pieces) > 3 else ""
         return {"pieces": pieces, "message": f"Noted: you're wearing {words}{more}."}
 
-    def _pieces(
-        self, doc: StylingDoc | None, view: WardrobeView, args: dict[str, Any]
-    ) -> tuple[list[str], str]:
+    async def _pieces(
+        self, uid: str, here: Here | None, doc: StylingDoc | None, view: WardrobeView,
+        args: dict[str, Any],
+    ) -> tuple[list[str], str]:  # fmt: skip
+        """By id; a plan's look NOW (a substitute he took, H1); his words; or all in use."""
         named = [str(i) for i in args.get("pieces") or []]
         if named:
             missing = [i for i in named if i not in view.pieces]
@@ -258,8 +260,9 @@ class StylingTools:
                 return [], f"{texts.ids_words(missing)} isn't in your wardrobe."
             return named, ""
         plan = doc.plan(str(args.get("plan"))) if doc is not None and args.get("plan") else None
-        if plan is not None:
-            return list(plan.pieces()), ""
+        if plan is not None and doc is not None and here is not None:
+            ans = await self.s.answer(uid, here, doc, view, plan)
+            return list(ans.suggestion.primary.ids()), ""
         if args.get("query"):
             return wear.resolve(view, str(args["query"]))
         if args.get("action") == "done":
@@ -273,8 +276,10 @@ class StylingTools:
         view = await self.s.view(uid)
         if view is None:
             return Preview("Log a wear.")
-        doc = await self.s.plans.read(uid) if self.s.off() is None else None
-        pieces, _ = self._pieces(doc, view, args)
+        on = self.s.off() is None
+        doc = await self.s.plans.read(uid) if on else None
+        here = await self.s.where(uid) if on else None
+        pieces, _ = await self._pieces(uid, here, doc, view, args)
         words = [card_words(view.pieces[i]) for i in pieces if i in view.pieces]
         return Preview(f"Log a wear: {texts.ids_words(words)}." if words else "Log a wear.")
 

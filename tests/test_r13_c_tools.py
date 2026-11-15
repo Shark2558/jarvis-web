@@ -227,3 +227,15 @@ async def test_a_wear_card_says_fixed_words_through_the_preview() -> None:
     with tool_context("owner-w:s"):
         card = await tool.preview({"action": "start", "pieces": [N.shirt_lb, N.under]})
     assert card.summary == "Log a wear: a light blue shirt and a private basic."
+
+
+async def test_wearing_a_plan_whose_shirt_went_to_the_basket_wears_the_substitute() -> None:
+    w = await world(at=ist(2026, 11, 17, 7, 0))
+    plan = await _plan(w, day="today", occasion="meeting", start="10:00", end="12:00")
+    await w.move(N.shirt_white, "deposited")
+    w.notifier.sent.clear()
+    got = await ok(w, "wear_log", action="start", plan=plan)
+    assert N.shirt_lb in got["pieces"] and N.shirt_white not in got["pieces"]
+    pieces = await w.pieces()
+    assert pieces[N.shirt_lb].state == "in_use" and pieces[N.shirt_lb].wear == plan
+    assert w.notifier.sent == []  # the substitute worn for its own plan: no change

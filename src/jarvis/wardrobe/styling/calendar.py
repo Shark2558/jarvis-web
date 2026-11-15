@@ -38,7 +38,7 @@ from jarvis.helpers.sources import OUTSIDE_TIMEOUT_S
 from jarvis.logging import get_logger
 from jarvis.tools.background import Verdict
 from jarvis.wardrobe.ports import WardrobeContext
-from jarvis.wardrobe.styling.plans import Plan, StylingDoc, new_plan_id
+from jarvis.wardrobe.styling.plans import MAX_PLANS, Plan, StylingDoc, new_plan_id
 from jarvis.wardrobe.styling.reserve import window
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.styling.sealed import SealedDoc
@@ -256,7 +256,7 @@ def sync(
     for e in entries:
         plan = doc.by_event(e.k)
         if plan is None or plan.manual:
-            if plan is None:
+            if plan is None and len(doc.plans) < MAX_PLANS:  # past 60: no more, said in counts
                 made = _plan_of(e, zone, now)
                 doc, touched = doc.put(made), [*touched, made.id]
             continue

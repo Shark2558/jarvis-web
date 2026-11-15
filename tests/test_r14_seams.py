@@ -95,7 +95,7 @@ async def running(s: Settings) -> AsyncIterator[tuple[FastAPI, AsyncClient]]:
 
 # ---- 1 · the version and the book's release name -------------------------------------------------
 def test_the_version_is_fourteen() -> None:
-    assert jarvis.__version__ == "14.0.1"  # R14 hotfix 1 (14.0.0 at I0); nothing compares it
+    assert jarvis.__version__ == "14.0.2"  # R14 hotfix 2 (14.0.0 at I0); nothing compares it
 
 
 def test_the_real_repository_is_r14_and_its_plan_comes_first() -> None:

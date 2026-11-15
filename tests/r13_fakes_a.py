@@ -104,12 +104,14 @@ def _segment(marker: int, payload: bytes) -> bytes:
 
 def jpeg(width: int = 512, height: int = 384, *, extra: bytes = b"") -> bytes:
     """A well-formed baseline JPEG's structure: SOI, an APP1 (dropped by the cleaner), DQT, SOF0
-    of `width` x `height`, DHT, SOS with a little entropy data, EOI. Never decoded."""
-    app1 = _segment(0xE1, b"Exif\x00\x00GPS-LAT-LONG" + extra)
+    of `width` x `height`, DHT, SOS with a little entropy data (plus `extra`), EOI. Never
+    decoded."""
+    app1 = _segment(0xE1, b"Exif\x00\x00GPS-LAT-LONG")
     dqt = _segment(0xDB, b"\x00" + bytes(range(64)))
     sof = _segment(0xC0, struct.pack(">BHHB", 8, height, width, 1) + b"\x01\x11\x00")
     dht = _segment(0xC4, b"\x00" + bytes([1] + [0] * 15) + b"\x00")
-    sos = _segment(0xDA, b"\x01\x01\x00\x00\x3f\x00") + b"\x12\x34\x00\x56"
+    scan = b"\x12\x34" + extra.replace(b"\xff", b"\x00") + b"\x00\x56"  # entropy data
+    sos = _segment(0xDA, b"\x01\x01\x00\x00\x3f\x00") + scan
     return b"\xff\xd8" + app1 + dqt + sof + dht + sos + b"\xff\xd9"
 
 

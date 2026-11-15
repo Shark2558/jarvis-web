@@ -11,12 +11,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.params import Depends
 from httpx import ASGITransport, AsyncClient
-from r13_fakes import UID, ev
+from pydantic import SecretStr
+from r13_fakes import UID, FixedClock, ev, ist
 from r13_fakes_b import BLAZER, JACKET, TEE, Rig, rig
 
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.laundry import router
+from jarvis.config import Settings
 from jarvis.wardrobe import http
 from jarvis.wardrobe.laundry.holds import admit
 
@@ -83,3 +85,26 @@ async def test_reads_are_limited_per_owner() -> None:
     async with client(r) as c:
         codes = [(await c.get("/v1/laundry/review")).status_code for _ in range(61)]
     assert codes[:60] == [200] * 60 and codes[60] == 429
+
+
+# ---- through the real app (I0's wiring mounts the router; A's store arrives at I1) -------------
+TOKEN = "laundry-route-test-token-0001"
+
+
+async def test_the_real_app_mounts_the_routes_owner_only_and_says_why_it_waits(
+    settings: Settings,
+) -> None:
+    from jarvis.api import create_app
+    from jarvis.llm.mock_provider import MockProvider
+    from jarvis.memory.inmemory import InMemorySessionStore
+
+    s = settings.model_copy(update={"env": "prod", "api_token": SecretStr(TOKEN)})
+    app = create_app(s, provider=MockProvider(), store=InMemorySessionStore())
+    app.state.wardrobe_now = FixedClock(ist(2026, 11, 16, 10, 0))
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            anon = await c.get("/v1/laundry")
+            owner = await c.get("/v1/laundry", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert anon.status_code == 401
+    assert owner.status_code == 503 and owner.headers["cache-control"] == "no-store"
+    assert owner.json() == {"detail": "Laundry is off: this server has no token key."}

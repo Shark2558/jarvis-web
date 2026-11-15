@@ -25,7 +25,7 @@ Read on `9a8392b`; every file:line below is from that commit.
    tap, later camera).
 3. **Recognition is free.** You tap the kind (shirt, vest, sock, shoe, belt, watch, kurta …) and
    JARVIS suggests the colour. "Have I seen this before?" is answered **on the phone** by a small
-   picture model (3.5 MB, Apache licence) that never sends the picture anywhere to compare. For
+   picture model (about 2.4 MB, Apache licence) that never sends the picture anywhere to compare. For
    identical copies (two black vests) JARVIS prints a sheet of small numbered QR labels; the phone
    already reads QR codes. Size and care labels are read on the phone; a wash symbol stays
    "unverified" until you confirm it.
@@ -263,8 +263,8 @@ dock panel would need a `<section>` and a dock button in `console.html` (at its 
   pins `console.html` byte-identical to `9a8392b` for R13. Web Push targets open `helpers`
   (`webpush/service.py:100`); the frame remembers the last sub-tab (`jarvis_helpers_tab`).
 - **The look does not change**: new CSS (`console-wardrobe.css`, ≤ 200 lines) only places things,
-  using the theme's tokens; a static test refuses a colour literal, a font, a shadow or a radius
-  not taken from a `var(--…)`, and `ui_checks.py` audits the new tabs (touch targets, overflow).
+  using the theme's tokens; a static test refuses a colour literal or a font that is not a
+  `var(--…)`, and `ui_checks.py` audits the new tabs (touch targets, overflow).
 
 **D2 · One ID per physical piece; the store.** Records (frozen, JSON in and out, I0's
 `wardrobe/model.py`):
@@ -302,11 +302,14 @@ verified, evidence {how: qr | match | tap | label | owner, score}, place, load, 
 `apply(uid, events)` in A's store:
 1. **Deduplicate**: a `client_id` or an `id` already in the log is ignored (two phones, a retry, a
    restore, a camera that sends twice).
-2. **Order by item**: events fold in `(at, recorded, id)` order. `at` from a device is clamped to
-   the server's time ± 5 minutes; one in the future is refused.
+2. **Order by item**: events fold in `(at, recorded, id)` order. A phone scan's `at` is its
+   capture time, refused when more than 10 minutes from the server's clock (a phone with a wrong
+   clock); a time he states ("I wore it yesterday", a move he records after a blind period) is
+   taken as he says, at most 30 days back, never in the future.
 3. **The newer verified event wins**: an event older (by `at`) than the piece's newest verified
-   state-setting event is kept in the log, marked `superseded`, and changes nothing (an old basket
-   message after a confirmed clean return can't make the shirt dirty again).
+   state-setting event is kept in the log, marked `superseded`, and changes no state (an old basket
+   message after a confirmed clean return can't make the shirt dirty again); a superseded `worn`
+   still counts as a wear.
 4. **A transition the table refuses** is kept as `conflict` and opens a review entry; the state
    stays.
 5. **An unverified event that would change availability** becomes a hold ("Missing or in review",
@@ -361,11 +364,12 @@ wardrobe type word>" (shirt, belt, watch, sock …); everything else still reach
   nearest of 18 named colours by ΔE; "multicolour" when two clusters are close in size): a
   suggestion he confirms or locks (INV-09).
 - **"Seen before?" on the phone**: the `embed` task returns the piece's 1,280-number fingerprint
-  (uint8, minus the zero point, as a 1,708-character base64 string: inside `plain()`'s 2,000 limit,
-  fact 3). The Wardrobe mode fetches his saved fingerprints (`GET /v1/wardrobe/fingerprints`: sealed
+  (the model's uint8 output as a 1,708-character base64 string: inside `plain()`'s 2,000 limit,
+  fact 3; compared after subtracting the output's zero point, which the manifest records). The Wardrobe mode fetches his saved fingerprints (`GET /v1/wardrobe/fingerprints`: sealed
   at rest, decrypted for the signed-in console, kept in memory only), compares by cosine (the best
   of each piece's views) and shows at most 3 candidates; **nothing is decided without his tap**.
-  The query fingerprint never leaves the phone; a fingerprint is stored only with a photo he saves.
+  The query fingerprint never leaves the phone; a fingerprint is stored only when he saves the
+  piece's look ("Remember how it looks", with or without its photo), and never for a private piece.
   Starting bands (calibrated in the pilot): ≥ 0.86 "likely this one", 0.72–0.86 "maybe", below "new?".
   Two candidates of one type within 0.02 of each other: "identical copies: read its label or tap
   which one", and a basket event holds both until he says (LND-04).
@@ -410,15 +414,18 @@ non-commercially (the position R7 took for MediaPipe's COCO-trained detector).
   hang it, and take the photo again." Without the two model files, saving a photo is off ("not
   installed") and taps still work. A test hook can only add refusals, never remove one.
 - **The crop**: the Wardrobe mode draws the piece's box into a ≤ 512-px JPEG (quality 0.8, ≈ 35 KB) in
-  memory and hands it to **the one door**: I0 adds `wardrobe(blob, {piece, view})` to
+  memory (the scan module is a panel like `console-camera-panel.js`: it calls `JarvisVision.run`
+  and `stream`, never `use`, so R7's use-case guard still finds no use case) and hands it to **the
+  one door**: I0 adds `wardrobe(blob, {piece, view})` to
   `console-r7-send.js`, which counts it in "Pictures sent from this device today" and posts to
   `POST /v1/wardrobe/photos`. The button says so: "Save this photo with the piece (sealed; only you)".
   The scan module never posts picture bytes itself (a static test).
 - **On the server** (A): JPEG only, ≤ 768 px a side, ≤ 200 KB, cleaned by `sanitise_jpeg` (fact 17),
   sealed with the new purpose `wardrobe_photos` (AAD `wardrobe/photo/{uid}/{photo}/v1`) in
-  `wardrobe_photo/{uid}_{photo}`, at most 3 views a piece (front, back, detail); its fingerprint in
-  `wardrobe_fp/{uid}_{shard}` (200 a shard, same purpose). **A private piece never has a photo**: the
-  mode skips the step and the route refuses one (422).
+  `wardrobe_photo/{uid}_{photo}` (photo id `wh_` + 12 hex), at most 3 views a piece (front, back, detail); its fingerprint in
+  `wardrobe_fp/{uid}_{shard}` (200 a shard, same purpose). **A private piece never has a photo or a
+  fingerprint**: the mode skips both steps and the routes refuse them (422); a tool still finds a
+  private piece by his words on the server, without ever returning them to the model.
 - **Promises that change, said plainly**: C63's "a frame is never stored" stays true for frames; a
   wardrobe photo is a crop he chose to save, through the door. I1 edits C63 and the camera's privacy
   note to say so; the persona's camera line names the one exception.
@@ -513,7 +520,8 @@ bin entry is purged. Deleting everything is a Privacy row (passkey).
 **D17 · Backup and restore of the wardrobe (OPS-06; Part A).** `GET /v1/wardrobe/backup` downloads one
 file sealed with the `wardrobe` key (AAD `wardrobe/backup/{uid}/v1`): pieces, pairs, sets, places,
 labels, states and the whole event log, plus photos and fingerprints **only when he ticks "include
-photos"**. It opens only on this JARVIS (the same token key; R14's Firestore backups cover a lost
+photos"** (they travel as their own sealed blobs, never opened for the backup). It opens only on
+this JARVIS (the same token key; R14's Firestore backups cover a lost
 database). `POST /v1/wardrobe/restore` checks the seal and the schema first, then merges: ids kept,
 events deduplicated by id and client id, the fold of D4 re-run, so a newer local verified event
 stays authoritative and nothing is duplicated; it reports counts (added, already there, superseded).
@@ -563,7 +571,7 @@ R14's `WITHOUT_AI` gains "your wardrobe: where a piece is, laundry, today's outf
 
 **D21 · Version, persona, guide.** `__version__ = "13.0.0"` at I0 (lower than 14.0.2: nothing
 compares versions, as with R7's 7.0.0 after 11.1.1); the four pins move. Persona **p13.0** at I1
-(`WARDROBE_RULE`): "A piece of clothing, footwear or an accessory is in the wardrobe: use
+(pinned in 21 test files, which move then; `WARDROBE_RULE`): "A piece of clothing, footwear or an accessory is in the wardrobe: use
 `wardrobe_find`, not Things. Never name a private piece outside the Wardrobe tab; say 'a private
 basic'. An outfit comes from wardrobe rules with their reasons; say a piece is ready only when the
 tool says so. Laundry is prepared, never ordered, paid or called. Archive, restore, merge and remove
@@ -594,7 +602,7 @@ the Camera → Wardrobe mode in C63; I0 lists them PLANNED with every collection
 | `wardrobe_review/{uid}` | B | open review entries (≤ 100): pending deposits, holds, conflicts, stale checks | `wardrobe` | until resolved, then 30 days |
 | `wardrobe_plans/{uid}` | C | plans (≤ 60: from 14 days back to 30 ahead), reservations, his rule words and preferences | `wardrobe` | 90 days after the event |
 | `wardrobe_cal/{uid}` | C | the last calendar read: event fingerprints, times, the dress code found (never a title) | `wardrobe` | overwritten |
-| `wardrobe_told/{uid}_{key}` | C (B for `laundry_overdue`, `wardrobe_review`) | once-only claims (a hash) | no | 30 days |
+| `wardrobe_told/{uid}_{key}` | C (B for `laundry_overdue`, `wardrobe_review`; each key starts with its part's name) | once-only claims (a hash) | no | 30 days |
 
 Keyring purposes 22 → **24** (`wardrobe`, `wardrobe_photos`). Never stored: a calendar title,
 description or attendee, a frame, a picture of a private piece, a picture with a person, the query
@@ -628,12 +636,32 @@ logs ≈ 4 MB a year; ≈ 15–20 MB in the first year.
 Every result lists at most 20 pieces (the gateway cuts at 12,000 characters, `gateway.py:106`), fences
 his words, follows D10's view, and shows fixed Activity words (`Tool.activity_words`).
 
+## Per part: failures, security, cost
+
+| Part | Failure modes and handling | Security and privacy | ₹ a month |
+|---|---|---|---|
+| A · Catalog and ledger | No token key → the wardrobe is off (never in clear) and says so; an index that can't be read or opened is never overwritten (the belongings rule); the 601st piece refused; a photo that isn't a clean JPEG refused in words; a restore whose seal or schema fails changes nothing | sealed index, logs, photos and fingerprints; photo bytes cleaned, never decoded on the server; the tag call only to a seeing, non-training brain; the backup opens only with this JARVIS's key | ₹0 (AI tagging only if he switches it on: ≈ ₹0.01–0.3 a photo, cap ₹30) |
+| B · Laundry | an ambiguous name → a review entry and holds, never a guess; a step on a piece not in that load refused; an outside batch with no due date never alerts; past 100 open entries the oldest stale checks fold into one "check this place" entry, and a pending deposit is never dropped | a shop's label only (no number, no address); never a call, an order or a message | ₹0 |
+| C · Styling | no calendar or "Never" on the Calendar row → manual plans only, said in Settings; no weather → the assumption shown; no complete look → the gap and a next action; a rules file that fails its check → the part is "setup failed" and the others run | titles never stored, sent or logged; only the chosen fields requested; alerts in fixed words | ₹0 (one Calendar read an hour per owner, free) |
+| D · Phone and panel | a model file that fails to load → "not installed", taps still work; a slow phone → the live look slows itself (R7's rule); no camera → "Choose a photo"; the door refuses a picture it can't redraw | person and face refusal before any save; crops only; the door counts every picture; private pieces count-only outside the tab | ₹0 (≈ 13 MB of model files to the phone once) |
+
+## Cost (₹ a month; no new paid service, secret or Scheduler job)
+
+| Item | ₹ |
+|---|---|
+| Firestore storage (≈ 15–20 MB in the first year, inside the free 1 GiB) | 0 |
+| Firestore reads and writes (a scan session ≈ 10 reads; an event ≈ 2 reads and 2 writes; ≈ 100 of each a day, inside the free 50,000 / 20,000) | 0 |
+| Google Calendar reads (≤ 24 a day per owner) and Open-Meteo (R11's hourly poll, no extra call) | 0 |
+| R14's daily backups, when he has switched them on (≈ ₹3.8 per 100 MB a month) | ≈ 0.6–0.8 |
+| Optional AI tagging (off by default; Haiku 5.5 ≈ ₹0.01, Sonnet 5.5 ≈ ₹0.26 a photo; at ₹95.24 a dollar) | 0 unless used; at most 30 |
+| Printing a QR sheet (his paper) and, later, washable labels (his choice) | outside JARVIS |
+
 ## The I0 seam list (branch `r13-i0`; the integrator owns these files)
 
 1. **Version** `13.0.0` (`__init__.py`; the four pins of fact 1).
 2. **Alert kinds** +4 (D19): `alerts.py` `R13_ALERT_KINDS`, `notify/ports.py` `DEFAULT_URGENCY`,
-   `notify/policy.py` `DAYTIME_RING_KINDS` (+3), `notify/held.py` (+3 held words; `wardrobe_review` is
-   feed only), `console-alerts.js` `KINDS` (+4 rows), `webpush/service.py` `TARGETS` (+4 → `helpers`),
+   `notify/policy.py` `DAYTIME_RING_KINDS` (+3), `notify/held.py` (+4 words, as R14 gave its info
+   kinds), `console-alerts.js` `KINDS` (+4 rows), `webpush/service.py` `TARGETS` (+4 → `helpers`),
    `buildbook/plain.py` `ALERT_WORDS` (+4); the pins 52 → **56** in the six tests of fact 12, the
    exact `DAYTIME_RING_KINDS` (`test_r51_seams.py:45`) and `TARGETS` (`test_r7_a_push.py:43`).
 3. **Keyring** +2 → **24** (`keyring.py`; `test_r7_seams.py:294`, `test_r11_seams.py:166`,
@@ -673,7 +701,8 @@ his words, follows D10's view, and shows fixed Activity words (`Tool.activity_wo
     contract check, `r13_tools`, `r13_tick_jobs`, `r13_clock_jobs`, `r13_privacy_sources`,
     `install_r13_routes` with I0's `GET /v1/r13` (each part's ready word), `install_r13_phrases`
     (first), the observers joined to A's store, the bin's `wardrobe_item` restorer and purger);
-    `api/tick_wiring.py` (+ R13's daily and clock jobs); `api/app.py` +4 lines (the import, `await
+    `api/tick_wiring.py` (+ R13's daily and clock jobs); `home/watchdog.py:82` `ADVISORY_JOBS` +=
+    `outfit_clock` (never a 503 for it, as R14's `selfwatch_clock`); `api/app.py` +4 lines (the import, `await
     r13.wire_r13(…)`, `r13=` to `build_gateway`, the routes) → **731 ≤ 735**; `tools/setup.py`
     (`r13=`); `api/personal.py` (the `r13_privacy_sources` slot before home's);
     `offline/mode.py` (`add_phrases(…, first=False)`); `offline/phrases_r14.py` (`WITHOUT_AI` +1).
@@ -814,7 +843,7 @@ the same ids; the avatar half is R13.1); **7** private items and photos (a look 
 alerts, Telegram, Web Push and the model's view show only approved details; deleting all wardrobe
 photos leaves the catalog usable; the avatar half is R13.1); **8** pilot measurements (from the
 events: item-id match rate, wrong status changes, unavailable pieces suggested, manual corrections
-per use; the pilot run reports them, D's `GET /v1/wardrobe/pilot` counts).
+per use; the pilot run reports them from A's `GET /v1/wardrobe/pilot`, counts only).
 
 **Browser (Playwright, Chromium's fake camera).** `--use-fake-ui-for-media-stream
 --use-fake-device-for-media-stream --use-file-for-fake-video-capture=tests/fixtures/r13/<clip>.y4m`
@@ -913,7 +942,7 @@ cases in tool results fail.
 ## Exit check (before the PR)
 
 1. **The pilot** on his phone: 20–30 pieces as above; the pilot counts (e2e 8) are written into
-   INTEGRATION notes with the bands D7 ends up using.
+   `docs/plans/r13-integration/I1-NOTES.md` with the bands D7 ends up using.
 2. **The workbook's end-to-end tests** 1–5, 7 and 8 pass (`evals/r13/e2e.py`; the gated runner, every
    built part's control failing it).
 3. **The full browser suite** once, on the joined branch (≈ 75 minutes; queued, never beside another
@@ -921,8 +950,8 @@ cases in tool results fail.
 4. **Screenshots looked at**: the Wardrobe tab and the Camera → Wardrobe mode at phone and laptop
    sizes, and the unchanged existing tabs against R14's.
 5. **The clock sweep**: the whole unit suite once with the clock moved forward (`time-machine` in a
-   ten-line plugin outside the repo) to 16 Nov 2026 09:00 IST, and the R13 files also at 20 Dec 2026,
-   1 Mar 2027 and 29 Feb 2028; no date bomb.
+   ten-line plugin outside the repo) to two days after the PR's date, 09:00 IST, and the R13 files
+   also at 20 Dec 2026, 1 Jan 2027 00:30 IST, 1 Mar 2027 and 29 Feb 2028; no date bomb.
 6. `ruff check`, `ruff format --check`, `mypy src` (the baseline only), `evals/run_all_mock.py` ALL
    PASS, `scripts/check_doc_versions.py`, `scripts/arch_coverage.py`, the coverage floor (95),
    `python -m jarvis.buildbook.gen --check`, the PR title check.

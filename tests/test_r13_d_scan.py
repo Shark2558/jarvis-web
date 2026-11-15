@@ -200,7 +200,7 @@ def test_ops_01_stop_ends_the_camera_and_the_label_reader_and_keeps_unsent_scans
 # ---- D10: private pieces ------------------------------------------------------------------------
 def test_d10_a_private_piece_never_gets_a_photo_a_fingerprint_or_a_tag() -> None:
     out = scan(
-        [*PHOTO, press("This one: A private basic (label read)")],
+        [*PHOTO, press("This one: A private basic (No. 2) (label read)")],
         vision={"codes": ["jw1:qrstuvwx"], "embed": _vec(11)},
         view=_view(ai_tagging=True),
     )
@@ -407,3 +407,41 @@ def test_the_scan_module_keeps_its_house_rules() -> None:
     for fn in ("savePhoto", "remember", "tag"):
         body = code[code.index(f"async function {fn}(") :]
         assert body.index("if (!allowed(card)") < 120, fn  # the gate first, every time
+
+
+SPLIT_JS = r"""
+const fs = require('fs');
+const src = fs.readFileSync(process.argv[1], 'utf8');
+const region = src.slice(src.indexOf('/*SCAN-PURE-BEGIN*/'), src.indexOf('/*SCAN-PURE-END*/'));
+const { boxesOf } = new Function(region + '\nreturn { boxesOf };')();
+const W = 64, H = 48;
+function scene(rects) {
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+    const hit = rects.find((r) => x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]);
+    d.set([...(hit ? hit[4](x) : [232, 228, 220]), 255], (y * W + x) * 4);
+  }
+  return d;
+}
+const navy = () => [28, 36, 78], stripes = (x) => (x % 3 === 0 ? [240, 240, 236] : [28, 36, 78]);
+console.log(JSON.stringify({
+  striped: boxesOf(scene([[20, 10, 16, 30, stripes]]), W, H).length,
+  apart: boxesOf(scene([[4, 8, 12, 30, navy], [40, 8, 14, 20, navy]]), W, H).map((b) => Math.round(b.x * 64)),
+  bare: boxesOf(scene([]), W, H),
+  speck: boxesOf(scene([[30, 20, 1, 1, navy]]), W, H).length,
+}));
+"""
+
+
+def test_the_split_finds_one_box_a_piece_and_the_whole_frame_when_bare() -> None:
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("node is not installed")
+    run = subprocess.run(
+        [node, "-e", SPLIT_JS, str(SCAN)], capture_output=True, text=True, timeout=30, check=False
+    )
+    assert run.returncode == 0, run.stderr
+    got = json.loads(run.stdout)
+    assert got["striped"] == 1  # light stripes are closed over: one shirt, one box
+    assert len(got["apart"]) == 2 and got["apart"][0] < got["apart"][1]  # laid apart: two, left first
+    assert got["bare"] == [{"x": 0, "y": 0, "w": 1, "h": 1}] and got["speck"] == 1  # a speck is not a piece

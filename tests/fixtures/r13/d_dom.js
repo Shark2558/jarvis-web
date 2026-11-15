@@ -23,6 +23,8 @@ class El {
     this.tagName = String(tag).toUpperCase(); this.children = []; this.parentNode = null; this.attrs = {}; this._text = '';
     this.className = ''; this.hidden = false; this.disabled = false; this.value = ''; this.type = ''; this.dataset = {}; this.listeners = {};
     this.width = 0; this.height = 0; this.uid = 'el' + (ids += 1); this.scene = null;
+    const el = this;
+    this.classList = { toggle(c, on) { const has = el.className.split(' ').filter(Boolean).filter((x) => x !== c); el.className = (on ? [...has, c] : has).join(' '); } };
   }
   get textContent() { return this._text + this.children.map((c) => c.textContent).join(''); }
   set textContent(v) { this.children.forEach((c) => { c.parentNode = null; }); this.children = []; this._text = v == null ? '' : String(v); }

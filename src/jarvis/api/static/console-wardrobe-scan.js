@@ -85,14 +85,16 @@ function boxesOf(px, w, h) { // pieces laid apart on a plain surface: what diffe
   const bg = edge.map((c) => c.sort((a, b) => a - b)[c.length >> 1] || 0);
   const fg = new Uint8Array(w * h), seen = new Uint8Array(w * h), found = [];
   for (let i = 0; i < w * h; i += 1) fg[i] = Math.abs(px[i * 4] - bg[0]) + Math.abs(px[i * 4 + 1] - bg[1]) + Math.abs(px[i * 4 + 2] - bg[2]) > FG ? 1 : 0;
+  const near = fg.slice(); // close gaps of one cell (a light stripe, a fold): one piece stays one box
+  for (let i = 0; i < w * h; i += 1) if (!fg[i]) { const x = i % w; near[i] = (x > 0 && fg[i - 1]) || (x < w - 1 && fg[i + 1]) || fg[i - w] || fg[i + w] ? 1 : 0; }
   for (let s = 0; s < w * h; s += 1) {
-    if (!fg[s] || seen[s]) continue;
+    if (!near[s] || seen[s]) continue;
     const stack = [s]; let n = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
     seen[s] = 1;
     while (stack.length) {
       const i = stack.pop(), x = i % w, y = (i - x) / w;
       n += 1; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-      [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].forEach(([u, v]) => { const j = v * w + u; if (u >= 0 && v >= 0 && u < w && v < h && fg[j] && !seen[j]) { seen[j] = 1; stack.push(j); } });
+      [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].forEach(([u, v]) => { const j = v * w + u; if (u >= 0 && v >= 0 && u < w && v < h && near[j] && !seen[j]) { seen[j] = 1; stack.push(j); } });
     }
     if (n >= Math.max(4, 0.015 * w * h)) found.push({ n, x0, y0, x1, y1 });
   }
@@ -128,7 +130,7 @@ const privateType = (t) => PRIVATE_TYPES.includes(t);
 function nameOf(id) { // his own words, on his own console; a private piece is said as one
   const p = pieceOf(id);
   if (!p) return 'A piece';
-  if (p.private) return 'A private basic';
+  if (p.private) { const l = ((S.view && S.view.labels) || []).find((x) => x.piece === id); return 'A private basic' + (l ? ' (No. ' + l.number + ')' : ''); }
   return (p.label || (p.colour ? p.colour.replace(/_/g, ' ') + ' ' : '') + p.type.replace(/_/g, ' ')).slice(0, 60);
 }
 function failed(e) {
@@ -137,6 +139,7 @@ function failed(e) {
   if (e && e.message === 'not installed') return 'Not installed on this server yet.';
   return navigator.onLine === false || (e && e.name === 'TypeError') ? OFFLINE : 'That didn\u2019t work. Please try again.';
 }
+const pressed = (b, on) => { b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.classList.toggle('primary', on); }; // the existing look
 const isNetwork = (e) => !!e && typeof e.status !== 'number' && (navigator.onLine === false || e.name === 'TypeError');
 
 // ---- the frame of the mode ---------------------------------------------------------------------------------------------
@@ -161,7 +164,7 @@ function mount(host, P) {
 }
 function choose(id) {
   S.flow = FLOWS.some(([f]) => f === id) ? id : 'add';
-  UI.flowBtns.forEach((b) => b.setAttribute('aria-pressed', b.dataset.flow === S.flow ? 'true' : 'false'));
+  UI.flowBtns.forEach((b) => pressed(b, b.dataset.flow === S.flow));
   clearScan();
   paint();
 }
@@ -367,7 +370,7 @@ function chooseActs(card) {
   const chips = mk('div', 'sacts wd-chips');
   chips.setAttribute('role', 'group');
   chips.setAttribute('aria-label', 'What kind of piece');
-  KINDS.forEach(([t, w]) => { const b = btn(w, '', () => { card.kind = t; card.private = privateType(t) ? null : false; paintBody(); }); b.setAttribute('aria-pressed', card.kind === t ? 'true' : 'false'); chips.append(b); });
+  KINDS.forEach(([t, w]) => { const b = btn(w, '', () => { card.kind = t; card.private = privateType(t) ? null : false; paintBody(); }); pressed(b, card.kind === t); chips.append(b); });
   out.push(mk('p', 'sfine', card.cands.top.length || label.length ? 'Or a new piece: what kind is it?' : 'A new piece: what kind is it?'), chips);
   if (card.colour) out.push(mk('p', 'sfine', 'Colour: ' + colourWords(card.colour) + ' (suggested)'));
   if (card.kind && card.private === null) {
@@ -405,7 +408,7 @@ function listBody(kind) {
     const places = ((S.view && S.view.places) || []).filter((p) => p.kind !== 'basket').map((p) => [p.id, p.label]);
     if (places.length) out.push(select('Where it goes', places, S.place, (v) => { S.place = v; }));
     const a = mk('div', 'sacts');
-    [[true, 'Dry'], [false, 'Needs pressing']].forEach(([v, w]) => { const b = btn(w, '', () => { S.dry = v; paintBody(); }); b.setAttribute('aria-pressed', S.dry === v ? 'true' : 'false'); a.append(b); });
+    [[true, 'Dry'], [false, 'Needs pressing']].forEach(([v, w]) => { const b = btn(w, '', () => { S.dry = v; paintBody(); }); pressed(b, S.dry === v); a.append(b); });
     out.push(a);
   }
   S.cards.forEach((card) => { if (!card.piece && card.cands.top.length) out.push(...pickRows(card)); });

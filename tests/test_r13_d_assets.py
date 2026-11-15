@@ -131,3 +131,13 @@ def test_inv_06_a_striped_shirt_keeps_its_candidate_under_rotation_and_folding(
         assert best["top"] == "striped", (view, best)  # the same piece is candidate 1
         assert best["margin"] > 0.05, (view, best)  # ahead of the next piece
     assert real["inv06"]["other_top"] != "striped"
+
+
+def test_the_books_licence_rows_say_what_the_manifest_says() -> None:
+    from jarvis.buildbook.gen.libs import VENDORED
+
+    files = _manifest()["files"]
+    ssd = VENDORED["vendor/vision/LICENSE-tensorflow-models.txt"][0]
+    assert ssd == "SSD-MobileNetV1: " + files["ssd_mobilenet_v1_12-int8.onnx"]["licence"]
+    assert "UltraFace" in VENDORED["vendor/vision/LICENSE-ultraface.txt"][0]
+    assert "MobileNet v2 (cut)" in VENDORED["vendor/vision/LICENSE-onnx-models.txt"][0]

@@ -39,6 +39,9 @@ SHOP_NUMBER = (
     "A shop's label can't hold a phone number or a long number: use a short name like "
     "'Dry cleaner'."
 )
+TYPE_SHOP = (
+    "Type the shop's label yourself in Helpers, Wardrobe: JARVIS never takes one from a message."
+)
 BAG_BAD = "A bag reference is at most 24 characters, with no long number."
 DUE_BAD = "A due date is from today up to 60 days ahead."
 TIME_BAD = "A time can be at most 30 days back and never ahead."

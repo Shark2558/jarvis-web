@@ -21,10 +21,12 @@ from __future__ import annotations
 from typing import Any, cast
 
 from jarvis.belongings.tools import origin_of
+from jarvis.core.channel import on_telegram
 from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.provenance import vouch
+from jarvis.tools.taint import spoken_in_context
 from jarvis.wardrobe.laundry import cards, checks, history, texts
 from jarvis.wardrobe.laundry.cards import fence, shown
 from jarvis.wardrobe.laundry.flows import Desk, Done
@@ -36,8 +38,10 @@ AGENT = "laundry"
 
 
 def _via() -> str:
-    ctx = require_tool_context()
-    return "voice" if ctx.spoken else "chat"
+    """Where a tap came from (the event's `via`): Telegram, a spoken turn, or the chat."""
+    if on_telegram():
+        return "telegram"
+    return "voice" if require_tool_context().spoken or spoken_in_context() else "chat"
 
 
 def _answer(done: Done) -> dict[str, Any]:
@@ -172,6 +176,8 @@ class LaundryAPI:
                 to=a.get("to", "ready"),
                 via=a.get("via") or _via(),
             )
+        elif ctx.outside:  # a card proposed in a round that read other people's words
+            return {"status": "refused", "message": texts.TYPE_SHOP}
         else:
             work = self._d.send_out(
                 ctx.user_id,

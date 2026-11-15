@@ -2,7 +2,9 @@
 """R13 Part B's tool schemas, descriptions and pure argument checks (docs/plans/r13-wardrobe.md
 "Tools", D10). The gateway runs each check BEFORE the policy decision, so a malformed call fails
 fast in plain words and never reaches a card. Write tools take piece ids; only `laundry_move` also
-takes a `query` (D10's one exception). No argument could order, pay, call or send anything.
+takes a `query` (D10's one exception). No argument could order, pay, call or send anything. A
+shop's label is his words: in a round that read other people's content it is refused before any
+card (R11's UPI rule), so it never comes from a message or waits in a card from one.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import re
 from datetime import date, datetime
 from typing import Any
 
+from jarvis.tools.taint import content_tainted
 from jarvis.wardrobe.laundry import providers, texts
 from jarvis.wardrobe.laundry.loads import WHOLE_LOAD
 from jarvis.wardrobe.laundry.store import BATCH_ID, ENTRY_ID, LOAD_ID
@@ -227,6 +230,8 @@ def check_send(a: dict[str, Any]) -> None:
     if not _ids(a, "pieces", MAX_PIECES):
         raise ValueError(texts.NOTHING_NAMED)
     if action == "send":
+        if content_tainted():  # R11's UPI rule: a shop's label never comes from a message
+            raise ValueError(texts.TYPE_SHOP)
         providers.clean_shop(a.get("shop"))
         providers.clean_bag(a.get("bag", ""))
         due_of(a)

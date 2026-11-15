@@ -58,6 +58,8 @@ async def test_a_short_batch_is_told_and_a_batch_without_a_due_date_is_never_ove
     await r.desk.receive(UID, batch, (BLAZER,))
     r.clock.set(ist(2026, 12, 30, 7, 0))
     await _job(r).run([UID])
+    r.clock.set(ist(2026, 12, 31, 7, 0))
+    await _job(r).run([UID])  # told once: no due date, so never daily
     assert r.notifier.sent == [
         (UID, "laundry_overdue", "A laundry batch came back short: 1 piece is still out. "
          "Details in Helpers, Wardrobe."),

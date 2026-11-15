@@ -74,6 +74,10 @@ async def test_spoken_untainted_runs_tainted_is_a_card_with_fixed_words_and_his_
     r = await rig()
     spoken = await r.tool("laundry_move", spoken=True, step="basket", query="navy striped shirt")
     assert spoken.outcome is GatewayOutcome.EXECUTED
+    (said,) = [
+        h.event for h in await r.store.history(UID, NAVY_SHIRT) if h.event.kind == "deposited"
+    ]
+    assert said.via == "voice" and said.source == "tap"  # where the tap came from
     card = await r.tool("laundry_move", tainted=True, step="basket", query="light blue shirt")
     assert card.outcome is GatewayOutcome.AWAITING_CONFIRMATION
     assert card.pending.summary == "Put a light blue shirt in the laundry basket"
@@ -101,22 +105,32 @@ async def test_status_lists_at_most_20_pieces_and_vouches_for_his_own_words() ->
     assert "Light blue office shirt" in blob and FENCE_PREFIX in blob
 
 
-async def test_status_does_not_vouch_for_a_shop_label_written_from_other_peoples_words() -> None:
+async def test_a_shop_label_from_a_message_is_refused_before_any_card() -> None:
     r = await rig()
     sent = await r.tool(
         "laundry_send_out", tainted=True, action="send", pieces=[BLAZER], shop="Quick Wash"
     )
-    assert sent.outcome is GatewayOutcome.AWAITING_CONFIRMATION
-    assert "Quick Wash" not in sent.pending.summary
-    assert sent.pending.summary == "Note that a charcoal blazer went to an outside laundry"
-    done = await r.gateway.execute(
-        ToolCall(id="t-send", name="laundry_send_out", arguments=sent.pending.arguments),
-        confirmation_id=sent.pending.id,
-        scope=r.scope,
+    assert sent.outcome is GatewayOutcome.ERROR and sent.pending is None
+    assert sent.error == (
+        "Type the shop's label yourself in Helpers, Wardrobe: JARVIS never takes one from a "
+        "message."
     )
+    assert (await r.laundry()).batches == ()
+
+
+async def test_a_spoken_shop_label_is_a_card_in_fixed_words_and_never_vouches() -> None:
+    r = await rig()
+    sent = await r.tool("laundry_send_out", spoken=True, action="send", pieces=[BLAZER],
+                        shop="Quick Wash")  # fmt: skip
+    assert sent.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert sent.pending.summary == "Note that a charcoal blazer went to an outside laundry"
+    call = ToolCall(id="t-send", name="laundry_send_out", arguments=sent.pending.arguments)
+    done = await r.gateway.execute(call, confirmation_id=sent.pending.id, scope=r.scope)
     assert done.outcome is GatewayOutcome.EXECUTED, done
+    (batch,) = (await r.laundry()).batches
+    assert batch.origin == "voice"
     status = await r.tool("laundry_status")
-    assert not status.trusted  # the shop's label came from a round that read outside words
+    assert not status.trusted  # a spoken label may be misheard: it never vouches
     assert status.result["batches"][0]["shop"].startswith(FENCE_PREFIX)
 
 

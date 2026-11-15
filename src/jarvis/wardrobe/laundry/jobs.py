@@ -3,8 +3,9 @@
 no new Scheduler job).
 
 For each owner, in his local day:
-- `laundry_overdue` (important: rings by day, held at night) for every open batch past its `due`,
-  or that came back short: once a batch a day;
+- `laundry_overdue` (important: rings by day, held at night) for every open batch past its `due`
+  (once a batch a day), or that came back short (once a batch: with no due date there is no day
+  to count from, so a batch without one is never told as overdue and never told daily);
 - `wardrobe_review` (info, feed only) when checks opened before today still wait: once a day;
 - the sweep: closed loads and batches after 90 days, answered checks after
   `wardrobe_review_keep_days`, B's claims after 30 days.
@@ -52,12 +53,12 @@ def _batch_alerts(laundry: LaundryDoc, today: date) -> list[tuple[str, str]]:
     for b in providers.open_batches(laundry):
         out_n = len(providers.outstanding(b))
         if providers.overdue(b, today):
-            words = texts.overdue_alert(out_n, providers.days_overdue(b, today))
-        elif b.short and out_n:
-            words = texts.short_alert(out_n)
-        else:
-            continue
-        out.append((f"laundry_overdue_{b.id}_{today.isoformat()}", words))
+            days = providers.days_overdue(b, today)
+            out.append(
+                (f"laundry_overdue_{b.id}_{today.isoformat()}", texts.overdue_alert(out_n, days))
+            )
+        elif b.short and out_n:  # told once: with no due date there is no day to count from
+            out.append((f"laundry_short_{b.id}", texts.short_alert(out_n)))
     return out
 
 

@@ -134,17 +134,20 @@ class Desk:
     ) -> Done:
         wardrobe = self.wardrobe()
         box: dict[str, Change] = {}
+        wrote: list[bool] = [False]
 
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
             laundry = await self.store.read_laundry(tx.get, uid)
             queue = await self.writer.current(uid, tx)
             change = box["change"] = planner(view, laundry, queue)
             events = _stamp(change.events, client_id, rev, via)
-            return Commit(events=events, extra=self._extra(uid, tx, change, laundry, queue))
+            extra = self._extra(uid, tx, change, laundry, queue)
+            wrote[0] = bool(extra)  # B's own documents changed: never "already done"
+            return Commit(events=events, extra=extra)
 
         done = await wardrobe.transact(uid, fn)
         change = box["change"]
-        if change.already or done.already:
+        if change.already or (done.already and not wrote[0]):
             return Done("already", texts.ALREADY, change.pieces, done)
         status = "review" if change.entry else "done"
         return Done(

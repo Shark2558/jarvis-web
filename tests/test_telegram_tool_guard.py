@@ -203,6 +203,7 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         r111=r111_tools(google, docs),  # R11.1 I1: every observation part's tools
         r7=r7_tools(google, docs),  # R7 I0 seam 21: every mobile part's tools, as the app builds
         r14=r14_tools(google, docs),  # R14 I0 seam 4: backups' and the register's tools (C4)
+        r13=r13_tools(docs),  # R13 I0 seam 6: the wardrobe's tools, as the app builds them
     )
 
 
@@ -246,6 +247,33 @@ def r14_tools(google: Any, docs: Any) -> tuple[Any, ...]:
 
     state = {"google": google}
     ctx = HardeningContext(s=get_settings(), docs=docs, audit=AuditLog(), state=state.get)
+    return tools_of(build_parts(ctx))
+
+
+def r13_tools(docs: Any) -> tuple[Any, ...]:
+    """The four R13 parts built through the real wiring on fakes (none has a tool at I0; the 18
+    arrive here as Parts A-C build them, so every wardrobe read must pick a side: they are all
+    behind the personal switch, D18)."""
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+
+    from jarvis.api.r13_wiring import build_parts
+    from jarvis.api.r13_wiring import r13_tools as tools_of
+    from jarvis.tools.audit import AuditLog
+    from jarvis.wardrobe.ports import WardrobeContext
+
+    async def zone(uid: str) -> ZoneInfo:
+        return ZoneInfo("Asia/Kolkata")
+
+    ctx = WardrobeContext(
+        s=get_settings(),
+        docs=docs,
+        keyring=None,
+        audit=AuditLog(),
+        now=lambda: datetime(2026, 11, 16, 6, 30, tzinfo=UTC),  # 12:00 IST, a fixed clock
+        zone=zone,
+        state={}.get,
+    )
     return tools_of(build_parts(ctx))
 
 

@@ -64,6 +64,7 @@ WITHOUT_AI: tuple[str, ...] = (
     "a home-service request (never a booking)",
     "the systems check and Vitals",
     "your helpers: bills, chores, upkeep, the kitchen, nudges, sleep and steps",
+    "your wardrobe: where a piece is, laundry, today's outfit",  # R13 I0 (D20)
 )
 ABILITIES_LINE = (
     "With the AI off I can still do these, Sir: " + "; ".join(WITHOUT_AI) + ".\n"

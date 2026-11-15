@@ -79,8 +79,10 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
 # told once) and a sweep retries its deletes by itself: neither may 503 the watchdog
 # R11 D3: the helpers' 5-minute clock rides here too; its reminders never fail the laptop check
 # R14 D7: self-health's 5-minute job runs FIRST (before the laptop check), for the brief's owners
+# R13: the wardrobe's 5-minute outfit_clock (calendar, weather, the evening's alert) is advisory
 ADVISORY_JOBS = frozenset(
     {"health_check", "book_seal", "book_sweep", "helpers_clock", "mobile_clock", "selfwatch_clock"}
+    | {"outfit_clock"}
 )
 
 

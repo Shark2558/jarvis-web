@@ -55,8 +55,18 @@ def test_only_a_real_tap_switches_the_microphone_back_on() -> None:
     assert m, "micOn"
     body = m.group(1)
     assert "e.isTrusted" in body and ".unlock('button')" in body
+    # security review 1, H1: only the owner's own show may lift his lock, never a guest's tap
+    assert "S.owner" in body and body.index("S.owner") < body.index(".unlock('button')")
     assert talk.count(".unlock(") == 1  # nothing else in the Book unlocks it
     assert "jarvis_mic_off_v1" not in talk and "localStorage" not in talk
+
+
+def test_the_talk_panel_is_told_whose_show_it_is() -> None:
+    show, talk = _read("console-book-show.js"), _read("console-book-talk.js")
+    assert "audience: S.script.audience" in show  # the server's own script answer, never the tab
+    assert "S.owner = !!(opts && opts.audience === 'owner')" in talk
+    m = re.search(r"function micState\(\) \{(.*?)\n  \}", talk, re.S)
+    assert m and "S.owner" in m.group(1), "the switch-on button is the owner's only"
 
 
 def test_the_show_page_has_the_status_line_and_the_switch_on_button() -> None:

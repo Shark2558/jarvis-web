@@ -283,7 +283,7 @@ def test_an_unsupported_browser_keeps_the_button_disabled_with_the_reason(
 def test_mic_off_is_shown_and_only_a_real_tap_switches_it_on(
     browser: Any, server_url: str, token: str
 ) -> None:
-    c, fake = _questions(browser, server_url, token, LOCKED)
+    c, fake = _questions(browser, server_url, token, LOCKED, audience="owner")  # his own show
     try:
         on = c.page.locator("#shMicOn")
         assert "switched off" in _status(c) and on.is_visible()
@@ -309,10 +309,35 @@ def test_mic_off_is_shown_and_only_a_real_tap_switches_it_on(
         c.close()
 
 
-def test_mic_off_set_while_listening_stops_and_sends_nothing(
+def test_mic_off_in_a_guest_show_offers_no_way_back(
     browser: Any, server_url: str, token: str
 ) -> None:
-    c, fake = _questions(browser, server_url, token)
+    """Security review 1, H1: a guest's real tap must never lift the owner's "Mic off" (R5 D11)."""
+    c, fake = _questions(browser, server_url, token, LOCKED, audience="guest")
+    try:
+        on = c.page.locator("#shMicOn")
+        assert on.is_hidden() and "switched off on this device" in _status(c)
+        assert "Switch it on" not in _status(c)
+        # the locked mic: nothing opens, and no way back is offered
+        c.page.locator("#shMic").click()
+        assert c.page.evaluate("window.__gum") == []
+        assert c.page.evaluate("document.activeElement.id") == "shQ"
+        c.page.evaluate("document.getElementById('shMicOn').hidden = false")  # a script shows it
+        on.click()  # a real, trusted tap: still the guest's
+        assert c.page.evaluate("window.JarvisAudio.locked()") is True
+        assert c.page.evaluate("localStorage.getItem('jarvis_mic_off_v1')") == "1"
+        assert on.is_hidden() and c.page.evaluate("window.__gum") == []
+        _typing_still_works(c, fake)
+        _clean(c)
+    finally:
+        c.close()
+
+
+@pytest.mark.parametrize("audience", ["owner", "guest"])
+def test_mic_off_set_while_listening_stops_and_sends_nothing(
+    browser: Any, server_url: str, token: str, audience: str
+) -> None:
+    c, fake = _questions(browser, server_url, token, audience=audience)
     try:
         c.page.locator("#shMic").click()
         c.page.wait_for_function(PRESSED.format("true"))
@@ -320,7 +345,8 @@ def test_mic_off_set_while_listening_stops_and_sends_nothing(
             "window.JarvisAudio.lock('button')"
         )  # "mic off" said elsewhere in this browser
         c.page.wait_for_function(PRESSED.format("false"))
-        assert "switched off" in _status(c) and c.page.locator("#shMicOn").is_visible()
+        assert "switched off" in _status(c)
+        assert c.page.locator("#shMicOn").is_visible() is (audience == "owner")  # H1
         c.page.wait_for_timeout(500)
         assert fake.to("POST", "/v1/book/show/hear") == []
         _typing_still_works(c, fake)
@@ -332,7 +358,7 @@ def test_mic_off_set_while_listening_stops_and_sends_nothing(
 def test_mic_off_offers_no_way_back_once_the_questions_run_out(
     browser: Any, server_url: str, token: str
 ) -> None:
-    c, fake = _questions(browser, server_url, token, LOCKED)
+    c, fake = _questions(browser, server_url, token, LOCKED, audience="owner")
     fake.ask_answers = [FakeBook.reply(left=0)]  # the session's last question
     try:
         on = c.page.locator("#shMicOn")

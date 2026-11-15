@@ -5,14 +5,15 @@
 // (a WAV <= 15 s) and comes back as text in the box for the guest to send. R6.2: one tap listens, a second stops; the
 // status line (#shHear) says Listening, Processing, Done (with what was heard when the free rules changed it); the words
 // are never sent by themselves; each failure is said by its reason (JarvisAudio.words, shared with the console, or the
-// server's Book wording) and the typed box stays usable; "Mic off" is shown with #shMicOn, which only a real tap
-// (isTrusted, then the R5 lock's own unlock, D11) switches back on. The closing lines themselves are the last
+// server's Book wording) and the typed box stays usable; "Mic off" is shown with #shMicOn, which only the owner's real
+// tap in his own show (isTrusted, then the R5 lock's own unlock, D11) switches back on: a guest's show offers no way
+// back (security review 1, H1: the audience comes from the server's script). The closing lines themselves are the last
 // beats of the show (console-book-show.js); this file shows what comes after: the session closed, its conversation deleted,
 // and -- while a guest lock holds the owner's consoles (D10) -- the hand-back line and Resume, also in any other console
 // tab the lock sent here. The lock id comes from GET /v1/book/show/lock, or from a refused POST /v1/book/resume.
 // No build step; CSP script-src 'self'; textContent only; ASCII source; <= 400 lines.
 // A dropped connection is said calmly ("Can't reach JARVIS..."), never as the browser's raw error.
-// window.JarvisBookTalk = { open({lines, phase}), hide(), clear(), done({audience, line, reason}), locked(), offline(retry) }
+// window.JarvisBookTalk = { open({lines, phase, audience}), hide(), clear(), done({audience, line, reason}), locked(), offline(retry) }
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -26,13 +27,14 @@
   const Show = () => window.JarvisBookShow;
   const V = () => window.JarvisBookVoice;
   const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null,
-    canRec: false, quiet: 0 };
+    canRec: false, quiet: 0, owner: false };
   const SILENT_MS = 1500; // no frame this long after the microphone opened: no sound is coming
   const HEAR = {
     listening: 'Listening\u2026 tap the mic again to stop.',
     processing: 'Processing\u2026',
     done: 'Done. Edit the question if you like, then press Ask.',
     off: 'The microphone is switched off in this browser. Switch it on to ask by voice, or type.',
+    offGuest: 'The microphone is switched off on this device. Type your question.', // H1: no way back for a guest
     on: 'The microphone is on. Tap the mic to ask by voice.',
     nothing: 'I didn\u2019t hear any words. Try again closer to the microphone, or type.',
     short: 'That was too short to hear anything. Tap the mic, speak, then tap it again.',
@@ -59,6 +61,7 @@
   function open(opts) {
     wire();
     S.lines = obj(opts && opts.lines) || {}; S.phase = opts && opts.phase === 'questions' ? 'questions' : 'show';
+    S.owner = !!(opts && opts.audience === 'owner'); // the server's script says whose show it is (H1)
     $('shFinish').textContent = S.phase === 'questions' ? 'No more questions' : 'Back to the show';
     $('shTalk').hidden = false; $('show').classList.add('talking');
     const R = V() && V().record;
@@ -114,21 +117,22 @@
     $('shMic').setAttribute('aria-label', on ? 'Stop and use what I said' : 'Ask by voice');
   }
   const micWords = (code) => { const A = AU(); return A && typeof A.words === 'function' ? A.words(code) : HEAR.caught; };
-  /** At rest: an old browser says so; "Mic off" says so and offers the way back; else the line is clear. */
+  /** At rest: an old browser says so; "Mic off" says so (the way back for the owner only); else the line is clear. */
   function micState() {
     const A = AU(), off = !!(S.canRec && A && A.locked()) && S.left !== 0; // out of questions: no way back needed
-    $('shMicOn').hidden = !off;
-    hearLine(!S.canRec ? micWords('unsupported') : off ? HEAR.off : '');
+    $('shMicOn').hidden = !(off && S.owner);
+    hearLine(!S.canRec ? micWords('unsupported') : off ? (S.owner ? HEAR.off : HEAR.offGuest) : '');
   }
-  /** "Switch the microphone on": his real tap only (R5 D11); a script's click is never trusted. Never listens by itself. */
+  /** "Switch the microphone on": the owner's real tap in his own show only (R5 D11, H1); a script's click is never
+   *  trusted, and a guest's tap never lifts his lock. Never listens by itself. */
   function micOn(e) {
     const A = AU();
-    if (A && A.locked() && !(e && e.isTrusted && A.unlock('button'))) return;
+    if (A && A.locked() && !(S.owner && e && e.isTrusted && A.unlock('button'))) { micState(); return; }
     micState(); hearLine(HEAR.on); $('shMic').focus();
   }
   function refused(code) {
     const A = AU();
-    if (code === 'mic_off' || (A && A.locked())) { micState(); $('shMicOn').focus(); return; }
+    if (code === 'mic_off' || (A && A.locked())) { micState(); $(S.owner ? 'shMicOn' : 'shQ').focus(); return; }
     if (code !== 'closed') { hearLine(''); sys(micWords(code)); } // 'closed': a cancel or the close won
   }
   async function mic() {

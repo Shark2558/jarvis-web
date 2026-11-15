@@ -201,7 +201,7 @@
     S.phase = 'questions'; S.playing = false; sync(); hold(S.held);
     const T = talk();
     if (!S.script.talk.on) { toClosing(); return; }
-    if (T) T.open({ lines: S.script.lines, phase: 'questions' });
+    if (T) T.open(talkOpts('questions'));
   }
   function toClosing() {
     const i = sceneStart(13);
@@ -249,7 +249,9 @@
   // ---- controls and keys ---------------------------------------------------------------------------
   function toggleSound() { S.sound = !S.sound; const V = voice(); if (V) V.mute(!S.sound); sync(); }
   function toggleCaptions() { S.captions = !S.captions; sync(); }
-  function ask() { const T = talk(); if (!T || S.phase === 'done' || S.phase === 'start') return; if (S.phase === 'playing') pause(); T.open({ lines: S.script.lines, phase: S.phase === 'questions' ? 'questions' : 'show' }); }
+  /** What the questions panel is told: the lines, the phase and whose show it is (the server's script; H1). */
+  const talkOpts = (phase) => ({ lines: S.script.lines, phase, audience: S.script.audience });
+  function ask() { const T = talk(); if (!T || S.phase === 'done' || S.phase === 'start') return; if (S.phase === 'playing') pause(); T.open(talkOpts(S.phase === 'questions' ? 'questions' : 'show')); }
   function confirmEnd() {
     const d = $('shConfirm');
     if (d.open || S.closing || !S.script) return;

@@ -2,7 +2,11 @@
 // the guest hand-back and Resume (JarvisPasskey.prove('book_resume', lockId)).
 // Questions: POST /v1/book/show/ask {text} -> {reply_id, reply, refused, follow_up, left}; the guarded reply is shown and
 // spoken by its id (the server holds its text), then the follow-up line. A spoken question goes to POST /v1/book/show/hear
-// (a WAV <= 15 s) and comes back as text in the box for the guest to send. The closing lines themselves are the last
+// (a WAV <= 15 s) and comes back as text in the box for the guest to send. R6.2: one tap listens, a second stops; the
+// status line (#shHear) says Listening, Processing, Done (with what was heard when the free rules changed it); the words
+// are never sent by themselves; each failure is said by its reason (JarvisAudio.words, shared with the console, or the
+// server's Book wording) and the typed box stays usable; "Mic off" is shown with #shMicOn, which only a real tap
+// (isTrusted, then the R5 lock's own unlock, D11) switches back on. The closing lines themselves are the last
 // beats of the show (console-book-show.js); this file shows what comes after: the session closed, its conversation deleted,
 // and -- while a guest lock holds the owner's consoles (D10) -- the hand-back line and Resume, also in any other console
 // tab the lock sent here. The lock id comes from GET /v1/book/show/lock, or from a refused POST /v1/book/resume.
@@ -21,7 +25,21 @@
   const B = () => window.JarvisBook;
   const Show = () => window.JarvisBookShow;
   const V = () => window.JarvisBookVoice;
-  const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null };
+  const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null,
+    canRec: false, quiet: 0 };
+  const SILENT_MS = 1500; // no frame this long after the microphone opened: no sound is coming
+  const HEAR = {
+    listening: 'Listening\u2026 tap the mic again to stop.',
+    processing: 'Processing\u2026',
+    done: 'Done. Edit the question if you like, then press Ask.',
+    off: 'The microphone is switched off in this browser. Switch it on to ask by voice, or type.',
+    on: 'The microphone is on. Tap the mic to ask by voice.',
+    nothing: 'I didn\u2019t hear any words. Try again closer to the microphone, or type.',
+    short: 'That was too short to hear anything. Tap the mic, speak, then tap it again.',
+    caught: 'I didn\u2019t catch that. Type the question instead.',
+    charged: ' This month\u2019s free listening minutes are used up, so this one was charged.',
+  };
+  const AU = () => window.JarvisAudio || null;
   /** Plain words for a failure: a dropped connection (fetch's TypeError) gets the calm sentence. */
   const words = (e, fallback) => (e && e.name === 'TypeError' ? OFFLINE : (e && e.message) || fallback);
 
@@ -35,7 +53,7 @@
   function leftWords() {
     $('shLeft').textContent = S.left === null ? '' : S.left + ' question' + (S.left === 1 ? '' : 's') + ' left';
     const out = S.left === 0; // out of questions: the box goes away (the server's limit line says why)
-    $('shQ').disabled = out || S.busy; $('shSend').disabled = S.busy; $('shMic').disabled = out || S.busy;
+    $('shQ').disabled = out || S.busy; $('shSend').disabled = S.busy; $('shMic').disabled = out || S.busy || !S.canRec;
     $('shTalk').querySelector('.composer-wrap').hidden = out;
   }
   function open(opts) {
@@ -44,8 +62,9 @@
     $('shFinish').textContent = S.phase === 'questions' ? 'No more questions' : 'Back to the show';
     $('shTalk').hidden = false; $('show').classList.add('talking');
     const R = V() && V().record;
-    $('shMic').hidden = !(R && R.supported());
-    leftWords(); $('shQ').focus();
+    S.canRec = !!(R && R.supported()); // an old browser: the button stays, disabled, and the line says why
+    $('shMic').hidden = false;
+    leftWords(); micState(); $('shQ').focus();
   }
   function hide() {
     const had = $('shTalk').contains(document.activeElement); // keep the focus in the show (D15)
@@ -66,7 +85,7 @@
   async function ask() {
     const text = $('shQ').value.replace(/\s+/g, ' ').trim().slice(0, MAX_Q);
     if (!text || S.busy || S.left === 0) return;
-    S.busy = true; $('shQ').value = ''; row('user', text); leftWords();
+    S.busy = true; $('shQ').value = ''; row('user', text); leftWords(); micState();
     const gen = S.gen; // the panel closed (Finish, End, the close) while waiting: drop what comes back
     const thinking = row('jarvis', '', 'pending'); thinking.firstChild.classList.add('typing');
     thinking.firstChild.append(mk('span', 'lbl', 'Thinking'));
@@ -88,36 +107,78 @@
       sys(words(e, 'That question did not go through.'));
     }
   }
-  // a spoken question: record (tap again to stop, 15 s at most), then the words land in the box
+  // ---- a spoken question: record (tap again to stop, 15 s at most), then the words land in the box --------
+  function hearLine(text) { const el = $('shHear'); el.textContent = text || ''; el.hidden = !text; }
+  function pressed(on) {
+    $('shMic').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('shMic').setAttribute('aria-label', on ? 'Stop and use what I said' : 'Ask by voice');
+  }
+  const micWords = (code) => { const A = AU(); return A && typeof A.words === 'function' ? A.words(code) : HEAR.caught; };
+  /** At rest: an old browser says so; "Mic off" says so and offers the way back; else the line is clear. */
+  function micState() {
+    const A = AU(), off = !!(S.canRec && A && A.locked());
+    $('shMicOn').hidden = !off;
+    hearLine(!S.canRec ? micWords('unsupported') : off ? HEAR.off : '');
+  }
+  /** "Switch the microphone on": his real tap only (R5 D11); a script's click is never trusted. Never listens by itself. */
+  function micOn(e) {
+    const A = AU();
+    if (A && A.locked() && !(e && e.isTrusted && A.unlock('button'))) return;
+    micState(); hearLine(HEAR.on); $('shMic').focus();
+  }
+  function refused(code) {
+    const A = AU();
+    if (code === 'mic_off' || (A && A.locked())) { micState(); $('shMicOn').focus(); return; }
+    if (code !== 'closed') { hearLine(''); sys(micWords(code)); } // 'closed': a cancel or the close won
+  }
   async function mic() {
-    const R = V() && V().record;
-    if (!R || S.busy) return;
+    const R = V() && V().record, A = AU();
+    if (!R || S.busy || !S.canRec) return;
     if (S.recording) { await sendRec(); return; }
+    if (A && A.locked()) { refused('mic_off'); return; } // nothing opens while it is off
     const gen = S.gen; // the panel closed (a jump, End, the close) while the microphone was starting: it never records
     try {
       if (!(await R.start())) return;
       if (gen !== S.gen) { R.cancel(); return; }
       S.recording = true; R.onFull(() => sendRec());
-      $('shMic').setAttribute('aria-pressed', 'true'); $('shMic').setAttribute('aria-label', 'Stop and use what I said');
-    } catch (_) { if (gen === S.gen) sys('The microphone is not available. Type the question instead.'); }
+      pressed(true); hearLine(HEAR.listening);
+      S.quiet = setTimeout(() => { if (S.recording && !R.frames()) { stopRec(true); hearLine(''); sys(micWords('silent')); } }, SILENT_MS);
+    } catch (e) { if (gen === S.gen) refused(e && e.code); }
   }
   function stopRec(cancel) {
     const R = V() && V().record;
-    S.recording = false; $('shMic').setAttribute('aria-pressed', 'false'); $('shMic').setAttribute('aria-label', 'Ask by voice');
+    clearTimeout(S.quiet); S.recording = false; pressed(false);
     if (!R) return null;
     if (cancel) { R.cancel(); return null; }
     return R.stop();
   }
+  /** A failed hearing: a dropped connection calmly, else the server's own Book wording, else ours (never a raw error). */
+  function hearWords(e) {
+    if (e && e.name === 'TypeError') return OFFLINE;
+    const said = e && e.status && e.body && typeof e.body.detail === 'string' ? txt(e.body.detail, 300) : '';
+    return said || HEAR.caught;
+  }
+  function landed(raw) {
+    const d = obj(raw) || {}, text = txt(d.text, MAX_Q), heard = txt(d.heard, MAX_Q);
+    if (!text) { hearLine(''); sys(HEAR.nothing); return; } // the box keeps what was typed
+    $('shQ').value = text; // for him to edit: never sent by itself
+    const done = d.changed === true && heard && heard !== text
+      ? 'Done. Heard \u201c' + heard + '\u201d; understood as the words in the box. Edit them if you like, then press Ask.' : HEAR.done;
+    hearLine(done + (d.charged === true ? HEAR.charged : ''));
+  }
   async function sendRec() {
-    const wav = stopRec(false);
-    if (!wav) return;
-    S.busy = true; leftWords();
+    const was = S.recording, wav = stopRec(false);
+    if (!wav) { if (was) { hearLine(''); sys(HEAR.short); } return; }
+    S.busy = true; leftWords(); hearLine(HEAR.processing);
     try {
       const r = await B().raw('/v1/book/show/hear', { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav' } });
       if (!r.ok) throw await B().failure(r);
-      const d = obj(await r.json());
-      $('shQ').value = txt(d && d.text, MAX_Q);
-    } catch (e) { if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; } sys(words(e, 'I didn\u2019t catch that. Type the question instead.')); }
+      landed(await r.json());
+    } catch (e) {
+      hearLine('');
+      if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; }
+      sys(hearWords(e));
+    }
     S.busy = false; leftWords(); $('shQ').focus();
   }
   function finish() {
@@ -131,7 +192,10 @@
     $('shSend').addEventListener('click', ask);
     $('shQ').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });
     $('shMic').addEventListener('click', mic);
+    $('shMicOn').addEventListener('click', micOn);
     $('shFinish').addEventListener('click', finish);
+    const A = AU(); // "mic off" from another tab or the console (R5 D11): a recording stops, the line follows
+    if (A && typeof A.onLock === 'function') A.onLock((d) => { if (d && d.locked && S.recording) stopRec(true); if (!$('shTalk').hidden) micState(); });
   }
 
   // ---- after the close: the session is gone; a guest lock may hold the owner's consoles ------------

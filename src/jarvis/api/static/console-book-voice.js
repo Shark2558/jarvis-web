@@ -5,7 +5,8 @@
 // browser's speechSynthesis (from the first 402 / 503 / decode error on, for the rest of the show), else -- sound off,
 // or no voice at all -- captions only: 330 ms a word + 800 ms. Pause, resume and stop work in every mode, also while a
 // line's audio is still being fetched: it then waits, paused, and starts on resume (never late, never by itself).
-// record: a spoken question (<= 15 s, 16 kHz PCM16 WAV) through the console's capture worklet, for POST /v1/book/show/hear.
+// record: a spoken question (<= 15 s, 16 kHz PCM16 WAV) through the console's capture worklet, for POST /v1/book/show/hear;
+// start() rejects with JarvisAudio's .code ('mic_off', 'blocked', 'no_mic', 'busy', 'failed', 'unsupported'), frames() counts.
 // The microphone opens only from a tap; a cancel or the close while it is still starting (the permission prompt, the
 // worklet) wins: the stream is stopped and nothing is recorded. Nothing is stored; dispose() stops and closes
 // everything (the page calls it at the close, D14).
@@ -246,6 +247,7 @@
       stop() { const f = release(); return f && f.length ? window.JarvisWav.encode(f, RATE) : null; },
       cancel() { gen += 1; const was = starting; release(); const a = A(); if (was && a) a.close(); }, // a pending open stops its tracks
       active: () => !!live,
+      frames: () => (live ? live.frames.length : 0), // R6.2: none yet means no sound has come (silent or too short)
     };
   })();
 

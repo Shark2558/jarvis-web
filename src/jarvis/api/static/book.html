@@ -45,11 +45,12 @@
       <div class="composer">
         <label class="sr-only" for="shQ">Your question about how JARVIS is built</label>
         <textarea id="shQ" rows="1" maxlength="500" placeholder="Ask how JARVIS is built" autocomplete="off"></textarea>
-        <button class="icon-btn sh-mic" id="shMic" type="button" aria-label="Ask by voice" aria-pressed="false" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="7" y="2.5" width="6" height="10" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg></button>
+        <button class="icon-btn sh-mic" id="shMic" type="button" aria-label="Ask by voice" aria-pressed="false" aria-describedby="shHear" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="7" y="2.5" width="6" height="10" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg></button>
         <button class="send" id="shSend" type="button" aria-label="Ask"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg></button>
       </div>
+      <p class="hint" id="shHear" role="status" aria-live="polite" hidden></p>
     </div>
-    <div class="sh-tfoot"><button class="btn lift" id="shFinish" type="button">No more questions</button></div>
+    <div class="sh-tfoot"><button class="btn lift" id="shMicOn" type="button" hidden>Switch the microphone on</button><button class="btn lift" id="shFinish" type="button">No more questions</button></div>
   </section>
 
   <div class="sh-cap" id="shCap" aria-live="polite"><p id="shCapText"></p></div>

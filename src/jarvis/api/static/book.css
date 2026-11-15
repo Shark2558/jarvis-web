@@ -72,7 +72,7 @@ html[data-surface="night"] .sh-cap p{font:400 17px/1.5 var(--tech);letter-spacin
 .sh-talk .composer textarea{min-height:44px;padding:11px 0}
 .sh-talk .send,.sh-talk .sh-mic{width:44px;height:44px}
 .sh-mic[aria-pressed="true"]{color:var(--accent-ink);background-color:var(--tint);border-color:var(--line)}
-.sh-tfoot{flex:none;display:flex;padding:0 10px 10px}
+.sh-tfoot{flex:none;display:flex;gap:8px;padding:0 10px 10px} /* R6.2: #shMicOn beside Finish while the mic is off */
 .sh-tfoot .btn{height:44px}
 
 /* ---- the start and end cards (the sign-in gate's look); the stage hides behind them ---------------- */

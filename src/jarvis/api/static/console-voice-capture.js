@@ -24,6 +24,9 @@
 //                       on the default input fires jarvis:audio-route {input, reason: 'input_missing'};
 //                       each microphone that goes live fires {input: {id, label: ''}, reason: 'input_live'}
 //                       (an id only, never a label). trackLabel(): the open track's name.
+//                       WORDS / words(code) (R6.2): the one table of plain words for each reason
+//                       the microphone can't listen ('blocked', 'no_mic', 'busy', 'unsupported',
+//                       'failed', 'ended', 'silent'); the console and the build book read it.
 //                       The wake-word module consumes the same frames:
 //                       JarvisWake.start({subscribe: JarvisAudio.subscribe, sampleRate: 16000}, onWake).
 //   window.JarvisWav    encode(frames | Int16Array, rate = 16000) → ArrayBuffer (RIFF/WAVE PCM16 mono).
@@ -277,8 +280,24 @@
     return t && typeof t.label === 'string' ? t.label : '';
   }
 
+  // ================================================================================== words (R6.2)
+  // Why the microphone can't listen, said the same everywhere: the console's composer
+  // (console-voice-mic.js HELP, console-voice-wake.js through it) and the build book's show
+  // (console-book-talk.js) read this one table by reason(). Each place keeps only the lines about
+  // its own controls ("mic off", cloud listening). The page puts them in place by textContent.
+  const WORDS = Object.freeze({
+    blocked: 'The microphone is blocked for JARVIS. In Chrome on Windows: click the icon left of the address, then Site settings → Microphone → Allow (and in Windows Settings → Privacy & security → Microphone, let apps use it). On Android: in Chrome tap ⋮ → Settings → Site settings → Microphone and allow this site (and Android Settings → Apps → Chrome → Permissions → Microphone → Allow). Then tap the mic again.',
+    no_mic: 'No microphone was found. Plug one in or check the sound settings, then tap the mic again.',
+    busy: 'Another app is using the microphone. Close it, then tap the mic again.',
+    unsupported: 'This browser can\'t record audio here. You can still type.',
+    failed: 'The microphone didn\'t start. Please try again.',
+    ended: 'The microphone stopped (unplugged or switched off). Check it, then tap the mic again.',
+    silent: 'The microphone isn\'t sending any sound. Check it isn\'t muted or switched off, then tap the mic again.',
+  });
+  const words = (code) => WORDS[code] || WORDS.failed;
+
   window.JarvisAudio = Object.freeze({
-    SAMPLE_RATE, FRAME,
+    SAMPLE_RATE, FRAME, WORDS, words,
     supported, prime, open, close, resume, subscribe, level, flush, onEnd,
     lock, unlock, onLock, recognizer, setInput, trackLabel, switched,
     locked: () => locked,

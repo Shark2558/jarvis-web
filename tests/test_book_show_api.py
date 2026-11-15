@@ -231,13 +231,13 @@ async def test_no_book_on_this_server(settings: Settings) -> None:
             assert r.status_code == 404 and r.json()["error"] == "no_book"
 
 
-async def test_token_mode_dev_opens_for_the_owner_only(settings: Settings) -> None:
+async def test_token_mode_dev_never_opens_the_book(settings: Settings) -> None:
+    """R6.2 G11 (owner rule 1, "including for local development"): no passkey-less dev open."""
     async for app in book_app(settings, google=False):
         async with AsyncClient(transport=app.transport, base_url="http://test") as c:
-            r = await c.post("/v1/book/open", json={"audience": "guest"})
-            assert r.status_code == 409 and r.json()["error"] == "guest_needs_google"
-            r = await c.post("/v1/book/open", json={"audience": "owner"})
-            assert r.status_code == 200 and r.json()["audience"] == "owner"
+            for audience in ("guest", "owner"):
+                r = await c.post("/v1/book/open", json={"audience": audience})
+                assert r.status_code == 403 and r.json()["error"] == "google_needed"
             r = await c.post("/v1/book/resume", json={})
             assert r.status_code == 403 and r.json()["error"] == "console_only"
 

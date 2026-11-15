@@ -49,7 +49,7 @@ ANSWER_WHEN_OFF = {("GET", "/v1/book"), ("GET", "/v1/book/show/lock")}
 # wired, token-mode dev, a made-up book token: (status, error code or None for a 200 body)
 WIRED: dict[tuple[str, str], tuple[int, str | None]] = {
     ("GET", "/v1/book"): (200, None),
-    ("POST", "/v1/book/open"): (200, None),  # token-mode dev: the owner, no passkey (D8)
+    ("POST", "/v1/book/open"): (403, "google_needed"),  # R6.2 G11: never without the passkey
     ("GET", "/v1/book/download/" + TICKET): (410, "gone"),
     ("POST", "/v1/book/resume"): (403, "console_only"),
     ("GET", "/v1/book/settings"): (200, None),

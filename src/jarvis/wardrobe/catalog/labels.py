@@ -2,9 +2,12 @@
 """QR labels for identical copies (docs/plans/r13-wardrobe.md D7, INV-07; plan review L5, M5).
 
 A label is a number and 8 characters of lower-case base32; its QR's payload is exactly
-`jw1:<code>`. A read code counts only when it is that AND one of HIS labels in the sealed index
-(`resolve`); any other code on a clothing tag is "not a JARVIS label": never sent, opened or
-shown. The sheet (`svg`) is 24 labels a page, numbers and QR codes only (no text of his), drawn
+`jw1:<code>`. His code for number N is a keyed hash of (his id, N) (`code_for`), so printing a
+sheet writes nothing (`GET labels.svg` only draws) and nobody can guess his codes; a label enters
+his sealed index when he sticks it on a piece (`assign`). A read code counts only when it is that
+AND one of HIS assigned labels (`resolve`); any other code on a clothing tag is "not a JARVIS
+label": never sent, opened or shown. The sheet (`svg`) is 24 labels a page, numbers and QR codes
+only (no text of his), drawn
 with segno (BSD-3-Clause, already vendored for R11's UPI QR) as plain SVG paths: no script, no
 link, no outside reference; the route serves it with `default-src 'none'`, `nosniff` and as an
 attachment. A piece has at most one label; giving its code to another piece frees the first.
@@ -17,9 +20,9 @@ from xml.sax.saxutils import escape
 
 import segno
 
-from jarvis.storage.docs import DocTx, Op
+from jarvis.storage.docs import DocTx
 from jarvis.wardrobe.catalog.store import NOT_IN, CatalogStore
-from jarvis.wardrobe.model import WardrobeLabel, WardrobeView, label_code_of, new_label_code
+from jarvis.wardrobe.model import WardrobeLabel, WardrobeView, label_code_of
 from jarvis.wardrobe.ports import Commit, Refused
 
 PER_SHEET = 24
@@ -27,6 +30,7 @@ MAX_LABELS = 600
 COLUMNS, ROWS = 4, 6
 CELL_W, CELL_H, QR_SIDE = 50, 46, 34  # millimetres on an A4 page (210 x 297)
 NOT_HIS = "That isn't one of your JARVIS labels."
+_B32 = "abcdefghijklmnopqrstuvwxyz234567"
 
 
 def resolve(view: WardrobeView, payload: object) -> str | None:
@@ -75,33 +79,36 @@ class Labels:
 
     resolve = staticmethod(resolve)
 
-    async def new_sheet(self, uid: str) -> tuple[WardrobeLabel, ...]:
-        out: list[WardrobeLabel] = []
+    def code_for(self, uid: str, number: int) -> str:
+        digest = bytes.fromhex(self.store.sealer.mac(f"label/{uid}/{number}"))
+        return "".join(_B32[b % 32] for b in digest[:8])
 
-        async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
-            if len(view.labels) + PER_SHEET > MAX_LABELS:
-                raise Refused(f"You can keep at most {MAX_LABELS} labels.")
-            first = max((lb.number for lb in view.labels.values()), default=0) + 1
-            taken, made = set(view.labels), {}
-            for n in range(first, first + PER_SHEET):
-                code = new_label_code()
-                while code in taken:
-                    code = new_label_code()
-                taken.add(code)
-                made[code] = WardrobeLabel.model_validate({"code": code, "number": n})
-            out[:] = list(made.values())
-            return view.model_copy(update={"labels": {**view.labels, **made}}), []
+    def number_of(self, uid: str, code: str) -> int | None:
+        return next((n for n in range(1, MAX_LABELS + 1) if self.code_for(uid, n) == code), None)
 
-        await self.store.rewrite(uid, fn)
+    async def sheet(self, uid: str, page: int = 1) -> tuple[WardrobeLabel, ...]:
+        """Page `page` of his labels (24 a page), each with the piece it is on, if any."""
+        if not 1 <= page <= MAX_LABELS // PER_SHEET:
+            raise Refused(f"There are {MAX_LABELS // PER_SHEET} sheets of labels.")
+        view = await self.store.view(uid)
+        out = []
+        for n in range((page - 1) * PER_SHEET + 1, page * PER_SHEET + 1):
+            code = self.code_for(uid, n)
+            piece = view.labels[code].piece if code in view.labels else None
+            out.append(WardrobeLabel.model_validate({"code": code, "number": n, "piece": piece}))
         return tuple(out)
 
     async def assign(self, uid: str, code: str, pid: str | None) -> WardrobeLabel:
         out: list[WardrobeLabel] = []
 
+        number = self.number_of(uid, code)
+        if number is None:
+            raise Refused(NOT_HIS)
+
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
-            lb = view.labels.get(code)
-            if lb is None:
-                raise Refused(NOT_HIS)
+            lb = view.labels.get(code) or WardrobeLabel.model_validate(
+                {"code": code, "number": number}
+            )
             recs = []
             if pid is not None:
                 p = view.piece(pid)

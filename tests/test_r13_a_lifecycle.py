@@ -98,7 +98,7 @@ async def test_inv16_merging_two_records_of_one_watch_is_a_card_and_keeps_one_co
 async def test_inv16_confirmed_separate_copies_stay_two(cat: Catalog) -> None:
     gw = gateway(cat)
     a, b = await _add(cat, NewPiece(type="vest"), NewPiece(type="vest"))
-    sheet = await desk(cat).labels.new_sheet(UID)
+    sheet = await desk(cat).labels.sheet(UID)
     await desk(cat).labels.assign(UID, sheet[0].code, a)
     await desk(cat).labels.assign(UID, sheet[1].code, b)
     done = await approve(gw, await call(gw, "wardrobe_merge", keep=a, merge=b))
@@ -229,7 +229,7 @@ async def test_an_edit_card_shows_fixed_words_and_his_qr_number_never_his_label(
         [PolicyRule(tool_pattern="wardrobe_*", effect=Effect.ASK, risks=[ActionRisk.REVERSIBLE])],
     )
     [vest] = await _add(cat, NewPiece(type="vest", label="Lucky vest"))
-    sheet = await desk(cat).labels.new_sheet(UID)
+    sheet = await desk(cat).labels.sheet(UID)
     await desk(cat).labels.assign(UID, sheet[16].code, vest)
     asked = await call(gw, "wardrobe_edit", piece=vest, colour="white")
     assert asked.pending is not None

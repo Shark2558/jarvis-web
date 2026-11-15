@@ -161,7 +161,7 @@ async def test_inv07_identical_vests_get_two_ids_and_only_the_labelled_one_enter
         cat, NewPiece(type="vest", colour="black"), NewPiece(type="vest", colour="black")
     )
     assert a != b
-    sheet = await desk(cat).labels.new_sheet(UID)
+    sheet = await desk(cat).labels.sheet(UID)
     code = sheet[0].code
     await desk(cat).labels.assign(UID, code, a)
     view = await cat.store.view(UID)

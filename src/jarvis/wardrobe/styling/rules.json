@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "slots": {
+    "top": ["shirt", "t_shirt", "polo", "top", "kurta", "gym"],
+    "bottom": ["trousers", "chinos", "jeans", "shorts", "joggers", "pyjama", "mundu", "dhoti"],
+    "shoes": ["dress_shoe", "sneaker", "sandal", "slipper", "boot"],
+    "socks": ["sock"],
+    "belt": ["belt"],
+    "watch": ["watch"],
+    "outer": ["blazer", "jacket", "hoodie", "sweater", "coat", "rainwear", "festive_layer"],
+    "base": ["vest", "undershirt", "thermal"],
+    "underwear": ["underpants", "briefs", "boxers"],
+    "tie": ["tie"],
+    "cap": ["cap"],
+    "scarf": ["scarf"]
+  },
+  "slot_words": {
+    "top": "top", "bottom": "bottom", "shoes": "shoes", "socks": "socks", "belt": "belt",
+    "watch": "watch", "outer": "outer layer", "base": "base layer", "underwear": "underwear",
+    "tie": "tie", "cap": "cap", "scarf": "scarf"
+  },
+  "paired": ["shoes", "socks"],
+  "formality": {
+    "shirt": 3, "t_shirt": 1, "polo": 2, "top": 2, "kurta": 3, "gym": 1,
+    "trousers": 4, "chinos": 3, "jeans": 2, "shorts": 1, "joggers": 1, "pyjama": 3,
+    "mundu": 3, "dhoti": 3, "dress_shoe": 5, "sneaker": 2, "sandal": 1, "slipper": 1,
+    "boot": 3, "sock": 3, "belt": 4, "watch": 4, "blazer": 5, "jacket": 2, "hoodie": 1,
+    "sweater": 3, "coat": 4, "rainwear": 1, "festive_layer": 4, "vest": 3, "undershirt": 3,
+    "thermal": 3, "underpants": 3, "briefs": 3, "boxers": 3, "tie": 5, "cap": 1, "scarf": 3
+  },
+  "codes": {
+    "business_formal": {
+      "words": "business formal", "target": 5, "min": 4,
+      "required": ["top", "bottom", "shoes", "socks", "belt", "watch", "underwear"],
+      "optional": ["base", "outer", "tie"],
+      "types": {"top": ["shirt"], "bottom": ["trousers", "chinos"], "shoes": ["dress_shoe"],
+                "outer": ["blazer", "coat"]}
+    },
+    "business_casual": {
+      "words": "business casual", "target": 4, "min": 3,
+      "required": ["top", "bottom", "shoes", "socks", "belt", "underwear"],
+      "optional": ["watch", "base", "outer"],
+      "types": {"top": ["shirt", "polo"], "bottom": ["trousers", "chinos"],
+                "shoes": ["dress_shoe", "boot", "sneaker"], "outer": ["blazer", "sweater", "coat"]}
+    },
+    "smart_casual": {
+      "words": "smart casual", "target": 3, "min": 2,
+      "required": ["top", "bottom", "shoes", "underwear"],
+      "optional": ["socks", "belt", "watch", "outer", "base"],
+      "types": {"top": ["shirt", "polo", "t_shirt"], "bottom": ["chinos", "jeans", "trousers"],
+                "shoes": ["sneaker", "dress_shoe", "boot"]}
+    },
+    "casual": {
+      "words": "casual", "target": 2, "min": 1,
+      "required": ["top", "bottom", "shoes", "underwear"],
+      "optional": ["socks", "watch", "outer", "cap"],
+      "types": {"top": ["t_shirt", "shirt", "polo", "top"],
+                "bottom": ["jeans", "shorts", "chinos", "joggers"],
+                "shoes": ["sneaker", "sandal", "slipper"]}
+    },
+    "festive": {
+      "words": "festive", "target": 4, "min": 1, "occasion": "festive", "sets_whole": true,
+      "required": ["top", "bottom", "shoes", "underwear"],
+      "optional": ["outer", "watch", "base"],
+      "types": {"top": ["kurta", "shirt"], "bottom": ["pyjama", "mundu", "dhoti", "trousers"],
+                "shoes": ["sandal", "dress_shoe"], "outer": ["festive_layer"]}
+    },
+    "mess_tolerant": {
+      "words": "okay to stain", "target": 1, "min": 1, "mess_ok": true,
+      "required": ["top", "bottom", "underwear"],
+      "optional": ["shoes"],
+      "types": {"top": ["t_shirt", "top", "kurta", "shirt", "gym"],
+                "bottom": ["shorts", "jeans", "joggers", "pyjama"],
+                "shoes": ["slipper", "sandal", "sneaker"]}
+    },
+    "sport": {
+      "words": "sport", "target": 1, "min": 1, "occasion": "sport",
+      "required": ["top", "bottom", "shoes", "underwear"],
+      "optional": ["socks", "cap", "watch"],
+      "types": {"top": ["t_shirt", "gym"], "bottom": ["shorts", "joggers"], "shoes": ["sneaker"]}
+    }
+  },
+  "events": {
+    "holi": {"code": "mess_tolerant", "words": ["holi", "rangpanchami"]},
+    "festival": {"code": "festive", "words": ["diwali", "deepavali", "onam", "vishu", "eid",
+                 "pongal", "navratri", "durga puja", "puja", "pooja", "wedding", "festival",
+                 "christmas", "sankranti", "ganesh chaturthi"]},
+    "meeting": {"code": "business_formal", "words": ["meeting", "review", "interview", "client",
+                "presentation", "board", "conference", "pitch", "court"]},
+    "sport": {"code": "sport", "words": ["gym", "run", "workout", "football", "cricket",
+              "badminton", "yoga", "tennis", "swim"]},
+    "function": {"code": "smart_casual", "words": ["party", "dinner", "function", "reception",
+                 "birthday", "lunch"]}
+  },
+  "event_order": ["holi", "festival", "meeting", "sport", "function"],
+  "default_code": "casual",
+  "event_code": "smart_casual",
+  "outdoor_words": ["park", "ground", "beach", "garden", "outdoor", "outdoors", "stadium",
+                    "field", "trek", "lawn", "terrace", "market"],
+  "indoor_words": ["office", "hall", "room", "online", "zoom", "meet", "home", "hotel"],
+  "hot_c": 32,
+  "cold_c": 18,
+  "light_fabrics": ["linen", "cotton", "khadi"],
+  "neutral": ["white", "black", "grey", "charcoal", "navy", "beige", "khaki"],
+  "pairing": [
+    ["light_blue", "charcoal"], ["light_blue", "navy"], ["light_blue", "beige"],
+    ["light_blue", "khaki"], ["light_blue", "grey"], ["blue", "khaki"], ["blue", "beige"],
+    ["blue", "grey"], ["pink", "navy"], ["pink", "charcoal"], ["pink", "grey"],
+    ["maroon", "beige"], ["maroon", "khaki"], ["green", "khaki"], ["olive", "beige"],
+    ["yellow", "navy"], ["purple", "grey"], ["brown", "beige"], ["navy", "khaki"],
+    ["white", "charcoal"], ["white", "navy"], ["white", "blue"], ["grey", "black"]
+  ],
+  "families": {"brown": "brown", "maroon": "brown", "black": "black", "charcoal": "black"},
+  "reusable": ["trousers", "chinos", "jeans", "blazer", "jacket", "hoodie", "sweater", "coat",
+               "rainwear", "festive_layer", "belt", "watch", "dress_shoe", "sneaker", "sandal",
+               "slipper", "boot", "tie", "cap", "scarf", "jewellery", "bag", "eyewear"],
+  "recent_days": 2
+}

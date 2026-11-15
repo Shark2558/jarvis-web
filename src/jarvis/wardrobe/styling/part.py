@@ -18,3 +18,7 @@ def build(ctx: WardrobeContext) -> WardrobePart:
 
 
 __all__ = ["build"]
+
+
+def build_with(ctx: WardrobeContext, *, fetcher: object = None) -> WardrobePart:
+    return build(ctx)

@@ -1,4 +1,4 @@
-Version v6.2.1 · 15 Nov 2026, 16:46 IST · Release R6.2 · Status: Draft — for the owner's approval · Owner: 🛠 Mark XXI
+Version v6.2.1 · 15 Nov 2026, 16:55 IST · Release R6.2 · Status: Draft — for the owner's approval · Owner: 🛠 Mark XXI
 
 # The Build Book rebuild (R6.2–R6.4) — Phase A findings and plan
 
@@ -248,7 +248,7 @@ browser: the text goes into #shQ for editing; never auto-sent
 
 | # | Case | How it was made | What the owner sees | Request sent |
 |---|---|---|---|---|
-| 1 | Permission granted | `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` | words land in the box (≈ 1.6–1.9 s WAV) | yes |
+| 1 | Permission granted | `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` | words land in the box (a 1.5–1.9 s WAV, the real worklet) | yes |
 | 2 | Permission denied (no prompt) | fake device only (headless says `NotSupportedError`) | "The microphone is not available. Type the question instead." | no |
 | 2e | Blocked in Chrome | `getUserMedia` throws `NotAllowedError` | same sentence | no |
 | 3 | "Mic off" set | `localStorage.jarvis_mic_off_v1 = '1'` | same sentence; nothing in the Book can switch it on | no |
@@ -384,6 +384,8 @@ stay green; one live check in the go-live guide.
 | G12 | Hear maps "limit unreadable" to 402 `budget_reached` | `api/book_show.py` `_voice_failure` (every `BudgetError`); elsewhere `BudgetUnavailable` is a 503 |
 | G13 | The free-minutes wording | Past the free allowance listening is charged, not refused (`billing.ensure_units_allowed`) |
 | G14 | The 15 MiB code-zip cap will be reached | ≈ 12 feature releases at +0.63 MB each (section 3) |
+| G15 | Activity's Undo is for deletes only | `activity/service.py` docstring; a created event says "Can't be undone from here…" (`activity/words.NOTE_WRITE`) — matters for the C2 example (9.1) |
+| G16 | No-AI mode reads "Add a … appointment" as "show my calendar" | `offline/rules.py` `_calendar` (`appointments?` in `_CALENDAR`) routes to `calendar_list_events` for today |
 
 ---
 
@@ -599,8 +601,10 @@ event.
 | Reply, on screen and spoken | the streamed reply; `POST /v1/voice/speak` (Chirp 3: HD, en-GB) or `speechSynthesis` (`console-voice-speech.js`) |
 
 Failure branches: mic denied (`console-voice-mic.js` `HELP.blocked`); STT fails (503 → the browser's
-recogniser under "Automatic", `console-voice.js:270`); No-AI mode (`offline/no_ai.py` + `offline/rules.py`
-`_calendar` handles only *listing* events: adding one needs the AI); monthly limit (402 before the stream,
+recogniser under "Automatic", `console-voice.js:270`); No-AI mode (`offline/no_ai.py`: the fixed rules can
+only *list* events, and `offline/rules.py` `_calendar` matches the word "appointment", so in No-AI mode this
+sentence shows **today's** events instead of adding one — a branch the book must show honestly, and a
+small bug to note for a later release); monthly limit (402 before the stream,
 `api/routes.py`); a free brain that learns from prompts gets no tools at all (`core/brain._tools_on`), so the
 event is not created; Calendar refuses (the tool's error result in plain words). **Proposed improvement:**
 extend the example with a second line, "Cancel it", which deletes the event with an Undo in Activity
@@ -752,7 +756,7 @@ architecture, walkthrough player, print views, the guest-safe full book, axe che
 
 ## 10. Repository inspection (only what the full book must cover)
 
-- **Dependencies:** `pyproject.toml` (17 run-time packages, `dev` and `homebridge` extras),
+- **Dependencies:** `pyproject.toml` (21 run-time packages, `dev` and `homebridge` extras),
   `requirements.lock` (67 hash-locked pins, Python 3.12 image), `requirements.licences.json`,
   `android/gradle/libs.versions.toml`, `deploy/home/bridge-requirements.txt`, `tools/markdy/package-lock.json`.
 - **Configuration:** 155 settings with prefix `JARVIS_` (`config.py`); secrets by name only:
@@ -830,4 +834,4 @@ R13, as the Workshop planned) is fine, but their approval stays stop 4.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v6.2.1 | 15 Nov 2026, 16:46 IST | R6.2 | First edition: how the book is made, measured sizes per release, the microphone traced and reproduced (20 cases) with its root cause and the Part 1 fix design, Claude used and called, gaps and wrong facts, the AI writer plan with ₹ estimates and caps, the two versions, the full prompt's C2–C8, Phase D and E questions, placement, effort and the approval stops | 🛠 Mark XXI |
+| v6.2.1 | 15 Nov 2026, 16:55 IST | R6.2 | First edition: how the book is made, measured sizes per release, the microphone traced and reproduced (20 cases) with its root cause and the Part 1 fix design, Claude used and called, gaps and wrong facts, the AI writer plan with ₹ estimates and caps, the two versions, the full prompt's C2–C8, Phase D and E questions, placement, effort and the approval stops | 🛠 Mark XXI |

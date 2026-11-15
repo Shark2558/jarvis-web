@@ -153,7 +153,7 @@ def changed_alert(p: Piece, label: str, *, proposal: bool) -> str:
     """outfit_changed (D19): fixed words, never his label, a title or a private piece's words."""
     who = piece_words(p)
     first = f"{who[0].upper()}{who[1:]} in {label} {LEFT_WORDS[p.state]}."
-    rest = f"A ready one is suggested {WHERE}." if proposal else f"None is ready: see {WHERE}."
+    rest = f"A ready one is suggested {WHERE}." if proposal else f"None is ready: look {WHERE}."
     return f"{first} {rest}"
 
 

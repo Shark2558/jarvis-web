@@ -262,14 +262,14 @@ async def world(
     google: FakeGoogle | None = None,
     zone: ZoneInfo = IST,
 ) -> World:
-    """The seeded store (pilot + brown belt) at 16 Nov 2026 09:00 IST, then the clock at `at`."""
+    """The seeded store (pilot + brown belt) at 15 Nov 2026 09:00 IST, then the clock at `at`
+    (16 Nov 2026 09:00 IST unless given)."""
     from jarvis.wardrobe.styling.part import build_with
 
-    clock = FixedClock(ist(2026, 11, 16, 9, 0))
+    clock = FixedClock(ist(2026, 11, 15, 9, 0))
     docs = MemoryDocs()
     store, _ = await _seeded(docs, clock)
-    if at is not None:
-        clock.set(at)
+    clock.set(at or ist(2026, 11, 16, 9, 0))
     rows, audit, notifier = Rules(), AuditLog(), RecordingNotifier()
     g = google or FakeGoogle()
     reads = reads_over(lambda: rows, audit, now=clock)

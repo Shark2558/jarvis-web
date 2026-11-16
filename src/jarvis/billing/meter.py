@@ -199,6 +199,19 @@ def encode(uid: str, m: MonthUsage, now: datetime) -> dict[str, Any]:
     }
 
 
+@dataclass(eq=False)
+class Hold:
+    """A hold on the free allowance (R6.2 round 3). It remembers the Pacific month it was made in
+    (review 3, LOW: a release after the month rolls over goes back to THAT month, not the new one)
+    and whether it was given back (a second release of the same hold is a no-op: the counter is
+    shared, so a repeat would take other calls' units)."""
+
+    key: str
+    units: float
+    month: str
+    released: bool = False
+
+
 class UsageMeter:
     def __init__(self, docs: Docs, *, prefix: str = "jarvis_", tz: str = "Asia/Kolkata") -> None:
         self._d = docs
@@ -314,10 +327,52 @@ class UsageMeter:
 
         return await self._d.transaction(fn)
 
+    async def reserve_units(
+        self, *, key: str, units: float, free_units: float, now: datetime
+    ) -> Hold | None:
+        """Hold `units` of the deployment's free allowance, check and count in ONE transaction
+        (R6.2, code review 2 L4): the Hold when `used + units` fits in `free_units` (now
+        counted), None when it doesn't (nothing written). The hold is the count: a free-only call
+        is never priced. UsageUnreadable (writing nothing) when the counter can't be read."""
+        if not _UNIT_KEY.fullmatch(key):
+            raise ValueError("invalid unit key")
+        month = self.allowance_month_of(now)
+        path = self._allowance_path(month)
+
+        async def fn(tx: DocTx) -> bool:
+            allow = decode_allowance(await tx.get(path), month)
+            if allow.used(key) + units > free_units:
+                return False
+            tx.set(path, encode_allowance(allow.plus(key, units), now))
+            return True
+
+        return Hold(key, units, month) if await self._d.transaction(fn) else None
+
+    async def release_units(self, hold: Hold, *, now: datetime) -> None:
+        """Give back a hold whose call was never billed, to the month it was made in (never
+        below zero). A hold already given back is left alone; a release that could not be
+        written raises and may be tried again."""
+        if hold.released:
+            return
+        month, path = hold.month, self._allowance_path(hold.month)
+        hold.released = True  # before the first await: two releases cannot both pass
+
+        async def fn(tx: DocTx) -> None:
+            allow = decode_allowance(await tx.get(path), month)
+            back = -min(hold.units, allow.used(hold.key))
+            tx.set(path, encode_allowance(allow.plus(hold.key, back), now))
+
+        try:
+            await self._d.transaction(fn)
+        except BaseException:
+            hold.released = False
+            raise
+
 
 __all__ = [
     "ALLOWANCE_TZ",
     "AllowanceUse",
+    "Hold",
     "MonthUsage",
     "UnitCharge",
     "UsageMeter",

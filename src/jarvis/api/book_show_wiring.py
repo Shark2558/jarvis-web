@@ -43,6 +43,7 @@ LIMITS = {  # per minute; `ask` is per session (D12: 6 a minute), the rest per o
     "script": 20,
     "speak": 90,  # ~100 beats a show, one prefetched
     "hear": 10,
+    "heard": 10,  # R6.2: the browser's words, corrected for free (the same as hear)
     "ask": 6,
     "beat": 10,  # the show beats every 60 s
     "close": 10,

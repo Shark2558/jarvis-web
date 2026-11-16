@@ -1,14 +1,22 @@
 // src/jarvis/api/static/console-book-talk.js -- R6 D11-D14 (book.html): questions (typed or spoken), the closing lines in order,
 // the guest hand-back and Resume (JarvisPasskey.prove('book_resume', lockId)).
 // Questions: POST /v1/book/show/ask {text} -> {reply_id, reply, refused, follow_up, left}; the guarded reply is shown and
-// spoken by its id (the server holds its text), then the follow-up line. A spoken question goes to POST /v1/book/show/hear
-// (a WAV <= 15 s) and comes back as text in the box for the guest to send. The closing lines themselves are the last
+// spoken by its id (the server holds its text), then the follow-up line. A spoken question (R6.2 decision 4) is heard by
+// THIS browser's own recogniser by default (JarvisBookVoice.listen, Rs 0; its words get the free corrections at POST
+// /v1/book/show/heard), or, when the owner set Listening to Cloud, recorded for POST /v1/book/show/hear (a WAV <= 15 s);
+// either way it comes back as text in the box to send. Where the browser can't recognise speech it says so plainly and
+// offers typing (the owner alone is pointed to the switch; it never switches by itself). R6.2: one tap listens, a second stops; the
+// status line (#shHear) says Listening, Processing, Done (with what was heard when the free rules changed it); the words
+// are never sent by themselves; each failure is said by its reason (JarvisAudio.words, shared with the console, or the
+// server's Book wording) and the typed box stays usable; "Mic off" is shown with #shMicOn, which only the owner's real
+// tap in his own show (isTrusted, then the R5 lock's own unlock, D11) switches back on: a guest's show offers no way
+// back (security review 1, H1: the audience comes from the server's script). The closing lines themselves are the last
 // beats of the show (console-book-show.js); this file shows what comes after: the session closed, its conversation deleted,
 // and -- while a guest lock holds the owner's consoles (D10) -- the hand-back line and Resume, also in any other console
 // tab the lock sent here. The lock id comes from GET /v1/book/show/lock, or from a refused POST /v1/book/resume.
 // No build step; CSP script-src 'self'; textContent only; ASCII source; <= 400 lines.
 // A dropped connection is said calmly ("Can't reach JARVIS..."), never as the browser's raw error.
-// window.JarvisBookTalk = { open({lines, phase}), hide(), clear(), done({audience, line, reason}), locked(), offline(retry) }
+// window.JarvisBookTalk = { open({lines, phase, audience, listening}), hide(), clear(), done({audience, line, reason}), locked(), offline(retry) }
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -21,7 +29,24 @@
   const B = () => window.JarvisBook;
   const Show = () => window.JarvisBookShow;
   const V = () => window.JarvisBookVoice;
-  const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null };
+  const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null,
+    canRec: false, quiet: 0, owner: false, browser: true, voice: 'browser', hush: 0, syncing: false, starting: false };
+  const SILENT_MS = 1500; // no frame this long after the microphone opened: no sound is coming
+  const HEAR = {
+    listening: 'Listening\u2026 tap the mic again to stop.',
+    processing: 'Processing\u2026',
+    done: 'Done. Edit the question if you like, then press Ask.',
+    off: 'The microphone is switched off in this browser. Switch it on to ask by voice, or type.',
+    offGuest: 'The microphone is switched off on this device. Type your question.', // H1: no way back for a guest
+    on: 'The microphone is on. Tap the mic to ask by voice.',
+    nothing: 'I didn\u2019t hear any words. Try again closer to the microphone, or type.',
+    short: 'That was too short to hear anything. Tap the mic, speak, then tap it again.',
+    caught: 'I didn\u2019t catch that. Type the question instead.',
+    charged: ' This month\u2019s free listening minutes are used up, so this one was charged.',
+    toCloud: ' Or switch to Cloud listening in Book settings (the console\u2019s Book panel). This show uses it as soon as you tap the mic again.', // the owner only
+    type: ' Or type your question.', // decision 4: every failure of this browser's recogniser offers typing
+  };
+  const AU = () => window.JarvisAudio || null;
   /** Plain words for a failure: a dropped connection (fetch's TypeError) gets the calm sentence. */
   const words = (e, fallback) => (e && e.name === 'TypeError' ? OFFLINE : (e && e.message) || fallback);
 
@@ -35,17 +60,37 @@
   function leftWords() {
     $('shLeft').textContent = S.left === null ? '' : S.left + ' question' + (S.left === 1 ? '' : 's') + ' left';
     const out = S.left === 0; // out of questions: the box goes away (the server's limit line says why)
-    $('shQ').disabled = out || S.busy; $('shSend').disabled = S.busy; $('shMic').disabled = out || S.busy;
+    $('shQ').disabled = out || S.busy; $('shSend').disabled = S.busy; $('shMic').disabled = out || S.busy || !S.canRec;
     $('shTalk').querySelector('.composer-wrap').hidden = out;
   }
   function open(opts) {
     wire();
     S.lines = obj(opts && opts.lines) || {}; S.phase = opts && opts.phase === 'questions' ? 'questions' : 'show';
+    S.owner = !!(opts && opts.audience === 'owner'); // the server's script says whose show it is (H1)
+    S.browser = !(opts && opts.listening === 'cloud'); // decision 4: this browser listens unless he chose the cloud
+    S.voice = opts && opts.voice === 'cloud' ? 'cloud' : 'browser';
     $('shFinish').textContent = S.phase === 'questions' ? 'No more questions' : 'Back to the show';
     $('shTalk').hidden = false; $('show').classList.add('talking');
-    const R = V() && V().record;
-    $('shMic').hidden = !(R && R.supported());
-    leftWords(); $('shQ').focus();
+    canRecord();
+    $('shMic').hidden = false;
+    leftWords(); micState(); $('shQ').focus();
+  }
+  function canRecord() { // an old browser: the button stays, disabled, and the line says why
+    const R = V() && (S.browser ? V().listen : V().record);
+    S.canRec = !!(R && R.supported());
+  }
+  /** Code review 2, M1: the owner may have switched Listening or Show voice to Cloud in Book settings since the script was
+   *  read (another tab). Read the choice again where it is used (a mic tap, the tab coming back); a blip keeps what we have. */
+  async function refresh() {
+    if (S.syncing || S.recording || S.busy || $('shTalk').hidden) return;
+    S.syncing = true; const gen = S.gen;
+    try {
+      const d = obj(await B().api('/v1/book/show/script')) || {};
+      if (gen !== S.gen) return;
+      const voice = d.voice === 'cloud' ? 'cloud' : 'browser', browser = d.listening !== 'cloud';
+      if (voice !== S.voice) { S.voice = voice; if (V()) V().start(voice); }
+      if (browser !== S.browser) { S.browser = browser; canRecord(); leftWords(); micState(); }
+    } catch (e) { if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); } } finally { S.syncing = false; }
   }
   function hide() {
     const had = $('shTalk').contains(document.activeElement); // keep the focus in the show (D15)
@@ -66,8 +111,9 @@
   async function ask() {
     const text = $('shQ').value.replace(/\s+/g, ' ').trim().slice(0, MAX_Q);
     if (!text || S.busy || S.left === 0) return;
-    S.busy = true; $('shQ').value = ''; row('user', text); leftWords();
-    const gen = S.gen; // the panel closed (Finish, End, the close) while waiting: drop what comes back
+    if (S.recording) stopRec(true); // code review 1, H1: a typed question wins; the recording is dropped, nothing sent
+    S.busy = true; $('shQ').value = ''; row('user', text); leftWords(); micState();
+    const gen = S.gen, hush = S.hush; // the panel closed (Finish, End, the close) while waiting: drop what comes back
     const thinking = row('jarvis', '', 'pending'); thinking.firstChild.classList.add('typing');
     thinking.firstChild.append(mk('span', 'lbl', 'Thinking'));
     try {
@@ -77,10 +123,10 @@
       if (!r) throw new Error('The answer came back in a shape this page doesn\u2019t know.');
       row('jarvis', r.reply, r.refused ? 'refused' : '');
       if (r.left !== null) S.left = r.left;
-      S.busy = false; leftWords(); $('shQ').focus();
+      S.busy = false; leftWords(); micState(); $('shQ').focus();
       const sh = Show();
       if (sh && r.id) await sh.say(r.id, r.reply);
-      if (gen !== S.gen) return;
+      if (gen !== S.gen || hush !== S.hush) return; // closed, or the mic was tapped: no follow-up over the listening
       if (r.follow) { row('jarvis', r.follow); const id = S.lines.anything_else ? S.lines.anything_else.id : ''; if (sh && id) await sh.say(id, r.follow); }
     } catch (e) {
       thinking.remove(); S.busy = false; leftWords();
@@ -88,36 +134,116 @@
       sys(words(e, 'That question did not go through.'));
     }
   }
-  // a spoken question: record (tap again to stop, 15 s at most), then the words land in the box
+  // ---- a spoken question: record (tap again to stop, 15 s at most), then the words land in the box --------
+  function hearLine(text) { const el = $('shHear'); el.textContent = text || ''; el.hidden = !text; }
+  function pressed(on) {
+    $('shMic').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('shMic').setAttribute('aria-label', on ? 'Stop and use what I said' : 'Ask by voice');
+  }
+  const micWords = (code) => { const A = AU(); return A && typeof A.words === 'function' ? A.words(code) : HEAR.caught; };
+  /** The shared words; with this browser's recogniser each offers typing, and the owner alone is pointed to the switch. */
+  const recWords = (code) => { const w = micWords(code), b = S.browser; return w + (b && !/\btype\b/i.test(w) ? HEAR.type : '') + (S.owner && b && /^rec_/.test(code) ? HEAR.toCloud : ''); };
+  /** At rest: an old browser says so; "Mic off" says so (the way back for the owner only); else the line is clear. */
+  function micState() {
+    const A = AU(), off = !!(S.canRec && A && A.locked()) && S.left !== 0; // out of questions: no way back needed
+    $('shMicOn').hidden = !(off && S.owner);
+    hearLine(!S.canRec ? recWords(S.browser ? 'rec_unsupported' : 'unsupported') : off ? (S.owner ? HEAR.off : HEAR.offGuest) : '');
+  }
+  /** "Switch the microphone on": the owner's real tap in his own show only (R5 D11, H1); a script's click is never
+   *  trusted, and a guest's tap never lifts his lock. Never listens by itself. */
+  function micOn(e) {
+    const A = AU();
+    if (A && A.locked() && !(S.owner && e && e.isTrusted && A.unlock('button'))) { micState(); return; }
+    micState(); hearLine(HEAR.on); $('shMic').focus();
+  }
+  function refused(code) {
+    const A = AU();
+    if (code === 'mic_off' || (A && A.locked())) { micState(); $(S.owner ? 'shMicOn' : 'shQ').focus(); return; }
+    if (code !== 'closed') { hearLine(''); sys(S.browser ? recWords(code === 'unsupported' ? 'rec_unsupported' : code) : micWords(code)); } // 'closed': a cancel or the close won
+  }
   async function mic() {
-    const R = V() && V().record;
-    if (!R || S.busy) return;
-    if (S.recording) { await sendRec(); return; }
-    const gen = S.gen; // the panel closed (a jump, End, the close) while the microphone was starting: it never records
-    try {
+    const R = V() && V().record, A = AU();
+    if (!R || S.busy || S.starting || !S.canRec) return;
+    if (S.recording) { if (S.browser) V().listen.stop(); else await sendRec(); return; }
+    if (A && A.locked()) { refused('mic_off'); return; } // nothing opens while it is off
+    S.hush += 1; V().stop(); // code review 2, L3: a reply still being spoken stops, so the mic never hears it
+    const gen = S.gen; S.starting = true; // review 3: the panel as it is now; a second tap waits for this one
+    try { await refresh(); await begin(R, gen); } finally { S.starting = false; }
+  }
+  /** After the choice was read again: only into the same panel, and only if "Mic off" is still off. */
+  async function begin(R, gen) {
+    const A = AU();
+    if (gen !== S.gen) return; // the panel closed (Finish, End, a jump) during the read: nothing starts
+    if (A && A.locked()) { refused('mic_off'); return; } // "Mic off" was set during the read
+    if (S.recording || S.busy) return;
+    if (!S.canRec) { micState(); return; } // the tap found no way to listen with the choice as it is now
+    if (S.browser) { listenHere(gen); return; }
+    try { // the panel may also close while the microphone is starting: it never records
       if (!(await R.start())) return;
       if (gen !== S.gen) { R.cancel(); return; }
       S.recording = true; R.onFull(() => sendRec());
-      $('shMic').setAttribute('aria-pressed', 'true'); $('shMic').setAttribute('aria-label', 'Stop and use what I said');
-    } catch (_) { if (gen === S.gen) sys('The microphone is not available. Type the question instead.'); }
+      pressed(true); hearLine(HEAR.listening);
+      S.quiet = setTimeout(() => { if (S.recording && !R.frames()) { stopRec(true); hearLine(''); sys(micWords('silent')); } }, SILENT_MS);
+    } catch (e) { if (gen === S.gen) refused(e && e.code); }
   }
   function stopRec(cancel) {
-    const R = V() && V().record;
-    S.recording = false; $('shMic').setAttribute('aria-pressed', 'false'); $('shMic').setAttribute('aria-label', 'Ask by voice');
+    const R = V() && V().record, L = V() && V().listen;
+    clearTimeout(S.quiet); S.recording = false; pressed(false);
+    if (L && L.active()) L.cancel(); // this browser's recogniser: dropped, nothing is sent
     if (!R) return null;
     if (cancel) { R.cancel(); return null; }
     return R.stop();
   }
+  /** A failed hearing: a dropped connection calmly, else the server's own Book wording, else ours (never a raw error). */
+  function hearWords(e) {
+    if (e && e.name === 'TypeError') return OFFLINE;
+    const said = e && e.status && e.body && typeof e.body.detail === 'string' ? txt(e.body.detail, 300) : '';
+    return said || HEAR.caught;
+  }
+  function landed(raw) {
+    const d = obj(raw) || {}, text = txt(d.text, MAX_Q), heard = txt(d.heard, MAX_Q);
+    if (!text) { hearLine(''); sys(HEAR.nothing); return; } // the box keeps what was typed
+    $('shQ').value = text; // for him to edit: never sent by itself
+    const done = d.changed === true && heard && heard !== text
+      ? 'Done. Heard \u201c' + heard + '\u201d; understood as the words in the box. Edit them if you like, then press Ask.' : HEAR.done;
+    hearLine(done + (d.charged === true ? HEAR.charged : ''));
+  }
   async function sendRec() {
-    const wav = stopRec(false);
-    if (!wav) return;
-    S.busy = true; leftWords();
+    const was = S.recording, wav = stopRec(false);
+    if (!wav) { if (was) { hearLine(''); sys(HEAR.short); } return; }
+    S.busy = true; leftWords(); hearLine(HEAR.processing);
     try {
       const r = await B().raw('/v1/book/show/hear', { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav' } });
       if (!r.ok) throw await B().failure(r);
-      const d = obj(await r.json());
-      $('shQ').value = txt(d && d.text, MAX_Q);
-    } catch (e) { if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; } sys(words(e, 'I didn\u2019t catch that. Type the question instead.')); }
+      landed(await r.json());
+    } catch (e) {
+      hearLine('');
+      if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; }
+      sys(hearWords(e));
+    }
+    S.busy = false; leftWords(); $('shQ').focus();
+  }
+  // ---- decision 4's default: this browser's own recogniser; its words get the free corrections --------------------
+  function listenHere(gen) {
+    try { if (!V().listen.start((got) => heardHere(got, gen))) return; } catch (e) { refused(e && e.code); return; }
+    S.recording = true; pressed(true); hearLine(HEAR.listening);
+  }
+  async function heardHere(got, gen) {
+    S.recording = false; pressed(false);
+    const A = AU();
+    if (gen !== S.gen) return;
+    if (!got.text) { // nothing heard, or the browser couldn't: said plainly; the box keeps what was typed
+      if (A && A.locked()) { micState(); return; } // "mic off" said meanwhile: its own line
+      const code = A ? A.recognition(got.error) : 'failed';
+      hearLine(''); sys(code ? recWords(code) : HEAR.nothing); return;
+    }
+    S.busy = true; leftWords(); hearLine(HEAR.processing);
+    let said = { text: got.text }; // the corrections are a bonus: his words land as heard
+    try { said = await B().api('/v1/book/show/heard', { method: 'POST', body: { text: got.text } }); } catch (e) {
+      if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; }
+    }
+    if (gen !== S.gen) { S.busy = false; return; } // code review 2, L2: the panel was cleared or closed meanwhile: write nothing
+    landed(said);
     S.busy = false; leftWords(); $('shQ').focus();
   }
   function finish() {
@@ -131,7 +257,11 @@
     $('shSend').addEventListener('click', ask);
     $('shQ').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } });
     $('shMic').addEventListener('click', mic);
+    $('shMicOn').addEventListener('click', micOn);
     $('shFinish').addEventListener('click', finish);
+    const A = AU(); // "mic off" from another tab or the console (R5 D11): a recording stops, the line follows
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
+    if (A && typeof A.onLock === 'function') A.onLock((d) => { if (d && d.locked && S.recording) stopRec(true); if (!$('shTalk').hidden) micState(); });
   }
 
   // ---- after the close: the session is gone; a guest lock may hold the owner's consoles ------------

@@ -87,7 +87,8 @@
     return { release: { id: RID.test(rel.id || '') ? rel.id : '', label: txt(rel.label, 8), version: VER.test(rel.version || '') ? rel.version : '' },
       audience: who, scenes, lines,
       closing: arr(closing).map(line).filter(Boolean).slice(0, 6), costs: { month: num(costs.month_inr), limit: num(costs.limit_inr) },
-      talk: { on: talk.on !== false, why: txt(talk.why, 200) }, voice: d.voice === 'browser' ? 'browser' : 'cloud', until: txt(d.until, 40) };
+      talk: { on: talk.on !== false, why: txt(talk.why, 200) }, until: txt(d.until, 40),
+      voice: d.voice === 'cloud' ? 'cloud' : 'browser', listening: d.listening === 'cloud' ? 'cloud' : 'browser' }; // R6.2 decision 4: Rs 0 unless he chose the cloud
   }
   function timeline(sc) {
     const out = [];
@@ -201,7 +202,7 @@
     S.phase = 'questions'; S.playing = false; sync(); hold(S.held);
     const T = talk();
     if (!S.script.talk.on) { toClosing(); return; }
-    if (T) T.open({ lines: S.script.lines, phase: 'questions' });
+    if (T) T.open(talkOpts('questions'));
   }
   function toClosing() {
     const i = sceneStart(13);
@@ -249,7 +250,9 @@
   // ---- controls and keys ---------------------------------------------------------------------------
   function toggleSound() { S.sound = !S.sound; const V = voice(); if (V) V.mute(!S.sound); sync(); }
   function toggleCaptions() { S.captions = !S.captions; sync(); }
-  function ask() { const T = talk(); if (!T || S.phase === 'done' || S.phase === 'start') return; if (S.phase === 'playing') pause(); T.open({ lines: S.script.lines, phase: S.phase === 'questions' ? 'questions' : 'show' }); }
+  /** What the questions panel is told: the lines, the phase, whose show it is (the server's script; H1), who listens. */
+  const talkOpts = (phase) => ({ lines: S.script.lines, phase, audience: S.script.audience, listening: S.script.listening, voice: S.script.voice });
+  function ask() { const T = talk(); if (!T || S.phase === 'done' || S.phase === 'start') return; if (S.phase === 'playing') pause(); T.open(talkOpts(S.phase === 'questions' ? 'questions' : 'show')); }
   function confirmEnd() {
     const d = $('shConfirm');
     if (d.open || S.closing || !S.script) return;

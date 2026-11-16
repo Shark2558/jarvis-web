@@ -3,13 +3,15 @@
 api/book_show.py). Every refusal and every grant is audited first (content-free).
 
 Open (`POST /v1/book/open {proof, audience}`), in this order:
-  console only (a signed-in browser; token-mode dev only for the owner) -> 5 a minute -> a book
-  on this server (404 no_book) -> Google mode: passkeys in force (403 passkey_setup_needed; NEVER
-  a sign-in-only fallback) -> a Google sign-in from the last 5 minutes (403 reauth_required) ->
-  `check_purpose(uid, "book_open", audience, proof)` (the proof is bound to its audience) ->
-  audit -> open. Token mode has no guest lock, so a guest open is 409 guest_needs_google. A guest
-  open consumes this browser's fresh sign-in: the guest can't use it for anything (a passkey
-  reset, say) while the owner's back is turned.
+  Google mode (R6.2 G11: token mode, dev included, is 403 google_needed: the book never opens
+  without the passkey and a fresh Google sign-in, "including for local development") -> console
+  only (a signed-in browser) -> 5 a minute -> a book on this server (404 no_book) -> passkeys in
+  force (403 passkey_setup_needed; NEVER a sign-in-only fallback) -> a Google sign-in from the
+  last 5 minutes (403 reauth_required) -> `check_purpose(uid, "book_open", audience, proof)` (the
+  proof is bound to its audience) -> audit -> open. A guest open consumes this browser's fresh
+  sign-in: the guest can't use it for anything (a passkey reset, say) while the owner's back is
+  turned. To try the book on a laptop, run JARVIS in Google mode at http://localhost (a passkey
+  works there: WebAuthn takes "localhost" as a domain); the tests fake the Google sign-in.
 
 Resume (`POST /v1/book/resume {proof}`): a signed-in browser of the owner whose lock it is ->
 `check_purpose(uid, "book_resume", lock_id, proof)` -> audit -> lift + end every session.
@@ -59,7 +61,10 @@ EMERGENCY = (
     "No passkey of yours is in force any more, so only the emergency unlock can lift this lock: "
     "run it from Google Cloud Shell (the runbook has the command)."
 )
-GUEST_GOOGLE = "A guest show needs Google sign-in, so every console of yours can be locked."
+GOOGLE_NEEDED = (
+    "The build book opens only with Google sign-in and your passkey, so it stays shut in token "
+    "mode. To try it on this computer, run JARVIS with JARVIS_AUTH_MODE=google."
+)
 NOTHING_LOCKED = "Nothing is locked."
 LOCK_CHANGED = "That lock has changed. Try Resume again."
 
@@ -86,10 +91,8 @@ def settings(request: Request) -> Settings:
 
 
 def console(request: Request) -> bool:
-    s = settings(request)
-    if session_email(request, s) is not None:
-        return True
-    return s.auth_mode is AuthMode.TOKEN and s.env == "dev"
+    """A browser signed in with Google (R6.2 G11: no token-mode dev shortcut any more)."""
+    return session_email(request, settings(request)) is not None
 
 
 def limited(request: Request, name: str, key: str) -> JSONResponse | None:
@@ -188,6 +191,9 @@ async def _opening(
     request: Request, svc: BookService, uid: str, now: datetime
 ) -> OpenBody | JSONResponse:
     """The checks before any proof, each refusal audited (D8: refused or granted)."""
+    if settings(request).auth_mode is not AuthMode.GOOGLE:  # G11: never without the passkey
+        no = book_err(403, "google_needed", GOOGLE_NEEDED)
+        return await _refuse(svc, uid, "unknown", now, no, "google_needed")
     if not console(request):
         no = book_err(403, "console_only", CONSOLE_ONLY)
         return await _refuse(svc, uid, "unknown", now, no, "console_only")
@@ -206,19 +212,13 @@ async def _opening(
 
 
 async def open_flow(request: Request, svc: BookService, uid: str) -> JSONResponse:
-    now, s = utcnow(request), settings(request)
-    body = await _opening(request, svc, uid, now)
+    now = utcnow(request)
+    body = await _opening(request, svc, uid, now)  # Google mode only (G11)
     if isinstance(body, JSONResponse):
         return body
-    if s.auth_mode is AuthMode.GOOGLE:
-        how = await _prove_open(request, svc, uid, body, now)
-        if isinstance(how, JSONResponse):
-            return how
-    elif body.audience == "guest":
-        r = book_err(409, "guest_needs_google", GUEST_GOOGLE)
-        return await _refuse(svc, uid, "guest", now, r, "guest_needs_google")
-    else:
-        how = "token-mode dev, no passkey"
+    how = await _prove_open(request, svc, uid, body, now)
+    if isinstance(how, JSONResponse):
+        return how
     return await _granted(request, svc, uid, body.audience, how, now)
 
 
@@ -293,6 +293,7 @@ async def resume_flow(request: Request, svc: BookService, uid: str) -> JSONRespo
 
 
 __all__ = [
+    "GOOGLE_NEEDED",
     "OpenBody",
     "ResumeBody",
     "console",

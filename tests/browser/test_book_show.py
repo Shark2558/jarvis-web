@@ -72,6 +72,8 @@ def _show(
     scenes: list[dict[str, Any]] | None = None,
     google: bool = False,
     init: tuple[str, ...] = (),
+    voice: str | None = "cloud",
+    listening: str | None = "cloud",
 ) -> tuple[Console, FakeBook]:
     c = Console(browser, url, token, viewport)
     for script_js in init:
@@ -84,7 +86,8 @@ def _show(
     c.page.add_init_script(SPEECH_STUB)
     c.page.add_init_script(SEED % (TOKEN, audience))
     fake = FakeBook(c.page)
-    fake.script_answer = (200, script(audience, QUICK if scenes is None else scenes))
+    sc = QUICK if scenes is None else scenes  # R6.2: the owner's switch, the cloud by default here
+    fake.script_answer = (200, script(audience, sc, voice=voice, listening=listening))
     if google:  # a guest show runs in Google mode: its lock stays on after the close
         google_mode(c.page)
     c.page.goto(url + "/book/show")

@@ -35,7 +35,7 @@ C_MODULES = [
     )
 ] + [
     SRC / "api" / f"{n}.py"
-    for n in ("book_show", "book_lock", "book_show_access", "book_show_wiring")
+    for n in ("book_show", "book_show_hear", "book_lock", "book_show_access", "book_show_wiring")
 ]
 LANE_FORBIDDEN = (
     "jarvis.core.brain",
@@ -91,6 +91,7 @@ def _imports(path: Path) -> set[str]:
         "telling",
         "lock",
         "show_script",
+        "hear",  # R6.2 (code review 1, L2): a guest's spoken question passes through it
     ],
 )
 def test_the_lane_imports_nothing_that_reaches_the_owner(name: str) -> None:

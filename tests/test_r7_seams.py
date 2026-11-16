@@ -107,7 +107,8 @@ def _text(path: Path) -> str:
 
 # ---- 1, 2 · the version and the build book's release name --------------------------------------
 def test_the_version_is_seven() -> None:
-    assert jarvis.__version__ == "13.0.0"  # R13 I0 (7.0.0 at R7 I0); nothing compares (D26)
+    # R13 I0 (6.2.0 at R6.2, 14.0.2 at hotfix 2, 7.0.0 at R7 I0); nothing compares (D26)
+    assert jarvis.__version__ == "13.0.0"
 
 
 def _repo(tmp_path: Path, version: str | None) -> Repo:
@@ -156,8 +157,8 @@ def test_the_fallback_label_reads_the_checkouts_version_file(tmp_path: Path) -> 
 
 def test_the_real_repository_is_r7_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)  # R13 I0: the release is now R13 (tests/test_r13_seams.py)
-    assert plans.release_label(repo) == "R13"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r13-wardrobe.md"
+    assert plans.release_label(repo) == "R13"  # R6.2 at R6.2, R14 until hotfix 2
+    assert plans.plan_paths(repo)[0] == "docs/plans/r13-wardrobe.md"  # R6.2 has no r6-2-*.md
     assert "docs/plans/r7-mobile.md" in plans.plan_paths(repo)
 
 

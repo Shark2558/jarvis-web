@@ -59,16 +59,12 @@
   const FX_MODE = { listening: 'listening', speaking: 'speaking', standby: 'standby', off: 'micoff' };
   const OFFER_MS = 30000;
   const LOCKED_LINE = 'The microphone is switched off. Switch it on with the mic button (or Ctrl + Shift + Space).';
-  const HELP = {
-    blocked: 'The microphone is blocked for JARVIS. Allow it in the site settings (the icon beside the address), then tap the mic again.',
-    no_mic: 'No microphone was found. Plug one in or check the sound settings, then tap the mic again.',
-    busy: 'Another app is using the microphone. Close it, then tap the mic again.',
-    unsupported: 'This browser can\'t record audio here. You can still type.',
-    failed: 'The microphone didn\'t start. Please try again.',
-    ended: 'The microphone stopped (unplugged or switched off). Check it, then tap the mic again.',
+  // R6.2: the words for each reason live in the capture module (JarvisAudio.WORDS), shared with the
+  // build book; only the lines about this composer's own controls are here.
+  const HELP = Object.freeze(Object.assign({}, A.WORDS, {
     mic_off: LOCKED_LINE,
     cloud_down: 'Cloud listening isn\'t available right now. In Voice, set Speech engine to Automatic to use this browser\'s recognition, or type.',
-  };
+  }));
 
   const S = { mode: 'idle', turn: 0, vad: null, unsub: null, rec: null, recText: '', stop: false, cancel: false,
     keep: false, before: '', placeholder: input.getAttribute('placeholder') || '', raf: 0, level: 0, lineTimer: 0,

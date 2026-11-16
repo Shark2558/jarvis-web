@@ -34,6 +34,7 @@ ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("GET", "/v1/book/show/script", None),
     ("POST", "/v1/book/show/speak", {"line_id": "s01b01"}),
     ("POST", "/v1/book/show/hear", None),
+    ("POST", "/v1/book/show/heard", {"text": "How does JARVIS read e-mail?"}),  # R6.2 decision 4
     ("POST", "/v1/book/show/ask", {"text": "How does JARVIS read e-mail?"}),
     ("POST", "/v1/book/show/beat", {}),
     ("POST", "/v1/book/close", {}),
@@ -49,8 +50,12 @@ ANSWER_WHEN_OFF = {("GET", "/v1/book"), ("GET", "/v1/book/show/lock")}
 # wired, token-mode dev, a made-up book token: (status, error code or None for a 200 body)
 WIRED: dict[tuple[str, str], tuple[int, str | None]] = {
     ("GET", "/v1/book"): (200, None),
-    ("POST", "/v1/book/open"): (200, None),  # token-mode dev: the owner, no passkey (D8)
-    ("GET", "/v1/book/download/" + TICKET): (410, "gone"),
+    ("POST", "/v1/book/open"): (403, "google_needed"),  # R6.2 G11: never without the passkey
+    # R6.2 security review 1, L2: the reader's second G11 gate has no token-mode-dev shortcut
+    ("GET", "/v1/book/sections"): (403, "console_only"),
+    ("GET", f"/v1/book/releases/{RID}/sections"): (403, "console_only"),
+    ("POST", f"/v1/book/releases/{RID}/ticket"): (403, "console_only"),
+    ("GET", "/v1/book/download/" + TICKET): (403, "console_only"),
     ("POST", "/v1/book/resume"): (403, "console_only"),
     ("GET", "/v1/book/settings"): (200, None),
     ("PUT", "/v1/book/settings"): (200, None),

@@ -3,14 +3,15 @@
 
 For each slot of the dress code (`FILL_ORDER`), the pieces of its types go through the hard
 exclusions in order (`STEPS`): formality, "okay to stain" (Holi, never a delicate piece), his
-"never" rules and exclusions, rain-ok outdoors, availability (Ready; In use only through a
-declared hand-off of a reusable piece, D3; a pair only whole; a set part that can't be worn alone
-only with its whole set, festive) and reservations by another plan. The first step that leaves
-a required slot empty is named in its gap, with a next action (`rank.gap`). What is left is
-ranked (`rank.best`), ties broken by piece id. His locks are kept while available; a plan's own
-picks while they still fit. A primary look and up to two alternatives (another top, else bottom,
-else shoes), each with reasons naming the actual piece ids (STY-11); a piece due back from the
-laundry shop by the day is an outstanding action (LND-16).
+"never" rules and exclusions, rain-ok outdoors, availability (Ready; In use only through a declared
+hand-off of a reusable piece, D3; a pair only whole; a set part that can't be worn alone only with
+its whole set, festive, its mates passing these same steps) and reservations by another plan. A
+set's mates are placed only when each passes every step for its slot (code review M1). The first
+step that leaves a required slot empty is named in its gap, with a next action (`rank.gap`). What
+is left is ranked (`rank.best`), ties broken by piece id. His locks are kept while available; a
+plan's own picks while they still fit. A primary look and up to two alternatives (another top, else
+bottom, else shoes), each with reasons naming the actual piece ids (STY-11); a piece due back from
+the laundry shop by the day is an outstanding action (LND-16).
 
 `AVAILABILITY` is read at call time: only the eval's negative control turns it off.
 """
@@ -67,10 +68,20 @@ def available(r: Run, p: Piece) -> bool:
             return False  # it needs its whole set, and a dress code that wears sets whole
         for mate, _alone in parts:
             slot = r.rules.slot_of(r.p(mate).type) if mate in r.view.pieces else None
-            taken = r.picks.get(slot or "")
-            if mate != p.id and taken is not None and mate not in taken.pieces:
+            if mate == p.id or slot is None:
+                continue
+            taken = r.picks.get(slot)
+            if taken is not None and mate not in taken.pieces:
                 return False
+            if mate_fails(r, slot, r.p(mate)) is not None:
+                return False  # its mate is held, left out or unsuitable here (code review M1)
     return True
+
+
+def mate_fails(r: Run, slot: str, p: Piece) -> str | None:
+    """The first hard exclusion a set's mate fails for its slot (availability apart: the set's
+    states are checked whole), else None (code review M1)."""
+    return next((name for name, ok in STEPS if name != "available" and not ok(r, slot, p)), None)
 
 
 def _formal_ok(r: Run, slot: str, p: Piece) -> bool:
@@ -156,13 +167,33 @@ def _place_mates(r: Run, pid: str) -> None:
             continue
         if not (r.code.sets_whole or not dict(parts).get(pid, True)):
             continue
-        for x in mates:
-            slot = r.rules.slot_of(r.p(x).type)
-            if slot is not None and slot not in r.picks:
-                r.picks[slot] = Pick(slot, (x,))
-                r.reasons.append(rank.why(r, slot, (x,)))
+        left = [_mate(r, x) for x in mates]
+        held = [why for why in left if why]
+        if held:  # a mate is reserved, left out or unsuitable: never placed (code review M1)
+            r.compromises.append(
+                f"The set {sid} isn't worn whole here: {'; '.join(held)}; {pid} can be worn alone."
+            )
+            continue
         ids = texts.ids_words([x for x, _ in parts])
         r.reasons.append(f"The set {sid} is complete: {ids} are ready.")
+
+
+MATE_WORDS = {"reserved": "is reserved for {held}", "prefs": "is left out by your rules"}
+
+
+def _mate(r: Run, x: str) -> str:
+    """Place one mate in its slot, or say why it can't be ("" when placed or already there)."""
+    slot = r.rules.slot_of(r.p(x).type)
+    taken = r.picks.get(slot or "")
+    if slot is None or (taken is not None and x in taken.pieces):
+        return ""
+    why = mate_fails(r, slot, r.p(x)) if taken is None else "taken"
+    if why is None:
+        r.picks[slot] = Pick(slot, (x,))
+        r.reasons.append(rank.why(r, slot, (x,)))
+        return ""
+    words = MATE_WORDS.get(why, "doesn't suit this look")
+    return f"{x} {words.format(held=r.ask.reserved.get(x, 'another plan'))}"
 
 
 def _why_not(r: Run, unit: Unit) -> str:
@@ -277,5 +308,6 @@ __all__ = [
     "Suggestion",
     "available",
     "fill_one",
+    "mate_fails",
     "suggest",
 ]

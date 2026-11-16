@@ -266,3 +266,32 @@ async def test_the_availability_switch_is_what_the_eval_control_turns_off(
     monkeypatch.setattr(engine, "AVAILABILITY", False)
     look = (await _look(w, Ask(day=TUE, code="business_formal"))).primary
     assert look.pick("shoes").pieces == SHOES  # the control: an unavailable pair suggested
+
+
+# ---- code review M1: a set's mates pass every hard exclusion -----------------------------------
+async def test_m1_a_set_mate_held_by_another_plan_never_enters_the_look() -> None:
+    w = await _w()
+    ask = Ask(day=TUE, code="festive", occasion="festival", reserved={N.pyjama: "your 08:00 event"})
+    look = (await _look(w, ask)).primary
+    assert look.pick("top").pieces == (N.kurta,)  # it can be worn alone
+    assert N.pyjama not in _ids(look)
+    assert not any("is complete" in r for r in look.reasons)
+    assert (
+        f"The set {KURTA_SET} isn't worn whole here: {N.pyjama} is reserved for your 08:00 event; "
+        f"{N.kurta} can be worn alone." in look.compromises
+    )
+
+
+async def test_m1_a_set_mate_he_excluded_never_enters_the_look() -> None:
+    w = await _w()
+    ask = Ask(day=TUE, code="festive", occasion="festival", excluded=frozenset({N.pyjama}))
+    look = (await _look(w, ask)).primary
+    assert N.pyjama not in _ids(look) and look.pick("top").pieces == (N.kurta,)
+    assert any(KURTA_SET in c and "left out by your rules" in c for c in look.compromises)
+
+
+async def test_m1_a_part_that_cant_be_worn_alone_needs_its_mates_free() -> None:
+    w = await _w()
+    ask = Ask(day=TUE, code="festive", occasion="festival", reserved={N.kurta: "your 08:00 event"})
+    look = (await _look(w, ask)).primary
+    assert N.kurta not in _ids(look) and N.pyjama not in _ids(look)

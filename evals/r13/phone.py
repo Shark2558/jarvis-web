@@ -62,15 +62,20 @@ SENTENCES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 class RecordingGateway:
-    """Runs nothing: records each call and answers 'executed' with a fixed line."""
+    """Runs nothing: records each call and answers 'executed' with a fixed line (a find names one
+    piece, so a move that edits by id goes on, D6)."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
 
     async def execute(self, call: Any, *, scope: str) -> Any:
         self.calls.append(call.name)
+        found = {"message": "ok", "found": True, "best": "wi_" + "a" * 12}  # one piece fits
         return SimpleNamespace(
-            outcome=GatewayOutcome.EXECUTED, result={"message": "ok"}, error=None, pending=None
+            outcome=GatewayOutcome.EXECUTED,
+            result=found if call.name == "wardrobe_find" else {"message": "ok"},
+            error=None,
+            pending=None,
         )
 
 

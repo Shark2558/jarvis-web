@@ -174,6 +174,8 @@ APP_ASSETS: dict[str, str] = {
     "console-helpers-wardrobe.js": _JS,  # Helpers -> Wardrobe (loaded by console-helpers.js)
     "console-wardrobe-pieces.js": _JS,  # its Pieces section (loaded by console-helpers-wardrobe.js)
     "console-wardrobe-scan.js": _JS,  # Camera -> Wardrobe, a pixel panel (loaded by console-r7.js)
+    "console-wardrobe-words.js": _JS,  # its non-pixel words (imported by console-wardrobe-scan.js)
+    "console-vision-r13.js": _JS,  # the wardrobe tasks' arithmetic (imported by console-vision.js)
     "console-wardrobe.css": "text/css",  # the Wardrobe tabs' places only (loaded by console-r7.js)
 }
 

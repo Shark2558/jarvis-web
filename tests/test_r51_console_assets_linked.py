@@ -68,6 +68,11 @@ NOT_IN_PAGE = {
         "import('./console-wardrobe-pieces.js')",
     ),
     "console-wardrobe-scan.js": ("console-r7.js", "import('./console-wardrobe-scan.js')"),
+    "console-vision-r13.js": ("console-vision.js", "import('./console-vision-r13.js')"),
+    "console-wardrobe-words.js": (
+        "console-wardrobe-scan.js",
+        "import('./console-wardrobe-words.js')",
+    ),
     "console-wardrobe.css": ("console-r7.js", "'/static/console-wardrobe.css'"),
 }
 # R6: linked from the show page (book.html), not the deck

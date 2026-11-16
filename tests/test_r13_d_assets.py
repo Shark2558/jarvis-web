@@ -6,8 +6,8 @@
 #     that file from the pins without the network, and refuses a vendored file that differs
 #   - the engine's own references (console-vision.js SELF13) are the manifest's
 #   - in Node, on the VENDORED onnxruntime-web: each model's self-check input (the engine's own
-#     SELFCHECK arithmetic) gives the manifest's reference; a drawn face fires UltraFace and a
-#     drawn silhouette fires SSD's "person" through the engine's own decoders (WARDROBE-PURE); a
+#     ramp and silhouette) gives the manifest's reference; a drawn face fires UltraFace and a
+#     drawn silhouette fires SSD's "person" through the engine's own decoders (console-vision-r13.js); a
 #     drawn striped shirt keeps its candidate under rotation and folding (INV-06's real half)
 from __future__ import annotations
 

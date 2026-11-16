@@ -30,8 +30,8 @@ MANIFEST.json (the route in `api/console.py` reads `files` only: `sha256` and `t
 `selfcheck` (D8, M8): a fixed ramp input, `((i % 251) / 250) * 2 - 1` over 1 x 3 x 224 x 224, and
 the SHA-256 of the output bytes on the vendored onnxruntime-web 1.30.0 (one thread); the task's
 `load()` compares it on the phone. Part D recorded the other two the same way (Node 22, the vendored
-runtime, one thread; console-vision.js SELF13 holds the same numbers and its SELFCHECK arithmetic
-makes the same inputs): `face`, the top five face scores on the ramp over 1 x 3 x 240 x 320 (fp32:
+runtime, one thread; console-vision.js SELF13 holds the same numbers and console-vision-r13.js's
+ramp and silhouette make the same inputs): `face`, the top five face scores on the ramp over 1 x 3 x 240 x 320 (fp32:
 a tolerance of 0.002); `person`, SSD's one detection on a drawn dark silhouette against a pale sky
 (uint8 1 x 300 x 300 x 3: class 1, its score and box, a tolerance of 0.03 for the int8 graph).
 """
@@ -143,8 +143,8 @@ MODELS: tuple[Model, ...] = (
         extra={
             "selfcheck": {
                 "input": (
-                    "the drawn silhouette (console-vision.js SELFCHECK: a dark figure against a "
-                    "pale sky) as uint8[1, 300, 300, 3]"
+                    "the drawn silhouette (console-vision-r13.js silhouette(): a dark figure against "
+                    "a pale sky) as uint8[1, 300, 300, 3]"
                 ),
                 "class": 1,
                 "score": 0.9449,

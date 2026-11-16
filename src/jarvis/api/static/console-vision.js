@@ -356,7 +356,8 @@ const qualityTask = {
 // The model files come only from BASE13 (vendor/vision/r13-1/, served only when they match MANIFEST.json), the first
 // time a task is used. The runtime is the wake word's own onnxruntime-web 1.30.0: the same module URL and the same
 // env.wasm values (one thread, no proxy), so a page has one runtime (console-wakeword.js is not edited). Each load()
-// runs its fixed self-check input (SELFCHECK below) and compares the answer with SELF13, the manifest's references:
+// runs its fixed self-check input (CHECKS_AT_LOAD below, with console-vision-r13.js's ramp and silhouette) and compares
+// the answer with SELF13, the manifest's references:
 // a mismatch is "not installed", so a quantized operator that runs wrongly on a phone is found and never trusted.
 const BASE13 = '/static/vendor/vision/r13-1/';
 const ORT_BASE = '/static/vendor/ort-1.30.0/';
@@ -368,129 +369,14 @@ const EMBED_DIMS = 1280, EMBED_B64 = 1708, EMBED_MODELS = ['mnv2-int8-1', 'mnv2-
 const PERSON_MIN = 0.5, FACE_MIN = 0.7, NMS_IOU = 0.3, BOXES_MAX = 20;
 const COLOUR_SIDE = 96; // the colour is read on a copy this small
 const SELF13 = Object.freeze(/*SELF13-BEGIN*/{"embed": {"sha256": "e5b53d7e5bf35dda17217bb1feed42f900451b5fe1f2db3eca1f50442bf15abd", "model": "mnv2-int8-1"}, "face": {"top": [0.07956, 0.07937, 0.07899, 0.07852, 0.07781], "tol": 0.002}, "person": {"class": 1, "score": 0.9449, "box": [0.1013, 0.2648, 0.8171, 0.7278], "tol": 0.03}}/*SELF13-END*/);
-/*WARDROBE-PURE-BEGIN*/
-// Plain arithmetic only (no DOM, no network): tests/fixtures/r13/models.mjs runs this very text in Node.
-const COLOURS13 = Object.freeze(/*COLOURS-BEGIN*/{ black: [20, 20, 22], white: [245, 245, 242], grey: [128, 128, 128],
-  charcoal: [54, 60, 66], navy: [28, 36, 78], blue: [40, 90, 200], light_blue: [150, 190, 230], green: [40, 140, 60],
-  olive: [110, 110, 50], yellow: [240, 210, 50], orange: [240, 130, 40], red: [200, 30, 40], maroon: [120, 25, 40],
-  pink: [240, 160, 190], purple: [110, 50, 140], brown: [110, 70, 40], beige: [220, 200, 160], khaki: [190, 175, 120] }/*COLOURS-END*/);
-const MEAN13 = [0.485, 0.456, 0.406], STD13 = [0.229, 0.224, 0.225]; // ImageNet, as MobileNet v2 was trained
-const MULTI_SHARE = 0.35, MULTI_DE = 20; // two clusters, each at least this share and this far apart: multicolour
-
-// The self-check inputs (D8): fixed arithmetic, the same bytes on every device
-function ramp(n) { const x = new Float32Array(n); for (let i = 0; i < n; i += 1) x[i] = ((i % 251) / 250) * 2 - 1; return x; }
-function silhouette() { // uint8[1, 300, 300, 3]: a dark figure against a pale sky (SSD's "person")
-  const W = 300, d = new Uint8Array(W * W * 3), ink = [35, 30, 30];
-  for (let i = 0; i < W * W; i += 1) { d[i * 3] = 190; d[i * 3 + 1] = 210; d[i * 3 + 2] = 235; }
-  const put = (x, y) => { d.set(ink, (y * W + x) * 3); };
-  const ellipse = (cx, cy, rx, ry) => {
-    for (let y = Math.max(0, Math.floor(cy - ry)); y < Math.min(W, Math.ceil(cy + ry)); y += 1) {
-      for (let x = Math.max(0, Math.floor(cx - rx)); x < Math.min(W, Math.ceil(cx + rx)); x += 1) {
-        const u = (x - cx) / rx, v = (y - cy) / ry;
-        if (u * u + v * v <= 1) put(x, y);
-      }
-    }
-  };
-  const rect = (x0, y0, w, h) => { for (let y = y0; y < Math.min(W, y0 + h); y += 1) for (let x = x0; x < x0 + w; x += 1) put(x, y); };
-  ellipse(150, 55, 24, 30); ellipse(150, 140, 52, 70); rect(112, 190, 32, 110); rect(156, 190, 32, 110);
-  ellipse(92, 145, 14, 60); ellipse(208, 145, 14, 60);
-  return d;
-}
-const near = (a, b, tol) => Math.abs(a - b) <= tol;
-function topScores(scores, k) { // face scores (column 1 of [n, 2]), the k highest
-  const out = [];
-  for (let i = 1; i < scores.length; i += 2) out.push(scores[i]);
-  return out.sort((a, b) => b - a).slice(0, k);
-}
-
-// Pixels in, a model's input out
-function chw(rgba, w, h, mean, std) { // RGBA bytes -> float32 [3, h, w], (v / 255 - mean) / std
-  const n = w * h, x = new Float32Array(3 * n);
-  for (let i = 0; i < n; i += 1) for (let k = 0; k < 3; k += 1) x[k * n + i] = (rgba[i * 4 + k] / 255 - mean[k]) / std[k];
-  return x;
-}
-function chwFace(rgba, n) { const x = new Float32Array(3 * n); for (let i = 0; i < n; i += 1) for (let k = 0; k < 3; k += 1) x[k * n + i] = (rgba[i * 4 + k] - 127) / 128; return x; }
-function rgb(rgba, n) { const x = new Uint8Array(3 * n); for (let i = 0; i < n; i += 1) { x[i * 3] = rgba[i * 4]; x[i * 3 + 1] = rgba[i * 4 + 1]; x[i * 3 + 2] = rgba[i * 4 + 2]; } return x; }
-function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i]); return btoa(s); }
-function quantize(floats, scale) { return Uint8Array.from(floats, (v) => Math.max(0, Math.min(255, Math.round(v / scale)))); }
-
-// The colour: CIE Lab (D65) and the nearest named colour by Delta E (CIE76)
-function lab(r, g, b) {
-  const lin = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-  const R = lin(r), G = lin(g), B = lin(b);
-  const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (t * 24389 / 27 + 16) / 116);
-  const x = f((0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047), y = f(0.2126 * R + 0.7152 * G + 0.0722 * B);
-  const z = f((0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883);
-  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
-}
-const dE = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-const NAMED13 = Object.keys(COLOURS13).map((k) => [k, lab(...COLOURS13[k])]);
-function nearest(p) { let best = null, d = Infinity; NAMED13.forEach(([k, q]) => { const e = dE(p, q); if (e < d) { d = e; best = k; } }); return best; }
-function median(xs) { const s = xs.slice().sort((a, b) => a - b); return s.length ? s[s.length >> 1] : 0; }
-function twoMeans(pts) { // two clusters, started from the darkest and the lightest point, 8 rounds
-  let a = pts[0], b = pts[0];
-  pts.forEach((p) => { if (p[0] < a[0]) a = p; if (p[0] > b[0]) b = p; });
-  let ca = [], cb = [];
-  for (let round = 0; round < 8; round += 1) {
-    ca = []; cb = [];
-    pts.forEach((p) => (dE(p, a) <= dE(p, b) ? ca : cb).push(p));
-    const mean = (c, was) => (c.length ? [0, 1, 2].map((k) => c.reduce((s, p) => s + p[k], 0) / c.length) : was);
-    a = mean(ca, a); b = mean(cb, b);
-  }
-  return [[a, ca.length], [b, cb.length]].sort((x, y) => y[1] - x[1]);
-}
-function colourOf(rgba) { // {name, second?, share}: the colour of these pixels (D7)
-  const pts = [];
-  for (let i = 0; i + 3 < rgba.length; i += 4) pts.push(lab(rgba[i], rgba[i + 1], rgba[i + 2]));
-  if (!pts.length) return { name: 'grey', share: 0 };
-  const [[big, nBig], [small, nSmall]] = twoMeans(pts);
-  const shareBig = nBig / pts.length, shareSmall = nSmall / pts.length;
-  if (shareSmall >= MULTI_SHARE && dE(big, small) > MULTI_DE && nearest(big) !== nearest(small)) {
-    return { name: 'multicolour', second: nearest(big), share: Math.round(shareBig * 1000) / 1000 };
-  }
-  const name = nearest([0, 1, 2].map((k) => median(pts.map((p) => p[k]))));
-  const share = pts.filter((p) => nearest(p) === name).length / pts.length;
-  return { name, share: Math.round(share * 1000) / 1000 };
-}
-
-// Boxes out of the two detectors, normalized {x, y, w, h}
-function iou(p, q) {
-  const x = Math.max(0, Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x));
-  const y = Math.max(0, Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y));
-  const both = x * y, all = p.w * p.h + q.w * q.h - both;
-  return all > 0 ? both / all : 0;
-}
-function nms(cands, limit, max) { // cands: [{score, box}] -> the boxes kept, best first
-  const kept = [];
-  cands.slice().sort((a, b) => b.score - a.score).forEach((c) => {
-    if (kept.length < max && kept.every((k) => iou(k.box, c.box) <= limit)) kept.push(c);
-  });
-  return kept.map((k) => k.box);
-}
-const unitBox = (x0, y0, x1, y1) => {
-  const c = (v) => Math.min(1, Math.max(0, v));
-  const x = c(x0), y = c(y0);
-  return { x, y, w: Math.max(0, c(x1) - x), h: Math.max(0, c(y1) - y) };
-};
-function faceBoxes(scores, boxes, min, limit, max) { // UltraFace: scores [n, 2], boxes [n, 4] as x1 y1 x2 y2
-  const cands = [];
-  for (let i = 0; i * 2 + 1 < scores.length; i += 1) {
-    if (scores[i * 2 + 1] >= min) cands.push({ score: scores[i * 2 + 1], box: unitBox(boxes[i * 4], boxes[i * 4 + 1], boxes[i * 4 + 2], boxes[i * 4 + 3]) });
-  }
-  return nms(cands, limit, max);
-}
-function personBoxes(classes, scores, boxes, count, min, max) { // SSD: boxes as ymin xmin ymax xmax; person is class 1
-  const out = [];
-  for (let i = 0; i < Math.min(count, scores.length); i += 1) {
-    if (Math.round(classes[i]) === 1 && scores[i] >= min) out.push(unitBox(boxes[i * 4 + 1], boxes[i * 4], boxes[i * 4 + 3], boxes[i * 4 + 2]));
-  }
-  return out.slice(0, max);
-}
-const round3 = (b) => ({ x: Math.round(b.x * 1000) / 1000, y: Math.round(b.y * 1000) / 1000, w: Math.round(b.w * 1000) / 1000, h: Math.round(b.h * 1000) / 1000 });
-const found = (boxes) => ({ found: boxes.length > 0, count: boxes.length, boxes: boxes.map(round3) });
-/*WARDROBE-PURE-END*/
-const COLOUR_NAMES = Object.freeze(Object.keys(COLOURS13));
 const SESSION = { executionProviders: ['wasm'], graphOptimizationLevel: 'all', logSeverityLevel: 3 };
+// The tasks' plain arithmetic lives in console-vision-r13.js (REVIEW-D-1 split), imported on first use: a failed import is
+// not kept (the next use tries again) and is "could not load" for these four tasks only; R7's five never wait for it.
+let R = null, pureLoad = null;
+const pure = () => {
+  if (!pureLoad) pureLoad = import('./console-vision-r13.js').then((m) => { R = m; return m; }, () => { pureLoad = null; throw new Error(NO_LOAD); });
+  return pureLoad;
+};
 
 // ---- their checks: exactly the server's WARDROBE_DATA -----------------------------------------------------------------
 const B64 = /^[A-Za-z0-9+/]+=*$/;
@@ -501,8 +387,8 @@ const foundOk = (d) => only(d, ['found', 'count', 'boxes']) && typeof d.found ==
 const CHECKS13 = {
   embed: (d) => only(d, ['v', 'dims', 'model']) && typeof d.v === 'string' && d.v.length === EMBED_B64 && B64.test(d.v)
     && d.dims === EMBED_DIMS && EMBED_MODELS.includes(d.model),
-  colour: (d) => only(d, ['name', 'second', 'share']) && (COLOUR_NAMES.includes(d.name) || d.name === 'multicolour')
-    && (d.second === undefined || COLOUR_NAMES.includes(d.second)) && inUnit(d.share),
+  colour: (d) => !!R && only(d, ['name', 'second', 'share']) && (R.COLOUR_NAMES.includes(d.name) || d.name === 'multicolour')
+    && (d.second === undefined || R.COLOUR_NAMES.includes(d.second)) && inUnit(d.share),
   person: foundOk,
   face: foundOk,
 };
@@ -527,6 +413,7 @@ async function model13(name) { // 404: the model file has not arrived (D8)
 }
 const sessions = {};
 async function open13(id, name, check) { // the session is kept only once its self-check matched SELF13
+  await pure();
   const o = await runtime();
   const s = await o.InferenceSession.create(await model13(name), SESSION);
   let ok = false;
@@ -541,19 +428,19 @@ async function sha256hex(bytes) {
 }
 const CHECKS_AT_LOAD = {
   embed: async (o, s) => {
-    const out = await s.run({ input: new o.Tensor('float32', ramp(3 * 224 * 224), [1, 3, 224, 224]) });
+    const out = await s.run({ input: new o.Tensor('float32', R.ramp(3 * 224 * 224), [1, 3, 224, 224]) });
     return (await sha256hex(out['472_quantized'].data)) === SELF13.embed.sha256;
   },
   face: async (o, s) => {
-    const out = await s.run({ input: new o.Tensor('float32', ramp(3 * 240 * 320), [1, 3, 240, 320]) });
-    const top = topScores(out.scores.data, 5);
-    return SELF13.face.top.every((v, i) => near(top[i], v, SELF13.face.tol));
+    const out = await s.run({ input: new o.Tensor('float32', R.ramp(3 * 240 * 320), [1, 3, 240, 320]) });
+    const top = R.topScores(out.scores.data, 5);
+    return SELF13.face.top.every((v, i) => R.near(top[i], v, SELF13.face.tol));
   },
   person: async (o, s) => {
-    const out = await s.run({ inputs: new o.Tensor('uint8', silhouette(), [1, 300, 300, 3]) });
+    const out = await s.run({ inputs: new o.Tensor('uint8', R.silhouette(), [1, 300, 300, 3]) });
     const ref = SELF13.person;
     return out.num_detections.data[0] >= 1 && Math.round(out.detection_classes.data[0]) === ref.class
-      && near(out.detection_scores.data[0], ref.score, ref.tol) && ref.box.every((v, i) => near(out.detection_boxes.data[i], v, ref.tol));
+      && R.near(out.detection_scores.data[0], ref.score, ref.tol) && ref.box.every((v, i) => R.near(out.detection_boxes.data[i], v, ref.tol));
   },
 };
 function sized(src, w, h) { // a canvas of this run only, exactly w x h (look() empties it when the run ends)
@@ -576,19 +463,20 @@ const embedTask = {
   load: guard(() => open13('embed', EMBED_MODEL, CHECKS_AT_LOAD.embed)),
   run: (frame) => look(frame, async (src) => {
     const quality = qualityOf(src), { o, s } = sessions.embed;
-    const out = await s.run({ input: new o.Tensor('float32', chw(sized(src, 224, 224), 224, 224, MEAN13, STD13), [1, 3, 224, 224]) });
-    return { data: { v: b64(out['472_quantized'].data), dims: EMBED_DIMS, model: SELF13.embed.model }, quality };
+    const out = await s.run({ input: new o.Tensor('float32', R.chw(sized(src, 224, 224), 224, 224, R.MEAN13, R.STD13), [1, 3, 224, 224]) });
+    return { data: { v: R.b64(out['472_quantized'].data), dims: EMBED_DIMS, model: SELF13.embed.model }, quality };
   }),
   check: CHECKS13.embed,
 };
 const colourTask = {
   id: 'colour', v: 1, input: 'photo',
+  load: guard(() => pure()),
   run: (frame, opts) => look(frame, async (src) => {
     const quality = qualityOf(src), k = Math.min(1, COLOUR_SIDE / Math.max(src.w, src.h));
     const w = Math.max(1, Math.round(src.w * k)), h = Math.max(1, Math.round(src.h * k));
     const all = sized(src, w, h), c = centreOf(opts && opts.box, w, h), px = [];
     for (let y = c.y; y < Math.min(h, c.y + c.h); y += 1) for (let x = c.x; x < Math.min(w, c.x + c.w); x += 1) px.push(...all.subarray((y * w + x) * 4, (y * w + x) * 4 + 4));
-    return { data: colourOf(px), quality };
+    return { data: R.colourOf(px), quality };
   }),
   check: CHECKS13.colour,
 };
@@ -597,9 +485,9 @@ const personTask = {
   load: guard(() => open13('person', PERSON_MODEL, CHECKS_AT_LOAD.person)),
   run: (frame) => look(frame, async (src) => {
     const quality = qualityOf(src), { o, s } = sessions.person;
-    const out = await s.run({ inputs: new o.Tensor('uint8', rgb(sized(src, 300, 300), 300 * 300), [1, 300, 300, 3]) });
-    const boxes = personBoxes(out.detection_classes.data, out.detection_scores.data, out.detection_boxes.data, out.num_detections.data[0], PERSON_MIN, BOXES_MAX);
-    return { data: found(boxes), quality };
+    const out = await s.run({ inputs: new o.Tensor('uint8', R.rgb(sized(src, 300, 300), 300 * 300), [1, 300, 300, 3]) });
+    const boxes = R.personBoxes(out.detection_classes.data, out.detection_scores.data, out.detection_boxes.data, out.num_detections.data[0], PERSON_MIN, BOXES_MAX);
+    return { data: R.found(boxes), quality };
   }),
   check: CHECKS13.person,
 };
@@ -608,8 +496,8 @@ const faceTask = {
   load: guard(() => open13('face', FACE_MODEL, CHECKS_AT_LOAD.face)),
   run: (frame) => look(frame, async (src) => {
     const quality = qualityOf(src), { o, s } = sessions.face;
-    const out = await s.run({ input: new o.Tensor('float32', chwFace(sized(src, 320, 240), 320 * 240), [1, 3, 240, 320]) });
-    return { data: found(faceBoxes(out.scores.data, out.boxes.data, FACE_MIN, NMS_IOU, BOXES_MAX)), quality };
+    const out = await s.run({ input: new o.Tensor('float32', R.chwFace(sized(src, 320, 240), 320 * 240), [1, 3, 240, 320]) });
+    return { data: R.found(R.faceBoxes(out.scores.data, out.boxes.data, FACE_MIN, NMS_IOU, BOXES_MAX)), quality };
   }),
   check: CHECKS13.face,
 };

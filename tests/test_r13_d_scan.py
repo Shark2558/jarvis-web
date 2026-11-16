@@ -38,6 +38,7 @@ from jarvis.wardrobe.model import CARE_WORDS, FABRICS, PRIVATE_BY_DEFAULT
 ROOT = Path(__file__).resolve().parents[1]
 DOM = ROOT / "tests" / "fixtures" / "r13" / "d_dom.js"
 SCAN = ROOT / "src" / "jarvis" / "api" / "static" / "console-wardrobe-scan.js"
+WORDS = ROOT / "src" / "jarvis" / "api" / "static" / "console-wardrobe-words.js"
 P = [p.id for p in PILOT]
 SHIRT, WHITE, NAVY, VEST1, VEST2, SNEAKER_L, SNEAKER_R = P[0], P[1], P[2], P[8], P[9], P[17], P[18]
 PERSON = (
@@ -221,8 +222,8 @@ def test_d10_a_private_by_default_kind_asks_make_it_private() -> None:
     assert set(re.findall(r"'(\w+)'", _region("PRIVATE_TYPES = [", "];"))) == PRIVATE_BY_DEFAULT
 
 
-def _region(start: str, end: str) -> str:
-    js = SCAN.read_text(encoding="utf-8")
+def _region(start: str, end: str, path: Path = WORDS) -> str:
+    js = path.read_text(encoding="utf-8")
     i = js.index(start)
     return js[i : js.index(end, i)]
 
@@ -407,6 +408,27 @@ def test_the_scan_module_keeps_its_house_rules() -> None:
     for fn in ("savePhoto", "remember", "tag"):
         body = code[code.index(f"async function {fn}(") :]
         assert body.index("if (!allowed(card)") < 120, fn  # the gate first, every time
+
+
+def test_the_words_are_their_own_module_imported_on_his_first_press() -> None:
+    code = re.sub(r"//[^\n]*|/\*.*?\*/", "", WORDS.read_text(encoding="utf-8"), flags=re.S)
+    banned = ("document", "window", "fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket")
+    banned += ("localStorage", "sessionStorage", "indexedDB", "drawImage", "getImageData", "toBlob")
+    banned += ("createImageBitmap", "JarvisChat", ".raw(", "FormData", ".api(", "import(", "Date")
+    for bad in banned:
+        assert bad not in code, bad
+    assert WORDS.read_text(encoding="utf-8").isascii() and len(code.splitlines()) <= 200
+    scan_code = re.sub(r"//[^\n]*|/\*.*?\*/", "", SCAN.read_text(encoding="utf-8"), flags=re.S)
+    assert scan_code.count("import('./console-wardrobe-words.js')") == 1
+    assert "function labelPiece(" not in scan_code and "function boxesOf(" in scan_code
+    assert scan([])["imported"] == []  # the page's start waits for nothing
+    assert scan(PHOTO, vision={"embed": _vec(11)})["imported"] == ["./console-wardrobe-words.js"]
+
+
+def test_words_that_cannot_load_say_so_and_ask_and_send_nothing() -> None:
+    out = scan([START, TAKE, press("Choose a photo")], noWords=True)
+    assert "This part couldn’t load. Reload the page to try again." in out["final"]
+    assert out["net"] == [] and out["door"] == [] and out["camera"]["live"] is False
 
 
 SPLIT_JS = r"""

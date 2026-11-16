@@ -9,6 +9,8 @@
 #   - the four tasks' checks are the server's schemas (WARDROBE_DATA): a well-formed result of each
 #     passes jarvis.vision.results.parse_result(wardrobe=True), the shapes the tasks return
 #   - each wardrobe model loads only through its self-check; a mismatch is "not installed"
+#   - REVIEW-D-1 split: the arithmetic is its own module (console-vision-r13.js), imported once, on a
+#     wardrobe task's first use, by the R13 section only; it holds no DOM, network, storage or clock
 from __future__ import annotations
 
 import json
@@ -26,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "jarvis" / "api" / "static"
 VISION = (STATIC / "console-vision.js").read_text(encoding="utf-8")
 PART_D = VISION[VISION.index("// ==== R13 Part D") : VISION.index("sealRegistry();\n")]
+PURE = (STATIC / "console-vision-r13.js").read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -142,3 +145,32 @@ def test_the_part_d_section_keeps_the_engines_house_rules() -> None:
     for bad in ("innerHTML", "eval(", "new Function", "console.log", "localStorage", "indexedDB"):
         assert bad not in PART_D, bad
     assert not re.search(r"https?://", PART_D)
+
+
+def _code(js: str) -> str:
+    return re.sub(r"//[^\n]*|/\*.*?\*/", "", js, flags=re.S)
+
+
+def test_the_arithmetic_is_its_own_module_imported_on_a_wardrobe_tasks_first_use() -> None:
+    assert VISION.count("import('./console-vision-r13.js')") == 1
+    assert "import('./console-vision-r13.js')" in PART_D  # the R13 section only: the core is I0's
+    assert "WARDROBE-PURE" not in VISION and "pureLoad = null; throw new Error(NO_LOAD);" in PART_D
+    for name in ("colourOf", "faceBoxes", "personBoxes", "silhouette", "ramp", "chwFace"):
+        assert f"function {name}(" in PURE and f"function {name}(" not in VISION, name
+    opened = PART_D[
+        PART_D.index("async function open13(") : PART_D.index("async function sha256hex")
+    ]
+    assert opened.index("await pure();") < opened.index("InferenceSession.create")
+    assert "load: guard(() => pure())," in PART_D  # colour has no model, only the arithmetic
+    assert "colour: (d) => !!R && " in PART_D  # no module yet: a colour fails its check
+
+
+def test_the_arithmetic_module_touches_no_dom_network_storage_or_clock() -> None:
+    code = _code(PURE)
+    banned = ("document", "window", "fetch(", "XMLHttpRequest", "WebSocket", "localStorage")
+    banned += ("sessionStorage", "indexedDB", "drawImage", "getImageData", "toBlob", "Date")
+    banned += ("JarvisVision", "JarvisCamera", "import(", "eval(", "new Function", "console.")
+    for bad in banned:
+        assert bad not in code, bad
+    assert PURE.isascii() and len(PURE.splitlines()) <= 200
+    assert re.search(r"^export \{ COLOURS13, COLOUR_NAMES,", PURE, re.M)

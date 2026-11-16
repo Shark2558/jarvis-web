@@ -42,43 +42,8 @@ const TAG_WORDS = 'Ask the AI to tag this piece (about \u20b90.30 at most)';
 const BAND_WORDS = { likely: 'likely this one', maybe: 'maybe', new: 'new?' };
 
 /*SCAN-PURE-BEGIN*/
-// Plain arithmetic only: tests/fixtures/r13/d_dom.js runs this very text in Node.
-const LABEL = /^jw1:([a-z2-7]{8})$/;
-const LIKELY = 0.8, MAYBE = 0.6, TWINS = 0.03, CANDIDATES = 3, BOXES = 6, FG = 60;
-const PRIVATE_TYPES = ['underpants', 'briefs', 'boxers', 'vest', 'undershirt', 'thermal']; // wardrobe/model.py
-const FABRICS13 = ['cotton', 'linen', 'silk', 'wool', 'polyester', 'nylon', 'viscose', 'rayon', 'denim', 'leather', 'elastane', 'spandex', 'khadi'];
-const CARE13 = [[/machine\s*wash/, 'machine_wash'], [/hand\s*wash/, 'hand_wash'], [/dry\s*clean/, 'dry_clean', /(?:do\s*not|don.?t)\s*dry\s*clean/],
-  [/(?:do\s*not|don.?t)\s*wash/, 'do_not_wash'], [/(?:cold|30\s*\W?\s*c)\s*wash|wash\w*\s*(?:cold|at\s*30)/, 'cold_wash'],
-  [/(?:warm|40\s*\W?\s*c)\s*wash|wash\w*\s*(?:warm|at\s*40)/, 'warm_wash'], [/(?:do\s*not|don.?t)\s*bleach|no\s*bleach/, 'do_not_bleach'],
-  [/(?:do\s*not|don.?t)\s*tumble/, 'do_not_tumble'], [/tumble\s*dry/, 'tumble_dry', /(?:do\s*not|don.?t)\s*tumble/],
-  [/line\s*dry|dry\s*in\s*(?:the\s*)?shade/, 'line_dry'], [/(?:do\s*not|don.?t)\s*iron/, 'do_not_iron'],
-  [/iron\s*(?:at\s*)?low|cool\s*iron|low\s*iron/, 'iron_low', /(?:do\s*not|don.?t)\s*iron/],
-  [/iron\s*(?:at\s*)?medium|warm\s*iron/, 'iron_medium', /(?:do\s*not|don.?t)\s*iron/],
-  [/iron\s*(?:at\s*)?high|hot\s*iron/, 'iron_high', /(?:do\s*not|don.?t)\s*iron/], [/wash\s*dark\s*colou?rs?\s*separately|wash\s*separately/, 'wash_dark_separately']];
-const SIZES = /^(?:XXS|XS|S|M|L|XL|XXL|XXXL|[2-6]XL|\d{2}(?:\s*\/\s*\d{2})?)$/;
-function labelPiece(value, labels) { // his own label's piece id, or null ("not a JARVIS label": never sent or shown)
-  const m = LABEL.exec(String(value || ''));
-  if (!m) return null;
-  const hit = (Array.isArray(labels) ? labels : []).find((l) => l && l.code === m[1] && typeof l.piece === 'string');
-  return hit ? hit.piece : null;
-}
-function unb64(s) { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i += 1) u[i] = bin.charCodeAt(i); return u; }
-function meanOf(vecs) { const m = new Float64Array(vecs[0].length); vecs.forEach((v) => v.forEach((x, i) => { m[i] += x / vecs.length; })); return m; }
-function cosine(a, b, mean) {
-  let d = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i += 1) { const x = a[i] - (mean ? mean[i] : 0), y = b[i] - (mean ? mean[i] : 0); d += x * y; na += x * x; nb += y * y; }
-  return na && nb ? d / Math.sqrt(na * nb) : 0;
-}
-const band = (s) => (s >= LIKELY ? 'likely' : s >= MAYBE ? 'maybe' : 'new');
-function candidates(query, prints, typeOf) { // his saved fingerprints of ONE model, centred by their mean (D7)
-  if (!query || !prints.length) return { top: [], twins: false };
-  const mean = prints.length >= 2 ? meanOf(prints.map((p) => p.v)) : null, best = new Map();
-  prints.forEach((p) => { const s = cosine(query, p.v, mean); if (!best.has(p.piece) || s > best.get(p.piece)) best.set(p.piece, s); });
-  const top = [...best].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, CANDIDATES)
-    .map(([piece, s]) => ({ piece, score: Math.round(s * 1000) / 1000, band: band(s) }));
-  const twins = top.length > 1 && top[0].band !== 'new' && top[0].score - top[1].score <= TWINS && typeOf(top[0].piece) === typeOf(top[1].piece);
-  return { top, twins };
-}
+// Plain arithmetic only: tests/test_r13_d_scan.py runs this very text in Node.
+const BOXES = 6, FG = 60;
 function boxesOf(px, w, h) { // pieces laid apart on a plain surface: what differs from the border's colour, in parts
   const at = (x, y) => (y * w + x) * 4, edge = [[], [], []];
   for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) [0, 1, 2].forEach((k) => edge[k].push(px[at(x, y) + k]));
@@ -102,19 +67,6 @@ function boxesOf(px, w, h) { // pieces laid apart on a plain surface: what diffe
   const out = found.sort((a, b) => b.n - a.n).slice(0, BOXES).sort((a, b) => a.x0 - b.x0).map(box);
   return out.length ? out : [{ x: 0, y: 0, w: 1, h: 1 }];
 }
-function parseLabel(text) { // only parsed forms (D7, INV-10): never the text itself; each stays unverified
-  const t = String(text || '').slice(0, 2000), lower = t.toLowerCase();
-  let size = null;
-  const said = /\bsize\s*[:.]?\s*([0-9a-z][0-9a-z /.-]{0,11})/i.exec(t);
-  const cand = said ? said[1].split(/\n/)[0].trim().toUpperCase() : (t.split(/\n/).map((x) => x.trim().toUpperCase()).find((x) => SIZES.test(x)) || null);
-  if (cand && /^[0-9A-Z /.-]{1,12}$/.test(cand)) size = cand;
-  const fabric = [], seenF = new Set(), re = /(\d{1,3})\s*%\s*([a-z]+)/g;
-  let m;
-  while ((m = re.exec(lower)) !== null) { const pct = Number(m[1]); if (FABRICS13.includes(m[2]) && pct <= 100 && !seenF.has(m[2])) { seenF.add(m[2]); fabric.push({ name: m[2], pct }); } }
-  const flat = lower.replace(/\s+/g, ' '), care = [];
-  CARE13.forEach(([rx, word, unless]) => { if (rx.test(flat) && !(unless && unless.test(flat)) && !care.includes(word)) care.push(word); });
-  return { size, fabric, care };
-}
 /*SCAN-PURE-END*/
 
 const S = { host: null, P: null, flow: 'add', view: null, prints: null, live: null, codes: null, photo: null, seq: 0,
@@ -126,7 +78,7 @@ const mk = (tag, cls, text) => S.P.mk(tag, cls, text);
 const btn = (text, cls, fn) => S.P.button(text, cls, fn);
 const signedIn = () => !!(S.P && S.P.signedIn());
 const pieceOf = (id) => ((S.view && Array.isArray(S.view.pieces) ? S.view.pieces : []).find((p) => p.id === id) || null);
-const privateType = (t) => PRIVATE_TYPES.includes(t);
+const privateType = (t) => !!W && W.PRIVATE_TYPES.includes(t);
 function nameOf(id) { // his own words, on his own console; a private piece is said as one
   const p = pieceOf(id);
   if (!p) return 'A piece';
@@ -141,6 +93,14 @@ function failed(e) {
 }
 const pressed = (b, on) => { b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.classList.toggle('primary', on); }; // the existing look
 const isNetwork = (e) => !!e && typeof e.status !== 'number' && (navigator.onLine === false || e.name === 'TypeError');
+// console-wardrobe-words.js (REVIEW-D-1 split): imported on the first press that needs it (Start the camera, Choose a
+// photo), so the page's start never waits for it; a failed import is not kept (the next press tries again)
+let W = null, wordsLoad = null;
+const words = () => {
+  if (!wordsLoad) wordsLoad = import('./console-wardrobe-words.js').then((m) => { W = m; return m; }, (e) => { wordsLoad = null; throw e; });
+  return wordsLoad;
+};
+const NO_PART = 'This part couldn\u2019t load. Reload the page to try again.';
 
 // ---- the frame of the mode ---------------------------------------------------------------------------------------------
 const UI = {};
@@ -194,10 +154,11 @@ async function startLive() {
   const c = Cam();
   if (!c) return;
   clearScan();
-  const mine = S.seq;
+  const mine = S.seq, ready = words().catch(() => null);
   let view = null;
   try { view = await c.start({}); } catch (e) { say(UI.state, String((e && e.message) || failed(e)).slice(0, 200), 'bad'); paintActs(); return; }
   if (mine !== S.seq) { c.stop('panel'); return; }
+  if (!(await ready)) { c.stop('panel'); say(UI.state, NO_PART, 'bad'); paintActs(); return; }
   S.live = view;
   if (signedIn()) { try { await loadView(); } catch (e) { say(UI.state, failed(e), 'bad'); } } // his labels, before the first read
   if (mine !== S.seq) return;
@@ -230,8 +191,10 @@ async function choosePhoto() {
   const c = Cam();
   if (!c) return;
   stop();
+  const ready = words().catch(() => null); // started now, awaited after the picker: the tap opens the picker
   let file = null;
   try { file = await c.photo(); } catch (e) { say(UI.state, failed(e), 'bad'); return; }
+  if (file && !(await ready)) { say(UI.state, NO_PART, 'bad'); return; }
   if (!file || !/^image\//.test(file.type || '')) { if (file) say(UI.state, 'That is not a picture. Choose a JPEG or PNG photo.', 'bad'); return; }
   let bmp = null;
   try { bmp = await createImageBitmap(file); } catch (_) { say(UI.state, 'This picture can\u2019t be read here. Try a JPEG or PNG.', 'bad'); return; }
@@ -296,7 +259,7 @@ function readCodes(r) { // his labels become ids; anything else is only counted,
   if (!r || !r.ok) return;
   let foreign = 0;
   r.data.codes.forEach((c) => {
-    const id = c.format === 'qr_code' ? labelPiece(c.value, S.view && S.view.labels) : null;
+    const id = c.format === 'qr_code' ? W.labelPiece(c.value, S.view && S.view.labels) : null;
     if (id) { if (!S.found.has(id)) S.found.set(id, { how: 'qr', score: null, at: new Date().toISOString() }); } else foreign += 1;
   });
   if (foreign) { S.foreign = true; say(UI.state, FOREIGN); }
@@ -306,7 +269,7 @@ async function cardFor(cv, b) {
   const piece = crop(cv, b, PHOTO_SIDE), card = { box: b, crop: piece, v: null, cands: { top: [], twins: false }, colour: null, piece: null, kind: '', private: null };
   try {
     const e = await run('embed', piece);
-    if (e.ok) { card.v = e.data.v; card.cands = candidates(unb64(e.data.v), await printsFor(e.data.model), (id) => (pieceOf(id) || {}).type); }
+    if (e.ok) { card.v = e.data.v; card.cands = W.candidates(W.unb64(e.data.v), await printsFor(e.data.model), (id) => (pieceOf(id) || {}).type); }
   } catch (_) { /* no fingerprint here: the card offers kinds and taps only */ }
   if (S.flow === 'add') { try { const c = await run('colour', piece); if (c.ok) card.colour = c.data; } catch (_) {} }
   return card; // a label read is offered first, never chosen for him: his tap decides
@@ -323,7 +286,7 @@ async function printsFor(model) {
   if (model !== MODEL && model !== 'mnv2-fp32-1') return [];
   if (!S.prints || S.prints.model !== model) {
     const got = await M.api('/v1/wardrobe/fingerprints?model=' + model);
-    S.prints = { model, items: (got && Array.isArray(got.items) ? got.items : []).map((x) => ({ piece: x.piece, v: unb64(x.v) })) }; // never another model's
+    S.prints = { model, items: (got && Array.isArray(got.items) ? got.items : []).map((x) => ({ piece: x.piece, v: W.unb64(x.v) })) }; // never another model's
   }
   return S.prints.items;
 }
@@ -556,7 +519,7 @@ async function tag(card, box) {
 async function readLabel(cv, mine) {
   const r = await run('text', cv);
   if (mine !== S.seq) return;
-  const got = parseLabel(r && r.ok ? r.data.text : '');
+  const got = W.parseLabel(r && r.ok ? r.data.text : '');
   const box = mk('section', 'hp-sec');
   box.append(mk('h3', 'hp-h', 'What the label says'));
   const fields = [];

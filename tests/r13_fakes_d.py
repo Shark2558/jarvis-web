@@ -8,7 +8,8 @@
 #                                  route recording every call (status "executed"), fingerprints
 #                                  of three pilot pieces, the tag estimate with AI tagging on
 #   d_app() -> FastAPI             I0's fake app with D's routes first; wardrobe_add registers a
-#                                  piece in I0's store, a saved fingerprint is offered next time
+#                                  piece in I0's store, a saved fingerprint is offered next time;
+#                                  D's two split-out modules served until I1 lists them (asset_routes)
 #   python tests/r13_fakes_d.py <port>   serve it (uvicorn; JARVIS_* as the browser tests set)
 #   serve_d(token) -> (url, stop)  start that server for a browser test module, healthy
 #   Picture(w, h)                  a drawn picture (a surface, stripes, a QR, a face, a
@@ -22,6 +23,7 @@ import base64
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -40,12 +42,14 @@ SERVED_AT = ist(2026, 11, 16, 9, 30)
 
 @dataclass
 class FakeData:
-    """One part's `WardrobeData`: `items` documents for `UID`; delete empties them."""
+    """One part's `WardrobeData`: `items` documents for `UID`; delete empties them. `row` is the
+    Privacy row it says it belongs to (the contract's field proposed for I1); None: by name."""
 
     name: str
     items: list[dict[str, Any]] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
     fail: bool = False
+    row: str | None = None
 
     async def count(self, uid: str) -> int:
         if self.fail:
@@ -201,6 +205,29 @@ def d_routes(state: dict[str, Any], store: Any = None, clock: Any = None) -> API
     return r
 
 
+# D's two console modules split out at REVIEW-D-1 (each imported on first use by its parent). Until I1
+# lists them in `api/console.APP_ASSETS` (INTEGRATION-D section 6), this test server serves them the way
+# the app serves an asset; once listed, the app's own route answers and this one steps aside.
+NEW_ASSETS = ("console-vision-r13.js", "console-wardrobe-words.js")
+
+
+def asset_routes() -> APIRouter:
+    from fastapi.responses import FileResponse
+
+    from jarvis.api.console import APP_ASSETS
+
+    static = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
+    r = APIRouter()
+    for name in (n for n in NEW_ASSETS if n not in APP_ASSETS):
+
+        async def serve(name: str = name) -> FileResponse:
+            heads = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+            return FileResponse(static / name, media_type="application/javascript", headers=heads)
+
+        r.add_api_route(f"/static/{name}", serve, methods=["GET"], include_in_schema=False)
+    return r
+
+
 def d_state() -> dict[str, Any]:
     return {"tools": [], "fingerprints": [], "photos": [], "tags": [], "added": []}
 
@@ -234,7 +261,7 @@ def d_app() -> Any:
     clock.set(SERVED_AT)
     app = fake_app(store, clock)
     state = d_state()
-    app.router.routes[:0] = d_routes(state, store, clock).routes
+    app.router.routes[:0] = [*asset_routes().routes, *d_routes(state, store, clock).routes]
     app.state.r13_d = state
     return app
 
@@ -350,7 +377,6 @@ def serve_d(token: str) -> tuple[str, Any]:
     import subprocess
     import time
     import urllib.request
-    from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     with socket.socket() as s:

@@ -1,11 +1,12 @@
-// tests/fixtures/r13/pure.mjs -- R13 Part D: console-vision.js's WARDROBE-PURE region, run as it is in Node, on drawn
-// colour patches and recorded-shape model outputs (no model, no DOM). tests/test_r13_d_vision.py reads the JSON line.
+// tests/fixtures/r13/pure.mjs -- R13 Part D: console-vision-r13.js (the wardrobe tasks' plain arithmetic), imported as
+// the ES module it is, on drawn colour patches and recorded-shape model outputs (no model, no DOM).
+// tests/test_r13_d_vision.py reads the JSON line.
 //   node tests/fixtures/r13/pure.mjs <repo root>
 import { readFileSync } from 'node:fs';
 
-const src = readFileSync(process.argv[2] + '/src/jarvis/api/static/console-vision.js', 'utf8');
-const region = src.slice(src.indexOf('/*WARDROBE-PURE-BEGIN*/'), src.indexOf('/*WARDROBE-PURE-END*/'));
-const P = new Function(region + '\nreturn { COLOURS13, colourOf, faceBoxes, personBoxes, found, b64, quantize, ramp, silhouette, chw, MEAN13, STD13 };')();
+// the file's own text as a module (a data: URL is always ESM, whatever Node's detection of a .js file)
+const asModule = (path) => import('data:text/javascript;base64,' + Buffer.from(readFileSync(path, 'utf8')).toString('base64'));
+const P = await asModule(process.argv[2] + '/src/jarvis/api/static/console-vision-r13.js');
 
 const patch = (n, f) => { const out = []; for (let i = 0; i < n; i += 1) out.push(...f(i), 255); return out; };
 const solid = (c) => patch(400, () => c);

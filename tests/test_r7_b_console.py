@@ -363,8 +363,9 @@ def test_a_failed_media_import_is_not_kept_and_a_failed_script_is_removed() -> N
     mp = js[js.index("const mp = () =>") : js.index("// ---- the tasks ----")]
     assert ".catch(() => { mediapipe = null;" in mp
     assert "removeChild(s)" in js and "scripts.delete(src)" in js  # no second <script> on a retry
-    # a load says only "not installed" or "could not load": R7's four and R13's three models
-    assert js.count("load: guard(") == 7
+    # a load says only "not installed" or "could not load": R7's four, R13's three models and the
+    # colour task, which waits for its arithmetic (console-vision-r13.js, REVIEW-D-1 split)
+    assert js.count("load: guard(") == 8
     assert "window.addEventListener('pagehide', unload)" in js and "terminate()" in js
 
 

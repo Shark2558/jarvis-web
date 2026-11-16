@@ -69,7 +69,7 @@
    "changes": "None: served as upstream.",
    "output": "detection boxes, classes (COCO; person is 1), scores, count",
    "selfcheck": {
-    "input": "the drawn silhouette (console-vision.js SELFCHECK: a dark figure against a pale sky) as uint8[1, 300, 300, 3]",
+    "input": "the drawn silhouette (console-vision-r13.js silhouette(): a dark figure against a pale sky) as uint8[1, 300, 300, 3]",
     "class": 1,
     "score": 0.9449,
     "box": [

@@ -1,8 +1,8 @@
 // tests/fixtures/r13/models.mjs -- R13 Part D (docs/plans/r13-wardrobe.md D7, D8, "Browser" and INV-06): the three
 // wardrobe models on the VENDORED onnxruntime-web 1.30.0 (one thread, no proxy: the wake word's settings), driven by
-// the engine's OWN arithmetic (console-vision.js, the WARDROBE-PURE region, run here as it is) and its own
+// the engine's OWN arithmetic (console-vision-r13.js, imported as the module it is) and its own
 // references (SELF13). Every picture is drawn here: generated test patterns, never a photo, never a real face.
-//   node tests/fixtures/r13/models.mjs <repo root> [<vision js>]   -> one JSON line on stdout:
+//   node tests/fixtures/r13/models.mjs <repo root>   -> one JSON line on stdout:
 //   selfcheck {embed, face, person}   each model's fixed input gives SELF13's reference
 //   face / clean_face                 a drawn face is found once; a laid-out shirt has none
 //   person / clean_person             a drawn silhouette is a "person"; the shirt is not
@@ -13,11 +13,10 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const root = process.argv[2];
-const visionPath = process.argv[3] || root + '/src/jarvis/api/static/console-vision.js';
 const STATIC = root + '/src/jarvis/api/static';
-const src = readFileSync(visionPath, 'utf8');
-const region = src.slice(src.indexOf('/*WARDROBE-PURE-BEGIN*/'), src.indexOf('/*WARDROBE-PURE-END*/'));
-const P = new Function(region + '\nreturn { ramp, silhouette, topScores, near, chw, chwFace, rgb, b64, faceBoxes, personBoxes, found, MEAN13, STD13 };')();
+const src = readFileSync(STATIC + '/console-vision.js', 'utf8');
+const asModule = (path) => import('data:text/javascript;base64,' + Buffer.from(readFileSync(path, 'utf8')).toString('base64'));
+const P = await asModule(STATIC + '/console-vision-r13.js');
 const SELF13 = JSON.parse(src.slice(src.indexOf('/*SELF13-BEGIN*/') + 16, src.indexOf('/*SELF13-END*/')));
 
 const ort = await import(STATIC + '/vendor/ort/ort.wasm.min.mjs');

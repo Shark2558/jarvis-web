@@ -4,7 +4,7 @@
 //   stdin  {source?, view, prints?, vision: {person, face, codes, embed, colour, text, delay_ms}, missing: [task],
 //           signedIn, noAi, offline, steps: [{op: press|select|type|photo|choose|start|stop|wait|vision|online|text}]}
 //   stdout {steps: [{op, text, state}], net: [{method, path, body}], door: [{fn, piece, view, w, h}],
-//           runs: [{task, src}], camera: {starts, stops, live}, crops: [{w, h, from}]}
+//           runs: [{task, src}], camera: {starts, stops, live}, crops: [{w, h, from}], imported: [spec]}
 // The spies prove what left the "phone": every M.api request with its body, every door call with the crop's size,
 // and which canvas each vision task ran on (the checks and the crop must share ONE bitmap). ASCII only.
 'use strict';
@@ -12,6 +12,18 @@ const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
 
+// The scan module imports console-wardrobe-words.js on its first press: a vm script's import() needs Node's
+// --experimental-vm-modules, so the harness runs itself again with it when started without (stdin passed on).
+if (!process.execArgv.includes('--experimental-vm-modules')) {
+  const again = require('child_process').spawnSync(process.execPath, ['--no-warnings', '--experimental-vm-modules', __filename],
+    { input: fs.readFileSync(0), maxBuffer: 64 * 1024 * 1024 });
+  process.stdout.write(again.stdout || '');
+  process.stderr.write(again.stderr || '');
+  process.exit(again.status === null ? 1 : again.status);
+}
+const STATIC = path.join(__dirname, '..', '..', '..', 'src', 'jarvis', 'api', 'static');
+// a module's own text, imported as the ES module it is (a data: URL is always ESM)
+const asModule = (file) => import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(path.join(STATIC, file), 'utf8')).toString('base64'));
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const settle = async (n = 30) => { for (let i = 0; i < n; i += 1) await new Promise((r) => setImmediate(r)); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -135,7 +147,13 @@ const ctx = {
   createImageBitmap: async (f) => ({ width: 1600, height: 1200, scene: SCENE, uid: 'bitmap', close() {} }),
 };
 ctx.globalThis = ctx;
-const source = input.source || fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src', 'jarvis', 'api', 'static', 'console-wardrobe-scan.js'), 'utf8');
+const source = input.source || fs.readFileSync(path.join(STATIC, 'console-wardrobe-scan.js'), 'utf8');
+const imported = []; // which modules the scan module imported, in order
+async function importer(spec) { // only its own sibling: anything else is refused
+  imported.push(spec);
+  if (input.noWords || spec !== './console-wardrobe-words.js') throw new Error('Failed to fetch dynamically imported module: ' + spec);
+  return asModule('console-wardrobe-words.js');
+}
 
 function find(label, exact = true) {
   return host.all().find((e) => e.tagName === 'BUTTON' && !hiddenIn(e) && !e.disabled && (exact ? e.textContent === label : e.textContent.startsWith(label)));
@@ -157,9 +175,10 @@ async function step(s) {
 
 (async () => {
   vm.createContext(ctx);
-  vm.runInContext(source, ctx, { filename: 'console-wardrobe-scan.js' });
+  vm.runInContext(source, ctx, { filename: 'console-wardrobe-scan.js', importModuleDynamically: importer });
   for (const s of input.steps || []) await step(s);
   await settle();
   out.final = text(host);
+  out.imported = imported;
   process.stdout.write(JSON.stringify(out));
 })().catch((e) => { process.stdout.write(JSON.stringify({ error: String(e && e.stack || e) })); process.exitCode = 1; });

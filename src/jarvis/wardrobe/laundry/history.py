@@ -61,7 +61,7 @@ def piece_history(
     view: WardrobeView, items: Sequence[HistoryItem], pid: str, now: datetime, zone: ZoneInfo
 ) -> dict[str, Any]:
     p = view.pieces[pid]
-    place = view.places.get(p.place or "")
+    place = None if p.private else view.places.get(p.place or "")  # D10: a private piece's slot
     ordered = sorted(items, key=lambda h: h.event.sort_key())
     setting = [h for h in ordered if h.mark == "applied" and h.event.kind in STATE_SETTING]
     began = setting[-1].event.at if setting else (p.updated_at or now)

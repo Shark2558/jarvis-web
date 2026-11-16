@@ -41,17 +41,17 @@ def fence(text: str) -> str:
     return wrap_external(plain, source=SOURCE, limit=LABEL_MAX)
 
 
+def fenced(out: dict[str, Any]) -> dict[str, Any]:
+    """A `model_view` with his words (the label, the place's label) fenced, masked when spoken."""
+    return {k: fence(v) if k in ("label", "place") and v else v for k, v in out.items()}
+
+
 def shown(view: WardrobeView, pid: str) -> dict[str, Any]:
     p = view.pieces.get(pid)
     if p is None:
         return {"id": pid}
     place = view.places.get(p.place or "")
-    out = model_view(p, place.label if place else None)
-    if out.get("label"):
-        out["label"] = fence(out["label"])
-    if out.get("place"):
-        out["place"] = fence(out["place"])
-    return out
+    return fenced(model_view(p, place.label if place else None))
 
 
 def _pieces(view: WardrobeView, ids: Any) -> list[Piece]:
@@ -124,4 +124,4 @@ def send(view: WardrobeView | None, a: dict[str, Any]) -> str:
     return f"Note that {what} went to an outside laundry{when}"
 
 
-__all__ = ["GENERIC", "SOURCE", "correct", "fence", "move", "review", "send", "shown"]
+__all__ = ["GENERIC", "SOURCE", "correct", "fence", "fenced", "move", "review", "send", "shown"]

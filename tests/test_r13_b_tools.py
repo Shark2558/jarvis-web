@@ -141,6 +141,21 @@ async def test_one_pieces_history_through_the_status_tool() -> None:
     assert res.result["state"] == "in_laundry" and res.result["step"] == "In laundry since 09:01"
 
 
+async def test_m5_one_pieces_history_fences_its_place_and_a_private_piece_has_none() -> None:
+    r = await rig()
+    out = (await r.tool("laundry_status", piece=BLUE_SHIRT)).result
+    for shown in (out["place"], out["piece"]["place"], out["piece"]["label"]):
+        assert shown.startswith(FENCE_PREFIX)  # his words: data, never instructions
+    assert "Shirt rack" in out["place"] and "Shirt rack" in out["piece"]["place"]
+    vest = (await r.tool("laundry_status", piece=VEST_A)).result
+    assert vest["place"] == "" and vest["piece"] == {
+        "id": VEST_A,
+        "slot": "base layer",
+        "state": "ready",
+        "words": "a private basic",
+    }
+
+
 async def test_review_list_resolve_and_blind_through_the_tool() -> None:
     r = await rig()
     from r13_fakes_b import TRAY

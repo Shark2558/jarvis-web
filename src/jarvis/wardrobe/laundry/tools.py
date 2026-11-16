@@ -28,7 +28,7 @@ from jarvis.tools.context import require_tool_context
 from jarvis.tools.provenance import vouch
 from jarvis.tools.taint import spoken_in_context
 from jarvis.wardrobe.laundry import cards, checks, history, texts
-from jarvis.wardrobe.laundry.cards import fence, shown
+from jarvis.wardrobe.laundry.cards import fence, fenced, shown
 from jarvis.wardrobe.laundry.flows import Desk, Done
 from jarvis.wardrobe.laundry.store import LaundryUnavailable, Origin
 from jarvis.wardrobe.model import WardrobeView
@@ -76,8 +76,9 @@ class LaundryAPI:
 
     async def _one(self, uid: str, a: dict[str, Any]) -> Any:
         got = await self._d.history(uid, piece=a.get("piece"), query=a.get("query"))
-        if got.get("found") and isinstance(got.get("piece"), dict) and "label" in got["piece"]:
-            got["piece"] = {**got["piece"], "label": fence(got["piece"]["label"])}
+        if got.get("found"):  # review M5: his place label too, fenced (masked when spoken)
+            place = got.get("place") or ""
+            got = {**got, "piece": fenced(got["piece"]), "place": fence(place) if place else ""}
         return vouch(got, True)
 
     async def _list(self, uid: str) -> Any:

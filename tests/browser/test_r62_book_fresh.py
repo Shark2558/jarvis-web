@@ -118,3 +118,25 @@ def test_a_correction_that_lands_after_the_panel_closed_writes_nothing(
         _clean(c)
     finally:
         c.close()
+
+
+# ---- L3: tapping the mic stops a reply that is still being narrated --------------------------------
+def test_tapping_the_mic_stops_the_reply_still_being_spoken(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _open(browser, server_url, token)
+    try:
+        c.page.evaluate(NARRATING)
+        before = len(c.page.evaluate("window.__spoken"))
+        c.page.locator("#shQ").fill("How is the vault built?")
+        c.page.locator("#shSend").click()
+        c.page.wait_for_function(f"() => window.__spoken.length > {before}")
+        cancels = c.page.evaluate("window.__cancels")
+        c.page.locator("#shMic").click()
+        c.page.wait_for_function(f"() => window.__cancels > {cancels}", timeout=3000)
+        c.page.wait_for_function(PRESSED.format("true"))
+        c.page.wait_for_timeout(300)  # the follow-up line does not start over the listening
+        assert len(c.page.evaluate("window.__spoken")) == before + 1
+        _clean(c)
+    finally:
+        c.close()

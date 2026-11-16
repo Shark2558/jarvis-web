@@ -30,7 +30,7 @@
   const Show = () => window.JarvisBookShow;
   const V = () => window.JarvisBookVoice;
   const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null,
-    canRec: false, quiet: 0, owner: false, browser: true };
+    canRec: false, quiet: 0, owner: false, browser: true, hush: 0 };
   const SILENT_MS = 1500; // no frame this long after the microphone opened: no sound is coming
   const HEAR = {
     listening: 'Listening\u2026 tap the mic again to stop.',
@@ -96,7 +96,7 @@
     if (!text || S.busy || S.left === 0) return;
     if (S.recording) stopRec(true); // code review 1, H1: a typed question wins; the recording is dropped, nothing sent
     S.busy = true; $('shQ').value = ''; row('user', text); leftWords(); micState();
-    const gen = S.gen; // the panel closed (Finish, End, the close) while waiting: drop what comes back
+    const gen = S.gen, hush = S.hush; // the panel closed (Finish, End, the close) while waiting: drop what comes back
     const thinking = row('jarvis', '', 'pending'); thinking.firstChild.classList.add('typing');
     thinking.firstChild.append(mk('span', 'lbl', 'Thinking'));
     try {
@@ -109,7 +109,7 @@
       S.busy = false; leftWords(); micState(); $('shQ').focus();
       const sh = Show();
       if (sh && r.id) await sh.say(r.id, r.reply);
-      if (gen !== S.gen) return;
+      if (gen !== S.gen || hush !== S.hush) return; // closed, or the mic was tapped: no follow-up over the listening
       if (r.follow) { row('jarvis', r.follow); const id = S.lines.anything_else ? S.lines.anything_else.id : ''; if (sh && id) await sh.say(id, r.follow); }
     } catch (e) {
       thinking.remove(); S.busy = false; leftWords();
@@ -149,6 +149,7 @@
     if (!R || S.busy || !S.canRec) return;
     if (S.recording) { if (S.browser) V().listen.stop(); else await sendRec(); return; }
     if (A && A.locked()) { refused('mic_off'); return; } // nothing opens while it is off
+    S.hush += 1; V().stop(); // code review 2, L3: a reply still being spoken stops, so the mic never hears it
     if (S.browser) { listenHere(); return; }
     const gen = S.gen; // the panel closed (a jump, End, the close) while the microphone was starting: it never records
     try {

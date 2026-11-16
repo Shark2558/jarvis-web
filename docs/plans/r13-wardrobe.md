@@ -45,7 +45,8 @@ how each finding was handled" near the end) and is Ready for I0.
    never get one; they appear only in your own Wardrobe checklist, never by name in an alert, on
    Telegram, on the lock screen or in what the AI is shown. JARVIS checks each photo on the phone
    for a person or a face and refuses it if it finds one; the check can miss a hand or a turned
-   face, so look before you save, and delete a photo from Privacy if one slips through. A saved
+   face, so look before you save, and delete a photo from Privacy if one slips through. The check
+   runs in your phone's page: the server cannot decode a picture, so it does not repeat it. A saved
    photo is cropped to the piece, locked with JARVIS's keyring and listed in the Privacy panel with
    export and delete. JARVIS keeps nothing about anyone else on purpose: no names, no faces.
 7. **Archive, restore, merge and remove always ask you first** (a card); a removed piece waits 30
@@ -532,7 +533,12 @@ folder, the files and the R7 test edits (`BASE13 + '…'` beside `BASE + '…'`)
   hang it, and take the photo again." A QR read or an on-device match that sends only ids still makes
   its event (a shirt held over the basket shows an arm). The checks and the crop use **one bitmap**;
   "Choose a photo" gets the same redraw and checks. Without the two model files, saving a photo is off
-  ("not installed") and taps and scans still work. A test hook can only add refusals.
+  ("not installed") and taps and scans still work. A test hook can only add refusals. **I1 (security
+  review L2): the check is the console's, not the server's.** The server cleans a JPEG by its structure
+  and never decodes it, so it cannot see a person or a face. A caller that holds the owner's token and
+  skips the console (a script, an altered page) can post a photo to `/photos` or `/tag` without the
+  check. That caller is the owner, so this is not an attack, but "never saved, tagged or sent" is a
+  property of the console; D's static and browser tests are the control.
 - **The crop**: ≤ `wardrobe_photo_side` (512) px, JPEG quality 0.8 (≈ 35 KB), made in memory and handed
   to **the one door**: I0 adds `wardrobe(blob, {piece, view})` and `tag(blob, {piece})` to
   `console-r7-send.js`, which count in "Pictures sent from this device today" and post to
@@ -729,6 +735,14 @@ Privacy rows (section "Wardrobe", D's `wardrobe/phone/privacy.py` over each part
 source saying its row): "Wardrobe pieces and places", "Laundry and wear history", "Outfit plans" (C's own
 row since I1: a key change costs plans only), "Wardrobe photos and fingerprints",
 "Only on this device: the Wardrobe mode's last choices"; export, and delete with the passkey.
+**I1 (security M1; code review).** A row never says "Nothing kept yet" for data that is on disk but
+can't be opened (no keyring, a failed setup, a changed key). A, B and C answer alike: **count and export
+say "Couldn't check right now" and delete still erases what is on disk**, by path and with no key,
+the index last (a part that is off or failed gets a stand-in, `wardrobe/kept.py`; A's log pages carry
+a plain `owner` field so they are found without the index). The counts are what is kept: archived and
+merged pieces, closed laundry batches (kept 90 days with his shop label) and a calendar choice with no
+plans count and make the row deletable. "Wardrobe pieces and places" erases every wardrobe photo and
+fingerprint too, and says so.
 
 **D21 · Version, persona, guide.** `__version__ = "13.0.0"` at I0 (lower than 14.0.2: nothing compares
 versions, as with R7's 7.0.0 after 11.1.1); the four pins move. Persona **p13.0** at I1 (pinned in 21
@@ -792,7 +806,7 @@ and 60 reads a minute per owner), and answers plain words.
 | `POST /v1/wardrobe/tag` · `GET …/tag/estimate` | A | D7's AI tag (the door) · its ₹ |
 | `GET /v1/wardrobe/labels.svg` · `POST …/labels` | A | the sheet · assign a label to a piece |
 | `GET /v1/wardrobe/backup` · `POST …/restore/check` · `POST …/restore` | A | D17 |
-| `GET /v1/wardrobe/pilot` | A | the pilot counts (e2e 8), counts only |
+| `GET /v1/wardrobe/pilot` | A | the pilot counts (e2e 8), counts only; `suggested` and `unavailable_suggested` are `null`: not measured in v13.0.0 (no suggestion log); 503 when unreadable |
 | `POST /v1/wardrobe/tools/{tool}` | A, B, C | the panel's changes through `gateway.execute` (D1) |
 | `GET /v1/laundry` · `GET /v1/laundry/review` | B | the laundry list, loads, batches · the review queue |
 | `GET /v1/outfits` · `GET /v1/outfits/calendars` · `PUT /v1/outfits/settings` | C | plans and suggestions · his calendars (governed read) · calendar, fields, lead, auto-swap |
@@ -1036,7 +1050,11 @@ details; deleting all wardrobe photos leaves the catalog usable; the avatar half
 measurements, from the events and the plan log (A's `GET /v1/wardrobe/pilot`, counts only):
 - item-ID match rate = scans where his tap chose candidate 1 ÷ scans with a candidate;
 - wrong status changes = corrections of state events;
-- unavailable pieces suggested = suggested pieces not eligible at suggestion time;
+- unavailable pieces suggested = suggested pieces not eligible at suggestion time. **Not measured in
+  v13.0.0** (Workshop decision, I1): C keeps no log of what each suggestion named, so the pilot's
+  `suggested` and `unavailable_suggested` read `null` (never 0) and the pass line's second half is
+  checked by the eval, which counts the live suggestions (case 8, with a control that makes the engine
+  suggest a basket piece). A pilot that can't be read is a 503, not zeros;
 - corrections per use = corrections ÷ events.
 
 **Pass line (owner question 14's default): unavailable pieces suggested = 0, and wrong status changes ≤ 1
@@ -1225,4 +1243,4 @@ Run's egress for `asia-south1`; Telegram and Web Push delivery.
 |---|---|---|---|---|
 | v13.0.1 | 15 Nov 2026, 16:42 IST | R13 | First edition, from the code at `9a8392b`: the owner's summary with ₹, the 54 use cases mapped to four parts and all 80 IDs placed (R13, R13.1, Later, Declined), code facts with file:line, the three model files downloaded, hash-checked and run on the vendored runtime, D0–D22, the data model, 18 tools, the I0 seam list, the part split with OPS-03 to A and LND-16 to C, a test per acceptance check, the end-to-end, browser and needles suites with controls, size guards, risks, owner questions, the exit check | 🛠 Mark XXI |
 | v13.0.2 | 15 Nov 2026, 17:28 IST | R13 | Plan review 1 written in (H1–H6, M1–M15, L1–L10 but L3, which is declined with its reason); Status Ready. The wear lifecycle and the hand-off between events (H1); AI tagging gated by the piece record, the same bitmap's check, a named ₹ counter and `BrainEyes` (H2); the restore's body cap, 25 MB, streaming, check-then-confirm and chunked idempotent writes, `app.py` 732 (H3); the `transact` contract with holds and their entries in one commit and one conformance test (H4); the HTTP contract and a fake server at I0 (H5); R7's pixel guard widened in the open with a `PANELS` list and C63's new words (H6); one clock rule, a pure fold, duplicates, the private-data sinks, parsed labels and QR codes, the trust rule, Things and wardrobe routing, `vision/assets.py`, uint8 fingerprints with self-checks and the fp32 cut's sum, the byte guard and a 400 cap, `ctx.now()`, the staged eval gate and e2e 8's pass line, calendar reads and cancelled events, the check gating only what is kept or sent, the summary's limits, SSD's Apache-2.0 upstream (M1–M15); tomorrow's weather in C's own document, no R11 file edited (L4); a "Plan review 1" table | 🛠 Mark XXI |
-| v13.0.3 | 16 Nov 2026, 23:30 IST | R13 | I1: the owner's decision that a declined calendar event still gets its outfit plan (D13); `wardrobe_max_pieces` 50 to 500 (D1's list: maximal pieces fit only to 500); the Wardrobe Privacy section has five rows (Outfit plans on its own, so a key change costs plans only); persona p13.0 as built | 🛠 Mark XXI |
+| v13.0.3 | 16 Nov 2026, 23:30 IST | R13 | I1 and its fixes (`docs/plans/r13-integration/I1-NOTES.md` section Fix: Privacy counts and deletes what it can't open, a merge keeps privacy, no words about a private piece in a card, the pilot's suggestion counts are `null`, a batch with an archived piece closes, the console's face check is the console's): I1: the owner's decision that a declined calendar event still gets its outfit plan (D13); `wardrobe_max_pieces` 50 to 500 (D1's list: maximal pieces fit only to 500); the Wardrobe Privacy section has five rows (Outfit plans on its own, so a key change costs plans only); persona p13.0 as built | 🛠 Mark XXI |

@@ -62,3 +62,12 @@ def test_the_outfit_plans_have_their_own_privacy_row_and_a_key_change_note() -> 
 
 def test_the_plan_records_the_owners_decision_on_declined_events() -> None:
     assert re.search(r"16 Nov.*declined.*event.*(keep|still).*plan", PLAN, re.S | re.I)
+
+
+def test_the_fixer_words_are_in_the_plan_and_the_guide() -> None:
+    """I1 fixes: L2's honest note, the pilot's 'not measured', and the Privacy rule (M1)."""
+    for text in (PLAN, GUIDE):
+        assert "cannot decode a picture" in text  # the face check is the console's (L2)
+        assert "not measured in v13.0.0" in text or "Not measured in\n  v13.0.0" in text
+    assert "Couldn't check right now" in PLAN and "delete still erases what is on disk" in PLAN
+    assert "never \"Nothing kept yet\"" in GUIDE

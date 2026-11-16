@@ -9,6 +9,7 @@
 # inside the free allowance and is never charged. Fixed clocks; made-up words only.
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -22,6 +23,7 @@ from book_show_fakes import Clock
 from pydantic import ValidationError
 from voice_fakes import FakeSTT, FakeTokens, FakeTTS
 
+from jarvis.billing.meter import UsageUnreadable
 from jarvis.billing.service import BudgetUnavailable, FreeAllowanceUsed
 from jarvis.buildbook import hear
 from jarvis.buildbook.owner import (
@@ -35,6 +37,7 @@ from jarvis.buildbook.owner import (
 from jarvis.config import Settings
 from jarvis.storage.docs import MemoryDocs
 from jarvis.voice.catalogue import Price, PriceList
+from jarvis.voice.ports import VoiceUnavailable
 from jarvis.voice.service import SpeakRequest, VoiceEngines, VoiceService
 from jarvis.voice.settings import VoiceSettingsStore
 
@@ -384,15 +387,71 @@ async def test_a_free_only_question_inside_the_allowance_goes_ahead_free() -> No
     assert len(stt.calls) == 1 and view.cost_inr == 0
 
 
-async def test_an_unreadable_allowance_fails_closed_for_free_only() -> None:
-    svc = _voice(FakeSTT(), FakeTTS())
+@pytest.mark.parametrize("error", [RuntimeError("down"), UsageUnreadable("bad counter")])
+async def test_an_unreadable_allowance_fails_closed_for_free_only(error: Exception) -> None:
+    stt = FakeSTT()
+    svc = _voice(stt, FakeTTS())
 
-    async def broken(month: str) -> Any:
-        raise RuntimeError("down")
+    async def broken(**_: Any) -> Any:
+        raise error
 
-    svc.billing.meter.allowance = broken  # type: ignore[method-assign]
+    svc.billing.meter.reserve_units = broken  # type: ignore[method-assign]
     with pytest.raises(BudgetUnavailable):
-        await svc.billing.ensure_free(key=svc.prices.stt.key, units=1.0, free_units=3240.0)
+        await svc.transcribe(UID, wav(1.0), owner_phrases=False, free_only=True)
+    assert stt.calls == []
+
+
+# ---- the end of the allowance (code review 2, L4): check and hold are one step -------------------
+async def _free_only_ask(svc: VoiceService, uid: str) -> str:
+    try:
+        await svc.transcribe(uid, wav(1.0), owner_phrases=False, free_only=True)
+    except FreeAllowanceUsed:
+        return "used"
+    return "heard"
+
+
+async def test_two_guests_at_the_end_of_the_allowance_cannot_both_get_through() -> None:
+    """Two owners' calls share the deployment's allowance (the lock is per owner). With one whole
+    step left, exactly one goes ahead; the other never reaches Google and nobody is priced."""
+    stt = FakeSTT(delay=0.02, billed=15.0)
+    svc = _voice(stt, FakeTTS())
+    await _used(svc, svc.prices.stt.free_units - 15)
+    got = await asyncio.gather(_free_only_ask(svc, UID), _free_only_ask(svc, "other-owner"))
+    assert sorted(got) == ["heard", "used"] and len(stt.calls) == 1
+    assert [(await svc.billing.month(u)).inr_total for u in (UID, "other-owner")] == [0.0, 0.0]
+    used = (await svc.billing.allowance((svc.prices.stt.key,))).used(svc.prices.stt.key)
+    assert used == svc.prices.stt.free_units  # the one call counted once, not twice
+
+
+async def test_a_free_only_call_counts_its_whole_step_once() -> None:
+    svc = _voice(FakeSTT(billed=15.0), FakeTTS())
+    await svc.transcribe(UID, wav(1.0), owner_phrases=False, free_only=True)
+    key = svc.prices.stt.key
+    assert (await svc.billing.allowance((key,))).used(key) == 15.0
+
+
+@pytest.mark.parametrize(("maybe_billed", "counted"), [(False, 0.0), (True, 15.0)])
+async def test_a_failed_free_only_call_counts_only_what_google_may_have_billed(
+    maybe_billed: bool, counted: float
+) -> None:
+    svc = _voice(FakeSTT(fail=VoiceUnavailable("timeout", maybe_billed=maybe_billed)), FakeTTS())
+    with pytest.raises(VoiceUnavailable):
+        await svc.transcribe(UID, wav(1.0), owner_phrases=False, free_only=True)
+    key = svc.prices.stt.key
+    assert (await svc.billing.allowance((key,))).used(key) == counted
+    assert (await svc.billing.month(UID)).inr_total == 0.0
+
+
+async def test_free_only_narration_counts_its_characters_once() -> None:
+    tts = FakeTTS()
+    svc = _voice(FakeSTT(), tts)
+    await svc.speak(UID, SpeakRequest(text="Welcome to the tour."), free_only=True)
+    spoken = len(tts.calls[0]["text"])
+    counted = [
+        (await svc.billing.allowance((p.key,))).used(p.key)
+        for p in (svc.prices.chirp3_hd, svc.prices.studio)
+    ]
+    assert sorted(counted) == [0.0, float(spoken)]
 
 
 # ---- POST /v1/book/show/heard: the browser's words, corrected for free ---------------------------

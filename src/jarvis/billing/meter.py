@@ -314,6 +314,40 @@ class UsageMeter:
 
         return await self._d.transaction(fn)
 
+    async def reserve_units(
+        self, *, key: str, units: float, free_units: float, now: datetime
+    ) -> bool:
+        """Hold `units` of the deployment's free allowance, check and count in ONE transaction
+        (R6.2, code review 2 L4): True when `used + units` fits in `free_units` (now counted),
+        False when it doesn't (nothing written). The hold is the count: a free-only call is
+        never priced. UsageUnreadable (writing nothing) when the counter can't be read."""
+        if not _UNIT_KEY.fullmatch(key):
+            raise ValueError("invalid unit key")
+        month = self.allowance_month_of(now)
+        path = self._allowance_path(month)
+
+        async def fn(tx: DocTx) -> bool:
+            allow = decode_allowance(await tx.get(path), month)
+            if allow.used(key) + units > free_units:
+                return False
+            tx.set(path, encode_allowance(allow.plus(key, units), now))
+            return True
+
+        return await self._d.transaction(fn)
+
+    async def release_units(self, *, key: str, units: float, now: datetime) -> None:
+        """Give back a hold whose call was never billed (never below zero)."""
+        if not _UNIT_KEY.fullmatch(key):
+            raise ValueError("invalid unit key")
+        month = self.allowance_month_of(now)
+        path = self._allowance_path(month)
+
+        async def fn(tx: DocTx) -> None:
+            allow = decode_allowance(await tx.get(path), month)
+            tx.set(path, encode_allowance(allow.plus(key, -min(units, allow.used(key))), now))
+
+        await self._d.transaction(fn)
+
 
 __all__ = [
     "ALLOWANCE_TZ",

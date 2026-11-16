@@ -415,21 +415,24 @@ class VoiceService:
             self._locks[(uid, api)] = lock
         return lock
 
-    async def _gate(
-        self, uid: str, price: Price, units: float, *, free_only: bool, step: float = 1.0
-    ) -> None:
+    async def _gate(self, uid: str, price: Price, units: float, *, free_only: bool) -> float:
         """The spending gate. `free_only` (R6.2 decision 4, a build book guest's cloud question
-        or narration): only while the free allowance covers the call rounded up to a whole
-        billing `step`, never priced."""
+        or narration): the free allowance is HELD for the call, a recognition rounded up to a
+        whole billing step (check and hold in one transaction), so it is never priced; returns
+        the units held, 0.0 for an ordinary call."""
         if free_only:
+            step = FREE_ONLY_STEP_S if price is self.prices.stt else 1.0
             whole = math.ceil(units / step) * step
-            await self.billing.ensure_free(key=price.key, units=whole, free_units=price.free_units)
-            return
+            await self.billing.reserve_free(key=price.key, units=whole, free_units=price.free_units)
+            return whole
         await self.billing.ensure_units_allowed(
             uid, key=price.key, units=units, free_units=price.free_units
         )
+        return 0.0
 
-    async def _meter(self, uid: str, price: Price, units: float) -> UnitCharge:
+    async def _meter(self, uid: str, price: Price, units: float, held: float = 0.0) -> UnitCharge:
+        if held:  # a free-only call: the hold already counted it, nothing is priced
+            return UnitCharge(units=held)
         return await self.billing.record_units(
             uid,
             key=price.key,
@@ -439,20 +442,34 @@ class VoiceService:
             label=METER_LABEL,
         )
 
+    async def _unhold(self, price: Price, held: float) -> None:
+        """A free-only call that Google did not bill gives its hold back."""
+        if held:
+            await self.billing.release_free(key=price.key, units=held)
+
     async def _engine(
-        self, api: Api, uid: str, price: Price, estimate: float, call: Callable[[], Awaitable[T]]
+        self,
+        api: Api,
+        uid: str,
+        price: Price,
+        estimate: float,
+        call: Callable[[], Awaitable[T]],
+        held: float = 0.0,
     ) -> T:
         """One engine call. If it fails after the request may have reached Google, its estimate
-        is metered (Google may bill it); a clean error answer is not."""
+        is metered (Google may bill it); a clean error answer is not, and a free-only hold on it
+        is given back."""
         try:
             return await call()
         except VoiceUnavailable as exc:
             self._note(api, exc)
             if exc.maybe_billed:
-                await self._meter(uid, price, estimate)
+                await self._meter(uid, price, estimate, held)
+            else:
+                await self._unhold(price, held)
             raise
         except asyncio.CancelledError:  # the owner went away mid-call: Google may have it
-            await self._meter(uid, price, estimate)  # shielded: completes despite the cancel
+            await self._meter(uid, price, estimate, held)  # shielded: completes despite the cancel
             raise
 
     async def speak(self, uid: str, req: SpeakRequest, *, free_only: bool = False) -> Speech:
@@ -466,7 +483,7 @@ class VoiceService:
         price = self.prices.tts(voice.type)
         chars = len(spoken)
         async with self._lock(uid, "tts"):
-            await self._gate(uid, price, chars, free_only=free_only)
+            held = await self._gate(uid, price, chars, free_only=free_only)
             audio = await self._engine(
                 "tts",
                 uid,
@@ -475,8 +492,9 @@ class VoiceService:
                 lambda: engines.tts.synthesize(
                     spoken, voice=voice.id, language=voice.language, rate=rate
                 ),
+                held,
             )
-            charge = await self._meter(uid, price, chars)
+            charge = await self._meter(uid, price, chars, held)
         log.info(
             "voice: spoke",
             extra={"chars": chars, "voice": voice.id, "cost_inr": round(charge.inr, 4)},
@@ -492,6 +510,7 @@ class VoiceService:
         audio: Audio,
         hints: tuple[str, ...],
         has_owner_words: bool,
+        held: float = 0.0,
     ) -> Transcript:
         """One recognition. If Google refuses the request while it carries the owner's words, try
         once more with the base hints alone, so one bad word cannot stop every transcription."""
@@ -502,12 +521,17 @@ class VoiceService:
             )
 
         try:
-            return await self._engine("stt", uid, price, estimate, call(hints))
+            return await self._engine("stt", uid, price, estimate, call(hints), held)
         except VoiceRejected:
             if not has_owner_words:
+                await self._unhold(price, held)
                 raise
         log.warning("voice: owner words were refused; retrying with the base hints only")
-        return await self._engine("stt", uid, price, estimate, call(self.hints_for(())))
+        try:
+            return await self._engine("stt", uid, price, estimate, call(self.hints_for(())), held)
+        except VoiceRejected:
+            await self._unhold(price, held)
+            raise
 
     async def transcribe(
         self,
@@ -532,13 +556,13 @@ class VoiceService:
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …
         async with self._lock(uid, "stt"):
-            await self._gate(uid, price, estimate, free_only=free_only, step=FREE_ONLY_STEP_S)
+            held = await self._gate(uid, price, estimate, free_only=free_only)
             t = await self._recognise(
-                engines, uid, price, estimate, audio, hints, bool(owner) or bool(turn)
+                engines, uid, price, estimate, audio, hints, bool(owner) or bool(turn), held
             )
             # … billed on what Google says it billed (totalBilledTime), when it says
             billed = t.billed_seconds if t.billed_seconds is not None else estimate
-            charge = await self._meter(uid, price, billed)
+            charge = await self._meter(uid, price, billed, held)
         text = t.text.strip()
         log.info(
             "voice: transcribed",

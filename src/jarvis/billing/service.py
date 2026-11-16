@@ -296,14 +296,32 @@ class Billing:
                 ),
             )
 
-    async def ensure_free(self, *, key: str, units: float, free_units: float) -> None:
-        """Free-only (R6.2 decision 4): the call goes ahead only while the deployment's free
-        allowance still covers `units`, whatever the limit; never a priced call.
-        FreeAllowanceUsed when it doesn't; BudgetUnavailable when the counter can't be read."""
-        used = (await self.allowance((key,))).used(key)
-        if used + units > free_units:
+    async def reserve_free(self, *, key: str, units: float, free_units: float) -> None:
+        """Free-only (R6.2 decision 4): hold `units` of the deployment's free allowance, checked
+        and counted in one transaction, so two calls at the end of it cannot both pass; the call
+        is never priced. FreeAllowanceUsed when it doesn't fit; BudgetUnavailable (fail closed)
+        when the counter can't be read."""
+        try:
+            fits = await self.meter.reserve_units(
+                key=key, units=units, free_units=free_units, now=self.clock()
+            )
+        except UsageUnreadable:
+            log.error("ALLOWANCE COUNTER UNREADABLE; free-only voice stays off", extra={"key": key})
+            raise BudgetUnavailable(MSG_ALLOWANCE_UNREADABLE) from None
+        except Exception as exc:  # noqa: BLE001 — storage down: say so
+            log.error("allowance unreadable", extra={"reason": type(exc).__name__})
+            raise BudgetUnavailable(MSG_USAGE_DOWN) from None
+        if not fits:
             log.info("free allowance used up; a free-only voice call refused", extra={"key": key})
             raise FreeAllowanceUsed()
+
+    async def release_free(self, *, key: str, units: float) -> None:
+        """Give back a hold whose call was never billed. Never raises (an unreleased hold only
+        keeps the free allowance a little lower, the safe side)."""
+        try:
+            await self.meter.release_units(key=key, units=units, now=self.clock())
+        except Exception as exc:  # noqa: BLE001 — the answer matters more than the counter
+            log.error("free hold not released", extra={"key": key, "reason": type(exc).__name__})
 
     # ---- metering ------------------------------------------------------------------------------
 

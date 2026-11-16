@@ -266,13 +266,13 @@ class PhotoVault(Protocol):
     async def delete_all(self, uid: str) -> int: ...
 
 
-PrivacyRow = Literal["pieces", "history", "photos"]  # D20: the Wardrobe Privacy row of a source
+PrivacyRow = Literal["pieces", "history", "plans", "photos"]  # D20: a source's Privacy row
 
 
 @runtime_checkable
 class WardrobeData(Protocol):
     """One part's data for D's Privacy rows (D20): counts, a plain export, delete everything.
-    `row` says which of the three server rows it belongs to (a source with none is refused)."""
+    `row` says which of the four server rows it belongs to (a source with none is refused)."""
 
     name: str
     row: PrivacyRow

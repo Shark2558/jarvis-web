@@ -2,7 +2,7 @@
    and the camera-on chip. The panel reuses the Helpers frame (.hp-tabs, .hp-pane, .hp-row, label.hp-field), .btn.sact in
    .sacts, .minput, .snote and .sfine; the chip is the status pill's amber look (.status.alert). Existing tokens only: no
    new colours, fonts, radii or shadows. Loaded by console-r7.js. */
-#p-camera .hp-tabs{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
+#p-camera .hp-tabs{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:10px}
 #p-camera label.hp-field{display:block;margin:10px 0 0}
 #p-camera label.hp-field > .snote{display:block;margin:0 0 4px}
 #p-camera .minput{height:44px}

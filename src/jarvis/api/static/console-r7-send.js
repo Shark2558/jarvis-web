@@ -125,6 +125,21 @@ function tag(blob, meta) {
   return postPicture('/v1/wardrobe/tag?piece=' + m.piece, blob);
 }
 
+const PHOTO = /^wh_[0-9a-f]{12}$/;
+async function thumb(id) { // a saved crop, back as a data: URL for an <img>
+  const chat = window.JarvisChat;
+  if (!PHOTO.test(String(id || '')) || !chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
+  const r = await chat.raw('/v1/wardrobe/photos/' + id);
+  if (!r.ok) throw new Error('That photo could not be shown.');
+  const b = await r.blob();
+  return new Promise((ok, no) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.onerror = no; f.readAsDataURL(b); });
+}
+async function drop(id) { // one photo, deleted
+  const chat = window.JarvisChat;
+  if (!PHOTO.test(String(id || '')) || !chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
+  const r = await chat.raw('/v1/wardrobe/photos/' + id, { method: 'DELETE' });
+  if (!r.ok) throw new Error('That photo could not be deleted.');
+}
 const line = () => 'Pictures sent from this device today: ' + readCount();
 
-if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, sentToday: readCount, line }));
+if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, sentToday: readCount, line }));

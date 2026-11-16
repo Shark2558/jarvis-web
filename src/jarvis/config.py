@@ -606,7 +606,7 @@ class Settings(BaseSettings):
     # R13 (docs/plans/r13-wardrobe.md seam 8): the wardrobe and laundry. His own choices (the
     # calendar and its fields, AI tagging, auto-swap, private display) live in his sealed index.
     wardrobe_enabled: bool = Field(default=True, description="Wardrobe & laundry (R13)")
-    wardrobe_max_pieces: int = Field(default=400, ge=50, le=600, description="Active pieces")
+    wardrobe_max_pieces: int = Field(default=400, ge=50, le=500, description="Active pieces")
     wardrobe_index_max_kb: int = Field(default=900, ge=100, le=950, description="Sealed index KB")
     wardrobe_stale_days: int = Field(default=14, ge=3, le=90, description="Unseen: a quick check")
     wardrobe_plan_evening: str = Field(default="20:00", pattern=_HHMM, description="outfit_ready")

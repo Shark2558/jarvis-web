@@ -20,11 +20,12 @@ from jarvis.storage.docs import Delete, Op
 from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PhotoVault
 from jarvis.wardrobe.catalog.purges import PurgeCount
 from jarvis.wardrobe.catalog.store import CatalogStore
+from jarvis.wardrobe.ports import PrivacyRow
 
 
 class CatalogData:
     name = "pieces"
-    row = "pieces"
+    row: PrivacyRow = "pieces"
 
     def __init__(self, store: CatalogStore, vault: PhotoVault) -> None:
         self.store, self.vault = store, vault
@@ -70,7 +71,7 @@ class PhotoData:
     export says how many, never a byte (D17: photos are never in an export)."""
 
     name = "photos"
-    row = "photos"
+    row: PrivacyRow = "photos"
 
     def __init__(self, vault: PhotoVault) -> None:
         self.vault = vault

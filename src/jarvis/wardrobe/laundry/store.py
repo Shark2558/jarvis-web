@@ -34,6 +34,7 @@ from jarvis.storage.docs import Create, Delete, DocExists, Docs, Query, Set
 from jarvis.undo.store import owner_ok
 from jarvis.wardrobe.laundry.texts import KEPT_NO_KEY, OFF, UNREADABLE
 from jarvis.wardrobe.model import Category, Event, PieceId, PlaceId
+from jarvis.wardrobe.ports import PrivacyRow
 from jarvis.wardrobe.states import State
 
 log = get_logger(__name__)
@@ -247,7 +248,7 @@ class LaundryData:
     """B's data for D's Privacy rows (D20): counts, a plain export, delete everything of B's."""
 
     name = "laundry"
-    row = "history"
+    row: PrivacyRow = "history"
 
     def __init__(self, store: LaundryStore) -> None:
         self._s = store

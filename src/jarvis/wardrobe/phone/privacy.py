@@ -1,5 +1,5 @@
 # src/jarvis/wardrobe/phone/privacy.py
-"""R13 D20 (docs/plans/r13-wardrobe.md): the Privacy panel's section "Wardrobe", four rows over
+"""R13 D20 (docs/plans/r13-wardrobe.md): the Privacy panel's section "Wardrobe", five rows over
 EVERY part's `WardrobeData` (count, a plain export, delete), read late from the app, so a part
 built after D, or rebuilt, is always counted. No row reads a Firestore path itself.
 
@@ -7,8 +7,10 @@ built after D, or rebuilt, is always counted. No row reads a Firestore path itse
 |--------------------|------------------------------------------------------|----------------------|
 | `wardrobe_pieces`  | the index (pieces, pairs, sets, places, labels) and  | row "pieces", else   |
 |                    | each piece's own history                             | the name "pieces"    |
-| `wardrobe_history` | laundry, the review queue, outfit plans, his wears   | row "history", else  |
-|                    |                                                      | "laundry", "outfits" |
+| `wardrobe_history` | laundry, the review queue and his wears              | row "history", else  |
+|                    |                                                      | the name "laundry"   |
+| `wardrobe_plans`   | outfit plans, the calendar and weather it keeps      | row "plans", else    |
+|                    | (I1: its own row, so a key change costs plans only)  | the name "outfits"   |
 | `wardrobe_photos`  | the saved crops and their fingerprints               | row "photos", else   |
 |                    |                                                      | the name "photos"    |
 | `wardrobe_device`  | nothing on the server or the phone: page memory only | none                 |
@@ -35,16 +37,19 @@ from jarvis.wardrobe.ports import WardrobeData
 
 SECTION = "Wardrobe"
 PIECES_ID, HISTORY_ID = "wardrobe_pieces", "wardrobe_history"
+PLANS_ID = "wardrobe_plans"
 PHOTOS_ID, DEVICE_ID = "wardrobe_photos", "wardrobe_device"
-ROW_IDS: tuple[str, ...] = (PIECES_ID, HISTORY_ID, PHOTOS_ID, DEVICE_ID)
-Row = Literal["pieces", "history", "photos"]
-ROWS: frozenset[str] = frozenset({"pieces", "history", "photos"})
+ROW_IDS: tuple[str, ...] = (PIECES_ID, HISTORY_ID, PLANS_ID, PHOTOS_ID, DEVICE_ID)
+Row = Literal["pieces", "history", "plans", "photos"]
+ROWS: frozenset[str] = frozenset({"pieces", "history", "plans", "photos"})
 PIECES_DATA = frozenset({"pieces"})  # A's index and its logs
 PHOTOS_DATA = frozenset({"photos"})  # A's photo vault (photos and fingerprints)
-HISTORY_DATA = frozenset({"laundry", "outfits"})  # B's and C's sources
+HISTORY_DATA = frozenset({"laundry"})  # B's source
+PLANS_DATA = frozenset({"outfits"})  # C's source
 _BY_NAME: tuple[tuple[Row, frozenset[str]], ...] = (
     ("pieces", PIECES_DATA),
     ("history", HISTORY_DATA),
+    ("plans", PLANS_DATA),
     ("photos", PHOTOS_DATA),
 )
 NOTHING_YET = "Nothing kept yet."
@@ -104,12 +109,24 @@ PIECES_SPEC = Spec(
 HISTORY_SPEC = Spec(
     HISTORY_ID,
     SECTION,
-    "Laundry, outfits and wear history",
-    "Laundry steps, loads and outside batches with your label for the shop, the review queue, "
-    "outfit plans, reservations and what you wore. A calendar event's title is never kept, only "
-    "its time.",
+    "Laundry and wear history",
+    "Laundry steps, loads and outside batches with your label for the shop, the review queue "
+    "and what you wore.",
     "entries",
-    "A piece's history until it is purged; closed laundry and past plans 90 days",
+    "A piece's history until it is purged; closed laundry 90 days",
+    OURS_ENC,
+    encrypted_by_jarvis=True,
+    delete="passkey",
+)
+PLANS_SPEC = Spec(
+    PLANS_ID,
+    SECTION,
+    "Outfit plans",
+    "Outfit plans and their reservations, your calendar choice and what the outfit alerts need "
+    "from the weather and your calendar. A calendar event's title is never kept, only its time. "
+    "Deleting this row leaves your pieces and laundry alone.",
+    "entries",
+    "Until you delete them; past plans 90 days",
     OURS_ENC,
     encrypted_by_jarvis=True,
     delete="passkey",
@@ -128,8 +145,8 @@ PHOTOS_SPEC = Spec(
     note=(
         "Each photo, and then its crop, is checked on your phone for a person or a face before it "
         "is kept. The check can miss a hand or a turned face: look before you save. Delete here "
-        "removes every wardrobe photo and fingerprint at once; one photo can't be deleted alone "
-        "yet."
+        "removes every wardrobe photo and fingerprint at once; one photo is deleted from the "
+        "piece in Helpers."
     ),
 )
 
@@ -167,10 +184,11 @@ class DeviceRow:
 
 
 def privacy_rows(data: DataFn) -> tuple[PrivacySource, ...]:
-    """The section's four rows over `data()` (every built part's `WardrobeData`, read late)."""
+    """The section's five rows over `data()` (every built part's `WardrobeData`, read late)."""
     return (
         _row(PIECES_SPEC, data, "pieces"),
         _row(HISTORY_SPEC, data, "history"),
+        _row(PLANS_SPEC, data, "plans"),
         _row(PHOTOS_SPEC, data, "photos"),
         DeviceRow(),
     )
@@ -184,6 +202,8 @@ __all__ = [
     "PHOTOS_DATA",
     "PHOTOS_ID",
     "PIECES_DATA",
+    "PLANS_DATA",
+    "PLANS_ID",
     "PIECES_ID",
     "ROWS",
     "ROW_IDS",

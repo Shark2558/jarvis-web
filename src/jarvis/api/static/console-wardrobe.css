@@ -47,8 +47,5 @@
   #hpp-wardrobe .hp-row .hp-acts{flex:1 1 100%;justify-content:flex-start}
 }
 
-/* the Camera panel's strip holds four tabs since R13 (Look, Results, Cameras, Wardrobe): four columns, so the fourth
-   never sits alone on a second row (console-camera.css, loaded before this file, laid out three) */
-#p-camera .hp-tabs{grid-template-columns:repeat(4,minmax(0,1fr))}
 /* M2: the crop a piece's Save would keep, shown on its card before anything is sent (placement only) */
 #camp-wardrobe .wd-crop { display: block; width: auto; height: auto; max-width: 100%; max-height: 12rem; margin: .25rem 0; }

@@ -1,5 +1,5 @@
 # src/jarvis/wardrobe/styling/data.py
-"""R13 Part C's data for D's Privacy rows (D20, "Laundry, outfits and wear history"): a count, a
+"""R13 Part C's data for D's Privacy rows (D20, the "Outfit plans" row): a count, a
 plain export (no calendar id, no title: there is none to give) and delete-everything (his plans,
 rules and choices, the last calendar read, the weather summary and C's once-only claims).
 """
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from jarvis.wardrobe.ports import PrivacyRow
 from jarvis.wardrobe.styling.calendar import Calendar
 from jarvis.wardrobe.styling.sealed import Off, Unreadable
 from jarvis.wardrobe.styling.service import Styling
@@ -15,7 +16,7 @@ from jarvis.wardrobe.styling.service import Styling
 
 class OutfitsData:
     name = "outfits"
-    row = "history"
+    row: PrivacyRow = "plans"
 
     def __init__(self, styling: Styling, calendar: Calendar) -> None:
         self._s, self._cal = styling, calendar

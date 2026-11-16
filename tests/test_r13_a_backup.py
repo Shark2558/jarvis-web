@@ -77,10 +77,10 @@ async def test_ops06_restoring_into_an_empty_wardrobe_keeps_ids_and_pair_links()
 async def test_ops06_a_restore_cut_after_chunk_two_runs_again_without_duplicates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cat = catalog(s=settings(wardrobe_max_pieces=600))
+    cat = catalog(s=settings(wardrobe_max_pieces=500))
     ids = await _seed(cat, n=CHUNK * 3)
     body = await desk(cat).backup.file(UID)
-    fresh = catalog(clock=cat.clock, s=settings(wardrobe_max_pieces=600))
+    fresh = catalog(clock=cat.clock, s=settings(wardrobe_max_pieces=500))
     restore = desk(fresh).restore
     token = (await restore.check(UID, body)).token
     real, calls = restore._chunk, []  # noqa: SLF001
@@ -199,12 +199,12 @@ async def test_h4_a_restore_never_writes_back_a_private_or_unticked_pieces_finge
 
 
 async def test_h4_every_chunk_brings_back_its_own_pieces_fingerprints() -> None:
-    cat = catalog(s=settings(wardrobe_max_pieces=600))
+    cat = catalog(s=settings(wardrobe_max_pieces=500))
     ids = await _seed(cat, n=CHUNK + 5)
     for n, pid in enumerate(ids):
         await desk(cat).vault.prints.save(UID, pid, "front", "mnv2-int8-1", fp(n))
     body = await desk(cat).backup.file(UID, photos=True)
-    fresh = catalog(clock=cat.clock, s=settings(wardrobe_max_pieces=600))
+    fresh = catalog(clock=cat.clock, s=settings(wardrobe_max_pieces=500))
     done = await desk(fresh).restore.apply(
         UID, body, (await desk(fresh).restore.check(UID, body)).token
     )
@@ -304,7 +304,7 @@ async def test_m3_a_restore_asks_only_for_the_hold_each_piece_is_in_now() -> Non
     await desk(fresh).restore.apply(UID, body, (await desk(fresh).restore.check(UID, body)).token)
     asked = [n for batch in writer.needed for n in batch]
     assert [(n.kind, n.piece, n.back_to, n.reason) for n in asked] == [
-        ("hold", vest, "ready", "restore")
+        ("hold", vest, "ready", "held")  # the hold it is in now (I1: the piece's own word)
     ]  # never the shirt's five old conflicts: a year of history is not his review queue
     view = await fresh.store.view(UID)
     assert (view.pieces[shirt].state, view.pieces[vest].state) == ("ready", "review")

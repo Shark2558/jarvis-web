@@ -128,4 +128,6 @@ async def test_the_real_app_puts_part_ds_night_into_the_brief(settings: Any) -> 
         assert isinstance(wired, r7_wiring.MobileSleep)
         line = await wired.sleep(uid, dt.UTC, day)
         assert line == SleepLine(minutes=400, start="23:50", end="06:30", source="app")
-        assert await wired.sleep(uid, dt.UTC, day + dt.timedelta(days=7)) is None  # no night that day
+        assert (
+            await wired.sleep(uid, dt.UTC, day + dt.timedelta(days=7)) is None
+        )  # no night that day

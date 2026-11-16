@@ -190,7 +190,7 @@ def test_the_r13_settings_have_safe_defaults() -> None:
     ("field", "bad"),
     [
         ("wardrobe_max_pieces", 49),
-        ("wardrobe_max_pieces", 601),
+        ("wardrobe_max_pieces", 501),
         ("wardrobe_index_max_kb", 951),
         ("wardrobe_stale_days", 2),
         ("wardrobe_stale_days", 91),
@@ -504,7 +504,16 @@ def test_only_the_two_named_panels_take_pixels(path: Path) -> None:
 
 def test_the_scan_module_keeps_the_camera_panels_rules() -> None:
     code = _code(STATIC / "console-wardrobe-scan.js")
-    for bad in ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "localStorage"):
+    for bad in (
+        "fetch(",
+        "XMLHttpRequest",
+        "sendBeacon",
+        "WebSocket",
+        "localStorage",
+        "JarvisChat",
+        ".raw(",
+        "FormData",
+    ):
         assert bad not in code, bad
     for bad in ("sessionStorage", "indexedDB", "innerHTML", "outerHTML", "insertAdjacentHTML"):
         assert bad not in code, bad
@@ -521,10 +530,9 @@ def test_the_door_is_the_only_caller_of_the_wardrobes_picture_routes() -> None:
         code = _code(path)
         if path.name == "console-r7-send.js":
             assert "'/v1/wardrobe/photos?piece='" in code and "'/v1/wardrobe/tag?piece='" in code
-            assert "wardrobe, tag," in code
+            assert "wardrobe, tag, thumb, drop," in code
             continue
-        for route in ("/v1/wardrobe/photos", "/v1/wardrobe/tag"):
-            assert f"'{route}" not in code, (path.name, route)
+        assert not re.search(r"""['"`]/v1/wardrobe/(?:photos|tag)\b""", code), path.name
 
 
 def test_the_camera_panel_mounts_one_wardrobe_mode_and_stops_it() -> None:
@@ -585,7 +593,7 @@ def test_the_size_guards_hold() -> None:
     for path in STATIC.glob("console*.js"):
         assert _lines(path) <= 800, path.name
     assert _lines(STATIC / "console-camera-panel.js") <= 483
-    assert _lines(STATIC / "console-r7-send.js") <= 130
+    assert _lines(STATIC / "console-r7-send.js") <= 145
     assert _lines(STATIC / "console-helpers.js") <= 238
     new_css = [p for p in STATIC.glob("console-wardrobe*.css")]
     assert sum(_lines(p) for p in new_css) <= 300

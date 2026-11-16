@@ -21,6 +21,8 @@ if (!process.execArgv.includes('--experimental-vm-modules')) {
   process.stderr.write(again.stderr || '');
   process.exit(again.status === null ? 1 : again.status);
 }
+const PARENT = process.ppid; // a harness whose parent died ends itself (a camera left on keeps a timer)
+setInterval(() => { try { process.kill(PARENT, 0); } catch (_) { process.exit(3); } }, 1000).unref();
 const STATIC = path.join(__dirname, '..', '..', '..', 'src', 'jarvis', 'api', 'static');
 // a module's own text, imported as the ES module it is (a data: URL is always ESM)
 const asModule = (file) => import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(path.join(STATIC, file), 'utf8')).toString('base64'));

@@ -106,7 +106,8 @@ def wardrobe_view(view: WardrobeView, *, show_private: bool = False) -> http.War
 
 
 def _event(e: http.EventIn, now: datetime) -> Event:
-    at = e.stated_at or (datetime.combine(e.day, datetime.min.time()) if e.day else None)
+    noon = ist(e.day.year, e.day.month, e.day.day) if e.day else None  # A's M5: 12:00 his time
+    at = e.stated_at or (min(noon, now) if noon is not None else None)  # or now while it is ahead
     return ev(
         e.piece, e.kind, e.at or at or now, sent=e.sent, verified=e.verified, how=e.how,
         score=e.score, source=e.source, via=e.via, to=e.to, place=e.place, plan=e.plan,

@@ -1,10 +1,10 @@
 # tests/test_r13_d_part.py -- R13 Part D's one join (docs/plans/r13-wardrobe.md "Part split", D20):
 #   - `build(ctx)` passes I0's contract check through the real wiring: its own name, no tool, no
 #     job, only the `phrases` service (R13's No-AI routers, in order) and its Privacy rows
-#   - the Privacy section "Wardrobe" has D20's four rows, each over every part's WardrobeData read
-#     LATE from the app (a part built after D still counts): pieces and places (A's index), the
-#     laundry, outfits and wear history (every other source), the photos and fingerprints (A's
-#     vault), and the device row (nothing kept on the phone; nothing to delete)
+#   - the Privacy section "Wardrobe" has D20's rows (five since I1: Outfit plans has its own),
+#     each over every part's WardrobeData read LATE from the app (a part built after D still
+#     counts): pieces and places (A's index), laundry and wear history, outfit plans (C), the
+#     photos and fingerprints (A's vault), and the device row (nothing kept on the phone)
 #   - counts add up, the export is each source's plain export under its name, delete (passkey)
 #     empties exactly that row's sources; with nothing built the rows say so and delete nothing;
 #     a source that fails makes only its row "Couldn't check right now"
@@ -46,12 +46,13 @@ def test_the_part_keeps_the_contract_through_the_real_wiring() -> None:
     assert built["phone"].ready == READY
 
 
-def test_the_privacy_section_has_d20s_four_rows_in_order() -> None:
+def test_the_privacy_section_has_d20s_rows_in_order() -> None:
     rows = build(_ctx()).privacy
     assert [r.id for r in rows] == list(privacy.ROW_IDS)
     assert [r.label for r in rows] == [
         "Wardrobe pieces and places",
-        "Laundry, outfits and wear history",
+        "Laundry and wear history",
+        "Outfit plans",
         "Wardrobe photos and fingerprints",
         "Only on this device: the Wardrobe mode's last choices",
     ]
@@ -83,16 +84,19 @@ async def test_the_rows_read_every_parts_data_late_and_add_it_up() -> None:
     parts.update(parts_with(pieces, history, laundry, outfits, photos))
     got = {k: await r.describe(UID) for k, r in rows.items()}
     assert got[privacy.PIECES_ID].count == 2 and got[privacy.PIECES_ID].delete == "passkey"
-    assert got[privacy.HISTORY_ID].count == 4 and got[privacy.HISTORY_ID].delete == "passkey"
+    assert got[privacy.HISTORY_ID].count == 3 and got[privacy.HISTORY_ID].delete == "passkey"
+    assert got[privacy.PLANS_ID].count == 1 and got[privacy.PLANS_ID].delete == "passkey"
     assert got[privacy.PHOTOS_ID].count == 1 and got[privacy.PHOTOS_ID].delete == "passkey"
     assert got[privacy.DEVICE_ID].count is None and got[privacy.DEVICE_ID].delete == "none"
-    assert all(got[k].encrypted_by_jarvis for k in privacy.ROW_IDS[:3])
+    assert all(got[k].encrypted_by_jarvis for k in privacy.ROW_IDS[:4])
     exported = await rows[privacy.HISTORY_ID].export(UID)
     assert exported == {
         "wardrobe_log": {"items": [{"e": 1}]},
         "laundry": {"items": [{"load": 1}, {"load": 2}]},
-        "outfits": {"items": [{"plan": 1}]},
     }
+    assert await rows[privacy.PLANS_ID].export(UID) == {"outfits": {"items": [{"plan": 1}]}}
+    assert await rows[privacy.PLANS_ID].delete(UID) == 1  # plans only: laundry stays
+    assert (await rows[privacy.HISTORY_ID].describe(UID)).count == 3
     assert await rows[privacy.PHOTOS_ID].delete(UID) == 1
     assert photos.deleted == [UID] and pieces.deleted == [] and photos.items == []
     assert (await rows[privacy.PIECES_ID].describe(UID)).count == 2  # the others untouched
@@ -113,8 +117,10 @@ async def test_the_words_say_what_is_never_kept() -> None:
     photos = await rows[privacy.PHOTOS_ID].describe(UID)
     assert "Never for a private piece" in photos.what and "can miss" in photos.note
     assert "removes every wardrobe photo and fingerprint at once" in photos.note  # L8
+    assert "deleted from the piece" in photos.note  # I1: the door's drop
     history = await rows[privacy.HISTORY_ID].describe(UID)
-    assert "title is never kept" in history.what
+    assert "title is never kept" in (await rows[privacy.PLANS_ID].describe(UID)).what
+    assert history.what
     device = await rows[privacy.DEVICE_ID].describe(UID)
     assert "memory only" in device.what and "closing the page" in device.what
     assert await rows[privacy.DEVICE_ID].export(UID) is None
@@ -154,12 +160,9 @@ def test_each_source_finds_its_row_by_its_own_row_else_its_name() -> None:
     row_of = privacy.row_of
     assert row_of(FakeData("catalog", row="pieces")) == "pieces"  # A at I1 says its row
     assert row_of(FakeData("photos")) == "photos" and row_of(FakeData("pieces")) == "pieces"
-    assert row_of(FakeData("laundry")) == row_of(FakeData("outfits")) == "history"
+    assert row_of(FakeData("laundry")) == "history" and row_of(FakeData("outfits")) == "plans"
     assert row_of(FakeData("catalog")) is None and row_of(FakeData("history")) is None
     assert row_of(FakeData("laundry", row="photos")) == "photos"  # its own word wins
     assert row_of(FakeData("photos", row="nothing")) is None
-    assert privacy.HISTORY_DATA == {"laundry", "outfits"} and privacy.ROWS == {
-        "pieces",
-        "history",
-        "photos",
-    }
+    assert privacy.HISTORY_DATA == {"laundry"} and privacy.PLANS_DATA == {"outfits"}
+    assert privacy.ROWS == {"pieces", "history", "plans", "photos"}

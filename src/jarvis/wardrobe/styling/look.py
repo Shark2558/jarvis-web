@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime, tzinfo
 
 from jarvis.wardrobe.model import Piece, WardrobeView
 from jarvis.wardrobe.states import wearable_set
@@ -45,6 +45,7 @@ class Ask:
     avoids: frozenset[str] = frozenset()
     stale_before: datetime | None = None
     for_words: str = ""  # "your 10:00 event"
+    zone: tzinfo = UTC  # his zone: every day the engine names is his local day (D15, M2)
 
 
 @dataclass(frozen=True)

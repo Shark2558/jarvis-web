@@ -295,3 +295,43 @@ async def test_m1_a_part_that_cant_be_worn_alone_needs_its_mates_free() -> None:
     ask = Ask(day=TUE, code="festive", occasion="festival", reserved={N.kurta: "your 08:00 event"})
     look = (await _look(w, ask)).primary
     assert N.kurta not in _ids(look) and N.pyjama not in _ids(look)
+
+
+# ---- code review M2 (D15): his local day in the stale line and in "worn lately" ----------------
+async def test_m2_a_sighting_at_01_00_ist_names_that_local_day() -> None:
+    from r13_fakes import IST
+
+    w = await _w()
+    await w.edit(N.watch, place_at=ist(2026, 10, 30, 1, 0))  # 29 Oct 19:30 UTC
+    ask = Ask(day=TUE, code="business_formal", stale_before=ist(2026, 11, 2, 20, 0), zone=IST)
+    look = (await _look(w, ask)).primary
+    assert (
+        f"Check that a grey watch ({N.watch}) is still in its place: not seen since Friday 30 "
+        "October." in look.compromises
+    )
+
+
+async def test_m2_a_planned_piece_unseen_for_15_days_adds_the_line() -> None:
+    from r13_fakes_c import UID as OWNER
+
+    w = await _w()
+    await w.edit(N.watch, place_at=ist(2026, 11, 1, 9, 0))
+    from jarvis.tools.gateway import GatewayOutcome
+
+    got = await w.call("outfit_plan", action="save", day="tomorrow", occasion="meeting")
+    assert got.outcome is GatewayOutcome.EXECUTED
+    assert any(N.watch in c and "not seen since Sunday 1 November" in c
+               for c in got.result["plan"]["look"]["compromises"])  # fmt: skip
+    assert OWNER
+
+
+def test_m2_worn_lately_counts_his_local_days() -> None:
+    from r13_fakes import IST, PILOT
+
+    from jarvis.wardrobe.styling import rank
+    from jarvis.wardrobe.styling.look import Run
+
+    tee = next(p for p in PILOT if p.id == N.tee)
+    worn = tee.model_copy(update={"last_worn": ist(2026, 11, 15, 0, 30)})  # 14 Nov 19:00 UTC
+    view = type("V", (), {"pieces": {tee.id: worn}})()
+    assert rank.recent(Run(view, Ask(day=TUE, code="casual", zone=IST), RULES), worn)  # type: ignore[arg-type]

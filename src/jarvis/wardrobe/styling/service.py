@@ -148,7 +148,7 @@ class Styling:
             excluded=frozenset(e.piece for e in prefs.excluded if e.occasion in (None, occasion)),
             likes=frozenset(prefs.likes), avoids=frozenset(prefs.avoids),
             stale_before=here.now - timedelta(days=self.ctx.s.wardrobe_stale_days),
-            for_words=self.phrase(plan, occasion, here.zone),
+            for_words=self.phrase(plan, occasion, here.zone), zone=here.zone,
         )  # fmt: skip
         return ask, weather
 

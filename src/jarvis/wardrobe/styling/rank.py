@@ -23,7 +23,8 @@ WHY = {"formality": "none is formal enough", "mess": "none is marked okay to sta
 def recent(r: Run, p: Piece) -> bool:
     if p.last_worn is None:
         return False
-    return r.ask.day - p.last_worn.date() <= timedelta(days=r.rules.recent_days)
+    worn = p.last_worn.astimezone(r.ask.zone).date()  # his local day (D15, code review M2)
+    return r.ask.day - worn <= timedelta(days=r.rules.recent_days)
 
 
 def piece_score(r: Run, slot: str, p: Piece) -> float:
@@ -125,7 +126,7 @@ def stale(r: Run, p: Piece) -> str | None:
         return None
     return (
         f"Check that {texts.piece_words(p)} ({p.id}) is still in its place: not seen since "
-        f"{texts.date_words(seen.date())}."
+        f"{texts.date_words(seen.astimezone(r.ask.zone).date())}."
     )
 
 

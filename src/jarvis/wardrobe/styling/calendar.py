@@ -13,7 +13,9 @@ the fields he picks.
   and URL-encoded into the path.
 - `read(...)`: `events.list` with `singleEvents=true` (Google returns no cancelled events) and
   `fields` naming ONLY id, status, updated, start, end, and the title and location when he let
-  JARVIS read them (title on, location off by default); never the description or attendees.
+  JARVIS read them (title on, location off by default), and `nextPageToken`; never the
+  description or attendees. A title or location is used only when its field is on, whatever
+  Google sends; a read with more pages to come cancels nothing (security review L4).
 - A title and a location are matched against the rules' words in code, in memory only
   (`entries`): what is kept (`wardrobe_cal/{uid}`, sealed) is each event's keyed fingerprint, its
   times or day, its `updated` stamp, the dress code and occasion found, and outdoor or not. A
@@ -71,7 +73,7 @@ def event_fields(fields: tuple[str, ...]) -> str:
     wanted += [
         name for flag, name in (("title", "summary"), ("location", "location")) if flag in fields
     ]
-    return f"items({','.join(wanted)})"
+    return f"items({','.join(wanted)}),nextPageToken"  # more pages: a partial read (L4)
 
 
 class _M(BaseModel):
@@ -98,6 +100,9 @@ class CalDoc(_M):
     start: datetime | None = None
     end: datetime | None = None
     entries: tuple[CalEntry, ...] = Field(default=(), max_length=MAX_EVENTS)
+
+
+Read = tuple[list["CalItem"], bool]
 
 
 @dataclass(frozen=True)
@@ -130,7 +135,8 @@ def _when(raw: Any) -> tuple[datetime | None, date | None]:
     return None, None
 
 
-def to_item(raw: Any) -> CalItem | None:
+def to_item(raw: Any, fields: tuple[str, ...] = ("title",)) -> CalItem | None:
+    """One event as read; its title and location only when he let JARVIS read them (L4)."""
     if not isinstance(raw, dict) or raw.get("status") == "cancelled":
         return None
     ident = raw.get("id")
@@ -139,7 +145,8 @@ def to_item(raw: Any) -> CalItem | None:
         return None
     if start is not None and (end is None or end <= start):
         return None
-    title, place = str(raw.get("summary") or "")[:200], str(raw.get("location") or "")[:200]
+    title = str(raw.get("summary") or "")[:200] if "title" in fields else ""
+    place = str(raw.get("location") or "")[:200] if "location" in fields else ""
     return CalItem(ident, start, end, day, str(raw.get("updated") or "")[:40], title, place)
 
 
@@ -198,7 +205,9 @@ class Calendar:
 
     async def read(
         self, uid: str, cal_id: str, fields: tuple[str, ...], start: datetime, end: datetime
-    ) -> list[CalItem] | str:
+    ) -> Read | str:
+        """(the events, whether the read is whole), or why it wasn't read. A read with more
+        pages to come is not whole: its absences cancel nothing (security review L4)."""
         params = {
             "timeMin": start.astimezone(UTC).isoformat(),
             "timeMax": end.astimezone(UTC).isoformat(),
@@ -211,8 +220,9 @@ class Calendar:
         if isinstance(got, str):
             return got
         items = got.get("items") if isinstance(got, dict) else None
-        found = (to_item(i) for i in (items if isinstance(items, list) else [])[:MAX_EVENTS])
-        return [i for i in found if i is not None]
+        whole = not (isinstance(got, dict) and got.get("nextPageToken"))
+        raw = (items if isinstance(items, list) else [])[:MAX_EVENTS]
+        return [i for i in (to_item(r, fields) for r in raw) if i is not None], whole
 
     def entries(self, uid: str, cal_id: str, items: list[CalItem]) -> tuple[CalEntry, ...]:
         """What is kept of each event: the rules' answer, never its words."""
@@ -259,7 +269,7 @@ def _room(doc: StylingDoc, key: str, gone: set[str]) -> bool:
 
 def sync(
     doc: StylingDoc, entries: tuple[CalEntry, ...], span: tuple[datetime, datetime],
-    zone: tzinfo, now: datetime,
+    zone: tzinfo, now: datetime, *, whole: bool = True,
 ) -> tuple[StylingDoc, list[str]]:  # fmt: skip
     """(the plans after this read, the ids of plans made or edited: their looks to pick)."""
     seen, gone = {e.k for e in entries}, {d.k for d in doc.dismissed}
@@ -277,7 +287,7 @@ def sync(
         if plan.updated != e.u or plan.cancelled:
             doc, touched = doc.put(_edited(plan, e, zone, now)), [*touched, plan.id]
     start, end = span
-    for plan in doc.plans:
+    for plan in doc.plans if whole else ():  # a partial read knows nothing is gone
         if plan.manual or plan.event is None or plan.cancelled or plan.event in seen:
             continue
         opens, closes = window(plan, zone)

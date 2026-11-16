@@ -73,7 +73,7 @@ async def test_ops04_only_the_chosen_calendar_and_fields_are_requested() -> None
     await _tick(w)
     ((method, url, params),) = _events_calls(w)
     assert method == "GET" and f"/calendars/{quote(WORK, safe='')}/events" in url
-    assert params["fields"] == "items(id,status,updated,start,end,summary)"
+    assert params["fields"] == "items(id,status,updated,start,end,summary),nextPageToken"
     assert params["singleEvents"] == "true"
     for never in ("description", "attendees", "location"):
         assert never not in params["fields"]
@@ -81,7 +81,8 @@ async def test_ops04_only_the_chosen_calendar_and_fields_are_requested() -> None
     await _pick(w, fields=["title", "location"])
     await _tick(w)
     assert (
-        _events_calls(w)[-1][2]["fields"] == "items(id,status,updated,start,end,summary,location)"
+        _events_calls(w)[-1][2]["fields"]
+        == "items(id,status,updated,start,end,summary,location),nextPageToken"
     )
 
 
@@ -322,3 +323,32 @@ async def test_the_evening_alert_does_not_count_an_outstanding_laundry_line_as_a
     assert w.notifier.sent == [
         ("outfit_ready", "Tomorrow's outfit for your 10:00 event is ready in Helpers, Wardrobe.")
     ]
+
+
+# ---- security review L4: the fields he chose, and a read cut short -------------------------------
+class PagedGoogle(FakeGoogle):
+    """Google answering with more pages to come (`nextPageToken`)."""
+
+    async def request(self, uid: str, method: str, url: str, **kw: Any) -> Any:
+        got = await super().request(uid, method, url, **kw)
+        return {**got, "nextPageToken": "more"} if url.endswith("/events") else got
+
+
+async def test_a_title_google_sends_while_his_title_field_is_off_is_never_used() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=FakeGoogle(events={WORK: [_meeting()]}))
+    await _pick(w, fields=[])
+    await _tick(w)
+    (plan,) = await _plans(w)
+    assert (plan.occasion, plan.code) == (None, "smart_casual")  # the title was not read
+    assert _events_calls(w)[0][2]["fields"] == "items(id,status,updated,start,end),nextPageToken"
+
+
+async def test_a_read_cut_short_by_a_next_page_cancels_nothing() -> None:
+    google = PagedGoogle(events={WORK: [_meeting()]})
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=google)
+    await _pick(w)
+    await _tick(w)
+    google.events[WORK] = []  # missing from a read that has more pages: not known to be gone
+    w.clock.advance(hours=1)
+    await _tick(w)
+    assert [p.cancelled for p in await _plans(w)] == [False]

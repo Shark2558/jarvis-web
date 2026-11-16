@@ -298,7 +298,7 @@ async def ops04() -> list[str]:
     only = len(calls) == 1 and "work-cal%40example.com" in calls[0][1]
     return (
         []
-        if only and fields == "items(id,status,updated,start,end,summary)"
+        if only and fields == "items(id,status,updated,start,end,summary),nextPageToken"
         else ["his calendar and fields only"]
     )
 

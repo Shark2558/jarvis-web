@@ -97,3 +97,18 @@ async def test_transferring_a_piece_purged_since_it_was_planned_is_refused_in_wo
     got = await ok(w, "outfit_plan", action="transfer", plan=second["id"], from_plan=first["id"],
                    piece=gone)  # fmt: skip
     assert got == {"refused": True, "message": "That piece isn't in your wardrobe any more."}
+
+
+async def test_locking_a_piece_another_plan_holds_is_refused_like_reserve() -> None:
+    from r13_fakes_c import SHOES
+
+    w = await world(at=ist(2026, 11, 16, 20, 0))
+    await _plan(w, occasion="meeting", start="10:00", end="12:00")
+    second = await _plan(w, start="11:00", end="13:00")
+    before = await w.styling.plans.read(UID)
+    got = await ok(w, "outfit_plan", action="lock", plan=second["id"], piece=SHOES[0])
+    assert got == {
+        "refused": True,
+        "message": f"{SHOES[0]} is reserved for your 10:00 event: transfer it, or pick another.",
+    }
+    assert await w.styling.plans.read(UID) == before

@@ -105,7 +105,8 @@ class OutfitClock:
             n.add("calendar_not_read")
             await self.s.change(uid, lambda d: d.model_copy(update={"cal_failed_at": here.now}))
             return
-        entries = self.calendar.entries(uid, cal, items)
+        found, whole = items
+        entries = self.calendar.entries(uid, cal, found)
         await self.calendar.sealed.change(
             uid, lambda _: CalDoc(read_at=here.now, start=span[0], end=span[1], entries=entries)
         )
@@ -116,7 +117,7 @@ class OutfitClock:
             touched.clear()
             if d.choice.calendar != cal:
                 return d
-            synced, ids = sync(d, entries, span, here.zone, here.now)
+            synced, ids = sync(d, entries, span, here.zone, here.now, whole=whole)
             touched.extend(ids)
             return synced.model_copy(update={"cal_read_at": here.now, "cal_failed_at": None})
 

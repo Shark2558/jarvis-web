@@ -95,7 +95,7 @@ async def _apply(
     """His plans after the action, this plan's picks already made again where it changed."""
     action = a.get("action")
     if action == "lock":
-        return doc.put(_lock(s, view, plan, a))
+        return doc.put(_lock(s, here, doc, view, plan, a))
     if action == "change":
         slot = a.get("slot")
         current = plan.slot(slot) if isinstance(slot, str) else None
@@ -134,9 +134,15 @@ def _held(
     raise PlanRefused("Say save, lock, change, reserve, transfer, release or share.")
 
 
-def _lock(s: Styling, view: WardrobeView, plan: Plan, a: dict[str, Any]) -> Plan:
+def _lock(
+    s: Styling, here: Here, doc: StylingDoc, view: WardrobeView, plan: Plan, a: dict[str, Any]
+) -> Plan:
     if a.get("piece"):
         slot, unit = _slot_of(s, view, a.get("piece"))
+        asked = str(a["piece"])
+        words = reserve.conflict(doc, plan, (asked, *(i for i in unit if i != asked)), here.zone)
+        if words is not None:  # as `reserve` does (security review L1, STY-14)
+            raise PlanRefused(words)
         return reserve.with_pick(plan, PlanPick(slot=slot, pieces=unit, locked=True))
     current = plan.slot(a["slot"]) if isinstance(a.get("slot"), str) else None
     if current is None:

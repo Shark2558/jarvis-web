@@ -14,7 +14,7 @@ from book_mocks import FakeBook
 from test_book_show import _begin, _clean, _show, _to_questions
 from test_console import Console
 from test_r62_book_listen import FAKE_SR, SAID, _done, _listen, _words
-from test_r62_book_mic import FAKE_MIC, PRESSED, TRACE, _said
+from test_r62_book_mic import FAKE_MIC, PRESSED, TRACE, _said, _status
 
 _pw = pytest.importorskip("playwright.sync_api")
 
@@ -94,6 +94,27 @@ def test_a_recogniser_that_never_ends_after_stop_gives_the_mic_back(
             assert "type your question" in _said(c)[0].lower()
         c.page.locator("#shMic").click()  # and the mic works again
         c.page.wait_for_function("() => window.__recs.length === 2")
+        _clean(c)
+    finally:
+        c.close()
+
+
+# ---- L2: a late correction never writes into a panel that was closed -------------------------------
+def test_a_correction_that_lands_after_the_panel_closed_writes_nothing(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _open(browser, server_url, token, HOLD_HEARD)
+    try:
+        _listen(c)
+        c.page.evaluate(f"window.__recs[0].say({SAID!r})")
+        c.page.locator("#shMic").click()
+        c.page.wait_for_function("() => window.__heardAsked === true")
+        c.page.locator("#shFinish").click()  # the panel closes while the words are being corrected
+        c.page.wait_for_function("() => document.getElementById('shTalk').hidden")
+        c.page.evaluate("window.__heardRelease()")
+        c.page.wait_for_timeout(500)
+        assert c.page.locator("#shQ").input_value() == ""
+        assert _status(c) == ""
         _clean(c)
     finally:
         c.close()

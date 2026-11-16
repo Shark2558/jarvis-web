@@ -212,10 +212,12 @@
       hearLine(''); sys(code ? recWords(code) : HEAR.nothing); return;
     }
     S.busy = true; leftWords(); hearLine(HEAR.processing);
-    try { landed(await B().api('/v1/book/show/heard', { method: 'POST', body: { text: got.text } })); } catch (e) {
+    let said = { text: got.text }; // the corrections are a bonus: his words land as heard
+    try { said = await B().api('/v1/book/show/heard', { method: 'POST', body: { text: got.text } }); } catch (e) {
       if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); return; }
-      landed({ text: got.text }); // the corrections are a bonus: his words land as heard
     }
+    if (gen !== S.gen) { S.busy = false; return; } // code review 2, L2: the panel was cleared or closed meanwhile: write nothing
+    landed(said);
     S.busy = false; leftWords(); $('shQ').focus();
   }
   function finish() {

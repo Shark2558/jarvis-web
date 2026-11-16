@@ -32,6 +32,7 @@ from typing import Any
 import pytest
 from r13_fake_server import fake_state, wardrobe_view
 from r13_fakes import PILOT
+from r13_record import record
 
 from jarvis.wardrobe.model import CARE_WORDS, FABRICS, PRIVATE_BY_DEFAULT
 
@@ -93,6 +94,9 @@ def scan(steps: list[dict[str, Any]], **payload: Any) -> dict[str, Any]:
     )
     out: dict[str, Any] = json.loads(run.stdout or "{}")
     assert "error" not in out and run.returncode == 0, out.get("error") or run.stderr[-2000:]
+    for n in out.get("net", []):  # I1's replay corpus (a no-op unless R13_RECORD_CALLS is set)
+        if n["method"] == "POST" and n["path"].startswith("/v1/wardrobe/tools/"):
+            record("scan", n["path"].rsplit("/", 1)[1], json.loads(n["body"])["arguments"])
     return out
 
 

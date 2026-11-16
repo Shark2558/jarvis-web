@@ -212,7 +212,8 @@ def test_add_a_piece_save_and_remember_it_then_the_same_photo_offers_it(
         offer.click()
         until(c.page, lambda: ": this piece." in pane_text(c), "his tap")
         history = seen(d_url, token, f"/v1/wardrobe/pieces/{pid}")["history"]
-        assert [e["kind"] for e in history][-1] == "seen"  # the same id, seen again
+        kinds = sorted(e["kind"] for e in history)  # the same id, seen again (not its order: the
+        assert kinds == ["registered", "seen"]  # page's clock and the server's differ by ms)
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()

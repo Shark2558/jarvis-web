@@ -30,6 +30,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from r13_fakes import PILOT, UID, ev, ist, piece
+from r13_record import record
 
 from jarvis.api.auth import require_auth
 from jarvis.wardrobe import http
@@ -135,6 +136,7 @@ def d_routes(state: dict[str, Any], store: Any = None, clock: Any = None) -> API
     @r.post("/v1/wardrobe/tools/{tool}")
     async def tool(tool: str, body: http.ToolCall) -> JSONResponse:
         state["tools"].append({"tool": tool, "arguments": body.arguments})
+        record("panel", tool, body.arguments)  # I1's replay corpus (a no-op unless asked for)
         result: dict[str, object] = {}
         if tool == "wardrobe_add":  # A's shape: {pieces: [...]} -> {status, ids, new}
             pieces = body.arguments.get("pieces")

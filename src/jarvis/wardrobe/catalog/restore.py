@@ -33,7 +33,7 @@ from jarvis.wardrobe.catalog.photos import MAX_SHARDS, Get, PhotoVault, is_entry
 from jarvis.wardrobe.catalog.sealed import aad_prints
 from jarvis.wardrobe.catalog.store import CatalogStore
 from jarvis.wardrobe.http import RestoreCheck, RestoreCounts, RestoreDone
-from jarvis.wardrobe.model import PHOTO_ID, Event, Piece, WardrobeView
+from jarvis.wardrobe.model import PHOTO_ID, Event, Pair, Piece, WardrobeView
 from jarvis.wardrobe.ports import Commit, Refused
 
 CHUNK = 50
@@ -53,6 +53,16 @@ class Parsed:
     prints: dict[int, dict[str, Any]] = field(default_factory=dict)
     has_photos: bool = False
     digest: str = ""
+
+
+@dataclass(frozen=True)
+class _Run:
+    """One apply's inputs, decided once before its first chunk."""
+
+    parsed: Parsed
+    prints: tuple[dict[str, str], ...]  # the file's fingerprint entries, opened
+    before: frozenset[str]  # his piece ids before this restore
+    everything: bool  # empty at the check: every piece and link of the file comes back
 
 
 def _head(line: bytes) -> dict[str, Any]:
@@ -166,10 +176,10 @@ class Restore:
         current, ticked = await self.store.view(uid), set(include_purged)
         ids = [p for p in parsed.view.pieces if p in current.pieces or empty or p in ticked]
         chunks = [ids[i : i + CHUNK] for i in range(0, len(ids), CHUNK)]
-        prints = self._file_prints(uid, parsed)
+        run = _Run(parsed, tuple(self._file_prints(uid, parsed)), frozenset(current.pieces), empty)
         added = there = events = 0
         for chunk in chunks:
-            got = await self._chunk(uid, parsed, chunk, prints)
+            got = await self._chunk(uid, run, chunk)
             added, there = added + got[0], there + got[1]
             events += got[2]
         counts = RestoreCounts(added=added, already_there=there, superseded=0, back_from_bin=0,
@@ -177,21 +187,21 @@ class Restore:
         words = f"Restored: {added} added, {there} already there, {events} events."
         return RestoreDone(counts=counts, chunks=len(chunks), message=words)
 
-    async def _chunk(
-        self, uid: str, parsed: Parsed, chunk: list[str], prints: Sequence[dict[str, str]]
-    ) -> tuple[int, int, int]:
+    async def _chunk(self, uid: str, run: _Run, chunk: list[str]) -> tuple[int, int, int]:
         seen: list[int] = [0, 0]
+        parsed = run.parsed
 
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
             new = [pid for pid in chunk if pid not in view.pieces]
             seen[:] = [len(new), len(chunk) - len(new)]
             recs = tuple(_record(parsed, parsed.view.pieces[pid]) for pid in new)
             events = tuple(e for pid in chunk for e in parsed.logs.get(pid, []))
-            extra = await self._photo_ops(uid, parsed, recs, prints, tx.get)
+            extra = await self._photo_ops(uid, parsed, recs, run.prints, tx.get)
             return Commit(events=events, records=recs, extra=extra)
 
         def links(fresh: WardrobeView) -> WardrobeView:
-            return _links(fresh, parsed.view)
+            took = set(fresh.pieces) if run.everything else set(fresh.pieces) - run.before
+            return _links(fresh, parsed.view, took, everything=run.everything)
 
         got = await self.store.transact(uid, fn, index=links, as_stored=True)
         return seen[0], seen[1], sum(m != "known" for m in got.marks.values())
@@ -240,16 +250,30 @@ def _record(parsed: Parsed, p: Piece) -> Piece:
     return p.model_copy(update={"photos": (), "fp_model": None})
 
 
-def _links(fresh: WardrobeView, old: WardrobeView) -> WardrobeView:
-    have = set(fresh.pieces)
-    pairs = {**{k: v for k, v in old.pairs.items() if set(v.pieces) <= have}, **fresh.pairs}
-    sets = {**{k: v for k, v in old.sets.items() if {x.piece for x in v.parts} <= have},
+def _pairs(fresh: WardrobeView, old: WardrobeView, took: set[str]) -> dict[str, Pair]:
+    """The file's pairs of pieces it brings back, never a piece into a second pair."""
+    pairs, paired = dict(fresh.pairs), {i for x in fresh.pairs.values() for i in x.pieces}
+    for k, v in old.pairs.items():
+        if k not in pairs and set(v.pieces) <= took and not paired & set(v.pieces):
+            pairs[k] = v
+            paired |= set(v.pieces)
+    return pairs
+
+
+def _links(
+    fresh: WardrobeView, old: WardrobeView, took: set[str], *, everything: bool
+) -> WardrobeView:
+    """The file's pairs, sets, labels and places come back ONLY with the pieces this restore
+    adds (`took`; into a wardrobe empty at the check, all of them): what he changed since
+    wins (D17, LND-13), so a pair he undid or a place he removed stays gone (M2)."""
+    sets = {**{k: v for k, v in old.sets.items() if {x.piece for x in v.parts} <= took},
             **fresh.sets}  # fmt: skip
-    places = {**old.places, **fresh.places}
-    labels = {**{k: v for k, v in old.labels.items() if v.piece in have or v.piece is None},
-              **fresh.labels}  # fmt: skip
-    return fresh.model_copy(update={"pairs": pairs, "sets": sets, "places": places,
-                                    "labels": labels})  # fmt: skip
+    used = {fresh.pieces[i].place for i in took}
+    places = {**{k: v for k, v in old.places.items() if everything or k in used}, **fresh.places}
+    back = {k: v for k, v in old.labels.items() if v.piece in took or (everything and not v.piece)}
+    labels = {**back, **fresh.labels}
+    return fresh.model_copy(update={"pairs": _pairs(fresh, old, took), "sets": sets,
+                                    "places": places, "labels": labels})  # fmt: skip
 
 
 __all__ = ["CHUNK", "EXPIRED", "UNREADABLE", "Parsed", "Restore", "parse"]

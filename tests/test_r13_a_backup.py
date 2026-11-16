@@ -120,6 +120,26 @@ async def test_a_piece_in_both_keeps_his_current_record_and_a_later_change_wins(
     assert view.pieces[ids[2]].label == "Renamed sock" and view.pieces[ids[0]].state == "ready"
 
 
+async def test_m2_a_restore_never_re_adds_a_pair_he_undid_or_a_place_he_removed() -> None:
+    cat = catalog()
+    l1, r1, r2 = (await desk(cat).service.add(UID, [NewPiece(type="sock")] * 3)).ids
+    await desk(cat).links.pair(UID, l1, r1)
+    shelf = await desk(cat).places.add(UID, "Top shelf")
+    body = await desk(cat).backup.file(UID)
+    await desk(cat).links.unpair(UID, l1)
+    await desk(cat).links.pair(UID, l1, r2)  # he re-paired a replacement half himself (LND-13)
+    await desk(cat).places.remove(UID, shelf.id)
+    check = await desk(cat).restore.check(UID, body)
+    await desk(cat).restore.apply(UID, body, check.token)
+    view = await cat.store.view(UID)
+    assert [x.pieces for x in view.pairs.values()] == [(l1, r2)]  # one pair a piece
+    assert desk(cat).counts.of(view).pairs == 1 and shelf.id not in view.places
+    fresh = catalog(clock=cat.clock)  # an empty wardrobe takes every link back
+    await desk(fresh).restore.apply(UID, body, (await desk(fresh).restore.check(UID, body)).token)
+    again = await fresh.store.view(UID)
+    assert [x.pieces for x in again.pairs.values()] == [(l1, r1)] and shelf.id in again.places
+
+
 async def test_a_piece_purged_since_comes_back_only_when_ticked() -> None:
     cat = catalog()
     ids = await _seed(cat)

@@ -149,3 +149,47 @@ async def test_the_scan_route_refuses_the_cameras_source_and_the_kinds_b_alone_w
             assert (await scan(kind=kind)).status_code in (200,), kind
         view = http.WardrobeView.model_validate((await c.get("/v1/wardrobe", headers=AUTH)).json())
         assert view.pieces[0].state in ("ready", "in_laundry", "in_use")  # nothing is held
+
+
+async def test_i1_a_null_switch_is_not_a_change_and_not_in_the_audit(
+    settings: Settings, monkeypatch: Any
+) -> None:
+    """Code review LOW: `{"ai_tagging": null}` counted as sent, so the audit said it moved."""
+    from jarvis.api import wardrobe_settings
+
+    seen: list[dict[str, Any]] = []
+
+    async def record(request: Any, *, agent: str, tool: str, args: dict[str, Any]) -> None:
+        seen.append(args)
+
+    monkeypatch.setattr(wardrobe_settings, "record_change", record)
+    async with running(_owner(settings)) as (_, c):
+        got = await c.put(PUT, json={"ai_tagging": None, "show_private": True}, headers=AUTH)
+        assert got.status_code == 200
+    assert seen == [{"changed": ["show_private"]}]
+
+
+async def test_i1_l4_the_outfit_settings_reply_carries_the_photo_estimate(
+    settings: Settings, monkeypatch: Any
+) -> None:
+    """Security L4: both PUT replies are built with `joined()`, so the per-photo ₹ shows."""
+    async with running(_owner(settings)) as (app, c):
+        desk = app.state.r13_parts["catalog"].services["store"].desk
+
+        async def priced() -> float:
+            return 0.05
+
+        monkeypatch.setattr(desk.tagging, "estimate_inr", priced)
+        got = await c.put("/v1/outfits/settings", json={"plan_alerts": False}, headers=AUTH)
+        assert got.status_code == 200
+        assert http.SettingsView.model_validate(got.json()).tag_estimate_inr == 0.05
+
+
+def test_i1_l4_the_ai_tagging_row_says_on_or_off_and_the_price_of_a_photo() -> None:
+    from pathlib import Path
+
+    js = Path("src/jarvis/api/static/console-helpers-wardrobe.js").read_text("utf-8")
+    start = js.index("const perPhoto")
+    row = js[start : js.index("H.toggle('AI tagging'")]
+    assert "set.tag_estimate_inr" in row and "About" in row  # the figure shows before it is on
+    assert "set.ai_tagging ? 'On: '" in row  # and the row's words follow the switch

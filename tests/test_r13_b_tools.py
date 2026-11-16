@@ -27,7 +27,6 @@ from r13_fakes_b import (
 )
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.llm.base import ToolCall
 from jarvis.tools.external import FENCE_PREFIX
 from jarvis.tools.gateway import GatewayOutcome
 from jarvis.wardrobe.ports import TOOL_OWNER
@@ -121,20 +120,17 @@ async def test_a_shop_label_from_a_message_is_refused_before_any_card() -> None:
     assert (await r.laundry()).batches == ()
 
 
-async def test_a_spoken_shop_label_is_a_card_in_fixed_words_and_never_vouches() -> None:
+async def test_a_spoken_shop_label_is_refused_typed_only_and_nothing_is_kept() -> None:
+    """Was: a card in fixed words, origin "voice". I1 (security L3, Workshop 3): his words by
+    voice are heard text, not typed ones, so a shop's label is refused like A's label and place."""
     r = await rig()
     sent = await r.tool("laundry_send_out", spoken=True, action="send", pieces=[BLAZER],
                         shop="Quick Wash")  # fmt: skip
-    assert sent.outcome is GatewayOutcome.AWAITING_CONFIRMATION
-    assert sent.pending.summary == "Note that a charcoal blazer went to an outside laundry"
-    call = ToolCall(id="t-send", name="laundry_send_out", arguments=sent.pending.arguments)
-    done = await r.gateway.execute(call, confirmation_id=sent.pending.id, scope=r.scope)
-    assert done.outcome is GatewayOutcome.EXECUTED, done
-    (batch,) = (await r.laundry()).batches
-    assert batch.origin == "voice"
-    status = await r.tool("laundry_status")
-    assert not status.trusted  # a spoken label may be misheard: it never vouches
-    assert status.result["batches"][0]["shop"].startswith(FENCE_PREFIX)
+    assert sent.outcome is GatewayOutcome.ERROR and "Type the shop" in str(sent.error)
+    assert (await r.laundry()).batches == ()
+    assert not await r.gateway.gate.pending()  # no card holds the words
+    typed = await r.tool("laundry_send_out", action="send", pieces=[BLAZER], shop="Quick Wash")
+    assert typed.outcome in (GatewayOutcome.EXECUTED, GatewayOutcome.AWAITING_CONFIRMATION)
 
 
 async def test_one_pieces_history_through_the_status_tool() -> None:

@@ -77,7 +77,9 @@ async def put_settings(
         return busy
     if (desk := desk_of(request)) is None:
         return off(request)
-    sent = {k: v for k, v in body.model_dump().items() if k in body.model_fields_set}
+    sent = {  # a null is not a change
+        k: v for k, v in body.model_dump().items() if k in body.model_fields_set and v is not None
+    }
     try:
         view = await tagging.update_settings(desk.store, uid, **sent)
     except Exception as exc:  # noqa: BLE001

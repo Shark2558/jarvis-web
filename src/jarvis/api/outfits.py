@@ -30,7 +30,9 @@ from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.r13_status import NO_STORE, limited, part_of
 from jarvis.api.settings_audit import record_change
+from jarvis.api.wardrobe_settings import joined
 from jarvis.wardrobe import http
+from jarvis.wardrobe.catalog.routes_common import desk_of
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.styling import texts, views
 from jarvis.wardrobe.styling.calendar import manual_from_now
@@ -177,7 +179,14 @@ async def put_settings(
     await record_change(request, agent="outfits", tool="outfit_settings",
                         args={"calendar": doc.choice.calendar is not None,
                               "fields": sorted(doc.choice.fields)})  # fmt: skip
-    return _ok(_settings_view(s, doc.choice, await s.view(uid)))
+    return _ok(await _joined(request, uid, _settings_view(s, doc.choice, await s.view(uid))))
+
+
+async def _joined(request: Request, uid: str, mine: http.SettingsView) -> http.SettingsView:
+    """A's switches and the ₹ one photo would cost join this reply, as `PUT /v1/wardrobe/settings`
+    (security L4); A off: this reply as it is."""
+    desk = desk_of(request)
+    return mine if desk is None else await joined(request, uid, desk, mine)
 
 
 __all__ = ["router"]

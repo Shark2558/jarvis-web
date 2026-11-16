@@ -194,7 +194,8 @@ function settingRows() {
   out.push(H.row('Use the event\u2019s location', 'Indoor or outdoor, for the weather. Off unless you switch it on.', [H.toggle('Use the event location', has('location'), (on) => outfit({ fields: fieldsWith('location', on, set) }))]));
   out.push(H.row('Tomorrow\u2019s outfit, the evening before', 'An alert at 20:00 for an event on your calendar.', [H.toggle('Evening outfit alert', set.plan_alerts !== false, (on) => outfit({ plan_alerts: on }))]));
   out.push(H.row('Swap a planned piece by itself', 'Off: JARVIS suggests a ready one and you tap.', [H.toggle('Auto-swap', !!set.auto_swap, (on) => outfit({ auto_swap: on }))]));
-  out.push(H.row('AI tagging', 'Off. When on: only for a saved piece that is not private, after the photo check, at most \u20b9' + (set.tag_cap_inr || 30) + ' a month; \u20b9' + Number(set.tag_month_inr || 0).toFixed(2) + ' this month.',
+  const perPhoto = Number(set.tag_estimate_inr) > 0 ? ' About \u20b9' + Number(set.tag_estimate_inr).toFixed(2) + ' a photo.' : '';
+  out.push(H.row('AI tagging', (set.ai_tagging ? 'On: ' : 'Off. When on: ') + 'only for a saved piece that is not private, after the photo check, at most \u20b9' + (set.tag_cap_inr || 30) + ' a month; \u20b9' + Number(set.tag_month_inr || 0).toFixed(2) + ' this month.' + perPhoto,
     [H.toggle('AI tagging', !!set.ai_tagging, (on) => wardrobeSettings({ ai_tagging: on }))]));
   const photos = H.mk('input', '');
   photos.type = 'checkbox'; photos.id = 'wdBackupPhotos';

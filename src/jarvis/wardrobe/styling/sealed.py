@@ -83,7 +83,7 @@ class SealedDoc(Generic[M]):
         except Exception as exc:  # noqa: BLE001 - never overwrite what can't be opened
             err = {"error": type(exc).__name__}
             log.error("outfits: a sealed document can't be opened", extra=err)
-            raise Unreadable(self._collection) from exc
+            raise Unreadable(self._collection) from None  # never chain decrypted values (L6)
 
     def _body(self, uid: str, value: M, rev: int) -> dict[str, Any]:
         _, ring = self._ready()

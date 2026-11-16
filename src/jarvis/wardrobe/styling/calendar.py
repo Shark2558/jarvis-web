@@ -74,7 +74,9 @@ def event_fields(fields: tuple[str, ...]) -> str:
 
 
 class _M(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    # Sealed records (code review M8, security review M2 and L6): a field a later release adds is
+    # ignored, so a rollback still opens the document; a bad value never echoes into an error.
+    model_config = ConfigDict(frozen=True, extra="ignore", hide_input_in_errors=True)
 
 
 class CalEntry(_M):

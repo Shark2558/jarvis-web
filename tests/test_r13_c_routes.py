@@ -84,12 +84,8 @@ async def test_put_settings_answers_the_settings_view_and_is_audited_without_an_
         })  # fmt: skip
     assert got.status_code == 200
     view = http.SettingsView.model_validate(got.json())
-    assert (view.calendar_chosen, view.lead_h, view.auto_swap, view.tag_cap_inr) == (
-        True,
-        6,
-        True,
-        30,
-    )
+    assert (view.calendar_chosen, view.auto_swap, view.tag_cap_inr) == (True, True, 30)
+    assert view.lead_h == 12  # the contract's default: an alert lead is never stored (M8)
     (line,) = [e for e in w.audit._entries if e.tool == "outfit_settings"]  # noqa: SLF001
     assert line.outcome == "changed" and line.agent == "outfits"
     assert "example.com" not in line.detail and "example.com" not in line.args_hash

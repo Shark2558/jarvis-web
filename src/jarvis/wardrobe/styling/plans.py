@@ -12,9 +12,10 @@ document `wardrobe_plans/{uid}` (`StylingDoc`, through `sealed.SealedDoc`).
 - `Prefs`: his "never" rules ("never tight at the neck", STY-08), pieces he excluded (for one
   occasion or all), colours he likes or avoids.
 - `Choice`: the one calendar he picked (its id, sealed here), the fields JARVIS may read (start
-  and end always; title on, location off by default), the alert lead, the evening alert on or
-  off, auto-swap (off). Plan review note: the plan put these in A's index; Part C can't write A's
-  index through the contract, so they live here (INTEGRATION-C, "Needs I1").
+  and end always; title on, location off by default), the evening alert on or off, auto-swap
+  (off). No "alert lead": D19 fixes the evening alert at 20:00, so it was dropped before the
+  first deploy (code review M8). Plan review note: the plan put these in A's index; Part C
+  can't write A's index through the contract, so they live here (INTEGRATION-C, "Needs I1").
 At most 60 plans, 14 days back to 30 ahead (older ones are dropped on the next change).
 """
 
@@ -63,7 +64,9 @@ def new_plan_id() -> str:
 
 
 class _M(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    # Sealed records (code review M8, security review M2 and L6): a field a later release adds is
+    # ignored, so a rollback still opens the document; a bad value never echoes into an error.
+    model_config = ConfigDict(frozen=True, extra="ignore", hide_input_in_errors=True)
 
 
 class PlanPick(_M):
@@ -127,7 +130,6 @@ class Prefs(_M):
 class Choice(_M):
     calendar: str | None = Field(default=None, max_length=300)  # from HIS list only, sealed
     fields: tuple[Field_, ...] = ("title",)
-    lead_h: int = Field(default=12, ge=0, le=48)
     plan_alerts: bool = True
     auto_swap: bool = False
 

@@ -6,8 +6,9 @@
     GET /v1/outfits/calendars   his calendars by a keyed reference and their names, shown live
                                 (a governed read on the Calendar row: "Allow" only), or why not
     PUT /v1/outfits/settings    the calendar (a reference from that list, or none: off), the
-                                fields JARVIS may read, the alert lead, the evening alert,
-                                auto-swap (`OutfitSettings` -> `SettingsView`)
+                                fields JARVIS may read, the evening alert, auto-swap
+                                (`OutfitSettings` -> `SettingsView`); the contract's `lead_h`
+                                is accepted and never stored (code review M8: dropped)
 
 Owner-only (`require_auth`), `no-store`, limited per owner (30 changes and 60 reads a minute,
 `api.r13_status.limited`); the styling service is read per request from
@@ -38,7 +39,7 @@ from jarvis.wardrobe.styling.service import Answer, Here, Styling
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 NOT_SET_UP = "Outfits aren't set up on this JARVIS."
-SENT_FIELDS = frozenset({"fields", "lead_h", "plan_alerts", "auto_swap"})
+SENT_FIELDS = frozenset({"fields", "plan_alerts", "auto_swap"})  # `lead_h`: never stored (M8)
 
 
 def _ok(model: Any) -> JSONResponse:
@@ -117,7 +118,7 @@ async def calendars(request: Request, uid: str = Depends(current_user)) -> JSONR
 def _settings_view(s: Styling, choice: Choice, view: WardrobeView | None) -> http.SettingsView:
     a = view.settings if view is not None else None
     return http.SettingsView(
-        calendar_chosen=choice.calendar is not None, fields=choice.fields, lead_h=choice.lead_h,
+        calendar_chosen=choice.calendar is not None, fields=choice.fields,
         plan_alerts=choice.plan_alerts, auto_swap=choice.auto_swap,
         ai_tagging=a.ai_tagging if a else False, show_private=a.show_private if a else False,
         tag_month_inr=view.tag_inr if view is not None else 0.0,

@@ -81,14 +81,22 @@ DAY = {
 
 
 class Capture(logging.Handler):
-    """Every log record whole (message and every extra field), as text."""
+    """Every log record (message and every extra field), as text, less the clock's own numbers:
+    `created`, `msecs`, `relativeCreated`, a thread or process id and a line number are digits a
+    short needle matches by chance (the r7 `131 in clear` that was no leak, R13 I1)."""
+
+    CLOCK = frozenset({"created", "msecs", "relativeCreated", "thread", "process", "lineno"})
 
     def __init__(self) -> None:
         super().__init__(logging.DEBUG)
         self.rows: list[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
-        self.rows.append(json.dumps(record.__dict__, default=str))
+        self.rows.append(
+            json.dumps(
+                {k: v for k, v in record.__dict__.items() if k not in self.CLOCK}, default=str
+            )
+        )
 
 
 @contextmanager

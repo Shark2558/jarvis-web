@@ -204,6 +204,11 @@ class CatalogStore:
         return result["committed"]  # type: ignore[no-any-return]
 
     async def correct(self, uid: str, piece: str, event_id: str, *, note: str = "") -> Committed:
+        """A's own correction of one event (the ledger only). It does NOT reconcile B's loads,
+        batches or review queue: the tools and routes correct through `LaundryFlows.correct`
+        (B's `plan_correct`), which does; `tests/test_r13_i1_review.py` pins that no product code
+        calls this one (code review)."""
+
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
             p = view.piece(piece)
             if p is None:

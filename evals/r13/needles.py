@@ -23,19 +23,41 @@ Control: `redact.py`'s model view swapped for the panel view: exactly the privat
 from __future__ import annotations
 
 import base64
+import importlib.util
 import json
 import sys
 from collections.abc import Awaitable, Callable
 from contextlib import ExitStack
 from datetime import timedelta
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 from unittest import mock
 from urllib.parse import quote
 
-sys.path.insert(0, str(Path(__file__).parent))
+HERE = Path(__file__).parent
+ROOT = HERE.parent.parent
+for _p in (ROOT / "tests", ROOT / "src"):  # appended: never ahead of what is already imported
+    if str(_p) not in sys.path:
+        sys.path.append(str(_p))
+
+
+def _wired() -> ModuleType:
+    """`wired.py` by path under a unique name: no top-level `wired` and no evals/r13 on sys.path."""
+    found = sys.modules.get("r13_wired")
+    if found is not None:
+        return found
+    spec = importlib.util.spec_from_file_location("r13_wired", HERE / "wired.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["r13_wired"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_W = _wired()
+World, running, want = _W.World, _W.running, _W.want
 from r13_fakes_a import fp, jpeg  # noqa: E402
-from wired import World, running, want  # noqa: E402
 
 from jarvis.tools.gateway import GatewayOutcome  # noqa: E402
 from jarvis.wardrobe.catalog.labels import NOT_HIS  # noqa: E402

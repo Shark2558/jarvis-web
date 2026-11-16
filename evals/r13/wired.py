@@ -24,8 +24,9 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "tests"))
+for _p in (ROOT / "src", ROOT / "tests"):  # appended: never ahead of what is already imported
+    if str(_p) not in sys.path:
+        sys.path.append(str(_p))
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 from r13_fakes import FixedClock, ist  # noqa: E402

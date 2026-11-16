@@ -3,15 +3,28 @@
 # `evals/r13/wired.py`), so a failure names the case, and each suite's control must fail it.
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 EVALS = Path(__file__).resolve().parents[1] / "evals" / "r13"
-sys.path.insert(0, str(EVALS))
-import e2e  # noqa: E402
-import needles  # noqa: E402
+
+
+def _suite(name: str) -> ModuleType:
+    """A suite by path under a unique name: evals/r13 never joins sys.path (its `catalog`,
+    `styling`, `phone`, `contract` and `run` would win over anything imported later)."""
+    spec = importlib.util.spec_from_file_location(f"r13_suite_{name}", EVALS / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+e2e, needles = _suite("e2e"), _suite("needles")
 
 
 @pytest.mark.parametrize("suite", [e2e, needles], ids=["e2e", "needles"])

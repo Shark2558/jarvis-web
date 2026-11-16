@@ -9,22 +9,44 @@
   named against what was ready when it was made) and wrong status changes <= 1 per 50 events.
 
 Negative controls (plan): the fold in ARRIVAL order (a late old event wins): tests 1 and 3 fail;
-a planted bad suggestion: test 8 fails.
+the engine's availability check off (a basket piece is suggested): test 8 fails.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from collections.abc import Awaitable, Callable
 from contextlib import ExitStack
 from datetime import timedelta
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).parent))
+HERE = Path(__file__).parent
+ROOT = HERE.parent.parent
+for _p in (ROOT / "tests", ROOT / "src"):  # appended: never ahead of what is already imported
+    if str(_p) not in sys.path:
+        sys.path.append(str(_p))
+
+
+def _wired() -> ModuleType:
+    """`wired.py` by path under a unique name: no top-level `wired` and no evals/r13 on sys.path."""
+    found = sys.modules.get("r13_wired")
+    if found is not None:
+        return found
+    spec = importlib.util.spec_from_file_location("r13_wired", HERE / "wired.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["r13_wired"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_W = _wired()
+World, running, want = _W.World, _W.running, _W.want
 from r13_fakes_a import jpeg  # noqa: E402
-from wired import World, running, want  # noqa: E402
 
 from jarvis.tools.gateway import GatewayOutcome  # noqa: E402
 from jarvis.wardrobe.model import Event  # noqa: E402

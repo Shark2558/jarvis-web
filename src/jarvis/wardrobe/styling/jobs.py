@@ -97,7 +97,8 @@ class OutfitClock:
 
     async def _calendar(self, uid: str, here: Here, doc: StylingDoc, n: Counts) -> None:
         cal = doc.choice.calendar
-        assert cal is not None
+        if cal is None:  # a check, not an assert (stripped under -O): no calendar, nothing to read
+            return
         span = (here.now, here.now + AHEAD)
         items = await self.calendar.read(uid, cal, doc.choice.fields, *span)
         if isinstance(items, str):

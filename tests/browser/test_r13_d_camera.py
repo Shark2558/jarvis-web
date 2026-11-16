@@ -334,6 +334,11 @@ def test_camera_wardrobe_passes_the_visual_gate(
         choose(c, shirt)
         button(c, "Shirt").wait_for()
         _audit(c, vp, f"wardrobe card {vp} {surface}", f"camera-wardrobe-card-{size}-{surface}")
+        button(c, "Shirt").click()  # a saved piece: its crop shown first (M2), its side (L7)
+        button(c, "Save as a new piece").click()
+        button(c, SAVE).wait_for()
+        c.page.locator("#camp-wardrobe .wd-crop").scroll_into_view_if_needed()
+        _audit(c, vp, f"wardrobe saved {vp} {surface}", f"camera-wardrobe-saved-{size}-{surface}")
         button(c, "To laundry").click()
         _audit(
             c, vp, f"wardrobe laundry {vp} {surface}", f"camera-wardrobe-laundry-{size}-{surface}"

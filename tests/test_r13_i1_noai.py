@@ -48,7 +48,7 @@ async def test_the_edit_takes_the_id_the_find_named_and_never_a_query() -> None:
     out, ran = await _run({"found": True, "best": WATCH, "message": "Found it."})
     assert [n for n, _ in ran] == ["wardrobe_find", "wardrobe_edit"]
     assert ran[1][1] == {"place": "travel bag", "piece": WATCH}
-    assert "query" not in ran[1][1] and out.calls == 2
+    assert "query" not in ran[1][1] and out.tool_calls == 2
 
 
 async def test_when_the_find_names_no_single_piece_nothing_moves_and_its_words_are_the_reply() -> (
@@ -61,4 +61,4 @@ async def test_when_the_find_names_no_single_piece_nothing_moves_and_its_words_a
     ):
         out, ran = await _run(found)
         assert [n for n, _ in ran] == ["wardrobe_find"], found  # the edit never ran
-        assert out.calls == 1 and out.reply  # the find's own words
+        assert out.tool_calls == 1 and out.reply  # the find's own words

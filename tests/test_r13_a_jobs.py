@@ -80,9 +80,31 @@ def test_the_rewear_rule_matches_the_owners_default() -> None:
     from r13_fakes import piece
 
     again = ("trousers", "jeans", "jacket", "belt", "dress_shoe", "sneaker", "watch")
+    again += ("festive_layer",)
     laundry = ("shirt", "t_shirt", "vest", "underpants", "sock")
     assert {after_wear(piece("wi_" + "1" * 12, t)) for t in again} == {"ready"}
     assert {after_wear(piece("wi_" + "1" * 12, t)) for t in laundry} == {"in_laundry"}
+
+
+# Part C's `styling/rules.json` "reusable" (r13-c), by value: until I1 puts the one copy in I0's
+# `wardrobe/states.py` (REWEAR_DEFAULT), A's sweep and C's wear log must close a wear the same way.
+C_REUSABLE = (
+    *("trousers", "chinos", "jeans", "blazer", "jacket", "hoodie", "sweater", "coat"),
+    *("rainwear", "festive_layer", "belt", "watch", "dress_shoe", "sneaker", "sandal"),
+    *("slipper", "boot", "tie", "cap", "scarf", "jewellery", "bag", "eyewear"),
+)
+
+
+def test_m8_the_rewear_rule_is_exactly_parts_cs_reusable_list() -> None:
+    from pathlib import Path
+
+    from jarvis.wardrobe.catalog.jobs import WORN_AGAIN
+
+    assert frozenset(C_REUSABLE) == WORN_AGAIN  # festive_layer: worn again, never laundry
+    assert len(C_REUSABLE) == len(WORN_AGAIN)
+    rules = Path(__file__).parents[1] / "src/jarvis/wardrobe/styling/rules.json"
+    if rules.exists():  # once C is merged (I1): the two copies can never drift apart
+        assert frozenset(json.loads(rules.read_text())["reusable"]) == WORN_AGAIN
 
 
 async def test_a_hold_without_its_entry_is_handed_to_bs_writer_again() -> None:

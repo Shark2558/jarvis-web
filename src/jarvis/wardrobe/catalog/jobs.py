@@ -4,9 +4,9 @@
 
 1. **A forgotten wear is closed** from `wardrobe_wear_close` (04:00) HIS local time: a piece
    still In use whose wear started before local midnight gets `wear_done` by the rewear rule
-   (trousers, jeans, outerwear, belts, shoes and the watch are worn again: Ready; shirts,
-   T-shirts, vests, underwear and socks go to the laundry), one wear, never two. Before 04:00
-   nothing is closed (he may still be out).
+   (trousers, jeans, outerwear, a festive layer, belts, shoes and the watch are worn again:
+   Ready; shirts, T-shirts, vests, underwear and socks go to the laundry), one wear, never two.
+   Before 04:00 nothing is closed (he may still be out).
 2. **A hold without its entry gets one** (a crash between versions): each piece held in review
    is handed to B's review writer again in a commit of its own; the writer adds an entry only
    where none is open.
@@ -31,8 +31,12 @@ from jarvis.wardrobe.states import State
 log = get_logger(__name__)
 
 NAME = "wardrobe_sweep"
+# The rewear rule's default, EQUAL to Part C's `rules.json` "reusable" (a test pins the two by
+# value). At I1 the one copy moves to I0's `wardrobe/states.py` (`REWEAR_DEFAULT`) and this
+# imports it (review A-1 M8): a festive layer, like a jacket, is worn again.
 WORN_AGAIN: frozenset[str] = frozenset(
-    {"trousers", "chinos", "jeans", *TYPES["outerwear"], *TYPES["footwear"], *TYPES["accessories"]}
+    {"trousers", "chinos", "jeans", "festive_layer", *TYPES["outerwear"], *TYPES["footwear"]}
+    | set(TYPES["accessories"])
 )
 
 

@@ -239,3 +239,43 @@ async def test_wearing_a_plan_whose_shirt_went_to_the_basket_wears_the_substitut
     pieces = await w.pieces()
     assert pieces[N.shirt_lb].state == "in_use" and pieces[N.shirt_lb].wear == plan
     assert w.notifier.sent == []  # the substitute worn for its own plan: no change
+
+
+# ---- code review H3: "for the meeting tomorrow" is the planned meeting; L3: today ----------------
+async def test_h3_what_to_wear_for_the_meeting_tomorrow_answers_the_planned_meeting() -> None:
+    w = await world(at=ist(2026, 11, 16, 21, 0), place=False)
+    plan = await _plan(w, day="tomorrow", occasion="meeting", start="10:00", end="12:00")
+    got = await ok(w, "outfit_suggest", day="tomorrow", occasion="meeting")
+    (look,) = got["looks"]
+    assert look["plan"] == plan
+    assert not [g for g in look["gaps"] if "reserved" in g]
+    assert got["message"].startswith(
+        "Tomorrow, Tuesday 17 November: business formal for your 10:00 event (a meeting)."
+    )
+
+
+async def test_h3_another_occasion_on_a_planned_day_is_a_fresh_look() -> None:
+    w = await world(at=ist(2026, 11, 16, 21, 0), place=False)
+    await _plan(w, day="tomorrow", occasion="meeting", start="10:00", end="12:00")
+    got = await ok(w, "outfit_suggest", day="tomorrow", occasion="Diwali")
+    assert got["looks"][0]["plan"] is None and got["looks"][0]["code"] == "festive"
+
+
+async def test_l3_today_after_the_meeting_is_a_fresh_look_not_the_finished_plan() -> None:
+    w = await world(at=ist(2026, 11, 17, 8, 0), place=False)
+    meeting = await _plan(w, day="today", occasion="meeting", start="10:00", end="12:00")
+    assert (await ok(w, "outfit_suggest", day="today"))["looks"][0]["plan"] == meeting
+    w.clock.set(ist(2026, 11, 17, 18, 0))
+    got = await ok(w, "outfit_suggest", day="today")
+    assert got["looks"][0]["plan"] is None
+    assert "Worn for" not in str(got) and got["message"].startswith(
+        "Today, Tuesday 17 November: casual, no event planned."
+    )
+
+
+async def test_l3_a_plan_he_is_wearing_is_not_what_to_wear_today() -> None:
+    w = await world(at=ist(2026, 11, 17, 8, 0), place=False)
+    meeting = await _plan(w, day="today", occasion="meeting", start="10:00", end="12:00")
+    await ok(w, "wear_log", action="start", plan=meeting)
+    got = await ok(w, "outfit_suggest", day="today")
+    assert got["looks"][0]["plan"] is None

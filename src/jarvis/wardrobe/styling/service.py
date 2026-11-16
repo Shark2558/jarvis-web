@@ -117,6 +117,15 @@ class Styling:
             return f"{base} ({occ})"
         return base or occ or ""
 
+    @staticmethod
+    def planned(doc: StylingDoc, day: date, here: Here, occasion: str | None) -> tuple[Plan, ...]:
+        """The plans "what should I wear" answers with: the day's plans, of the occasion he
+        names (code review H3); for today, only those not worn and not over (L3)."""
+        found = [p for p in doc.on(day) if occasion is None or p.occasion == occasion]
+        if day == here.today:
+            found = [p for p in found if not p.worn and reserve.window(p, here.zone)[1] > here.now]
+        return tuple(found)
+
     # ---- asks and looks ---------------------------------------------------------------------
     async def ask(
         self, uid: str, here: Here, doc: StylingDoc, *, day: date, code: str,

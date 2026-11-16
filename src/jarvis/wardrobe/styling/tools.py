@@ -4,7 +4,8 @@ gateway (policy, cards, the audit); the panel calls the same tools through A's
 `POST /v1/wardrobe/tools/{tool}` (D1).
 
 - `outfit_suggest` (R1, No-AI): a day's look ("today", "tomorrow" in his zone, or a date; an
-  occasion in his words; a dress code): the day's plans when it has some, else a suggestion.
+  occasion in his words; a dress code): the day's plans of that occasion when it has some (for
+  today, not worn and not over), else a suggestion; a dress code is always a fresh suggestion.
 - `outfit_plans` (R1): the plans ahead (or one day's) with their looks now.
 - `outfit_plan` (R2): save, lock, change, reserve, transfer, release, share (`actions`).
 - `outfit_prefs` (R2): never / allow, exclude / include, like / avoid, a plan's dress code.
@@ -104,7 +105,7 @@ class StylingTools:
             return refused("Ask for today, tomorrow or a date up to 30 days ahead.")
         occ = s.rules.occasion_of(str(args["occasion"])) if args.get("occasion") else None
         code = args.get("code") if args.get("code") in s.rules.codes else None
-        planned = doc.on(day) if occ is None and code is None else ()
+        planned = s.planned(doc, day, here, occ) if code is None else ()
         answers = [await s.answer(uid, here, doc, view, p) for p in planned]
         if not answers:
             answers = [await s.fresh(uid, here, doc, view, day=day, occasion=occ, code=code)]

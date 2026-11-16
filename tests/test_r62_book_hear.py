@@ -34,6 +34,7 @@ ADMIN = ("gcloud", "Cloud Shell", "Vitals", "₹", "JARVIS_", "browser's voice",
 NOT_FOR_THE_BOOK = ("gcloud", "Cloud Shell", "browser's voice", "₹")  # nobody, in the Book
 # narration: the browser's voice really does read the line there (console-book-voice.js)
 SETUP = ("gcloud", "Cloud Shell", "Vitals", "₹", "JARVIS_", "Run the")
+SPENDING = ("spending", "limit", "charged", "minutes", "rupee")  # the owner's billing state
 
 
 async def _hear(
@@ -165,8 +166,9 @@ def test_the_monthly_limit_is_said_truthfully() -> None:
         hear.words("budget_reached", owner=False),
         hear.words("budget_reached", owner=True),
     )
-    assert "free listening minutes" in guest and "limit" in guest
-    assert owner.startswith(guest) and "Vitals" in owner  # the owner is told where to raise it
+    assert "free listening minutes" in owner and "limit" in owner
+    assert "Vitals" in owner  # the owner is told where to raise it
+    assert guest == "JARVIS can't listen right now. Type your question."  # L1: neutral for a guest
 
 
 async def test_a_recording_too_short_says_so(settings: Settings) -> None:
@@ -325,8 +327,12 @@ def test_understood_uses_the_free_rules_only() -> None:
 @pytest.mark.parametrize("reason", hear.REASONS)
 def test_every_reason_has_plain_words_and_a_guest_gets_no_admin_text(reason: str) -> None:
     guest, owner = hear.words(reason, owner=False), hear.words(reason, owner=True)
-    assert guest and guest.endswith(".") and owner.startswith(guest)
+    assert guest and guest.endswith(".")
+    neutral = reason in ("budget_reached", "budget_unreadable")  # a guest's own line (L1)
+    assert owner.startswith(guest) is not neutral, (guest, owner)
     assert [w for w in ADMIN if w in guest] == [], guest
+    # security review 1, L1: a guest is never told about the owner's spending, in any words
+    assert [w for w in SPENDING if w in guest.lower()] == [], guest
     assert [w for w in NOT_FOR_THE_BOOK if w in owner] == [], owner
 
 

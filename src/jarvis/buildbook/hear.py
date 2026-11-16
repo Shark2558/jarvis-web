@@ -78,6 +78,7 @@ _PUBLIC_STACK_ROLES: Final = frozenset({"language", "vendored", "3d"})
 _SPLIT: Final = re.compile(r"\s*(?:,|/|\(|\)|\band\b)\s*")
 
 # ---- the words a failure is said in --------------------------------------------------------------
+_NEUTRAL: Final = "JARVIS can't listen right now. Type your question."
 _WORDS: Final[dict[str, str]] = {
     "not_configured": (
         "Listening isn't set up on this server, so JARVIS can't hear spoken questions here. "
@@ -108,7 +109,7 @@ _WORDS: Final[dict[str, str]] = {
         "The speech service couldn't take that recording. Try again, or type your question."
     ),
     # R6.2 decision 4: a guest's cloud listening stops at the free allowance (never charged)
-    "free_used": "JARVIS can't listen right now. Type your question.",
+    "free_used": _NEUTRAL,
     "listening_browser": (
         "Listening now uses this browser's own speech recognition. Reload this page to use it, "
         "or type your question."
@@ -119,14 +120,17 @@ _OWNER_TAIL: Final[dict[str, str]] = {
     "api_disabled": " Vitals shows how to switch it on.",
     "budget_reached": " You can raise the limit in Vitals.",
 }
+# R6.2 (security review 1, L1): a guest is never told about the owner's spending, in any words
+_GUEST: Final[dict[str, str]] = {"budget_reached": _NEUTRAL, "budget_unreadable": _NEUTRAL}
 REASONS: Final[tuple[str, ...]] = tuple(_WORDS)
 SPEAK_OFF: Final = "Use the browser's voice."  # narration: the page reads the line itself
 
 
 def words(reason: str, *, owner: bool) -> str:
-    """The sentence for `reason` (an unknown one: the speech service isn't answering)."""
+    """The sentence for `reason` (an unknown one: the speech service isn't answering); a guest gets
+    a neutral line for the owner's spending state."""
     base = _WORDS.get(reason, _WORDS["upstream_error"])
-    return base + (_OWNER_TAIL.get(reason, "") if owner else "")
+    return (base + _OWNER_TAIL.get(reason, "")) if owner else _GUEST.get(reason, base)
 
 
 # ---- the book's own words for the recogniser -----------------------------------------------------

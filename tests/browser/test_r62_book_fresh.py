@@ -13,8 +13,8 @@ import pytest
 from book_mocks import FakeBook
 from test_book_show import _begin, _clean, _show, _to_questions
 from test_console import Console
-from test_r62_book_listen import FAKE_SR, SAID, _done, _listen, _words
-from test_r62_book_mic import FAKE_MIC, PRESSED, TRACE, _said, _status
+from test_r62_book_listen import FAKE_SR, NO_SR, SAID, TO_CLOUD, _done, _listen, _words
+from test_r62_book_mic import FAKE_MIC, PRESSED, TRACE, _frames, _said, _status
 
 _pw = pytest.importorskip("playwright.sync_api")
 
@@ -72,6 +72,72 @@ def _owner_switched(fake: FakeBook, **choices: str) -> None:
 
 def _count(fake: FakeBook, path: str, at_least: int = 1) -> bool:
     return len(fake.to("POST", path)) >= at_least
+
+
+# ---- M1: a switch to the cloud reaches the show that is already open -------------------------------
+def test_a_switch_to_cloud_listening_reaches_the_show_already_open(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _open(browser, server_url, token)
+    try:
+        _listen(c)
+        c.page.evaluate("window.__recs[0].fail('network')")
+        c.page.locator("#shThread .sys").first.wait_for()
+        (said,) = _said(c)
+        assert TO_CLOUD in said and "as soon as you tap the mic again" in said
+        _owner_switched(fake, listening="cloud")
+        c.page.locator("#shMic").click()
+        c.page.wait_for_function(PRESSED.format("true"))
+        assert c.page.evaluate("window.__recs.length") == 1  # no second browser recogniser
+        _frames(c)
+        c.page.locator("#shMic").click()
+        c.page.wait_for_function(PRESSED.format("false"))
+        for _ in range(100):
+            if _count(fake, "/v1/book/show/hear"):
+                break
+            c.page.wait_for_timeout(50)
+        assert _count(fake, "/v1/book/show/hear") and "ok" in c.page.evaluate("window.__gum")
+        assert fake.to("POST", "/v1/book/show/heard") == []
+        _clean(c)
+    finally:
+        c.close()
+
+
+def test_a_switch_to_the_cloud_voice_reaches_the_show_already_open(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _open(browser, server_url, token)
+    try:
+        _owner_switched(fake, voice="cloud")
+        c.page.locator("#shMic").click()  # the tap reads the choice again, then listens
+        c.page.wait_for_function(PRESSED.format("true"))
+        c.page.locator("#shMic").click()
+        c.page.wait_for_function(PRESSED.format("false"))
+        c.page.locator("#shQ").fill("How is the vault built?")
+        c.page.locator("#shSend").click()
+        for _ in range(100):
+            if _count(fake, "/v1/book/show/speak"):
+                break
+            c.page.wait_for_timeout(50)
+        assert _count(fake, "/v1/book/show/speak")  # the reply is narrated by the cloud voice
+    finally:
+        c.close()
+
+
+def test_coming_back_to_the_tab_reads_the_choice_again_for_a_browser_that_cant_listen(
+    browser: Any, server_url: str, token: str
+) -> None:
+    c, fake = _open(browser, server_url, token, NO_SR)
+    try:
+        mic = c.page.locator("#shMic")
+        assert mic.is_disabled() and TO_CLOUD in _status(c)
+        _owner_switched(fake, listening="cloud")
+        c.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        c.page.wait_for_function("() => !document.getElementById('shMic').disabled", timeout=3000)
+        assert _status(c) == ""
+        _clean(c)
+    finally:
+        c.close()
 
 
 # ---- L1: a recogniser that never ends must not leave the mic dead ----------------------------------

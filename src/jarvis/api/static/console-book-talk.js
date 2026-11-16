@@ -30,7 +30,7 @@
   const Show = () => window.JarvisBookShow;
   const V = () => window.JarvisBookVoice;
   const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null,
-    canRec: false, quiet: 0, owner: false, browser: true, hush: 0 };
+    canRec: false, quiet: 0, owner: false, browser: true, voice: 'browser', hush: 0, syncing: false };
   const SILENT_MS = 1500; // no frame this long after the microphone opened: no sound is coming
   const HEAR = {
     listening: 'Listening\u2026 tap the mic again to stop.',
@@ -43,7 +43,7 @@
     short: 'That was too short to hear anything. Tap the mic, speak, then tap it again.',
     caught: 'I didn\u2019t catch that. Type the question instead.',
     charged: ' This month\u2019s free listening minutes are used up, so this one was charged.',
-    toCloud: ' Or switch to Cloud listening in Book settings (the console\u2019s Book panel).', // the owner only
+    toCloud: ' Or switch to Cloud listening in Book settings (the console\u2019s Book panel). This show uses it as soon as you tap the mic again.', // the owner only
     type: ' Or type your question.', // decision 4: every failure of this browser's recogniser offers typing
   };
   const AU = () => window.JarvisAudio || null;
@@ -68,12 +68,29 @@
     S.lines = obj(opts && opts.lines) || {}; S.phase = opts && opts.phase === 'questions' ? 'questions' : 'show';
     S.owner = !!(opts && opts.audience === 'owner'); // the server's script says whose show it is (H1)
     S.browser = !(opts && opts.listening === 'cloud'); // decision 4: this browser listens unless he chose the cloud
+    S.voice = opts && opts.voice === 'cloud' ? 'cloud' : 'browser';
     $('shFinish').textContent = S.phase === 'questions' ? 'No more questions' : 'Back to the show';
     $('shTalk').hidden = false; $('show').classList.add('talking');
-    const R = V() && (S.browser ? V().listen : V().record);
-    S.canRec = !!(R && R.supported()); // an old browser: the button stays, disabled, and the line says why
+    canRecord();
     $('shMic').hidden = false;
     leftWords(); micState(); $('shQ').focus();
+  }
+  function canRecord() { // an old browser: the button stays, disabled, and the line says why
+    const R = V() && (S.browser ? V().listen : V().record);
+    S.canRec = !!(R && R.supported());
+  }
+  /** Code review 2, M1: the owner may have switched Listening or Show voice to Cloud in Book settings since the script was
+   *  read (another tab). Read the choice again where it is used (a mic tap, the tab coming back); a blip keeps what we have. */
+  async function refresh() {
+    if (S.syncing || S.recording || S.busy || $('shTalk').hidden) return;
+    S.syncing = true; const gen = S.gen;
+    try {
+      const d = obj(await B().api('/v1/book/show/script')) || {};
+      if (gen !== S.gen) return;
+      const voice = d.voice === 'cloud' ? 'cloud' : 'browser', browser = d.listening !== 'cloud';
+      if (voice !== S.voice) { S.voice = voice; if (V()) V().start(voice); }
+      if (browser !== S.browser) { S.browser = browser; canRecord(); leftWords(); micState(); }
+    } catch (e) { if (e && e.status === 401) { const sh = Show(); if (sh) sh.expired(); } } finally { S.syncing = false; }
   }
   function hide() {
     const had = $('shTalk').contains(document.activeElement); // keep the focus in the show (D15)
@@ -150,6 +167,9 @@
     if (S.recording) { if (S.browser) V().listen.stop(); else await sendRec(); return; }
     if (A && A.locked()) { refused('mic_off'); return; } // nothing opens while it is off
     S.hush += 1; V().stop(); // code review 2, L3: a reply still being spoken stops, so the mic never hears it
+    await refresh();
+    if (S.recording || S.busy) return;
+    if (!S.canRec) { micState(); return; } // the tap found no way to listen with the choice as it is now
     if (S.browser) { listenHere(); return; }
     const gen = S.gen; // the panel closed (a jump, End, the close) while the microphone was starting: it never records
     try {
@@ -235,6 +255,7 @@
     $('shMicOn').addEventListener('click', micOn);
     $('shFinish').addEventListener('click', finish);
     const A = AU(); // "mic off" from another tab or the console (R5 D11): a recording stops, the line follows
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
     if (A && typeof A.onLock === 'function') A.onLock((d) => { if (d && d.locked && S.recording) stopRec(true); if (!$('shTalk').hidden) micState(); });
   }
 

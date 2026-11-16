@@ -251,7 +251,7 @@
   function toggleSound() { S.sound = !S.sound; const V = voice(); if (V) V.mute(!S.sound); sync(); }
   function toggleCaptions() { S.captions = !S.captions; sync(); }
   /** What the questions panel is told: the lines, the phase, whose show it is (the server's script; H1), who listens. */
-  const talkOpts = (phase) => ({ lines: S.script.lines, phase, audience: S.script.audience, listening: S.script.listening });
+  const talkOpts = (phase) => ({ lines: S.script.lines, phase, audience: S.script.audience, listening: S.script.listening, voice: S.script.voice });
   function ask() { const T = talk(); if (!T || S.phase === 'done' || S.phase === 'start') return; if (S.phase === 'playing') pause(); T.open(talkOpts(S.phase === 'questions' ? 'questions' : 'show')); }
   function confirmEnd() {
     const d = $('shConfirm');

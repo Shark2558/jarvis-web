@@ -95,7 +95,7 @@ class LaundryDaily:
         start = local.replace(hour=0, minute=0, second=0, microsecond=0)
         assert self._store.docs is not None  # `available` checked it
         get = self._store.docs.get
-        laundry = await self._store.read_laundry(get, uid)
+        laundry = await self._settle_gone(uid, await self._store.read_laundry(get, uid), now)
         queue = await self._store.read_review(get, uid)
         words = [
             await self._tell(uid, "laundry_overdue", key, said, now)
@@ -109,6 +109,29 @@ class LaundryDaily:
             )
         await self._sweep(uid, now)
         return [w for w in words if w]
+
+    async def _settle_gone(self, uid: str, laundry: LaundryDoc, now: datetime) -> LaundryDoc:
+        """A piece archived or merged away while out is no longer waited for (code review H1)."""
+        wardrobe = self._ctx.store()
+        out = {p for b in providers.open_batches(laundry) for p in providers.outstanding(b)}
+        if wardrobe is None or not out or self._store.docs is None:
+            return laundry
+        view = await wardrobe.view(uid)
+        gone = frozenset(
+            p for p in out if (x := view.piece(p)) is None or x.state == "archived" or x.merged_into
+        )
+        if not gone:
+            return laundry
+        store = self._store
+        assert store.docs is not None
+
+        async def work(tx: DocTx) -> LaundryDoc:
+            fresh = providers.without(await store.read_laundry(tx.get, uid), gone, now)
+            op = store.laundry_op(uid, fresh, now)
+            tx.set(op.path, op.data)
+            return fresh
+
+        return await store.docs.transaction(work)
 
     async def _tell(self, uid: str, kind: Kind, key: str, said: str, now: datetime) -> str:
         """Claim, send, and keep the claim only when he has it (review H4): the codebase's one

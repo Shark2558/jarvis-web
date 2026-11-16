@@ -125,6 +125,25 @@ def mark_back(doc: LaundryDoc, pid: str, now: datetime) -> LaundryDoc:
     return _replace(doc, _settled(batch, (*batch.back, pid), now)) if batch else doc
 
 
+def without(doc: LaundryDoc, gone: frozenset[str], now: datetime) -> LaundryDoc:
+    """Pieces that are no longer his (archived, merged away) come off the batches they are out
+    on, so a batch never waits for them; one with nothing left out closes."""
+    out = doc
+    for batch in open_batches(doc):
+        if gone & set(outstanding(batch)):
+            left = tuple(p for p in batch.pieces if p not in gone or p in batch.back)
+            if not left:  # a batch holds at least one piece: nothing of it is left to keep
+                out = out.model_copy(
+                    update={"batches": tuple(b for b in out.batches if b.id != batch.id)}
+                )
+                continue
+            update: dict[str, object] = {"pieces": left}
+            if not [p for p in left if p not in batch.back]:
+                update |= {"closed_at": now, "short": False}
+            out = _replace(out, batch.model_copy(update=update))
+    return out
+
+
 def prune(doc: LaundryDoc, now: datetime) -> LaundryDoc:
     keep = tuple(b for b in doc.batches if b.closed_at is None or now - b.closed_at <= KEEP)
     return doc.model_copy(update={"batches": keep})

@@ -197,3 +197,21 @@ async def test_one_owners_failure_stops_no_one_and_no_key_is_off() -> None:
 
 def test_the_job_has_a_name_the_wiring_accepts_and_a_bounded_budget() -> None:
     assert LaundryDaily.name == "laundry_daily" and 0 < LaundryDaily.budget_s <= 60
+
+
+async def test_i1_an_archived_piece_never_keeps_a_batch_overdue() -> None:
+    """Code review H1: a piece archived while out left its batch open for ever, and
+    `laundry_daily` rang "overdue" every day with a new claim. Gone pieces come off the batch,
+    and a batch with nothing left out closes."""
+    r, batch = await _overdue_rig()
+    await r.commit(ev(BLAZER, "archived", r.clock(), to="archived"))
+    r.clock.set(ist(2026, 11, 20, 7, 0))
+    await _job(r).run([UID])
+    assert [m for _, k, m in r.notifier.sent if k == "laundry_overdue"] == [
+        "1 piece at an outside laundry is 2 days overdue: details in Helpers, Wardrobe."
+    ]  # only the trousers are still out
+    await r.commit(ev(TROUSERS, "archived", r.clock(), to="archived"))
+    r.clock.set(ist(2026, 11, 21, 7, 0))
+    await _job(r).run([UID])
+    assert len(r.notifier.sent) == 1  # nothing left out: no new alert
+    assert all(b.id != batch for b in (await r.laundry()).batches)  # nothing left to keep

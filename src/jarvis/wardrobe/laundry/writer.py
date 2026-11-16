@@ -8,7 +8,8 @@ without the entry that resolves it. It reads B's queue through the commit's `tx`
 write) and answers ONE `Set` of the whole sealed document (or nothing, when every need is already
 covered).
 
-Two calls in one commit see each other: each answer is staged on that `tx` object, and the next
+Two calls in one commit see each other: each answer is staged on that `tx` object (held weakly,
+so it goes when the commit is over), and the next
 call in the same commit (B's own flow, C's stale check through this same method, then the fold's
 needs) starts from it, so the last `Set` A writes is the superset. That rests on two lines of A's
 contract (ports: "writes the index, the log pages, `extra` and the entries LAST"): A passes the
@@ -20,6 +21,7 @@ Without a key it raises `LaundryUnavailable`: the commit rolls back, nothing is 
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -33,27 +35,22 @@ from jarvis.wardrobe.ports import ReviewNeeded
 if TYPE_CHECKING:
     from jarvis.wardrobe.laundry.flows import Desk
 
-STAGED_MAX = 32  # commits in flight at once (one owner; a few concurrent taps)
-
 
 class LaundryWriter:
     def __init__(self, store: LaundryStore, now: Callable[[], datetime]) -> None:
         self._store, self._now = store, now
-        self._staged: dict[int, tuple[DocTx, dict[str, ReviewDoc]]] = {}
+        # keyed by the commit's own `tx` object, held weakly: a commit's staging goes with it
+        # (review L7), and a retried transaction's new `tx` starts from a fresh read
+        self._staged: weakref.WeakKeyDictionary[DocTx, dict[str, ReviewDoc]] = (
+            weakref.WeakKeyDictionary()
+        )
         self.desk: Desk | None = None
 
     def _slot(self, tx: DocTx) -> dict[str, ReviewDoc] | None:
-        found = self._staged.get(id(tx))
-        return found[1] if found is not None and found[0] is tx else None
+        return self._staged.get(tx)
 
     def _stage(self, tx: DocTx, uid: str, doc: ReviewDoc) -> None:
-        slot = self._slot(tx)
-        if slot is None:
-            slot = {}
-            self._staged[id(tx)] = (tx, slot)  # the tx is held: its id can't be reused meanwhile
-            while len(self._staged) > STAGED_MAX:
-                self._staged.pop(next(iter(self._staged)))
-        slot[uid] = doc
+        self._staged.setdefault(tx, {})[uid] = doc
 
     async def current(self, uid: str, tx: DocTx) -> ReviewDoc:
         """His queue as this commit sees it: staged by an earlier call in it, else read."""
@@ -77,4 +74,4 @@ class LaundryWriter:
         return (self.put(uid, tx, after),)
 
 
-__all__ = ["STAGED_MAX", "LaundryWriter"]
+__all__ = ["LaundryWriter"]

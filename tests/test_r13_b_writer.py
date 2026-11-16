@@ -6,6 +6,7 @@
 # entry and a pending deposit or a hold is never dropped; without a key it writes nothing in clear.
 from __future__ import annotations
 
+import gc
 from datetime import timedelta
 
 import pytest
@@ -156,3 +157,12 @@ async def test_the_review_view_counts_open_entries_and_shows_at_most_100() -> No
     got = await r.desk.review_view(UID)
     assert got.open == 2 and [e.kind for e in got.entries] == ["hold", "hold"]
     assert got.entries[1].words == "Missing: tell JARVIS where it is."
+
+
+async def test_l7_a_commits_staging_goes_with_its_transaction() -> None:
+    r = await rig()
+    await r.desk.blind(UID, places=(TRAY,))
+    await r.commit(admit(ev(TEE, "deposited", r.clock(), source="camera")))
+    await r.desk.move(UID, "basket", pieces=(NAVY_SHIRT,), more=1, category="tops")
+    gc.collect()
+    assert len(r.writer._staged) == 0  # noqa: SLF001 - nothing held once each commit is over

@@ -45,7 +45,8 @@ const SAVE_WORDS = 'Save this photo with the piece (sealed; only you)';
 const TAG_MOST = 0.51, TAG_RANGE = '\u20b90.01\u2013\u20b90.51, depending on the brain';
 const tagWords = (inr) => 'Send this photo to the AI to tag it (about ' + (inr ? '\u20b9' + inr.toFixed(2) : TAG_RANGE) + ')';
 const noAi = () => !!(window.JarvisBrainMode && window.JarvisBrainMode.get() === 'none');
-const BAND_WORDS = { likely: 'likely this one', maybe: 'maybe', new: 'new?' };
+const BAND_WORDS = { likely: ' (likely this one)', maybe: ' (maybe)', weak: ' (a weak match)' }; // none: no words (M5)
+const banded = (c) => BAND_WORDS[c.band] || '';
 
 /*SCAN-PURE-BEGIN*/
 // Plain arithmetic only: tests/test_r13_d_scan.py runs this very text in Node.
@@ -119,11 +120,9 @@ function mount(host, P) {
   UI.stage = mk('div', 'cam-stage');
   UI.acts = mk('div', 'sacts cam-acts');
   UI.state = mk('p', 'snote');
-  UI.state.setAttribute('role', 'status');
-  UI.state.setAttribute('aria-live', 'polite');
+  UI.state.setAttribute('role', 'status'); UI.state.setAttribute('aria-live', 'polite');
   UI.body = mk('div', 'wd-scan');
-  UI.unsent = mk('div', 'sacts');
-  UI.unsent.hidden = true;
+  UI.unsent = mk('div', 'sacts'); UI.unsent.hidden = true;
   UI.sent = mk('p', 'sfine');
   host.replaceChildren(mk('p', 'sfine', INTRO), UI.flows, UI.stage, UI.acts, UI.state, UI.body, UI.unsent, UI.sent);
   choose('add');
@@ -328,15 +327,13 @@ function row(title, sub, actions) {
   t.append(mk('b', '', title));
   if (sub) t.append(mk('small', '', sub));
   (actions || []).forEach((x) => a.append(x));
-  r.append(t);
-  if (a.childNodes.length) r.append(a);
+  r.append(t); if (a.childNodes.length) r.append(a);
   return r;
 }
 function select(label, options, value, change) {
   const s = mk('select', 'minput');
   options.forEach(([v, t]) => { const o = mk('option', '', t); o.value = v; s.append(o); });
-  s.value = value;
-  s.addEventListener('change', () => change(s.value));
+  s.value = value; s.addEventListener('change', () => change(s.value));
   return S.P.field(label, s);
 }
 function paintBody() {
@@ -358,7 +355,7 @@ function chooseActs(card) {
   const out = [];
   const label = [...S.found.keys()];
   if (card.cands.twins) out.push(mk('p', 'snote warn', TWINS_NOTE));
-  const picks = card.cands.top.map((c) => btn('This one: ' + nameOf(c.piece) + ' (' + BAND_WORDS[c.band] + ')', c.band === 'likely' ? 'primary' : '', () => pick(card, c.piece, 'match', c.score)));
+  const picks = card.cands.top.map((c) => btn('This one: ' + nameOf(c.piece) + banded(c), c.band === 'likely' ? 'primary' : '', () => pick(card, c.piece, 'match', c.score)));
   label.forEach((id) => picks.unshift(btn('This one: ' + nameOf(id) + ' (label read)', 'primary', () => pick(card, id, 'qr', null))));
   if (picks.length) { const a = mk('div', 'sacts'); a.append(...picks); out.push(a); }
   const chips = mk('div', 'sacts wd-chips');
@@ -434,7 +431,7 @@ function pickRows(card) {
   const out = [];
   if (card.cands.twins) out.push(mk('p', 'snote warn', TWINS_NOTE));
   const a = mk('div', 'sacts');
-  card.cands.top.forEach((c) => a.append(btn(nameOf(c.piece) + ' (' + BAND_WORDS[c.band] + ')', '', () => { S.found.set(c.piece, { how: 'match', score: c.score, at: new Date().toISOString() }); card.piece = c.piece; paintBody(); })));
+  card.cands.top.forEach((c) => a.append(btn(nameOf(c.piece) + banded(c), '', () => { S.found.set(c.piece, { how: 'match', score: c.score, at: new Date().toISOString() }); card.piece = c.piece; paintBody(); })));
   if (card.cands.twins) a.append(btn('Not sure which', '', () => { card.cands.top.slice(0, 2).forEach((c) => S.found.set(c.piece, { how: 'unsure', score: c.score, at: new Date().toISOString() })); card.piece = card.cands.top[0].piece; paintBody(); }));
   out.push(a);
   return out;

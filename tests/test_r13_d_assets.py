@@ -9,8 +9,9 @@
 #     ramp and silhouette) gives the manifest's reference; a drawn face fires UltraFace and a
 #     drawn silhouette fires SSD's "person" through the engine's own decoders (console-vision-r13.js); a
 #     drawn striped shirt keeps its candidate under rotation and folding (INV-06's real half)
-#   - REVIEW-D-1 H2 on the real models: a 60-80 px face beside a piece in a 1600 x 1200 photo is
-#     missed by the whole-photo check and found in the crop the scan module cuts
+#   - REVIEW-D-1 on the real models: H2, a 60-80 px face beside a piece in a 1600 x 1200 photo is
+#     missed by the whole-photo check and found in the crop the scan module cuts; M5, the scan
+#     module's bands never call INV-06's right piece a weak match, and say none for a single print
 from __future__ import annotations
 
 import importlib.util
@@ -151,3 +152,10 @@ def test_h2_a_small_face_beside_a_piece_is_missed_by_the_photo_and_found_in_its_
     for row in real["small_face"]:
         assert row["crop"] is True, row  # the crop's own check refuses it: nothing kept or sent
     assert [r["frame"] for r in real["small_face"]] == [False, False, False]  # why H2 was needed
+
+
+def test_m5_the_bands_on_inv_06s_real_scores(real: dict[str, Any]) -> None:
+    for view in ("rotated", "folded", "back"):
+        got = real["bands"][view]
+        assert got["top"] == "striped" and got["band"] in ("maybe", "likely"), (view, got)
+    assert real["bands"]["one"]["band"] is None  # one saved print: no band words at all

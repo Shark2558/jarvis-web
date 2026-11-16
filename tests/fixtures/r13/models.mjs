@@ -8,6 +8,7 @@
 //   person / clean_person             a drawn silhouette is a "person"; the shirt is not
 //   inv06 {rotated, folded, back}     a drawn striped shirt's views find the striped shirt first (centred cosine over
 //                                     the gallery's mean, as the scan module compares), with the margin to the next
+//   bands {rotated, folded, back, one} console-wardrobe-words.js's candidates() on those real fingerprints (M5)
 //   small_face [{px, frame, crop}]    H2: a 60-80 px face beside a piece in a 1600 x 1200 photo, checked on the whole
 //                                     photo and on the 512-px crop the scan module cuts (its own boxesOf and crop),
 //                                     whole and in its four overlapping two-thirds (cropChecks)
@@ -151,7 +152,19 @@ out.inv06 = {
 };
 out.inv06.other_top = (await rank(rotate(gallery.checked, 25))).top;
 
-// ---- 4: H2, a small face beside a piece: the whole photo, then the crop that would leave ---------------------------
+// ---- 4: M5, the scan module's own bands on these real fingerprints ----------------------------------------------
+const W = await asModule(STATIC + '/console-wardrobe-words.js');
+const prints = names.map((n) => ({ piece: n, v: vecs[n] }));
+const own = (id) => id; // every piece its own type: no "identical copies" here
+const bandOf = async (p, gallery) => { const c = W.candidates(await embed(p), gallery, own); return { top: c.top[0].piece, band: c.top[0].band }; };
+out.bands = {
+  rotated: await bandOf(rotate(laid, 25), prints),
+  folded: await bandOf(shirt(navyWhite, { sleeves: false, height: 0.55 }), prints),
+  back: await bandOf(shirt(navyWhite, { collar: false }), prints),
+  one: await bandOf(rotate(laid, 25), prints.filter((x) => x.piece === 'checked')),
+};
+
+// ---- 5: H2, a small face beside a piece: the whole photo, then the crop that would leave ---------------------------
 const scan = readFileSync(STATIC + '/console-wardrobe-scan.js', 'utf8');
 const region = scan.slice(scan.indexOf('/*SCAN-PURE-BEGIN*/'), scan.indexOf('/*SCAN-PURE-END*/'));
 const { boxesOf } = new Function(region + '\nreturn { boxesOf };')();

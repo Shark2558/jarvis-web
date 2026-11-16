@@ -5,7 +5,10 @@
 // module imports it on its first press (Start the camera, Choose a photo); tests import this very file. ASCII only.
 
 const LABEL = /^jw1:([a-z2-7]{8})$/;
-const LIKELY = 0.8, MAYBE = 0.6, TWINS = 0.03, CANDIDATES = 3;
+// The plan's starting bands (D7; the pilot calibrates them, raw and centred). M5 (REVIEW-D-1), from INV-06's real scores: a
+// candidate is never called "new?"; candidate 1 at least LIFT ahead of candidate 2 is "maybe"; with fewer than BANDED
+// saved prints there is no mean to centre on and raw scores do not separate pieces, so no band words at all.
+const LIKELY = 0.8, MAYBE = 0.6, TWINS = 0.03, CANDIDATES = 3, LIFT = 0.25, BANDED = 3;
 const PRIVATE_TYPES = ['underpants', 'briefs', 'boxers', 'vest', 'undershirt', 'thermal']; // wardrobe/model.py
 const FABRICS13 = ['cotton', 'linen', 'silk', 'wool', 'polyester', 'nylon', 'viscose', 'rayon', 'denim', 'leather', 'elastane', 'spandex', 'khadi'];
 const CARE13 = [[/machine\s*wash/, 'machine_wash'], [/hand\s*wash/, 'hand_wash'], [/dry\s*clean/, 'dry_clean', /(?:do\s*not|don.?t)\s*dry\s*clean/],
@@ -30,14 +33,15 @@ function cosine(a, b, mean) {
   for (let i = 0; i < a.length; i += 1) { const x = a[i] - (mean ? mean[i] : 0), y = b[i] - (mean ? mean[i] : 0); d += x * y; na += x * x; nb += y * y; }
   return na && nb ? d / Math.sqrt(na * nb) : 0;
 }
-const band = (s) => (s >= LIKELY ? 'likely' : s >= MAYBE ? 'maybe' : 'new');
+const band = (s) => (s >= LIKELY ? 'likely' : s >= MAYBE ? 'maybe' : 'weak');
 function candidates(query, prints, typeOf) { // his saved fingerprints of ONE model, centred by their mean (D7)
   if (!query || !prints.length) return { top: [], twins: false };
-  const mean = prints.length >= 2 ? meanOf(prints.map((p) => p.v)) : null, best = new Map();
+  const banded = prints.length >= BANDED, mean = banded ? meanOf(prints.map((p) => p.v)) : null, best = new Map();
   prints.forEach((p) => { const s = cosine(query, p.v, mean); if (!best.has(p.piece) || s > best.get(p.piece)) best.set(p.piece, s); });
   const top = [...best].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, CANDIDATES)
-    .map(([piece, s]) => ({ piece, score: Math.round(s * 1000) / 1000, band: band(s) }));
-  const twins = top.length > 1 && top[0].band !== 'new' && top[0].score - top[1].score <= TWINS && typeOf(top[0].piece) === typeOf(top[1].piece);
+    .map(([piece, s]) => ({ piece, score: Math.round(s * 1000) / 1000, band: banded ? band(s) : null }));
+  if (banded && top.length > 1 && top[0].band === 'weak' && top[0].score - top[1].score >= LIFT) top[0].band = 'maybe';
+  const twins = banded && top.length > 1 && top[0].band !== 'weak' && top[0].score - top[1].score <= TWINS && typeOf(top[0].piece) === typeOf(top[1].piece);
   return { top, twins };
 }
 function parseLabel(text) { // only parsed forms (D7, INV-10): never the text itself; each stays unverified
@@ -54,5 +58,5 @@ function parseLabel(text) { // only parsed forms (D7, INV-10): never the text it
   return { size, fabric, care };
 }
 
-export { LABEL, LIKELY, MAYBE, TWINS, CANDIDATES, PRIVATE_TYPES, FABRICS13, CARE13, SIZES, labelPiece, unb64, meanOf, cosine,
+export { LABEL, LIKELY, MAYBE, TWINS, CANDIDATES, LIFT, BANDED, PRIVATE_TYPES, FABRICS13, CARE13, SIZES, labelPiece, unb64, meanOf, cosine,
   band, candidates, parseLabel };

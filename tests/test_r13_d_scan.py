@@ -346,6 +346,50 @@ def test_l10_the_tag_checks_no_ai_again_at_the_press() -> None:
     assert out["steps"][-1]["found"] is True and out["door"] == []
 
 
+# ---- M5: the bands say nothing they can't back ------------------------------------------------
+BANDS_JS = r"""
+const P = await import('data:text/javascript;base64,' + Buffer.from(require('fs')
+  .readFileSync(process.argv[1], 'utf8')).toString('base64'));
+const v = (seed, n = 64) => Uint8Array.from({ length: n }, (_, i) => (seed * 31 + i * 7 + (i % (seed || 1))) % 256);
+const type = () => 'shirt';
+const gallery = [1, 2, 3, 4, 5].map((s) => ({ piece: 'p' + s, v: v(s) }));
+const near = Uint8Array.from(v(3), (x, i) => (i % 9 ? x : 255 - x)); // piece 3, seen at another angle
+console.log(JSON.stringify({
+  banded: P.candidates(near, gallery, type).top,
+  one: P.candidates(v(9), [{ piece: 'p1', v: v(1) }], type),
+  two: P.candidates(v(9), gallery.slice(0, 2), type),
+}));
+"""
+
+
+def _bands() -> dict[str, Any]:
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("node is not installed")
+    src = "(async () => {" + BANDS_JS + "})();"
+    run = subprocess.run(
+        [node, "-e", src, str(WORDS)], capture_output=True, text=True, timeout=30, check=False
+    )
+    assert run.returncode == 0, run.stderr
+    out: dict[str, Any] = json.loads(run.stdout)
+    return out
+
+
+def test_m5_no_candidate_is_ever_called_new_and_few_prints_say_no_band() -> None:
+    got = _bands()
+    assert all(c["band"] in ("likely", "maybe", "weak") for c in got["banded"])
+    assert got["one"]["top"][0]["band"] is None and got["two"]["top"][0]["band"] is None
+    assert got["one"]["twins"] is False and got["two"]["twins"] is False
+    js = WORDS.read_text(encoding="utf-8") + SCAN.read_text(encoding="utf-8")
+    shown = re.sub(r"//[^\n]*|/\*.*?\*/", "", js, flags=re.S)  # what a card can say
+    assert "new?" not in shown and "LIFT = 0.25, BANDED = 3" in js
+
+
+def test_m5_a_single_print_offers_its_piece_with_no_band_words() -> None:
+    out = scan(PHOTO, vision={"embed": _vec(11)}, prints=PRINTS[2:])
+    assert f"This one: {VIEW_NAME[NAVY]}" in out["steps"][-1]["buttons"]  # just his tap to make
+
+
 # ---- D10: private pieces ------------------------------------------------------------------------
 def test_d10_a_private_piece_never_gets_a_photo_a_fingerprint_or_a_tag() -> None:
     out = scan(

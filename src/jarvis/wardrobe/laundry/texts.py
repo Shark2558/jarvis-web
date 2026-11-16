@@ -55,6 +55,7 @@ MOVED_NEEDS = "Say where it is now: a state and, if you like, a place."
 NOTHING_TO_CORRECT = "There's no step to strike out for that piece."
 EVENT_UNKNOWN = "That step isn't in this piece's history."
 CORRECTED = "Done: that step is struck out and the piece's state worked out again."
+CORRECTED_HELD = f"Done: that step is struck out. The piece waits for a check {WHERE}."
 CLOSED = "Done: the check is closed."
 NOTHING_LEFT = "Nothing to change: it was answered another way. The check is closed."
 # the Activity words (`Tool.activity_words`): fixed, never a piece or a shop

@@ -96,6 +96,24 @@ def from_need(need: ReviewNeeded, view: WardrobeView, now: datetime) -> Entry:
     )
 
 
+def covered(doc: ReviewDoc, need: ReviewNeeded) -> bool:
+    return any(_covers(e, need) for e in open_entries(doc))
+
+
+def reopen(view: WardrobeView, doc: ReviewDoc, piece: str, now: datetime) -> Change:
+    """Review H3's stop-gap: a correction left this piece held and no open entry answers it
+    (the fold asks for none after a `corrected`, until I1): its check, from the piece's own
+    hold. Nothing to do ("already") when it isn't held or an entry already holds it."""
+    p = view.pieces.get(piece)
+    if p is None or p.state != "review" or p.hold is None:
+        return Change(already=True)
+    need = ReviewNeeded("hold", piece, None, back_to=p.back_to, reason=p.hold)
+    if covered(doc, need):
+        return Change(already=True)
+    entry = from_need(need, view, now)
+    return Change(entries=(entry,), words=texts.CORRECTED_HELD, pieces=(piece,), entry=entry.id)
+
+
 def put(doc: ReviewDoc, entry: Entry) -> ReviewDoc:
     entries = [entry if e.id == entry.id else e for e in doc.entries]
     if all(e.id != entry.id for e in doc.entries):
@@ -219,12 +237,14 @@ __all__ = [
     "add_needs",
     "ask_which",
     "cap",
+    "covered",
     "entry_view",
     "find",
     "from_need",
     "open_entries",
     "prune",
     "put",
+    "reopen",
     "review_view",
     "words_of",
 ]

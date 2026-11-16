@@ -325,7 +325,22 @@ class Desk:
             raise Refused(texts.UNKNOWN_PIECE)
         target = history.to_correct(await wardrobe.history(uid, piece), event)
         done = await wardrobe.correct(uid, piece, target)
-        return Done("done", texts.CORRECTED, (piece,), done)
+        return await self._reopen(uid, piece, done) or Done("done", texts.CORRECTED, (piece,), done)
+
+    async def _reopen(self, uid: str, piece: str, done: Committed) -> Done | None:
+        """Review H3's stop-gap: a correction that leaves the piece held gets its check in a
+        second commit (the atomic fix is I1's: the fold asks for it); A's sweep stays the
+        backstop if this one fails."""
+        p = done.view.piece(piece)
+        if p is None or p.state != "review":
+            return None
+        now = self.ctx.now()
+
+        def plan(view: WardrobeView, laundry: LaundryDoc, queue: ReviewDoc) -> Change:
+            return review.reopen(view, queue, piece, now)
+
+        got = await self._commit(uid, plan)
+        return got if got.status == "review" else None
 
     # ---- reads -------------------------------------------------------------------------------
     async def status(self, uid: str) -> dict[str, Any]:

@@ -19,6 +19,8 @@ from r13_fakes_b import (
     SOCK_R,
     TEE,
     TROUSERS,
+    TWIN,
+    WATCH,
     WHITE_SHIRT,
     rig,
 )
@@ -77,6 +79,53 @@ async def test_lnd_05_correcting_an_old_basket_event_never_overwrites_a_later_cl
     assert fixed.status == "done" and await r.state(BLUE_SHIRT) == "ready"
     marks = {h.event.id: h.mark for h in await r.store.history(UID, BLUE_SHIRT)}
     assert marks[deposit] == "voided"
+
+
+async def test_lnd_05_striking_out_a_release_reopens_its_check() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))
+    (entry,) = await r.open_entries()
+    await r.desk.resolve(UID, entry.id, "none")  # "there was no deposit": both released
+    assert await r.state(WHITE_SHIRT) == "ready" and await r.open_entries() == ()
+    r.clock.advance(minutes=5)
+    got = await r.desk.correct(UID, WHITE_SHIRT)  # the newest step: the release
+    shirt = await r.piece(WHITE_SHIRT)
+    assert shirt.state == "review" and shirt.hold == "held"
+    (again,) = await r.open_entries()  # a hold never lives without its entry (H4)
+    assert (again.kind, again.reason, again.pieces, again.back_to) == (
+        "hold",
+        "held",
+        (WHITE_SHIRT,),
+        "ready",
+    )
+    assert got.status == "review" and got.entry == again.id
+    assert got.message == (
+        "Done: that step is struck out. The piece waits for a check in Helpers, Wardrobe."
+    )
+    r.clock.advance(minutes=1)
+    await r.desk.resolve(UID, again.id, "these")  # and it can be answered
+    assert await r.state(WHITE_SHIRT) == "ready" and await r.open_entries() == ()
+
+
+async def test_lnd_05_a_correction_that_leaves_no_hold_opens_nothing() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", pieces=(TEE,))
+    r.clock.advance(minutes=5)
+    got = await r.desk.correct(UID, TEE)
+    assert got.status == "done" and got.entry is None and await r.open_entries() == ()
+
+
+async def test_lnd_05_a_correction_beside_an_open_check_opens_no_second_one() -> None:
+    r = await rig()
+    await r.commit(ev(WATCH, "missing", r.clock()))
+    r.clock.advance(minutes=1)
+    seen = ev(WATCH, "seen", r.clock(), place=DRAWER)
+    await r.commit(seen)
+    r.clock.advance(minutes=1)
+    got = await r.desk.correct(UID, WATCH, seen.id)  # still missing: its own check answers it
+    assert got.status == "done" and got.entry is None
+    (only,) = await r.open_entries()
+    assert only.pieces == (WATCH,) and await r.state(WATCH) == "review"
 
 
 async def test_lnd_06_a_shirt_lifted_from_the_hamper_to_the_sorting_table_stays_unavailable() -> (

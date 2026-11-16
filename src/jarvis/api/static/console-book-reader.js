@@ -5,6 +5,8 @@
 // .bwhat, .blines, .bchips) and the amber .tag for a flagged licence (the word says it too, never colour alone).
 // Server text reaches the page through textContent only; a field of the wrong type is dropped, never guessed.
 // No build step; CSP script-src 'self'; ASCII source; <= 400 lines.
+// R6.2 owner decision 4: Show voice and Listening are each "Browser (free)" (the default, Rs 0) or "Cloud"; a switch to
+// Cloud shows what it uses and costs and asks first (the console's .bdialog), then saves with confirm_cost: true.
 // window.JarvisBookReader = { sections(host, raw) -> count, settings(host, deps) }.
 (() => {
   'use strict';
@@ -164,8 +166,18 @@
     return n;
   }
 
-  // ---- Book settings (D16): creator name, show voice, questions, a training brain --------------
-  const VOICES = [['cloud', 'JARVIS\u2019s cloud voice'], ['browser', 'This browser\u2019s voice']];
+  // ---- Book settings (D16): creator name, show voice, listening (R6.2), questions, a training brain ----------
+  // [key, label, hint (the privacy note for listening), the options, what Cloud uses and costs (the confirmation)]
+  const VOICE_ROWS = [
+    ['show_voice', 'Show voice', 'The browser voice is free and works without the cloud.',
+      [['browser', 'Browser (free)'], ['cloud', 'Cloud (\u20b9)']],
+      ['The cloud voice uses this month\u2019s free Google allowance first (shared with the console), then costs about \u20b920\u201330 a tour, up to your monthly limit.',
+        'A guest show uses your choice, but a guest\u2019s tour stops at the free allowance and is never charged.']],
+    ['listening', 'Listening', 'Ask by voice. This browser\u2019s recognition is free, but Chrome may send your audio to Google (the browser\u2019s maker) to turn it into text, unless it listens on the device.',
+      [['browser', 'Browser (free)'], ['cloud', 'Cloud (\u20b9)']],
+      ['Cloud listening uses this month\u2019s free Google allowance first (shared with the console), then costs about \u20b92.3 a minute of listening, up to your monthly limit.',
+        'A guest show uses your choice, but a guest\u2019s cloud listening stops at the free allowance and is never charged.']],
+  ];
   function sw(key, label, hint, on, flip) {
     const opt = mk('div', 'bopt'), t = mk('div', 'btxt'), b = mk('button', 'bsw'), tr = mk('span', 'track');
     t.append(mk('span', 'bl', label), mk('small', '', hint));
@@ -184,15 +196,22 @@
     const line = mk('div', 'bk-namerow'); line.append(inp, go);
     opt.append(lab, line); return opt;
   }
-  function voiceRow(value, save) {
+  /** One voice choice: Browser (free) saves at once; Cloud asks first, with what it uses and costs (confirm before commit). */
+  function voiceRow([key, label, hint, options, cost], value, save, ask) {
     const opt = mk('div', 'bopt'), t = mk('div', 'btxt'), sel = mk('select', 'bsel');
-    sel.id = 'bkVoice';
-    const lab = mk('label', 'bl', 'Show voice'); lab.htmlFor = 'bkVoice';
-    t.append(lab, mk('small', '', 'The browser voice is free and works without the cloud.'));
-    VOICES.forEach(([v, words]) => { const o = mk('option', '', words); o.value = v; o.selected = v === value; sel.append(o); });
-    sel.addEventListener('change', () => save({ show_voice: sel.value }));
+    sel.id = key === 'show_voice' ? 'bkVoice' : 'bkListen'; sel.dataset.key = key;
+    const lab = mk('label', 'bl', label); lab.htmlFor = sel.id;
+    t.append(lab, mk('small', '', hint));
+    options.forEach(([v, words]) => { const o = mk('option', '', words); o.value = v; o.selected = v === value; sel.append(o); });
+    const put = async (patch) => { await save(patch); if (sel.isConnected) sel.value = value; }; // refused: the saved choice
+    sel.addEventListener('change', async () => {
+      if (sel.value !== 'cloud') { await put({ [key]: sel.value }); return; }
+      const yes = await ask(label + ': switch to the cloud?', cost, [{ id: '', label: 'Keep it free' }, { id: 'go', label: 'Use the cloud', kind: 'primary' }]);
+      if (yes === 'go') await put({ [key]: 'cloud', confirm_cost: true }); else sel.value = value;
+    });
     opt.append(t, sel); return opt;
   }
+  const voice = (v) => (v === 'cloud' ? 'cloud' : 'browser'); // R6.2: anything else is the free browser
   /** deps: {load() -> settings, save(patch) -> settings (throws plain words), ask(title, lines, buttons) -> id} */
   function settings(host, deps) {
     const wrap = mk('div', 'bk-set'), noteEl = mk('p', 'bnote bk-setnote');
@@ -222,11 +241,11 @@
         }
         await save({ [key]: on });
       };
-      body.append(nameRow(txt(data.creator_name, 40), save), voiceRow(data.show_voice === 'browser' ? 'browser' : 'cloud', save),
+      body.append(nameRow(txt(data.creator_name, 40), save), ...VOICE_ROWS.map((r) => voiceRow(r, voice(data[r[0]]), save, deps.ask)),
         sw('talk_on', 'Questions after the show', 'JARVIS answers questions about how he is built.', data.talk_on !== false, flip),
         sw('allow_training_brain', 'Allow a brain that may learn', 'Off: questions use a brain that does not train on them.', data.allow_training_brain === true, flip));
     };
-    const box = disclosure('Book settings', 'Creator name, voice, questions', (body) => {
+    const box = disclosure('Book settings', 'Creator name, voice, listening, questions', (body) => {
       paint(body);
       deps.load().then((d) => { data = obj(d) || {}; paint(body); }, () => { body.textContent = ''; body.append(mk('p', 'bempty', 'Couldn\u2019t read the settings.')); });
     }, false);

@@ -445,7 +445,8 @@ async def test_settings_round_trip_and_the_audit_names_fields_only(rig: Rig) -> 
     no_store(r)
     assert r.json() == {
         "creator_name": "",
-        "show_voice": "cloud",
+        "show_voice": "browser",  # R6.2 owner decision 4: the browser's voices by default
+        "listening": "browser",
         "talk_on": True,
         "allow_training_brain": False,
         "creator_max": 40,

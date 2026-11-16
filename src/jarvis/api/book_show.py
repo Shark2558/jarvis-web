@@ -6,16 +6,19 @@ browser's show-only marker, SEC-4: `book_show_auth`), every answer `no-store` (a
 included).
 
 POST /v1/book/open {proof, audience}     {token, session_id, until, idle_until, audience} · 403
-                                         console_only / passkey_setup_needed / reauth_required /
-                                         passkey_required / passkey_rejected · 409
-                                         guest_needs_google · 404 no_book · 429 (5 a minute)
+                                         google_needed (token mode, R6.2 G11) / console_only /
+                                         passkey_setup_needed / reauth_required /
+                                         passkey_required / passkey_rejected · 404 no_book · 429
+                                         (5 a minute)
 GET  /v1/book/show/script                ● {release, audience, scenes 1-13, closing {lines,
                                          hand_back}, costs (+ month_inr, limit_inr: owner only),
-                                         talk {on, why}, voice cloud|browser, session}
+                                         talk {on, why}, voice and listening browser|cloud (R6.2:
+                                         the browser's unless the owner switched), session}
 POST /v1/book/show/speak {line_id}       ● audio/mpeg (a beat id of this book or a lines.LINES
                                          key; the server holds the text) · 404 unknown_line · 503
-                                         voice_unavailable (reason browser: Book settings) · 402
-POST /v1/book/show/hear                  ● audio/wav <= 15 s, 600 KB -> {text} (never stored)
+                                         voice_unavailable (reason browser: Book settings;
+                                         free_used: a guest past the free allowance) · 402
+POST /v1/book/show/hear | /show/heard    ● a spoken question: api/book_show_hear.py (R6.2)
 POST /v1/book/show/ask {text}            ● {reply_id, reply, refused, follow_up, left} (<= 500
                                          characters, 6 a minute a session)
 POST /v1/book/show/beat                  ● {until, idle_until}
@@ -38,7 +41,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.api.auth import require_auth
-from jarvis.api.body import read_capped
 from jarvis.api.book_http import (
     NO_STORE,
     RESUME_OFF,
@@ -57,7 +59,8 @@ from jarvis.api.book_show_access import (
 )
 from jarvis.api.book_show_auth import require_show_auth, show_user
 from jarvis.api.identity import current_user
-from jarvis.billing.service import BudgetError
+from jarvis.billing.service import BudgetError, BudgetUnavailable, FreeAllowanceUsed
+from jarvis.buildbook import hear
 from jarvis.buildbook.lines import LINES
 from jarvis.buildbook.model import SessionView
 from jarvis.buildbook.ports import BookUnavailable, LockUnreadable, SessionGone
@@ -72,7 +75,6 @@ from jarvis.voice.ports import (
     VoiceRejected,
 )
 from jarvis.voice.service import SpeakRequest
-from jarvis.voice.wav import parse_wav
 
 log = get_logger(__name__)
 router = APIRouter(prefix="/v1/book")
@@ -80,11 +82,9 @@ OWNER_ONLY = [Depends(require_auth)]  # open: an owner's sign-in, never the show
 SHOW = [Depends(require_show_auth)]  # SEC-4: an owner's sign-in or the presenting browser's marker
 
 QUESTION_MAX = 500  # D12
-HEAR_MAX_BYTES = 600 * 1024
-HEAR_MAX_S = 15.0
-WAV_TYPES = frozenset({"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"})
 SESSION_GONE = "This build book session has ended. Open the book again from the console."
 TOO_LONG = f"Keep a question under {QUESTION_MAX} characters."
+SPOKEN_TOO_LONG = "Keep a spoken question under 15 seconds."
 
 
 class SpeakBody(BaseModel):
@@ -122,20 +122,34 @@ async def _session(
         return _gone()
 
 
-def _voice_failure(exc: Exception) -> JSONResponse:
-    if isinstance(exc, BudgetError):
-        return book_err(402, "budget_reached", str(exc))
-    if isinstance(exc, VoiceBusy):
-        return book_err(429, "voice_busy", str(exc))
-    if isinstance(exc, AudioTooLarge):
-        return book_err(413, "too_large", str(exc))
-    if isinstance(exc, BadAudio | NothingToSay | VoiceRejected):
+def _said(reason: str, *, owner: bool, hearing: bool) -> str:
+    """R6.2: the Book's own words, never the voice service's setup text (a Cloud Shell command,
+    "the browser's voice is used"). Narration falls back to the page's own voice: it says so."""
+    return hear.words(reason, owner=owner) if hearing else hear.SPEAK_OFF
+
+
+def _unavailable(reason: str, *, owner: bool, hearing: bool) -> JSONResponse:
+    detail = _said(reason, owner=owner, hearing=hearing)
+    return book_json({"error": "voice_unavailable", "detail": detail, "reason": reason}, 503)
+
+
+def _voice_failure(exc: Exception, *, owner: bool, hearing: bool) -> JSONResponse:
+    if isinstance(exc, BudgetUnavailable):  # G12: the limit can't be read, so it isn't "reached"
+        return _unavailable("budget_unreadable", owner=owner, hearing=hearing)
+    if isinstance(exc, BudgetError):  # G13: the free minutes AND the month's limit are used up
         return book_err(
-            422, "bad_audio" if isinstance(exc, BadAudio) else "input_rejected", str(exc)
+            402, "budget_reached", _said("budget_reached", owner=owner, hearing=hearing)
         )
+    if isinstance(exc, VoiceBusy):
+        return book_err(429, "voice_busy", _said("busy", owner=owner, hearing=hearing))
+    if isinstance(exc, AudioTooLarge):
+        return book_err(413, "too_large", SPOKEN_TOO_LONG)
+    if isinstance(exc, BadAudio):
+        return book_err(422, "bad_audio", str(exc))  # plain words about the recording itself
+    if isinstance(exc, NothingToSay | VoiceRejected):
+        return book_err(422, "input_rejected", _said("rejected", owner=owner, hearing=hearing))
     reason = getattr(exc, "reason", "upstream_error")
-    r = book_json({"error": "voice_unavailable", "detail": str(exc), "reason": reason}, 503)
-    return r
+    return _unavailable(reason, owner=owner, hearing=hearing)
 
 
 @router.post("/open", response_model=None, dependencies=OWNER_ONLY)
@@ -195,50 +209,13 @@ async def show_speak(request: Request, uid: str = Depends(show_user)) -> Respons
             503,
         )
     try:
-        out = await voice.speak(uid, SpeakRequest(text=text))
+        # a guest's narration stays inside the free allowance, as a guest's listening does
+        out = await voice.speak(uid, SpeakRequest(text=text), free_only=view.audience != "owner")
+    except FreeAllowanceUsed:
+        return _unavailable("free_used", owner=view.audience == "owner", hearing=False)
     except (VoiceError, BudgetError) as exc:
-        return _voice_failure(exc)
+        return _voice_failure(exc, owner=view.audience == "owner", hearing=False)
     return Response(content=out.audio, media_type="audio/mpeg", headers=NO_STORE)
-
-
-@router.post("/show/hear", response_model=None, dependencies=SHOW)
-async def show_hear(request: Request, uid: str = Depends(show_user)) -> JSONResponse:
-    svc = _svc(request)
-    if svc is None:
-        return book_off()
-    if (r := limited(request, "hear", uid)) is not None:
-        return r
-    view = await _session(request, svc, uid)
-    if isinstance(view, JSONResponse):
-        return view
-    voice = getattr(request.app.state, "voice", None)
-    ctype = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if voice is None:
-        return book_json(
-            {
-                "error": "voice_unavailable",
-                "detail": "Type your question.",
-                "reason": "not_configured",
-            },
-            503,
-        )
-    if ctype not in WAV_TYPES:
-        return book_err(422, "bad_audio", "Send the recording as audio/wav.")
-    if not svc.allow_hearing(view.session_id):
-        return book_json(
-            {"error": "voice_unavailable", "detail": "Type your question.", "reason": "budget"}, 503
-        )
-    try:
-        blob = await read_capped(
-            request, HEAR_MAX_BYTES, too_large=lambda: AudioTooLarge(HEAR_MAX_BYTES)
-        )
-        if parse_wav(blob).seconds > HEAR_MAX_S:
-            return book_err(413, "too_long", "Keep a spoken question under 15 seconds.")
-        # D1: a guest's words are never biased toward the owner's own phrases (names, places)
-        heard = await voice.transcribe(uid, blob, owner_phrases=view.audience == "owner")
-    except (VoiceError, BudgetError) as exc:
-        return _voice_failure(exc)
-    return book_json({"text": heard.text})  # handed back, never kept (kept only if asked)
 
 
 @router.post("/show/ask", response_model=None, dependencies=SHOW)

@@ -4,7 +4,8 @@ facts come from the release's book.json (`book.show`, scenes 1-11, and `book.cos
 13 and every spoken refusal are D13's fixed lines (`lines.py`), filled with the honorific, its
 possessive and the creator credit from Book settings. The owner's month spend (₹) is added for the
 owner only: a guest never sees it (D1). Book settings that can't be read mean the defaults (no
-creator name, the cloud voice).
+creator name, the browser's voice and listening: R6.2 decision 4, Rs 0). A guest show follows the
+owner's saved choice.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ class ShowScript:
             return {}
         try:
             return await self._read.get(uid)
-        except Exception as exc:  # noqa: BLE001 - defaults: no name, cloud voice
+        except Exception as exc:  # noqa: BLE001 - defaults: no name, the browser's voices
             log.warning("book settings unreadable", extra={"error": type(exc).__name__})
             return {}
 
@@ -64,7 +65,12 @@ class ShowScript:
         return next((b.text for b in beats if b.id == line_id), None)
 
     async def voice(self, uid: str) -> str:
-        return "browser" if (await self.prefs(uid)).get("show_voice") == "browser" else "cloud"
+        """The show voice: "cloud" only when the owner chose it (R6.2: the browser's by default)."""
+        return "cloud" if (await self.prefs(uid)).get("show_voice") == "cloud" else "browser"
+
+    async def listening(self, uid: str) -> str:
+        """Ask by voice: "cloud" only when the owner chose it, else the browser's own recogniser."""
+        return "cloud" if (await self.prefs(uid)).get("listening") == "cloud" else "browser"
 
     def fixed_lines(self, audience: Audience, words: dict[str, str]) -> dict[str, Any]:
         """Scene 12's line (`ask`, or `ai_off` when questions are off), the follow-up and, for a
@@ -86,7 +92,7 @@ class ShowScript:
     async def build(self, uid: str, session: SessionView, talk: TalkState) -> dict[str, Any]:
         """`GET /v1/book/show/script` in the shape D's show reads (INTEGRATION-D, I1): {release,
         audience, scenes (1-11), lines {ask, anything_else, ai_off, hand_back (guest)}, closing
-        [{id, text}] (scene 13), costs, talk, voice, until, session}."""
+        [{id, text}] (scene 13), costs, talk, voice, listening (R6.2), until, session}."""
         book, audience = self.source.book(), session.audience
         words = await self.words(uid)
         return {
@@ -98,6 +104,7 @@ class ShowScript:
             "costs": await self.costs(uid, audience),
             "talk": talk.model_dump(),
             "voice": await self.voice(uid),
+            "listening": await self.listening(uid),
             "until": session.until,
             "session": {
                 "until": session.until,

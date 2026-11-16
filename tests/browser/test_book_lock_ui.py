@@ -53,12 +53,18 @@ def _locked_tab(browser: Any, url: str, token: str) -> tuple[Console, FakeBook]:
         c.page
     )  # the console is up (token mode); the show it goes to sees a Google-mode server
     c.page.route("**/v1/locked-probe", lambda r: j(r, 423, LOCKED))
-    code = c.page.evaluate(
-        "() => window.JarvisConsole.api('/v1/locked-probe').then(() => 'ok', (e) => e.code)"
+    # R6.2: the 423 sends this tab to the show (location.replace) before api() rejects, so an
+    # evaluate that awaited the answer raced the navigation ("Execution context was destroyed").
+    # The probe starts without being awaited; its code is kept in this tab's sessionStorage (the
+    # rejection runs before the navigation can commit), and is read once the show is up.
+    c.page.evaluate(
+        "() => { window.JarvisConsole.api('/v1/locked-probe').then("
+        "() => sessionStorage.setItem('__probe', 'ok'),"
+        " (e) => sessionStorage.setItem('__probe', String(e && e.code))); }"
     )
-    assert code == "show_locked"
     c.page.wait_for_url("**/book/show")
     c.page.locator("#shDone").wait_for(state="visible")
+    assert c.page.evaluate("() => sessionStorage.getItem('__probe')") == "show_locked"
     return c, fake
 
 

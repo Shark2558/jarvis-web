@@ -10,7 +10,9 @@ GET  /v1/book/sections                 ● the current book's eight sections
 GET  /v1/book/releases/{rid}/sections  ● an older sealed release's sections
 POST /v1/book/releases/{rid}/ticket    ● {ticket, expires_in_s: 60}
 GET  /v1/book/download/{ticket}        the sealed source zip (attachment), audited first
-GET  /v1/book/settings | PUT           D16 Book settings
+GET  /v1/book/settings | PUT           D16 Book settings (R6.2: a switch to the cloud voice or
+                                       cloud listening needs `confirm_cost: true`, else 422
+                                       confirm_needed; audited by field names only)
 
 ● = header X-Jarvis-Book: a live OWNER book session, resolved through C's
 `app.state.book_service.resolve` when it is wired (an expired or idle session is then finished:
@@ -49,7 +51,7 @@ from jarvis.api.ratelimit import RateLimiter
 from jarvis.api.settings_audit import record_change
 from jarvis.buildbook.lines import CREATOR_MAX
 from jarvis.buildbook.model import Book, SealedRelease, SessionView, load_book
-from jarvis.buildbook.owner import BookSettingsPatch, SettingsRejected
+from jarvis.buildbook.owner import BookSettingsPatch, CostNotConfirmed, SettingsRejected
 from jarvis.buildbook.ports import BookError, BookUnavailable, VaultTampered
 from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
@@ -290,13 +292,21 @@ async def put_settings(request: Request, uid: str = Depends(current_user)) -> JS
     patch = await _settings_patch(request)
     try:
         saved = await store.update(uid, patch)
+    except CostNotConfirmed as exc:  # R6.2 decision 4: the cloud only with its cost confirmed
+        raise BookRefused(422, "confirm_needed", str(exc)) from None
     except SettingsRejected as exc:
         raise BookRefused(422, "input_rejected", str(exc)) from None
     except BookError as exc:
         raise BookRefused(503, "unavailable", str(exc)) from None
-    fields = sorted(patch.model_dump(exclude_none=True))
-    await record_change(request, agent="book", tool="book_settings", args={"fields": fields})
+    await record_change(request, agent="book", tool="book_settings", args=_changed(patch))
     return book_json(saved.model_dump())
+
+
+def _changed(patch: BookSettingsPatch) -> dict[str, Any]:
+    """The audit line: the names of the settings changed (never a value), and that a cost was
+    confirmed when one was."""
+    fields = sorted(patch.model_dump(exclude_none=True, exclude={"confirm_cost"}))
+    return {"fields": fields, **({"cost_confirmed": True} if patch.confirm_cost else {})}
 
 
 def install_book(app: FastAPI) -> None:

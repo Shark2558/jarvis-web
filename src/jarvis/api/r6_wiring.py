@@ -14,7 +14,8 @@ so that file stays a short list of named steps, as R4's `api/r4_wiring.py` does.
   R6's setup fails, the lock still holds and Resume answers 503 (the emergency unlock is the way
   out). `app.state.book_off` says why the book is off: "no_key", "setup_failed" or None (on).
 - `install_r6_routes` (before the console router): /v1/book (api/book.py, B) and the session and
-  show routes (api/book_show.py, C). `GET /book/show` is the console's (api/console.py).
+  show routes (api/book_show.py, C; a spoken question's in api/book_show_hear.py, R6.2). `GET
+  /book/show` is the console's (api/console.py).
 - `install_show_lock(app, s)` (Google sign-in only, called just BEFORE the session middleware is
   added, so the lock runs INSIDE `SessionMiddleware` and can read the cookie session): C's
   `ShowLockMiddleware`, reading `app.state.book_lock` per request (D10).
@@ -39,6 +40,7 @@ from jarvis.api.book import install_book
 from jarvis.api.book_http import book_now
 from jarvis.api.book_lock import install_show_lock_middleware, owner_ids
 from jarvis.api.book_show import install_book_show
+from jarvis.api.book_show_hear import install_book_hear
 from jarvis.api.book_show_wiring import C_STATE, book_sweep_job, wire_book_c
 from jarvis.api.identity import primary_user_id
 from jarvis.api.r4_wiring import _notifier
@@ -72,15 +74,16 @@ R6_STATE = (
     *C_STATE,  # C: sessions, lock (the middleware's store), talk, service, show_limits
 )
 R6_JOB_NAMES = frozenset({"book_seal", "book_sweep"})
-SETTINGS_KEYS = ("creator_name", "show_voice", "talk_on", "allow_training_brain")
+SETTINGS_KEYS = ("creator_name", "show_voice", "listening", "talk_on", "allow_training_brain")
 BOOK_OFF_NOTE = (
     "The build book is OFF: no encryption key on this server (it is sealed in the vault)"
 )
 
 
 class SettingsPrefs:
-    """C's Book settings reader (`show_script.Prefs`) over B's store: the same four keys, the safe
-    defaults when nothing is stored or it can't be read (never a training brain)."""
+    """C's Book settings reader (`show_script.Prefs`) over B's store: the same keys, the safe
+    defaults when nothing is stored or it can't be read (never a training brain; R6.2: the
+    browser's voices)."""
 
     def __init__(self, store: BookSettingsStore) -> None:
         self._store = store
@@ -185,9 +188,11 @@ async def wire_r6(app: FastAPI, s: Settings, docs: Docs, audit: AuditTrail) -> N
 
 
 def install_r6_routes(app: FastAPI) -> None:
-    """Every Contract route, authed and no-store."""
+    """Every Contract route, authed and no-store (R6.2: a spoken question's two routes beside the
+    show's, api/book_show_hear.py)."""
     install_book(app)
     install_book_show(app)
+    install_book_hear(app)
 
 
 def install_show_lock(app: FastAPI, s: Settings) -> None:

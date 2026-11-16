@@ -39,6 +39,7 @@ from jarvis.billing.budget import BudgetPatch, BudgetStore, LimitUnreadable
 from jarvis.billing.fx import FETCH_TIMEOUT_S, FxRates
 from jarvis.billing.meter import (
     AllowanceUse,
+    Hold,
     MonthUsage,
     UnitCharge,
     UsageMeter,
@@ -139,6 +140,14 @@ class BudgetUnavailable(BudgetError):
     @property
     def brief_note(self) -> str:
         return NOTE_UNAVAILABLE
+
+
+class FreeAllowanceUsed(BudgetError):
+    """A free-only voice call (R6.2 decision 4: a build book guest's cloud listening) the free
+    allowance no longer covers: refused, never priced (→ 503 in the Book's own words)."""
+
+    def __init__(self) -> None:
+        super().__init__("This month's free allowance doesn't cover it, so nothing was sent.")
 
 
 # ---- views ------------------------------------------------------------------------------------
@@ -286,6 +295,37 @@ class Billing:
                     "and speech recognition still work; raise the limit in Vitals for the cloud "
                     "voice."
                 ),
+            )
+
+    async def reserve_free(self, *, key: str, units: float, free_units: float) -> Hold:
+        """Free-only (R6.2 decision 4): hold `units` of the deployment's free allowance, checked
+        and counted in one transaction, so two calls at the end of it cannot both pass; the call
+        is never priced. Returns the Hold (it remembers its month). FreeAllowanceUsed when it
+        doesn't fit; BudgetUnavailable (fail closed) when the counter can't be read."""
+        try:
+            hold = await self.meter.reserve_units(
+                key=key, units=units, free_units=free_units, now=self.clock()
+            )
+        except UsageUnreadable:
+            log.error("ALLOWANCE COUNTER UNREADABLE; free-only voice stays off", extra={"key": key})
+            raise BudgetUnavailable(MSG_ALLOWANCE_UNREADABLE) from None
+        except Exception as exc:  # noqa: BLE001 — storage down: say so
+            log.error("allowance unreadable", extra={"reason": type(exc).__name__})
+            raise BudgetUnavailable(MSG_USAGE_DOWN) from None
+        if hold is None:
+            log.info("free allowance used up; a free-only voice call refused", extra={"key": key})
+            raise FreeAllowanceUsed()
+        return hold
+
+    async def release_free(self, hold: Hold) -> None:
+        """Give back a hold whose call was never billed, to the month it was made in. Never
+        raises (an unreleased hold only keeps the free allowance a little lower, the safe
+        side)."""
+        try:
+            await self.meter.release_units(hold, now=self.clock())
+        except Exception as exc:  # noqa: BLE001 — the answer matters more than the counter
+            log.error(
+                "free hold not released", extra={"key": hold.key, "reason": type(exc).__name__}
             )
 
     # ---- metering ------------------------------------------------------------------------------
@@ -460,6 +500,7 @@ __all__ = [
     "BudgetError",
     "BudgetReached",
     "BudgetUnavailable",
+    "FreeAllowanceUsed",
     "RateView",
     "UsageView",
     "build_billing",

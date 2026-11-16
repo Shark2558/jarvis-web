@@ -140,7 +140,9 @@ def test_show_locked_still_goes_to_the_show(browser: Any, server_url: str, token
     try:
         c.open()
         c.page.route("**/v1/locked-probe", lambda r: j(r, 423, SHOW_LOCKED))
-        c.page.evaluate("() => window.JarvisConsole.api('/v1/locked-probe').catch(() => null)")
+        # The 423 sends this tab to the show before the probe settles: start it without awaiting
+        # it (a block body returns nothing), or evaluate races the navigation (R6.2, as 84ee243).
+        c.page.evaluate("() => { window.JarvisConsole.api('/v1/locked-probe').catch(() => null); }")
         c.page.wait_for_url("**/book/show", timeout=10000)
         assert c.page.locator("#r7Lock").count() == 0
     finally:

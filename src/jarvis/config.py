@@ -33,6 +33,7 @@ class AuthMode(StrEnum):
 
 
 MIN_SESSION_SECRET_LEN = 32
+ENVS = frozenset({"dev", "staging", "prod"})  # JARVIS_ENV (R6.2 L3: nothing else starts)
 
 
 def _is_private_host(host: str) -> bool:
@@ -95,6 +96,16 @@ class Settings(BaseSettings):
         description="A re-sign-in counts only if Google's ID token carries auth_time (switch "
         "on only after Google's Session age claims is on; off: the moment it completed)",
     )
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _known_env(cls, v: object) -> str:
+        """R6.2 (security review 1, L3): one of the known values, written any way, at start-up;
+        every dev shortcut compares exactly "dev", so " Dev" must never count as another env."""
+        env = v.strip().lower() if isinstance(v, str) else v
+        if env not in ENVS:
+            raise ValueError("JARVIS_ENV must be dev, staging or prod")
+        return str(env)
 
     @field_validator("owner_emails", mode="before")
     @classmethod
@@ -569,6 +580,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("K_REVISION", "cloud_run_revision"),
         description="Cloud Run's own K_REVISION (S5): a new one is a new version live",
     )
+    cloud_run_service: str | None = Field(
+        default=None,
+        max_length=120,
+        validation_alias=AliasChoices("K_SERVICE", "cloud_run_service"),
+        description="Cloud Run's own K_SERVICE (R6.2): set, dev-only settings refuse to start",
+    )
     backup_checks_enabled: bool = Field(
         default=True, description="Read the backups' list and the canary daily (D4)"
     )
@@ -641,6 +658,7 @@ class Settings(BaseSettings):
 
     def require_prod_invariants(self) -> None:
         """Fail fast on misconfiguration that is acceptable in dev but not beyond it."""
+        self._refuse_dev_on_cloud_run()
         if self.env != "dev" and self.api_token is None:
             raise RuntimeError("JARVIS_API_TOKEN must be set when JARVIS_ENV != dev")
         if self.llm_backend is LLMBackend.ANTHROPIC and self.anthropic_api_key is None:
@@ -660,6 +678,22 @@ class Settings(BaseSettings):
         # malformed or weak is a start-up error, never a surprise at the first connect.
         if self.token_key is not None:
             self.token_key_bytes()
+
+    def _refuse_dev_on_cloud_run(self) -> None:
+        """R6.2 (G11, decision 6): Cloud Run sets K_SERVICE on every service; dev-only settings
+        (the laptop's shortcuts, token sign-in) never start there. Names settings, never values."""
+        if not self.cloud_run_service:  # Cloud Run never sets it empty
+            return
+        if self.env == "dev":
+            raise RuntimeError(
+                "JARVIS_ENV=dev is for a laptop and never starts on Cloud Run (K_SERVICE is set): "
+                "deploy with JARVIS_ENV=prod"
+            )
+        if self.auth_mode is AuthMode.TOKEN:
+            raise RuntimeError(
+                "JARVIS_AUTH_MODE=token never starts on Cloud Run (K_SERVICE is set): the console "
+                "and the build book need Google sign-in there; deploy with JARVIS_AUTH_MODE=google"
+            )
 
     def token_key_bytes(self) -> bytes | None:
         if self.token_key is None:

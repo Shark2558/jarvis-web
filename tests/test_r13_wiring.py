@@ -49,6 +49,7 @@ def _ctx(s: Settings) -> WardrobeContext:
 
 class _Data:
     name = "laundry"
+    row = "history"
 
     async def count(self, uid: str) -> int:
         return 0
@@ -95,6 +96,22 @@ def test_a_part_that_breaks_its_contract_is_left_out_and_the_rest_stay(
 def test_the_contract_refuses_what_a_part_does_not_own(part: WardrobePart) -> None:
     with pytest.raises(ValueError, match="part"):
         wiring.check_part(part.name, part)
+
+
+def test_data_must_say_its_privacy_row_or_the_part_is_setup_failed() -> None:
+    """INTEGRATION-D 6.4: `WardrobeData.row`, one of pieces, history, photos."""
+
+    class NoRow(_Data):
+        row = None  # type: ignore[assignment]
+
+    class OddRow(_Data):
+        row = "everything"  # type: ignore[assignment]
+
+    for bad in (NoRow, OddRow):
+        with pytest.raises(ValueError, match="no Privacy row"):
+            wiring.check_part("laundry", WardrobePart("laundry", data=(bad(),)))  # type: ignore[arg-type]
+    good = WardrobePart("laundry", data=(_Data(),))
+    assert wiring.check_part("laundry", good) is good
 
 
 def test_a_part_must_return_its_own_name() -> None:

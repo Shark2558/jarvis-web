@@ -247,6 +247,7 @@ class LaundryData:
     """B's data for D's Privacy rows (D20): counts, a plain export, delete everything of B's."""
 
     name = "laundry"
+    row = "history"
 
     def __init__(self, store: LaundryStore) -> None:
         self._s = store

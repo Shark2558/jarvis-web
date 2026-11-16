@@ -26,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from importlib import import_module
-from typing import Any
+from typing import Any, get_args
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI
@@ -54,6 +54,7 @@ from jarvis.wardrobe.ports import (
     SERVICE_OWNER,
     ChangeObserver,
     PartName,
+    PrivacyRow,
     ReviewWriter,
     WardrobeContext,
     WardrobeData,
@@ -111,6 +112,8 @@ def check_part(name: PartName, part: object) -> WardrobePart:
         raise ValueError(f"part {name} offers an observer without changed()")
     if not all(isinstance(d, WardrobeData) for d in part.data):
         raise ValueError(f"part {name} offers data without count, export and delete")
+    if any(d.row not in get_args(PrivacyRow) for d in part.data):
+        raise ValueError(f"part {name} offers data with no Privacy row")
     return part
 
 

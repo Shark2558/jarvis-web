@@ -134,8 +134,9 @@ async def test_the_export_is_plain_json_without_photos_or_fingerprints() -> None
     [shirt] = (await desk(cat).service.add(UID, [NewPiece(type="shirt", label="Office shirt")])).ids
     await desk(cat).vault.save(UID, shirt, "front", jpeg())
     await desk(cat).vault.prints.save(UID, shirt, "front", "mnv2-int8-1", fp(5))
-    [data] = cat.part.data
-    assert data.name == "catalog" and await data.count(UID) == 1
+    data, photos = cat.part.data
+    assert (data.name, data.row, await data.count(UID)) == ("pieces", "pieces", 1)
+    assert (photos.name, photos.row, await photos.count(UID)) == ("photos", "photos", 1)
     out = await data.export(UID)
     text = json.dumps(out)
     assert "Office shirt" in text and fp(5)[:30] not in text and "wh_" not in text
@@ -147,11 +148,29 @@ async def test_delete_everything_leaves_nothing_of_his_in_the_catalogs_collectio
     [shirt] = (await desk(cat).service.add(UID, [NewPiece(type="shirt")])).ids
     await desk(cat).vault.save(UID, shirt, "front", jpeg())
     await desk(cat).vault.prints.save(UID, shirt, "front", "mnv2-int8-1", fp(5))
-    [data] = cat.part.data
+    data, _ = cat.part.data
     assert await data.delete(UID) == 1
     left = [p for p in cat.docs._data if UID in p]  # noqa: SLF001 - every stored path
     assert left == []
     assert (await cat.store.view(UID)).pieces == {}
+
+
+async def test_deleting_the_photos_row_leaves_the_catalog_usable_and_says_nothing_of_bytes() -> (
+    None
+):
+    """INTEGRATION-D 6.4 and e2e 7: the "photos" row drops photos and fingerprints only."""
+    cat = catalog()
+    [shirt] = (await desk(cat).service.add(UID, [NewPiece(type="shirt", label="Office")])).ids
+    await desk(cat).vault.save(UID, shirt, "front", jpeg())
+    await desk(cat).vault.prints.save(UID, shirt, "front", "mnv2-int8-1", fp(5))
+    data, photos = cat.part.data
+    exported = json.dumps(await photos.export(UID))
+    assert "wh_" not in exported and fp(5)[:30] not in exported
+    assert await photos.delete(UID) == 1 and await photos.count(UID) == 0
+    view = await cat.store.view(UID)
+    assert view.pieces[shirt].photos == () and view.pieces[shirt].label == "Office"
+    assert await data.count(UID) == 1  # the catalog stays
+    assert await desk(cat).vault.prints.items(UID, "mnv2-int8-1") == ()
 
 
 # ---- the pilot's counts (e2e 8) ---

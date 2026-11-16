@@ -1,7 +1,9 @@
 # src/jarvis/wardrobe/catalog/data.py
-"""The catalog's data for D's Privacy rows (docs/plans/r13-wardrobe.md D20; `ports.WardrobeData`):
-"Wardrobe pieces and places" and "Wardrobe photos and fingerprints".
+"""The catalog's two data sources for D's Privacy rows (docs/plans/r13-wardrobe.md D20;
+`ports.WardrobeData`): `pieces` (row "pieces": "Wardrobe pieces and places") and `photos` (row
+"photos": "Wardrobe photos and fingerprints"; INTEGRATION-D 6.4).
 
+`CatalogData` (name "pieces"):
 - `count`: the pieces he owns (archived and merged-away records are not counted).
 - `export`: a plain JSON of his own records (pieces, pairs, sets, places, labels and each piece's
   history), WITHOUT photos or fingerprints (D17); Privacy scrubs it again on the way out.
@@ -21,7 +23,8 @@ from jarvis.wardrobe.catalog.store import CatalogStore
 
 
 class CatalogData:
-    name = "catalog"
+    name = "pieces"
+    row = "pieces"
 
     def __init__(self, store: CatalogStore, vault: PhotoVault) -> None:
         self.store, self.vault = store, vault
@@ -62,4 +65,24 @@ class CatalogData:
         return len(view.pieces)
 
 
-__all__ = ["CatalogData"]
+class PhotoData:
+    """The photos row: photos and fingerprints only, and the catalog stays usable (e2e 7). The
+    export says how many, never a byte (D17: photos are never in an export)."""
+
+    name = "photos"
+    row = "photos"
+
+    def __init__(self, vault: PhotoVault) -> None:
+        self.vault = vault
+
+    async def count(self, uid: str) -> int:
+        return await self.vault.count(uid)
+
+    async def export(self, uid: str) -> dict[str, Any]:
+        return {"photos": await self.vault.count(uid)}
+
+    async def delete(self, uid: str) -> int:
+        return await self.vault.delete_all(uid)
+
+
+__all__ = ["CatalogData", "PhotoData"]

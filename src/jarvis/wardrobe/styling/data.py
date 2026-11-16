@@ -15,6 +15,7 @@ from jarvis.wardrobe.styling.service import Styling
 
 class OutfitsData:
     name = "outfits"
+    row = "history"
 
     def __init__(self, styling: Styling, calendar: Calendar) -> None:
         self._s, self._cal = styling, calendar

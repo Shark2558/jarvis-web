@@ -21,7 +21,7 @@ from typing import Any
 
 from jarvis.wardrobe.catalog.backup import Backup
 from jarvis.wardrobe.catalog.counts import Tally
-from jarvis.wardrobe.catalog.data import CatalogData
+from jarvis.wardrobe.catalog.data import CatalogData, PhotoData
 from jarvis.wardrobe.catalog.jobs import WardrobeSweep
 from jarvis.wardrobe.catalog.labels import Labels
 from jarvis.wardrobe.catalog.links import Links
@@ -117,7 +117,7 @@ def build(ctx: WardrobeContext, *, eyes: Any = None) -> WardrobePart:
         "catalog",
         tools=tools,
         daily_jobs=(sweep,),
-        data=(desk.data,),
+        data=(desk.data, PhotoData(desk.vault)),
         services={"store": desk.store, "photos": desk.vault, "bin": desk.bin},
         ready=READY,
     )

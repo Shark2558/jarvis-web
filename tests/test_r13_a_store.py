@@ -307,7 +307,7 @@ async def test_m6_each_whole_wardrobe_read_opens_the_index_once_not_once_a_piece
         return await real(path)
 
     monkeypatch.setattr(cat.docs, "get", counting)
-    [data] = cat.part.data
+    data, _ = cat.part.data
     [sweep] = cat.part.daily_jobs
     from jarvis.api.r13_wiring import sweep_closer
     from jarvis.wardrobe.styling.rules import load_rules

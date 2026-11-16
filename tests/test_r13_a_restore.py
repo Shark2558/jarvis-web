@@ -156,3 +156,21 @@ async def test_l3_a_chunk_closes_by_bytes_as_well_as_by_count(
     assert sizes and max(sizes) <= limit
     for pid in ids:
         assert len(await fresh.store.history(UID, pid)) == 151
+
+
+async def test_l4_a_backup_the_restore_would_refuse_is_refused_in_words_without_photos_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.wardrobe.catalog.backup import TOO_BIG_HISTORY
+    from jarvis.wardrobe.ports import Refused
+
+    cat = catalog()
+    await _shirts(cat, 20)
+    backup = desk(cat).backup
+    plain, full = await backup.estimate(UID, photos=False), await backup.estimate(UID, photos=True)
+    body = await backup.file(UID)
+    assert len(body) <= plain <= full  # never under the real file: the check errs safe
+    monkeypatch.setattr(backup, "max_bytes", len(body))  # a long history, near the cap
+    with pytest.raises(Refused) as got:
+        await backup.file(UID)  # refused before a byte is sent, not by the restore's 413
+    assert str(got.value) == TOO_BIG_HISTORY.format(mb=backup.max_mb)

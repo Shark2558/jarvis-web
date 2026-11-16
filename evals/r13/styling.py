@@ -145,10 +145,7 @@ async def sty07() -> list[str]:
         fetch=forecast(ist(2026, 11, 16).date(), [(29, ()), (27, (15, 16))]),
     )
     await w.part.clock_jobs[0].run([UID])
-    plan = await _save(w, day="tomorrow", code="casual", start="16:00", end="18:00")
-    doc = await w.styling.plans.read(UID)
-    out = doc.plan(plan["id"]).model_copy(update={"outdoor": True})  # type: ignore[union-attr]
-    await w.styling.change(UID, lambda d: d.put(out))
+    await _save(w, day="tomorrow", code="casual", start="16:00", end="18:00", setting="outdoor")
     look = (await _ok(w, "outfit_plans"))["plans"][0]
     rainy = _slot(look, "shoes") == list(SNEAKERS) and _slot(look, "outer") == [N.rain_jacket]
     said = look["weather"] == "Weather for your home area: rain likely from 15:00."

@@ -39,6 +39,11 @@ LOOK_KEYS = ("pieces", "reasons", "compromises", "gaps")
 _S: dict[str, Any] = {"type": "string"}
 _IDS: dict[str, Any] = {"type": "array", "items": {"type": "string"}, "maxItems": 20}
 CODES = "business_formal, business_casual, smart_casual, casual, festive, mess_tolerant, sport"
+_SETTING: dict[str, Any] = {
+    "type": "string", "enum": ["indoor", "outdoor"],
+    "description": "indoor or outdoor (rain-ok shoes and an outer layer outdoors when rain)",
+}  # fmt: skip
+SETTINGS = {"indoor": False, "outdoor": True}
 
 
 def _schema(props: dict[str, Any], required: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -50,6 +55,7 @@ SUGGEST = _schema(
         "day": {**_S, "description": "today, tomorrow (his time zone) or YYYY-MM-DD"},
         "occasion": {**_S, "maxLength": 60, "description": "his words: the meeting, Diwali"},
         "code": {**_S, "description": f"a dress code: {CODES}"},
+        "setting": _SETTING,
     }
 )
 PLANS = _schema({"day": _S, "days": {"type": "integer", "minimum": 1, "maximum": 14}})
@@ -59,6 +65,7 @@ PLAN = _schema(
         **dict.fromkeys(("plan", "day", "code", "start", "end", "slot", "piece", "from_plan"), _S),
         "occasion": {**_S, "maxLength": 60},
         "pieces": _IDS,
+        "setting": _SETTING,
     },
     ("action",),
 )
@@ -107,8 +114,11 @@ class StylingTools:
         code = args.get("code") if args.get("code") in s.rules.codes else None
         planned = s.planned(doc, day, here, occ) if code is None else ()
         answers = [await s.answer(uid, here, doc, view, p) for p in planned]
-        if not answers:
-            answers = [await s.fresh(uid, here, doc, view, day=day, occasion=occ, code=code)]
+        if not answers:  # outdoors: his setting, else his words ("a walk in the park", M7)
+            words = str(args.get("occasion") or "")
+            out = SETTINGS.get(str(args.get("setting")), s.rules.outdoor_of(words))
+            fresh = await s.fresh(uid, here, doc, view, day=day, occasion=occ, code=code, out=out)
+            answers = [fresh]
         looks, budget = [], MAX_RESULT_PIECES
         for ans in answers:
             entry, used = views.answer_dict(view, ans, s.rules, here, budget=budget)

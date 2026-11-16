@@ -130,6 +130,7 @@ class Styling:
     async def ask(
         self, uid: str, here: Here, doc: StylingDoc, *, day: date, code: str,
         occasion: str | None, plan: Plan | None = None, skip: Skip | None = None,
+        out: bool | None = None,
     ) -> tuple[Ask, Weather]:  # fmt: skip
         span = reserve.window(plan, here.zone) if plan is not None and plan.starts else None
         weather = await self.outlook.weather(uid, day, span, here.zone)
@@ -141,7 +142,7 @@ class Styling:
         prefs = doc.prefs
         ask = Ask(
             day=day, code=code, occasion=occasion, rain=weather.rain, hot=weather.hot,
-            cold=weather.cold, outdoor=plan.outdoor if plan is not None else None,
+            cold=weather.cold, outdoor=plan.outdoor if plan is not None else out,
             locked={p.slot: p.pieces for p in (plan.picks if plan else ()) if p.locked},
             keep={p.slot: p.pieces for p in (plan.picks if plan else ()) if not p.locked},
             skip=skip or {},
@@ -177,10 +178,12 @@ class Styling:
 
     async def fresh(
         self, uid: str, here: Here, doc: StylingDoc, view: WardrobeView, *, day: date,
-        occasion: str | None, code: str | None,
+        occasion: str | None, code: str | None, out: bool | None = None,
     ) -> Answer:  # fmt: skip
         chosen = code or self.rules.code_of(occasion, event=False)
-        ask, weather = await self.ask(uid, here, doc, day=day, code=chosen, occasion=occasion)
+        ask, weather = await self.ask(
+            uid, here, doc, day=day, code=chosen, occasion=occasion, out=out
+        )
         return Answer(day, chosen, ask.for_words, suggest(view, ask, self.rules), weather)
 
     def _shared_words(

@@ -91,15 +91,39 @@ async def test_sty07_a_rainy_outdoor_plan_takes_rain_ok_shoes_and_an_outer_layer
     w = await world(at=ist(2026, 11, 16, 18, 0), fetch=RAINY)
     await _tick(w)
     got = await ok(w, "outfit_plan", action="save", day="tomorrow", code="casual",
-                   start="16:00", end="18:00")  # fmt: skip
+                   start="16:00", end="18:00", setting="outdoor")  # fmt: skip
     pid = got["plan"]["id"]
-    doc = await w.styling.plans.read(UID)
-    outdoors = doc.plan(pid).model_copy(update={"outdoor": True})  # type: ignore[union-attr]
-    await w.styling.change(UID, lambda d: d.put(outdoors))
+    assert (await w.styling.plans.read(UID)).plan(pid).outdoor is True  # type: ignore[union-attr]
     look = (await ok(w, "outfit_plans"))["plans"][0]
     by = {p["slot"]: p["ids"] for p in look["pieces"]}
     assert by["shoes"] == list(SNEAKERS) and by["outer"] == [N.rain_jacket]
     assert look["weather"] == "Weather for your home area: rain likely from 15:00."
+
+
+async def test_sty07_he_can_mark_a_plan_from_his_calendar_outdoors() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), fetch=RAINY)
+    await _tick(w)
+    got = await ok(w, "outfit_plan", action="save", day="tomorrow", start="16:00", end="18:00")
+    pid = got["plan"]["id"]
+    assert (await w.styling.plans.read(UID)).plan(pid).outdoor is None  # type: ignore[union-attr]
+    await ok(w, "outfit_plan", action="save", plan=pid, setting="outdoor")
+    assert (await w.styling.plans.read(UID)).plan(pid).outdoor is True  # type: ignore[union-attr]
+    await ok(w, "outfit_plan", action="save", plan=pid, setting="indoor")
+    assert (await w.styling.plans.read(UID)).plan(pid).outdoor is False  # type: ignore[union-attr]
+
+
+async def test_sty07_his_words_for_an_outdoor_place_mean_outdoors() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), fetch=RAINY)
+    await _tick(w)
+    await w.move(N.rain_jacket, "deposited")  # no rain-ok outer layer left
+    park = await ok(w, "outfit_suggest", day="tomorrow", occasion="a walk in the park")
+    assert (
+        f"No ready outer layer: {N.rain_jacket} is In laundry (wash it)."
+        in (park["looks"][0]["gaps"])
+    )  # outdoors in the rain an outer layer is required
+    home = await ok(w, "outfit_suggest", day="tomorrow", occasion="a walk in the park",
+                    setting="indoor")  # fmt: skip
+    assert not [g for g in home["looks"][0]["gaps"] if "outer layer" in g]
 
 
 async def test_sty07_no_place_or_helpers_off_assumes_indoors() -> None:

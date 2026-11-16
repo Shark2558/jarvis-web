@@ -4,7 +4,8 @@ reserve, transfer, release, share. Each reads his plans, the wardrobe view and t
 writes ONE change of `wardrobe_plans/{uid}`; a refusal (`PlanRefused`) writes nothing.
 
 - save: a plan for a day (and a time, an occasion or a dress code), its picks from the engine's
-  primary look (a code he names is his: not tentative; an occasion's is tentative, STY-03);
+  primary look (a code he names is his: not tentative; an occasion's is tentative, STY-03); with
+  `plan`, that plan again; `setting` marks it indoors or outdoors (STY-07, code review M7);
 - lock: a slot's current pick, or a piece he names into its slot, kept from now on (STY-12);
 - change: one slot again, every other pick kept while still eligible (STY-12);
 - reserve: a piece (or its pair) into this plan, refused while another plan holds it (STY-14);
@@ -41,9 +42,13 @@ def _slot_of(s: Styling, view: WardrobeView, pid: Any) -> tuple[str, tuple[str, 
     return slot, reserve.unit_of(view, p.id)
 
 
+SETTINGS = {"indoor": False, "outdoor": True}
+
+
 async def save(
     s: Styling, uid: str, here: Here, doc: StylingDoc, view: WardrobeView, a: dict[str, Any]
 ) -> Plan:
+    """A new plan, or `plan`'s look made again; `setting` marks it indoors or outdoors (M7)."""
     if a.get("plan"):
         plan = _plan(doc, a["plan"])
     else:
@@ -54,6 +59,8 @@ async def save(
         starts, ends = s.at(day, a.get("start"), here.zone), s.at(day, a.get("end"), here.zone)
         code = a.get("code")
         plan = s.new_plan(here, day=day, occasion=occ, code=code, starts=starts, ends=ends)
+    if a.get("setting") in SETTINGS:
+        plan = plan.model_copy(update={"outdoor": SETTINGS[a["setting"]]})
     return await s.repick(uid, here, doc, view, plan)
 
 

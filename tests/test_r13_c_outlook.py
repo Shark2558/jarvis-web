@@ -48,7 +48,7 @@ async def test_at_most_twice_a_day_with_r11s_own_request() -> None:
     assert len(w.fetcher.calls) == 3  # 04:00 (the evening before's), 05:00 and 18:00
     url, params = w.fetcher.calls[0]
     assert url == "https://api.open-meteo.com/v1/forecast"
-    assert params == request_params((18.52, 73.86), "Asia/Kolkata")
+    assert params == {**request_params((18.52, 73.86), "Asia/Kolkata"), "forecast_days": "3"}
 
 
 async def test_a_failed_fetch_waits_an_hour() -> None:
@@ -145,3 +145,22 @@ async def test_a_dry_day_says_so_with_its_highest_temperature() -> None:
     got = await ok(w, "outfit_suggest", day="tomorrow")
     assert got["looks"][0]["weather"] == "Weather for your home area: no rain expected, up to 34°C."
     assert json.dumps(got).count("rain likely") == 0
+
+
+# ---- code review L1: "tomorrow" between 00:00 and 05:00 still has its weather --------------------
+async def test_tomorrow_after_midnight_keeps_the_evening_fetchs_weather() -> None:
+    three = forecast(MON, [(29, ()), (30, ()), (27, (15, 16))])
+    w = await world(at=ist(2026, 11, 16, 18, 0), fetch=three)
+    await _tick(w)
+    w.clock.set(ist(2026, 11, 17, 0, 30))  # still the evening's fetch: no new one before 05:00
+    await _tick(w)
+    assert len(w.fetcher.calls) == 1
+    got = await ok(w, "outfit_suggest", day="tomorrow")
+    assert got["looks"][0]["weather"] == "Weather for your home area: rain likely from 15:00."
+
+
+async def test_a_day_the_forecast_does_not_cover_stays_unknown() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), fetch=RAINY)  # two days only
+    await _tick(w)
+    got = await ok(w, "outfit_suggest", day="2026-11-18")
+    assert got["looks"][0]["weather"] == "Weather unknown: I assumed indoors."

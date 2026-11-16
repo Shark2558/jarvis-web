@@ -9,14 +9,16 @@ its title. Dates are his local dates, written whole ("Tuesday 17 November"). Ale
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta, tzinfo
+from datetime import date, datetime, time, tzinfo
 
 from jarvis.wardrobe.model import Piece
 from jarvis.wardrobe.redact import PRIVATE_WORDS, fixed_words, type_words
 from jarvis.wardrobe.states import STATE_WORDS, State
 
 WEATHER_UNKNOWN = "Weather unknown: I assumed indoors."
+_HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 OCCASION_WORDS = {
     "meeting": "a meeting", "festival": "a festival", "holi": "Holi", "sport": "sport",
     "function": "a function",
@@ -144,6 +146,14 @@ def states_line(pieces: Sequence[Piece]) -> str:
     return "; ".join(parts)
 
 
+def time_of(hhmm: str) -> time:
+    """ "20:00" -> 20:00; `ValueError` unless it is HH:MM (the one reader, code review L5)."""
+    m = _HHMM.match(hhmm)
+    if m is None:
+        raise ValueError("not a time of day")
+    return time(int(m[1]), int(m[2]))
+
+
 def local_time(at: datetime, zone: tzinfo) -> str:
     return at.astimezone(zone).strftime("%H:%M")
 
@@ -191,10 +201,6 @@ def ready_event_label(day: date, today: date, starts: datetime | None, zone: tzi
     return f"{whose(day, today)} outfit for {event_words(starts, zone)}"
 
 
-def tomorrow_of(now: datetime, zone: tzinfo) -> date:
-    return now.astimezone(zone).date() + timedelta(days=1)
-
-
 __all__ = [
     "LEFT_WORDS",
     "LOOK_WORDS",
@@ -222,7 +228,7 @@ __all__ = [
     "ready_event_label",
     "ready_more_alert",
     "states_line",
-    "tomorrow_of",
+    "time_of",
     "unit_words",
     "whose",
 ]

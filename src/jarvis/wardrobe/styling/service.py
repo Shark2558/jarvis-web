@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
@@ -38,7 +38,6 @@ from jarvis.wardrobe.styling.sealed import SealedDoc, Told
 OCCASION_WORDS = texts.OCCASION_WORDS
 NO_EVENT = "no event planned"
 Skip = dict[str, frozenset[str]]
-_HHMM = 5
 
 
 @dataclass(frozen=True)
@@ -100,12 +99,10 @@ class Styling:
     def at(day: date, hhmm: str | None, zone: tzinfo) -> datetime | None:
         if not hhmm:
             return None
-        h, _, m = hhmm.partition(":")
-        if len(hhmm) != _HHMM or not (h.isdigit() and m.isdigit()):
-            raise PlanRefused("A time is HH:MM, like 10:00.")
-        if int(h) > 23 or int(m) > 59:
-            raise PlanRefused("A time is HH:MM, like 10:00.")
-        return datetime.combine(day, time(int(h), int(m)), tzinfo=zone)
+        try:
+            return datetime.combine(day, texts.time_of(hhmm), tzinfo=zone)
+        except ValueError:
+            raise PlanRefused("A time is HH:MM, like 10:00.") from None
 
     def phrase(self, plan: Plan | None, occasion: str | None, zone: tzinfo) -> str:
         occ = OCCASION_WORDS.get(occasion or "")

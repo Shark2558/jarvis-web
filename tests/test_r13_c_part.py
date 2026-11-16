@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -118,8 +119,11 @@ def test_the_rules_file_is_beside_the_module() -> None:
 
 @pytest.mark.xfail(strict=True, reason="Needs I1: pyproject package-data for rules.json")
 def test_the_package_ships_the_rules_file() -> None:
-    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert '"jarvis.wardrobe.styling" = ["rules.json"]' in text
+    """Semantic (code review M9): trips once the entry lands, in any spelling; I1 then drops
+    this xfail line so a missing entry fails the suite."""
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    shipped = data.get("tool", {}).get("setuptools", {}).get("package-data", {})
+    assert "rules.json" in shipped.get("jarvis.wardrobe.styling", [])
 
 
 # ---- code review M4: the rewear rule has ONE source, C's rules.json ------------------------------

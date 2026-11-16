@@ -40,8 +40,7 @@ OUTSTANDING = "Outstanding:"  # an LND-16 line: a next action, not a gap to fix 
 
 
 def _evening(s: Styling) -> time:
-    h, _, m = s.ctx.s.wardrobe_plan_evening.partition(":")
-    return time(int(h), int(m))
+    return texts.time_of(s.ctx.s.wardrobe_plan_evening)
 
 
 class OutfitClock:

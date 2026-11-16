@@ -188,16 +188,11 @@ def resolve(view: WardrobeView, query: str) -> tuple[list[str], str]:
 
 
 # ---- the forgotten wear (run by A's wardrobe_sweep) ---------------------------------------------
-def _close_at(close: str) -> time:
-    h, _, m = close.partition(":")
-    return time(int(h), int(m))
-
-
 async def closing_events(
     store: WardrobeStore, uid: str, *, now: datetime, zone: tzinfo, close: str, rules: Rules
 ) -> tuple[Event, ...]:
     local = now.astimezone(zone)
-    if local.time() < _close_at(close):
+    if local.time() < texts.time_of(close):
         return ()
     midnight = datetime.combine(local.date(), time.min, tzinfo=zone)
     view, out = await store.view(uid), []

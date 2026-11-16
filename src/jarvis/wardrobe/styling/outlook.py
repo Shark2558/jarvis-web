@@ -9,8 +9,10 @@ documents (a rollback to v14.0.2 would find them unreadable) and edits no R11 fi
 - the `outfit_clock` fetches at most twice a day, once from 05:00 and once from 18:00 his time
   (`slot_of`; a failure waits an hour), with R11's own `request_params`, fetcher and
   `parse_forecast` (Open-Meteo, no key; no new outside service);
-- today's and tomorrow's summary (the highest temperature and the hours rain is likely, by R11's
-  own thresholds) is kept sealed in `wardrobe_outlook/{uid}` (overwritten each time);
+- the summary of today, tomorrow and the day after (the highest temperature and the hours rain is
+  likely, by R11's own thresholds; three days so "tomorrow" between 00:00 and 05:00 still has
+  the evening's fetch, code review L1) is kept sealed in `wardrobe_outlook/{uid}` (overwritten
+  each time; a day the forecast does not cover is not kept);
 - `weather(uid, day, span)` says what a look assumes: "Weather for your home area: rain likely
   from 15:00." or, with Helpers off, no place or nothing kept for that day, "Weather unknown: I
   assumed indoors." (STY-07).
@@ -42,6 +44,7 @@ from jarvis.wardrobe.styling.texts import WEATHER_UNKNOWN
 
 log = get_logger(__name__)
 MORNING, EVENING = time(5, 0), time(18, 0)
+FORECAST_DAYS = 3  # today, tomorrow and the day after: "tomorrow" at 00:30 is still covered (L1)
 RETRY = timedelta(minutes=60)
 HOME = "Weather for your home area"
 
@@ -59,7 +62,7 @@ class DayOutlook(_M):
 
 
 class OutlookDoc(_M):
-    days: tuple[DayOutlook, ...] = Field(default=(), max_length=2)
+    days: tuple[DayOutlook, ...] = Field(default=(), max_length=FORECAST_DAYS)
     slot: str | None = Field(default=None, max_length=16)  # "2026-11-16-am": its fetch is done
     place: str | None = Field(default=None, max_length=16)  # a hash of the point it is for
     fetched_at: datetime | None = None
@@ -161,7 +164,7 @@ class Outlook:
         try:
             got = await self._fetcher.get(
                 OPEN_METEO_FORECAST_URL,
-                params=request_params(point, tz),
+                params={**request_params(point, tz), "forecast_days": str(FORECAST_DAYS)},
                 cap=MAX_WEATHER_BYTES,
                 timeout_s=OUTSIDE_TIMEOUT_S,
             )
@@ -172,7 +175,9 @@ class Outlook:
             await self.sealed.change(uid, lambda _: failed)
             return "failed"
         today = now.astimezone(zone).date()
-        days = (summary(fc, today), summary(fc, today + timedelta(days=1)))
+        covered = {d.day for d in fc.days}
+        ahead = (today + timedelta(days=n) for n in range(FORECAST_DAYS))
+        days = tuple(summary(fc, d) for d in ahead if d in covered)  # never an empty day
         fresh = OutlookDoc(days=days, slot=slot, place=place, fetched_at=now)
         await self.sealed.change(uid, lambda _: fresh)
         return "fetched"

@@ -9,6 +9,8 @@
 #     ramp and silhouette) gives the manifest's reference; a drawn face fires UltraFace and a
 #     drawn silhouette fires SSD's "person" through the engine's own decoders (console-vision-r13.js); a
 #     drawn striped shirt keeps its candidate under rotation and folding (INV-06's real half)
+#   - REVIEW-D-1 H2 on the real models: a 60-80 px face beside a piece in a 1600 x 1200 photo is
+#     missed by the whole-photo check and found in the crop the scan module cuts
 from __future__ import annotations
 
 import importlib.util
@@ -141,3 +143,11 @@ def test_the_books_licence_rows_say_what_the_manifest_says() -> None:
     assert ssd == "SSD-MobileNetV1: " + files["ssd_mobilenet_v1_12-int8.onnx"]["licence"]
     assert "UltraFace" in VENDORED["vendor/vision/LICENSE-ultraface.txt"][0]
     assert "MobileNet v2 (cut)" in VENDORED["vendor/vision/LICENSE-onnx-models.txt"][0]
+
+
+def test_h2_a_small_face_beside_a_piece_is_missed_by_the_photo_and_found_in_its_crop(
+    real: dict[str, Any],
+) -> None:
+    for row in real["small_face"]:
+        assert row["crop"] is True, row  # the crop's own check refuses it: nothing kept or sent
+    assert [r["frame"] for r in real["small_face"]] == [False, False, False]  # why H2 was needed

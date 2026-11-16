@@ -159,9 +159,9 @@ def test_ops_01_the_checks_and_the_crop_use_one_bitmap_and_the_crop_is_at_most_5
         [*PHOTO, press(f"This one: {VIEW_NAME[NAVY]} (likely this one)"), press(SAVE)],
         vision={"embed": _vec(11)},
     )
-    checked = {r["src"] for r in out["runs"] if r["task"] in ("person", "face")}
-    assert len(checked) == 1  # both checks on one canvas
-    [photo] = checked
+    checked = [r["src"] for r in out["runs"] if r["task"] in ("person", "face")]
+    photo, sent = checked[0], out["door"][0]["from"]  # the photo the crops are cut from, the crop
+    assert checked[:4] == [photo, photo, sent, sent] and len(checked) == 12  # + its 4 parts (H2)
     crops = [c for c in out["crops"] if c["from"] == photo]
     assert crops and all(max(c["w"], c["h"]) <= 512 for c in crops)
     [sent] = out["door"]
@@ -196,6 +196,58 @@ def test_ops_01_stop_ends_the_camera_and_the_label_reader_and_keeps_unsent_scans
     assert out["camera"]["live"] is False and out["camera"]["stops"] >= 1
     assert out["streams"] == 1 and out["streamStops"] == 1
     assert "Not sent yet: keep this page open. (1)" in out["final"]
+
+
+# ---- H1: a live session keeps his list after a send (REVIEW-D-1) --------------------------------
+def test_h1_after_a_live_send_his_next_label_is_read_and_his_names_stay() -> None:
+    out = scan(
+        [
+            press("To laundry"),
+            START,
+            {"op": "wait", "ms": 80},
+            press("Put in laundry"),  # the contract's reply carries no view (ScanReply.view)
+            {"op": "vision", "vision": {"codes": ["jw1:qrstuvwx"]}},
+            {"op": "wait", "ms": 80},
+            press("Put in laundry"),
+        ],
+        vision={"codes": ["jw1:abcdefgh"]},
+    )
+    assert not any("not a JARVIS label" in s["text"] for s in out["steps"])
+    assert "A private basic (No. 2)" in out["steps"][5]["text"]  # his second label, his words
+    first, second = posts(out, "/v1/wardrobe/scan")
+    assert VEST1 in [e["piece"] for e in second["events"]]  # read as his (M1 drops the repeat)
+    assert first["rev_seen"] == second["rev_seen"] == VIEW["rev"]  # never null after a send
+
+
+# ---- H2: the crop that would leave is checked itself (REVIEW-D-1) --------------------------------
+@pytest.mark.parametrize("what", [SAVE, "Remember how it looks", TAG])
+def test_h2_a_face_only_the_crop_shows_keeps_and_sends_nothing(what: str) -> None:
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    on = _view(ai_tagging=True, tag_month_inr=0.02, tag_cap_inr=30)
+    out = scan([*PHOTO, pick, press(what)], vision={"embed": _vec(11), "crop_face": True}, view=on)
+    assert out["steps"][3]["found"] is True  # the whole frame passed: the button was offered
+    assert kept_or_sent(out) == [] and PERSON in out["final"]
+    for words in (SAVE, "Remember how it looks", TAG):
+        assert words not in out["final"]
+    faces = [r["src"] for r in out["runs"] if r["task"] == "face"]
+    [crop] = [r["src"] for r in out["runs"] if r["task"] == "embed"]
+    assert len(faces) == 2 and faces[0] != crop and faces[1] == crop  # the photo, then the crop
+
+
+def test_h2_the_crop_is_checked_once_and_a_clean_crop_still_saves() -> None:
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    out = scan(
+        [*PHOTO, pick, press(SAVE), press("Remember how it looks")], vision={"embed": _vec(11)}
+    )
+    assert [d["fn"] for d in out["door"]] == ["wardrobe"] and len(posts(out, FP)) == 1
+    faces = [r["src"] for r in out["runs"] if r["task"] == "face"]
+    assert faces[1] == out["door"][0]["from"]  # the saved bytes were checked, once, then
+    assert len(faces) == 6 and len(set(faces[2:])) == 4  # four overlapping parts of them (H2)
+    parts = [c for c in out["crops"] if c["from"] == faces[1]]
+    assert len(parts) == 4 and all(c["w"] < 512 for c in parts)  # each two-thirds of the crop
+
+
+FP = "/v1/wardrobe/fingerprints"
 
 
 # ---- D10: private pieces ------------------------------------------------------------------------

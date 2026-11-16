@@ -8,6 +8,9 @@
 //   person / clean_person             a drawn silhouette is a "person"; the shirt is not
 //   inv06 {rotated, folded, back}     a drawn striped shirt's views find the striped shirt first (centred cosine over
 //                                     the gallery's mean, as the scan module compares), with the margin to the next
+//   small_face [{px, frame, crop}]    H2: a 60-80 px face beside a piece in a 1600 x 1200 photo, checked on the whole
+//                                     photo and on the 512-px crop the scan module cuts (its own boxesOf and crop),
+//                                     whole and in its four overlapping two-thirds (cropChecks)
 // Used by tests/test_r13_d_assets.py. ASCII only.
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -147,4 +150,30 @@ out.inv06 = {
   back: await rank(shirt(navyWhite, { collar: false })),
 };
 out.inv06.other_top = (await rank(rotate(gallery.checked, 25))).top;
+
+// ---- 4: H2, a small face beside a piece: the whole photo, then the crop that would leave ---------------------------
+const scan = readFileSync(STATIC + '/console-wardrobe-scan.js', 'utf8');
+const region = scan.slice(scan.indexOf('/*SCAN-PURE-BEGIN*/'), scan.indexOf('/*SCAN-PURE-END*/'));
+const { boxesOf } = new Function(region + '\nreturn { boxesOf };')();
+function cut(p, b, side) { // the scan module's crop(): the box, then at most `side` px on its long side
+  const sx = Math.floor(b.x * p.w), sy = Math.floor(b.y * p.h), sw = Math.max(1, Math.round(b.w * p.w)), sh = Math.max(1, Math.round(b.h * p.h));
+  const o = pic(sw, sh, [0, 0, 0]);
+  for (let y = 0; y < sh; y += 1) o.d.set(p.d.subarray(((sy + y) * p.w + sx) * 4, ((sy + y) * p.w + sx + sw) * 4), y * sw * 4);
+  const k = Math.min(1, side / Math.max(sw, sh));
+  return resize(o, Math.max(1, Math.round(sw * k)), Math.max(1, Math.round(sh * k)));
+}
+out.small_face = [];
+for (const px of [60, 70, 80]) {
+  const big = pic(1600, 1200, SURFACE);
+  fill(big, inRect(500, 300, 500, 600), () => [28, 36, 78]); // a navy piece laid on the surface
+  face(big, 1080, 360, px);                                     // a small face just beside it (REVIEW-D-1's probe)
+  const small = resize(big, 64, 48), boxes = boxesOf(small.d, 64, 48);
+  const box = boxes.find((b) => b.x < 0.4 && b.x + b.w > 0.6) || boxes[0];
+  const c = cut(big, box, 512), tw = Math.ceil(c.w * 2 / 3), th = Math.ceil(c.h * 2 / 3); // the scan module's cropChecks()
+  const parts = [c, ...[[0, 0], [c.w - tw, 0], [0, c.h - th], [c.w - tw, c.h - th]].map(([x, y]) => cut(c, { x: x / c.w, y: y / c.h, w: tw / c.w, h: th / c.h }, 4096))];
+  const whole = (await faces(c)).found;
+  let any = whole;
+  for (const q of parts.slice(1)) any = any || (await faces(q)).found;
+  out.small_face.push({ px, frame: (await faces(big)).found, crop_whole: whole, crop: any, boxes: boxes.length });
+}
 console.log(JSON.stringify(out));

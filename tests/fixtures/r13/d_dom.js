@@ -1,7 +1,7 @@
 // tests/fixtures/r13/d_dom.js -- R13 Part D: a small DOM, a fake camera, fake vision answers and spies, enough to run
 // Camera -> Wardrobe (console-wardrobe-scan.js) in Node (vm) by BEHAVIOUR. Used by tests/test_r13_d_scan.py and
 // evals/r13/phone.py. Every picture is a drawn scene (a plain surface and rectangles): never a photo.
-//   stdin  {source?, view, prints?, vision: {person, face, codes, embed, colour, text, delay_ms}, missing: [task],
+//   stdin  {source?, view, prints?, vision: {person, face, crop_face, codes, embed, colour, text, delay_ms}, missing: [task],
 //           signedIn, noAi, offline, steps: [{op: press|select|type|photo|choose|start|stop|wait|vision|online|text}]}
 //   stdout {steps: [{op, text, state}], net: [{method, path, body}], door: [{fn, piece, view, w, h}],
 //           runs: [{task, src}], camera: {starts, stops, live}, crops: [{w, h, from}], imported: [spec]}
@@ -92,7 +92,10 @@ const JarvisVision = {
     out.runs.push({ task, src: src && src.uid });
     if (vision.delay_ms) await wait(vision.delay_ms);
     if (missing.has(task)) throw new Error('not installed');
-    if (task === 'person' || task === 'face') { const f = !!vision[task]; return ok(task, { found: f, count: f ? 1 : 0, boxes: f ? [{ x: 0.4, y: 0.1, w: 0.2, h: 0.3 }] : [] }); }
+    if (task === 'person' || task === 'face') { // crop_face: a small face that only the crop (<= 512 px) shows (H2)
+      const f = !!vision[task] || (task === 'face' && !!vision.crop_face && !!src && Math.max(src.width, src.height) <= 512);
+      return ok(task, { found: f, count: f ? 1 : 0, boxes: f ? [{ x: 0.4, y: 0.1, w: 0.2, h: 0.3 }] : [] });
+    }
     if (task === 'code') return ok(task, { codes: vision.codes.map((v) => ({ format: 'qr_code', value: v })) });
     if (task === 'embed') return vision.embed ? ok(task, { v: vision.embed, dims: 1280, model: 'mnv2-int8-1' }) : Object.freeze({ task, ok: false, data: {} });
     if (task === 'colour') return ok(task, vision.colour);
@@ -180,5 +183,5 @@ async function step(s) {
   await settle();
   out.final = text(host);
   out.imported = imported;
-  process.stdout.write(JSON.stringify(out));
+  process.stdout.write(JSON.stringify(out), () => process.exit(0)); // a camera left on keeps its timer: end here
 })().catch((e) => { process.stdout.write(JSON.stringify({ error: String(e && e.stack || e) })); process.exitCode = 1; });

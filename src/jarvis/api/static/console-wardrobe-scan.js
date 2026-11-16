@@ -214,6 +214,18 @@ async function check(cv) { // {checked, refused}: both tasks ran on this bitmap 
     return { checked: ran, refused: !ran || person.data.found || face.data.found };
   } catch (_) { return { checked: false, refused: true }; }
 }
+async function cropChecks(c) { // H2: the crop that would leave, whole and as four overlapping two-thirds (a small face, near full size)
+  const w = c.width, h = c.height, tw = Math.ceil(w * 2 / 3), th = Math.ceil(h * 2 / 3), parts = [c];
+  [[0, 0], [w - tw, 0], [0, h - th], [w - tw, h - th]].forEach(([x, y]) => { const t = document.createElement('canvas'); t.width = tw; t.height = th; t.getContext('2d').drawImage(c, x, y, tw, th, 0, 0, tw, th); parts.push(t); });
+  let gate = { checked: true, refused: false };
+  for (const t of parts) { if (!gate.refused) gate = await check(t); if (t !== c) { t.width = 0; t.height = 0; } }
+  return gate;
+}
+async function cropOk(card) { // H2: the bytes that leave are the bytes that were checked (a small face can be large here)
+  if (!card.cropCheck) { say(UI.state, CHECKING); card.cropCheck = cropChecks(card.crop); }
+  card.cropGate = await card.cropCheck;
+  return card.cropGate.checked && !card.cropGate.refused;
+}
 function crop(cv, b, side) { // the box, in memory, at most `side` px on its long side
   const sx = Math.floor(b.x * cv.width), sy = Math.floor(b.y * cv.height);
   const sw = Math.max(1, Math.round(b.w * cv.width)), sh = Math.max(1, Math.round(b.h * cv.height));
@@ -282,6 +294,10 @@ async function loadView() {
   if (!S.place) { const home = (S.view.places || []).find((p) => p.kind === 'storage'); S.place = home ? home.id : ''; }
   return S.view;
 }
+async function refreshView() { // in the background: only a list that arrived replaces his list
+  try { const v = await M.api('/v1/wardrobe?private=1'); if (v && Array.isArray(v.pieces)) S.view = v; } catch (_) { return; }
+  if (UI.body) paintBody();
+}
 async function printsFor(model) {
   if (model !== MODEL && model !== 'mnv2-fp32-1') return [];
   if (!S.prints || S.prints.model !== model) {
@@ -348,15 +364,18 @@ function chooseActs(card) {
   return out;
 }
 const colourWords = (c) => (c.name === 'multicolour' ? 'multicolour, mostly ' + String(c.second || '').replace(/_/g, ' ') : c.name.replace(/_/g, ' '));
-function allowed(card) { // D9: only a saved piece that is not private, from a photo whose check ran and found nobody
-  const p = pieceOf(card.piece);
-  return !!(p && !p.private && !privateType(p.type) && S.gate && S.gate.checked && !S.gate.refused && card.crop && card.crop.width && S.photo);
+function allowed(card) { // D9: a saved piece that is not private, from a photo AND a crop whose checks found nobody
+  const p = pieceOf(card.piece), cut = card.cropGate;
+  return !!(p && !p.private && !privateType(p.type) && S.gate && S.gate.checked && !S.gate.refused && !(cut && (!cut.checked || cut.refused))
+    && card.crop && card.crop.width && S.photo);
 }
+function whyNot(card) { const bad = [S.gate, card && card.cropGate].find((g) => g && g.refused); return bad && bad.checked ? PERSON : NO_CHECK; }
+const refuse = (card) => { say(UI.state, whyNot(card), 'bad'); paintBody(); };
 function savedActs(card) {
   const out = [mk('p', 'snote ok', nameOf(card.piece) + ': this piece.')];
   const p = pieceOf(card.piece);
   if (p && (p.private || privateType(p.type))) { out.push(mk('p', 'sfine', PRIVATE_NOTE)); return out; }
-  if (!allowed(card)) { out.push(mk('p', 'sfine', S.gate && S.gate.checked ? PERSON : NO_CHECK)); return out; }
+  if (!allowed(card)) { out.push(mk('p', 'sfine', whyNot(card))); return out; }
   const a = mk('div', 'sacts');
   a.append(btn(SAVE_WORDS, 'primary', () => savePhoto(card)));
   if (card.v) a.append(btn('Remember how it looks', '', () => remember(card)));
@@ -438,7 +457,7 @@ async function flush() {
   try {
     const r = await M.api('/v1/wardrobe/scan', { body: { rev_seen: S.view ? S.view.rev : null, events: batch.map((e) => Object.assign({}, e, { sent })) } });
     say(UI.state, String((r && r.message) || 'Saved.') + (r && r.review ? ' ' + r.review + ' to check in Helpers, Wardrobe.' : ''), 'ok');
-    S.view = (r && r.view) || null;
+    if (r && r.view) S.view = r.view; else refreshView(); // H1: his list stays until a fresh one has arrived
   } catch (e) {
     if (isNetwork(e)) S.queue.unshift(...batch); // kept in memory only; said below
     else say(UI.state, failed(e), 'bad');
@@ -478,6 +497,7 @@ async function addPiece(card) {
 const blobOf = (c) => new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', JPEG_Q));
 async function savePhoto(card) {
   if (!allowed(card)) { paintBody(); return; }
+  if (!(await cropOk(card))) { refuse(card); return; }
   const door = Door(), blob = await blobOf(card.crop);
   if (!door || !blob) return;
   try { await door.wardrobe(blob, { piece: card.piece, view: 'front' }); say(UI.state, 'Saved with the piece, sealed. Only you can see it.', 'ok'); } catch (e) { say(UI.state, String((e && e.message) || failed(e)).slice(0, 200), 'bad'); }
@@ -485,6 +505,7 @@ async function savePhoto(card) {
 }
 async function remember(card) {
   if (!allowed(card) || !card.v) { paintBody(); return; }
+  if (!(await cropOk(card))) { refuse(card); return; }
   try {
     await M.api('/v1/wardrobe/fingerprints', { body: { piece: card.piece, view: 'front', model: MODEL, v: card.v } });
     S.prints = null;
@@ -504,6 +525,7 @@ function tagBox(card) { // optional AI tagging (D7, H2): his setting, the AI on,
 }
 async function tag(card, box) {
   if (!allowed(card)) { paintBody(); return; }
+  if (!(await cropOk(card))) { refuse(card); return; }
   const door = Door(), blob = await blobOf(card.crop);
   if (!door || !blob) return;
   try {

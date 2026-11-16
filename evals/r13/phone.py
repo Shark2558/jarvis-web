@@ -9,8 +9,9 @@ D6, D10, D20; "Tests and evals").
 - `views`: D10's words: a private piece is "a private basic" for alerts and cards and its slot
   for the AI, never his label; the Privacy rows' words name no piece;
 - `ops01`: Camera -> Wardrobe by behaviour (tests/fixtures/r13/d_dom.js, Node): a photo with a
-  person, or with a face, keeps and sends nothing; a clean photo saves exactly one crop of at most
-  512 px; a label read still makes its event with a person in view.
+  person, or with a face, keeps and sends nothing; so does a face that only the crop shows (the crop
+  is checked itself at Save, REVIEW-D-1 H2); a clean photo saves exactly one crop of at most 512 px;
+  a label read still makes its event with a person in view.
 
 Negative control: the person check off (the scan module's `check()` ignores the person task):
 the person case must then fail, so this part cannot pass whatever the scan module does.
@@ -183,6 +184,11 @@ def _ops01(source: str | None) -> list[dict[str, Any]]:
         )
         bad = [got["error"]] if "error" in got else [f"sent: {_sent(got)}"] if _sent(got) else []
         out.append(_case(f"ops01:{who}_keeps_and_sends_nothing", bad))
+    got = _scan(
+        [*PHOTO, pick, _press(SAVE)], source, vision={"crop_face": True, "codes": ["jw1:abcdefgh"]}
+    )
+    bad = [got["error"]] if "error" in got else [f"sent: {_sent(got)}"] if _sent(got) else []
+    out.append(_case("ops01:a_face_only_the_crop_shows_keeps_and_sends_nothing", bad))
     got = _scan([*PHOTO, pick, _press(SAVE)], source, vision={"codes": ["jw1:abcdefgh"]})
     door = got.get("door", [])
     ok = len(door) == 1 and max(door[0]["w"], door[0]["h"]) <= 512

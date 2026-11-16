@@ -25,6 +25,17 @@ from jarvis.wardrobe.ports import Refused, ReviewNeeded
 
 MAX_OPEN = 100
 _HOLDING = frozenset({"hold", "rescan", "pending_deposit"})
+# Every reason word an entry may carry (the fold's, A's sweep's, C's, B's own). A need from
+# another part with a word not here gets its kind's safe default instead of failing A's whole
+# commit (`Entry.reason` is a short fixed word); a hold is answered by the piece's own hold.
+REASONS = frozenset(
+    {"unverified", "held", "missing", "restored", "blind", "which", "pending", "refused"}
+    | {"stale", "corrected", "sweep", "rescan"}
+)
+
+
+def _reason(word: str, default: str) -> str:
+    return word if word in REASONS else default
 
 
 def open_entries(doc: ReviewDoc) -> tuple[Entry, ...]:
@@ -75,7 +86,7 @@ def from_need(need: ReviewNeeded, view: WardrobeView, now: datetime) -> Entry:
     }
     if need.kind == "hold":
         return Entry.model_validate(
-            {**base, "kind": "hold", "reason": need.reason or "held", "pieces": one}
+            {**base, "kind": "hold", "reason": _reason(need.reason, "held"), "pieces": one}
         )
     if need.kind == "conflict":
         return Entry.model_validate({**base, "kind": "conflict", "reason": "refused"})
@@ -98,7 +109,7 @@ def from_need(need: ReviewNeeded, view: WardrobeView, now: datetime) -> Entry:
         {
             **base,
             "kind": "rescan",
-            "reason": need.reason or "rescan",
+            "reason": _reason(need.reason, "rescan"),
             "pieces": held,
             "candidates": (*one, *need.candidates),
         }
@@ -242,6 +253,7 @@ def ask_which(
 
 __all__ = [
     "MAX_OPEN",
+    "REASONS",
     "add",
     "add_needs",
     "ask_which",

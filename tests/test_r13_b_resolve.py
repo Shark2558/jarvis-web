@@ -340,3 +340,21 @@ def test_needs_from_another_part_still_become_entries() -> None:
         ("rescan", "blind", (BELT,), (BELT,)),
         ("rescan", "rescan", (), (WATCH,)),
     ]
+
+
+def test_a_reason_word_b_does_not_know_never_fails_the_commit() -> None:
+    from r13_fakes import ist
+
+    from jarvis.wardrobe.laundry.store import ReviewDoc
+
+    now = ist(2026, 11, 16, 9, 0)
+    doc = review.add_needs(
+        ReviewDoc(),
+        [
+            ReviewNeeded("hold", BELT, reason="a reason far longer than any fixed word"),
+            ReviewNeeded("rescan", WATCH, reason="damaged"),
+        ],
+        WardrobeView(uid=UID),
+        now,
+    )
+    assert [(e.kind, e.reason) for e in doc.entries] == [("hold", "held"), ("rescan", "rescan")]

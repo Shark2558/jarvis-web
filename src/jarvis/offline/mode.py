@@ -67,10 +67,17 @@ class BrainMode:
         """R11 D18: the helpers' No-AI routers, tried first, in the order they were added."""
         return self._phrases
 
-    def add_phrases(self, routers: Sequence[Callable[[str, datetime], NoAIRoute | None]]) -> None:
+    def add_phrases(
+        self,
+        routers: Sequence[Callable[[str, datetime], NoAIRoute | None]],
+        *,
+        first: bool = False,
+    ) -> None:
+        """Append the routers (tried after the ones before them), or with `first` put them
+        ahead of every one added so far (R13 D6: the wardrobe's, ahead of R14's `things`)."""
         if len(self._phrases) + len(routers) > MAX_PHRASES:
             raise ValueError("too many No-AI phrase routers")
-        self._phrases = (*self._phrases, *routers)
+        self._phrases = (*routers, *self._phrases) if first else (*self._phrases, *routers)
 
     @property
     def current(self) -> Mode:

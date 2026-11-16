@@ -293,7 +293,7 @@ def test_device_words_are_a_closed_vocabulary(text: str, word: bool) -> None:
 def test_spoken_phrases_use_a_kind_word_and_never_a_label() -> None:
     devs = describe(
         [
-            "Headphones (Akash's AirPods)",
+            "Headphones (Ravi's AirPods)",
             "Speakers (Realtek(R) Audio)",
             "Speakers (boAt Stone 352)",
             "Something odd",
@@ -306,5 +306,5 @@ def test_spoken_phrases_use_a_kind_word_and_never_a_label() -> None:
     assert spoken[0][0] == "your earphones" and spoken[1][0] == "the laptop speakers"
     assert spoken[2][0] == "the speaker" and spoken[3][0] == "that device"
     flat = json.dumps(spoken).lower()
-    for secret in ("akash", "airpods", "boat", "realtek", "stone"):
+    for secret in ("ravi", "airpods", "boat", "realtek", "stone"):
         assert secret not in flat

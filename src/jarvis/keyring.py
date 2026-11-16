@@ -75,6 +75,10 @@ PURPOSES: tuple[str, ...] = (
     # domain, the key fingerprint `mac("backup_probe", "fingerprint/v1")`): a restored copy must
     # open it with the live key
     "backup_probe",
+    # R13 (docs/plans/r13-wardrobe.md D2, D9, D17): the wardrobe's sealed index, event logs,
+    # laundry, review, plans and the backup file; and its photos and fingerprints, apart
+    "wardrobe",
+    "wardrobe_photos",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

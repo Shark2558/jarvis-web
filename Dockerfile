@@ -22,6 +22,8 @@ ENV HOME_KIT_ROOT=/app
 # in as a build arg instead.
 RUN date -u +%Y-%m-%dT%H:%M:%SZ > src/jarvis/BUILD_DATE
 RUN pip install --no-build-isolation --no-deps .
+# R13 Part C (D12): the styling rules ship as package data; a missing or broken file fails the build
+RUN python -c "from jarvis.wardrobe.styling.rules import load_rules; load_rules()"
 USER jarvis
 EXPOSE 8000
 # Cloud Run (and most PaaS) inject $PORT; default 8000 for local/docker-compose.

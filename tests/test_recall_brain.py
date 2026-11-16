@@ -67,12 +67,12 @@ def _req(msg: str, **kw: object) -> ChatRequest:
 
 async def test_notes_block_is_sent_and_reported_as_used() -> None:
     r = rig()
-    await r.svc.put_profile(UID, "about", "Akash, project lead in Thiruvananthapuram")
+    await r.svc.put_profile(UID, "about", "Ravi, project lead in Thiruvananthapuram")
     f = await r.svc.add_fact(UID, "Prefers window seats on flights", "preferences")
     brain = _brain(r)
     res = await brain.chat(_req("Book me a flight seat"))
     system = r.private.calls[0].system
-    assert NOTES in system and "Akash, project lead" in system and f"[{f.id}]" in system
+    assert NOTES in system and "Ravi, project lead" in system and f"[{f.id}]" in system
     assert [(m.id, m.text) for m in res.memory_used] == [(f.id, f.text)]
     # the stable system prompt stays cacheable: the notes live in the dynamic trailer only
     assert build_system_prompt(honorific="Sir") in system
@@ -89,7 +89,7 @@ async def test_memory_off_sends_nothing() -> None:
 
 async def test_a_training_brain_never_gets_memory_tools_or_learning() -> None:
     r = rig()
-    await r.svc.put_profile(UID, "about", "Akash")
+    await r.svc.put_profile(UID, "about", "Ravi")
     await r.svc.add_fact(UID, "Prefers window seats", "preferences")
     await r.svc.update_settings(UID, SettingsPatch(learn=True, confirm_spend=True))
     brain = _brain(r)
@@ -101,7 +101,7 @@ async def test_a_training_brain_never_gets_memory_tools_or_learning() -> None:
     await r.svc.drain()
     assert res is not None and res.memory_used == []
     for call in r.training.calls:
-        assert NOTES not in call.system and "Akash" not in call.system
+        assert NOTES not in call.system and "Ravi" not in call.system
         assert "window seats" not in call.system and call.tools is None
     assert r.private.calls == []  # and no learning run on the private brain either
 

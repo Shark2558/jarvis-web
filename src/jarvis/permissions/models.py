@@ -129,8 +129,9 @@ class CancelResetRequest(_In):
 
 
 class PermissionsPatch(_In):
-    # every row at once, two to spare (R3: 33 rows; R11.1: 46, cap 48; R7: 49, cap 51)
-    groups: dict[str, str] | None = Field(default=None, max_length=51)
+    # every row at once, two to spare (R3: 33 rows; R11.1: 46, cap 48; R7: 49, cap 51; R13: 52,
+    # cap 54)
+    groups: dict[str, str] | None = Field(default=None, max_length=54)
     require_passkey: bool | None = None
     proof: PasskeyProof | None = None
 

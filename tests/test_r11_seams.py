@@ -55,16 +55,16 @@ KEY = bytes(range(1, 33))
 
 
 def test_the_version_is_eleven() -> None:
-    # 11.x at R11; R7 I0 made it 7.0.0 (nothing compares it, D26), R14 I0 14.0.0, R6.2 6.2.0;
-    # the exact number: test_about.py
-    assert jarvis.__version__.startswith("6.2.")
+    # 11.x at R11; R7 I0 made it 7.0.0 (nothing compares it, D26), R14 I0 14.0.0, R6.2 6.2.0,
+    # R13 I0 13.0.0; the exact number: test_about.py
+    assert jarvis.__version__.startswith("13.")
 
 
 # ---- alert kinds (D5) ---------------------------------------------------------------------------
 def test_thirteen_helper_kinds_make_thirty_six_and_each_belongs_to_one_part() -> None:
     every = get_args(AlertKind)
     assert len(R11_ALERT_KINDS) == 13 and set(R11_ALERT_KINDS) <= set(every)
-    assert len(every) == len(set(every)) == 52 and set(DEFAULT_URGENCY) == set(every)  # R7, R14
+    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)  # R7..R13
     assert kinds.part_kinds() == frozenset(R11_ALERT_KINDS)
     owners = [p for k in R11_ALERT_KINDS for p in kinds.PARTS if k in kinds.KINDS_OF[p]]
     assert len(owners) == 13  # exactly one part each
@@ -124,8 +124,8 @@ def test_the_alerts_card_lists_the_helper_kinds_in_order() -> None:
     block = js[js.index("const KINDS = [") : js.index("];", js.index("const KINDS = ["))]
     listed = re.findall(r"\['([a-z_]+)', '", block)
     # R11.1 added its two kinds after them (tests/test_r11_1_seams.py), R7 five more, R14 eleven
-    # rows (its nine kinds and R5.1's two systems rings; tests/test_r14_seams.py)
-    assert listed[-31:-18] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
+    # rows (its nine kinds and R5.1's two systems rings; tests/test_r14_seams.py), R13 four
+    assert listed[-35:-22] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
 
 
 # ---- storm control (D5) -------------------------------------------------------------------------
@@ -163,8 +163,8 @@ def test_a_disaster_warning_is_never_capped_only_de_duplicated() -> None:
 def test_five_keyring_purposes_each_with_its_own_key() -> None:
     new = ("bills", "spend", "wellbeing", "alerts_place", "kitchen")
     assert (
-        set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 22
-    )  # R7 + 3, R14 + 1
+        set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 24
+    )  # R7 + 3, R14 + 1, R13 + 2
     ring = Keyring(KEY)
     for purpose in new:
         blob = ring.cipher(purpose).encrypt(b"x", aad=f"{purpose}/u/v1")

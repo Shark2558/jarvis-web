@@ -95,13 +95,15 @@ async def running(s: Settings) -> AsyncIterator[tuple[FastAPI, AsyncClient]]:
 
 # ---- 1 · the version and the book's release name -------------------------------------------------
 def test_the_version_is_fourteen() -> None:
-    assert jarvis.__version__ == "6.2.0"  # R6.2 (14.0.2 at R14 hotfix 2); nothing compares it
+    # R13 I0 (6.2.0 at R6.2, 14.0.2 at R14 hotfix 2); nothing compares it
+    assert jarvis.__version__ == "13.0.0"
 
 
 def test_the_real_repository_is_r14_and_its_plan_comes_first() -> None:
-    repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R6.2"  # R6.2: 6.2.0 (R14 until hotfix 2)
-    assert plans.plan_paths(repo)[0] == "docs/plans/r14-hardening.md"  # no r6-2-*.md plan yet
+    repo = Repo.from_git(ROOT)  # R13 I0: the release is now R13 (tests/test_r13_seams.py)
+    assert plans.release_label(repo) == "R13"  # R6.2 at R6.2, R14 until hotfix 2
+    assert plans.plan_paths(repo)[0] == "docs/plans/r13-wardrobe.md"  # R6.2 has no r6-2-*.md
+    assert "docs/plans/r14-hardening.md" in plans.plan_paths(repo)
 
 
 # ---- 8 · layers ----------------------------------------------------------------------------------
@@ -195,7 +197,7 @@ def test_the_drill_copy_is_the_one_target_and_never_the_live_one() -> None:
 def test_nine_kinds_make_fifty_two() -> None:
     every = get_args(AlertKind)
     assert R14_ALERT_KINDS == (*SELF, "selfwatch_ok", "backup_ok")
-    assert len(every) == len(set(every)) == 52 and set(DEFAULT_URGENCY) == set(every)
+    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)  # R13: 56
     assert all(DEFAULT_URGENCY[k] == "important" for k in SELF)
     assert DEFAULT_URGENCY["selfwatch_ok"] == DEFAULT_URGENCY["backup_ok"] == "info"
     assert set(SELF) <= DAYTIME_RING_KINDS  # held in quiet hours, never dropped like a nudge
@@ -255,13 +257,13 @@ def test_a_self_health_ring_that_reached_no_channel_gives_its_slot_back() -> Non
 
 # ---- 3 · the key purpose -------------------------------------------------------------------------
 def test_one_key_purpose_makes_twenty_two() -> None:
-    assert keyring.PURPOSES[-1] == "backup_probe"
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 22
+    assert keyring.PURPOSES[-3] == "backup_probe"  # R13 appended wardrobe, wardrobe_photos
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 24
 
 
 # ---- 4 · permissions: no new row, the new tools in their rows, the words ------------------------
 def test_no_row_is_added_and_the_new_tools_fall_into_theirs() -> None:
-    assert len({g.id for g in GROUPS}) == len(GROUPS) == 49
+    assert len({g.id for g in GROUPS}) == len(GROUPS) == 52  # R13 I0: + 3 (wardrobe rows)
     assert {g.id for g in groups_for("vitals_backups", R1)} == {"vitals"}
     assert {g.id for g in groups_for("vitals_drill_start", R2)} == {"vitals_change"}
     assert {g.id for g in groups_for("maint_service_request", R1)} == {"household"}
@@ -746,7 +748,7 @@ def test_the_persona_opens_a_skill_while_the_offer_is_on_by_default() -> None:
         assert len(bullets) >= 5, bullets  # the rules, web, Drive, the tools rule, Maps/YouTube
         stale = [b[:70] for b in bullets if "skills_open" not in b]
         assert not stale, f"{wit}: {stale}"
-    assert PERSONA_VERSION == "p14.0"
+    assert PERSONA_VERSION == "p13.0"
 
 
 def test_the_common_brief_names_the_contract_the_guards_and_the_hook() -> None:

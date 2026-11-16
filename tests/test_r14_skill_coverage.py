@@ -48,11 +48,12 @@ async def test_the_registers_open_reads_agree_with_the_telegram_guard() -> None:
 
 async def test_the_planned_list_names_no_tool_that_is_built() -> None:
     """I1: every R14 part is built, so a tool still listed as `planned` would hide a rename
-    from the stale-name check (`SkillRegister.problems`)."""
+    from the stale-name check (`SkillRegister.problems`). R13's I1 emptied the list."""
     gw = await linked_gateway()
     register = SkillRegister(load_catalogue())
     built = {s.name for s in gw.registry.specs()}
-    assert not register.catalogue.planned & built, sorted(register.catalogue.planned & built)
+    stale = register.catalogue.planned & built
+    assert not stale, sorted(stale)
 
 
 async def test_the_service_request_is_filed_under_task_with_the_house_jobs() -> None:

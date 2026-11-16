@@ -22,8 +22,8 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const ID = /^del_[0-9a-f]{20}$/;
-  const KINDS = { event: 'Event', task: 'To-do', vault_item: 'Vault document', note: 'Note', thing: 'Thing' };
-  const WORDS = { event: 'event', task: 'to-do', vault_item: 'vault document', note: 'note', thing: 'thing' };
+  const KINDS = { event: 'Event', task: 'To-do', vault_item: 'Vault document', note: 'Note', thing: 'Thing', wardrobe_item: 'Wardrobe piece' };
+  const WORDS = { event: 'event', task: 'to-do', vault_item: 'vault document', note: 'note', thing: 'thing', wardrobe_item: 'wardrobe piece' };
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const STALE_MS = 60 * 1000;
   const OPEN_KEY = 'jarvis_deleted_open';

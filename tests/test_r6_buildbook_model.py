@@ -248,12 +248,12 @@ def test_the_d13_lines_are_verbatim() -> None:
 
 
 def test_render_fills_the_honorific_pronoun_and_creator() -> None:
-    by = lines.credit_by("Akash")
-    assert by == "Akash, my owner and creator"
+    by = lines.credit_by("Ravi")
+    assert by == "Ravi, my owner and creator"
     assert lines.credit_by(None) == lines.credit_by("   ") == "my owner and creator"
     assert len(lines.credit_by("x" * 90)) == 40 + len(", my owner and creator")
     assert lines.render("credit", h="Sir", his="his", by=by) == (
-        "Everything you've seen was designed and built by Akash, my owner and creator. "
+        "Everything you've seen was designed and built by Ravi, my owner and creator. "
         "The credit is all his."
     )
     assert lines.render("thanks_owner", h="Ma'am", his="hers", by=by) == "Thank you, Ma'am."

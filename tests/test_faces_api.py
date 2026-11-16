@@ -20,7 +20,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.permissions.errors import PasskeyRejected, PasskeyRequired
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = user_id_for_email(OWNER)
 CSRF = {"X-Requested-With": "JARVIS"}
 BEARER = {"Authorization": "Bearer cli-token"}

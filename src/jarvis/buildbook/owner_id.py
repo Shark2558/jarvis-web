@@ -17,7 +17,7 @@ amendment, integrated review SEC-1; docs/plans/r6-build-book.md).
   tags and "-at-" / "-dot-" are read through (for the address only, so no two words are joined),
   and a Gmail address also counts as Gmail's own mailbox (dots and a `+tag` don't count, at
   gmail.com or googlemail.com). Two or more distinctive tokens also count run together
-  ("akashkumar").
+  ("ravikumar").
 - **A handle counts as a whole** (security re-review #3): the whole local part (and its mailbox
   without a `+tag`) is a needle too when it has >= 4 characters and is not made only of vocabulary
   words, so "rk1987@" matches "rk1987" (bounded like an address part) while "owner@", "info@" and

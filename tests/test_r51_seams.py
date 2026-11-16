@@ -51,6 +51,8 @@ def test_home_offline_idle_is_a_known_important_home_kind() -> None:
         # R14 D6: self-health and backups (tests/test_r14_seams.py)
         | {"job_failing", "clock_stopped", "brief_missed", "errors_piling", "spend_spike"}
         | {"deploy_changed", "backup_problem"}
+        # R13 D19: the wardrobe's three important kinds (tests/test_r13_seams.py)
+        | {"outfit_ready", "outfit_changed", "laundry_overdue"}
     )
 
 

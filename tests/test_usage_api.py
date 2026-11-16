@@ -16,7 +16,7 @@ from jarvis.api.identity import user_id_for_email
 from jarvis.config import AuthMode, Settings
 from jarvis.memory.inmemory import InMemorySessionStore
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = user_id_for_email(OWNER)
 CSRF = {"X-Requested-With": "JARVIS"}
 BEARER = {"Authorization": "Bearer cli-token"}

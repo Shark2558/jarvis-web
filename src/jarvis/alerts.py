@@ -12,6 +12,8 @@ in to; held in memory, never stored, logged or audited). A sink that can't do ei
 R11 (docs/plans/r11-free-helpers.md D5): thirteen helper kinds; `R11_ALERT_KINDS` lists them.
 R11.1 (docs/plans/r11-1-observations.md): two more; `R11_1_ALERT_KINDS` lists them.
 R7 (docs/plans/r7-mobile.md D25): five more; `R7_ALERT_KINDS` lists them.
+R14 (docs/plans/r14-hardening.md D6): nine more; `R14_ALERT_KINDS` lists them.
+R13 (docs/plans/r13-wardrobe.md D19): four more; `R13_ALERT_KINDS` lists them.
 """
 
 from __future__ import annotations
@@ -94,6 +96,14 @@ AlertKind = Literal[
     "backup_problem",
     "selfwatch_ok",
     "backup_ok",
+    # R13 (docs/plans/r13-wardrobe.md D19): the wardrobe. Fixed templates that never name his
+    # label, a calendar title or a private piece. Three are "important" daytime rings held at
+    # night (an outfit ready, a planned piece gone, laundry overdue or short); the review queue is
+    # info (feed only). Part C raises the outfit kinds, Part B the other two.
+    "outfit_ready",
+    "outfit_changed",
+    "laundry_overdue",
+    "wardrobe_review",
 ]
 HOME_ALERT_KINDS: tuple[AlertKind, ...] = (
     "home_intruder",
@@ -183,12 +193,19 @@ R14_ALERT_KINDS: tuple[AlertKind, ...] = (
     "selfwatch_ok",
     "backup_ok",
 )
+R13_ALERT_KINDS: tuple[AlertKind, ...] = (
+    "outfit_ready",
+    "outfit_changed",
+    "laundry_overdue",
+    "wardrobe_review",
+)
 
 
 __all__ = [
     "HOME_ALERT_KINDS",
     "R11_1_ALERT_KINDS",
     "R11_ALERT_KINDS",
+    "R13_ALERT_KINDS",
     "R14_ALERT_KINDS",
     "R7_ALERT_KINDS",
     "AlertKind",

@@ -345,7 +345,177 @@ const qualityTask = {
   run: (frame) => look(frame, async (src) => { const q = qualityOf(src); return { data: q, quality: q }; }),
   check: CHECKS.quality,
 };
+
+// ==== R13 Part D: the wardrobe's four tasks (docs/plans/r13-wardrobe.md D7-D9) ==========================================
+// Run ONLY by the two named pixel panels (Camera and Camera -> Wardrobe: tests/test_r13_seams.py PANELS). Their results
+// are checked like the others (the server's jarvis.vision.results WARDROBE_DATA) and are never kept vision results.
+//   embed   MobileNet v2 int8, cut after its pool: the piece's fingerprint, uint8 x 1,280 (1,708 base64) and its model
+//   colour  plain arithmetic: the box's centre in Lab, the nearest of 18 named colours; "multicolour" for two far apart
+//   person  SSD-MobileNetV1 int8: "person" >= 0.5        } the check before a photo, a fingerprint or an AI tag is kept
+//   face    UltraFace RFB-320: a face >= 0.7, after NMS  } or sent (D9); either one found refuses all three
+// The model files come only from BASE13 (vendor/vision/r13-1/, served only when they match MANIFEST.json), the first
+// time a task is used. The runtime is the wake word's own onnxruntime-web 1.30.0: the same module URL and the same
+// env.wasm values (one thread, no proxy), so a page has one runtime (console-wakeword.js is not edited). Each load()
+// runs its fixed self-check input (CHECKS_AT_LOAD below, with console-vision-r13.js's ramp and silhouette) and compares
+// the answer with SELF13, the manifest's references:
+// a mismatch is "not installed", so a quantized operator that runs wrongly on a phone is found and never trusted.
+const BASE13 = '/static/vendor/vision/r13-1/';
+const ORT_BASE = '/static/vendor/ort-1.30.0/';
+const EMBED_MODEL = 'mobilenetv2-int8-embed.onnx';
+const FACE_MODEL = 'version-RFB-320.onnx';
+const PERSON_MODEL = 'ssd_mobilenet_v1_12-int8.onnx';
+const INT8_SCALE = 0.019110053777694702; // 472_quantized: uint8, zero point 0 (the fp32 fallback would quantize with it)
+const EMBED_DIMS = 1280, EMBED_B64 = 1708, EMBED_MODELS = ['mnv2-int8-1', 'mnv2-fp32-1'];
+const PERSON_MIN = 0.5, FACE_MIN = 0.7, NMS_IOU = 0.3, BOXES_MAX = 20;
+const COLOUR_SIDE = 96; // the colour is read on a copy this small
+const SELF13 = Object.freeze(/*SELF13-BEGIN*/{"embed": {"sha256": "e5b53d7e5bf35dda17217bb1feed42f900451b5fe1f2db3eca1f50442bf15abd", "model": "mnv2-int8-1"}, "face": {"top": [0.07956, 0.07937, 0.07899, 0.07852, 0.07781], "tol": 0.002}, "person": {"class": 1, "score": 0.9449, "box": [0.1013, 0.2648, 0.8171, 0.7278], "tol": 0.03}}/*SELF13-END*/);
+const SUMS13 = Object.freeze(/*SUMS13-BEGIN*/{"mobilenetv2-int8-embed.onnx": "c32ba47ca0cadf3845f771da1e429aa992e7b92d598b1e1a68054ed6b54e4ab0", "version-RFB-320.onnx": "34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017", "ssd_mobilenet_v1_12-int8.onnx": "2b79e6a7fb1ec6a33f332b9b10d82d9de4b7b49dcd26b5946921bb356895c954"}/*SUMS13-END*/); // MANIFEST.json's file sums
+const SESSION = { executionProviders: ['wasm'], graphOptimizationLevel: 'all', logSeverityLevel: 3 };
+// The tasks' plain arithmetic lives in console-vision-r13.js (REVIEW-D-1 split), imported on first use: a failed import is
+// not kept (the next use tries again) and is "could not load" for these four tasks only; R7's five never wait for it.
+let R = null, pureLoad = null;
+const pure = () => {
+  if (!pureLoad) pureLoad = import('./console-vision-r13.js').then((m) => { R = m; return m; }, () => { pureLoad = null; throw new Error(NO_LOAD); });
+  return pureLoad;
+};
+
+// ---- their checks: exactly the server's WARDROBE_DATA -----------------------------------------------------------------
+const B64 = /^[A-Za-z0-9+/]+=*$/;
+const unitBox13 = (b) => only(b, ['x', 'y', 'w', 'h']) && ['x', 'y', 'w', 'h'].every((k) => inUnit(b[k]));
+const foundOk = (d) => only(d, ['found', 'count', 'boxes']) && typeof d.found === 'boolean' && Number.isInteger(d.count)
+  && d.count >= 0 && d.count <= BOXES_MAX && Array.isArray(d.boxes) && d.boxes.length === d.count && d.boxes.every(unitBox13)
+  && d.found === d.count > 0;
+const CHECKS13 = {
+  embed: (d) => only(d, ['v', 'dims', 'model']) && typeof d.v === 'string' && d.v.length === EMBED_B64 && B64.test(d.v)
+    && d.dims === EMBED_DIMS && EMBED_MODELS.includes(d.model),
+  colour: (d) => !!R && only(d, ['name', 'second', 'share']) && (R.COLOUR_NAMES.includes(d.name) || d.name === 'multicolour')
+    && (d.second === undefined || R.COLOUR_NAMES.includes(d.second)) && inUnit(d.share),
+  person: foundOk,
+  face: foundOk,
+};
+
+// ---- one runtime, the model files from JARVIS, the self-checks -----------------------------------------------------
+let ortLoad = null;
+const runtime = () => { // a failed import is not kept: the next use tries again
+  if (!ortLoad) {
+    ortLoad = import(ORT_BASE + 'ort.wasm.min.mjs').then((mod) => {
+      const o = mod.InferenceSession ? mod : mod.default;
+      o.env.wasm.numThreads = 1; o.env.wasm.proxy = false; o.env.wasm.wasmPaths = ORT_BASE; // the wake word's values
+      return o;
+    }, () => { ortLoad = null; throw new Error(NO_LOAD); });
+  }
+  return ortLoad;
+};
+async function model13(name) { // 404: the model file has not arrived (D8); other bytes than the manifest's: not installed (L3)
+  const r = await fetch(BASE13 + name, { credentials: 'same-origin' });
+  if (r.status === 404) throw new Error(NOT_INSTALLED);
+  if (!r.ok) throw new Error(NO_LOAD);
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  if (!SUMS13[name] || (await sha256hex(bytes)) !== SUMS13[name]) throw new Error(NOT_INSTALLED);
+  return bytes;
+}
+const sessions = {};
+async function open13(id, name, check) { // the session is kept only once its self-check matched SELF13
+  await pure();
+  const o = await runtime();
+  const s = await o.InferenceSession.create(await model13(name), SESSION);
+  let ok = false;
+  try { ok = await check(o, s); } catch (_) { ok = false; }
+  if (!ok) { try { await s.release(); } catch (_) {} throw new Error(NOT_INSTALLED); }
+  sessions[id] = { o, s };
+}
+async function sha256hex(bytes) {
+  if (!(crypto && crypto.subtle)) return ''; // no digest here: the check fails closed
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(h, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+const CHECKS_AT_LOAD = {
+  embed: async (o, s) => {
+    const out = await s.run({ input: new o.Tensor('float32', R.ramp(3 * 224 * 224), [1, 3, 224, 224]) });
+    return (await sha256hex(out['472_quantized'].data)) === SELF13.embed.sha256;
+  },
+  face: async (o, s) => {
+    const out = await s.run({ input: new o.Tensor('float32', R.ramp(3 * 240 * 320), [1, 3, 240, 320]) });
+    const top = R.topScores(out.scores.data, 5);
+    return SELF13.face.top.every((v, i) => R.near(top[i], v, SELF13.face.tol));
+  },
+  person: async (o, s) => {
+    const out = await s.run({ inputs: new o.Tensor('uint8', R.silhouette(), [1, 300, 300, 3]) });
+    const ref = SELF13.person;
+    return out.num_detections.data[0] >= 1 && Math.round(out.detection_classes.data[0]) === ref.class
+      && R.near(out.detection_scores.data[0], ref.score, ref.tol) && ref.box.every((v, i) => R.near(out.detection_boxes.data[i], v, ref.tol));
+  },
+};
+function sized(src, w, h) { // a canvas of this run only, exactly w x h (look() empties it when the run ends)
+  const c = document.createElement('canvas');
+  src.pads.push(c);
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src.img, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h).data;
+}
+function centreOf(box, w, h) { // the middle half of the box, in pixels of a w x h copy
+  const b = box && unitBox13(box) ? box : { x: 0, y: 0, w: 1, h: 1 };
+  const x0 = Math.floor((b.x + b.w / 4) * w), y0 = Math.floor((b.y + b.h / 4) * h);
+  return { x: x0, y: y0, w: Math.max(1, Math.round(b.w / 2 * w)), h: Math.max(1, Math.round(b.h / 2 * h)) };
+}
+
+// ---- the four tasks -------------------------------------------------------------------------------------------------
+const embedTask = {
+  id: 'embed', v: 1, input: 'photo',
+  load: guard(() => open13('embed', EMBED_MODEL, CHECKS_AT_LOAD.embed)),
+  run: (frame) => look(frame, async (src) => {
+    const quality = qualityOf(src), { o, s } = sessions.embed;
+    const out = await s.run({ input: new o.Tensor('float32', R.chw(sized(src, 224, 224), 224, 224, R.MEAN13, R.STD13), [1, 3, 224, 224]) });
+    return { data: { v: R.b64(out['472_quantized'].data), dims: EMBED_DIMS, model: SELF13.embed.model }, quality };
+  }),
+  check: CHECKS13.embed,
+};
+const colourTask = {
+  id: 'colour', v: 1, input: 'photo',
+  load: guard(() => pure()),
+  run: (frame, opts) => look(frame, async (src) => {
+    const quality = qualityOf(src), k = Math.min(1, COLOUR_SIDE / Math.max(src.w, src.h));
+    const w = Math.max(1, Math.round(src.w * k)), h = Math.max(1, Math.round(src.h * k));
+    const all = sized(src, w, h), c = centreOf(opts && opts.box, w, h), px = [];
+    for (let y = c.y; y < Math.min(h, c.y + c.h); y += 1) for (let x = c.x; x < Math.min(w, c.x + c.w); x += 1) px.push(...all.subarray((y * w + x) * 4, (y * w + x) * 4 + 4));
+    return { data: R.colourOf(px), quality };
+  }),
+  check: CHECKS13.colour,
+};
+const personTask = {
+  id: 'person', v: 1, input: 'photo',
+  load: guard(() => open13('person', PERSON_MODEL, CHECKS_AT_LOAD.person)),
+  run: (frame) => look(frame, async (src) => {
+    const quality = qualityOf(src), { o, s } = sessions.person;
+    const out = await s.run({ inputs: new o.Tensor('uint8', R.rgb(sized(src, 300, 300), 300 * 300), [1, 300, 300, 3]) });
+    const boxes = R.personBoxes(out.detection_classes.data, out.detection_scores.data, out.detection_boxes.data, out.num_detections.data[0], PERSON_MIN, BOXES_MAX);
+    return { data: R.found(boxes), quality };
+  }),
+  check: CHECKS13.person,
+};
+const faceTask = {
+  id: 'face', v: 1, input: 'photo',
+  load: guard(() => open13('face', FACE_MODEL, CHECKS_AT_LOAD.face)),
+  run: (frame) => look(frame, async (src) => {
+    const quality = qualityOf(src), { o, s } = sessions.face;
+    const out = await s.run({ input: new o.Tensor('float32', R.chwFace(sized(src, 320, 240), 320 * 240), [1, 3, 240, 320]) });
+    return { data: R.found(R.faceBoxes(out.scores.data, out.boxes.data, FACE_MIN, NMS_IOU, BOXES_MAX)), quality };
+  }),
+  check: CHECKS13.face,
+};
+function unload13() { // the page left: the three sessions go; the next use loads them again
+  ['embed', 'person', 'face'].forEach((id) => {
+    const t = tasks.get(id), got = sessions[id];
+    delete sessions[id];
+    if (t) { t.ready = false; t.loading = null; }
+    if (got) { try { Promise.resolve(got.s.release()).catch(() => {}); } catch (_) {} }
+  });
+}
+window.addEventListener('pagehide', unload13);
+
 [textTask, codeTask, objectsTask, poseTask, qualityTask].forEach((t) => register(t));
+[embedTask, colourTask, personTask, faceTask].forEach((t) => register(t)); // R13 D: before the seal
 sealRegistry();
 
 // When the page is left, the worker and the landmarkers are let go (a phone keeps no 100 MB it no longer needs); the

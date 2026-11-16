@@ -51,7 +51,7 @@ WORDS = (
     "personal notes are explained in the build book."
 )
 VOCAB_ONLY = "home.vault@example.com"  # every token is JARVIS's own word: only the address counts
-NAMED = "akash.kumar@example.com"
+NAMED = "ravi.kumar@example.com"
 HOSTS = frozenset({"cloud.google.com"})
 
 
@@ -163,14 +163,14 @@ def test_the_vocabulary_words_alone_are_not_the_address() -> None:
 @pytest.mark.parametrize(
     ("text", "hit"),
     [
-        ("Built by Akash Kumar.", "word"),
-        ("Kumar, Akash wrote it.", "word"),
-        ("akash_kumar did this", "word"),
-        ("ＡＫＡＳＨ was here", "word"),
-        ("ak​ash", "word"),
-        ("Akashic records", None),
+        ("Built by Ravi Kumar.", "word"),
+        ("Kumar, Ravi wrote it.", "word"),
+        ("ravi_kumar did this", "word"),
+        ("ＲＡＶＩ was here", "word"),
+        ("ra​vi", "word"),
+        ("Raviic records", None),
         ("The kumaran river", None),
-        ("akash.kumar@example.com", "address"),
+        ("ravi.kumar@example.com", "address"),
     ],
 )
 def test_first_last_matches_the_name_in_any_order(text: str, hit: str | None) -> None:
@@ -180,10 +180,10 @@ def test_first_last_matches_the_name_in_any_order(text: str, hit: str | None) ->
 
 
 def test_tokens_split_on_separators_and_digits() -> None:
-    marks = owner_id.marks(["Akash.Kumar+jarvis_99-Home@Example.com", "ab.c@example.com", " "])
-    assert marks.addresses == ("akash.kumar+jarvis_99-home@example.com", "ab.c@example.com")
+    marks = owner_id.marks(["Ravi.Kumar+jarvis_99-Home@Example.com", "ab.c@example.com", " "])
+    assert marks.addresses == ("ravi.kumar+jarvis_99-home@example.com", "ab.c@example.com")
     # "jarvis", "home": vocabulary; "ab", "c": short; two tokens also count run together
-    assert marks.tokens == ("akash", "kumar", "akashkumar")
+    assert marks.tokens == ("ravi", "kumar", "ravikumar")
 
 
 def test_the_vocabulary_is_fixed_text_only() -> None:
@@ -191,7 +191,7 @@ def test_the_vocabulary_is_fixed_text_only() -> None:
     assert vocab is owner_id.vocabulary()  # built once
     for word in ("jarvis", "owner", "vault", "home", "info", "mail", "device", "commit", "layers"):
         assert word in vocab, word
-    for name in ("akash", "kumar", "priya"):
+    for name in ("ravi", "kumar", "priya"):
         assert name not in vocab
 
 
@@ -203,11 +203,11 @@ def test_the_seal_notice_names_what_matched() -> None:
 
 
 async def test_a_book_holding_a_name_token_is_refused_with_its_own_words() -> None:
-    sealer, notes = _sealer(NAMED, _book_with("Built by Akash Kumar."))
+    sealer, notes = _sealer(NAMED, _book_with("Built by Ravi Kumar."))
     assert (await sealer.ensure(UID)).state == "failed"
     ((_, kind, words),) = notes.sent
     assert kind == "book_seal_failed" and "a word from your e-mail address" in words
-    assert "akash" not in words.lower()
+    assert "ravi" not in words.lower()
 
 
 # ---- security re-review #3: a handle-style local part counts as a whole ------------------------
@@ -243,7 +243,7 @@ def test_the_whole_local_part_counts_only_as_itself(text: str) -> None:
     [
         ("rk1987@example.com", ("rk1987",)),
         ("RK1987+jarvis@example.com", ("rk1987+jarvis", "rk1987")),  # the mailbox without its tag
-        ("akash.kumar@example.com", ("akash.kumar",)),
+        ("ravi.kumar@example.com", ("ravi.kumar",)),
         ("owner2@example.com", ("owner2",)),  # a number makes it a handle
         ("rk1@example.com", ()),  # < 4 characters: not a name
         ("owner@example.com", ()),
@@ -299,7 +299,7 @@ def test_other_mailboxes_are_not_the_address(text: str, owner: str) -> None:
     assert owner_id.match(text, (owner,)) is None
 
 
-@pytest.mark.parametrize("text", ["Built by AkashKumar.", "akashkumar@gmail.com wrote it"])
+@pytest.mark.parametrize("text", ["Built by RaviKumar.", "ravikumar@gmail.com wrote it"])
 def test_a_run_together_name_is_a_word(text: str) -> None:
     assert owner_id.match(text, (NAMED,)) == "word"
     assert owner_id.in_book(_book_with(text), (NAMED,)) == "word"

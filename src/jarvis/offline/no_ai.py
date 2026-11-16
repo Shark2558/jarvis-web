@@ -32,7 +32,7 @@ from jarvis.llm.brains import BrainSpec
 from jarvis.logging import get_trace_id
 from jarvis.memory.base import SessionStore
 from jarvis.offline.mode import BrainMode
-from jarvis.offline.rules import NoAIRoute, NoAIRouter, route_no_ai
+from jarvis.offline.rules import NoAICall, NoAIRoute, NoAIRouter, route_no_ai
 from jarvis.offline.said import say
 from jarvis.people.guard import REFUSAL_LINES
 from jarvis.tools.budget import turn_budget
@@ -105,6 +105,20 @@ def _unavailable(res: GatewayResult) -> bool:
     return res.outcome is GatewayOutcome.ERROR and (res.error or "").startswith("unknown tool")
 
 
+def _taken(call: NoAICall, results: Sequence[GatewayResult]) -> dict[str, Any] | None:
+    """The call's arguments with any value it takes from the step before (R13 D6, D10); None when
+    that value is not an id (several pieces fit, or none: nothing moves, and the step before's own
+    words are the reply)."""
+    args: dict[str, Any] = dict(call.arguments)
+    prev = results[-1].result if results else None
+    for arg, key in getattr(call, "take", ()):
+        value = prev.get(key) if isinstance(prev, dict) else None
+        if not isinstance(value, str) or not value:
+            return None
+        args[arg] = value
+    return args
+
+
 async def run_no_ai(
     gateway: Gateway | None,
     text: str,
@@ -128,9 +142,10 @@ async def run_no_ai(
     results: list[GatewayResult] = []
     with turn_budget(), collecting_cards(cards):
         for call in route.calls:
-            tool_call = ToolCall(
-                id=f"noai-{uuid.uuid4().hex[:8]}", name=call.tool, arguments=call.arguments
-            )
+            args = _taken(call, results)
+            if args is None:
+                break  # the step before named no single piece: its own words are the reply
+            tool_call = ToolCall(id=f"noai-{uuid.uuid4().hex[:8]}", name=call.tool, arguments=args)
             with context_trust(untrusted=False, spoken=spoken, owner_text=text):
                 res = await gateway.execute(tool_call, scope=scope)
             ran.append(tool_call)

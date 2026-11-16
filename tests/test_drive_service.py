@@ -24,7 +24,7 @@ from jarvis.drive.service import (
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.tools.external import FENCE_PREFIX
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = "u_owner"
 SA = "jarvis-run@proj-123.iam.gserviceaccount.com"
 

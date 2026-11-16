@@ -44,7 +44,7 @@ from jarvis.vault.ports import IntakeResult, Source  # noqa: E402
 from jarvis.vault_inbox.service import InboxService  # noqa: E402
 from jarvis.vault_inbox.store import Inbox, InboxStore  # noqa: E402
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = "u_owner"
 PDF_BYTES = b"%PDF-1.4 fake driving licence"
 Case = Callable[[], Awaitable[list[str]]]

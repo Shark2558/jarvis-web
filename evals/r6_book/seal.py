@@ -43,7 +43,7 @@ from jarvis.vault.unlock import TicketGone
 
 PART = "seal"
 BUILT = True
-OWNER_EMAIL = "akash.owner2558@example.com"
+OWNER_EMAIL = "ravi.owner2558@example.com"
 
 
 class World:

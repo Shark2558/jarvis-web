@@ -113,7 +113,7 @@ class Rules:
         return rules_for(self.choices)
 
 
-OWNER_EMAIL = "akash@example.com"  # the owner people_connector links
+OWNER_EMAIL = "ravi@example.com"  # the owner people_connector links
 SCOPE = f"{PEOPLE_UID}:s"  # the owner whose link and folders the fakes serve
 
 

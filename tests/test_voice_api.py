@@ -519,7 +519,7 @@ async def test_text_and_transcripts_never_reach_the_logs(
         assert secret not in logged
 
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 
 

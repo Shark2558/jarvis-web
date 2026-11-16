@@ -241,7 +241,7 @@ MARKERS = ("TZ0", "TZ1", "TZ2", "TZ3", "TZ4", "TZ5")
 
 async def training_case(i: int, msgs: list[str]) -> dict[str, Any]:
     r = rig()
-    await r.svc.put_profile(UID, "about", "Akash, project lead [TZ0]")
+    await r.svc.put_profile(UID, "about", "Ravi, project lead [TZ0]")
     for text, cat in PLANTED:
         await r.svc.add_fact(UID, text, cat)
     await _consent(r.svc)
@@ -480,7 +480,7 @@ async def suite_roundtrip(cases: list[dict[str, Any]]) -> dict[str, Any]:
     for c in cases:
         await r.svc.add_fact(UID, c["text"], c["category"], keywords=c["keywords"])
     blocks = {
-        "about": "Akash, project lead\nThiruvananthapuram",
+        "about": "Ravi, project lead\nThiruvananthapuram",
         "preferences": "Short answers",
         "people": "Priya (wife), Anaya (daughter)",
         "work": "Amnex; Kerala Unified Registry",

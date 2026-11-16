@@ -23,7 +23,7 @@ KEY_B64 = base64.b64encode(KEY).decode()
 
 def _tokens(**over: object) -> GoogleTokens:
     base: dict[str, object] = {
-        "email": "akash@example.com",
+        "email": "ravi@example.com",
         "access_token": "ya29.access",
         "refresh_token": "1//refresh",
         "expires_at": 1_800_000_000.0,
@@ -96,7 +96,7 @@ async def test_doc_store_persists_only_ciphertext() -> None:
     assert raw is not None
     blob = json.dumps(raw)
     assert "ya29.access" not in blob and "1//refresh" not in blob
-    assert raw["email"] == "akash@example.com" and raw["needs_reconnect"] is False
+    assert raw["email"] == "ravi@example.com" and raw["needs_reconnect"] is False
     assert await st.get("u_1") == _tokens()
     await st.delete("u_1")
     assert await docs.get("t_tokens/u_1") is None and await st.get("u_1") is None

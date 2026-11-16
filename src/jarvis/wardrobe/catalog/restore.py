@@ -1,0 +1,338 @@
+# src/jarvis/wardrobe/catalog/restore.py
+"""Restoring the wardrobe's backup file, confirm before commit (docs/plans/r13-wardrobe.md D17,
+OPS-06; plan review H3; review A-1 H4, M2, M3, L1-L5).
+
+1. `check(uid, file)` opens every line (the seal, the line order, the file's id, its head, the
+   schema, his id, today's key; up to 25 MB, so in a worker thread: voice and chat never wait on
+   it) and answers the counts (to add, already there, where his current record wins, in Recently
+   deleted, purged since, events new to the logs) with a token: a MAC of his id, the file's
+   SHA-256, an expiry an hour on, whether his wardrobe was empty and his purge count. It WRITES
+   NOTHING (the token is stateless, so nothing about the file is kept either).
+2. `apply(uid, file, token, include_purged)` checks the token against the same file and applies
+   it in chunks of at most 50 pieces or about 8 MiB a transaction (under Firestore's 10 MiB): a
+   piece in both keeps his current record and gains the file's events (unioned by event id and
+   re-folded: the newer verified event wins, so a backup never undoes a later change); a piece
+   missing now comes back only into an empty wardrobe or when he ticks it (purged since). Events
+   are kept as they were stored (`as_stored`), so a restore cut after any chunk runs again and
+   duplicates nothing. Pairs, sets, labels, places, photos and fingerprints come back only with
+   the pieces that come back (fingerprints merged into his shards chunk by chunk, never for a
+   piece that is private: D9).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import timedelta
+from typing import Any
+
+from jarvis.keyring import KEY_ID
+from jarvis.storage.docs import DocTx, Op, Set
+from jarvis.wardrobe.catalog.backup import FID, MAGIC, VERSION, aad_line
+from jarvis.wardrobe.catalog.logs import PAGE
+from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PER_SHARD, Get, PhotoVault, is_entry
+from jarvis.wardrobe.catalog.purges import PurgeCount
+from jarvis.wardrobe.catalog.sealed import aad_prints, dumps
+from jarvis.wardrobe.catalog.store import CatalogStore
+from jarvis.wardrobe.http import RestoreCheck, RestoreCounts, RestoreDone
+from jarvis.wardrobe.model import PHOTO_ID, Event, Pair, Piece, WardrobeView
+from jarvis.wardrobe.ports import Commit, Refused
+
+CHUNK = 50
+# What one chunk may write (L3): its pieces' sealed log pages and photos, the index twice over
+# and, with photos, every fingerprint shard at its fullest, under Firestore's 10 MiB a commit.
+CHUNK_BYTES = 8 * 1024 * 1024
+PRINTS_BYTES = MAX_SHARDS * PER_SHARD * 2400
+TOKEN_LIFE = timedelta(hours=1)
+UNREADABLE = (
+    "That file can't be opened: it isn't a wardrobe backup of yours from this JARVIS, or it was "
+    "made before a key change."
+)
+EXPIRED = "That check has expired or was for another file: check the file again."
+
+
+@dataclass(frozen=True)
+class Parsed:
+    view: WardrobeView
+    logs: dict[str, list[Event]]
+    photos: dict[str, dict[str, Any]] = field(default_factory=dict)
+    prints: dict[int, dict[str, Any]] = field(default_factory=dict)
+    has_photos: bool = False
+    digest: str = ""
+
+
+@dataclass(frozen=True)
+class _Run:
+    """One apply's inputs, decided once before its first chunk."""
+
+    parsed: Parsed
+    prints: tuple[dict[str, str], ...]  # the file's fingerprint entries, opened
+    before: frozenset[str]  # his piece ids before this restore
+    everything: bool  # empty at the check: every piece and link of the file comes back
+
+
+def _head(line: bytes) -> dict[str, Any]:
+    import json  # noqa: PLC0415 - only the clear head is plain JSON
+
+    if not line.startswith(MAGIC):
+        raise ValueError("magic")
+    head = json.loads(line[len(MAGIC) :])
+    if head.get("v") != VERSION or head.get("kid") != KEY_ID:
+        raise ValueError("version or key")
+    if not isinstance(head.get("photos"), bool) or not FID.match(str(head.get("fid", ""))):
+        raise ValueError("head")
+    return dict(head)
+
+
+def parse(store: CatalogStore, uid: str, body: bytes) -> Parsed:
+    try:
+        lines = body.rstrip(b"\n").split(b"\n")
+        head = _head(lines[0])
+        fid = str(head["fid"])
+        rows = [store.sealer.open("wardrobe", aad_line(uid, fid, n, lines[0] if n == 1 else None),
+                                  ln.decode("ascii"))
+                for n, ln in enumerate(lines[1:], start=1)]  # fmt: skip
+        if not rows or rows[-1].get("t") != "end" or rows[-1]["d"]["lines"] != len(rows) - 1:
+            raise ValueError("cut")
+        view = WardrobeView.model_validate(rows[0]["d"])
+        if rows[0]["t"] != "index" or view.uid != uid:
+            raise ValueError("index")
+        out = Parsed(view, {}, has_photos=bool(head.get("photos")))
+        for row in rows[1:-1]:
+            _take(out, row["t"], row["d"])
+    except (ValueError, KeyError, TypeError, IndexError, UnicodeDecodeError):
+        raise Refused(UNREADABLE) from None
+    except Exception:  # noqa: BLE001 - a seal that doesn't open: the same plain words
+        raise Refused(UNREADABLE) from None
+    return Parsed(out.view, out.logs, out.photos, out.prints, out.has_photos,
+                  hashlib.sha256(body).hexdigest())  # fmt: skip
+
+
+def _take(out: Parsed, kind: str, d: Any) -> None:
+    """One line of the file; a photo or a shard must be his, a shard number in range."""
+    uid = out.view.uid
+    if kind == "log":
+        out.logs[str(d["p"])] = [Event.model_validate(e) for e in d["e"]]
+    elif kind == "photo" and PHOTO_ID.match(str(d["id"])) and d["doc"].get("owner") == uid:
+        out.photos[str(d["id"])] = dict(d["doc"])
+    elif kind == "fp" and 0 <= int(d["n"]) < MAX_SHARDS and d["doc"].get("owner") == uid:
+        out.prints[int(d["n"])] = dict(d["doc"])
+    else:
+        raise ValueError("line")
+
+
+class Restore:
+    def __init__(self, store: CatalogStore, vault: PhotoVault) -> None:
+        self.store, self.vault, self.purges = store, vault, PurgeCount(store)
+
+    # ---- the token (stateless: the check writes nothing) --------------------------------------
+    def _token(self, uid: str, digest: str, expires: int, empty: bool, purged: int) -> str:
+        """`empty`: the wardrobe was empty at the check, so every piece is added, also when a
+        restore cut halfway runs again (decided once, carried under the MAC). `purged`: his
+        purge count then: a purge since makes the token stale, so "empty" is never replayed
+        over a piece he purged (L2)."""
+        mac = self.store.sealer.mac(f"restore/{uid}/{digest}/{expires}/{int(empty)}/{purged}")
+        return f"{expires:x}-{int(empty)}-{mac[:40]}"
+
+    def _token_ok(self, uid: str, digest: str, token: str, purged: int) -> bool | None:
+        """The check's `empty`, or None when the token is not for this file, has expired, or a
+        purge happened since; anything not plain ASCII is simply not a token."""
+        head, _, rest = token.partition("-")
+        if not token.isascii() or not head.isalnum():
+            return None
+        try:
+            expires, empty = int(head, 16), rest[:1] == "1"
+        except ValueError:
+            return None
+        fresh = self.store.now().timestamp() < expires
+        ok = hmac.compare_digest(self._token(uid, digest, expires, empty, purged), token)
+        return empty if fresh and ok else None
+
+    # ---- check ---------------------------------------------------------------------------------
+    async def check(self, uid: str, body: bytes) -> RestoreCheck:
+        parsed = await asyncio.to_thread(parse, self.store, uid, body)  # off the loop (L5)
+        current = await self.store.view(uid)
+        counts, purged = await self._counts(uid, parsed, current)
+        expires = int((self.store.now() + TOKEN_LIFE).timestamp())
+        words = (
+            f"{counts.added} to add, {counts.already_there} already there, "
+            f"{counts.events} new events; nothing is changed until you restore."
+        )
+        count = await self.purges.read(uid)
+        token = self._token(uid, parsed.digest, expires, not current.pieces, count)
+        return RestoreCheck(token=token, counts=counts,
+                            purged=purged, photos=parsed.has_photos, message=words)  # fmt: skip
+
+    async def _counts(
+        self, uid: str, parsed: Parsed, current: WardrobeView
+    ) -> tuple[RestoreCounts, tuple[str, ...]]:
+        both = [pid for pid in parsed.view.pieces if pid in current.pieces]
+        missing = [pid for pid in parsed.view.pieces if pid not in current.pieces]
+        empty = not current.pieces
+        new_events = 0
+        there = set(both)
+        for pid, events in parsed.logs.items():
+            if pid not in there:
+                new_events += len(events)
+                continue
+            known = {e.id for e in await self.store.events(uid, pid, view=current)}
+            new_events += sum(e.id not in known for e in events)
+        differ = sum(_attrs(current.pieces[p]) != _attrs(parsed.view.pieces[p]) for p in both)
+        in_bin = sum(current.pieces[p].state == "archived" for p in both)
+        counts = RestoreCounts(
+            added=len(missing) if empty else 0, already_there=len(both), superseded=differ,
+            back_from_bin=in_bin, purged_since=0 if empty else len(missing), events=new_events,
+        )  # fmt: skip
+        return counts, () if empty else tuple(missing)
+
+    # ---- apply ---------------------------------------------------------------------------------
+    async def apply(
+        self, uid: str, body: bytes, token: str, include_purged: Sequence[str] = ()
+    ) -> RestoreDone:
+        parsed = await asyncio.to_thread(parse, self.store, uid, body)
+        empty = self._token_ok(uid, parsed.digest, token, await self.purges.read(uid))
+        if empty is None:
+            raise Refused(EXPIRED)
+        current, ticked = await self.store.view(uid), set(include_purged)
+        ids = [p for p in parsed.view.pieces if p in current.pieces or empty or p in ticked]
+        chunks = _chunks(ids, parsed, _base(parsed, current))
+        run = _Run(parsed, tuple(self._file_prints(uid, parsed)), frozenset(current.pieces), empty)
+        added = there = events = 0
+        for chunk in chunks:
+            got = await self._chunk(uid, run, chunk)
+            added, there = added + got[0], there + got[1]
+            events += got[2]
+        counts = RestoreCounts(added=added, already_there=there, superseded=0, back_from_bin=0,
+                               purged_since=0, events=events)  # fmt: skip
+        words = f"Restored: {added} added, {there} already there, {events} events."
+        return RestoreDone(counts=counts, chunks=len(chunks), message=words)
+
+    async def _chunk(self, uid: str, run: _Run, chunk: list[str]) -> tuple[int, int, int]:
+        seen: list[int] = [0, 0]
+        parsed = run.parsed
+
+        async def fn(view: WardrobeView, tx: DocTx) -> Commit:
+            new = [pid for pid in chunk if pid not in view.pieces]
+            seen[:] = [len(new), len(chunk) - len(new)]
+            recs = tuple(_record(parsed, parsed.view.pieces[pid]) for pid in new)
+            events = tuple(e for pid in chunk for e in parsed.logs.get(pid, []))
+            extra = await self._photo_ops(uid, parsed, recs, run.prints, tx.get)
+            return Commit(events=events, records=recs, extra=extra)
+
+        def links(fresh: WardrobeView) -> WardrobeView:
+            took = set(fresh.pieces) if run.everything else set(fresh.pieces) - run.before
+            return _links(fresh, parsed.view, took, everything=run.everything)
+
+        got = await self.store.transact(uid, fn, index=links, as_stored=True)
+        return seen[0], seen[1], sum(m != "known" for m in got.marks.values())
+
+    def _file_prints(self, uid: str, parsed: Parsed) -> list[dict[str, str]]:
+        """The file's fingerprint entries, opened once (a shard that won't open: the file is
+        refused before anything is written)."""
+        out: list[Any] = []
+        try:
+            for n in sorted(parsed.prints) if parsed.has_photos else ():
+                blob = parsed.prints[n].get("blob")
+                out += self.store.sealer.open("wardrobe_photos", aad_prints(uid, n), blob)
+        except Exception:  # noqa: BLE001 - a seal that doesn't open: the same plain words
+            raise Refused(UNREADABLE) from None
+        return [e for e in out if is_entry(e)]
+
+    async def _photo_ops(
+        self,
+        uid: str,
+        parsed: Parsed,
+        recs: Sequence[Piece],
+        prints: Sequence[dict[str, str]],
+        get: Get,
+    ) -> tuple[Op, ...]:
+        """Photos and fingerprints come back ONLY with the pieces this chunk adds, and never
+        for one that is private (D9, D17; H4): merged into his shards, never written whole."""
+        if not parsed.has_photos:
+            return ()
+        ops: list[Op] = [Set(self.vault.path(uid, ph), parsed.photos[ph])
+                         for p in recs for ph in p.photos if ph in parsed.photos]  # fmt: skip
+        allowed = {p.id for p in recs if not p.private}
+        ops += await self.vault.prints.merge_ops(uid, [e for e in prints if e["p"] in allowed], get)
+        return tuple(ops)
+
+
+def _sealed(obj: Any) -> int:
+    return len(dumps(obj)) * 4 // 3 + 64
+
+
+def _base(parsed: Parsed, current: WardrobeView) -> int:
+    """What every chunk writes whatever its pieces: the index (his and the file's records)
+    and, with photos, his fingerprint shards."""
+    prints = PRINTS_BYTES if parsed.has_photos and parsed.prints else 0
+    return _sealed(parsed.view.to_json()) + _sealed(current.to_json()) + prints
+
+
+def _cost(parsed: Parsed, pid: str) -> int:
+    """About what bringing back one piece writes: its log pages, sealed, and its photos."""
+    events = parsed.logs.get(pid, [])
+    pages = _sealed([e.to_json() for e in events]) + 128 * (len(events) // PAGE + 1)
+    if not parsed.has_photos:
+        return pages
+    found = (parsed.photos[ph] for ph in parsed.view.pieces[pid].photos if ph in parsed.photos)
+    return pages + sum(len(dumps(doc)) for doc in found)
+
+
+def _chunks(ids: Sequence[str], parsed: Parsed, base: int) -> list[list[str]]:
+    """At most CHUNK pieces, closed early once CHUNK_BYTES would be passed (L3)."""
+    out: list[list[str]] = []
+    now: list[str] = []
+    size = base
+    for pid in ids:
+        cost = _cost(parsed, pid)
+        if now and (len(now) >= CHUNK or size + cost > CHUNK_BYTES):
+            out.append(now)
+            now, size = [], base
+        now.append(pid)
+        size += cost
+    return [*out, now] if now else out
+
+
+def _attrs(p: Piece) -> dict[str, Any]:
+    drop = {"state", "back_to", "place", "place_at", "hold", "expected_back", "wear", "wears"}
+    drop |= {"last_worn", "events", "created_at", "updated_at"}
+    return {k: v for k, v in p.model_dump().items() if k not in drop}
+
+
+def _record(parsed: Parsed, p: Piece) -> Piece:
+    if parsed.has_photos and not p.private:
+        kept = tuple(ph for ph in p.photos if ph in parsed.photos)
+        return p.model_copy(update={"photos": kept})
+    return p.model_copy(update={"photos": (), "fp_model": None})
+
+
+def _pairs(fresh: WardrobeView, old: WardrobeView, took: set[str]) -> dict[str, Pair]:
+    """The file's pairs of pieces it brings back, never a piece into a second pair."""
+    pairs, paired = dict(fresh.pairs), {i for x in fresh.pairs.values() for i in x.pieces}
+    for k, v in old.pairs.items():
+        if k not in pairs and set(v.pieces) <= took and not paired & set(v.pieces):
+            pairs[k] = v
+            paired |= set(v.pieces)
+    return pairs
+
+
+def _links(
+    fresh: WardrobeView, old: WardrobeView, took: set[str], *, everything: bool
+) -> WardrobeView:
+    """The file's pairs, sets, labels and places come back ONLY with the pieces this restore
+    adds (`took`; into a wardrobe empty at the check, all of them): what he changed since
+    wins (D17, LND-13), so a pair he undid or a place he removed stays gone (M2)."""
+    sets = {**{k: v for k, v in old.sets.items() if {x.piece for x in v.parts} <= took},
+            **fresh.sets}  # fmt: skip
+    used = {fresh.pieces[i].place for i in took}
+    places = {**{k: v for k, v in old.places.items() if everything or k in used}, **fresh.places}
+    back = {k: v for k, v in old.labels.items() if v.piece in took or (everything and not v.piece)}
+    labels = {**back, **fresh.labels}
+    return fresh.model_copy(update={"pairs": _pairs(fresh, old, took), "sets": sets,
+                                    "places": places, "labels": labels})  # fmt: skip
+
+
+__all__ = ["CHUNK", "EXPIRED", "UNREADABLE", "Parsed", "Restore", "parse"]

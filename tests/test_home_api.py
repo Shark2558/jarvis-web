@@ -22,7 +22,7 @@ from jarvis.home import kit, signing
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = user_id_for_email(OWNER)
 CSRF = {"X-Requested-With": "JARVIS"}
 

@@ -1,4 +1,4 @@
-Version v7.0.3 · 13 Nov 2026, 23:40 IST · Release R7 · Status: Current · Owner: 🛠 Mark XVII
+Version v13.0.1 · 15 Nov 2026, 18:40 IST · Release R13 · Status: Current · Owner: 🛠 Mark XXI
 
 # R7 — Part B integration notes (camera and the vision engine)
 
@@ -71,6 +71,18 @@ brain ─▶ gateway ─▶ vision_results (R1) ─▶ kept results, read text f
 ## 3. Contract files
 
 - `src/jarvis/vision/results.py`: **unchanged**.
+- **R13 I0's contract lines (15 Nov 2026, `docs/plans/r13-wardrobe.md` D8, D9, plan review H6,
+  M7).** `vision/results.py` gains `WARDROBE_TASKS` (embed, colour, person, face) with their
+  schemas (`WARDROBE_DATA`) and `parse_result(raw, wardrobe=True)`; `TASKS` stays the five and a
+  plain `parse_result` still refuses every other task, so a wardrobe result is never a kept vision
+  result. `vision/assets.py` learns the second release `r13-1` (`WARDROBE_RELEASE`,
+  `WARDROBE_FILES`; `installed(served, served13)` answers the four only when given both). The
+  use-case guard is widened in the open: two named panels may take pixels, the Camera panel and
+  Camera -> Wardrobe (`console-wardrobe-scan.js`, mounted through `JarvisCameraModes`), and
+  `tests/test_r13_seams.py` fails any other console module that calls `JarvisVision.run` /
+  `stream`, names `JarvisCamera` or uses a pixel API of D13's list outside the drawing modules.
+  The port core of `console-vision.js` is unchanged (its hash pin holds); R13 Part D adds its
+  four tasks in the Part B section and the `BASE13` lines of the R7 tests.
 - The port core of `console-vision.js`: **changed in v7.0.2 by two contract lines** (the Workshop's
   decisions on the reviews), now SHA-256 `f26e439a…0860` (I0's was `9e5ae773…82c6`), pinned by
   `tests/test_r7_b_console.py::test_the_port_core_is_the_agreed_one_byte_for_byte`. Part B's tasks
@@ -315,6 +327,7 @@ engine and guard, `dc7aba6` eval and Part B tests, `976853a` browser tests.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v13.0.1 | 15 Nov 2026, 18:40 IST | R13 | R13 I0: the contract lines section 3 requires for the wardrobe tasks, the `r13-1` release and the two named pixel panels (plan review H6) | 🛠 Mark XXI |
 | v7.0.3 | 13 Nov 2026, 23:40 IST | R7 | I1: section 5's restart line dropped, since `vision_files` is now checked again whenever the folder changes (Needs I1 item 12, done at I1) | 🛠 Mark XVII |
 | v7.0.2 | 13 Nov 2026, 23:30 IST | R7 | Review follow-ups: package-data for a non-editable install, a day under Firestore's limit, pagination, a bad day blocks nothing, atomic `vision_assets.py`, the engine sealed and `stream` reporting (two contract lines in the port core), the camera stopping unconditionally, newest look wins, plain errors, a real tap on the camera's own buttons, a fail-closed use-case guard, eval with seven controls, section 7a for R8, Needs I1 items 11 to 14 | 🛠 Mark XVII |
 | v7.0.1 | 13 Nov 2026, 20:50 IST | R7 | First edition: what Part B built (the camera's one door, the five tasks, the Camera panel, kept results, `vision_results`, the vendored tools at 22.3 MB), the contract facts later parts build on, the model steps for CI or the laptop, the checks, ten Needs-I1 items, eight deviations and what could not be verified here | 🛠 Mark XVII |

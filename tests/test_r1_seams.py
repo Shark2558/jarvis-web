@@ -9,6 +9,7 @@ the brain's offline wiring, the Telegram trailer placeholder, settings and the t
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +48,9 @@ CSRF = {"X-Requested-With": "JARVIS"}
 
 
 @pytest.fixture(autouse=True)
-def _clean_offline_marker() -> None:
+def _clean_offline_marker() -> Iterator[None]:
+    channel.reset_offline()
+    yield
     channel.reset_offline()
 
 
@@ -227,8 +230,8 @@ def test_new_settings_bounds(field: str, good: tuple[int, int], bad: tuple[int, 
 def test_three_new_rows_follow_the_todo_rows() -> None:
     ids = [g.id for g in GROUPS]
     # 23 on R1 + 5 R2 + 5 R3 (Home, Camera) + 5 R4 + 6 R11 (D16) + 2 R11.1 (plans, pictures)
-    # + 3 R7 (vision, watch, sos)
-    assert len(ids) == 49
+    # + 3 R7 (vision, watch, sos) + 3 R13 (wardrobe, laundry, outfits)
+    assert len(ids) == 52
     assert ids.index("groceries") == ids.index("todo_delete") + 1
     assert ids[ids.index("groceries") : ids.index("groceries") + 3] == [
         "groceries",
@@ -288,7 +291,7 @@ def test_telegram_trailer_carries_the_rule_and_others_do_not() -> None:
 
 
 def test_persona_version_is_p4_6() -> None:
-    assert prompts_mod.PERSONA_VERSION == "p14.0"
+    assert prompts_mod.PERSONA_VERSION == "p13.0"
 
 
 # ---- tools/base.py + observers -----------------------------------------------------------

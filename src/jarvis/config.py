@@ -34,6 +34,7 @@ class AuthMode(StrEnum):
 
 MIN_SESSION_SECRET_LEN = 32
 ENVS = frozenset({"dev", "staging", "prod"})  # JARVIS_ENV (R6.2 L3: nothing else starts)
+_HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"  # R13: a local time of day, "20:00"
 
 
 def _is_private_host(host: str) -> bool:
@@ -619,6 +620,22 @@ class Settings(BaseSettings):
     bill_pay_cap_inr: int = Field(
         default=1_00_000, ge=1, le=1_00_000, description="A prepared UPI payment's ceiling (₹)"
     )
+    # R13 (docs/plans/r13-wardrobe.md seam 8): the wardrobe and laundry. His own choices (the
+    # calendar and its fields, AI tagging, auto-swap, private display) live in his sealed index.
+    wardrobe_enabled: bool = Field(default=True, description="Wardrobe & laundry (R13)")
+    wardrobe_max_pieces: int = Field(default=400, ge=50, le=500, description="Active pieces")
+    wardrobe_index_max_kb: int = Field(default=900, ge=100, le=950, description="Sealed index KB")
+    wardrobe_stale_days: int = Field(default=14, ge=3, le=90, description="Unseen: a quick check")
+    wardrobe_plan_evening: str = Field(default="20:00", pattern=_HHMM, description="outfit_ready")
+    wardrobe_change_window_h: int = Field(default=36, ge=6, le=72, description="outfit_changed")
+    wardrobe_calendar_refresh_min: int = Field(default=60, ge=15, le=360, description="Calendar")
+    wardrobe_photo_side: int = Field(default=512, ge=256, le=512, description="A photo's side px")
+    wardrobe_photo_max_kb: int = Field(default=200, ge=50, le=400, description="A photo's KB")
+    wardrobe_photos_per_piece: int = Field(default=3, ge=1, le=3, description="Views a piece")
+    wardrobe_ai_tag_month_inr: int = Field(default=30, ge=0, le=200, description="0 = never")
+    wardrobe_review_keep_days: int = Field(default=30, ge=7, le=90, description="Resolved checks")
+    wardrobe_backup_max_mb: int = Field(default=25, ge=5, le=30, description="A backup file's MB")
+    wardrobe_wear_close: str = Field(default="04:00", pattern=_HHMM, description="Close a wear")
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")

@@ -1,0 +1,125 @@
+[
+ {
+  "arguments": {
+   "category": "tops",
+   "more": 2,
+   "step": "basket"
+  },
+  "source": "scan",
+  "tool": "laundry_move"
+ },
+ {
+  "arguments": {
+   "action": "resolve",
+   "entry": "rv_1",
+   "outcome": "none"
+  },
+  "source": "panel",
+  "tool": "laundry_review"
+ },
+ {
+  "arguments": {
+   "action": "resolve",
+   "entry": "rv_1",
+   "outcome": "these",
+   "pieces": [
+    "wi_000000000009"
+   ]
+  },
+  "source": "panel",
+  "tool": "laundry_review"
+ },
+ {
+  "arguments": {
+   "pieces": [
+    {
+     "client_id": "wd00000000000000",
+     "colour": "navy",
+     "private": false,
+     "type": "shirt"
+    }
+   ]
+  },
+  "source": "panel",
+  "tool": "wardrobe_add"
+ },
+ {
+  "arguments": {
+   "pieces": [
+    {
+     "client_id": "wd00000000000000",
+     "private": false,
+     "type": "shirt"
+    }
+   ]
+  },
+  "source": "panel",
+  "tool": "wardrobe_add"
+ },
+ {
+  "arguments": {
+   "pieces": [
+    {
+     "client_id": "wd00000000000000",
+     "colour": "navy",
+     "private": false,
+     "type": "shirt"
+    }
+   ]
+  },
+  "source": "scan",
+  "tool": "wardrobe_add"
+ },
+ {
+  "arguments": {
+   "pieces": [
+    {
+     "client_id": "wd00000000000000",
+     "colour": "navy",
+     "private": true,
+     "type": "vest"
+    }
+   ]
+  },
+  "source": "scan",
+  "tool": "wardrobe_add"
+ },
+ {
+  "arguments": {
+   "care": [
+    "machine_wash",
+    "cold_wash",
+    "do_not_bleach"
+   ],
+   "fabric": [
+    "cotton 60%",
+    "polyester 40%"
+   ],
+   "piece": "wi_000000000001",
+   "read": true,
+   "size": "M"
+  },
+  "source": "scan",
+  "tool": "wardrobe_edit"
+ },
+ {
+  "arguments": {
+   "piece": "wi_000000000001",
+   "read": true,
+   "size": "M",
+   "verify": [
+    "size"
+   ]
+  },
+  "source": "scan",
+  "tool": "wardrobe_edit"
+ },
+ {
+  "arguments": {
+   "action": "start",
+   "plan": "pl_1"
+  },
+  "source": "panel",
+  "tool": "wear_log"
+ }
+]

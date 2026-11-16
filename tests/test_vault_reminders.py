@@ -170,7 +170,7 @@ async def test_at_most_three_alerts_then_one_summary() -> None:
 async def test_generic_text_has_no_type_holder_or_last4() -> None:
     svc, _, sink, job, _ = await rig()
     item = await add(svc, 30, type_id="passport")
-    await svc.update(UID, item.id, {"last4": "4821", "title": "Akash passport"})
+    await svc.update(UID, item.id, {"last4": "4821", "title": "Ravi passport"})
     await job.run([UID])
     text = sink.calls[0][1]
     assert text == (

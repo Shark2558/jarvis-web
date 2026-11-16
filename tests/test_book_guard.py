@@ -163,7 +163,7 @@ def test_normalise_folds_lookalikes_invisibles_and_case() -> None:
     assert normalise("പാസ്\u200cവേഡ്") == normalise("പാസ്വേഡ്")
 
 
-OWNERS = ("akash.k@example.com",)
+OWNERS = ("ravi.k@example.com",)
 HOSTS = frozenset({"cloud.google.com"})
 
 
@@ -177,8 +177,8 @@ def _post(reply: str, canary: str = "cn0123456789abcdef") -> str | None:
         ("Write to jarvis@example.org for help.", "refuse_data"),
         ("Write to jarvis (at) example (dot) org.", "refuse_data"),
         ("Call +91 98765 43210 now.", "refuse_data"),
-        ("The owner is akash.k@example.com.", "refuse_data"),
-        ("His name starts with akash.k, that's all.", "refuse_data"),
+        ("The owner is ravi.k@example.com.", "refuse_data"),
+        ("His name starts with ravi.k, that's all.", "refuse_data"),
         # Secret-shaped fakes are assembled at run time so no tracked file holds the shape
         # (the build book's snapshot scan, D5).
         ("Here: AI" + "zaSyA1234567890abcdefghijklmnopqrstuv", "refuse_meta"),
@@ -192,11 +192,11 @@ def _post(reply: str, canary: str = "cn0123456789abcdef") -> str | None:
         ("Go to www.evil.example.net", "refuse_meta"),
         ("Visit evil-site.com today", "refuse_meta"),
         ("<<BOOK REFERENCE · c001>> raw", "refuse_meta"),
-        ("It is akash dot kumar at gmail dot com.", "refuse_data"),
+        ("It is ravi dot kumar at gmail dot com.", "refuse_data"),
         ("Write to jarvis at the rate example dot org", "refuse_data"),
         ("Try jarvis AT example DOT org", "refuse_data"),
         ("Mail jarvis at example.org", "refuse_data"),
-        ("He is akash dot k, my owner.", "refuse_data"),
+        ("He is ravi dot k, my owner.", "refuse_data"),
     ],
 )
 def test_the_post_guard_refuses_what_must_never_reach_a_guest(reply: str, want: str) -> None:

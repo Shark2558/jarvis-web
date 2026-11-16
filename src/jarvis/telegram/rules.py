@@ -63,10 +63,19 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
 # R2 D12: the owner's vault list (metadata only, never files), notes, memos, links and things.
-PERSONAL_PATTERNS: tuple[str, ...] = ("vault_*", "kb_*", "belongings_*")
+# R13 D18: his wardrobe, laundry, outfits and what he wore join the same switch (default off).
+PERSONAL_PATTERNS: tuple[str, ...] = (
+    "vault_*",
+    "kb_*",
+    "belongings_*",
+    "wardrobe_*",
+    "laundry_*",
+    "outfit_*",
+    "wear_*",
+)
 PERSONAL_REFUSAL = (
-    "Your vault list, notes and things are not available from Telegram - your choice in "
-    "Integrations -> Telegram; open the console."
+    "Your vault list, notes, things and wardrobe are not available from Telegram - your choice "
+    "in Integrations -> Telegram; open the console."
 )
 # R3 D15: home devices, camera history and faces (its own switch, default off).
 # R11.1 I1: the photo import (it answers faces found and the people recognised, by name) and its

@@ -3,12 +3,13 @@
 line to spare; docs/plans/r14-hardening.md D7, seam 7).
 
 - `tick_jobs(app)`: R2's jobs, the alert policy's, R4's vitals and health check, R6's book jobs,
-  R11's helpers clock and daily jobs, R7's own two, R14's daily jobs (the existing morning tick,
-  no new Scheduler job).
+  R11's helpers clock and daily jobs, R7's own two, R14's daily jobs, R13's (`wardrobe_sweep`,
+  `laundry_daily`) (the existing morning tick, no new Scheduler job).
 - `add_clock_job(app, job)`: the 5-minute advisory jobs (the systems check, the helpers' clock,
   R7's clock) register here instead of on the home watchdog, so they also run with Home off.
 - `clock_jobs(app)` / `install_clocks(app)`: `app.state.clock_jobs`, built once: R14's 5-minute
-  jobs FIRST (`selfwatch_clock`), then the registered ones, each run for the brief's owners
+  jobs FIRST (`selfwatch_clock`), then the registered ones and R13's `outfit_clock`, each run for
+  the brief's owners
   (`BriefService.owners`, read late) whatever owners the caller passes. With Home on, the watchdog
   runs the R14 jobs before its own laptop check and the rest after it; with Home off the
   5-minute route runs the same list (`api/home.py`).
@@ -24,6 +25,7 @@ from typing import Any
 from fastapi import FastAPI
 
 import jarvis.api.r7_wiring as r7
+import jarvis.api.r13_wiring as r13
 import jarvis.api.r14_wiring as r14
 from jarvis.api.home_wiring import check_job_names, notify_tick_jobs
 from jarvis.api.personal import personal_tick_jobs
@@ -43,6 +45,7 @@ def tick_jobs(app: FastAPI) -> tuple[Any, ...]:
         *r11_tick_jobs(app),
         *r7.mobile_tick_jobs(app),
         *r14.r14_tick_jobs(app),
+        *r13.r13_tick_jobs(app),  # R13: wardrobe_sweep (A), laundry_daily (B)
     )
     check_job_names(jobs)
     return jobs
@@ -83,7 +86,8 @@ def clock_jobs(app: FastAPI) -> tuple[ForOwners, ...]:
         return built
     owners = _brief_owners(app)
     added = tuple(getattr(app.state, "clock_jobs_added", None) or ())
-    jobs = tuple(ForOwners(j, owners) for j in (*r14.r14_clock_jobs(app), *added))
+    later = (*added, *r13.r13_clock_jobs(app))  # R13: C's outfit_clock, after the rest
+    jobs = tuple(ForOwners(j, owners) for j in (*r14.r14_clock_jobs(app), *later))
     names = [j.name for j in jobs]
     if len(set(names)) != len(names):
         raise RuntimeError(f"the 5-minute clock jobs must have unique names: {names}")

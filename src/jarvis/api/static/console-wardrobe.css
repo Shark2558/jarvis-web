@@ -1,0 +1,51 @@
+/* src/jarvis/api/static/console-wardrobe.css -- R13 Part D (docs/plans/r13-wardrobe.md D1): where the Wardrobe tabs
+   place things (Helpers -> Wardrobe, Camera -> Wardrobe), loaded by console-r7.js. It only places: no colour, font,
+   radius or shadow of its own (a value is a var(--...) token; tests/test_r13_seams.py), at most 200 lines. Both tabs
+   reuse the existing components: .hp-sec, .hp-h, .hp-row, .hp-txt, .hp-acts, label.hp-field, .btn.sact in .sacts
+   (the chosen step or kind wears the existing .btn.primary), .bsw toggles, .minput, .snote, .sfine, .cam-stage. */
+
+/* Camera -> Wardrobe: the five steps, the kind chips and long "This one: ..." buttons wrap; every target 44 px */
+#camp-wardrobe .wd-flows{margin-top:10px}
+#camp-wardrobe .wd-flows .btn.sact{flex:1 1 calc(33.333% - 8px);min-height:44px}
+#camp-wardrobe .sacts .btn.sact{height:auto;min-height:44px;max-width:100%;flex-shrink:1;padding:8px 12px;line-height:1.25;white-space:normal;overflow-wrap:anywhere}
+#camp-wardrobe .wd-chips .btn.sact{flex:0 1 auto}
+#camp-wardrobe .wd-scan{margin:6px 0 0}
+#camp-wardrobe .wd-card{margin:12px 0 0}
+#camp-wardrobe .wd-card .snote,#camp-wardrobe .wd-card .sfine{margin:8px 0 0}
+#camp-wardrobe label.hp-field{display:block;margin:10px 0 0}
+#camp-wardrobe label.hp-field > .snote{display:block;margin:0 0 4px}
+#camp-wardrobe .minput{height:44px;width:100%;box-sizing:border-box}
+#camp-wardrobe select.minput{padding:0 8px;cursor:pointer}
+#camp-wardrobe select.minput option{background:var(--well);color:var(--ink)}
+#camp-wardrobe .hp-row .hp-acts{flex-wrap:wrap;justify-content:flex-end}
+#camp-wardrobe .hp-row .btn.sact{min-height:44px}
+
+/* Helpers -> Wardrobe: sections, plans, rows whose actions wrap under their words on a phone */
+#hpp-wardrobe .hp-sec{margin:0 0 18px}
+#hpp-wardrobe .hp-sec > .hp-h:not(:first-child){margin-top:14px}
+#hpp-wardrobe .wd-plan{margin:0 0 12px}
+#hpp-wardrobe .wd-plan .hp-row{min-height:0;padding:6px 0}
+#hpp-wardrobe .wd-plan .sfine,#hpp-wardrobe .wd-plan .snote{margin:6px 0 0}
+#hpp-wardrobe .sacts{margin-top:6px}
+#hpp-wardrobe .sacts .btn.sact{height:auto;min-height:44px;max-width:100%;flex-shrink:1;padding:8px 12px;line-height:1.25;white-space:normal;overflow-wrap:anywhere}
+#hpp-wardrobe .hp-row .hp-acts .bsw{flex:none}
+#hpp-wardrobe .minput{height:44px;width:100%;box-sizing:border-box}
+#hpp-wardrobe select.minput{padding:0 8px;cursor:pointer}
+#hpp-wardrobe select.minput option{background:var(--well);color:var(--ink)}
+#hpp-wardrobe input[type="file"].minput{padding:9px 8px;height:auto;min-height:44px}
+#hpp-wardrobe input[type="checkbox"]{width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle}
+#hpp-wardrobe label.hp-field{display:flex;align-items:center;flex-wrap:wrap;min-height:44px}
+#hpp-wardrobe label.hp-field > .snote{flex:1 1 100%}
+#hpp-wardrobe label.wd-tick{gap:8px}
+#hpp-wardrobe label.wd-tick > .snote{flex:0 1 auto;margin:0}
+#hpp-wardrobe .hp-grid{margin-top:6px}
+#hpp-wardrobe .hp-form{margin:6px 0 10px}
+
+@media (max-width:899px){
+  #camp-wardrobe .wd-flows .btn.sact{flex:1 1 calc(50% - 8px)}
+  #hpp-wardrobe .hp-row{flex-wrap:wrap}
+  #hpp-wardrobe .hp-row .hp-acts{flex:1 1 100%;justify-content:flex-start}
+}
+
+/* M2: the crop a piece's Save would keep, shown on its card before anything is sent (placement only) */
+#camp-wardrobe .wd-crop { display: block; width: auto; height: auto; max-width: 100%; max-height: 12rem; margin: .25rem 0; }

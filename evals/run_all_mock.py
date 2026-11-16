@@ -121,6 +121,9 @@ SUITES = [
     # R14 I0: "Free hardening" -- I0's contract part (built) and the four parts' stubs; each built
     # part's negative control must make the suite fail
     ("r14 (gated)", [sys.executable, str(HERE / "r14" / "run.py"), "--mock"], True),
+    # R13 I0: "Wardrobe & laundry, phone first" -- I0's contract part (built) and the six stubs,
+    # STAGED (a stub passes until I1 flips STUBS_PASS); each built part's control must fail it
+    ("r13 (gated)", [sys.executable, str(HERE / "r13" / "run.py"), "--mock"], True),
 ]
 
 

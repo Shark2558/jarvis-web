@@ -48,6 +48,11 @@ _WORDS = {
     "backup_problem": "backup problem",
     "selfwatch_ok": "JARVIS recovered",
     "backup_ok": "backup drill passed",
+    # R13 D19: the wardrobe (fixed words; never a piece's label)
+    "outfit_ready": "outfit ready",
+    "outfit_changed": "outfit changed",
+    "laundry_overdue": "laundry overdue",
+    "wardrobe_review": "wardrobe check",
 }
 
 

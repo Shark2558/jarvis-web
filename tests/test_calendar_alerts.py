@@ -135,7 +135,7 @@ def _event(eid: str, **extra: Any) -> dict[str, Any]:
         "summary": "Budget review",
         "start": {"dateTime": "2027-01-15T15:00:00+05:30"},
         "end": {"dateTime": "2027-01-15T16:00:00+05:30"},
-        "organizer": {"email": "akash@example.com"},
+        "organizer": {"email": "ravi@example.com"},
         **extra,
     }
 
@@ -223,7 +223,7 @@ async def test_alert_on_a_meeting_with_guests_stays_r3_and_the_card_shows_the_ch
 ) -> None:
     shared = _event(
         "evshared1",
-        attendees=[{"email": "akash@example.com", "self": True}, {"email": "fin@example.com"}],
+        attendees=[{"email": "ravi@example.com", "self": True}, {"email": "fin@example.com"}],
     )
     fake_google.on("GET", f"{EVENTS}/evshared1", httpx.Response(200, json=shared))
     out = await _run(

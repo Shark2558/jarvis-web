@@ -43,10 +43,10 @@ async def test_settings_default_to_the_safe_choices() -> None:
 async def test_a_partial_update_keeps_the_rest_and_persists() -> None:
     docs = MemoryDocs()
     store = BookSettingsStore(docs)
-    got = await store.update(UID, BookSettingsPatch(creator_name="  Akash   Das ", talk_on=False))
-    assert got.creator_name == "Akash Das" and got.talk_on is False and got.show_voice == "browser"
+    got = await store.update(UID, BookSettingsPatch(creator_name="  Ravi   Menon ", talk_on=False))
+    assert got.creator_name == "Ravi Menon" and got.talk_on is False and got.show_voice == "browser"
     got = await store.update(UID, BookSettingsPatch(show_voice="cloud", confirm_cost=True))
-    assert got.creator_name == "Akash Das" and got.show_voice == "cloud"
+    assert got.creator_name == "Ravi Menon" and got.show_voice == "cloud"
     assert await BookSettingsStore(docs).get(UID) == got
     assert await BookSettingsStore(docs).get(OTHER) == BookSettings()
     assert set(docs._data[f"jarvis_book_settings/{UID}"]) >= {
@@ -59,12 +59,12 @@ async def test_a_partial_update_keeps_the_rest_and_persists() -> None:
 
 async def test_an_empty_name_clears_it() -> None:
     store = BookSettingsStore(MemoryDocs())
-    await store.update(UID, BookSettingsPatch(creator_name="Akash"))
+    await store.update(UID, BookSettingsPatch(creator_name="Ravi"))
     assert (await store.update(UID, BookSettingsPatch(creator_name="   "))).creator_name == ""
 
 
 @pytest.mark.parametrize(
-    "name", ["x" * 41, "<script>", "Akash‮Das!", "1234", "a@b.c", "line\nbreak?" * 5]
+    "name", ["x" * 41, "<script>", "Ravi‮Menon!", "1234", "a@b.c", "line\nbreak?" * 5]
 )
 async def test_a_bad_creator_name_is_refused_and_nothing_is_written(name: str) -> None:
     docs = MemoryDocs()

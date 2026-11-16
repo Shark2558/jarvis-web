@@ -24,7 +24,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 
 PATH = "/v1/attachments"
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 
 

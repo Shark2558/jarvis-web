@@ -24,7 +24,7 @@ from jarvis.privacy.service import PrivacyService
 from jarvis.tools import Gateway
 
 ORIGIN = "http://test"
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = user_id_for_email(OWNER)
 CSRF = {"X-Requested-With": "JARVIS"}
 BEARER = {"Authorization": "Bearer cli-token"}

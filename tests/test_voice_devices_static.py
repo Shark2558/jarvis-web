@@ -1,7 +1,7 @@
 # tests/test_voice_devices_static.py
 """R5 workstream B, the static half (docs/plans/r5-voice.md D13, D14).
 
-Device labels can hold personal names ("Akash's AirPods"), so the two device modules must never
+Device labels can hold personal names ("Ravi's AirPods"), so the two device modules must never
 talk to the server; they write the DOM through textContent only; they never open the microphone to
 get names; they keep their size limits; and they register the three device.* voice commands.
 The browser half is tests/browser/test_voice_devices.py.

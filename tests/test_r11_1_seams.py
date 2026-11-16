@@ -70,7 +70,8 @@ def _lines(path: Path) -> int:
 
 
 def test_the_version_is_eleven_point_one() -> None:
-    assert jarvis.__version__ == "6.2.0"  # R6.2 (14.0.2 at R14 hotfix 2; nothing compares it)
+    # R13 I0 (6.2.0 at R6.2, 14.0.2 at R14 hotfix 2, 7.0.0 at R7; nothing compares it)
+    assert jarvis.__version__ == "13.0.0"
 
 
 # ---- settings -----------------------------------------------------------------------------------
@@ -115,8 +116,9 @@ def test_a_setting_outside_its_range_is_refused(field: str, bad: int) -> None:
 def test_two_kinds_make_thirty_eight() -> None:
     every = get_args(AlertKind)
     assert R11_1_ALERT_KINDS == ("series_checkin", "faces_to_name")
-    # R7 I0 added five (tests/test_r7_seams.py): 43; R14 I0 nine (tests/test_r14_seams.py): 52
-    assert len(every) == len(set(every)) == 52 and set(DEFAULT_URGENCY) == set(every)
+    # R7 I0 added five (tests/test_r7_seams.py): 43; R14 I0 nine (tests/test_r14_seams.py): 52;
+    # R13 I0 four (tests/test_r13_seams.py): 56
+    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)
     assert DEFAULT_URGENCY["series_checkin"] == "important"
     assert DEFAULT_URGENCY["faces_to_name"] == "info"
     # "did the session happen?" is asked every time: it rings by day and is HELD at night,
@@ -136,8 +138,11 @@ def test_the_held_summary_and_the_alerts_card_know_both_kinds() -> None:
 # ---- permission rows ----------------------------------------------------------------------------
 def test_two_rows_make_forty_six_and_sit_before_maps() -> None:
     ids = [g.id for g in GROUPS]
-    assert len(ids) == len(set(ids)) == 49  # R7 I0: + 3 after Camera (tests/test_r7_seams.py)
-    assert ids[ids.index("kitchen") + 1 : ids.index("maps")] == ["plans", "pictures"]
+    assert len(ids) == len(set(ids)) == 52  # R7 I0: + 3 after Camera; R13 I0: + 3 after Pictures
+    assert ids[ids.index("kitchen") + 1 : ids.index("maps")] == [
+        *("plans", "pictures"),
+        *("wardrobe", "laundry", "outfits"),  # R13 I0 (tests/test_r13_seams.py)
+    ]
     plans, pictures = get_group("plans"), get_group("pictures")
     assert plans is not None and pictures is not None
     assert (plans.section, plans.risk) == ("Calendar plans", R2)

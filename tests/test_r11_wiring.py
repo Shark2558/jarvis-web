@@ -88,9 +88,10 @@ async def test_the_helpers_start_with_four_empty_parts_and_both_composites(
         assert st.helpers_daily.job_names == ("breach_watch", "helpers_sweep")  # ... not here
         names = [j.name for j in st.tick_jobs]
         # R11's two composites, then R7's own two (never inside the helpers': code M5)
-        assert names[-7:-3] == ["helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily"]
-        # R14 I1: the parts' daily jobs come last (A's two, B's one; api/tick_wiring.py)
-        assert names[-3:] == ["backup_canary", "backup_drill", "selfwatch_daily"]
+        assert names[-8:-4] == ["helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily"]
+        # R14 I1: the parts' daily jobs (A's two, B's one; api/tick_wiring.py), then R13's: B's
+        # `laundry_daily` needs no key (A's `wardrobe_sweep` needs the keyring, which is off here)
+        assert names[-4:] == ["backup_canary", "backup_drill", "selfwatch_daily", "laundry_daily"]
         assert st.brief._helpers is not None  # noqa: SLF001 - the brief's Helpers source
         assert "helpers_nudge" in st.privacy.registry.ids()
 
@@ -181,7 +182,8 @@ async def test_a_failing_part_is_left_empty_and_the_others_run(
         out = await a.client.post(WATCHDOG_PATH)  # Home off: the one 5-minute clock (R14 D7)
         assert out.status_code == 200 and out.json()["jobs"]["helpers_clock"] == "ok"
         # R14 I1: B's 5-minute self-health clock runs first on the shared clock (D7)
-        jobs = {"selfwatch_clock", "health_check", "helpers_clock", "mobile_clock"}
+        # R13: C's 5-minute `outfit_clock` rides the same clock (advisory on the watchdog)
+        jobs = {"selfwatch_clock", "health_check", "helpers_clock", "mobile_clock", "outfit_clock"}
         assert set(out.json()["jobs"]) == jobs
         assert job.seen == [r11.owners_of(settings)]  # the configured owners, never a list passed
         status = await st.helpers_status.read()

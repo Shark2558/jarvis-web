@@ -1,0 +1,22 @@
+JARVIS R13 (the wardrobe): the on-device models in vendor/vision/r13-1/
+
+All three come from the ONNX Model Zoo (https://github.com/onnx/models, Apache License 2.0, see
+LICENSE-onnx-models.txt) at commit c5cae0f1942c8d7727372c7b1f6b485aa39e4421.
+
+mobilenetv2-int8-embed.onnx - MobileNet v2-1.0 int8 (validated/vision/classification/mobilenet;
+  the model page: "SPDX-License-Identifier: Apache-2.0", "License: Apache 2.0"). MODIFIED (Apache
+  License 2.0, section 4(b)): JARVIS cut the graph after its global average pool and its Reshape
+  (output 472_quantized) and removed the classifier; the weights are byte-identical.
+
+version-RFB-320.onnx - UltraFace (validated/vision/body_analysis/ultraface; the model page:
+  "License: MIT"; upstream Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB, MIT, see
+  LICENSE-ultraface.txt). Unmodified.
+
+ssd_mobilenet_v1_12-int8.onnx - SSD-MobileNetV1 int8 (validated/vision/object_detection_
+  segmentation/ssd-mobilenetv1; the model page: "License: MIT"). Its weights come from the
+  TensorFlow Object Detection API (tensorflow/models, /research: Apache License 2.0, see
+  LICENSE-tensorflow-models.txt). Unmodified.
+
+The data that trained these weights (ImageNet, WIDER FACE, COCO) has its own terms, some of them
+for non-commercial research; JARVIS uses the published weights under the licences above, for one
+person, non-commercially.

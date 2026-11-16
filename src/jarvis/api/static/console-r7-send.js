@@ -8,6 +8,8 @@
 //   attach(files) -> Promise<n> the paperclip's own path: JarvisAttach.add(files), each picture first redrawn
 //   vault(file) -> Promise<item|null>  the usual vault proposal (POST /v1/vault/upload), for him to confirm
 //   sentToday() -> n            pictures this device sent today; line() -> "Pictures sent from this device today: n"
+//   wardrobe(blob, {piece, view}), tag(blob, {piece}) -> Promise<json>   R13 D9: Camera -> Wardrobe's only two ways
+//                               to send a picture: a saved piece's crop (POST /v1/wardrobe/photos) and its AI tag
 // Every picture is first redrawn on this device by R11.1's shrink (JarvisFixes.parts.files.shrink): JPEG of at
 // most 1,568 px, so a WebP or a full-size photo is never sent as it is; one the browser can't read is refused in
 // plain words. The counter lives only in this browser (localStorage, per day). Nothing here runs before a press.
@@ -95,6 +97,49 @@ async function vault(file) {
   return j && j.item ? j.item : null;
 }
 
+// R13 I0 (docs/plans/r13-wardrobe.md D9): redrawn and counted like every picture; piece and view checked first.
+const PIECE = /^wi_[0-9a-f]{12}$/;
+const VIEWS = ['front', 'back', 'detail'];
+const NOT_A_PIECE = 'That photo is not for a saved piece, so it was not sent, Sir.';
+async function postPicture(path, blob) {
+  const chat = window.JarvisChat;
+  if (!chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
+  const file = blob instanceof File ? blob : new File([blob], 'piece.jpg', { type: 'image/jpeg' });
+  const doc = await prepared(file);
+  if (doc.type !== 'image/jpeg') throw new Error(UNREADABLE);
+  const r = await chat.raw(path, { method: 'POST', body: doc, headers: { 'Content-Type': 'image/jpeg' } });
+  let j = null;
+  try { j = await r.json(); } catch (_) {}
+  if (!r.ok) throw new Error((j && typeof j.detail === 'string' && j.detail) || 'The upload did not work. Please try again.');
+  bump(1);
+  return j;
+}
+function wardrobe(blob, meta) {
+  const m = meta || {};
+  if (!PIECE.test(String(m.piece || '')) || !VIEWS.includes(m.view)) return Promise.reject(new Error(NOT_A_PIECE));
+  return postPicture('/v1/wardrobe/photos?piece=' + m.piece + '&view=' + m.view, blob);
+}
+function tag(blob, meta) {
+  const m = meta || {};
+  if (!PIECE.test(String(m.piece || ''))) return Promise.reject(new Error(NOT_A_PIECE));
+  return postPicture('/v1/wardrobe/tag?piece=' + m.piece, blob);
+}
+
+const PHOTO = /^wh_[0-9a-f]{12}$/;
+async function thumb(id) { // a saved crop, back as a data: URL for an <img>
+  const chat = window.JarvisChat;
+  if (!PHOTO.test(String(id || '')) || !chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
+  const r = await chat.raw('/v1/wardrobe/photos/' + id);
+  if (!r.ok) throw new Error('That photo could not be shown.');
+  const b = await r.blob();
+  return new Promise((ok, no) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.onerror = no; f.readAsDataURL(b); });
+}
+async function drop(id) { // one photo, deleted
+  const chat = window.JarvisChat;
+  if (!PHOTO.test(String(id || '')) || !chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
+  const r = await chat.raw('/v1/wardrobe/photos/' + id, { method: 'DELETE' });
+  if (!r.ok) throw new Error('That photo could not be deleted.');
+}
 const line = () => 'Pictures sent from this device today: ' + readCount();
 
-if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, sentToday: readCount, line }));
+if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, sentToday: readCount, line }));

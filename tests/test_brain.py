@@ -29,7 +29,7 @@ async def test_first_turn_creates_session_and_persists_both_turns(
 
 
 async def test_session_memory_carries_context(brain: Brain, provider: MockProvider) -> None:
-    r1 = await brain.chat(ChatRequest(message="My name is Akash"))
+    r1 = await brain.chat(ChatRequest(message="My name is Ravi"))
     r2 = await brain.chat(ChatRequest(message="What is my name?", session_id=r1.session_id))
 
     assert r2.session_id == r1.session_id
@@ -37,8 +37,8 @@ async def test_session_memory_carries_context(brain: Brain, provider: MockProvid
     # the second LLM call must have seen the first exchange
     second_call = provider.calls[1]
     assert [m.content for m in second_call.messages] == [
-        "My name is Akash",
-        "Certainly, Sir. You said: My name is Akash",
+        "My name is Ravi",
+        "Certainly, Sir. You said: My name is Ravi",
         "What is my name?",
     ]
 

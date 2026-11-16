@@ -82,11 +82,11 @@ def test_live_about_you_and_learning_consent(make: Callable[..., Console]) -> No
     page = _fresh(c)
     _main(c)
     ta = page.locator("#memP-about")
-    ta.fill("Akash. Call me Sir. Project lead in Thiruvananthapuram.")
+    ta.fill("Ravi. Call me Sir. Project lead in Thiruvananthapuram.")
     page.locator("#p-memory").get_by_role("button", name="Save").first.click()
     page.wait_for_timeout(600)
     view = _view(c)
-    assert view["profile"]["about"].startswith("Akash. Call me Sir.")
+    assert view["profile"]["about"].startswith("Ravi. Call me Sir.")
     # learning: the dialog first, then the real PUT with confirm_spend
     _settings(c)
     page.locator("#memLearn").click()

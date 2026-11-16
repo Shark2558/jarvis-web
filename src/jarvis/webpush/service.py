@@ -24,7 +24,7 @@ from types import MappingProxyType
 
 import httpx
 
-from jarvis.alerts import R14_ALERT_KINDS
+from jarvis.alerts import R13_ALERT_KINDS, R14_ALERT_KINDS
 from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
 from jarvis.offline.config import PinnedTransport, Resolver, system_resolver
@@ -97,6 +97,9 @@ TARGETS: Mapping[str, str] = MappingProxyType(
         "phone_unlinked": "integrations",
         # R14 D6: JARVIS's own health and its backups open the Vitals board
         **{kind: "vitals" for kind in R14_ALERT_KINDS},
+        # R13 D1, D19: the wardrobe's alerts open Helpers (its last sub-tab; the text names
+        # "Helpers, Wardrobe": a tab hint would touch R7's launch-word module, plan L3)
+        **{kind: "helpers" for kind in R13_ALERT_KINDS},
         **{kind: "helpers" for kind in _HELPERS},
         **{kind: "home" for kind in _HOME},
     }

@@ -23,7 +23,7 @@ CHANNEL = {
     "items": [
         {
             "id": "UC1234567890",
-            "snippet": {"title": "Akash\nBuilds", "customUrl": "@akashbuilds"},
+            "snippet": {"title": "Ravi\nBuilds", "customUrl": "@ravibuilds"},
             "statistics": {"subscriberCount": "120", "videoCount": "7", "viewCount": "4500"},
             "contentDetails": {"relatedPlaylists": {"uploads": "UU1234567890"}},
         }
@@ -66,7 +66,7 @@ async def test_channel_returns_clean_own_channel_fields() -> None:
     yt, fake = await build()
     fake.on("GET", f"{API}/channels", httpx.Response(200, json=CHANNEL))
     ch = await yt.channel(GOOGLE_UID)
-    assert ch.title == "Akash Builds" and ch.subscribers == 120 and ch.videos == 7
+    assert ch.title == "Ravi Builds" and ch.subscribers == 120 and ch.videos == 7
     assert fake.requests[0].url.params["mine"] == "true"
 
 

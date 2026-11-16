@@ -209,6 +209,11 @@ ALERT_WORDS: Mapping[str, str] = MappingProxyType(
         "backup_problem": "A backup or the restore drill has a problem",
         "selfwatch_ok": "JARVIS has recovered",
         "backup_ok": "The monthly restore drill passed",
+        # R13 D19: the wardrobe
+        "outfit_ready": "Tomorrow's outfit is ready",
+        "outfit_changed": "A piece of a planned outfit changed",
+        "laundry_overdue": "Laundry at a shop is overdue or came back short",
+        "wardrobe_review": "Wardrobe pieces wait for a quick check",
     }
 )
 

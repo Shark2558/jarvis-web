@@ -111,16 +111,23 @@ async def test_the_real_app_puts_part_ds_night_into_the_brief(settings: Any) -> 
     async with app.router.lifespan_context(app):
         body = app.state.r7_parts["body"]
         uid = app.state.brief.owners[0]
+        # the intake only takes days in the last 35 by the real clock: build the night from today
+        from zoneinfo import ZoneInfo
+
+        day = dt.datetime.now(ZoneInfo("Asia/Kolkata")).date() - dt.timedelta(days=1)
+        before = day - dt.timedelta(days=1)
         night = {
-            "start": "2026-11-12T23:50:00+05:30",
-            "end": "2026-11-13T06:30:00+05:30",
+            "start": f"{before.isoformat()}T23:50:00+05:30",
+            "end": f"{day.isoformat()}T06:30:00+05:30",
             "writer": "com.example.makerhealth",  # another health app: named as itself
             "stages": None,
         }
-        days = [{"date": "2026-11-13", "steps": None, "heart": None, "sleep": [night]}]
+        days = [{"date": day.isoformat(), "steps": None, "heart": None, "sleep": [night]}]
         await body.services["watch"].intake(uid, json.dumps({"v": 1, "days": days}).encode())
         wired = app.state.brief._sleep  # the source the app built the brief with
         assert isinstance(wired, r7_wiring.MobileSleep)
-        line = await wired.sleep(uid, dt.UTC, date(2026, 11, 13))
+        line = await wired.sleep(uid, dt.UTC, day)
         assert line == SleepLine(minutes=400, start="23:50", end="06:30", source="app")
-        assert await wired.sleep(uid, dt.UTC, date(2026, 11, 20)) is None  # no night that day
+        assert (
+            await wired.sleep(uid, dt.UTC, day + dt.timedelta(days=7)) is None
+        )  # no night that day

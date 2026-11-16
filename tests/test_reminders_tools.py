@@ -57,8 +57,8 @@ def _reminder(eid: str, start: str, text: str = "⏰ call Ravi", **extra: Any) -
         "transparency": "transparent",
         "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]},
         "extendedProperties": TAG,
-        "organizer": {"email": "akash@example.com", "self": True},
-        "creator": {"email": "akash@example.com", "self": True},
+        "organizer": {"email": "ravi@example.com", "self": True},
+        "creator": {"email": "ravi@example.com", "self": True},
         "htmlLink": f"https://calendar.google.com/event?eid={eid}",
         **extra,
     }
@@ -420,7 +420,7 @@ async def test_update_refuses_a_reminder_someone_added_guests_to(
     shared = _reminder(
         "rem22",
         "2027-01-15T17:00:00+05:30",
-        attendees=[{"email": "akash@example.com", "self": True}, {"email": "x@example.com"}],
+        attendees=[{"email": "ravi@example.com", "self": True}, {"email": "x@example.com"}],
     )
     fake_google.on("GET", f"{EVENTS}/rem22", httpx.Response(200, json=shared))
     out = await _run(gw, "reminder_update", {"event_id": "rem22", "text": "x"})

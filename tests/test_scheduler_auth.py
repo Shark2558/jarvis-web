@@ -386,14 +386,14 @@ async def test_a_signed_in_browser_cookie_cannot_tick(ssettings: Settings) -> No
             "auth_mode": AuthMode.GOOGLE,
             "google_client_id": "cid",
             "google_client_secret": SecretStr("gsecret"),
-            "owner_emails": ["akash@example.com"],
+            "owner_emails": ["ravi@example.com"],
             "session_secret": SecretStr("x" * 32),
         }
     )
     async for c in _app_client(gs, FakeJWKS(KEY)):
 
         async def fake(request: Any) -> dict[str, Any]:
-            return {"userinfo": {"email": "akash@example.com", "email_verified": True}}
+            return {"userinfo": {"email": "ravi@example.com", "email_verified": True}}
 
         c.app.state.oauth.google.authorize_access_token = fake  # type: ignore[attr-defined]
         await c.get("/auth/callback?code=a&state=b")

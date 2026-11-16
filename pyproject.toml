@@ -112,6 +112,8 @@ where = ["src"]
 "jarvis.helpers.kitchen" = ["data/*.json"]
 # R14 Part C (D11): the skill register's catalogue (data)
 "jarvis.skills" = ["catalogue.json"]
+# R13 Part C (D12): the styling rules (data, checked at start; the image installs non-editable)
+"jarvis.wardrobe.styling" = ["rules.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

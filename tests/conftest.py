@@ -1,7 +1,7 @@
 # tests/conftest.py
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -9,6 +9,7 @@ from pydantic import SecretStr
 
 from jarvis.api import create_app
 from jarvis.config import LLMBackend, SessionBackend, Settings
+from jarvis.core import channel
 from jarvis.core.brain import Brain
 from jarvis.core.guardrails import ConfirmationGate
 from jarvis.integrations.google import GoogleConnector
@@ -116,3 +117,12 @@ def google_conn(fake_google: FakeGoogle, token_store: MemoryTokenStore) -> Googl
 async def connected(google_conn: GoogleConnector, token_store: MemoryTokenStore) -> GoogleConnector:
     await token_store.put(GOOGLE_UID, google_tokens())
     return google_conn
+
+
+@pytest.fixture(autouse=True)
+def _offline_marker_clean() -> Iterator[None]:
+    """`channel._offline` is a mutable holder shared with child tasks: a test that calls
+    `mark_offline()` leaves it set for the next file unless it is reset after as well as before."""
+    channel.reset_offline()
+    yield
+    channel.reset_offline()

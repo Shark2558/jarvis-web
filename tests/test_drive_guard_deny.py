@@ -10,7 +10,7 @@ from jarvis.drive.client import DriveClient
 from jarvis.drive.guard import ParentsGuard, WalkBudget
 from jarvis.drive.ports import NotInRoots
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 
 
 def _tree() -> FakeDrive:

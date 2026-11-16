@@ -42,7 +42,8 @@ from jarvis.home.models import HomeStatus, OutageKind
 from jarvis.home.ports import ArmReader
 from jarvis.home.store import HomeStore
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Delivery, Notifier, Signal
+from jarvis.notify.ports import OWNER_SETTLED, Delivery, Notifier, Signal
+from jarvis.notify.ports import took as took_
 from jarvis.ticks import FAILED_COUNT, TickJob, TickObserver, run_jobs
 
 log = get_logger(__name__)
@@ -54,7 +55,6 @@ IDLE_TEXT = (
     "it's back, Sir."
 )
 # The owner's own choice for the kind: nothing to retry, the outage is settled as told.
-OWNER_SETTLED = frozenset({"switched_off", "feed_only"})
 # The whole run, under the Scheduler's --attempt-deadline of 60 s (deploy/cloudrun.sh) with room
 # to answer (R6 review L4): a job the run has no time left for is cut ("degraded" when advisory),
 # and the next run in 5 minutes tries again.
@@ -68,9 +68,7 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
         return True
     if not idle:
         return False  # armed: unchanged (integrated review H5)
-    if delivery.action == "hold":
-        return True
-    return delivery.action == "drop" and delivery.reason in OWNER_SETTLED
+    return took_(delivery)  # the one rule: a hold, or his own setting
 
 
 # Jobs that ride the watchdog but are not the laptop watchdog: when one fails the Scheduler must
@@ -79,8 +77,10 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
 # told once) and a sweep retries its deletes by itself: neither may 503 the watchdog
 # R11 D3: the helpers' 5-minute clock rides here too; its reminders never fail the laptop check
 # R14 D7: self-health's 5-minute job runs FIRST (before the laptop check), for the brief's owners
+# R13: the wardrobe's 5-minute outfit_clock (calendar, weather, the evening's alert) is advisory
 ADVISORY_JOBS = frozenset(
     {"health_check", "book_seal", "book_sweep", "helpers_clock", "mobile_clock", "selfwatch_clock"}
+    | {"outfit_clock"}
 )
 
 
@@ -271,6 +271,7 @@ __all__ = [
     "WATCHDOG_BUDGET_S",
     "ARMED_TEXT",
     "IDLE_TEXT",
+    "OWNER_SETTLED",
     "AlertWhen",
     "OfflineJob",
     "Watchdog",

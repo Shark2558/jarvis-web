@@ -1,0 +1,149 @@
+# src/jarvis/wardrobe/catalog/backup.py
+"""The wardrobe's own backup file (docs/plans/r13-wardrobe.md D17, OPS-06; plan review H3, L9).
+
+One file, made line by line and streamed (never whole in memory):
+
+    JWB1 {"v": 2, "kid": "tk1", "photos": false, "fid": <16 hex>}\\n   the head, in clear
+    <base64 line 1>\\n ... <base64 line N>\\n       each line sealed with the `wardrobe` key,
+        AAD `wardrobe/backup/{uid}/v1/{fid}/{n}`; line 1's AAD also ends `|<SHA-256 of the head>`
+
+A line is `{"t": "index" | "log" | "photo" | "fp" | "end", "d": ...}`: the index (pieces, pairs,
+sets, places, labels, states, his settings), each piece's whole event log, and ONLY when he ticks
+"include photos" each photo's and fingerprint shard's stored document as it is (their own sealed
+blobs, never opened for the backup); the last line counts the lines before it. The line number
+in each AAD makes a reordered, spliced or cut file fail to open; the file's own random id (`fid`)
+makes a line of another of his files fail to open; the head (its "photos" too) is bound into line
+1's seal, so it can't be changed (review A-1 L1). It opens only on this JARVIS for him with
+today's key; after a key change (`keyring.KEY_ID`) older files can't be read.
+A file the restore would refuse (over `wardrobe_backup_max_mb`, estimated from the index before a
+byte is sent) is refused in words: with photos, download it without them (R14's Firestore
+backups keep them); without, his history is too long for one file.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import secrets
+from collections.abc import AsyncIterator
+from typing import Any
+
+from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PhotoVault
+from jarvis.wardrobe.catalog.sealed import aad_backup, dumps
+from jarvis.wardrobe.catalog.store import CatalogStore
+from jarvis.wardrobe.model import WardrobeView
+from jarvis.wardrobe.ports import Refused
+
+MAGIC = b"JWB1 "
+VERSION = 2  # 2: the head names its file (`fid`) and is bound into line 1's seal (L1)
+FID = re.compile(r"^[0-9a-f]{16}$")
+TOO_BIG = "With photos this backup is over {mb} MB: download it without photos."
+TOO_BIG_HISTORY = (
+    "Your wardrobe's history makes a backup over {mb} MB, more than a restore takes: remove "
+    "pieces you no longer use, or raise the server's backup limit (at most 30 MB)."
+)
+# One event in a log line, sealed (short keys, AES-GCM, base64): a typical one is about 400, the
+# widest about 800; the estimate errs on the safe side of what the restore will take (L4).
+EVENT_BYTES = 600
+LINE_BYTES = 160
+KEY_NOTE = "It opens only on this JARVIS; after a key change older backup files can't be read."
+
+
+def aad_line(uid: str, fid: str, n: int, head: bytes | None = None) -> str:
+    """Line `n` of his file `fid`; line 1 also names the exact head it came with."""
+    base = f"{aad_backup(uid)}/{fid}/{n}"
+    return f"{base}|{hashlib.sha256(head).hexdigest()}" if head is not None else base
+
+
+class Backup:
+    def __init__(self, store: CatalogStore, vault: PhotoVault, *, max_mb: int) -> None:
+        self.store, self.vault, self.max_bytes = store, vault, max_mb * 1024 * 1024
+        self.max_mb = max_mb
+
+    def _line(self, aad: str, kind: str, data: Any) -> bytes:
+        blob = self.store.sealer.seal("wardrobe", aad, {"t": kind, "d": data})
+        return blob.encode() + b"\n"
+
+    async def _photo_docs(
+        self, uid: str, view: WardrobeView | None = None
+    ) -> list[tuple[str, dict[str, Any]]]:
+        view = view if view is not None else await self.store.view(uid)
+        found = []
+        for p in view.pieces.values():
+            for ph in p.photos:
+                doc = await self.store.docs.get(self.vault.path(uid, ph))
+                if doc is not None:
+                    found.append((ph, doc))
+        return found
+
+    async def estimate(self, uid: str, *, photos: bool, view: WardrobeView | None = None) -> int:
+        """About the file's size, from the index (each piece's event count) and, with photos,
+        the photo and fingerprint documents as stored; never under the real file."""
+        view = view if view is not None else await self.store.view(uid)
+        events = sum(p.events for p in view.pieces.values())
+        size = len(dumps(view.to_json())) * 4 // 3 + LINE_BYTES * (len(view.pieces) + 2)
+        size += EVENT_BYTES * events
+        if photos:
+            docs = [doc for _, doc in await self._photo_docs(uid, view)]
+            for shard in range(MAX_SHARDS):
+                found = await self.store.docs.get(self.vault.prints.path(uid, shard))
+                if found is None:
+                    break
+                docs.append(found)
+            size += sum(len(json.dumps(doc)) * 4 // 3 + LINE_BYTES for doc in docs)
+        return size
+
+    async def check_size(self, uid: str, photos: bool, view: WardrobeView | None = None) -> None:
+        """Before a byte is sent: refuse, in words, a file the restore would refuse (L4)."""
+        view = view if view is not None else await self.store.view(uid)
+        if await self.estimate(uid, photos=photos, view=view) <= self.max_bytes:
+            return
+        if photos and await self.estimate(uid, photos=False, view=view) <= self.max_bytes:
+            raise Refused(TOO_BIG.format(mb=self.max_mb))
+        raise Refused(TOO_BIG_HISTORY.format(mb=self.max_mb))
+
+    async def lines(
+        self, uid: str, *, photos: bool = False, view: WardrobeView | None = None
+    ) -> AsyncIterator[bytes]:
+        """The file, line by line (the route streams it)."""
+        fid = secrets.token_hex(8)
+        head = MAGIC + dumps({"v": VERSION, "kid": self.store.sealer.kid, "photos": photos,
+                              "fid": fid})  # fmt: skip
+        yield head + b"\n"
+        view = view if view is not None else await self.store.view(uid)
+        n = 1
+        yield self._line(aad_line(uid, fid, n, head), "index", view.to_json())
+        for pid in view.pieces:
+            n += 1
+            events = [e.to_json() for e in await self.store.events(uid, pid, view=view)]
+            yield self._line(aad_line(uid, fid, n), "log", {"p": pid, "e": events})
+        if photos:
+            for ph, doc in await self._photo_docs(uid, view):
+                n += 1
+                yield self._line(aad_line(uid, fid, n), "photo", {"id": ph, "doc": doc})
+            for shard in range(MAX_SHARDS):
+                found = await self.store.docs.get(self.vault.prints.path(uid, shard))
+                if found is None:
+                    break
+                n += 1
+                yield self._line(aad_line(uid, fid, n), "fp", {"n": shard, "doc": found})
+        yield self._line(aad_line(uid, fid, n + 1), "end", {"lines": n})
+
+    async def file(self, uid: str, *, photos: bool = False) -> bytes:
+        """The whole file (tests and the eval; the route streams `lines`)."""
+        view = await self.store.view(uid)
+        await self.check_size(uid, photos, view)
+        return b"".join([chunk async for chunk in self.lines(uid, photos=photos, view=view)])
+
+
+__all__ = [
+    "FID",
+    "KEY_NOTE",
+    "MAGIC",
+    "TOO_BIG",
+    "TOO_BIG_HISTORY",
+    "VERSION",
+    "Backup",
+    "aad_line",
+]

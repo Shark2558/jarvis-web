@@ -26,7 +26,7 @@ from jarvis.vault.service import VaultService
 from jarvis.vault.store import VaultStore
 from jarvis.vault.unlock import UnlockStore
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 OTHER = "partner@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 BEARER = {"Authorization": "Bearer cli-token"}

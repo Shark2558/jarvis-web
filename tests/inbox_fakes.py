@@ -16,7 +16,7 @@ from jarvis.vault.ports import IntakeResult, Source
 from jarvis.vault_inbox.service import InboxService
 from jarvis.vault_inbox.store import InboxStore
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = "u_owner"
 PDF_BYTES = b"%PDF-1.4 fake driving licence"
 

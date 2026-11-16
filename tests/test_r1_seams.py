@@ -9,6 +9,7 @@ the brain's offline wiring, the Telegram trailer placeholder, settings and the t
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +48,9 @@ CSRF = {"X-Requested-With": "JARVIS"}
 
 
 @pytest.fixture(autouse=True)
-def _clean_offline_marker() -> None:
+def _clean_offline_marker() -> Iterator[None]:
+    channel.reset_offline()
+    yield
     channel.reset_offline()
 
 

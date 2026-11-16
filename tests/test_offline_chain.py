@@ -4,6 +4,7 @@
 # calendar add would run without a card.
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -61,7 +62,9 @@ async def _add(gw: Gateway) -> GatewayOutcome:
 
 
 @pytest.fixture(autouse=True)
-def _fresh() -> None:
+def _fresh() -> Iterator[None]:
+    channel.reset_offline()
+    yield
     channel.reset_offline()
 
 

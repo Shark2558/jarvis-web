@@ -46,7 +46,7 @@ PERSON = (
 )
 NO_CHECK = "Saving a photo is off on this phone: the check for a person or a face is not installed."
 SAVE = "Save this photo with the piece (sealed; only you)"
-TAG = "Ask the AI to tag this piece (about ₹0.30 at most)"
+TAG = "Send this photo to the AI to tag it (about ₹0.01–₹0.51, depending on the brain)"
 
 
 def _vec(seed: int) -> str:
@@ -309,6 +309,41 @@ def test_m2_the_card_shows_the_exact_crop_before_anything_is_sent() -> None:
     out = scan([*PHOTO, pick, press(SAVE)], vision={"embed": _vec(11)})
     [shown] = out["steps"][2]["shown"]  # drawn on the card, above Save, before any press
     assert out["door"][0]["from"] == shown and "Save keeps exactly this crop:" in out["final"]
+
+
+# ---- M3: the rupees for one AI tag are true ------------------------------------------------------
+def test_m3_the_tag_range_is_the_price_tables_cheapest_and_dearest_brain() -> None:
+    from jarvis.config import Settings
+    from jarvis.llm.pricing import PRICES
+
+    tokens_in, tokens_out = 750, 120  # one crop and its answer (docs/plans/r13-wardrobe.md D7)
+    rate = Settings.model_fields["usd_inr_rate"].default
+    each = sorted(
+        (tokens_in * p.input_per_mtok + tokens_out * p.output_per_mtok) / 1e6 * rate
+        for name, p in PRICES.items()
+        if name.startswith("claude-")  # the seeing, non-training brains
+    )
+    assert rate == 95.24 and (round(each[0], 2), round(each[-1], 2)) == (0.01, 0.51)
+    js = SCAN.read_text(encoding="utf-8")
+    assert "const TAG_MOST = 0.51, TAG_RANGE = '\\u20b90.01\\u2013\\u20b90.51," in js
+
+
+def test_m3_the_brains_own_estimate_is_said_and_used_for_the_limit_when_the_view_has_it() -> None:
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    own = _view(ai_tagging=True, tag_month_inr=0.02, tag_cap_inr=30, tag_estimate_inr=0.26)
+    out = scan([*PHOTO, pick], vision={"embed": _vec(11)}, view=own)
+    assert "Send this photo to the AI to tag it (about ₹0.26)" in out["final"]
+    near = _view(ai_tagging=True, tag_month_inr=29.6, tag_cap_inr=30)  # 29.6 + 0.51 passes 30
+    out = scan([*PHOTO, pick], vision={"embed": _vec(11)}, view=near)
+    assert TAG not in out["final"] and "limit" in out["final"]
+
+
+def test_l10_the_tag_checks_no_ai_again_at_the_press() -> None:
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    on = _view(ai_tagging=True, tag_month_inr=0.02, tag_cap_inr=30)
+    steps = [*PHOTO, pick, {"op": "noai", "on": True}, press(TAG)]
+    out = scan(steps, vision={"embed": _vec(11)}, view=on)
+    assert out["steps"][-1]["found"] is True and out["door"] == []
 
 
 # ---- D10: private pieces ------------------------------------------------------------------------

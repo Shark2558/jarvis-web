@@ -171,6 +171,7 @@ async function step(s) {
   if (s.op === 'settle') await settle(s.n || 30);
   if (s.op === 'vision') vision = Object.assign({}, vision, s.vision);
   if (s.op === 'online') offline = !!s.offline; // {op: 'online'} is back online; {offline: true} goes off
+  if (s.op === 'noai') input.noAi = !!s.on; // the AI switched off (or on) while the page is open
   r.text = text(host);
   r.buttons = host.all().filter((e) => e.tagName === 'BUTTON' && !hiddenIn(e)).map((e) => e.textContent);
   r.videos = host.all().filter((e) => e.tagName === 'VIDEO').length;

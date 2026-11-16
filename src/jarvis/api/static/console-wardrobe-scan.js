@@ -39,8 +39,12 @@ const TWINS_NOTE = 'Identical copies: read its label or tap which one.';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const SIGN_IN = 'Sign in first.';
 const SAVE_WORDS = 'Save this photo with the piece (sealed; only you)';
-const TAG_AT_MOST = 0.3; // the plan's figure for one photo at most (D7); the door gives no estimate to read (R7's rule)
-const TAG_WORDS = 'Ask the AI to tag this piece (about \u20b90.30 at most)';
+// M3: one photo (~750 tokens in, ~120 out) costs about Rs 0.01 with the cheapest seeing brain and 0.51 with the dearest
+// (llm/pricing.py at 95.24 a dollar; tests/test_r13_d_scan.py recomputes both). The view's own `tag_estimate_inr`
+// (the brain that would answer, A's at I1) is said instead whenever it is there.
+const TAG_MOST = 0.51, TAG_RANGE = '\u20b90.01\u2013\u20b90.51, depending on the brain';
+const tagWords = (inr) => 'Send this photo to the AI to tag it (about ' + (inr ? '\u20b9' + inr.toFixed(2) : TAG_RANGE) + ')';
+const noAi = () => !!(window.JarvisBrainMode && window.JarvisBrainMode.get() === 'none');
 const BAND_WORDS = { likely: 'likely this one', maybe: 'maybe', new: 'new?' };
 
 /*SCAN-PURE-BEGIN*/
@@ -531,17 +535,16 @@ async function remember(card) {
 }
 function tagBox(card) { // optional AI tagging (D7, H2): his setting, the AI on, the rupees shown before the press
   const set = (S.view && S.view.settings) || {};
-  const noAi = !!(window.JarvisBrainMode && window.JarvisBrainMode.get() === 'none');
-  if (set.ai_tagging !== true || noAi) return null;
+  if (set.ai_tagging !== true || noAi()) return null;
   const box = mk('div', 'sacts');
-  const month = Number(set.tag_month_inr) || 0, cap = Number(set.tag_cap_inr) || 0;
-  if (cap <= 0 || month + TAG_AT_MOST > cap) { box.append(mk('p', 'sfine', 'AI tagging has reached this month\u2019s limit of \u20b9' + cap + '.')); return box; }
+  const month = Number(set.tag_month_inr) || 0, cap = Number(set.tag_cap_inr) || 0, own = Number(set.tag_estimate_inr) > 0 ? Number(set.tag_estimate_inr) : 0;
+  if (cap <= 0 || month + (own || TAG_MOST) > cap) { box.append(mk('p', 'sfine', 'AI tagging has reached this month\u2019s limit of \u20b9' + cap + '.')); return box; }
   box.append(mk('p', 'sfine', 'AI tagging this month: \u20b9' + month.toFixed(2) + ' of \u20b9' + cap + '.'),
-    btn(TAG_WORDS, '', () => tag(card, box)));
+    btn(tagWords(own), '', () => tag(card, box)));
   return box;
 }
 async function tag(card, box) {
-  if (!allowed(card)) { paintBody(); return; }
+  if (!allowed(card) || noAi()) { paintBody(); return; } // L10: the AI switched off since: nothing is sent
   if (!(await cropOk(card))) { refuse(card); return; }
   const door = Door(), blob = await blobOf(card.crop);
   if (!door || !blob) return;

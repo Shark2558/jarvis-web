@@ -250,7 +250,11 @@ def join_sweep(app: FastAPI) -> None:
     styling = getattr(service(app, "refresh"), "styling", None)
     rules = getattr(styling, "rules", None)
     catalog = _parts(app).get("catalog")
-    if store is None or rules is None or catalog is None:
+    if store is None or catalog is None:
+        return
+    if rules is None:  # C off or failed: say so, or a forgotten wear stays open without a word
+        ready = getattr(_parts(app).get("styling"), "ready", "not built")
+        log.warning("forgotten wears are not closed: styling has no rules", extra={"ready": ready})
         return
     for job in catalog.daily_jobs:
         if isinstance(job, WardrobeSweep):

@@ -178,6 +178,26 @@ def test_the_sweep_is_bound_to_cs_rules_and_left_alone_without_them() -> None:
     assert sweep.closer is None  # no styling part: the step is skipped
 
 
+def test_a_sweep_left_without_its_closer_says_why_in_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Code review M: with C off, forgotten wears are never closed, and nothing said so."""
+    from jarvis.wardrobe.catalog.jobs import WardrobeSweep
+
+    store = memory_store(MemoryDocs(), FixedClock(ist(2026, 11, 16, 9, 0)))
+    sweep = WardrobeSweep(store, lambda uid: None)  # type: ignore[arg-type,return-value]
+    app = FastAPI()
+    app.state.r13_parts = {
+        "catalog": WardrobePart("catalog", daily_jobs=(sweep,), services={"store": store}),
+        "styling": WardrobePart("styling", ready="off: no token key"),
+    }
+    with caplog.at_level("WARNING"):
+        wiring.join_sweep(app)
+    assert sweep.closer is None
+    assert any("forgotten wears" in r.getMessage() for r in caplog.records)
+    assert "off: no token key" in " ".join(str(r.__dict__) for r in caplog.records)
+
+
 # ---- the joins -----------------------------------------------------------------------------------
 async def test_the_store_is_joined_with_bs_writer_and_every_observer_cs_refresh_first() -> None:
     clock = FixedClock(ist(2026, 11, 16, 9, 0))

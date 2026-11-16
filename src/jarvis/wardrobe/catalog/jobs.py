@@ -57,7 +57,8 @@ class WardrobeSweep:
         closed = holds = failed = 0
         for uid in owners:
             try:
-                c, h = await self.sweep(uid)
+                c, h, f = await self.sweep(uid)
+                failed += f
             except Exception as exc:  # noqa: BLE001 - one owner never stops the others
                 log.warning("wardrobe sweep failed", extra={"error": type(exc).__name__})
                 failed += 1
@@ -65,9 +66,17 @@ class WardrobeSweep:
             closed, holds = closed + c, holds + h
         return {"owners": len(owners), "closed": closed, "holds": holds, "failed": failed}
 
-    async def sweep(self, uid: str) -> tuple[int, int]:
+    async def sweep(self, uid: str) -> tuple[int, int, int]:
+        """(wears closed, holds repaired, 1 when the closer failed). A closer that raises never
+        skips the hold repair, which does not depend on it (code review)."""
         view = await self.store.view(uid)
-        return await self._close_wears(uid), await self._repair_holds(uid, view)
+        closed, failed = 0, 0
+        try:
+            closed = await self._close_wears(uid)
+        except Exception as exc:  # noqa: BLE001 - the repair below still runs
+            log.warning("wardrobe closer failed", extra={"error": type(exc).__name__})
+            failed = 1
+        return closed, await self._repair_holds(uid, view), failed
 
     async def _close_wears(self, uid: str) -> int:
         if self.closer is None:  # no styling part: no rule to close by

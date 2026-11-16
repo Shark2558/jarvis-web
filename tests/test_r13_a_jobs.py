@@ -124,6 +124,26 @@ async def test_a_hold_without_its_entry_is_handed_to_bs_writer_again() -> None:
     )  # its own hold, so the words say why
 
 
+async def test_i1_a_closer_that_raises_never_skips_the_hold_repair() -> None:
+    """Code review M: `sweep` ran the closer then the repair, so a closer that raised (bad rules,
+    a document that can't be opened) skipped the repair for that owner every day."""
+    cat = catalog()
+    writer = RecordingWriter()
+    cat.store.bind(review_writer=writer)
+    [shirt] = (await desk(cat).service.add(UID, [NewPiece(type="shirt")])).ids
+    await _commit(cat, ev(shirt, "held", cat.clock()))
+    writer.needed.clear()
+
+    async def broken(uid: str, now: Any, zone: Any, at: str) -> int:
+        raise RuntimeError("the rules could not be read")
+
+    [job] = cat.part.daily_jobs
+    job.closer = broken
+    got = await job.run([UID])
+    assert got["holds"] == 1 and len(writer.needed) == 1  # the repair still ran
+    assert got["failed"] == 1  # and the closer's failure is said, not hidden
+
+
 async def test_one_owner_that_cannot_be_read_never_stops_the_others() -> None:
     cat = catalog()
     await desk(cat).service.add(UID, [NewPiece(type="shirt")])

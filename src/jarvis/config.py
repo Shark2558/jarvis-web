@@ -33,6 +33,7 @@ class AuthMode(StrEnum):
 
 
 MIN_SESSION_SECRET_LEN = 32
+ENVS = frozenset({"dev", "staging", "prod"})  # JARVIS_ENV (R6.2 L3: nothing else starts)
 
 
 def _is_private_host(host: str) -> bool:
@@ -95,6 +96,16 @@ class Settings(BaseSettings):
         description="A re-sign-in counts only if Google's ID token carries auth_time (switch "
         "on only after Google's Session age claims is on; off: the moment it completed)",
     )
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _known_env(cls, v: object) -> str:
+        """R6.2 (security review 1, L3): one of the known values, written any way, at start-up;
+        every dev shortcut compares exactly "dev", so " Dev" must never count as another env."""
+        env = v.strip().lower() if isinstance(v, str) else v
+        if env not in ENVS:
+            raise ValueError("JARVIS_ENV must be dev, staging or prod")
+        return str(env)
 
     @field_validator("owner_emails", mode="before")
     @classmethod

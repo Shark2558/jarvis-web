@@ -32,6 +32,10 @@ WHERE = "in Helpers, Wardrobe"
 OFF_NO_KEY = "Outfits are off: JARVIS has no token key to seal your plans."
 OFF_NO_STORE = "Outfits are off: no storage is set up."
 NOT_READY_YET = "Your wardrobe isn't ready yet: try again in a minute."
+UNREADABLE = (
+    "Your outfit plans can't be opened (JARVIS's key changed): delete them in Privacy to start "
+    "again."
+)
 NEXT_ACTION: dict[State, str] = {
     "in_laundry": "wash {it}",
     "washing": "{it} {is} in the wash",
@@ -200,6 +204,7 @@ __all__ = [
     "OCCASION_WORDS",
     "OFF_NO_STORE",
     "PRIVATE_WORDS",
+    "UNREADABLE",
     "WEATHER_UNKNOWN",
     "WHERE",
     "changed_alert",

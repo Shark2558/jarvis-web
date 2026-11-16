@@ -11,6 +11,7 @@ from jarvis.tools.context import current_tool_context, require_tool_context
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.styling import texts
 from jarvis.wardrobe.styling.plans import StylingDoc
+from jarvis.wardrobe.styling.sealed import Unreadable
 from jarvis.wardrobe.styling.service import Here, Styling
 
 Ready = tuple[str, Here, StylingDoc, WardrobeView]
@@ -41,7 +42,11 @@ async def ready(s: Styling) -> Ready | dict[str, Any]:
     view = await s.view(who)
     if view is None:
         return refused(texts.NOT_READY_YET)
-    return who, await s.where(who), await s.plans.read(who), view
+    try:
+        doc = await s.plans.read(who)
+    except Unreadable:  # a key change: said in words, never a bare failure (security M3)
+        return refused(texts.UNREADABLE)
+    return who, await s.where(who), doc, view
 
 
 __all__ = ["Ready", "plural", "ready", "refused", "uid", "via"]

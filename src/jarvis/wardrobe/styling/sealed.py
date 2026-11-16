@@ -5,8 +5,10 @@
 
 - `SealedDoc`: one document per owner (`wardrobe_plans/{uid}`, `wardrobe_cal/{uid}`,
   `wardrobe_outlook/{uid}`), read whole, changed in a transaction (a write never loses another).
-  No key: `Off` (C is off and says so; nothing is ever written in clear). A document that can't
-  be opened is never overwritten (`Unreadable`).
+  No key: `Off` (C is off and says so; nothing is ever written in clear). His plans, if they
+  can't be opened (a key change), are never overwritten (`Unreadable`: the tools and routes say
+  so in words); a derived cache (`wardrobe_cal`, `wardrobe_outlook`) reads as empty and its next
+  write replaces it (`reset_unreadable`, security review M3).
 - `Told`: once-only claims in `wardrobe_told/{uid}_styling_<key>` (shared with B; each key starts
   with the part's name, `ports.TOLD_KEY_PREFIX`), written BEFORE the send: `once` (create-only)
   and `every` (at most once per gap). A claim holds a hash of its key and its time, nothing else;
@@ -54,9 +56,11 @@ class SealedDoc(Generic[M]):
         model: type[M],
         now: Callable[[], datetime],
         prefix: str = "jarvis_",
+        reset_unreadable: bool = False,
     ) -> None:
         self._docs, self._ring, self._model = docs, keyring, model
         self._collection, self._now, self._prefix = collection, now, prefix
+        self._reset = reset_unreadable  # a derived cache: unreadable reads as empty (M3)
 
     @property
     def available(self) -> bool:
@@ -81,7 +85,10 @@ class SealedDoc(Generic[M]):
             plain = ring.cipher(PURPOSE).decrypt(str(raw.get("blob", "")), aad=self._aad(uid))
             return self._model.model_validate(json.loads(plain))
         except Exception as exc:  # noqa: BLE001 - never overwrite what can't be opened
-            err = {"error": type(exc).__name__}
+            err = {"error": type(exc).__name__, "collection": self._collection}
+            if self._reset:  # a cache made again by its next write (security review M3)
+                log.warning("outfits: an unreadable cache is made again", extra=err)
+                return self._model()
             log.error("outfits: a sealed document can't be opened", extra=err)
             raise Unreadable(self._collection) from None  # never chain decrypted values (L6)
 

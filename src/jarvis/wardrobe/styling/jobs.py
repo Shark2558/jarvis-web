@@ -13,8 +13,10 @@ advisory on the watchdog). For each of the brief's owners, in this order:
    evening alerts are on; at most three a day of plans, then one line for the rest ("Tomorrow's
    outfits for 17 more events are ready ...", security review H1). An LND-16 "Outstanding" line
    is not counted as a gap (code review L2).
-4. once a day, the claims older than 30 days go.
-One owner's failure never stops another's; the counts carry class names only.
+4. once a day (whatever the hour of the first tick, code review L5), the claims older than 30
+   days go.
+Each step runs on its own: a failure is counted by step and class name and the next step still
+runs (security review M3); one owner's failure never stops another's.
 """
 
 from __future__ import annotations
@@ -63,15 +65,30 @@ class OutfitClock:
         return n.done("ready_sent", "plans_made", "weather")
 
     async def _owner(self, uid: str, n: Counts) -> None:
+        """Each step on its own (security review M3): one that fails is counted by its class
+        name and the next still runs; without his plans the rest can't."""
         here = await self.s.where(uid)
-        n.add(f"weather_{await self.s.outlook.refresh(uid, here.now, here.zone)}")
-        doc = await self.s.plans.read(uid)
-        if doc.choice.calendar and self._due(doc, here.now):
-            await self._calendar(uid, here, doc, n)
+        try:
+            n.add(f"weather_{await self.s.outlook.refresh(uid, here.now, here.zone)}")
+        except Exception as exc:  # noqa: BLE001 - counted by class; the calendar still runs
+            _failed(n, "weather", exc)
+        try:
             doc = await self.s.plans.read(uid)
-        await self._ready(uid, here, doc, n)
-        if here.now.astimezone(here.zone).time() < time(0, 5):
-            await self.s.told.prune(uid)
+        except Exception as exc:  # noqa: BLE001 - his plans can't be opened: nothing more
+            _failed(n, "plans", exc)
+            return
+        if doc.choice.calendar and self._due(doc, here.now):
+            try:
+                await self._calendar(uid, here, doc, n)
+                doc = await self.s.plans.read(uid)
+            except Exception as exc:  # noqa: BLE001 - counted by class; the alerts still run
+                _failed(n, "calendar", exc)
+        try:
+            await self._ready(uid, here, doc, n)
+            if await self.s.told.once(uid, f"prune_{here.today.isoformat()}"):  # once a day (L5)
+                await self.s.told.prune(uid)
+        except Exception as exc:  # noqa: BLE001 - counted by class
+            _failed(n, "ready", exc)
 
     def _due(self, doc: StylingDoc, now: datetime) -> bool:
         every = timedelta(minutes=self.s.ctx.s.wardrobe_calendar_refresh_min)
@@ -171,6 +188,11 @@ class OutfitClock:
         before = plan.day - timedelta(days=1)
         evening = datetime.combine(before, _evening(self.s), tzinfo=here.zone)
         return evening <= here.now < starts
+
+
+def _failed(n: Counts, step: str, exc: Exception) -> None:
+    log.warning("outfit_clock: a step failed", extra={"step": step, "error": type(exc).__name__})
+    n.add(f"{step}_failed_{type(exc).__name__}")
 
 
 __all__ = ["NAME", "OutfitClock"]

@@ -34,10 +34,12 @@ READY = "ready"
 READY_WORDS = {OFF_NO_STORE: "off: no storage", OFF_NO_KEY: "off: no token key"}
 
 
-def _sealed(ctx: WardrobeContext, collection: str, model: Any) -> SealedDoc[Any]:
+def _sealed(
+    ctx: WardrobeContext, collection: str, model: Any, *, cache: bool = False
+) -> SealedDoc[Any]:
     return SealedDoc(
         ctx.docs, ctx.keyring, collection=collection, model=model, now=ctx.now,
-        prefix=ctx.s.firestore_prefix,
+        prefix=ctx.s.firestore_prefix, reset_unreadable=cache,
     )  # fmt: skip
 
 
@@ -45,11 +47,11 @@ def build_with(
     ctx: WardrobeContext, *, fetcher: Fetcher | None = None, rules: Rules | None = None
 ) -> WardrobePart:
     checked = rules or load_rules()
-    weather = _sealed(ctx, "wardrobe_outlook", OutlookDoc)
+    weather = _sealed(ctx, "wardrobe_outlook", OutlookDoc, cache=True)
     outlook = Outlook(ctx, fetcher or HttpFetcher(), weather, checked)
     told = Told(ctx.docs, now=ctx.now, prefix=ctx.s.firestore_prefix)
     styling = Styling(ctx, checked, _sealed(ctx, "wardrobe_plans", StylingDoc), told, outlook)
-    calendar = Calendar(ctx, checked, _sealed(ctx, "wardrobe_cal", CalDoc))
+    calendar = Calendar(ctx, checked, _sealed(ctx, "wardrobe_cal", CalDoc, cache=True))
     refresh = PlanRefresh(styling, calendar)
     return WardrobePart(
         "styling",

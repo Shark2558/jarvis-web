@@ -30,6 +30,7 @@ from jarvis.wardrobe.redact import card_words
 from jarvis.wardrobe.styling import texts, wear
 from jarvis.wardrobe.styling.answers import plural, ready, refused, uid, via
 from jarvis.wardrobe.styling.plans import Plan, StylingDoc
+from jarvis.wardrobe.styling.sealed import Unreadable
 from jarvis.wardrobe.styling.service import Here, Styling
 
 NO_OUTFIT = "You have no outfit planned for today: say which pieces you are wearing."
@@ -169,8 +170,11 @@ class WearLog:
         if view is None:
             return Preview("Log a wear.")
         on = self.s.off() is None
-        doc = await self.s.plans.read(who) if on else None
-        here = await self.s.where(who) if on else None
+        try:
+            doc = await self.s.plans.read(who) if on else None
+        except Unreadable:
+            doc = None
+        here = await self.s.where(who) if doc is not None else None
         pieces, _, _ = await self._pieces(who, here, doc, view, args)
         words = [card_words(view.pieces[i]) for i in pieces if i in view.pieces]
         return Preview(f"Log a wear: {texts.ids_words(words)}." if words else "Log a wear.")

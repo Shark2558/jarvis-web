@@ -35,6 +35,7 @@ from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.styling import texts, views
 from jarvis.wardrobe.styling.calendar import manual_from_now
 from jarvis.wardrobe.styling.plans import Choice, StylingDoc
+from jarvis.wardrobe.styling.sealed import Unreadable
 from jarvis.wardrobe.styling.service import Answer, Here, Styling
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -81,7 +82,10 @@ async def outfits(request: Request, uid: str = Depends(current_user)) -> JSONRes
     view = await s.view(uid)
     if view is None:
         return _err(503, texts.NOT_READY_YET)
-    here, doc = await s.where(uid), await s.plans.read(uid)
+    try:
+        here, doc = await s.where(uid), await s.plans.read(uid)
+    except Unreadable:  # a key change: plain words, never a bare 500 (security review M3)
+        return _err(503, texts.UNREADABLE)
     show = view.settings.show_private
     today = await _day(s, uid, here, doc, view, 0)
     tomorrow = await _day(s, uid, here, doc, view, 1)
@@ -157,7 +161,10 @@ async def put_settings(
         out = manual_from_now(d, here.now) if d.choice.calendar else d
         return out.model_copy(update={"choice": choice, "cal_read_at": None, "cal_failed_at": None})
 
-    doc = await s.change(uid, apply)
+    try:
+        doc = await s.change(uid, apply)
+    except Unreadable:
+        return _err(503, texts.UNREADABLE)
     if moved["calendar"] and calendar is not None:
         await calendar.sealed.delete(uid)  # the last read of a calendar he left (security L5)
     await record_change(request, agent="outfits", tool="outfit_settings",

@@ -24,6 +24,7 @@ from jarvis.storage.docs import DocTx, Op
 from jarvis.wardrobe.http import LaundryView, ReviewView
 from jarvis.wardrobe.laundry import (
     blind,
+    corrections,
     history,
     holds,
     loads,
@@ -319,13 +320,20 @@ class Desk:
         return await self._commit(uid, plan, via=via)
 
     async def correct(self, uid: str, piece: str, event: str | None = None) -> Done:
-        """LND-05 through A's `correct`: the event is voided and the piece re-folded."""
+        """LND-05: the step is voided (the `corrected` event A's `correct` builds) and B's own
+        loads, batches and checks follow it in the SAME commit (review M1)."""
         wardrobe = self.wardrobe()
         if (await wardrobe.view(uid)).piece(piece) is None:
             raise Refused(texts.UNKNOWN_PIECE)
         target = history.to_correct(await wardrobe.history(uid, piece), event)
-        done = await wardrobe.correct(uid, piece, target)
-        return await self._reopen(uid, piece, done) or Done("done", texts.CORRECTED, (piece,), done)
+        now = self.ctx.now()
+
+        def plan(view: WardrobeView, laundry: LaundryDoc, queue: ReviewDoc) -> Change:
+            return corrections.plan_correct(view, laundry, queue, target, now)
+
+        done = await self._commit(uid, plan)
+        assert done.committed is not None  # a commit ran
+        return await self._reopen(uid, piece, done.committed) or done
 
     async def _reopen(self, uid: str, piece: str, done: Committed) -> Done | None:
         """Review H3's stop-gap: a correction that leaves the piece held gets its check in a

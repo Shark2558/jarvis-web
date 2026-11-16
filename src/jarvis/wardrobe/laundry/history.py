@@ -20,8 +20,9 @@ from zoneinfo import ZoneInfo
 
 from jarvis.wardrobe.http import LaundryView
 from jarvis.wardrobe.laundry import loads, providers, review, texts
+from jarvis.wardrobe.laundry.corrections import CARD_ONLY
 from jarvis.wardrobe.laundry.store import LaundryDoc, ReviewDoc
-from jarvis.wardrobe.model import Piece, WardrobeView
+from jarvis.wardrobe.model import Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import HistoryItem, Refused
 from jarvis.wardrobe.redact import model_view
 from jarvis.wardrobe.states import STATE_SETTING, STATE_WORDS, State, eligible, target_of
@@ -161,21 +162,23 @@ def laundry_view(view: WardrobeView, laundry: LaundryDoc, today: date, ready: st
     )
 
 
-def to_correct(items: Sequence[HistoryItem], event: str | None) -> str:
-    live = [
-        h
-        for h in items
-        if h.mark != "voided" and h.event.kind not in ("registered", "corrected", "merged")
-    ]
+def to_correct(items: Sequence[HistoryItem], event: str | None) -> Event:
+    """The step to strike out: the one named, else the newest live one. The card-only kinds
+    (A's `CARD_ONLY`: archive, restore, merge, a registration, a correction) have their own
+    button, so they are never struck out here and never count as "the newest"."""
+    live = [h for h in items if h.mark != "voided" and h.event.kind not in CARD_ONLY]
     if event is not None:
-        if not any(h.event.id == event for h in items):
+        named = next((h for h in items if h.event.id == event), None)
+        if named is None:
             raise Refused(texts.EVENT_UNKNOWN)
-        if not any(h.event.id == event for h in live):
+        if named.event.kind in CARD_ONLY:
+            raise Refused(texts.OWN_BUTTON)
+        if named.mark == "voided":
             raise Refused(texts.NOTHING_TO_CORRECT)
-        return event
+        return named.event
     if not live:
         raise Refused(texts.NOTHING_TO_CORRECT)
-    return max(live, key=lambda h: h.event.sort_key()).event.id
+    return max(live, key=lambda h: h.event.sort_key()).event
 
 
 __all__ = [

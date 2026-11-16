@@ -54,6 +54,7 @@ OUTCOME_BAD = "That answer doesn't fit this check."
 MOVED_NEEDS = "Say where it is now: a state and, if you like, a place."
 NOTHING_TO_CORRECT = "There's no step to strike out for that piece."
 EVENT_UNKNOWN = "That step isn't in this piece's history."
+OWN_BUTTON = "That change is undone with its own button: archive, restore or merge."  # A's words
 CORRECTED = "Done: that step is struck out and the piece's state worked out again."
 CORRECTED_HELD = f"Done: that step is struck out. The piece waits for a check {WHERE}."
 CLOSED = "Done: the check is closed."

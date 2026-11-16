@@ -19,7 +19,7 @@
 (() => {
   'use strict';
   const ID = /^(s\d{2}b\d{2}|[a-z_]{2,20}|r_[0-9a-f]{12})$/;
-  const WORD_MS = 330, TAIL_MS = 800, START_MS = 1500, CACHE = 3, MAX_REC_S = 15, RATE = 16000;
+  const WORD_MS = 330, TAIL_MS = 800, START_MS = 1500, CACHE = 3, MAX_REC_S = 15, END_WAIT_MS = 3000, RATE = 16000;
   const S = { ctx: null, gain: null, an: null, data: null, mode: 'cloud', muted: false, closed: false, seq: 0, cur: null,
     cache: new Map(), pulse: 0, lv: 0, paused: false };
   const captionMs = (text) => (String(text || '').split(/\s+/).filter(Boolean).length * WORD_MS) + TAIL_MS;
@@ -262,9 +262,16 @@
     const supported = () => { const a = A(); return !!(a && typeof a.canRecognise === 'function' && a.canRecognise()); };
     function finish(me) {
       if (cur !== me) return;
-      cur = null; clearTimeout(me.timer);
+      cur = null; clearTimeout(me.timer); clearTimeout(me.dog);
       const done = me.done; me.done = null;
       if (done) done({ text: me.text.replace(/\s+/g, ' ').trim(), error: me.error });
+    }
+    /** Stop it and wait for its end; a recogniser that never ends (some Chrome network failures) is let go after
+     *  END_WAIT_MS, so the mic never stays dead (code review 2, L1): its words so far, else "listening stopped". */
+    function halt(me) {
+      try { me.r.stop(); } catch (_) { finish(me); return; }
+      clearTimeout(me.dog);
+      me.dog = setTimeout(() => { if (cur !== me) return; me.error = me.error || 'aborted'; try { me.r.abort(); } catch (_) {} finish(me); }, END_WAIT_MS);
     }
     /** true: listening now; false: already listening or closed. Throws .code 'mic_off' / 'unsupported' / 'failed'. */
     function begin(done) {
@@ -277,14 +284,14 @@
       r.onerror = (e) => { me.error = String((e && e.error) || 'failed'); };
       r.onend = () => finish(me);
       cur = me;
-      me.timer = setTimeout(() => { try { r.stop(); } catch (_) { finish(me); } }, MAX_REC_S * 1000);
+      me.timer = setTimeout(() => halt(me), MAX_REC_S * 1000);
       try { r.start(); } catch (_) { cur = null; clearTimeout(me.timer); throw Object.assign(new Error('failed'), { code: 'failed' }); }
       return true;
     }
     return {
       supported,
       start: begin,
-      stop() { if (cur) { try { cur.r.stop(); } catch (_) { finish(cur); } } }, // its last words, then its end
+      stop() { if (cur) halt(cur); }, // its last words, then its end
       cancel() { const me = cur; cur = null; if (!me) return; clearTimeout(me.timer); me.done = null; try { me.r.abort(); } catch (_) {} },
       active: () => !!cur,
     };

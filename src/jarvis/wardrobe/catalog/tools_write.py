@@ -27,7 +27,7 @@ from jarvis.wardrobe.catalog.labels import NOT_HIS
 from jarvis.wardrobe.catalog.links import pair_refusal, set_refusal
 from jarvis.wardrobe.catalog.places import resolve_place, unknown_place
 from jarvis.wardrobe.catalog.store import WardrobeUnavailable
-from jarvis.wardrobe.catalog.tools import AGENT, PIECE, guarded, line, uid
+from jarvis.wardrobe.catalog.tools import AGENT, PIECE, failed, guarded, line, uid
 from jarvis.wardrobe.model import PLACE_ID, PRIVATE_BY_DEFAULT, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
 from jarvis.wardrobe.redact import card_words, fixed_words
@@ -137,7 +137,7 @@ class WriteTools:
                 if p.get("place"):
                     found = resolve_place(view, str(p["place"]))
                     if found is None:
-                        raise Refused(unknown_place(view))
+                        raise unknown_place(view)
                     place = found.id
                 label = str(p.get("label") or "")
                 if origin == "outside" and label:
@@ -189,7 +189,7 @@ class WriteTools:
             except (Refused, WardrobeUnavailable) as exc:
                 if not saved:
                     raise
-                return {"status": "partial", "saved": saved, "message": str(exc)}  # the truth
+                return {"status": "partial", "saved": saved, "message": failed(exc)["message"]}
             fresh = await self.d.store.view(uid())
             shown = line(fresh, fresh.pieces[p.id], self.d.views.place_words)
             return {"status": "done", "piece": shown}
@@ -199,7 +199,7 @@ class WriteTools:
     def _first(self, view: WardrobeView, p: Piece, a: dict[str, Any]) -> None:
         """What would refuse a later step, refused before anything is written."""
         if a.get("place") and resolve_place(view, str(a["place"])) is None:
-            raise Refused(unknown_place(view))
+            raise unknown_place(view)
         code = str(a.get("label_code") or "")
         if code and code not in view.labels and self.d.labels.number_of(uid(), code) is None:
             raise Refused(NOT_HIS)

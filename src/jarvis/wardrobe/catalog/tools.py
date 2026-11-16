@@ -26,6 +26,7 @@ from jarvis.tools.context import require_tool_context
 from jarvis.tools.external import wrap_external
 from jarvis.tools.provenance import vouch
 from jarvis.tools.spoken import mask_for_speech, speaking_now, withhold_if_sensitive
+from jarvis.wardrobe.catalog.places import MAX_PLACES, UNKNOWN, UnknownPlace
 from jarvis.wardrobe.catalog.search import count_word, rank
 from jarvis.wardrobe.catalog.store import WardrobeUnavailable
 from jarvis.wardrobe.model import LABEL_MAX, PLACE_LABEL_MAX, Piece, WardrobeView
@@ -79,6 +80,9 @@ def owned_words(pieces: Iterable[Piece]) -> bool:
 
 def failed(exc: Exception) -> dict[str, str]:
     status = "refused" if isinstance(exc, Refused) else "unavailable"
+    if isinstance(exc, UnknownPlace) and exc.names:  # his place names: data, fenced (L7)
+        names = say(", ".join(exc.names), MAX_PLACES * (PLACE_LABEL_MAX + 2))
+        return {"status": status, "message": f"{UNKNOWN}{names}"}
     return {"status": status, "message": str(exc)}
 
 

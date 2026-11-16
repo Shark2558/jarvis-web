@@ -82,7 +82,7 @@ class CatalogService:
             recs, events = [], []
             for pid, spec, there in zip(ids, specs, known, strict=True):
                 if spec.place is not None and spec.place not in view.places:
-                    raise Refused(unknown_place(view))
+                    raise unknown_place(view)
                 if not there:
                     recs.append(new_record(spec, pid, custom, now))
                 fields = {"source": source, "via": via, "client_id": spec.client_id}
@@ -148,7 +148,7 @@ class CatalogService:
                 raise Refused(NOT_IN)
             found = resolve_place(view, place)
             if found is None:
-                raise Refused(unknown_place(view))
+                raise unknown_place(view)
             where[:] = [found.id]
             return Commit(events=(event(pid, "seen", now, place=found.id, source=source, via=via),))
 

@@ -37,11 +37,20 @@ def resolve_place(view: WardrobeView, words: str) -> Place | None:
     return next((p for p in view.places.values() if thing_key(p.label) == key), None)
 
 
-def unknown_place(view: WardrobeView) -> str:
-    if not view.places:
-        return NO_PLACES
-    names = ", ".join(p.label for p in view.places.values())
-    return f"I don't know that place. Your places: {names}."
+UNKNOWN = "I don't know that place. Your places: "
+
+
+class UnknownPlace(Refused):
+    """An unknown place, refused with his places listed: plain words in his own panel; a tool
+    fences the names (his own words) before the model sees them (`tools.failed`, L7)."""
+
+    def __init__(self, names: tuple[str, ...]) -> None:
+        super().__init__(f"{UNKNOWN}{', '.join(names)}." if names else NO_PLACES)
+        self.names = names
+
+
+def unknown_place(view: WardrobeView) -> UnknownPlace:
+    return UnknownPlace(tuple(p.label for p in view.places.values()))
 
 
 def without_baseline(view: WardrobeView) -> tuple[str, ...]:
@@ -89,7 +98,7 @@ class Places:
         async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
             found = resolve_place(view, place)
             if found is None:
-                raise Refused(unknown_place(view))
+                raise unknown_place(view)
             other = resolve_place(view, words)
             if other is not None and other.id != found.id:
                 raise Refused("You already have a place by that name.")
@@ -106,7 +115,7 @@ class Places:
         async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
             found = resolve_place(view, place)
             if found is None:
-                raise Refused(unknown_place(view))
+                raise unknown_place(view)
             if any(p.place == found.id for p in view.active()):
                 raise Refused("Pieces are still kept there: move them first.")
             out[:] = [found.id]
@@ -125,7 +134,7 @@ class Places:
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
             found = resolve_place(view, place)
             if found is None:
-                raise Refused(unknown_place(view))
+                raise unknown_place(view)
             target[:] = [found.id]
             events: list[Event] = []
             for pid in dict.fromkeys(seen):
@@ -151,6 +160,7 @@ __all__ = [
     "Baseline",
     "PlaceKind",
     "Places",
+    "UnknownPlace",
     "resolve_place",
     "unknown_place",
     "without_baseline",

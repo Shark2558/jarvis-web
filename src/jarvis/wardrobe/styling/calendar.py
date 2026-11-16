@@ -18,7 +18,8 @@ the fields he picks.
   (`entries`): what is kept (`wardrobe_cal/{uid}`, sealed) is each event's keyed fingerprint, its
   times or day, its `updated` stamp, the dress code and occasion found, and outdoor or not. A
   title is never stored, sent or logged.
-- `sync(doc, entries, span, ...)` (pure): a new event makes a plan (tentative); a plan he kept
+- `sync(doc, entries, span, ...)` (pure): a new event makes a plan (tentative; at most 20 made
+  by the calendar, never one he removed: security review H1); a plan he kept
   when he switched this calendar off, never edited (still tentative, not worn), is taken back
   when he picks the same calendar again (code review H2); an edited one
   (its `updated` stamp) refreshes its times and, while tentative, its dress code; a calendar plan
@@ -40,7 +41,7 @@ from jarvis.helpers.sources import OUTSIDE_TIMEOUT_S
 from jarvis.logging import get_logger
 from jarvis.tools.background import Verdict
 from jarvis.wardrobe.ports import WardrobeContext
-from jarvis.wardrobe.styling.plans import MAX_PLANS, Plan, StylingDoc, new_plan_id
+from jarvis.wardrobe.styling.plans import MAX_CAL_PLANS, MAX_PLANS, Plan, StylingDoc, new_plan_id
 from jarvis.wardrobe.styling.reserve import window
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.styling.sealed import SealedDoc
@@ -250,12 +251,18 @@ def _edited(p: Plan, e: CalEntry, zone: tzinfo, now: datetime) -> Plan:
     )  # fmt: skip
 
 
+def _room(doc: StylingDoc, key: str, gone: set[str]) -> bool:
+    """A new calendar plan: not one he removed, at most 20 made by the calendar, at most 60 in
+    all (security review H1: invites from anyone can't take his own slots)."""
+    return key not in gone and doc.made() < MAX_CAL_PLANS and len(doc.plans) < MAX_PLANS
+
+
 def sync(
     doc: StylingDoc, entries: tuple[CalEntry, ...], span: tuple[datetime, datetime],
     zone: tzinfo, now: datetime,
 ) -> tuple[StylingDoc, list[str]]:  # fmt: skip
     """(the plans after this read, the ids of plans made or edited: their looks to pick)."""
-    seen = {e.k for e in entries}
+    seen, gone = {e.k for e in entries}, {d.k for d in doc.dismissed}
     touched: list[str] = []
     for e in entries:
         plan = doc.by_event(e.k)
@@ -263,7 +270,7 @@ def sync(
             plan = plan.model_copy(update={"manual": False})  # his calendar again: taken back
             doc, touched = doc.put(plan), [*touched, plan.id]
         if plan is None or plan.manual:
-            if plan is None and len(doc.plans) < MAX_PLANS:  # past 60: no more, said in counts
+            if plan is None and _room(doc, e.k, gone):
                 made = _plan_of(e, zone, now)
                 doc, touched = doc.put(made), [*touched, made.id]
             continue

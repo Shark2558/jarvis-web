@@ -77,7 +77,7 @@ async def run(s: Styling, uid: str, a: dict[str, Any]) -> tuple[Plan | None, str
         return plan, "Saved."
     plan = _plan(doc, a.get("plan"))
     if action == "release" and not a.get("piece"):
-        await s.change(uid, lambda d: d.drop(plan.id))
+        await s.change(uid, lambda d: d.dismiss(plan))  # a calendar one is not made again (H1)
         return None, "That plan is gone."
     final = await _apply(s, uid, here, doc, view, plan, a)
     fresh = final.plan(plan.id)

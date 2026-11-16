@@ -10,7 +10,9 @@ advisory on the watchdog). For each of the brief's owners, in this order:
 3. `outfit_ready` (D19): for each calendar plan that is not cancelled or worn, from
    `wardrobe_plan_evening` (20:00) the evening before until it starts (a plan found later is
    told when found); once a plan (claimed in `wardrobe_told` before the send); only while his
-   evening alerts are on.
+   evening alerts are on; at most three a day of plans, then one line for the rest ("Tomorrow's
+   outfits for 17 more events are ready ...", security review H1). An LND-16 "Outstanding" line
+   is not counted as a gap (code review L2).
 4. once a day, the claims older than 30 days go.
 One owner's failure never stops another's; the counts carry class names only.
 """
@@ -18,7 +20,7 @@ One owner's failure never stops another's; the counts carry class names only.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from jarvis.helpers.house.guard import Counts
 from jarvis.logging import get_logger
@@ -31,6 +33,8 @@ from jarvis.wardrobe.styling.service import Here, Styling
 log = get_logger(__name__)
 NAME = "outfit_clock"
 CAL_RETRY = timedelta(minutes=15)
+MAX_READY = 3  # outfit_ready alerts a day of plans; the rest in one line (security review H1)
+OUTSTANDING = "Outstanding:"  # an LND-16 line: a next action, not a gap to fix (code review L2)
 
 
 def _evening(s: Styling) -> time:
@@ -106,19 +110,41 @@ class OutfitClock:
         view = await self.s.view(uid)
         if notifier is None or view is None:
             return
+        due: dict[date, list[Plan]] = {}
         for plan in doc.plans:
-            if not self._ready_due(plan, here):
-                continue
-            if not await self.s.told.once(uid, f"ready_{plan.id}"):
-                continue
-            ans = await self.s.answer(uid, here, doc, view, plan)
-            label = texts.ready_event_label(plan.day, here.today, plan.starts, here.zone)
-            words = texts.ready_alert(label, len(ans.suggestion.primary.gaps))
-            try:
-                await notifier.notify(uid, Signal(source="nudge", kind="outfit_ready"), words)
-                n.add("ready_sent")
-            except Exception as exc:  # noqa: BLE001 - claimed; "can't send" is a result
-                log.warning("outfits: outfit_ready not sent", extra={"error": type(exc).__name__})
+            if self._ready_due(plan, here):
+                due.setdefault(plan.day, []).append(plan)
+        for day, plans in due.items():
+            more = 0
+            for plan in plans:
+                if not await self.s.told.once(uid, f"ready_{plan.id}"):
+                    continue
+                if not await self._slot(uid, day):
+                    more += 1  # past the evening's first three: one line for the rest (H1)
+                    continue
+                ans = await self.s.answer(uid, here, doc, view, plan)
+                label = texts.ready_event_label(plan.day, here.today, plan.starts, here.zone)
+                gaps = [g for g in ans.suggestion.primary.gaps if not g.startswith(OUTSTANDING)]
+                await self._send(uid, texts.ready_alert(label, len(gaps)), n)
+            if more and await self.s.told.once(uid, f"ready_more_{day.isoformat()}"):
+                await self._send(uid, texts.ready_more_alert(day, here.today, more), n)
+
+    async def _slot(self, uid: str, day: date) -> bool:
+        """One of the day's MAX_READY alert slots, claimed before the send."""
+        for k in range(1, MAX_READY + 1):
+            if await self.s.told.once(uid, f"ready_{day.isoformat()}_{k}"):
+                return True
+        return False
+
+    async def _send(self, uid: str, words: str, n: Counts) -> None:
+        notifier = self.s.ctx.notifier()
+        if notifier is None:
+            return
+        try:
+            await notifier.notify(uid, Signal(source="nudge", kind="outfit_ready"), words)
+            n.add("ready_sent")
+        except Exception as exc:  # noqa: BLE001 - claimed; "can't send" is a result
+            log.warning("outfits: outfit_ready not sent", extra={"error": type(exc).__name__})
 
     def _ready_due(self, plan: Plan, here: Here) -> bool:
         """A calendar plan, not cancelled or worn, from the evening before until it starts."""

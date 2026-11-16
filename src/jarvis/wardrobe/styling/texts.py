@@ -168,6 +168,12 @@ def ready_alert(label: str, gaps: int) -> str:
     return f"{base}."
 
 
+def ready_more_alert(day: date, today: date, more: int) -> str:
+    """outfit_ready past the evening's first three (security review H1): one line for the rest."""
+    who, s = whose(day, today), "s" if more > 1 else ""
+    return f"{who[0].upper()}{who[1:]} outfits for {more} more event{s} are ready {WHERE}."
+
+
 def ready_event_label(day: date, today: date, starts: datetime | None, zone: tzinfo) -> str:
     """ "tomorrow's outfit for your 10:00 event"."""
     return f"{whose(day, today)} outfit for {event_words(starts, zone)}"
@@ -199,6 +205,7 @@ __all__ = [
     "private_view_words",
     "ready_alert",
     "ready_event_label",
+    "ready_more_alert",
     "states_line",
     "tomorrow_of",
     "unit_words",

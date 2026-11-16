@@ -16,7 +16,9 @@ document `wardrobe_plans/{uid}` (`StylingDoc`, through `sealed.SealedDoc`).
   (off). No "alert lead": D19 fixes the evening alert at 20:00, so it was dropped before the
   first deploy (code review M8). Plan review note: the plan put these in A's index; Part C
   can't write A's index through the contract, so they live here (INTEGRATION-C, "Needs I1").
-At most 60 plans, 14 days back to 30 ahead (older ones are dropped on the next change).
+At most 60 plans, 14 days back to 30 ahead (older ones are dropped on the next change); at most
+20 of them made by his calendar, and an event whose plan he removed is not made again
+(`dismissed`, until its day is past): strangers' invites can't take his slots (security H1).
 """
 
 from __future__ import annotations
@@ -33,6 +35,8 @@ from jarvis.wardrobe.model import COLOURS, PieceId
 PLAN_ID = re.compile(r"^op_[0-9a-f]{8}$")
 EVENT_KEY = re.compile(r"^[0-9a-f]{16}$")
 MAX_PLANS, BACK_DAYS, AHEAD_DAYS = 60, 14, 30
+MAX_CAL_PLANS = 20  # plans his calendar makes: the other 40 stay his (security review H1)
+MAX_DISMISSED = 200
 MAX_NEVER, MAX_EXCLUDED, MAX_COLOURS = 20, 50, 10
 Field_ = Literal["title", "location"]
 
@@ -134,12 +138,20 @@ class Choice(_M):
     auto_swap: bool = False
 
 
+class Dismissed(_M):
+    """A calendar event whose plan he removed: never made again (kept until its day is past)."""
+
+    k: EventKey
+    day: date
+
+
 class StylingDoc(_M):
     plans: tuple[Plan, ...] = Field(default=(), max_length=MAX_PLANS)
     prefs: Prefs = Field(default_factory=Prefs)
     choice: Choice = Field(default_factory=Choice)
     cal_read_at: datetime | None = None
     cal_failed_at: datetime | None = None
+    dismissed: tuple[Dismissed, ...] = Field(default=(), max_length=MAX_DISMISSED)
 
     def plan(self, pid: str) -> Plan | None:
         return next((p for p in self.plans if p.id == pid), None)
@@ -161,9 +173,28 @@ class StylingDoc(_M):
     def drop(self, pid: str) -> StylingDoc:
         return self.model_copy(update={"plans": tuple(p for p in self.plans if p.id != pid)})
 
+    def dismiss(self, plan: Plan) -> StylingDoc:
+        """This doc without `plan`; a calendar plan's event is remembered (security review H1)."""
+        out = self.drop(plan.id)
+        if plan.event is None:
+            return out
+        gone = (*self.dismissed, Dismissed(k=plan.event, day=plan.day))[-MAX_DISMISSED:]
+        return out.model_copy(update={"dismissed": gone})
+
+    def made(self) -> int:
+        """How many plans his calendar made (a draft too: they take his slots until pruned)."""
+        return sum(1 for p in self.plans if not p.manual)
+
     def pruned(self, today: date) -> StylingDoc:
-        keep = tuple(p for p in self.plans if p.day >= today - timedelta(days=BACK_DAYS))
-        return self.model_copy(update={"plans": keep})
+        """Plans older than 14 days go; a cancelled calendar draft once its day is past; a
+        dismissed event once its day is past (security review H1)."""
+        keep = tuple(
+            p for p in self.plans
+            if p.day >= today - timedelta(days=BACK_DAYS)
+            and not (not p.manual and p.cancelled and p.day < today)
+        )  # fmt: skip
+        gone = tuple(d for d in self.dismissed if d.day >= today)
+        return self.model_copy(update={"plans": keep, "dismissed": gone})
 
 
 class PlanRefused(ValueError):  # noqa: N818 - a refusal in plain words
@@ -185,9 +216,11 @@ def in_range(day: date, today: date) -> bool:
 __all__ = [
     "AHEAD_DAYS",
     "BACK_DAYS",
+    "MAX_CAL_PLANS",
     "MAX_PLANS",
     "PLAN_ID",
     "Choice",
+    "Dismissed",
     "Exclusion",
     "Never",
     "Plan",

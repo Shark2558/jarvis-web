@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from httpx import ASGITransport, AsyncClient
 from r13_fakes import UID
-from r13_fakes_c import RING, FakeGoogle, World, app_of, gevent, ist, world
+from r13_fakes_c import RING, FakeGoogle, N, World, app_of, gevent, ist, world
 
 from jarvis.tools.policy import Effect
 
@@ -251,3 +251,74 @@ async def test_switching_the_calendar_off_deletes_its_last_read() -> None:
     assert await w.docs.get(f"jarvis_wardrobe_cal/{UID}") is not None
     await _pick(w, cal="")
     assert await w.docs.get(f"jarvis_wardrobe_cal/{UID}") is None
+
+
+# ---- security review H1: strangers' invites can't flood his plans or his evening ---------------
+def _invites(n: int) -> list[dict[str, Any]]:
+    return [
+        gevent(f"inv-{i}", ist(2026, 11, 17, 8 + i % 12, (i // 12) * 10), 0.25, title="Invite")
+        for i in range(n)
+    ]
+
+
+async def test_fifty_invites_make_at_most_20_plans_one_capped_evening_and_his_save_works() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=FakeGoogle(events={WORK: _invites(50)}))
+    await _pick(w)
+    await _tick(w)
+    plans = await _plans(w)
+    assert len(plans) == 20 and not [p for p in plans if p.manual]
+    got = await w.call("outfit_plan", action="save", day="tomorrow")
+    assert "refused" not in got.result  # his own 40 slots stay his
+    w.clock.set(ist(2026, 11, 16, 20, 0))
+    await _tick(w)
+    w.clock.advance(minutes=5)
+    await _tick(w)
+    assert [k for k, _ in w.notifier.sent] == ["outfit_ready"] * 4
+    assert w.notifier.sent[-1][1] == (
+        "Tomorrow's outfits for 17 more events are ready in Helpers, Wardrobe."
+    )
+
+
+async def test_a_calendar_plan_he_released_is_not_made_again_until_its_day_is_past() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=FakeGoogle(events={WORK: [_meeting()]}))
+    await _pick(w)
+    await _tick(w)
+    (plan,) = await _plans(w)
+    from jarvis.wardrobe.styling import actions
+
+    await actions.run(w.styling, UID, {"action": "release", "plan": plan.id})
+    w.clock.advance(hours=1)
+    await _tick(w)
+    assert await _plans(w) == ()
+    w.clock.set(ist(2026, 11, 18, 9, 0))
+    await _tick(w)
+    assert (await w.styling.plans.read(UID)).dismissed == ()  # its day is past: forgotten
+
+
+async def test_a_cancelled_calendar_draft_goes_once_its_day_has_passed() -> None:
+    google = FakeGoogle(events={WORK: [_meeting()]})
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=google)
+    await _pick(w)
+    await _tick(w)
+    await w.call("outfit_plan", action="save", day="tomorrow")  # his own plan that day
+    google.events[WORK] = []
+    w.clock.set(ist(2026, 11, 16, 19, 5))
+    await _tick(w)
+    assert sorted(p.cancelled for p in await _plans(w)) == [False, True]
+    w.clock.set(ist(2026, 11, 18, 9, 0))
+    await _tick(w)
+    assert [(p.manual, p.cancelled) for p in await _plans(w)] == [(True, False)]
+
+
+# ---- code review L2: an LND-16 line is not a gap to fix ------------------------------------------
+async def test_the_evening_alert_does_not_count_an_outstanding_laundry_line_as_a_gap() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=FakeGoogle(events={WORK: [_meeting()]}))
+    await w.move(N.shirt_white, "sent_out")
+    await w.edit(N.shirt_white, expected_back=ist(2026, 11, 17).date())
+    await _pick(w)
+    await _tick(w)
+    w.clock.set(ist(2026, 11, 16, 20, 0))
+    await _tick(w)
+    assert w.notifier.sent == [
+        ("outfit_ready", "Tomorrow's outfit for your 10:00 event is ready in Helpers, Wardrobe.")
+    ]

@@ -58,5 +58,26 @@ function parseLabel(text) { // only parsed forms (D7, INV-10): never the text it
   return { size, fabric, care };
 }
 
+// The words a card says (moved from the scan module: its 600-line guard)
+const KINDS = [['shirt', 'Shirt'], ['t_shirt', 'T-shirt'], ['trousers', 'Trousers'], ['jeans', 'Jeans'], ['vest', 'Vest'],
+  ['underpants', 'Underpants'], ['sock', 'Sock'], ['dress_shoe', 'Shoe'], ['sneaker', 'Sneaker'], ['sandal', 'Sandal'],
+  ['belt', 'Belt'], ['watch', 'Watch'], ['kurta', 'Kurta'], ['blazer', 'Blazer'], ['jacket', 'Jacket'],
+  ['rainwear', 'Rainwear'], ['unknown', 'Unknown']];
+// M3: one photo (~750 tokens in, ~120 out) costs about Rs 0.01 with the cheapest seeing brain and 0.51 with the dearest
+// (llm/pricing.py at 95.24 a dollar; tests/test_r13_d_scan.py recomputes both). The view's own `tag_estimate_inr`
+// (the brain that would answer, A's at I1) is said instead whenever it is there.
+const TAG_MOST = 0.51, TAG_RANGE = '\u20b90.01\u2013\u20b90.51, depending on the brain';
+const tagWords = (inr) => 'Send this photo to the AI to tag it (about ' + (inr ? '\u20b9' + inr.toFixed(2) : TAG_RANGE) + ')';
+const BAND_WORDS = { likely: ' (likely this one)', maybe: ' (maybe)', weak: ' (a weak match)' }; // none: no words (M5)
+const banded = (c) => BAND_WORDS[c.band] || '';
+const colourWords = (c) => (c.name === 'multicolour' ? 'multicolour, mostly ' + String(c.second || '').replace(/_/g, ' ') : c.name.replace(/_/g, ' '));
+function labelFields(got) { // a care label's parsed words as A's wardrobe_edit fields (INV-10): [field, his words, value]
+  const out = [];
+  if (got.size) out.push(['size', 'Size ' + got.size, got.size]);
+  if (got.fabric.length) out.push(['fabric', got.fabric.map((f) => f.pct + '% ' + f.name).join(', '), got.fabric.map((f) => f.name + ' ' + f.pct + '%')]);
+  if (got.care.length) out.push(['care', got.care.map((c) => c.replace(/_/g, ' ')).join(', '), got.care]);
+  return out;
+}
+
 export { LABEL, LIKELY, MAYBE, TWINS, CANDIDATES, LIFT, BANDED, PRIVATE_TYPES, FABRICS13, CARE13, SIZES, labelPiece, unb64, meanOf, cosine,
-  band, candidates, parseLabel };
+  band, candidates, parseLabel, KINDS, TAG_MOST, tagWords, banded, colourWords, labelFields };

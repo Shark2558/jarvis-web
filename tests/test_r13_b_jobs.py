@@ -7,11 +7,14 @@
 # day (23:30 and 00:30 IST both tested).
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 
+import pytest
 from r13_fakes import UID, ev, ist
 from r13_fakes_b import BLAZER, JACKET, TROUSERS, VEST_A, rig
 
+from jarvis.notify.ports import Delivery
 from jarvis.wardrobe.laundry.holds import admit
 from jarvis.wardrobe.laundry.jobs import LaundryDaily
 
@@ -93,6 +96,59 @@ async def test_a_failed_send_releases_its_claim_and_is_tried_again() -> None:
     r.notifier.fail = False
     await _job(r).run([UID])
     assert [k for _, k, _ in r.notifier.sent] == ["laundry_overdue"]
+
+
+async def _short_rig():  # type: ignore[no-untyped-def]
+    r = await rig()
+    batch = (await r.desk.send_out(UID, (BLAZER, JACKET), "Laundry shop")).batch
+    await r.desk.receive(UID, batch, (BLAZER,))  # short, no due date: told once
+    return r
+
+
+def _claims(r) -> list[str]:  # type: ignore[no-untyped-def]
+    return [p for p in r.docs._data if "wardrobe_told" in p]  # noqa: SLF001
+
+
+async def test_h4_a_once_only_alert_no_channel_took_is_tried_again_at_the_next_run() -> None:
+    r = await _short_rig()
+    r.notifier.answer = Delivery(action="ring", reason="important")  # neither Telegram nor push
+    first = await _job(r).run([UID])
+    assert first == {"not_sent": 1} and _claims(r) == []
+    r.notifier.answer = None
+    r.clock.advance(days=1)
+    second = await _job(r).run([UID])
+    assert second == {"overdue": 1} and [k for _, k, _ in r.notifier.sent] == [
+        "laundry_overdue",
+        "laundry_overdue",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("answer", "told"),
+    [
+        (Delivery(action="hold", reason="quiet_hours"), True),  # in the morning's held summary
+        (Delivery(action="drop", reason="switched_off"), True),  # his own choice: nothing to retry
+        (Delivery(action="drop", reason="feed_only"), True),
+        (Delivery(action="drop", reason="storm"), False),  # reached nobody: tried again
+        (Delivery(action="silent", reason="important"), False),
+    ],
+)
+async def test_h4_told_is_the_codebases_one_rule(answer: Delivery, told: bool) -> None:
+    r = await _short_rig()
+    r.notifier.answer = answer
+    counts = await _job(r).run([UID])
+    assert (counts == {"overdue": 1}) is told and bool(_claims(r)) is told
+
+
+async def test_h4_a_send_the_ticks_budget_cancels_gives_its_claim_back() -> None:
+    r = await _short_rig()
+    r.notifier.stall = True
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.05):  # the tick's own budget, as `ticks._outcome_of` does
+            await _job(r).run([UID])
+    assert _claims(r) == []  # tried again at the next run
+    r.notifier.stall = False
+    assert await _job(r).run([UID]) == {"overdue": 1}
 
 
 async def test_without_a_notifier_nothing_is_claimed() -> None:

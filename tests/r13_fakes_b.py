@@ -7,11 +7,13 @@
 #                       observer bound into it, a keyring, a recording notifier and a REAL gateway
 #                       with B's five tools
 #   Rig.tool(name, **)  one call through the gateway (tainted / spoken rounds on request)
-#   FakeNotifier        records (uid, kind, message); `fail` raises, `held` answers "hold"
+#   FakeNotifier        records (uid, kind, message); `fail` raises, `held` answers "hold",
+#                       `answer` any Delivery (a ring no channel took), `stall` never answers
 #   the pilot's pieces by name (BLUE_SHIRT ... SHORTS), its places and its first sock pair
 #   TWIN                a second white formal shirt, near-identical to WHITE_SHIRT (LND-04)
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -66,6 +68,8 @@ class FakeNotifier:
     fail: bool = False
     held: bool = False
     off: bool = False  # the app has no notifier: `ctx.notifier()` answers None
+    answer: Delivery | None = None  # what the policy and the channels made of it, when set
+    stall: bool = False  # never answers: the tick's budget cancels the send
 
     async def notify(
         self,
@@ -79,6 +83,10 @@ class FakeNotifier:
         if self.fail:
             raise RuntimeError("the notifier is down")
         self.sent.append((uid, signal.kind, message))
+        if self.stall:
+            await asyncio.Event().wait()
+        if self.answer is not None:
+            return self.answer
         if self.held:
             return Delivery(action="hold", reason="quiet_hours")
         return Delivery(action="ring", reason="test", telegram=True)

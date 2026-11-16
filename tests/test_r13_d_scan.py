@@ -350,10 +350,11 @@ def test_l10_the_tag_checks_no_ai_again_at_the_press() -> None:
 BANDS_JS = r"""
 const P = await import('data:text/javascript;base64,' + Buffer.from(require('fs')
   .readFileSync(process.argv[1], 'utf8')).toString('base64'));
-const v = (seed, n = 64) => Uint8Array.from({ length: n }, (_, i) => (seed * 31 + i * 7 + (i % (seed || 1))) % 256);
+const v = (seed, n = 64) => Uint8Array.from({ length: n },
+  (_, i) => (seed * 31 + i * 7 + (i % (seed || 1))) % 256);
 const type = () => 'shirt';
 const gallery = [1, 2, 3, 4, 5].map((s) => ({ piece: 'p' + s, v: v(s) }));
-const near = Uint8Array.from(v(3), (x, i) => (i % 9 ? x : 255 - x)); // piece 3, seen at another angle
+const near = Uint8Array.from(v(3), (x, i) => (i % 9 ? x : 255 - x)); // piece 3, another angle
 console.log(JSON.stringify({
   banded: P.candidates(near, gallery, type).top,
   one: P.candidates(v(9), [{ piece: 'p1', v: v(1) }], type),
@@ -403,6 +404,17 @@ def test_m6_a_new_piece_is_its_ids_first_and_a_second_press_is_never_a_second_pi
     assert len(_adds(out)) == 1 and ": this piece." in out["final"]  # then no button to press
     out = scan([*ADD[:3], press("Save as a new piece", now=True), press("Save as a new piece")])
     assert len(_adds(out)) == 1
+
+
+@pytest.mark.parametrize("status", ["needs_approval", "denied", "error"])
+def test_a_change_that_waits_for_his_ok_or_fails_is_said_and_never_taken_for_done(
+    status: str,
+) -> None:
+    out = scan(ADD, vision={"embed": _vec(11)}, toolStatus=status)
+    assert len(_adds(out)) == 1 and ": this piece." not in out["final"]  # nothing taken as done
+    assert "Save as a new piece" in out["steps"][-1]["buttons"]  # the card stays his to finish
+    if status == "needs_approval":  # a card that waits for his OK (C's whole-plan release, too)
+        assert "That needs your OK: the card is waiting." in out["final"]
 
 
 def test_m6_a_retry_after_a_failure_carries_the_same_client_id() -> None:

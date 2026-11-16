@@ -120,6 +120,7 @@ async function api(p, opts) {
   const answers = Object.assign({ '/v1/wardrobe?private=1': input.view, '/v1/wardrobe/fingerprints?model=mnv2-int8-1': { model: 'mnv2-int8-1', items: input.prints || [] },
     '/v1/wardrobe/scan': { applied: 1, duplicates: 0, review: 0, already_done: false, marks: {}, message: 'Saved.' } }, input.answers || {});
   if (p.startsWith('/v1/wardrobe/tools/') && toolFail > 0) { toolFail -= 1; throw new TypeError('Failed to fetch'); }
+  if (p.startsWith('/v1/wardrobe/tools/') && input.toolStatus) return { status: input.toolStatus, message: 'Add a piece to your wardrobe', approval_id: 'ap_000000000001' };
   if (p.startsWith('/v1/wardrobe/tools/')) return { status: 'executed', message: 'Done, Sir.', result: p.endsWith('wardrobe_add') ? { status: 'done', ids: ['wi_0000000000ff'], new: ['wi_0000000000ff'] } : (input.toolResult || {}) };
   if (p === '/v1/wardrobe/fingerprints' && o.body) return { piece: o.body.piece, view: o.body.view, model: o.body.model };
   const a = answers[p];

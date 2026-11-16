@@ -136,11 +136,29 @@ async def test_a_piece_that_is_not_in_the_batch_is_refused() -> None:
 
 @pytest.mark.parametrize(
     "label",
-    ["Shop 12345 67890", "11111-22222 cleaners", "call 1234567890", "x" * 41, "", "   "],
+    [
+        "Shop 12345 67890",
+        "11111-22222 cleaners",
+        "call 1234567890",
+        "12_345_67_890",  # review L6: any separator, a letter too: the digits are counted
+        "1234\u00b7567\u00b7890",
+        "12x34x56x78x90",
+        "Shop 123 Lane 45",
+        "cleaner@example.com",
+        "x" * 41,
+        "",
+        "   ",
+    ],
 )
 def test_a_shop_label_never_holds_a_phone_number_and_stays_short(label: str) -> None:
     with pytest.raises(Refused):
         providers.clean_shop(label)
+
+
+@pytest.mark.parametrize("ref", ["Slip 1_2_3_4_5", "a@example.com"])
+def test_l6_a_bag_reference_holds_no_long_number_or_address(ref: str) -> None:
+    with pytest.raises(Refused):
+        providers.clean_bag(ref)
 
 
 def test_a_short_label_is_kept_in_his_words() -> None:

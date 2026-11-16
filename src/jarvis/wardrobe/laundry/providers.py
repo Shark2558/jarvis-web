@@ -1,8 +1,9 @@
 # src/jarvis/wardrobe/laundry/providers.py
 """R13 Part B: outside laundry and dry-cleaning as records (docs/plans/r13-wardrobe.md D11, LND-14).
 
-A batch is his label for the shop (his words, at most 40 characters; a run of 5 or more digits is
-refused, so no phone number is ever kept, and nothing that reads as an ID or account number), a bag
+A batch is his label for the shop (his words, at most 40 characters; more than 4 digits in all, or
+an "@", is refused, so no phone number or address is ever kept, nor anything that reads as an ID
+or account number), a bag
 reference, the pieces, and a `due` date on each `sent_out` event (A's view shows it as
 `expected_back`). Each piece is checked back in on its own; a receive that leaves pieces out marks
 the batch "short"; past its `due` with pieces out it is "overdue" (B's `laundry_daily` tells him).
@@ -12,7 +13,6 @@ Open batches at most 20; closed ones are kept 90 days.
 
 from __future__ import annotations
 
-import re
 import secrets
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta
@@ -30,7 +30,7 @@ MAX_OPEN = 20
 SHOP_MAX, BAG_MAX = 40, 24
 DUE_AHEAD = timedelta(days=60)
 KEEP = timedelta(days=90)
-_LONG_NUMBER = re.compile(r"\d(?:[\s().+/-]{0,2}\d){4,}")  # 5+ digits, however they are spaced
+MAX_DIGITS = 4  # review L6: the digits are COUNTED, so no separator (_, ·, a letter) hides one
 RECEIVE_TO: tuple[State, ...] = ("ready", "needs_prep")
 
 
@@ -49,17 +49,23 @@ def _clean(text: object, limit: int, empty: str, long: str) -> str:
     return plain
 
 
+def _reads_as_contact(text: str) -> bool:
+    """A phone, account or ID number (more than 4 digits in all, however they are spaced or
+    split) or an e-mail address: never kept in a shop's label or a bag reference."""
+    return sum(ch.isdigit() for ch in text) > MAX_DIGITS or "@" in text
+
+
 def clean_shop(label: object) -> str:
     """His label for the shop, or a plain refusal."""
     plain = _clean(label, SHOP_MAX, texts.SHOP_EMPTY, texts.SHOP_LONG)
-    if _LONG_NUMBER.search(plain) or sensitive_reason(plain):
+    if _reads_as_contact(plain) or sensitive_reason(plain):
         raise Refused(texts.SHOP_NUMBER)
     return plain
 
 
 def clean_bag(ref: object) -> str:
     plain = _clean(ref if ref is not None else "", BAG_MAX, "", texts.BAG_BAD)
-    if _LONG_NUMBER.search(plain) or (plain and sensitive_reason(plain)):
+    if _reads_as_contact(plain) or (plain and sensitive_reason(plain)):
         raise Refused(texts.BAG_BAD)
     return plain
 

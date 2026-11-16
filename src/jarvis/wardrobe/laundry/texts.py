@@ -40,13 +40,13 @@ TOO_MANY_BATCHES = "20 batches are out: mark one back first."
 SHOP_EMPTY = "Give the shop a short label, like 'Dry cleaner'."
 SHOP_LONG = "A shop's label is at most 40 characters."
 SHOP_NUMBER = (
-    "A shop's label can't hold a phone number or a long number: use a short name like "
-    "'Dry cleaner'."
+    "A shop's label can't hold a phone number, an e-mail address or a long number: use a short "
+    "name like 'Dry cleaner'."
 )
 TYPE_SHOP = (
     "Type the shop's label yourself in Helpers, Wardrobe: JARVIS never takes one from a message."
 )
-BAG_BAD = "A bag reference is at most 24 characters, with no long number."
+BAG_BAD = "A bag reference is at most 24 characters, with no long number or e-mail address."
 DUE_BAD = "A due date is from today up to 60 days ahead."
 TIME_BAD = "A time can be at most 30 days back and never ahead."
 BLIND_NOTHING = "Name the places or the kinds of piece you moved."

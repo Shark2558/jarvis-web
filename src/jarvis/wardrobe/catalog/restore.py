@@ -2,7 +2,8 @@
 """Restoring the wardrobe's backup file, confirm before commit (docs/plans/r13-wardrobe.md D17,
 OPS-06; plan review H3).
 
-1. `check(uid, file)` opens every line (the seal, the line order, the schema, his id, today's key)
+1. `check(uid, file)` opens every line (the seal, the line order, the schema, his id, today's key;
+   up to 25 MB, so in a worker thread: voice and chat never wait on it)
    and answers the counts (to add, already there, where his current record wins, in Recently
    deleted, purged since, events new to the logs) with a token: a MAC of his id, the file's
    SHA-256 and an expiry an hour on. It WRITES NOTHING (the token is stateless, so nothing about
@@ -19,6 +20,7 @@ OPS-06; plan review H3).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 from collections.abc import Sequence
@@ -135,7 +137,7 @@ class Restore:
 
     # ---- check ---------------------------------------------------------------------------------
     async def check(self, uid: str, body: bytes) -> RestoreCheck:
-        parsed = parse(self.store, uid, body)
+        parsed = await asyncio.to_thread(parse, self.store, uid, body)  # off the loop (L5)
         current = await self.store.view(uid)
         counts, purged = await self._counts(uid, parsed, current)
         expires = int((self.store.now() + TOKEN_LIFE).timestamp())
@@ -169,7 +171,7 @@ class Restore:
     async def apply(
         self, uid: str, body: bytes, token: str, include_purged: Sequence[str] = ()
     ) -> RestoreDone:
-        parsed = parse(self.store, uid, body)
+        parsed = await asyncio.to_thread(parse, self.store, uid, body)
         empty = self._token_ok(uid, parsed.digest, token)
         if empty is None:
             raise Refused(EXPIRED)

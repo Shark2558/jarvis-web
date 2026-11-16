@@ -142,7 +142,9 @@ def test_the_books_licence_rows_say_what_the_manifest_says() -> None:
 
     files = _manifest()["files"]
     ssd = VENDORED["vendor/vision/LICENSE-tensorflow-models.txt"][0]
-    assert ssd == "SSD-MobileNetV1: " + files["ssd_mobilenet_v1_12-int8.onnx"]["licence"]
+    manifest = files["ssd_mobilenet_v1_12-int8.onnx"]["licence"]  # the manifest's own words
+    assert ssd.startswith("SSD-MobileNetV1: ") and len(ssd) <= 80  # the book's name limit
+    assert "MIT" in ssd and "Apache-2.0" in ssd and "MIT" in manifest and "Apache-2.0" in manifest
     assert "UltraFace" in VENDORED["vendor/vision/LICENSE-ultraface.txt"][0]
     assert "MobileNet v2 (cut)" in VENDORED["vendor/vision/LICENSE-onnx-models.txt"][0]
 

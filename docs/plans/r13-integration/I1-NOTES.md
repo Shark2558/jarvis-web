@@ -10,7 +10,7 @@ I1 steps, the Workshop's seven binding decisions (Mark XXI) and the owner's deci
 
 States: done (commit), declined (reason), left (for the integrated reviews or the Workshop).
 
-## Items (open = still to do on this branch)
+## Items
 
 | # | Item | Source | State |
 |---|---|---|---|
@@ -31,22 +31,24 @@ States: done (commit), declined (reason), left (for the integrated reviews or th
 | 15 | Ship `rules.json` in the image and check it at build; `outfit_plan` never in Approve all; gateway logs a failure's class only | I0 §6 | done `3d6b5a7f` |
 | 16 | No-AI runner fills a `TakeCall` from the step before | D §6 | done `919964ad` `25b2a22d` |
 | 17 | D's two console modules in `APP_ASSETS`; `gateway.py` at 760; phone eval find names one piece | D §6 | done `c68bafa7` |
-| 18 | Door `thumb` and `drop` (guard 130 to 145) | D §6 | open |
-| 19 | Camera strip CSS move; `d_dom.js` exits when its parent dies | D §6 | open |
-| 20 | Fake-server noon stated day (A13) and D tests expecting noon | A §6 | open |
-| 21 | A14 `wardrobe_max_pieces` 600 to 500 after checking the plan | A §6 | open |
-| 22 | A15 C69 retention row and plan data model | A §6 | open |
-| 23 | A6 `plan_counts` from C into `PilotCounts` | A §6 | open |
-| 24 | C9 "Outfit plans" Privacy row decision | C §6 | open |
-| 25 | C10 runbook key-change note | C §6 | open |
-| 26 | C11 guide: C69-C71 built, C63 wording, camera and wardrobe-photos privacy rows | C §6 | open |
-| 27 | D10 and D6 texts | D §6 | open |
-| 28 | Persona p13.0 and its 21 pins | plan I1 | open |
-| 29 | Owner decision 16 Nov: declined calendar events keep their outfit plans, recorded in the plan | owner | open |
-| 30 | Workshop 4 overflow sentence confirmed | Workshop 4 | open |
-| 31 | `evals/r13/e2e.py` and `needles.py` | plan I1 | open |
-| 32 | Flip `STUBS_PASS`, empty `planned`, update the gate test | plan I1 | open |
-| 33 | D's browser tests on the wired app | D §6 | open |
-| 34 | Version pins | plan I1 | open |
-| 35 | D10 core `tell()` skip | D §6 | declined: core stays untouched; the shared `took()` rule (item 13) covers the need |
-| 36 | A16 and C12 integrated re-reviews | A/C §6 | left for the reviews |
+| 18 | Door `thumb` and `drop` (guard 130 to 145), I0's door test widened to any quote | D §6 | done `e4549593` |
+| 19 | Camera strip's four columns moved into `console-camera.css`; `d_dom.js` ends when its parent dies | D §6 | done `e4549593` |
+| 20 | Fake server's stated day is noon his time (or now while it is ahead) | A §6 | done `e4549593` |
+| 21 | A14 `wardrobe_max_pieces` 50 to 500 (maximal pieces fit only to 500); plan D1 text | A §6 | done `e4549593` |
+| 22 | A15 `wardrobe_restore/{uid}` is his purge count (guide C69; the plan's data model unchanged: it already said so) | A §6 | done `baee5527` |
+| 23 | A6 `plan_counts` from C into `PilotCounts` | A §6 | left: C keeps no log of what each suggestion named, so there is nothing to count; the pilot's `suggested` and `unavailable_suggested` stay 0 and `evals/r13/e2e.py` case 8 counts them from the live suggestions instead. Workshop to say whether C should log them |
+| 24 | C9 an "Outfit plans" Privacy row of its own (five rows; B's `laundry` stays "Laundry and wear history") | C §6 | done `e4549593` |
+| 25 | C10 key-change note (C51's "When it fails" and C71 in the guide; there is no separate runbook file in the repo) | C §6 | done `baee5527` |
+| 26 | C11 guide: C69-C71 built, C63's new words, the camera row keeps "Never kept: a camera frame" and points a wardrobe photo to its own row, all pinned in `tests/test_r13_i1_docs.py` | C §6, D9, M14 | done `baee5527` |
+| 27 | D10 and D6 texts (the move is `wardrobe_find` then `wardrobe_edit(piece, place)`; `query` only on `laundry_move` and `wear_log`) | D §6, A §6 | done `baee5527` |
+| 28 | Persona p13.0 with `WARDROBE_RULE`; the 21 pins move | D21 | done `6848d035` |
+| 29 | Owner decision 16 Nov: a declined calendar event still gets its outfit plan, recorded in plan D13 | owner | done `baee5527` |
+| 30 | Workshop 4 overflow sentence ("Tomorrow's outfits for 17 more events are ready in Helpers, Wardrobe.") written into plan D19 as built | Workshop 4 | done `baee5527` (the Workshop's own wording could not be re-read here; it equals INTEGRATION-C 5.13) |
+| 31 | `evals/r13/e2e.py` (tests 1-5, 7, 8) and `needles.py` (8 classes, 9 sinks) through the wired app, `evals/r13/wired.py`, `tests/test_r13_i1_e2e.py` | plan I1 | done `67a4487e` and the commit after it |
+| 32 | `STUBS_PASS` False, `planned` emptied, the gate test pins the flip; the Telegram guard's R13 tools built with a keyring | plan I1 | done `67a4487e` |
+| 33 | D's browser tests onto the wired app | D §6 | left: they still run on the contract fake server, which `test_the_fake_server_answers_every_route_with_its_model` ties to the real routes; the wired app is covered by the replay of D's recorded calls, the e2e and the needles |
+| 34 | Version pins (program 13.0.0, persona p13.0, guide and plan v13.0.3, build book ≤ 80-char library names) | plan I1 | done `baee5527` `6848d035` and the next commit |
+| 35 | D10 core `tell()` skip for photo-only wardrobe tasks | D §6 | declined: the core's hash is a contract (I0) and D's static test already refuses any console module that subscribes to `embed`, `colour`, `person` or `face` |
+| 36 | A16 and C12 integrated re-reviews (`code-reviewer`, `python-reviewer`, `security-reviewer`) in a fresh context | A/C §6 | left for the reviews |
+| 37 | The brief test's night is built from today (date bomb, found by the clock sweep on main too) | Workshop | done `361c8725` (passes at today's date and under the sweep at 2027-01-02) |
+| 38 | `test_r13_a_backup` expects the hold's own word as a restore entry's reason (I1's `f.hold`, item 11) | A §6 | done `e4549593` |

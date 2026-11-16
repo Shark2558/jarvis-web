@@ -118,8 +118,7 @@ VENDORED: dict[str, tuple[str, str, str, str]] = {
     ),
     "vendor/vision/LICENSE-ultraface.txt": ("UltraFace face detector", "", "model", "vision"),
     "vendor/vision/LICENSE-tensorflow-models.txt": (
-        "SSD-MobileNetV1: MIT (ONNX Model Zoo); weights from the TensorFlow Object Detection API "
-        "(Apache-2.0)",  # D8: the manifest's own words
+        "SSD-MobileNetV1: MIT; weights Apache-2.0 (TF Object Detection API)",  # <= 80 (I1)
         "",
         "model",
         "vision",

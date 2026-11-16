@@ -125,9 +125,10 @@ PHOTOS_SPEC = Spec(
     encrypted_by_jarvis=True,
     delete="passkey",
     note=(
-        "Each photo is checked on your phone for a person or a face before it is kept. The check "
-        "can miss a hand or a turned face: look before you save, and delete here if one slipped "
-        "through."
+        "Each photo, and then its crop, is checked on your phone for a person or a face before it "
+        "is kept. The check can miss a hand or a turned face: look before you save. Delete here "
+        "removes every wardrobe photo and fingerprint at once; one photo can't be deleted alone "
+        "yet."
     ),
 )
 

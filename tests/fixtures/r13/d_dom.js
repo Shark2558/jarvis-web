@@ -98,7 +98,7 @@ const JarvisVision = {
       return ok(task, { found: f, count: f ? 1 : 0, boxes: f ? [{ x: 0.4, y: 0.1, w: 0.2, h: 0.3 }] : [] });
     }
     if (task === 'code') return ok(task, { codes: vision.codes.map((v) => ({ format: 'qr_code', value: v })) });
-    if (task === 'embed') return vision.embed ? ok(task, { v: vision.embed, dims: 1280, model: 'mnv2-int8-1' }) : Object.freeze({ task, ok: false, data: {} });
+    if (task === 'embed') return vision.embed ? ok(task, { v: vision.embed, dims: 1280, model: vision.embed_model || 'mnv2-int8-1' }) : Object.freeze({ task, ok: false, data: {} });
     if (task === 'colour') return ok(task, vision.colour);
     if (task === 'text') return ok(task, { text: vision.text, confidence: 0.9 });
     throw new Error('That vision task is not installed.');
@@ -115,6 +115,7 @@ const JarvisCamera = {
 async function api(p, opts) {
   const o = opts || {};
   out.net.push({ method: o.method || (o.body !== undefined ? 'POST' : 'GET'), path: p, body: o.body === undefined ? '' : JSON.stringify(o.body) });
+  if (input.scanDelay && p === '/v1/wardrobe/scan') await wait(input.scanDelay); // a send still on its way
   if (offline && p.startsWith('/v1/wardrobe/scan')) { const e = new TypeError('Failed to fetch'); throw e; }
   const answers = Object.assign({ '/v1/wardrobe?private=1': input.view, '/v1/wardrobe/fingerprints?model=mnv2-int8-1': { model: 'mnv2-int8-1', items: input.prints || [] },
     '/v1/wardrobe/scan': { applied: 1, duplicates: 0, review: 0, already_done: false, marks: {}, message: 'Saved.' } }, input.answers || {});

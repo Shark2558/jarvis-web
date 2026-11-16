@@ -324,7 +324,7 @@ def test_m3_the_tag_range_is_the_price_tables_cheapest_and_dearest_brain() -> No
         if name.startswith("claude-")  # the seeing, non-training brains
     )
     assert rate == 95.24 and (round(each[0], 2), round(each[-1], 2)) == (0.01, 0.51)
-    js = SCAN.read_text(encoding="utf-8")
+    js = WORDS.read_text(encoding="utf-8")
     assert "const TAG_MOST = 0.51, TAG_RANGE = '\\u20b90.01\\u2013\\u20b90.51," in js
 
 
@@ -437,6 +437,85 @@ def test_m6_helpers_sends_a_settings_change_to_the_settings_route_never_to_a_too
     js = (SCAN.parent / "console-helpers-wardrobe.js").read_text(encoding="utf-8")
     assert "settings: {" not in js and "label_field" not in SCAN.read_text(encoding="utf-8")
     assert "H.api('/v1/wardrobe/settings', { method: 'PUT', body })" in js
+
+
+# ---- the LOWs (REVIEW-D-1) ---------------------------------------------------------------------
+STATIC = SCAN.parent
+DOOR_ROUTE = re.compile(r"""['"`]/v1/wardrobe/(?:photos|tag)\b""")
+
+
+def _plain(path: Path) -> str:
+    return re.sub(r"//[^\n]*|/\*.*?\*/", "", path.read_text(encoding="utf-8"), flags=re.S)
+
+
+def test_l1_only_the_door_names_the_picture_routes_in_any_quote() -> None:
+    for path in sorted(STATIC.glob("console*.js")):
+        if path.name != "console-r7-send.js":
+            assert not DOOR_ROUTE.search(_plain(path)), path.name
+    assert DOOR_ROUTE.search("M.api(`/v1/wardrobe/tag?piece=${id}`)")  # a backtick is caught
+    for path in (SCAN, WORDS):
+        for bad in ("JarvisChat", ".raw(", "FormData"):
+            assert bad not in _plain(path), (path.name, bad)
+
+
+def test_l2_no_console_module_subscribes_to_the_wardrobe_tasks() -> None:
+    use = re.compile(r"(?:JarvisVision|parts\s*\.\s*vision|\bV)\s*\.\s*use\s*\(([^)]*)\)", re.S)
+    for path in sorted(STATIC.glob("*.js")):
+        for m in use.finditer(_plain(path)):
+            named = set(re.findall(r"'([a-z-]+)'", m.group(1)))
+            assert not named & {"embed", "colour", "person", "face"}, path.name
+
+
+def test_l3_the_phone_compares_each_model_files_bytes_with_the_manifest() -> None:
+    vision = (STATIC / "console-vision.js").read_text(encoding="utf-8")
+    raw = vision[vision.index("/*SUMS13-BEGIN*/") + 16 : vision.index("/*SUMS13-END*/")]
+    manifest = json.loads(
+        (STATIC / "vendor/vision/r13-1/MANIFEST.json").read_text(encoding="utf-8")
+    )
+    assert json.loads(raw) == {k: v["sha256"] for k, v in manifest["files"].items()}
+    body = vision[vision.index("async function model13(") : vision.index("const sessions = {};")]
+    assert "(await sha256hex(bytes)) !== SUMS13[name]) throw new Error(NOT_INSTALLED);" in body
+    assert body.index("SUMS13[name]") < body.index("return bytes;")
+
+
+def test_l4_remember_sends_the_fingerprints_own_model() -> None:
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    fp32 = {
+        "/v1/wardrobe/fingerprints?model=mnv2-fp32-1": {"model": "mnv2-fp32-1", "items": PRINTS}
+    }
+    vision = {"embed": _vec(11), "embed_model": "mnv2-fp32-1"}
+    out = scan([*PHOTO, pick, press("Remember how it looks")], vision=vision, answers=fp32)
+    [body] = posts(out, FP)
+    assert body["model"] == "mnv2-fp32-1" and body["piece"] == NAVY
+
+
+@pytest.mark.parametrize(("photos", "side"), [(0, "front"), (1, "back"), (2, "detail")])
+def test_l7_a_photo_is_saved_as_the_side_he_picks_first_the_one_not_saved_yet(
+    photos: int, side: str
+) -> None:
+    view = _view()
+    for p in view["pieces"]:
+        if p["id"] == NAVY:
+            p["photos"] = [f"wh_{n:012x}" for n in range(photos)]
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    out = scan([*PHOTO, pick, press(SAVE)], vision={"embed": _vec(11)}, view=view)
+    assert out["door"][0]["view"] == side
+    out = scan([*PHOTO, pick, press("Detail"), press(SAVE)], vision={"embed": _vec(11)}, view=view)
+    assert out["door"][0]["view"] == "detail"
+
+
+def test_l10_a_scan_queued_while_one_is_sent_goes_right_after_it() -> None:
+    steps = [
+        press("To laundry"),
+        START,
+        {"op": "wait", "ms": 80},
+        press("Put in laundry", now=True),
+    ]
+    steps += [{"op": "vision", "vision": {"codes": ["jw1:qrstuvwx"]}}, {"op": "wait", "ms": 80}]
+    steps += [press("Put in laundry", now=True), {"op": "wait", "ms": 600}]
+    out = scan(steps, vision={"codes": ["jw1:abcdefgh"]}, scanDelay=250)
+    sent = [e["piece"] for b in posts(out, "/v1/wardrobe/scan") for e in b["events"]]
+    assert sent == [NAVY, VEST1] and "Not sent yet" not in out["final"]
 
 
 # ---- D10: private pieces ------------------------------------------------------------------------

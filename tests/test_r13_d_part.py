@@ -112,6 +112,7 @@ async def test_the_words_say_what_is_never_kept() -> None:
     rows = _rows(_ctx(parts_with(FakeData("photos", [{}]))))
     photos = await rows[privacy.PHOTOS_ID].describe(UID)
     assert "Never for a private piece" in photos.what and "can miss" in photos.note
+    assert "removes every wardrobe photo and fingerprint at once" in photos.note  # L8
     history = await rows[privacy.HISTORY_ID].describe(UID)
     assert "title is never kept" in history.what
     device = await rows[privacy.DEVICE_ID].describe(UID)

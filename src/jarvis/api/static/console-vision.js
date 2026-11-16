@@ -369,6 +369,7 @@ const EMBED_DIMS = 1280, EMBED_B64 = 1708, EMBED_MODELS = ['mnv2-int8-1', 'mnv2-
 const PERSON_MIN = 0.5, FACE_MIN = 0.7, NMS_IOU = 0.3, BOXES_MAX = 20;
 const COLOUR_SIDE = 96; // the colour is read on a copy this small
 const SELF13 = Object.freeze(/*SELF13-BEGIN*/{"embed": {"sha256": "e5b53d7e5bf35dda17217bb1feed42f900451b5fe1f2db3eca1f50442bf15abd", "model": "mnv2-int8-1"}, "face": {"top": [0.07956, 0.07937, 0.07899, 0.07852, 0.07781], "tol": 0.002}, "person": {"class": 1, "score": 0.9449, "box": [0.1013, 0.2648, 0.8171, 0.7278], "tol": 0.03}}/*SELF13-END*/);
+const SUMS13 = Object.freeze(/*SUMS13-BEGIN*/{"mobilenetv2-int8-embed.onnx": "c32ba47ca0cadf3845f771da1e429aa992e7b92d598b1e1a68054ed6b54e4ab0", "version-RFB-320.onnx": "34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017", "ssd_mobilenet_v1_12-int8.onnx": "2b79e6a7fb1ec6a33f332b9b10d82d9de4b7b49dcd26b5946921bb356895c954"}/*SUMS13-END*/); // MANIFEST.json's file sums
 const SESSION = { executionProviders: ['wasm'], graphOptimizationLevel: 'all', logSeverityLevel: 3 };
 // The tasks' plain arithmetic lives in console-vision-r13.js (REVIEW-D-1 split), imported on first use: a failed import is
 // not kept (the next use tries again) and is "could not load" for these four tasks only; R7's five never wait for it.
@@ -405,11 +406,13 @@ const runtime = () => { // a failed import is not kept: the next use tries again
   }
   return ortLoad;
 };
-async function model13(name) { // 404: the model file has not arrived (D8)
+async function model13(name) { // 404: the model file has not arrived (D8); other bytes than the manifest's: not installed (L3)
   const r = await fetch(BASE13 + name, { credentials: 'same-origin' });
   if (r.status === 404) throw new Error(NOT_INSTALLED);
   if (!r.ok) throw new Error(NO_LOAD);
-  return new Uint8Array(await r.arrayBuffer());
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  if (!SUMS13[name] || (await sha256hex(bytes)) !== SUMS13[name]) throw new Error(NOT_INSTALLED);
+  return bytes;
 }
 const sessions = {};
 async function open13(id, name, check) { // the session is kept only once its self-check matched SELF13

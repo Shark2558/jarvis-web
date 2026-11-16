@@ -9,11 +9,9 @@
 //   Back clean    the place it goes to, dry or needs pressing; "Back clean" sends the returns (ids only)
 //   Find          what a scan or a typed name finds in his own list: state and place
 //   Read a label  size, fabric and care words parsed from the label's text, each UNVERIFIED until he confirms
-// The check (D9): the person and face tasks run on THE bitmap the crop is cut from; one hit, or a check that is not
-// installed, and that photo keeps and sends nothing (no photo, no fingerprint, no AI tag). A QR read or a match he
-// taps sends only ids, so it still makes its event. A crop is at most 512 px, JPEG 0.8, made in memory and handed
-// to the one door (door.wardrobe, door.tag); a private piece never gets either, nor a fingerprint.
-// Unsent scans wait in this page's memory only ("Not sent yet: keep this page open"); closing the page drops them.
+// The check (D9): person and face run on the photo (they gate the card) and again on the crop at the press (H2); a hit,
+// or a check not installed, keeps and sends nothing. A tap or a QR read sends ids only. Crops <= 512 px, JPEG 0.8, to
+// the one door (door.wardrobe, door.tag); never for a private piece. Unsent scans wait in page memory only.
 // Rules (the camera panel's): no fetch, XHR, sendBeacon, WebSocket or any storage; M.api only to /v1/wardrobe and
 // /v1/laundry paths and never with picture bytes; textContent only; nothing asked before sign-in or a press; ASCII.
 const M = window.JarvisMobile;
@@ -21,10 +19,6 @@ const Vis = () => window.JarvisVision || null;
 const Cam = () => window.JarvisCamera || null;
 const Door = () => (M && M.parts && M.parts.send) || null;
 const FLOWS = [['add', 'Add pieces'], ['laundry', 'To laundry'], ['clean', 'Back clean'], ['find', 'Find'], ['label', 'Read a label']];
-const KINDS = [['shirt', 'Shirt'], ['t_shirt', 'T-shirt'], ['trousers', 'Trousers'], ['jeans', 'Jeans'], ['vest', 'Vest'],
-  ['underpants', 'Underpants'], ['sock', 'Sock'], ['dress_shoe', 'Shoe'], ['sneaker', 'Sneaker'], ['sandal', 'Sandal'],
-  ['belt', 'Belt'], ['watch', 'Watch'], ['kurta', 'Kurta'], ['blazer', 'Blazer'], ['jacket', 'Jacket'],
-  ['rainwear', 'Rainwear'], ['unknown', 'Unknown']];
 const PHOTO_SIDE = 512, JPEG_Q = 0.8, LOOK_SIDE = 2000, SPLIT_SIDE = 64, MODEL = 'mnv2-int8-1';
 const INTRO = 'JARVIS looks on this phone. A photo of a piece is kept only when you press Save, cropped to the piece, after a check for a person or a face that can miss: look before you save.';
 const PERSON = 'This picture shows a person. Lay the piece on a surface or hang it, and take the photo again.';
@@ -39,14 +33,8 @@ const TWINS_NOTE = 'Identical copies: read its label or tap which one.';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const SIGN_IN = 'Sign in first.';
 const SAVE_WORDS = 'Save this photo with the piece (sealed; only you)';
-// M3: one photo (~750 tokens in, ~120 out) costs about Rs 0.01 with the cheapest seeing brain and 0.51 with the dearest
-// (llm/pricing.py at 95.24 a dollar; tests/test_r13_d_scan.py recomputes both). The view's own `tag_estimate_inr`
-// (the brain that would answer, A's at I1) is said instead whenever it is there.
-const TAG_MOST = 0.51, TAG_RANGE = '\u20b90.01\u2013\u20b90.51, depending on the brain';
-const tagWords = (inr) => 'Send this photo to the AI to tag it (about ' + (inr ? '\u20b9' + inr.toFixed(2) : TAG_RANGE) + ')';
+const SIDES = [['front', 'Front'], ['back', 'Back'], ['detail', 'Detail']]; // A keeps up to three views a piece (L7)
 const noAi = () => !!(window.JarvisBrainMode && window.JarvisBrainMode.get() === 'none');
-const BAND_WORDS = { likely: ' (likely this one)', maybe: ' (maybe)', weak: ' (a weak match)' }; // none: no words (M5)
-const banded = (c) => BAND_WORDS[c.band] || '';
 
 /*SCAN-PURE-BEGIN*/
 // Plain arithmetic only: tests/test_r13_d_scan.py runs this very text in Node.
@@ -57,7 +45,7 @@ function boxesOf(px, w, h) { // pieces laid apart on a plain surface: what diffe
   const bg = edge.map((c) => c.sort((a, b) => a - b)[c.length >> 1] || 0);
   const fg = new Uint8Array(w * h), seen = new Uint8Array(w * h), found = [];
   for (let i = 0; i < w * h; i += 1) fg[i] = Math.abs(px[i * 4] - bg[0]) + Math.abs(px[i * 4 + 1] - bg[1]) + Math.abs(px[i * 4 + 2] - bg[2]) > FG ? 1 : 0;
-  const near = fg.slice(); // close gaps of one cell (a light stripe, a fold): one piece stays one box
+  const near = fg.slice(); // a gap cell next to a piece joins it: gaps up to two cells (~3 % of the long side) close, one piece stays one box
   for (let i = 0; i < w * h; i += 1) if (!fg[i]) { const x = i % w; near[i] = (x > 0 && fg[i - 1]) || (x < w - 1 && fg[i + 1]) || fg[i - w] || fg[i + w] ? 1 : 0; }
   for (let s = 0; s < w * h; s += 1) {
     if (!near[s] || seen[s]) continue;
@@ -296,7 +284,7 @@ async function cardFor(cv, b) {
     whole: b.w * b.h > WHOLE_MAX }; // M2: no edges found: taps and matches only, nothing kept or sent
   try {
     const e = await run('embed', piece);
-    if (e.ok) { card.v = e.data.v; card.cands = W.candidates(W.unb64(e.data.v), await printsFor(e.data.model), (id) => (pieceOf(id) || {}).type); }
+    if (e.ok) { card.v = e.data.v; card.model = e.data.model; card.cands = W.candidates(W.unb64(e.data.v), await printsFor(e.data.model), (id) => (pieceOf(id) || {}).type); }
   } catch (_) { /* no fingerprint here: the card offers kinds and taps only */ }
   if (S.flow === 'add') { try { const c = await run('colour', piece); if (c.ok) card.colour = c.data; } catch (_) {} }
   return card; // a label read is offered first, never chosen for him: his tap decides
@@ -356,15 +344,15 @@ function chooseActs(card) {
   const out = [];
   const label = [...S.found.keys()];
   if (card.cands.twins) out.push(mk('p', 'snote warn', TWINS_NOTE));
-  const picks = card.cands.top.map((c, i) => btn('This one: ' + nameOf(c.piece) + banded(c), c.band === 'likely' ? 'primary' : '', () => pick(card, c.piece, i ? 'tap' : 'match', card.cands.top[0].score)));
+  const picks = card.cands.top.map((c, i) => btn('This one: ' + nameOf(c.piece) + W.banded(c), c.band === 'likely' ? 'primary' : '', () => pick(card, c.piece, i ? 'tap' : 'match', card.cands.top[0].score)));
   label.forEach((id) => picks.unshift(btn('This one: ' + nameOf(id) + ' (label read)', 'primary', () => pick(card, id, 'qr', null))));
   if (picks.length) { const a = mk('div', 'sacts'); a.append(...picks); out.push(a); }
   const chips = mk('div', 'sacts wd-chips');
   chips.setAttribute('role', 'group');
   chips.setAttribute('aria-label', 'What kind of piece');
-  KINDS.forEach(([t, w]) => { const b = btn(w, '', () => { card.kind = t; card.private = privateType(t) ? null : false; paintBody(); }); pressed(b, card.kind === t); chips.append(b); });
+  W.KINDS.forEach(([t, w]) => { const b = btn(w, '', () => { card.kind = t; card.private = privateType(t) ? null : false; paintBody(); }); pressed(b, card.kind === t); chips.append(b); });
   out.push(mk('p', 'sfine', card.cands.top.length || label.length ? 'Or a new piece: what kind is it?' : 'A new piece: what kind is it?'), chips);
-  if (card.colour) out.push(mk('p', 'sfine', 'Colour: ' + colourWords(card.colour) + ' (suggested)'));
+  if (card.colour) out.push(mk('p', 'sfine', 'Colour: ' + W.colourWords(card.colour) + ' (suggested)'));
   if (card.kind && card.private === null) {
     const a = mk('div', 'sacts');
     a.append(btn('Make it private', 'primary', () => { card.private = true; paintBody(); }), btn('Keep it visible', '', () => { card.private = false; paintBody(); }));
@@ -378,7 +366,6 @@ function chooseActs(card) {
   }
   return out;
 }
-const colourWords = (c) => (c.name === 'multicolour' ? 'multicolour, mostly ' + String(c.second || '').replace(/_/g, ' ') : c.name.replace(/_/g, ' '));
 function allowed(card) { // D9: a saved piece that is not private, from a photo AND a crop whose checks found nobody
   const p = pieceOf(card.piece), cut = card.cropGate;
   return !!(p && !p.private && !privateType(p.type) && !card.whole && S.gate && S.gate.checked && !S.gate.refused && !(cut && (!cut.checked || cut.refused))
@@ -397,6 +384,12 @@ function savedActs(card) {
   if (!allowed(card)) { out.push(mk('p', 'sfine', whyNot(card))); return out; }
   card.crop.className = 'wd-crop'; card.crop.setAttribute('role', 'img'); // M2: exactly what Save, Remember or the AI tag use
   card.crop.setAttribute('aria-label', 'The crop of this piece, on this phone only'); out.push(mk('p', 'sfine', 'Save keeps exactly this crop:'), card.crop);
+  if (!card.side) card.side = SIDES[Math.min((p.photos || []).length, 2)][0]; // the first side not saved yet, as far as his list says
+  const sides = mk('div', 'sacts wd-chips');
+  sides.setAttribute('role', 'group');
+  sides.setAttribute('aria-label', 'Which side of the piece');
+  SIDES.forEach(([id, w]) => { const b = btn(w, '', () => { card.side = id; paintBody(); }); pressed(b, card.side === id); sides.append(b); });
+  out.push(sides);
   const a = mk('div', 'sacts');
   a.append(btn(SAVE_WORDS, 'primary', () => savePhoto(card)));
   if (card.v) a.append(btn('Remember how it looks', '', () => remember(card)));
@@ -434,7 +427,7 @@ function pickRows(card) {
   const out = [];
   if (card.cands.twins) out.push(mk('p', 'snote warn', TWINS_NOTE));
   const a = mk('div', 'sacts');
-  card.cands.top.forEach((c, i) => a.append(btn(nameOf(c.piece) + banded(c), '', () => { S.found.set(c.piece, { how: i ? 'tap' : 'match', score: card.cands.top[0].score, at: new Date().toISOString() }); card.piece = c.piece; paintBody(); })));
+  card.cands.top.forEach((c, i) => a.append(btn(nameOf(c.piece) + W.banded(c), '', () => { S.found.set(c.piece, { how: i ? 'tap' : 'match', score: card.cands.top[0].score, at: new Date().toISOString() }); card.piece = c.piece; paintBody(); })));
   if (card.cands.twins) a.append(btn('Not sure which', '', () => { card.cands.top.slice(0, 2).forEach((c) => S.found.set(c.piece, { how: 'unsure', score: c.score, at: new Date().toISOString() })); card.piece = card.cands.top[0].piece; paintBody(); }));
   out.push(a);
   return out;
@@ -472,18 +465,24 @@ async function send(kind) {
   paint();
 }
 async function flush() {
-  if (!S.queue.length || S.busy || !signedIn()) { paintUnsent(); return; }
+  if (S.busy) { S.again = true; return; } // L10: a scan queued during a send goes right after it
+  if (!S.queue.length || !signedIn()) { paintUnsent(); return; }
   S.busy = true;
+  let sentOk = false;
   const batch = S.queue.splice(0, 50), sent = new Date().toISOString();
   try {
     const r = await M.api('/v1/wardrobe/scan', { body: { rev_seen: S.view ? S.view.rev : null, events: batch.map((e) => Object.assign({}, e, { sent })) } });
     say(UI.state, String((r && r.message) || 'Saved.') + (r && r.review ? ' ' + r.review + ' to check in Helpers, Wardrobe.' : ''), 'ok');
     if (r && r.view) S.view = r.view; else refreshView(); // H1: his list stays until a fresh one has arrived
+    sentOk = true;
   } catch (e) {
     if (isNetwork(e)) S.queue.unshift(...batch); // kept in memory only; said below
     else say(UI.state, failed(e), 'bad');
   } finally { S.busy = false; }
+  const again = S.again;
+  S.again = false;
   paintUnsent();
+  if (sentOk && (again || S.queue.length)) await flush();
 }
 function paintUnsent() {
   if (!UI.unsent) return;
@@ -523,14 +522,14 @@ async function savePhoto(card) {
   if (!(await cropOk(card))) { refuse(card); return; }
   const door = Door(), blob = await blobOf(card.crop);
   if (!door || !blob) return;
-  try { await door.wardrobe(blob, { piece: card.piece, view: 'front' }); say(UI.state, 'Saved with the piece, sealed. Only you can see it.', 'ok'); } catch (e) { say(UI.state, String((e && e.message) || failed(e)).slice(0, 200), 'bad'); }
+  try { await door.wardrobe(blob, { piece: card.piece, view: card.side || 'front' }); say(UI.state, 'Saved with the piece, sealed. Only you can see it.', 'ok'); } catch (e) { say(UI.state, String((e && e.message) || failed(e)).slice(0, 200), 'bad'); }
   paintActs();
 }
 async function remember(card) {
-  if (!allowed(card) || !card.v) { paintBody(); return; }
+  if (!allowed(card) || !card.v || !card.model) { paintBody(); return; }
   if (!(await cropOk(card))) { refuse(card); return; }
   try {
-    await M.api('/v1/wardrobe/fingerprints', { body: { piece: card.piece, view: 'front', model: MODEL, v: card.v } });
+    await M.api('/v1/wardrobe/fingerprints', { body: { piece: card.piece, view: card.side || 'front', model: card.model, v: card.v } });
     S.prints = null;
     say(UI.state, 'Remembered: JARVIS will offer this piece when it sees it again.', 'ok');
   } catch (e) { say(UI.state, failed(e), 'bad'); }
@@ -540,9 +539,9 @@ function tagBox(card) { // optional AI tagging (D7, H2): his setting, the AI on,
   if (set.ai_tagging !== true || noAi()) return null;
   const box = mk('div', 'sacts');
   const month = Number(set.tag_month_inr) || 0, cap = Number(set.tag_cap_inr) || 0, own = Number(set.tag_estimate_inr) > 0 ? Number(set.tag_estimate_inr) : 0;
-  if (cap <= 0 || month + (own || TAG_MOST) > cap) { box.append(mk('p', 'sfine', 'AI tagging has reached this month\u2019s limit of \u20b9' + cap + '.')); return box; }
+  if (cap <= 0 || month + (own || W.TAG_MOST) > cap) { box.append(mk('p', 'sfine', 'AI tagging has reached this month\u2019s limit of \u20b9' + cap + '.')); return box; }
   box.append(mk('p', 'sfine', 'AI tagging this month: \u20b9' + month.toFixed(2) + ' of \u20b9' + cap + '.'),
-    btn(tagWords(own), '', () => tag(card, box)));
+    btn(W.tagWords(own), '', () => tag(card, box)));
   return box;
 }
 async function tag(card, box) {
@@ -566,10 +565,7 @@ async function readLabel(cv, mine) {
   const got = W.parseLabel(r && r.ok ? r.data.text : '');
   const box = mk('section', 'hp-sec');
   box.append(mk('h3', 'hp-h', 'What the label says'));
-  const fields = []; // [A's field, his words, its parsed value]: each field is kept or confirmed whole (M6)
-  if (got.size) fields.push(['size', 'Size ' + got.size, got.size]);
-  if (got.fabric.length) fields.push(['fabric', got.fabric.map((f) => f.pct + '% ' + f.name).join(', '), got.fabric.map((f) => f.name + ' ' + f.pct + '%')]);
-  if (got.care.length) fields.push(['care', got.care.map((c) => c.replace(/_/g, ' ')).join(', '), got.care]);
+  const fields = W.labelFields(got); // [A's field, his words, its parsed value]: each kept or confirmed whole (M6)
   if (!fields.length) box.append(mk('p', 'sfine', 'No size, fabric or care words could be read. Type them in Helpers, Wardrobe.'));
   const pieces = ((S.view && S.view.pieces) || []).map((p) => [p.id, nameOf(p.id)]);
   let target = pieces.length ? pieces[0][0] : '';

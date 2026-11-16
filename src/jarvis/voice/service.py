@@ -39,7 +39,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from jarvis.billing import Billing
-from jarvis.billing.meter import UnitCharge
+from jarvis.billing.meter import Hold, UnitCharge
 from jarvis.config import Settings
 from jarvis.core.prompts import DEFAULT_WIT, WIT_LEVELS
 from jarvis.logging import get_logger
@@ -416,24 +416,27 @@ class VoiceService:
             self._locks[(uid, api)] = lock
         return lock
 
-    async def _gate(self, uid: str, price: Price, units: float, *, free_only: bool) -> float:
+    async def _gate(self, uid: str, price: Price, units: float, *, free_only: bool) -> Hold | None:
         """The spending gate. `free_only` (R6.2 decision 4, a build book guest's cloud question
         or narration): the free allowance is HELD for the call, a recognition rounded up to a
         whole billing step (check and hold in one transaction), so it is never priced; returns
-        the units held, 0.0 for an ordinary call."""
+        the Hold, None for an ordinary call."""
         if free_only:
             step = FREE_ONLY_STEP_S if price is self.prices.stt else 1.0
             whole = math.ceil(units / step) * step
-            await self.billing.reserve_free(key=price.key, units=whole, free_units=price.free_units)
-            return whole
+            return await self.billing.reserve_free(
+                key=price.key, units=whole, free_units=price.free_units
+            )
         await self.billing.ensure_units_allowed(
             uid, key=price.key, units=units, free_units=price.free_units
         )
-        return 0.0
+        return None
 
-    async def _meter(self, uid: str, price: Price, units: float, held: float = 0.0) -> UnitCharge:
-        if held:  # a free-only call: the hold already counted it, nothing is priced
-            return UnitCharge(units=held)
+    async def _meter(
+        self, uid: str, price: Price, units: float, held: Hold | None = None
+    ) -> UnitCharge:
+        if held is not None:  # a free-only call: the hold already counted it, nothing is priced
+            return UnitCharge(units=held.units)
         return await self.billing.record_units(
             uid,
             key=price.key,
@@ -443,10 +446,10 @@ class VoiceService:
             label=METER_LABEL,
         )
 
-    async def _unhold(self, price: Price, held: float) -> None:
+    async def _unhold(self, held: Hold | None) -> None:
         """A free-only call that Google did not bill gives its hold back."""
-        if held:
-            await self.billing.release_free(key=price.key, units=held)
+        if held is not None:
+            await self.billing.release_free(held)
 
     async def _engine(
         self,
@@ -455,7 +458,7 @@ class VoiceService:
         price: Price,
         estimate: float,
         call: Callable[[], Awaitable[T]],
-        held: float = 0.0,
+        held: Hold | None = None,
         *,
         retry_follows: bool = False,
     ) -> T:
@@ -474,14 +477,14 @@ class VoiceService:
             if exc.maybe_billed:
                 await self._meter(uid, price, estimate, held)
             else:
-                await self._unhold(price, held)
+                await self._unhold(held)
             raise
         except VoiceBusy:
-            await self._unhold(price, held)
+            await self._unhold(held)
             raise
         except VoiceRejected:
             if not retry_follows:
-                await self._unhold(price, held)
+                await self._unhold(held)
             raise
         except asyncio.CancelledError:  # the owner went away mid-call: Google may have it
             await self._meter(uid, price, estimate, held)  # shielded: completes despite the cancel
@@ -525,7 +528,7 @@ class VoiceService:
         audio: Audio,
         hints: tuple[str, ...],
         has_owner_words: bool,
-        held: float = 0.0,
+        held: Hold | None = None,
     ) -> Transcript:
         """One recognition. If Google refuses the request while it carries the owner's words, try
         once more with the base hints alone, so one bad word cannot stop every transcription."""

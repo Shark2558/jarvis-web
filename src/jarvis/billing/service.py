@@ -39,6 +39,7 @@ from jarvis.billing.budget import BudgetPatch, BudgetStore, LimitUnreadable
 from jarvis.billing.fx import FETCH_TIMEOUT_S, FxRates
 from jarvis.billing.meter import (
     AllowanceUse,
+    Hold,
     MonthUsage,
     UnitCharge,
     UsageMeter,
@@ -296,13 +297,13 @@ class Billing:
                 ),
             )
 
-    async def reserve_free(self, *, key: str, units: float, free_units: float) -> None:
+    async def reserve_free(self, *, key: str, units: float, free_units: float) -> Hold:
         """Free-only (R6.2 decision 4): hold `units` of the deployment's free allowance, checked
         and counted in one transaction, so two calls at the end of it cannot both pass; the call
-        is never priced. FreeAllowanceUsed when it doesn't fit; BudgetUnavailable (fail closed)
-        when the counter can't be read."""
+        is never priced. Returns the Hold (it remembers its month). FreeAllowanceUsed when it
+        doesn't fit; BudgetUnavailable (fail closed) when the counter can't be read."""
         try:
-            fits = await self.meter.reserve_units(
+            hold = await self.meter.reserve_units(
                 key=key, units=units, free_units=free_units, now=self.clock()
             )
         except UsageUnreadable:
@@ -311,17 +312,21 @@ class Billing:
         except Exception as exc:  # noqa: BLE001 — storage down: say so
             log.error("allowance unreadable", extra={"reason": type(exc).__name__})
             raise BudgetUnavailable(MSG_USAGE_DOWN) from None
-        if not fits:
+        if hold is None:
             log.info("free allowance used up; a free-only voice call refused", extra={"key": key})
             raise FreeAllowanceUsed()
+        return hold
 
-    async def release_free(self, *, key: str, units: float) -> None:
-        """Give back a hold whose call was never billed. Never raises (an unreleased hold only
-        keeps the free allowance a little lower, the safe side)."""
+    async def release_free(self, hold: Hold) -> None:
+        """Give back a hold whose call was never billed, to the month it was made in. Never
+        raises (an unreleased hold only keeps the free allowance a little lower, the safe
+        side)."""
         try:
-            await self.meter.release_units(key=key, units=units, now=self.clock())
+            await self.meter.release_units(hold, now=self.clock())
         except Exception as exc:  # noqa: BLE001 — the answer matters more than the counter
-            log.error("free hold not released", extra={"key": key, "reason": type(exc).__name__})
+            log.error(
+                "free hold not released", extra={"key": hold.key, "reason": type(exc).__name__}
+            )
 
     # ---- metering ------------------------------------------------------------------------------
 

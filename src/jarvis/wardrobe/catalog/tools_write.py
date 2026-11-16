@@ -21,7 +21,7 @@ from jarvis.belongings.tools import origin_of
 from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import require_tool_context
-from jarvis.tools.taint import content_tainted
+from jarvis.tools.taint import content_tainted, spoken_in_context
 from jarvis.wardrobe.catalog.edits import Edit, NewPiece
 from jarvis.wardrobe.catalog.labels import NOT_HIS
 from jarvis.wardrobe.catalog.links import pair_refusal, set_refusal
@@ -35,8 +35,9 @@ from jarvis.wardrobe.redact import card_words, fixed_words
 ADDED, CHANGED, PLACED = "Added to your wardrobe", "Changed your wardrobe", "Changed your places"
 NOT_OWN = "Saved without the label: labels and places are only ever your own words."
 TAINTED = (
-    "This round read other people's content, and labels and place names are only ever his own "
-    "words: leave the label out and name places by their id, or he types it in Helpers, Wardrobe."
+    "This round read other people's content or was spoken, and labels and place names are only "
+    "ever his own typed words: leave the label out and name places by their id. Type its label "
+    "in Helpers, Wardrobe."
 )
 _ATTRS = (
     *("type", "label", "colour", "second", "pattern", "features", "formality", "occasions"),
@@ -75,9 +76,10 @@ def _by_name(place: object) -> bool:
 
 
 def _own_words(texts: Iterable[object], places: Iterable[object] = ()) -> None:
-    """On a round that read other people's content his free text never enters a card's stored
-    arguments (approvals are clear JSON, printed on Telegram; D10): refused before any card."""
-    if not content_tainted():
+    """On a round that read other people's content, or a spoken one, his free text never enters a
+    card's stored arguments (approvals are clear JSON, printed on Telegram; D10): refused before
+    any card. A spoken turn's words are heard text, not typed ones (Workshop decision 3)."""
+    if not (content_tainted() or spoken_in_context()):
         return
     if any(isinstance(t, str) and t.strip() for t in texts) or any(map(_by_name, places)):
         raise ValueError(TAINTED)

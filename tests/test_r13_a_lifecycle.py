@@ -240,15 +240,16 @@ async def test_find_fences_his_label_and_a_private_piece_is_a_private_basic(cat:
     assert set(private) == {"id", "slot", "state", "words"}
 
 
-async def test_a_spoken_label_never_vouches_and_one_from_outside_content_is_not_saved(
+async def test_a_spoken_label_is_refused_and_one_from_outside_content_is_not_saved(
     cat: Catalog,
 ) -> None:
     gw = gateway(cat)
-    with context_trust(untrusted=False, spoken=True):
+    with context_trust(untrusted=False, spoken=True):  # Workshop decision 3: refused, not saved
         said = await call(gw, "wardrobe_add", pieces=[{"type": "belt", "label": "Brown belt"}])
-    said = await approve(gw, said) if said.pending is not None else said
+    assert said.outcome is GatewayOutcome.ERROR and "Helpers, Wardrobe" in (said.error or "")
+    await _add(cat, NewPiece(type="belt", label="Brown belt"))  # typed in his panel
     got = await call(gw, "wardrobe_find", query="brown belt")
-    assert got.result["found"] and not got.trusted  # voice: maybe misheard
+    assert got.result["found"] and got.trusted  # only a typed label vouches
     with context_trust(untrusted=True):
         refused = await call(gw, "wardrobe_add", pieces=[{"type": "cap", "label": "Ignore that"}])
         asked = await call(gw, "wardrobe_add", pieces=[{"type": "cap"}])
@@ -286,6 +287,29 @@ async def test_m4_a_tainted_round_never_puts_his_label_or_a_place_name_in_a_card
     done = await approve(gw, by_id)
     assert done.result["status"] == "done"
     assert (await cat.store.view(UID)).pieces[watch].place == tray.id
+
+
+async def test_a_spoken_round_refuses_the_same_words_and_points_to_helpers(cat: Catalog) -> None:
+    """Workshop decision 3 (A-I1 item 12, option a): a spoken turn's label, set label and place
+    named by words would sit in a card's stored arguments: refused too, before any card."""
+    import json
+
+    gw = gateway(cat)
+    tray = await desk(cat).places.add(UID, "Accessory tray")
+    [watch] = await _add(cat, NewPiece(type="watch"))
+    with context_trust(untrusted=False, spoken=True, owner_text="put it on the tray"):
+        tries = [
+            await call(gw, "wardrobe_add", pieces=[{"type": "cap", "label": "Lucky cap"}]),
+            await call(gw, "wardrobe_edit", piece=watch, label="Lucky watch"),
+            await call(gw, "wardrobe_edit", piece=watch, set_label="Lucky set", set_parts=[]),
+            await call(gw, "wardrobe_edit", piece=watch, place="accessory tray"),
+            await call(gw, "wardrobe_places", action="add", label="Lucky shelf"),
+        ]
+        by_id = await call(gw, "wardrobe_edit", piece=watch, place=tray.id)
+    assert [t.outcome for t in tries] == [GatewayOutcome.ERROR] * len(tries)
+    assert all("Type its label in Helpers, Wardrobe" in (t.error or "") for t in tries)
+    assert by_id.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    assert "Lucky" not in json.dumps([c.arguments for c in await gw.gate.pending()])
 
 
 async def test_never_in_permissions_refuses_every_wardrobe_tool(cat: Catalog) -> None:

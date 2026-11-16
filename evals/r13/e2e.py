@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from r13_fakes_a import jpeg  # noqa: E402
 from wired import World, running, want  # noqa: E402
 
+from jarvis.tools.gateway import GatewayOutcome  # noqa: E402
 from jarvis.wardrobe.model import Event  # noqa: E402
 
 PART = "e2e"
@@ -169,7 +170,12 @@ async def e2e5() -> list[str]:
 async def e2e7() -> list[str]:
     async with running() as w:
         out: list[str] = []
-        priv, sh = await _add(w, {"type": "underpants", "label": "ZQPRIV grey pair"}, SET[0])
+        priv, sh = await _add(w, {"type": "shirt", "label": "ZQPRIV grey pair"}, SET[0])
+        await w.ok("wardrobe_edit", piece=priv, private=True)  # its label stays, sealed
+        said = await w.call("wardrobe_add", pieces=[{"type": "underpants", "label": "ZQPRIV two"}])
+        out += want(
+            said.outcome is GatewayOutcome.ERROR, "a private piece's label isn't taken in a call"
+        )
         res = await w.ok("wardrobe_find", query="grey")
         text = str(res)
         out += want("ZQPRIV" not in text, "the model never sees a private piece's label")

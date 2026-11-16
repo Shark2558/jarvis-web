@@ -39,6 +39,10 @@ TAINTED = (
     "ever his own typed words: leave the label out and name places by their id. Type its label "
     "in Helpers, Wardrobe."
 )
+PRIVATE_WORDS = (
+    "A private piece keeps no label or place by name: a card's words are kept in clear. "
+    "It is found by its type and colour."
+)
 _ATTRS = (
     *("type", "label", "colour", "second", "pattern", "features", "formality", "occasions"),
     *("weather", "mess_ok", "delicate", "private", "size", "brand", "fabric", "care", "read"),
@@ -85,6 +89,12 @@ def _own_words(texts: Iterable[object], places: Iterable[object] = ()) -> None:
         raise ValueError(TAINTED)
 
 
+def _spoken_for_private(piece: dict[str, Any]) -> None:
+    """A private piece's label or a place by its words is refused before any card (review M3)."""
+    if _private(piece) and (str(piece.get("label") or "").strip() or _by_name(piece.get("place"))):
+        raise ValueError(PRIVATE_WORDS)
+
+
 def _check_add(a: dict[str, Any]) -> None:
     pieces = a.get("pieces")
     if not isinstance(pieces, list) or not 1 <= len(pieces) <= 20:
@@ -94,6 +104,8 @@ def _check_add(a: dict[str, Any]) -> None:
     if any(set(p) - set(_NEW) for p in pieces):
         raise ValueError(f"a piece has only {', '.join(_NEW)}")
     _own_words((p.get("label") for p in pieces), (p.get("place") for p in pieces))
+    for p in pieces:
+        _spoken_for_private(p)
 
 
 def _check_edit(a: dict[str, Any]) -> None:
@@ -102,7 +114,11 @@ def _check_edit(a: dict[str, Any]) -> None:
     parts = a.get("set_parts", [])
     if not isinstance(parts, list) or any(not isinstance(x, dict) for x in parts):
         raise ValueError("set_parts is a list of {piece, alone}")
-    _own_words((a.get("label"), a.get("set_label")), (a.get("place"),))
+    _own_words(
+        (a.get("label"), a.get("set_label"), a.get("brand"), a.get("size")), (a.get("place"),)
+    )
+    if a.get("private") is True:
+        _spoken_for_private({"private": True, "label": a.get("label"), "place": a.get("place")})
 
 
 def _check_places(a: dict[str, Any]) -> None:
@@ -166,10 +182,12 @@ class WriteTools:
         try:
             view = await self.d.store.view(uid())
             p = await self._piece(view, a)
-            label = view.labels.get(p.label_code or "")
-            return Preview(f"Change {card_words(p, label.number if label else None)}")
         except Exception:  # noqa: BLE001 - the card still never names his piece
             return Preview("Change a piece in your wardrobe")
+        if p.private:  # the card stores its arguments in clear: no words about a private piece
+            _spoken_for_private({"private": True, "label": a.get("label"), "place": a.get("place")})
+        label = view.labels.get(p.label_code or "")
+        return Preview(f"Change {card_words(p, label.number if label else None)}")
 
     async def edit(self, a: dict[str, Any]) -> Any:
         origin = origin_of(require_tool_context())

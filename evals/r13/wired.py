@@ -89,6 +89,7 @@ class World:
     log: Recorder
     uid: str
     results: list[Any] = field(default_factory=list)  # every tool result the model would see
+    planted: list[tuple[str, bool]] = field(default_factory=list)  # (what was planted, accepted)
 
     @property
     def store(self) -> Any:

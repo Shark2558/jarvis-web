@@ -37,24 +37,32 @@ sys.path.insert(0, str(Path(__file__).parent))
 from r13_fakes_a import fp, jpeg  # noqa: E402
 from wired import World, running, want  # noqa: E402
 
+from jarvis.tools.gateway import GatewayOutcome  # noqa: E402
+from jarvis.wardrobe.catalog.labels import NOT_HIS  # noqa: E402
+
 PART = "needles"
 BUILT = True
 Case = Callable[[], Awaitable[list[str]]]
 
 PRIVATE = "QXPRIVLABELAA"
+ATTEMPT = (
+    "QXPRIVATTEMPTFF"  # a private piece's label offered in a tool call: refused before any card
+)
 FREE = "QXFREELABELBB"
 SHOP = "QXSHOPLABELCC"
+PLACE = "QXPLACELABELGG"  # a place he named by its words (review L5)
 PHONE = "9876501234"
 OCR = "QXOCRTEXTDD"
-FOREIGN = "QXFORE12"
+FOREIGN = "qxfore22"  # eight base32 letters: passes the schema, is not his (a 4xx with NOT_HIS)
 PHOTO = b"QXPHOTOBYTESEE"
 PRINT = fp(7)
 MARKER = "QXMARKERZZ"
 # class -> the needle texts; allowed sinks per class (D10's one place and his own fenced words)
 NEEDLES: dict[str, tuple[str, ...]] = {
-    "private_label": (PRIVATE,),
+    "private_label": (PRIVATE, ATTEMPT),
     "free_label": (FREE,),
     "shop_label": (SHOP,),
+    "place_label": (PLACE,),
     "phone": (PHONE,),
     "ocr_text": (OCR,),
     "foreign_qr": (FOREIGN,),
@@ -64,6 +72,7 @@ NEEDLES: dict[str, tuple[str, ...]] = {
 ALLOWED: dict[str, frozenset[str]] = {
     "free_label": frozenset({"tool_results", "approval_args"}),  # fenced; D10's query
     "shop_label": frozenset({"tool_results"}),
+    "place_label": frozenset({"tool_results", "approval_args"}),  # as free_label: D10's precedent
 }
 SINKS = ("documents", "logs", "audit", "alerts", "approval_words", "approval_args", "sessions",
          "tool_results", "backup")  # fmt: skip
@@ -100,25 +109,34 @@ async def _pieces(w: World) -> list[str]:
     made = await w.ok(
         "wardrobe_add",
         pieces=[
-            {"type": "underpants", "label": PRIVATE},
+            {"type": "shirt", "label": PRIVATE},  # made private below: its label is kept sealed
             {"type": "shirt", "label": FREE, "colour": "white"},
             {"type": "trousers", "label": "Grey trousers"},
         ],
     )
-    return list(made["ids"])
+    ids = list(made["ids"])
+    await w.ok("wardrobe_edit", piece=ids[0], private=True)
+    tried = await w.call("wardrobe_add", pieces=[{"type": "underpants", "label": ATTEMPT}])
+    w.planted.append(("private_label_in_a_call", tried.outcome is GatewayOutcome.ERROR))
+    return ids
 
 
 async def _scans(w: World, priv: str, shirt: str) -> None:
     head = {"Content-Type": "image/jpeg"}
-    await w.send("POST", f"/v1/wardrobe/photos?piece={shirt}&view=front",
-                 content=jpeg(extra=PHOTO), headers=head)  # fmt: skip
+    got = await w.send("POST", f"/v1/wardrobe/photos?piece={shirt}&view=front",
+                       content=jpeg(extra=PHOTO), headers=head)  # fmt: skip
+    w.planted.append(("photo_bytes", got.status_code == 200))
     sent = {"piece": shirt, "view": "front", "model": "mnv2-int8-1", "v": PRINT}
-    await w.send("POST", "/v1/wardrobe/fingerprints", json=sent)
+    got = await w.send("POST", "/v1/wardrobe/fingerprints", json=sent)
+    w.planted.append(("fingerprint", got.status_code == 200))
     w.clock.advance(hours=1)
     note = f"label reads {OCR} call {PHONE}"[:120]
     body = {"events": [{"client_id": "needle-0001", "piece": shirt, "kind": "seen", "note": note}]}
-    await w.send("POST", "/v1/wardrobe/scan", json=body)
-    await w.send("POST", "/v1/wardrobe/labels", json={"code": f"jw1:{FOREIGN}", "piece": shirt})
+    got = await w.send("POST", "/v1/wardrobe/scan", json=body)
+    w.planted.append(("ocr_text and phone", got.status_code == 200))
+    got = await w.send("POST", "/v1/wardrobe/labels", json={"code": FOREIGN, "piece": shirt})
+    # it passes the schema and is refused in his words (a schema 422 would not say NOT_HIS)
+    w.planted.append(("foreign_qr", got.status_code == 422 and NOT_HIS in got.text))
     await w.send("GET", "/v1/wardrobe/labels.svg?sheet=1")
 
 
@@ -163,6 +181,8 @@ async def _cards(w: World, priv: str, shirt: str) -> None:
         json={"arguments": {"keep": shirt, "merge": twin}},
     )  # waits in a conversation
     await w.ok("wardrobe_find", query="trousers")
+    await w.ok("wardrobe_places", action="add", label=PLACE, kind="storage")
+    await w.ok("wardrobe_edit", piece=shirt, place=PLACE)  # a place by his words
 
 
 async def _sinks(w: World) -> dict[str, str]:
@@ -189,6 +209,7 @@ async def _sinks(w: World) -> dict[str, str]:
     }
 
 
+_PLANTED: list[tuple[str, bool]] = []  # every plant and whether the app took it as meant
 _EVIDENCE: list[dict[str, str]] = []  # one week per run (`_run` clears it)
 
 
@@ -196,6 +217,7 @@ async def _evidence() -> dict[str, str]:
     if not _EVIDENCE:
         async with running() as w:
             _EVIDENCE.append(await _week(w))
+            _PLANTED[:] = w.planted
     return _EVIDENCE[0]
 
 
@@ -225,7 +247,18 @@ def _sink_case(sink: str) -> Case:
     return case
 
 
+async def _planted_all() -> list[str]:
+    """Every plant got in as meant: a needle that was refused at the door searches nothing (the
+    foreign QR once failed the schema with a 422 and its class passed without testing anything)."""
+    await _evidence()
+    names = {n for n, _ in _PLANTED}
+    out = [f"{n} was not accepted as planted" for n, ok in _PLANTED if not ok]
+    expected = {"photo_bytes", "fingerprint", "ocr_text and phone", "foreign_qr"}
+    return out + want(expected <= names, f"plants missing: {sorted(expected - names)}")
+
+
 CASES: dict[str, Case] = {f"needle_{c}": _class_case(c) for c in NEEDLES}
+CASES["planted_all"] = _planted_all
 CASES |= {f"sink_{s}": _sink_case(s) for s in SINKS}
 
 

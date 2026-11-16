@@ -139,8 +139,10 @@ class StylingTools:
         answers = [await s.answer(uid, here, doc, view, p) for p in planned]
         if not answers:  # outdoors: his setting, else his words ("a walk in the park", M7)
             words = str(args.get("occasion") or "")
-            out = SETTINGS.get(str(args.get("setting")), s.rules.outdoor_of(words))
-            fresh = await s.fresh(uid, here, doc, view, day=day, occasion=occ, code=code, out=out)
+            outdoor = SETTINGS.get(str(args.get("setting")), s.rules.outdoor_of(words))
+            fresh = await s.fresh(
+                uid, here, doc, view, day=day, occasion=occ, code=code, out=outdoor
+            )
             answers = [fresh]
         looks, budget = [], MAX_RESULT_PIECES
         for ans in answers:

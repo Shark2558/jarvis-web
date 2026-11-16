@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
@@ -212,7 +213,7 @@ def _order(p: Plan) -> tuple[date, bool, datetime, str]:
 CHANGED = "That plan changed meanwhile: try again."
 
 
-def cas(current: StylingDoc, ours: StylingDoc, seen: dict[str, Plan | None]) -> StylingDoc:
+def cas(current: StylingDoc, ours: StylingDoc, seen: Mapping[str, Plan | None]) -> StylingDoc:
     """Our version of each plan in `seen` onto `current`, only where `current` still holds the
     plan as we read it (frozen records compare by value; security review M1)."""
     for pid, before in seen.items():
@@ -222,7 +223,7 @@ def cas(current: StylingDoc, ours: StylingDoc, seen: dict[str, Plan | None]) -> 
     return current
 
 
-def strict(current: StylingDoc, ours: StylingDoc, seen: dict[str, Plan | None]) -> StylingDoc:
+def strict(current: StylingDoc, ours: StylingDoc, seen: Mapping[str, Plan | None]) -> StylingDoc:
     """As `cas`, but a plan changed meanwhile refuses the whole change in plain words."""
     if any(current.plan(pid) != before for pid, before in seen.items()):
         raise PlanRefused(CHANGED)

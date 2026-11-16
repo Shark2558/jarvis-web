@@ -498,7 +498,7 @@ def test_about_you_saves_each_block_and_keeps_unsaved_typing(make: Callable[...,
     page = c.page
     about = page.locator("#memP-about")
     assert about.input_value() == "Ravi, project lead."
-    expect(page.locator("#memC-about")).to_have_text("20 / 1,000")
+    expect(page.locator("#memC-about")).to_have_text(f"{len(profile['about'])} / 1,000")
     about.fill("Ravi, project lead in Thiruvananthapuram. Call me Sir.")
     assert page.locator("#memS-about").get_attribute("aria-disabled") is None
     page.locator("#memS-about").click()

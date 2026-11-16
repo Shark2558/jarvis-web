@@ -105,12 +105,17 @@ def _audio_words(c: Console, code: str) -> str:
     return str(c.page.evaluate(f"window.JarvisAudio.words('{code}')"))
 
 
-def _record(c: Console, ms: int = 600) -> None:
+def _frames(c: Console, at_least: int = 3) -> None:
+    """A few 80 ms frames of the fake microphone have come (code review 1, L3: no fixed wait)."""
+    c.page.wait_for_function(f"() => window.JarvisBookVoice.record.frames() >= {at_least}")
+
+
+def _record(c: Console) -> None:
     """One tap listens, a second tap stops (and sends what was said)."""
     mic = c.page.locator("#shMic")
     mic.click()
     c.page.wait_for_function(PRESSED.format("true"))
-    c.page.wait_for_timeout(ms)  # a few 80 ms frames of the fake microphone
+    _frames(c)
     mic.click()
     c.page.wait_for_function(PRESSED.format("false"))
 
@@ -145,7 +150,7 @@ def test_one_tap_listens_a_second_stops_and_the_words_land_in_the_box_unsent(
         mic.click()
         c.page.wait_for_function(PRESSED.format("true"))
         assert "Listening" in _status(c)
-        c.page.wait_for_timeout(700)
+        _frames(c)
         mic.click()
         c.page.wait_for_function(PRESSED.format("false"))
         c.page.wait_for_function(

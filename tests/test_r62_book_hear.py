@@ -65,12 +65,12 @@ async def _hear(
 async def test_the_owner_gets_the_consoles_corrections_with_his_own_words(
     settings: Settings,
 ) -> None:
-    ears = Ears(heard="javis what is the trivandram office", phrases=("Trivandrum",))
+    ears = Ears(heard="javis what is the rivertonn office", phrases=("Riverton",))
     code, body = await _hear(settings, ears, "owner")
     assert code == 200
     assert body == {
-        "text": "JARVIS what is the trivandrum office",
-        "heard": "javis what is the trivandram office",
+        "text": "JARVIS what is the riverton office",
+        "heard": "javis what is the rivertonn office",
         "changed": True,
         "no_speech": False,
     }
@@ -82,15 +82,15 @@ async def test_the_owner_gets_the_consoles_corrections_with_his_own_words(
 
 
 async def test_a_guest_is_never_biased_toward_the_owners_words(settings: Settings) -> None:
-    ears = Ears(heard="javis what is the trivandram office", phrases=("Trivandrum",))
+    ears = Ears(heard="javis what is the rivertonn office", phrases=("Riverton",))
     code, body = await _hear(settings, ears, "guest")
     assert code == 200
-    assert body["text"] == "JARVIS what is the trivandram office"  # the free rule, not his word
-    assert body["changed"] is True and body["heard"] == "javis what is the trivandram office"
+    assert body["text"] == "JARVIS what is the rivertonn office"  # the free rule, not his word
+    assert body["changed"] is True and body["heard"] == "javis what is the rivertonn office"
     assert ears.settings_reads == []  # his words are never even read for a guest (D1)
     (asked,) = ears.asked
     assert asked["owner_phrases"] is False and asked["turn_hints"] == ()
-    assert "Trivandrum" not in asked["public_hints"] and "Firestore" in asked["public_hints"]
+    assert "Riverton" not in asked["public_hints"] and "Firestore" in asked["public_hints"]
 
 
 async def test_words_heard_right_come_back_unchanged(settings: Settings) -> None:
@@ -243,15 +243,15 @@ def _voice(stt: FakeSTT) -> VoiceService:
 async def test_public_hints_reach_the_recogniser_for_a_guest_and_his_words_never() -> None:
     stt = FakeSTT()
     svc = _voice(stt)
-    await svc.update_settings(UID, VoiceSettingsPatch.model_validate({"phrases": ["Kochi"]}))
+    await svc.update_settings(UID, VoiceSettingsPatch.model_validate({"phrases": ["Northvale"]}))
     await svc.transcribe(
-        UID, wav(1.0), owner_phrases=False, public_hints=("Firestore",), turn_hints=("Kerala",)
+        UID, wav(1.0), owner_phrases=False, public_hints=("Firestore",), turn_hints=("Eastmoor",)
     )
     guest = stt.calls[-1]["phrases"]
-    assert "Firestore" in guest and "Kochi" not in guest and "Kerala" not in guest
-    await svc.transcribe(UID, wav(1.0), public_hints=("Firestore",), turn_hints=("Kerala",))
+    assert "Firestore" in guest and "Northvale" not in guest and "Eastmoor" not in guest
+    await svc.transcribe(UID, wav(1.0), public_hints=("Firestore",), turn_hints=("Eastmoor",))
     owner = stt.calls[-1]["phrases"]
-    assert owner.index("Firestore") < owner.index("Kerala") < owner.index("Kochi")
+    assert owner.index("Firestore") < owner.index("Eastmoor") < owner.index("Northvale")
 
 
 async def test_a_refused_public_hint_is_retried_with_the_base_list_only() -> None:

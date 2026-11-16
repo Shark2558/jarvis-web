@@ -6,9 +6,10 @@ browser's show-only marker, SEC-4: `book_show_auth`), every answer `no-store` (a
 included).
 
 POST /v1/book/open {proof, audience}     {token, session_id, until, idle_until, audience} · 403
-                                         console_only / passkey_setup_needed / reauth_required /
-                                         passkey_required / passkey_rejected · 409
-                                         guest_needs_google · 404 no_book · 429 (5 a minute)
+                                         google_needed (token mode, R6.2 G11) / console_only /
+                                         passkey_setup_needed / reauth_required /
+                                         passkey_required / passkey_rejected · 404 no_book · 429
+                                         (5 a minute)
 GET  /v1/book/show/script                ● {release, audience, scenes 1-13, closing {lines,
                                          hand_back}, costs (+ month_inr, limit_inr: owner only),
                                          talk {on, why}, voice and listening browser|cloud (R6.2:

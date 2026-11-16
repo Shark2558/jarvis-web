@@ -170,6 +170,20 @@ async def test_a_piece_held_by_another_check_is_never_released_by_this_one() -> 
     assert str(gone.value) == "That check is already closed."
 
 
+async def test_l8_picking_a_piece_another_check_holds_is_refused_in_its_own_words() -> None:
+    r = await rig()
+    await r.commit(holds.admit(ev(TWIN, "deposited", r.clock(), source="camera")))
+    r.clock.advance(minutes=1)
+    await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))
+    first, second = await r.open_entries()
+    with pytest.raises(Refused) as held:
+        await r.desk.resolve(UID, second.id, "these", pieces=(TWIN,))
+    assert str(held.value) == (
+        "A white shirt waits for a check in Helpers, Wardrobe: resolve that first."
+    )  # never "isn't ready or in use": the way out is the other check
+    assert (await r.piece(TWIN)).hold == "unverified" and len(await r.open_entries()) == 2
+
+
 async def test_a_choice_outside_the_candidates_is_refused() -> None:
     r = await rig()
     await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))

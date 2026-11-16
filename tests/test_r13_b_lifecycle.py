@@ -26,6 +26,7 @@ from r13_fakes_b import (
 )
 
 from jarvis.storage.docs import Op
+from jarvis.tools.gateway import GatewayOutcome
 from jarvis.wardrobe.laundry.holds import admit
 from jarvis.wardrobe.model import Evidence
 from jarvis.wardrobe.ports import Refused
@@ -47,9 +48,25 @@ async def test_lnd_01_a_deposit_keeps_the_shirt_owned_but_out_of_ready_pieces() 
     assert NAVY_SHIRT not in {p.id for p in (await r.view()).active() if p.eligible}
 
 
-async def test_lnd_02_a_cancelled_scan_sends_nothing_and_a_camera_deposit_needs_a_release() -> None:
+async def test_lnd_02_only_his_press_deposits_and_a_card_he_cancels_writes_nothing() -> None:
     r = await rig()
-    assert await r.state(WHITE_SHIRT) == "ready"  # a scan he cancels never calls B: Ready
+    card = await r.tool("laundry_move", tainted=True, step="basket", pieces=[WHITE_SHIRT])
+    assert card.outcome is GatewayOutcome.AWAITING_CONFIRMATION and card.pending is not None
+    await r.gateway.gate.cancel(card.pending.id)  # he leaves it: nothing is sent
+    kinds = [h.event.kind for h in await r.store.history(UID, WHITE_SHIRT)]
+    assert "deposited" not in kinds and await r.state(WHITE_SHIRT) == "ready"
+    pressed = await r.tool("laundry_move", panel=True, step="basket", pieces=[WHITE_SHIRT])
+    assert pressed.result["status"] == "done"  # "Put in laundry": one deposit, his verified tap
+    (dep,) = [
+        h.event for h in await r.store.history(UID, WHITE_SHIRT) if h.event.kind == "deposited"
+    ]
+    assert (dep.verified, dep.source, dep.via) == (True, "tap", "panel")
+
+
+async def test_lnd_02_the_camera_rule_a_deposit_without_a_release_is_held() -> None:
+    """`holds.admit` as a unit: no production path calls it yet (I1 moves it into A's store,
+    INTEGRATION-B section 6)."""
+    r = await rig()
     no_release = ev(WHITE_SHIRT, "deposited", r.clock(), source="camera", via="cam-basket")
     held = admit(no_release)
     assert held.verified is False

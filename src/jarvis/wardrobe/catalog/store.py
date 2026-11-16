@@ -185,7 +185,8 @@ class CatalogStore:
         """`index` (A's own, beyond the contract): a change to the index's other records (a
         place's baseline, a pair) in the same commit; `needed`: entries to ask B's writer for
         with no event (the sweep: a hold without its entry, D4.4); `as_stored`: the events were
-        settled before (a restore, D17): kept exactly, still deduplicated and re-folded."""
+        settled before (a restore, D17): kept exactly, still deduplicated and re-folded, and
+        only a hold the piece is in now asks for its entry."""
         result: dict[str, Any] = {}
 
         async def work(tx: DocTx) -> None:
@@ -252,7 +253,7 @@ class CatalogStore:
         take_records(w, commit.records, now)
         await self._append(w, uid, tx, commit.events, as_stored)
         for pid in w.new:
-            refold(w, uid, pid, now)
+            refold(w, uid, pid, now, as_stored=as_stored)
         check_cap(view, w.pieces, self.max_pieces)
         fresh = view.model_copy(update={"pieces": w.pieces, "rev": view.rev + 1, "updated_at": now})
         if index is not None:

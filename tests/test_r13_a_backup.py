@@ -271,3 +271,38 @@ async def test_a_backup_never_opens_under_another_jarvis_key() -> None:
     with pytest.raises(Refused) as got:
         await desk(elsewhere).restore.check(UID, body)
     assert str(got.value) == UNREADABLE
+
+
+async def _five_old_conflicts_then_a_hold(cat: Catalog) -> tuple[str, str]:
+    shirt, vest = (await desk(cat).service.add(UID, [NewPiece(type="shirt")] * 2)).ids
+    for _ in range(5):  # a load started on a Ready shirt: refused, an entry each, long resolved
+        cat.clock.advance(minutes=5)
+
+        async def fn(view: object, tx: object) -> Commit:
+            return Commit(events=(ev(shirt, "load_started", cat.clock()),))
+
+        await cat.store.transact(UID, fn)
+
+    async def hold(view: object, tx: object) -> Commit:
+        return Commit(events=(ev(vest, "held", cat.clock()),))
+
+    await cat.store.transact(UID, hold)
+    return shirt, vest
+
+
+async def test_m3_a_restore_asks_only_for_the_hold_each_piece_is_in_now() -> None:
+    from r13_fakes import RecordingWriter
+
+    cat = catalog()
+    shirt, vest = await _five_old_conflicts_then_a_hold(cat)
+    body = await desk(cat).backup.file(UID)
+    fresh = catalog(clock=cat.clock)
+    writer = RecordingWriter()
+    fresh.store.bind(review_writer=writer)
+    await desk(fresh).restore.apply(UID, body, (await desk(fresh).restore.check(UID, body)).token)
+    asked = [n for batch in writer.needed for n in batch]
+    assert [(n.kind, n.piece, n.back_to, n.reason) for n in asked] == [
+        ("hold", vest, "ready", "restore")
+    ]  # never the shirt's five old conflicts: a year of history is not his review queue
+    view = await fresh.store.view(UID)
+    assert (view.pieces[shirt].state, view.pieces[vest].state) == ("ready", "review")

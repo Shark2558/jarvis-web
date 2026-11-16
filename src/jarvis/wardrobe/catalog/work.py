@@ -61,12 +61,17 @@ def _asks(w: Work, pid: str, f: folding.Folded) -> None:
         w.needed += folding.rescans(pid, folding.fold(x for x in log_ if x.id not in ids).marks, f)
 
 
-def refold(w: Work, uid: str, pid: str, now: datetime) -> None:
+def refold(w: Work, uid: str, pid: str, now: datetime, *, as_stored: bool = False) -> None:
+    """`as_stored` (a restore): the history's old marks ask for nothing (each was settled long
+    ago); only a hold the piece is in NOW asks for its entry (M3 of review A-1)."""
     log_, added = w.logs[pid], w.new[pid]
     f = folding.fold(log_)
     for e in added:
         w.marks[e.id] = f.marks[e.id]
-    _asks(w, pid, f)
+    if not as_stored:
+        _asks(w, pid, f)
+    elif f.state == "review" and f.hold:
+        w.needed.append(ReviewNeeded("hold", pid, back_to=f.back_to, reason="restore"))
     before = w.pieces[pid]
     after = before.model_copy(
         update={

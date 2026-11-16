@@ -173,6 +173,8 @@ async function step(s) {
   if (s.op === 'online') offline = !!s.offline; // {op: 'online'} is back online; {offline: true} goes off
   r.text = text(host);
   r.buttons = host.all().filter((e) => e.tagName === 'BUTTON' && !hiddenIn(e)).map((e) => e.textContent);
+  r.videos = host.all().filter((e) => e.tagName === 'VIDEO').length;
+  r.shown = host.all().filter((e) => e.tagName === 'CANVAS' && /\bwd-crop\b/.test(e.className)).map((e) => e.uid);
   out.steps.push(r);
 }
 

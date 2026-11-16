@@ -71,7 +71,7 @@ function boxesOf(px, w, h) { // pieces laid apart on a plain surface: what diffe
 
 const S = { host: null, P: null, flow: 'add', view: null, prints: null, live: null, codes: null, photo: null, seq: 0,
   gate: null, cards: [], found: new Map(), more: 0, moreKind: 'tops', dry: true, place: '', queue: [], device: '', busy: false,
-  query: '' };
+  query: '', skip: new Set() }; // skip: ids sent, cancelled or removed while this camera stays on (M1)
 const randomId = (n) => { const a = new Uint8Array(n); crypto.getRandomValues(a); return Array.from(a, (b) => 'abcdefghijklmnopqrstuvwxyz234567'[b % 32]).join(''); };
 const say = (el, text, kind) => (S.P ? S.P.say(el, text, kind) : null);
 const mk = (tag, cls, text) => S.P.mk(tag, cls, text);
@@ -123,9 +123,11 @@ function mount(host, P) {
   choose('add');
 }
 function choose(id) {
-  S.flow = FLOWS.some(([f]) => f === id) ? id : 'add';
+  const next = FLOWS.some(([f]) => f === id) ? id : 'add';
+  if (S.live && next !== S.flow) stop(); // M1: another step ends the camera and the label reader
+  S.flow = next;
   UI.flowBtns.forEach((b) => pressed(b, b.dataset.flow === S.flow));
-  clearScan();
+  clearList();
   paint();
 }
 function clearScan() {
@@ -133,6 +135,12 @@ function clearScan() {
   if (S.photo) { S.photo.width = 0; S.photo.height = 0; }
   S.photo = null; S.gate = null; S.cards = []; S.found = new Map(); S.more = 0; S.foreign = false;
   UI.stage.replaceChildren();
+  say(UI.state, '');
+}
+function clearList() { // M1: while the camera is on, only the list goes; its view and its reader stay
+  if (!S.live) { clearScan(); return; }
+  S.found.forEach((_, id) => S.skip.add(id)); // sent, cancelled or left: not offered again by this camera
+  S.cards = []; S.found = new Map(); S.more = 0; S.foreign = false;
   say(UI.state, '');
 }
 function paint() { paintActs(); paintBody(); paintUnsent(); }
@@ -171,7 +179,7 @@ async function startLive() {
 function stop() { // Stop, another tab, the panel hidden: the camera ends before the next frame; unsent scans stay
   S.seq += 1;
   if (S.codes) { S.codes.stop(); S.codes = null; }
-  S.live = null;
+  S.live = null; S.skip = new Set();
   const c = Cam();
   if (c) c.stop('panel');
   if (S.photo) { S.photo.width = 0; S.photo.height = 0; S.photo = null; S.gate = null; }
@@ -272,7 +280,7 @@ function readCodes(r) { // his labels become ids; anything else is only counted,
   let foreign = 0;
   r.data.codes.forEach((c) => {
     const id = c.format === 'qr_code' ? W.labelPiece(c.value, S.view && S.view.labels) : null;
-    if (id) { if (!S.found.has(id)) S.found.set(id, { how: 'qr', score: null, at: new Date().toISOString() }); } else foreign += 1;
+    if (id) { if (!S.found.has(id) && !(S.live && S.skip.has(id))) S.found.set(id, { how: 'qr', score: null, at: new Date().toISOString() }); } else foreign += 1;
   });
   if (foreign) { S.foreign = true; say(UI.state, FOREIGN); }
   if (UI.body) paintBody();
@@ -395,7 +403,7 @@ function listBody(kind) {
   }
   S.cards.forEach((card) => { if (!card.piece && card.cands.top.length) out.push(...pickRows(card)); });
   const rows = [...S.found.entries()].map(([id, f]) => row(nameOf(id), f.how === 'qr' ? 'Its label was read' : f.how === 'unsure' ? 'One of these: both wait for a quick check' : 'You tapped it',
-    [btn('Remove', '', () => { S.found.delete(id); paintBody(); })]));
+    [btn('Remove', '', () => { S.found.delete(id); if (S.live) S.skip.add(id); paintBody(); })]));
   out.push(...(rows.length ? rows : [mk('p', 'sfine', 'Start the camera to read their labels, or take a photo.')]));
   if (kind === 'laundry') {
     const n = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((x) => [String(x), x ? String(x) : 'None']);
@@ -405,7 +413,7 @@ function listBody(kind) {
   const a = mk('div', 'sacts');
   const go = btn(kind === 'laundry' ? 'Put in laundry' : 'Put away clean', 'primary', () => send(kind));
   go.disabled = !S.found.size && !S.more;
-  a.append(go, btn('Cancel', '', () => { clearScan(); paint(); say(UI.state, 'Nothing was sent.'); }));
+  a.append(go, btn('Cancel', '', () => { clearList(); paint(); say(UI.state, 'Nothing was sent.'); }));
   out.push(a);
   return out;
 }
@@ -444,7 +452,7 @@ function event(piece, kind, f, extra) {
 async function send(kind) {
   const events = [...S.found.entries()].map(([id, f]) => (kind === 'laundry' ? event(id, 'deposited', f) : event(id, S.dry ? 'returned' : 'needs_prep', f, S.dry && S.place ? { place: S.place } : {})));
   const more = kind === 'laundry' && S.more ? { step: 'basket', unseen: S.more, category: S.moreKind } : null;
-  clearScan();
+  clearList();
   if (events.length) S.queue.push(...events);
   await flush();
   if (more) await tool('laundry_move', more);
@@ -576,5 +584,5 @@ function join() {
   return !!(modes && modes.register('wardrobe', { mount, stop }));
 }
 if (!join()) document.addEventListener('jarvis:camera-modes', join, { once: true });
-document.addEventListener('jarvis:camera', () => { const c = Cam(); if (S.live && !(c && c.live())) { if (S.codes) S.codes.stop(); S.codes = null; S.live = null; if (UI.stage) UI.stage.replaceChildren(); } if (UI.acts) paintActs(); });
+document.addEventListener('jarvis:camera', () => { const c = Cam(); if (S.live && !(c && c.live())) { if (S.codes) S.codes.stop(); S.codes = null; S.live = null; S.skip = new Set(); if (UI.stage) UI.stage.replaceChildren(); } if (UI.acts) paintActs(); });
 document.addEventListener('jarvis:pictures-sent', () => { const d = Door(); if (UI.sent && d) UI.sent.textContent = d.line(); });

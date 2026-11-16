@@ -250,6 +250,33 @@ def test_h2_the_crop_is_checked_once_and_a_clean_crop_still_saves() -> None:
 FP = "/v1/wardrobe/fingerprints"
 
 
+# ---- M1: the camera and its label reader across a step change, a send and Cancel ---------------
+def test_m1_a_step_change_ends_the_camera_and_the_label_reader() -> None:
+    steps = [press("To laundry"), START, {"op": "wait", "ms": 60}, press("Add pieces")]
+    out = scan([*steps, {"op": "wait", "ms": 80}], vision={"codes": ["jw1:abcdefgh"]})
+    assert out["streams"] == out["streamStops"] == 1 and out["camera"]["live"] is False
+    assert out["camera"]["starts"] == out["camera"]["stops"] == 1
+    assert out["steps"][-1]["videos"] == 0 and "Its label was read" not in out["final"]
+
+
+@pytest.mark.parametrize("end", ["Put in laundry", "Cancel"])
+def test_m1_a_live_send_or_cancel_keeps_the_view_and_never_offers_that_label_again(
+    end: str,
+) -> None:
+    steps = [press("To laundry"), START, {"op": "wait", "ms": 80}, press(end)]
+    out = scan(
+        [*steps, {"op": "wait", "ms": 120}, press("Put in laundry")], vision={"codes": [LBL]}
+    )
+    assert len(posts(out, "/v1/wardrobe/scan")) == (1 if end == "Put in laundry" else 0)
+    assert out["steps"][-1]["found"] is False  # nothing left to send: no duplicate deposit
+    assert out["steps"][-1]["videos"] == 1 and out["camera"]["live"] is True  # the view stays
+    assert out["streams"] == 1 and out.get("streamStops", 0) == 0  # the reader keeps reading
+    assert "Its label was read" not in out["final"]
+
+
+LBL = "jw1:abcdefgh"
+
+
 # ---- D10: private pieces ------------------------------------------------------------------------
 def test_d10_a_private_piece_never_gets_a_photo_a_fingerprint_or_a_tag() -> None:
     out = scan(

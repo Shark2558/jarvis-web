@@ -84,7 +84,7 @@ ROUTES: tuple[tuple[str, str, str, object, object, tuple[int, ...]], ...] = (
     ("GET", "/v1/wardrobe/tag/estimate", "catalog", None, TagEstimate, _E),
     ("GET", "/v1/wardrobe/labels.svg", "catalog", None, "image/svg+xml", _E),
     ("POST", "/v1/wardrobe/labels", "catalog", LabelAssign, LabelView, (*_E, 404, 422)),
-    ("GET", "/v1/wardrobe/backup", "catalog", None, "application/octet-stream", (*_E, 503)),
+    ("GET", "/v1/wardrobe/backup", "catalog", None, "application/octet-stream", (*_E, 422, 503)),
     ("POST", "/v1/wardrobe/restore/check", "catalog", "application/octet-stream", RestoreCheck,
      (*_E, 413, 422)),
     ("POST", "/v1/wardrobe/restore", "catalog", "application/octet-stream", RestoreDone,

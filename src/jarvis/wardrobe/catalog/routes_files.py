@@ -186,20 +186,22 @@ async def tag_estimate(
 
 
 @router.get("/v1/wardrobe/backup", include_in_schema=False)
-async def backup(request: Request, photos: int = 0, uid: str = Depends(current_user)) -> Response:
+async def backup(
+    request: Request, photos: bool = False, uid: str = Depends(current_user)
+) -> Response:
     if (desk := desk_of(request)) is None:
         return off(request)
     if (busy := limited(request, "backup", uid, change=False)) is not None:
         return busy
     try:
-        await desk.backup.check_size(uid, bool(photos))
+        await desk.backup.check_size(uid, photos)
         await desk.store.view(uid)  # fails here, in words, before a byte is sent
     except Exception as exc:  # noqa: BLE001
         return refused(exc, status=503)
     name = "jarvis-wardrobe-photos.jwb" if photos else "jarvis-wardrobe.jwb"
     heads = NO_STORE_HEADERS | {"X-Content-Type-Options": "nosniff"}
     heads["Content-Disposition"] = f'attachment; filename="{name}"'
-    stream = desk.backup.lines(uid, photos=bool(photos))
+    stream = desk.backup.lines(uid, photos=photos)
     return StreamingResponse(stream, media_type="application/octet-stream", headers=heads)
 
 

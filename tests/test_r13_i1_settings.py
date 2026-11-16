@@ -103,3 +103,20 @@ async def test_a_panel_card_waits_in_his_open_conversation_never_a_strangers(
         )
         again = http.ToolReply.model_validate(alien.json())
         assert again.session_id not in (None, str(mine.id), str(theirs.id))  # a new one of his
+
+
+async def test_the_backups_photos_flag_is_a_bool_in_any_spelling(settings: Settings) -> None:
+    """INTEGRATION-D 6.6: `?photos=1` and `?photos=true` mean photos; absent, 0 and false do not."""
+    async with running(_owner(settings)) as (_, c):
+        names = {}
+        for q in ("", "?photos=0", "?photos=false", "?photos=1", "?photos=true"):
+            got = await c.get(f"/v1/wardrobe/backup{q}", headers=AUTH)
+            assert got.status_code == 200, q
+            names[q] = got.headers["content-disposition"]
+        assert {names[q] for q in ("", "?photos=0", "?photos=false")} == {
+            'attachment; filename="jarvis-wardrobe.jwb"'
+        }
+        assert {names[q] for q in ("?photos=1", "?photos=true")} == {
+            'attachment; filename="jarvis-wardrobe-photos.jwb"'
+        }
+        assert (await c.get("/v1/wardrobe/backup?photos=maybe", headers=AUTH)).status_code == 422

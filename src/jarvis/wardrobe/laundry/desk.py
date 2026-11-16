@@ -182,8 +182,8 @@ class DeskCore:
         return history.laundry_view(view, laundry, today, texts.READY)
 
     async def review_view(self, uid: str) -> ReviewView:
-        _, _, queue = await self.read(uid)
-        return review.review_view(queue, texts.READY)
+        view, _, queue = await self.read(uid)
+        return review.review_view(queue, texts.READY, view)
 
 
 __all__ = ["DeskCore", "Done", "Planner"]

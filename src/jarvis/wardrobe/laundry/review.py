@@ -19,6 +19,7 @@ from typing import Any
 
 from jarvis.wardrobe.http import ReviewEntry, ReviewView
 from jarvis.wardrobe.laundry import texts
+from jarvis.wardrobe.laundry.answers import answers_of
 from jarvis.wardrobe.laundry.store import Change, Entry, ReviewDoc, new_entry_id
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import Refused, ReviewNeeded
@@ -215,7 +216,9 @@ def prune(doc: ReviewDoc, now: datetime, *, keep_days: int) -> ReviewDoc:
     return doc.model_copy(update={"entries": kept})
 
 
-def entry_view(e: Entry) -> ReviewEntry:
+def entry_view(e: Entry, view: WardrobeView | None = None) -> ReviewEntry:
+    """What the panel shows: the fixed words, the closed reason word, a pending deposit's count
+    and the answers (from `answers.py`, the resolver's own table)."""
     return ReviewEntry(
         id=e.id,
         kind=e.kind,
@@ -223,13 +226,18 @@ def entry_view(e: Entry) -> ReviewEntry:
         candidates=e.candidates,
         words=words_of(e),
         opened_at=e.opened_at,
+        reason=_reason(e.reason, ""),  # type: ignore[arg-type]
+        count=min(e.count, 20) if e.kind == "pending_deposit" else 0,
+        answers=answers_of(e, view),  # type: ignore[arg-type]
     )
 
 
-def review_view(doc: ReviewDoc, ready: str) -> ReviewView:
+def review_view(doc: ReviewDoc, ready: str, view: WardrobeView | None = None) -> ReviewView:
     shown = sorted(open_entries(doc), key=lambda e: e.opened_at)
     return ReviewView(
-        ready=ready, entries=tuple(entry_view(e) for e in shown[:MAX_OPEN]), open=len(shown)
+        ready=ready,
+        entries=tuple(entry_view(e, view) for e in shown[:MAX_OPEN]),
+        open=len(shown),
     )
 
 

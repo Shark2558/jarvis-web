@@ -51,6 +51,12 @@ class ReviewEntry(_M):
     candidates: tuple[PieceId, ...] = ()
     words: str  # fixed words ("Which of these went into the basket?")
     opened_at: datetime
+    reason: Literal[
+        "", "unverified", "held", "missing", "restored", "blind", "which", "pending", "refused",
+        "stale", "corrected", "sweep", "rescan",
+    ] = ""  # the closed set: B's `review.REASONS` ("rescan": a rescan that names none)  # fmt: skip
+    count: int = Field(default=0, ge=0, le=20)  # a pending deposit: how many he couldn't show
+    answers: tuple[Literal["these", "none", "moved", "dismiss"], ...] = ()  # the resolver's own
 
 
 class ReviewView(_M):

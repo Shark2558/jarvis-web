@@ -18,20 +18,13 @@ from datetime import datetime
 from typing import NamedTuple
 
 from jarvis.wardrobe.laundry import blind, loads, providers, texts
+from jarvis.wardrobe.laundry.answers import OUTCOMES, family
 from jarvis.wardrobe.laundry.holds import basket_event, tap
 from jarvis.wardrobe.laundry.review import find_open, put
 from jarvis.wardrobe.laundry.store import Change, Entry, LaundryDoc, Outcome, ReviewDoc
 from jarvis.wardrobe.model import Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
 from jarvis.wardrobe.states import State
-
-_OUTCOMES: Mapping[str, frozenset[str]] = {
-    "pending_deposit": frozenset({"these", "none"}),
-    "which": frozenset({"these", "none", "dismiss"}),
-    "hold": frozenset({"these", "none", "moved"}),
-    "conflict": frozenset({"these", "none", "dismiss"}),
-    "stale": frozenset({"these", "moved", "dismiss"}),
-}
 
 
 class _Ask(NamedTuple):
@@ -52,17 +45,6 @@ class _Res(NamedTuple):
     left: tuple[str, ...]
     words: str
     review: ReviewDoc | None = None  # other entries this answer changed (a blind check's list)
-
-
-def _family(e: Entry) -> str:
-    """How an entry is answered. Only B's own "which one?" (it carries the step he asked for)
-    takes a laundry step; every other rescan (A's "corrected", another part's) is a check: a
-    sighting where it is, a new place, or dismissed (review H1: never a default clean return)."""
-    if e.kind == "rescan":
-        if e.reason == "blind":
-            return "hold"
-        return "which" if e.reason == "which" and e.step else "stale"
-    return "stale" if e.kind == "place" else e.kind
 
 
 def _chosen(
@@ -221,8 +203,8 @@ def plan_resolve(
     e = find_open(doc, entry_id)
     if place is not None and place not in view.places:  # review L10, as `move` checks it
         raise Refused(texts.UNKNOWN_PLACE)
-    fam = _family(e)
-    if outcome not in _OUTCOMES[fam]:
+    fam = family(e)
+    if outcome not in OUTCOMES[fam]:
         raise Refused(texts.OUTCOME_BAD)
     ask = _Ask(outcome, pieces, to, place, how, originals or {}, now)
     res = _answer(view, laundry, doc, e, fam, ask)

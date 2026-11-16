@@ -35,10 +35,7 @@ from jarvis.wardrobe.styling.plans import (
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.styling.sealed import SealedDoc, Told
 
-OCCASION_WORDS = {
-    "meeting": "a meeting", "festival": "a festival", "holi": "Holi", "sport": "sport",
-    "function": "a function",
-}  # fmt: skip
+OCCASION_WORDS = texts.OCCASION_WORDS
 NO_EVENT = "no event planned"
 Skip = dict[str, frozenset[str]]
 _HHMM = 5

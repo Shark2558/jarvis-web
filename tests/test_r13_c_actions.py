@@ -6,8 +6,9 @@ from __future__ import annotations
 from typing import Any
 
 from r13_fakes import UID
-from r13_fakes_c import N, World, ist, world
+from r13_fakes_c import SCOPE, N, World, ist, world
 
+from jarvis.llm.base import ToolCall
 from jarvis.tools.gateway import GatewayOutcome
 
 
@@ -44,8 +45,11 @@ async def test_releasing_a_piece_resuggests_its_slot_and_releasing_the_plan_drop
     belt = _slot(plan, "belt")
     got = await ok(w, "outfit_plan", action="release", plan=plan["id"], piece=belt[0])
     assert _slot(got["plan"], "belt") == belt  # re-suggested: still the best one
-    gone = await ok(w, "outfit_plan", action="release", plan=plan["id"])
-    assert gone == {"message": "That plan is gone."}
+    asked = await w.call("outfit_plan", action="release", plan=plan["id"])  # always a card (M4)
+    assert asked.outcome is GatewayOutcome.AWAITING_CONFIRMATION and asked.pending is not None
+    again = ToolCall(id="c2", name="outfit_plan", arguments=asked.pending.arguments)
+    gone = await w.gw.execute(again, scope=SCOPE, confirmation_id=asked.pending.id)
+    assert gone.result == {"message": "That plan is gone."}
     assert (await w.styling.plans.read(UID)).plans == ()
 
 

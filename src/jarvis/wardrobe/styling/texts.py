@@ -17,6 +17,14 @@ from jarvis.wardrobe.redact import PRIVATE_WORDS, fixed_words, type_words
 from jarvis.wardrobe.states import STATE_WORDS, State
 
 WEATHER_UNKNOWN = "Weather unknown: I assumed indoors."
+OCCASION_WORDS = {
+    "meeting": "a meeting", "festival": "a festival", "holi": "Holi", "sport": "sport",
+    "function": "a function",
+}  # fmt: skip
+LOOK_WORDS = {  # "out of Holi looks", "out of meeting looks"
+    "meeting": "meeting", "festival": "festival", "holi": "Holi", "sport": "sport",
+    "function": "function",
+}  # fmt: skip
 PLURAL_TYPES = frozenset(
     {"trousers", "chinos", "jeans", "shorts", "joggers", "underpants", "briefs", "boxers"}
 )
@@ -185,9 +193,11 @@ def tomorrow_of(now: datetime, zone: tzinfo) -> date:
 
 __all__ = [
     "LEFT_WORDS",
+    "LOOK_WORDS",
     "NEXT_ACTION",
     "NOT_READY_YET",
     "OFF_NO_KEY",
+    "OCCASION_WORDS",
     "OFF_NO_STORE",
     "PRIVATE_WORDS",
     "WEATHER_UNKNOWN",

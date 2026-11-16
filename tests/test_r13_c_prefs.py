@@ -41,20 +41,21 @@ async def test_sty06_a_favourite_excluded_from_holi_stays_out_and_comes_back() -
     await w.edit(N.shirt_navy, mess_ok=True)
     first = await ok(w, "outfit_suggest", day="tomorrow", occasion="Holi")
     assert N.shirt_navy in _ids(first)
-    got = await ok(w, "outfit_prefs", action="exclude", piece=N.shirt_navy, occasion="Holi")
-    assert got == {"message": f"{N.shirt_navy} is left out for holi."}
+    got = await ok(w, "outfit_prefs", action="exclude", piece=N.shirt_navy, occasion="holi")
+    assert got == {"message": f"{N.shirt_navy} is left out for Holi."}
     holi = await ok(w, "outfit_suggest", day="tomorrow", occasion="Holi")
     assert N.shirt_navy not in _ids(holi)
     casual = await ok(w, "outfit_suggest", day="tomorrow", code="smart_casual")
     assert N.shirt_navy in _ids(casual)  # only Holi
-    await ok(w, "outfit_prefs", action="include", piece=N.shirt_navy, occasion="Holi")
+    await ok(w, "outfit_prefs", action="include", piece=N.shirt_navy, occasion="holi")
     assert N.shirt_navy in _ids(await ok(w, "outfit_suggest", day="tomorrow", occasion="Holi"))
 
 
 async def test_an_unknown_occasion_is_refused_in_words() -> None:
     w = await world()
-    got = await ok(w, "outfit_prefs", action="exclude", piece=N.tee, occasion="moon landing")
-    assert got["refused"] is True and "a meeting, a festival, Holi" in got["message"]
+    got = await w.call("outfit_prefs", action="exclude", piece=N.tee, occasion="moon landing")
+    assert got.outcome is GatewayOutcome.ERROR  # the gateway's check: one of the rules' keys
+    assert got.error == "occasion must be one of: holi, festival, meeting, sport, function."
 
 
 async def test_colours_he_avoids_rank_lower_never_out() -> None:

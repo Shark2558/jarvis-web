@@ -14,8 +14,10 @@ gateway (policy, cards, the audit); the panel calls the same tools through A's
 
 Results: piece ids and fixed words only (`views`), at most 20 pieces; the two reads vouch for
 their result (every string is a fixed-list word or JARVIS's own sentence, never his label or a
-title, D18). A card's words come from `preview` through `redact` ("a private basic"). Untrusted
-by default (`trusted_output` False); Activity shows fixed words.
+title, D18). A card's words come from `preview` through `redact` ("a private basic", `cards`);
+removing a whole plan is always a card; every argument is checked before the policy step in
+fixed words (`cards.check_*`; an occasion on the write tools is a rules key). Untrusted by
+default (`trusted_output` False); Activity shows fixed words.
 """
 
 from __future__ import annotations
@@ -29,6 +31,17 @@ from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import MAX_RESULT_PIECES
 from jarvis.wardrobe.styling import actions, prefs, views
 from jarvis.wardrobe.styling.answers import plural, ready, refused
+from jarvis.wardrobe.styling.cards import (
+    Cards,
+    check_plan,
+    check_plans,
+    check_prefs,
+    check_suggest,
+    check_wear,
+    plan_words,
+    prefs_words,
+    whole_release,
+)
 from jarvis.wardrobe.styling.plans import PlanRefused, StylingDoc, strict
 from jarvis.wardrobe.styling.service import Answer, Here, Styling
 from jarvis.wardrobe.styling.wearlog import WearLog
@@ -59,24 +72,34 @@ SUGGEST = _schema(
     }
 )
 PLANS = _schema({"day": _S, "days": {"type": "integer", "minimum": 1, "maximum": 14}})
-PLAN = _schema(
-    {
-        "action": {"type": "string", "enum": list(actions.ACTIONS)},
-        **dict.fromkeys(("plan", "day", "code", "start", "end", "slot", "piece", "from_plan"), _S),
-        "occasion": {**_S, "maxLength": 60},
-        "pieces": _IDS,
-        "setting": _SETTING,
-    },
-    ("action",),
-)
-PREFS = _schema(
-    {
-        "action": {"type": "string", "enum": list(prefs.ACTIONS)},
-        **dict.fromkeys(("feature", "value", "piece", "plan", "code"), _S),
-        "occasion": {**_S, "maxLength": 60},
-    },
-    ("action",),
-)
+
+
+def plan_schema(occasions: list[str]) -> dict[str, Any]:
+    """An occasion on a write tool is one of the rules' keys (security review L3)."""
+    return _schema(
+        {
+            "action": {"type": "string", "enum": list(actions.ACTIONS)},
+            **dict.fromkeys(("plan", "day", "code", "start", "end", "slot", "piece"), _S),
+            "from_plan": _S,
+            "occasion": {"type": "string", "enum": occasions},
+            "pieces": _IDS,
+            "setting": _SETTING,
+        },
+        ("action",),
+    )
+
+
+def prefs_schema(occasions: list[str]) -> dict[str, Any]:
+    return _schema(
+        {
+            "action": {"type": "string", "enum": list(prefs.ACTIONS)},
+            **dict.fromkeys(("feature", "value", "piece", "plan", "code"), _S),
+            "occasion": {"type": "string", "enum": occasions},
+        },
+        ("action",),
+    )
+
+
 WEAR = _schema(
     {
         "action": {"type": "string", "enum": ["start", "done"]},
@@ -139,7 +162,9 @@ class StylingTools:
             return got
         uid, here, doc, view = got
         day = self.s.day_of(args["day"], here.today) if args.get("day") else None
-        days = int(args.get("days") or 7)
+        days = args.get("days", 7)
+        if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 14:
+            return refused("Ask for 1 to 14 days.")  # never echoes what was sent (M2)
         if day is not None:
             found = [p for p in doc.plans if p.day == day]
         else:
@@ -178,6 +203,8 @@ class StylingTools:
             return got
         uid, here, doc, view = got
         rules = self.s.rules
+        if args.get("action") == "exclude" and args.get("piece") not in view.pieces:
+            return refused("That piece isn't in your wardrobe.")
         try:
             if args.get("action") == "code":
                 return await self._code(uid, here, doc, view, args)
@@ -202,45 +229,40 @@ class StylingTools:
         return {"message": words, "plan": await self._plan_dict(uid, plan.id)}
 
 
-def _plan_words(args: dict[str, Any]) -> str:
-    return f"Outfit plan: {str(args.get('action', 'change'))[:12]}."
-
-
-def _prefs_words(args: dict[str, Any]) -> str:
-    return f"Outfit rule: {str(args.get('action', 'change'))[:12]}."
-
-
 def styling_tools(s: Styling) -> tuple[Tool, ...]:
-    t, w = StylingTools(s), WearLog(s)
+    t, w, c = StylingTools(s), WearLog(s), Cards(s)
+    keys = list(s.rules.events)
     return (
         Tool(
             "outfit_suggest",
             "What to wear on a day, by his fixed rules, with reasons and the piece ids.",
-            SUGGEST, R1, t.suggest, agent=AGENT, may_vouch=True,
+            SUGGEST, R1, t.suggest, agent=AGENT, may_vouch=True, check=check_suggest,
             activity_words="Looked at an outfit",
         ),
         Tool(
             "outfit_plans",
             "His outfit plans ahead (or one day's) and their looks now.",
-            PLANS, R1, t.plans, agent=AGENT, may_vouch=True,
+            PLANS, R1, t.plans, agent=AGENT, may_vouch=True, check=check_plans,
             activity_words="Looked at outfit plans",
         ),
         Tool(
             "outfit_plan",
             "Save, lock, change, reserve, transfer, release or share an outfit plan (piece ids).",
-            PLAN, R2, t.plan, agent=AGENT, summarize=_plan_words,
+            plan_schema(keys), R2, t.plan, agent=AGENT, summarize=plan_words,
+            check=check_plan(keys), preview=c.plan, ask_when=whole_release,
             activity_words="Changed an outfit plan",
         ),
         Tool(
             "outfit_prefs",
             "His outfit rules: never or allow, exclude or include, like or avoid, a dress code.",
-            PREFS, R2, t.prefs, agent=AGENT, summarize=_prefs_words,
+            prefs_schema(keys), R2, t.prefs, agent=AGENT, summarize=prefs_words,
+            check=check_prefs(keys), preview=c.prefs,
             activity_words="Changed an outfit rule",
         ),
         Tool(
             "wear_log",
             "Log a wear: start (I'm wearing ...) or done (I wore ..., done for today).",
-            WEAR, R2, w.run, agent=AGENT, spoken_ok=True, preview=w.card,
+            WEAR, R2, w.run, agent=AGENT, spoken_ok=True, preview=w.card, check=check_wear,
             activity_words="Logged a wear",
         ),
     )  # fmt: skip

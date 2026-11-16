@@ -74,7 +74,7 @@ async def test_sty01_what_to_wear_tomorrow_is_the_next_local_day_with_its_occasi
 
 async def test_sty01_a_planned_meeting_is_what_tomorrow_answers_with() -> None:
     w = await world(at=ist(2026, 11, 16, 21, 0), place=False)
-    await _plan(w, day="tomorrow", occasion="client meeting", start="10:00", end="12:00")
+    await _plan(w, day="tomorrow", occasion="meeting", start="10:00", end="12:00")
     got = await ok(w, "outfit_suggest", day="tomorrow")
     look = got["looks"][0]
     assert look["occasion"] == "your 10:00 event (a meeting)"
@@ -101,7 +101,7 @@ async def test_a_result_shows_fixed_words_and_ids_never_his_label_and_vouches() 
 async def test_outfit_plans_lists_the_plans_ahead_with_their_looks() -> None:
     w = await world(at=ist(2026, 11, 16, 20, 0))
     first = await _plan(w, day="tomorrow", occasion="meeting", start="10:00", end="12:00")
-    second = await _plan(w, day="2026-11-20", occasion="Diwali")
+    second = await _plan(w, day="2026-11-20", occasion="festival")
     got = await ok(w, "outfit_plans")
     assert [p["id"] for p in got["plans"]] == [first, second]
     assert got["plans"][1]["code"] == "festive"
@@ -111,7 +111,7 @@ async def test_outfit_plans_lists_the_plans_ahead_with_their_looks() -> None:
 # ---- STY-03 the dress code is his; the calendar is never written --------------------------------
 async def test_sty03_changing_catch_up_to_business_formal_gives_a_business_formal_look() -> None:
     w = await world(at=ist(2026, 11, 16, 20, 0))
-    plan = await _plan(w, day="tomorrow", occasion="Catch-up", start="16:00", end="17:00")
+    plan = await _plan(w, day="tomorrow", start="16:00", end="17:00")  # "Catch-up": no rule word
     before = await ok(w, "outfit_plans")
     assert before["plans"][0]["code"] == "smart_casual" and before["plans"][0]["tentative"]
     await ok(w, "outfit_prefs", action="code", plan=plan, code="business_formal")
@@ -144,7 +144,7 @@ async def test_sty14_reserved_shoes_appear_for_their_event_and_conflict_for_a_se
     plans = (await ok(w, "outfit_plans"))["plans"]
     shoes = next(p["ids"] for p in plans[0]["look"]["pieces"] if p["slot"] == "shoes")
     assert shoes == list(SHOES)
-    second = await _plan(w, day="tomorrow", occasion="board review", start="11:00", end="13:00")
+    second = await _plan(w, day="tomorrow", occasion="meeting", start="11:00", end="13:00")
     look = (await ok(w, "outfit_plans"))["plans"][1]["look"]
     assert N.shoe_l not in _ids(look)
     assert any("reserved for your 10:00 event" in g for g in look["gaps"])
@@ -165,7 +165,7 @@ async def test_sty14_reserved_shoes_appear_for_their_event_and_conflict_for_a_se
 async def test_sty13_a_meeting_and_an_evening_function_share_a_declared_base() -> None:
     w = await world(at=ist(2026, 11, 17, 8, 0))
     meeting = await _plan(w, day="today", occasion="meeting", start="10:00", end="12:00")
-    evening = await _plan(w, day="today", occasion="dinner", start="19:00", end="22:00")
+    evening = await _plan(w, day="today", occasion="function", start="19:00", end="22:00")
     base = [N.trousers, N.watch]
     got = await ok(w, "outfit_plan", action="share", plan=evening, from_plan=meeting, pieces=base)
     look = got["plan"]["look"]

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from jarvis.wardrobe.model import COLOURS, FEATURES, PATTERNS, TYPES
+from jarvis.wardrobe.model import COLOURS, FEATURES, PATTERNS, PIECE_ID, TYPES
 from jarvis.wardrobe.styling import texts
 from jarvis.wardrobe.styling.plans import (
     MAX_COLOURS,
@@ -31,6 +31,7 @@ from jarvis.wardrobe.styling.plans import (
 from jarvis.wardrobe.styling.rules import Rules
 
 ACTIONS = ("never", "allow", "exclude", "include", "like", "avoid", "code")
+BY_ID = "Name the piece by its id (wi_ and 12 letters or digits)."
 _TYPES = tuple(t for ts in TYPES.values() for t in ts)
 FIXED: dict[str, tuple[str, ...]] = {
     **{k: v for k, v in FEATURES.items() if k != "side"},
@@ -71,11 +72,12 @@ def apply(prefs: Prefs, rules: Rules, args: dict[str, Any]) -> tuple[Prefs, str]
             raise PlanRefused(f"You have {MAX_NEVER} rules: remove one first.")
         return prefs.model_copy(update={"never": (*rest, rule)}), f"Noted: never {words}."
     if action in ("exclude", "include"):
-        piece, occ = args.get("piece"), _occasion(rules, args.get("occasion"))
-        if not isinstance(piece, str):
-            raise PlanRefused("Name the piece by its id.")
+        piece = args.get("piece")
+        if not isinstance(piece, str) or not PIECE_ID.match(piece):  # never echoed (M2)
+            raise PlanRefused(BY_ID)
+        occ = _occasion(rules, args.get("occasion"))
         kept = tuple(e for e in prefs.excluded if not (e.piece == piece and e.occasion == occ))
-        where = f"for {occ}" if occ else "from every look"
+        where = f"for {texts.OCCASION_WORDS[occ]}" if occ else "from every look"
         if action == "include":
             return prefs.model_copy(update={"excluded": kept}), f"{piece} is back {where}."
         if len(kept) >= MAX_EXCLUDED:

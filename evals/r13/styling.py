@@ -102,7 +102,7 @@ async def sty02() -> list[str]:
 
 async def sty03() -> list[str]:
     w = await world(at=ist(2026, 11, 16, 20, 0))
-    plan = await _save(w, day="tomorrow", occasion="Catch-up", start="16:00", end="17:00")
+    plan = await _save(w, day="tomorrow", start="16:00", end="17:00")  # "Catch-up": no rule word
     await _ok(w, "outfit_prefs", action="code", plan=plan["id"], code="business_formal")
     after = (await _ok(w, "outfit_plans"))["plans"][0]
     top = _slot(after["look"], "top")
@@ -209,7 +209,7 @@ async def sty12() -> list[str]:
 async def sty13() -> list[str]:
     w = await world(at=ist(2026, 11, 17, 8, 0))
     meeting = await _save(w, day="today", occasion="meeting", start="10:00", end="12:00")
-    evening = await _save(w, day="today", occasion="dinner", start="19:00", end="22:00")
+    evening = await _save(w, day="today", occasion="function", start="19:00", end="22:00")
     await _ok(
         w,
         "outfit_plan",
@@ -228,7 +228,7 @@ async def sty13() -> list[str]:
 async def sty14() -> list[str]:
     w = await world(at=ist(2026, 11, 16, 20, 0))
     first = await _save(w, day="tomorrow", occasion="meeting", start="10:00", end="12:00")
-    second = await _save(w, day="tomorrow", occasion="board review", start="11:00", end="13:00")
+    second = await _save(w, day="tomorrow", occasion="meeting", start="11:00", end="13:00")
     got = await _ok(w, "outfit_plan", action="reserve", plan=second["id"], piece=N.shoe_l)
     ok = _slot(first["look"], "shoes") == list(SHOES) and N.shoe_l not in _ids(second["look"])
     return [] if ok and got.get("refused") else ["a reservation and its conflict"]

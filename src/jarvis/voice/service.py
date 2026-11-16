@@ -63,6 +63,7 @@ from jarvis.voice.ports import (
     TokenSource,
     Transcript,
     TTSProvider,
+    VoiceBusy,
     VoiceError,
     VoiceRejected,
     VoiceUnavailable,
@@ -455,10 +456,17 @@ class VoiceService:
         estimate: float,
         call: Callable[[], Awaitable[T]],
         held: float = 0.0,
+        *,
+        retry_follows: bool = False,
     ) -> T:
-        """One engine call. If it fails after the request may have reached Google, its estimate
-        is metered (Google may bill it); a clean error answer is not, and a free-only hold on it
-        is given back."""
+        """One engine call, and THE rule for a free-only hold when it fails (R6.2 round 3):
+        Google did not bill it, so the hold is given back, for a clean error answer
+        (VoiceUnavailable not maybe_billed, which includes a request that never left), a clean 429
+        (VoiceBusy) and a rejection (VoiceRejected; kept while `retry_follows`, the retry then
+        owns it). Whether Google billed is unclear for a timeout after the request went out
+        (maybe_billed: its estimate is metered), a cancel mid-call (metered too) and any
+        unexpected error: the hold stays, over-counting the shared free allowance being the safe
+        side for the owner's money. Nothing else decides this."""
         try:
             return await call()
         except VoiceUnavailable as exc:
@@ -466,6 +474,13 @@ class VoiceService:
             if exc.maybe_billed:
                 await self._meter(uid, price, estimate, held)
             else:
+                await self._unhold(price, held)
+            raise
+        except VoiceBusy:
+            await self._unhold(price, held)
+            raise
+        except VoiceRejected:
+            if not retry_follows:
                 await self._unhold(price, held)
             raise
         except asyncio.CancelledError:  # the owner went away mid-call: Google may have it
@@ -521,17 +536,14 @@ class VoiceService:
             )
 
         try:
-            return await self._engine("stt", uid, price, estimate, call(hints), held)
+            return await self._engine(
+                "stt", uid, price, estimate, call(hints), held, retry_follows=has_owner_words
+            )
         except VoiceRejected:
             if not has_owner_words:
-                await self._unhold(price, held)
                 raise
         log.warning("voice: owner words were refused; retrying with the base hints only")
-        try:
-            return await self._engine("stt", uid, price, estimate, call(self.hints_for(())), held)
-        except VoiceRejected:
-            await self._unhold(price, held)
-            raise
+        return await self._engine("stt", uid, price, estimate, call(self.hints_for(())), held)
 
     async def transcribe(
         self,

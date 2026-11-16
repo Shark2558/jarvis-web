@@ -120,3 +120,32 @@ async def test_the_backups_photos_flag_is_a_bool_in_any_spelling(settings: Setti
             'attachment; filename="jarvis-wardrobe-photos.jwb"'
         }
         assert (await c.get("/v1/wardrobe/backup?photos=maybe", headers=AUTH)).status_code == 422
+
+
+# ---- the scan route's refusals (INTEGRATION-B 6.3) ---------------------------------------------
+async def test_the_scan_route_refuses_the_cameras_source_and_the_kinds_b_alone_writes(
+    settings: Settings,
+) -> None:
+    from test_r13_a_routes import _add
+
+    async with running(_owner(settings)) as (app, c):
+        [shirt] = await _add(c, {"type": "shirt"})
+        n = 0
+
+        async def scan(**fields: object) -> Any:
+            nonlocal n
+            n += 1
+            ev = {"client_id": f"scan-{n:08d}", "piece": shirt, "kind": "seen", "source": "phone"}
+            return await c.post("/v1/wardrobe/scan", json={"events": [ev | fields]}, headers=AUTH)
+
+        for kind in ("held", "released", "blind", "load_started", "sent_out", "received", "found"):
+            got = await scan(kind=kind)
+            assert got.status_code == 422, kind  # B stays the only writer of its own kinds
+            assert "own button" in got.json()["detail"] or "laundry" in got.json()["detail"]
+        camera = await scan(kind="deposited", source="camera")
+        assert camera.status_code == 422 and "camera" in camera.json()["detail"].lower()
+        assert (await scan(kind="deposited", released=True)).status_code == 422  # not a field
+        for kind in ("seen", "deposited", "returned", "wear_started", "lifted"):
+            assert (await scan(kind=kind)).status_code in (200,), kind
+        view = http.WardrobeView.model_validate((await c.get("/v1/wardrobe", headers=AUTH)).json())
+        assert view.pieces[0].state in ("ready", "in_laundry", "in_use")  # nothing is held

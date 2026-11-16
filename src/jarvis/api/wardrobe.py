@@ -61,8 +61,16 @@ router.routes.extend(files_router.routes)  # one router (an included one is lazy
 router.routes.extend(settings_router.routes)
 NOT_IN = "That piece isn't in your wardrobe."
 MERGED = "That piece was merged into another: refresh the list and scan again."
-# what a scan may record; registering, merging, archiving and corrections go through the tools
-SCAN_KINDS = frozenset(EVENT_KINDS) - {"registered", "merged", "corrected", "archived", "restored"}
+# what a scan may record: registering, merging, archiving and corrections go through the tools; the
+# laundry's own steps and holds are B's alone (its documents track them, so a scan can't start
+# "washing" outside a load or clear a hold behind its entry: INTEGRATION-B 6.3)
+CARD_KINDS = frozenset({"registered", "merged", "corrected", "archived", "restored"})
+LAUNDRY_KINDS = frozenset(
+    {"held", "released", "blind", "load_started", "sent_out", "received", "found"}
+)
+SCAN_KINDS = frozenset(EVENT_KINDS) - CARD_KINDS - LAUNDRY_KINDS
+OWN_STEP = "That step is made in Helpers, Wardrobe, in its own laundry buttons."
+NO_CAMERA = "A camera's scan can't be sent from here yet: scan with your phone, or tap it."
 PLAIN_SCOPE = "wardrobe"
 
 
@@ -132,6 +140,10 @@ async def _at(desk: Any, uid: str, e: http.EventIn, now: datetime) -> tuple[date
 async def _events(desk: Any, uid: str, body: http.ScanRequest, view: WardrobeView) -> list[Event]:
     now, out = desk.store.now(), []
     for e in body.events:
+        if e.source == "camera":  # the cameras arrive with R8; its release rule is the store's
+            raise Refused(NO_CAMERA)
+        if e.kind in LAUNDRY_KINDS:
+            raise Refused(OWN_STEP)
         if e.kind not in SCAN_KINDS:
             raise Refused("That change is made with its own button: archive, restore or merge.")
         p = view.piece(e.piece)

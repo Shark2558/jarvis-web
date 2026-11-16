@@ -135,6 +135,9 @@ class Styling:
         weather = await self.outlook.weather(uid, day, span, here.zone)
         probe = plan or Plan(id="op_00000000", day=day, code=code)
         held = reserve.reserved_for(doc, probe, here.zone)
+        earlier = frozenset(
+            i for i, o in held.items() if plan is not None and reserve.can_share_from(o, plan)
+        )
         prefs = doc.prefs
         ask = Ask(
             day=day, code=code, occasion=occasion, rain=weather.rain, hot=weather.hot,
@@ -144,6 +147,7 @@ class Styling:
             skip=skip or {},
             shared={i: plan.shared_from for i in plan.shared} if plan and plan.shared_from else {},
             reserved={i: reserve.held_words(o, here.zone) for i, o in held.items()},
+            earlier=earlier,
             never=tuple((n.feature, n.value) for n in prefs.never),
             excluded=frozenset(e.piece for e in prefs.excluded if e.occasion in (None, occasion)),
             likes=frozenset(prefs.likes), avoids=frozenset(prefs.avoids),

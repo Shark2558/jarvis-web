@@ -279,3 +279,32 @@ async def test_l3_a_plan_he_is_wearing_is_not_what_to_wear_today() -> None:
     await ok(w, "wear_log", action="start", plan=meeting)
     got = await ok(w, "outfit_suggest", day="today")
     assert got["looks"][0]["plan"] is None
+
+
+# ---- code review M5: a reusable piece an earlier plan holds is a proposed shared base ------------
+async def test_m5_a_later_plan_proposes_the_earlier_plans_reusable_pieces_not_gaps() -> None:
+    w = await world(at=ist(2026, 11, 16, 20, 0), place=False)
+    first = await _plan(w, day="tomorrow", occasion="meeting", start="09:00", end="11:00")
+    got = await ok(w, "outfit_plan", action="save", day="tomorrow", occasion="meeting",
+                   start="16:00", end="17:00")  # fmt: skip
+    look = got["plan"]["look"]
+    shoes = f"{SHOES[0]} and {SHOES[1]}"
+    assert (
+        f"Reused from your 09:00 event, if you share them: charcoal trousers ({N.trousers}), a "
+        f"pair of brown dress shoes ({shoes}) and a grey watch ({N.watch}): share them from that "
+        "plan in Helpers, Wardrobe."
+    ) in look["compromises"]
+    assert not [g for g in look["gaps"] if any(i in g for i in (N.trousers, N.watch, SHOES[0]))]
+    assert [g for g in look["gaps"] if N.under in g]  # underwear is never reused: still a gap
+    shared = await ok(w, "outfit_plan", action="share", plan=got["plan"]["id"], from_plan=first,
+                      pieces=[N.trousers, SHOES[0], N.watch])  # fmt: skip
+    after = shared["plan"]["look"]
+    assert {N.trousers, N.watch, *SHOES} <= set(_ids(after))
+    assert not [c for c in after["compromises"] if c.startswith("Reused from")]
+
+
+async def test_m5_a_fresh_suggestion_still_names_the_reservation_as_a_gap() -> None:
+    w = await world(at=ist(2026, 11, 16, 20, 0), place=False)
+    await _plan(w, day="tomorrow", occasion="meeting", start="09:00", end="11:00")
+    got = await ok(w, "outfit_suggest", day="tomorrow", code="business_formal")
+    assert any("reserved for your 09:00 event" in g for g in got["looks"][0]["gaps"])

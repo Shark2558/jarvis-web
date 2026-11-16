@@ -116,6 +116,13 @@ def transfer(
     return doc.put(left).put(moved)
 
 
+def can_share_from(source: Plan, plan: Plan) -> bool:
+    """Can `plan` declare a shared base from `source`: an earlier plan of the same day?"""
+    if source.day != plan.day or source.id == plan.id:
+        return False
+    return not (source.starts and plan.starts and source.starts >= plan.starts)
+
+
 def share(
     doc: StylingDoc,
     plan: Plan,
@@ -124,9 +131,7 @@ def share(
     view: WardrobeView,
     rules: Rules,
 ) -> StylingDoc:
-    if source.day != plan.day or source.id == plan.id:
-        raise PlanRefused("A shared base comes from an earlier plan the same day.")
-    if source.starts and plan.starts and source.starts >= plan.starts:
+    if not can_share_from(source, plan):
         raise PlanRefused("A shared base comes from an earlier plan the same day.")
     units: list[tuple[str, tuple[str, ...]]] = []
     for pid in pieces:
@@ -150,6 +155,7 @@ def share(
 
 
 __all__ = [
+    "can_share_from",
     "conflict",
     "held_words",
     "holds_against",

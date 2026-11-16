@@ -39,6 +39,7 @@ class Ask:
     skip: Mapping[str, frozenset[str]] = field(default_factory=dict)  # "change this one"
     shared: Mapping[str, str] = field(default_factory=dict)  # piece -> the plan it is worn for
     reserved: Mapping[str, str] = field(default_factory=dict)  # piece -> "your 10:00 event"
+    earlier: frozenset[str] = frozenset()  # held by an earlier plan the same day: shareable
     never: tuple[tuple[str, str], ...] = ()
     excluded: frozenset[str] = frozenset()
     likes: frozenset[str] = frozenset()
@@ -84,6 +85,7 @@ class Run:
     reasons: list[str] = field(default_factory=list)
     compromises: list[str] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
+    proposed: list[Unit] = field(default_factory=list)  # a shared base to propose (M5)
 
     @property
     def code(self) -> CodeRule:

@@ -233,8 +233,34 @@ def _fill_slot(r: Run, slot: str, required: bool, ban: frozenset[str]) -> None:
         left = units[:1]
     if left:
         _take(r, slot, rank.best(r, slot, left), locked=False)
+    elif required and step == "reserved" and (unit := _shareable(r, slot, removed)) is not None:
+        r.proposed.append(unit)  # not a hard gap: a shared base he can declare (M5)
     elif required:
         r.gaps.append(rank.gap(r, slot, step, removed))
+
+
+def _shareable(r: Run, slot: str, removed: list[Unit]) -> Unit | None:
+    """The best unit an earlier plan the same day holds that the rewear rule reuses (code review
+    M5: the whole-day hold keeps it from this plan unless he declares it shared)."""
+    ok = [
+        u for u in removed
+        if all(i in r.ask.earlier and r.rules.reusable_piece(r.p(i)) for i in u)
+    ]  # fmt: skip
+    return rank.best(r, slot, ok) if ok else None
+
+
+def _proposals(r: Run) -> None:
+    """ "Reused from your 09:00 event, if you share it: ...: share it from that plan ..." """
+    by: dict[str, list[Unit]] = {}
+    for unit in r.proposed:
+        by.setdefault(r.ask.reserved.get(unit[0], "an earlier plan"), []).append(unit)
+    for held, units in by.items():
+        them = "them" if len(units) > 1 else "it"
+        words = texts.ids_words([f"{r.words(u)} ({texts.ids_words(u)})" for u in units])
+        r.compromises.append(
+            f"Reused from {held}, if you share {them}: {words}: share {them} from that plan "
+            f"{texts.WHERE}."
+        )
 
 
 def _outstanding(r: Run) -> None:
@@ -259,6 +285,7 @@ def _look(view: WardrobeView, ask: Ask, rules: Rules, ban: Mapping[str, frozense
         if slot not in r.picks:
             _fill_slot(r, slot, required, ban.get(slot, frozenset()))
     _outstanding(r)
+    _proposals(r)
     order = {s: n for n, s in enumerate(FILL_ORDER)}
     picks = tuple(sorted(r.picks.values(), key=lambda p: order.get(p.slot, len(order))))
     return LookOut(picks, tuple(r.reasons), tuple(dict.fromkeys(r.compromises)), tuple(r.gaps))

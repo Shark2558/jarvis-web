@@ -46,7 +46,7 @@ async def test_a_rules_file_that_fails_its_check_is_setup_failed_and_others_run(
     monkeypatch.setattr(styling_part, "load_rules", broken)
     parts = wiring.build_parts(w.ctx)
     assert parts["styling"].ready == "setup failed" and not parts["styling"].tools
-    assert parts["catalog"].ready == "not built yet"  # the others still built
+    assert parts["catalog"].ready != "setup failed"  # the others still built
 
 
 async def test_no_key_or_no_storage_is_built_and_says_so() -> None:

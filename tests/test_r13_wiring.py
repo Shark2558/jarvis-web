@@ -131,7 +131,9 @@ def test_a_good_part_keeps_its_tools_jobs_services_and_data() -> None:
 def test_every_stub_part_builds_through_the_real_modules(settings: Settings) -> None:
     parts = wiring.build_parts(_ctx(settings))
     assert tuple(parts) == PARTS
-    assert {p.ready for p in parts.values()} == {"not built yet"}
+    assert wiring.SETUP_FAILED not in {p.ready for p in parts.values()}
+    assert parts["catalog"].ready == "Off: no document store on this server."
+    assert parts["phone"].ready == "ready"
 
 
 # ---- the joins -----------------------------------------------------------------------------------
@@ -240,9 +242,9 @@ async def test_the_app_builds_the_four_parts_and_answers_v1_r13(settings: Settin
         assert got.status_code == 200 and got.headers["cache-control"] == "no-store"
         body = got.json()
         assert body["version"] == "v13.0.0"
-        assert [(p["part"], p["ready"]) for p in body["parts"]] == [
-            (n, "not built yet") for n in PARTS
-        ]
+        assert [p["part"] for p in body["parts"]] == list(PARTS)
+        assert all(p["ready"] != wiring.SETUP_FAILED for p in body["parts"])
+        assert body["parts"][0]["ready"].startswith("Off: the wardrobe needs")
         assert (await c.get("/v1/r13")).status_code == 401  # the owner's only
 
 

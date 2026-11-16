@@ -165,6 +165,22 @@ class Delivery(_Frozen):
         return _FEED[self.action]
 
 
+# His own settings that end an alert's retry: nothing to send again (a kind switched off, or
+# kept to the feed only).
+OWNER_SETTLED = frozenset({"switched_off", "feed_only"})
+
+
+def took(delivery: object) -> bool:
+    """THE rule for "the owner has this alert, or chose not to" (R13 I1: one rule for Self-health's
+    `reached`, Home's idle `took` and the laundry job): a channel took it, it waits in the held
+    summary (it goes out in the morning), or his own setting dropped it. Else it is retried."""
+    if not isinstance(delivery, Delivery):
+        return False
+    if delivery.telegram or delivery.push or delivery.action == "hold":
+        return True
+    return delivery.action == "drop" and delivery.reason in OWNER_SETTLED
+
+
 @runtime_checkable
 class NotifyPolicy(Protocol):
     def decide(self, signal: Signal, settings: Any, now: datetime) -> Decision: ...
@@ -206,6 +222,8 @@ class DirectNotifier:
 __all__ = [
     "DEFAULT_URGENCY",
     "MAX_PUSH_DEVICES",
+    "OWNER_SETTLED",
+    "took",
     "Action",
     "Decision",
     "Delivery",

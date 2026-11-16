@@ -27,7 +27,7 @@ from typing import Literal
 
 from jarvis.alerts import AlertKind
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Delivery, Notifier, Signal
+from jarvis.notify.ports import OWNER_SETTLED, Delivery, Notifier, Signal, took
 from jarvis.notify.storm import SELF_GAP
 from jarvis.selfwatch.ledger import MAX_MEMORY_CLAIMS, Told
 from jarvis.selfwatch.ports import SENDING
@@ -36,7 +36,7 @@ log = get_logger(__name__)
 
 MAX_TEXT = 300
 # The owner's own choice for the kind (`home.watchdog.OWNER_SETTLED`): nothing to retry.
-SETTLED = frozenset({"switched_off", "feed_only"})
+SETTLED = OWNER_SETTLED
 RETRY_EVERY = SELF_GAP  # 30 minutes: the storm admits the same kind and subject again by then
 MAX_TRIES = 6  # about 2.5 hours of tries; then the claim stands
 MAX_NAMED = 8  # job names in one message; the rest are counted
@@ -112,12 +112,8 @@ class Said:
 
 
 def reached(got: object) -> bool:
-    """Whether the owner has it, or chose not to (`home.watchdog.took` for an idle alert)."""
-    if not isinstance(got, Delivery):
-        return False
-    if got.telegram or got.push or got.action == "hold":
-        return True
-    return got.action == "drop" and got.reason in SETTLED
+    """Whether the owner has it, or chose not to: `notify.ports.took`, the one rule."""
+    return took(got)
 
 
 class Teller:

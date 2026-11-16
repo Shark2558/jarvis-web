@@ -10,7 +10,7 @@ For each owner, in his local day:
 - the sweep: closed loads and batches after 90 days, answered checks after
   `wardrobe_review_keep_days`, B's claims after 30 days.
 Each alert is claimed in `wardrobe_told` (`laundry_...`) BEFORE it is sent and kept only when he
-has it (the codebase's one rule, `selfwatch.texts.reached`); a send no channel took, one that
+has it (the codebase's one rule, `notify.ports.took`); a send no channel took, one that
 raised or one the tick's budget cancelled releases its claim (tried again at the next run).
 Fixed words only (`texts`): counts, never a label, a shop or a private piece. One owner's failure
 stops no one (`failed`).
@@ -25,8 +25,7 @@ from datetime import date, datetime, timedelta
 from typing import Literal
 
 from jarvis.logging import get_logger
-from jarvis.notify.ports import Signal
-from jarvis.selfwatch.texts import reached
+from jarvis.notify.ports import Signal, took
 from jarvis.storage.docs import Delete, DocTx
 from jarvis.ticks import FAILED_COUNT
 from jarvis.wardrobe.laundry import loads, providers, review, texts
@@ -113,7 +112,7 @@ class LaundryDaily:
 
     async def _tell(self, uid: str, kind: Kind, key: str, said: str, now: datetime) -> str:
         """Claim, send, and keep the claim only when he has it (review H4): the codebase's one
-        rule (`selfwatch.texts.reached`, Home's `watchdog.took`): a channel took it, it waits in
+        rule (`notify.ports.took`): a channel took it, it waits in
         the held summary, or his own setting dropped it. Anything else, a send that raised, or
         one the tick's budget cancelled, gives the claim back: tried again at the next run. A
         send that raises is the job's failure (`failed`, review M6); "no channel took it" is
@@ -126,7 +125,7 @@ class LaundryDaily:
         told = False
         try:
             got = await notifier.notify(uid, Signal(source="system", kind=kind), said)
-            told = reached(got)
+            told = took(got)
         except Exception as exc:  # noqa: BLE001 - review M6: a dead notifier fails the job
             log.warning("a laundry alert was not sent", extra={"error": type(exc).__name__})
             return FAILED_COUNT  # the tick reports "failed": R14's self-health hears it

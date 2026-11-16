@@ -1,7 +1,8 @@
 # src/jarvis/wardrobe/styling/actions.py
 """R13 `outfit_plan`'s actions (docs/plans/r13-wardrobe.md "Tools", D12): save, lock, change,
 reserve, transfer, release, share. Each reads his plans, the wardrobe view and the weather, then
-writes ONE change of `wardrobe_plans/{uid}`; a refusal (`PlanRefused`) writes nothing.
+writes ONE change of `wardrobe_plans/{uid}`; a refusal (`PlanRefused`) writes nothing, and a plan
+another writer changed meanwhile is refused ("That plan changed meanwhile: try again.", M1).
 
 - save: a plan for a day (and a time, an occasion or a dress code), its picks from the engine's
   primary look (a code he names is his: not tentative; an occasion's is tentative, STY-03); with
@@ -20,7 +21,7 @@ from typing import Any
 
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.styling import reserve
-from jarvis.wardrobe.styling.plans import Plan, PlanPick, PlanRefused, StylingDoc
+from jarvis.wardrobe.styling.plans import Plan, PlanPick, PlanRefused, StylingDoc, strict
 from jarvis.wardrobe.styling.service import Here, Styling
 
 ACTIONS = ("save", "lock", "change", "reserve", "transfer", "release", "share")
@@ -73,7 +74,7 @@ async def run(s: Styling, uid: str, a: dict[str, Any]) -> tuple[Plan | None, str
     action = a.get("action")
     if action == "save":
         plan = await save(s, uid, here, doc, view, a)
-        await s.change(uid, lambda d: d.put(plan))
+        await s.change(uid, lambda d: strict(d, doc.put(plan), {plan.id: doc.plan(plan.id)}))
         return plan, "Saved."
     plan = _plan(doc, a.get("plan"))
     if action == "release" and not a.get("piece"):
@@ -82,17 +83,9 @@ async def run(s: Styling, uid: str, a: dict[str, Any]) -> tuple[Plan | None, str
     final = await _apply(s, uid, here, doc, view, plan, a)
     fresh = final.plan(plan.id)
     assert fresh is not None
-    await s.change(uid, lambda d: _merge(d, final, (plan.id, str(a.get("from_plan") or ""))))
+    ids = {plan.id, str(a.get("from_plan") or "")} - {""}
+    await s.change(uid, lambda d: strict(d, final, {i: doc.plan(i) for i in ids}))
     return fresh, "Done."
-
-
-def _merge(current: StylingDoc, ours: StylingDoc, ids: tuple[str, ...]) -> StylingDoc:
-    """Our versions of the plans this action touched, onto whatever else changed meanwhile."""
-    for pid in ids:
-        mine = ours.plan(pid)
-        if mine is not None:
-            current = current.put(mine)
-    return current
 
 
 async def _apply(

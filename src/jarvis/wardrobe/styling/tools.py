@@ -29,7 +29,7 @@ from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import MAX_RESULT_PIECES
 from jarvis.wardrobe.styling import actions, prefs, views
 from jarvis.wardrobe.styling.answers import plural, ready, refused
-from jarvis.wardrobe.styling.plans import PlanRefused, StylingDoc
+from jarvis.wardrobe.styling.plans import PlanRefused, StylingDoc, strict
 from jarvis.wardrobe.styling.service import Answer, Here, Styling
 from jarvis.wardrobe.styling.wearlog import WearLog
 
@@ -177,13 +177,16 @@ class StylingTools:
         if isinstance(got, dict):
             return got
         uid, here, doc, view = got
+        rules = self.s.rules
         try:
             if args.get("action") == "code":
                 return await self._code(uid, here, doc, view, args)
-            new, words = prefs.apply(doc.prefs, self.s.rules, args)
+            _, words = prefs.apply(doc.prefs, rules, args)  # checked, and its words
+            await self.s.change(  # made again on his rules NOW (security review M1)
+                uid, lambda d: d.model_copy(update={"prefs": prefs.apply(d.prefs, rules, args)[0]})
+            )
         except PlanRefused as exc:
             return refused(str(exc))
-        await self.s.change(uid, lambda d: d.model_copy(update={"prefs": new}))
         return {"message": words}
 
     async def _code(
@@ -194,7 +197,7 @@ class StylingTools:
         plan = fixed.plan(str(args["plan"]))
         assert plan is not None
         plan = await s.repick(uid, here, fixed, view, plan)
-        await s.change(uid, lambda d: d.put(plan))
+        await s.change(uid, lambda d: strict(d, fixed.put(plan), {plan.id: doc.plan(plan.id)}))
         words = f"Dress code set: {s.rules.code_words(plan.code)}."
         return {"message": words, "plan": await self._plan_dict(uid, plan.id)}
 

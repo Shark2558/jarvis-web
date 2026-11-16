@@ -16,7 +16,9 @@ piece:
   by default), takes it; and when the plan's event starts within `wardrobe_change_window_h`
   (36 h) it sends ONE `outfit_changed` per plan per 2 hours, claimed before the send, in fixed
   words that never name his label, a title or a private piece.
-An observer only reads the ledger and alerts; it writes only C's own plans. It never raises.
+An observer only reads the ledger and alerts; it writes only C's own plans, each only where it is
+still as it was read (a plan changed meanwhile is judged once more, security review M1). It never
+raises.
 `WEAR_RULE` is read at call time: only the eval's negative control turns it off.
 """
 
@@ -32,7 +34,7 @@ from jarvis.wardrobe.model import Piece, WardrobeView
 from jarvis.wardrobe.ports import PieceChange
 from jarvis.wardrobe.styling import engine, texts
 from jarvis.wardrobe.styling.calendar import Calendar
-from jarvis.wardrobe.styling.plans import Plan, PlanPick, StylingDoc
+from jarvis.wardrobe.styling.plans import Plan, PlanPick, StylingDoc, cas
 from jarvis.wardrobe.styling.reserve import window, with_pick
 from jarvis.wardrobe.styling.service import Here, Styling
 
@@ -75,7 +77,7 @@ class PlanRefresh:
             return "later"
         return "left"
 
-    async def _changed(self, change: PieceChange) -> None:
+    async def _changed(self, change: PieceChange, only: frozenset[str] | None = None) -> None:
         s = self.styling
         if s.off() is not None:
             return
@@ -88,14 +90,23 @@ class PlanRefresh:
             _Hit(p, self.judge(p, change, piece, here))
             for p in doc.plans
             if change.piece in p.pieces() and p.active and window(p, here.zone)[1] > here.now
-        ]
+            and (only is None or p.id in only)
+        ]  # fmt: skip
         todo = [h for h in hits if h.verdict in ("own", "back", "left")]
         if not todo:
             return
         updated, alerts = await self._updates(change.uid, doc, view, piece, todo, here)
-        await s.change(change.uid, lambda d: _onto(d, updated))
+        seen = {p.id: doc.plan(p.id) for p in updated}
+        ours = doc
+        for p in updated:
+            ours = ours.put(p)
+        after = await s.change(change.uid, lambda d: cas(d, ours, seen))
+        stale = frozenset(pid for pid in seen if after.plan(pid) != ours.plan(pid))
         for plan, proposal in alerts:
-            await self._alert(change.uid, plan, piece, proposal, here)
+            if plan.id not in stale:
+                await self._alert(change.uid, plan, piece, proposal, here)
+        if stale and only is None:  # changed meanwhile (security review M1): judged once more
+            await self._changed(change, stale)
 
     async def _updates(
         self, uid: str, doc: StylingDoc, view: WardrobeView, piece: Piece, hits: list[_Hit],
@@ -144,13 +155,6 @@ class PlanRefresh:
             await notifier.notify(uid, Signal(source="nudge", kind="outfit_changed"), words)
         except Exception as exc:  # noqa: BLE001 - "can't send" is a result, never an error
             log.warning("outfits: outfit_changed not sent", extra={"error": type(exc).__name__})
-
-
-def _onto(doc: StylingDoc, plans: list[Plan]) -> StylingDoc:
-    for p in plans:
-        if doc.plan(p.id) is not None:
-            doc = doc.put(p)
-    return doc
 
 
 __all__ = ["GAP", "WEAR_RULE", "PlanRefresh"]

@@ -27,7 +27,7 @@ from jarvis.logging import get_logger
 from jarvis.notify.ports import Signal
 from jarvis.wardrobe.styling import texts
 from jarvis.wardrobe.styling.calendar import AHEAD, CalDoc, Calendar, sync
-from jarvis.wardrobe.styling.plans import Plan, StylingDoc
+from jarvis.wardrobe.styling.plans import Plan, StylingDoc, cas
 from jarvis.wardrobe.styling.service import Here, Styling
 
 log = get_logger(__name__)
@@ -92,16 +92,33 @@ class OutfitClock:
         await self.calendar.sealed.change(
             uid, lambda _: CalDoc(read_at=here.now, start=span[0], end=span[1], entries=entries)
         )
-        synced, touched = sync(doc, entries, span, here.zone, here.now)
-        view = await self.s.view(uid)
-        if view is not None:
-            for pid in touched:
-                plan = synced.plan(pid)
-                if plan is not None:
-                    synced = synced.put(await self.s.repick(uid, here, synced, view, plan))
+        touched: list[str] = []
+
+        def apply(d: StylingDoc) -> StylingDoc:
+            """The read onto his plans NOW (security review M1), unless he switched calendars."""
+            touched.clear()
+            if d.choice.calendar != cal:
+                return d
+            synced, ids = sync(d, entries, span, here.zone, here.now)
+            touched.extend(ids)
+            return synced.model_copy(update={"cal_read_at": here.now, "cal_failed_at": None})
+
+        synced = await self.s.change(uid, apply)
         n.add("plans_made", len(touched))
-        final = synced.model_copy(update={"cal_read_at": here.now, "cal_failed_at": None})
-        await self.s.change(uid, lambda d: _calendar_onto(d, final, doc.choice.calendar))
+        await self._repick(uid, here, synced, tuple(touched))
+
+    async def _repick(self, uid: str, here: Here, doc: StylingDoc, ids: tuple[str, ...]) -> None:
+        """Each touched plan's look, written only where the plan is still as it was read."""
+        view = await self.s.view(uid)
+        if view is None or not ids:
+            return
+        seen: dict[str, Plan] = {}
+        for pid in ids:
+            plan = doc.plan(pid)
+            if plan is not None:
+                seen[pid] = plan
+                doc = doc.put(await self.s.repick(uid, here, doc, view, plan))
+        await self.s.change(uid, lambda d: cas(d, doc, seen))
 
     async def _ready(self, uid: str, here: Here, doc: StylingDoc, n: Counts) -> None:
         if not doc.choice.calendar or not doc.choice.plan_alerts:
@@ -154,16 +171,6 @@ class OutfitClock:
         before = plan.day - timedelta(days=1)
         evening = datetime.combine(before, _evening(self.s), tzinfo=here.zone)
         return evening <= here.now < starts
-
-
-def _calendar_onto(current: StylingDoc, ours: StylingDoc, cal: str | None) -> StylingDoc:
-    """This read's calendar plans onto his plans now (unless he switched calendars meanwhile)."""
-    if current.choice.calendar != cal:
-        return current
-    for plan in ours.plans:
-        if not plan.manual:
-            current = current.put(plan)
-    return current.model_copy(update={"cal_read_at": ours.cal_read_at, "cal_failed_at": None})
 
 
 __all__ = ["NAME", "OutfitClock"]

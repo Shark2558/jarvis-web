@@ -209,12 +209,33 @@ def _order(p: Plan) -> tuple[date, bool, datetime, str]:
     return (p.day, p.starts is not None, p.starts or _EARLIEST, p.id)
 
 
+CHANGED = "That plan changed meanwhile: try again."
+
+
+def cas(current: StylingDoc, ours: StylingDoc, seen: dict[str, Plan | None]) -> StylingDoc:
+    """Our version of each plan in `seen` onto `current`, only where `current` still holds the
+    plan as we read it (frozen records compare by value; security review M1)."""
+    for pid, before in seen.items():
+        mine = ours.plan(pid)
+        if mine is not None and current.plan(pid) == before:
+            current = current.put(mine)
+    return current
+
+
+def strict(current: StylingDoc, ours: StylingDoc, seen: dict[str, Plan | None]) -> StylingDoc:
+    """As `cas`, but a plan changed meanwhile refuses the whole change in plain words."""
+    if any(current.plan(pid) != before for pid, before in seen.items()):
+        raise PlanRefused(CHANGED)
+    return cas(current, ours, seen)
+
+
 def in_range(day: date, today: date) -> bool:
     return today - timedelta(days=BACK_DAYS) <= day <= today + timedelta(days=AHEAD_DAYS)
 
 
 __all__ = [
     "AHEAD_DAYS",
+    "CHANGED",
     "BACK_DAYS",
     "MAX_CAL_PLANS",
     "MAX_PLANS",
@@ -229,6 +250,8 @@ __all__ = [
     "PlanRefused",
     "Prefs",
     "StylingDoc",
+    "cas",
     "in_range",
     "new_plan_id",
+    "strict",
 ]

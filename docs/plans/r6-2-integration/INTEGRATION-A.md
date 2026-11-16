@@ -386,9 +386,49 @@ shape of the race fixed in `test_book_lock_ui` (not changed or run here).
 No new or changed function is over 50 lines (`VoiceService.view`, 52, and
 `Billing.ensure_units_allowed`, 51, are unchanged code).
 
+## 10. Version 6.2.3: the second reviews' findings
+
+The second fresh-context reviews of `9a48161..3f73fd2` are kept as `REVIEW-SECURITY-2.md` and
+`REVIEW-CODE-2.md` (checked first for personal data: none; two local scratch paths replaced). No
+CRITICAL or HIGH; both said ship. Every finding below was fixed test first (the test written and run
+red for the right reason, then the fix, then green), one commit each, except where noted. The code
+stays at version 6.2.0.
+
+| Finding | Fix | Test | Commit |
+|---|---|---|---|
+| Security LOW-1: a guest's narration could be priced when Show voice is Cloud | `VoiceService.speak(free_only=)` through the same gate as listening; `show_speak` passes `free_only` for a guest and answers a used-up allowance with the existing 503 "Use the browser's voice." (reason `free_used`), the speech engine never called. The Show voice confirmation now says a guest's tour stops at the free allowance and is never charged | `test_r62_book_listening.py`: 2 unit tests and 1 HTTP test red (+ 2 controls: a guest inside the allowance and the owner past it still get the cloud voice); `test_r62_book_listen.py` dialog text red | 476d9df3 |
+| Code L4: two free-only calls at the end of the allowance could both pass, one priced to the owner | An atomic check-and-hold already fitted the meter's own transaction pattern, so it was added without a redesign: `UsageMeter.reserve_units` / `release_units` and `Billing.reserve_free` / `release_free` (new methods; `ensure_free` is replaced, it was R6.2's own). A free-only call holds its whole 15 s step (or its characters) in one transaction before the engine is called, is never metered again (so it can never be priced), and gives the hold back if Google did not bill it (a clean error, or a rejection). A call that may have been billed keeps its hold; an unreadable counter fails closed. Ordinary calls and other releases are untouched. Two simple trade-offs: a free-only call counts its whole step, as Google bills it, and a hold is kept if Google rejects the retry with the base hints | `test_two_guests_at_the_end_of_the_allowance_cannot_both_get_through` (two owners at once, one step left: red, both went through) and 3 more (counted once, failed calls, narration, fail closed x2); 4 red | 5ac07698 |
+| Code M2: the heard route's log test passed on a 404 | asserts the route answered 200 first | proved red by taking the route away | 4ec4cc2b |
+| Code L6: the strict-types test passed with the fields missing | a valid `{"listening": "cloud", "confirm_cost": true}` case | proved red by removing the field | 322efc13 |
+| Test only: `test_show_locked_still_goes_to_the_show` awaited the probe across the redirect | the probe starts without being awaited, as 84ee243 | `test_r7_c_lock.py`: 16 passed, three runs in a row. The race did not appear in six runs of the old code, so no red was seen | 307f00ef |
+| Code L1: a recogniser that never fires `onend` after stop left the mic dead | `listen.stop()` and the 15 s cap wait 3 s for its end, then use its words so far or show "Listening stopped before any words came ... type your question", and the mic works again | `test_r62_book_fresh.py` (2, with and without words): red | 9d6efa21 |
+| Code L2: `heardHere` wrote into a cleared or closed panel | checks the panel generation after the await (and frees the busy flag) | `test_r62_book_fresh.py`: red | 7f675ec9 |
+| Code L3: tapping the mic left a reply narration playing | starting to listen stops the voice; the follow-up line no longer starts over it | `test_r62_book_fresh.py`: red | 9b6e2d56 |
+| Code M1: a switch to Cloud did not reach the open show | the panel reads `GET /v1/book/show/script` again on each mic tap and when the tab comes back, and applies the new Listening and Show voice at once; the failure line adds "This show uses it as soon as you tap the mic again." | `test_r62_book_fresh.py` (3: listening after a failure, show voice, a browser that cannot listen): red | 6eb11090 |
+
+Accepted as the owner asked: Security LOW-2 (the guest script names the choice) and LOW-3 (one
+in-flight request may finish after a switch back), Code L5 (private helper imports between the two
+route modules), and the old place names in `tests/test_book_guest_voice.py` (a later sweep).
+
+Red before green: the Python and browser tests above were run on the code before each fix (LOW-1 3
+Python and 1 browser, L4 4, M1 3, L1 2, L2 1, L3 1, M2 and L6 by mutation) and all pass after.
+
+Run on this code (each behind `flock /tmp/heavy.lock`): the unit files touched plus the Book, R6.2,
+voice and billing unit files (759 and 1,260 passed in two runs); the Book browser files
+`test_r62_book_listen`, `test_r62_book_mic`, `test_r62_book_fresh`, `test_r7_c_lock` (77 passed) and
+`test_book_show`, `test_book_panel`, `test_book_lock_ui`, `test_book_show_hold` (61 passed); `ruff
+check`, `ruff format --check` and `mypy` on the changed modules: clean. The Workshop runs the full
+suites.
+
+Sizes: `console-book-talk.js` 366 (342), `console-book-voice.js` 301 (294), `console-book-show.js`
+390 (unchanged), `console-book-reader.js` 257 (unchanged), `api/book_show.py` 310 (306),
+`voice/service.py` 640 (613; `transcribe` 49 lines), `billing/service.py` 506, `billing/meter.py`
+361, `api/app.py` 727 (unchanged); no CSS added.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.2.1 | 15 Nov 2026, 20:15 IST | R6.2 | First edition: Part 1 built (Ask by voice in the shared R5 code and the Book; the hear route's free corrections and plain words; G11's refusal and the Cloud Run guard; version 6.2.0), the 20 cases as tests, what was run, the wiring, the sizes, local development, the live check, the open questions. Finished at the takeover (the first builder's draft of 18:40 IST, never committed): the three uncommitted fixes finished test first, Phase A case 2 and the questions-run-out case as tests, the missed `test_r11_seams` pin, every run re-done on the final code with its results, the takeover's review and the guard's scope (section 8, items 8 and 9) | 🛠 Mark XXI |
 | v6.2.2 | 16 Nov 2026, 11:39 IST | R6.2 | Section 9: the fresh-context reviews' 2 HIGH and 8 LOW and how each was handled (H1s by the previous fixer; L1–L3 security, L1–L4 code and L4's names here), the redirect race in `test_book_lock_ui`, owner decision 4 built (the Book's listening and narration are the browser's by default, ₹0; an owner-only, cost-confirmed switch to the cloud; a guest's cloud listening free-only; `POST /v1/book/show/heard`), the browser path's typing offer, the tests and results, the sizes; sections 7 and 8 (items 1, 3, 5) updated. Taken over from a fixer stopped by a usage limit | 🛠 Mark XXI |
+| v6.2.3 | 16 Nov 2026 | R6.2 | Section 10: the second reviews' findings (security LOW-1, code M1, M2, L1-L4, L6 and the sibling lock test), each fixed test first; the reviews kept as `REVIEW-SECURITY-2.md` and `REVIEW-CODE-2.md` | 🛠 Mark XXI |

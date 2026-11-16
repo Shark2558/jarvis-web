@@ -5,6 +5,8 @@ three on-device models, served from `static/vendor/vision/r13-1/` by the existin
 
     python scripts/wardrobe_assets.py check     the folder matches MANIFEST.json and every sum
                                                 below (standard library; no network; exit 1)
+    python scripts/wardrobe_assets.py manifest  write MANIFEST.json from the pins below (no
+                                                network); refused when a vendored file differs
     python scripts/wardrobe_assets.py fetch [--from DIR] [--fallback]
         download each upstream file from the ONNX Model Zoo at the pinned commit (or take it from
         DIR, found by its SHA-256), refuse any other sum, make the cut, check the cut's sum, and
@@ -27,8 +29,12 @@ MANIFEST.json (the route in `api/console.py` reads `files` only: `sha256` and `t
 
 `selfcheck` (D8, M8): a fixed ramp input, `((i % 251) / 250) * 2 - 1` over 1 x 3 x 224 x 224, and
 the SHA-256 of the output bytes on the vendored onnxruntime-web 1.30.0 (one thread); the task's
-`load()` compares it on the phone. Part D records the face and person references (a fixed
-input's top scores, with a tolerance) the same way.
+`load()` compares it on the phone. Part D recorded the other two the same way (Node 22, the vendored
+runtime, one thread; console-vision.js SELF13 holds the same numbers and console-vision-r13.js's
+ramp and silhouette make the same inputs): `face`, the top five face scores on the ramp over
+1 x 3 x 240 x 320 (fp32: a tolerance of 0.002); `person`, SSD's one detection on a drawn dark
+silhouette against a pale sky (uint8 1 x 300 x 300 x 3: class 1, its score and box, a tolerance
+of 0.03 for the int8 graph).
 """
 
 from __future__ import annotations
@@ -115,7 +121,13 @@ MODELS: tuple[Model, ...] = (
         licence_files=("LICENSE-ultraface.txt",),
         changes="None: served as upstream.",
         output="scores float[1, 4420, 2], boxes float[1, 4420, 4]",
-        extra={"selfcheck": None},  # Part D records its reference (D8)
+        extra={
+            "selfcheck": {
+                "input": "((i % 251) / 250) * 2 - 1 over float32[1, 3, 240, 320]",
+                "top": [0.07956, 0.07937, 0.07899, 0.07852, 0.07781],
+                "tol": 0.002,
+            }
+        },
     ),
     Model(
         name="ssd_mobilenet_v1_12-int8.onnx",
@@ -129,7 +141,18 @@ MODELS: tuple[Model, ...] = (
         licence_files=("LICENSE-tensorflow-models.txt", "NOTICE-wardrobe-models.txt"),
         changes="None: served as upstream.",
         output="detection boxes, classes (COCO; person is 1), scores, count",
-        extra={"selfcheck": None},  # Part D records its reference (D8)
+        extra={
+            "selfcheck": {
+                "input": (
+                    "the drawn silhouette (console-vision-r13.js silhouette(): a dark figure "
+                    "against a pale sky) as uint8[1, 300, 300, 3]"
+                ),
+                "class": 1,
+                "score": 0.9449,
+                "box": [0.1013, 0.2648, 0.8171, 0.7278],
+                "tol": 0.03,
+            }
+        },
     ),
 )
 FALLBACK = Model(
@@ -340,6 +363,22 @@ def fetch(folder: Path | None, *, fallback: bool) -> None:
     print(f"wrote {len(files)} model files, {len(texts)} licences and MANIFEST.json")
 
 
+def write_manifest() -> None:
+    """MANIFEST.json from the pins, without the network: every vendored file must match first."""
+    try:
+        listed = json.loads((FOLDER / "MANIFEST.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        listed = {}  # no manifest yet: the fallback counts only once it is vendored
+    fallback = bool(listed.get("fallback", {}).get(FALLBACK.name, {}).get("vendored"))
+    models = (*MODELS, FALLBACK) if fallback else MODELS
+    for m in models:
+        path = FOLDER / m.name
+        if not path.is_file() or sha256(path.read_bytes()) != m.sha256:
+            raise SystemExit(f"refused: {m.name} is missing or not its pinned SHA-256")
+    write_atomic(FOLDER / "MANIFEST.json", manifest_bytes(models))
+    print("wrote MANIFEST.json")
+
+
 def problems() -> list[str]:
     """What `check` finds wrong in the folder (empty: all good)."""
     out: list[str] = []
@@ -374,12 +413,16 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
+    sub.add_parser("manifest")
     f = sub.add_parser("fetch")
     f.add_argument("--from", dest="folder", type=Path, default=None)
     f.add_argument("--fallback", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "fetch":
         fetch(args.folder, fallback=args.fallback)
+        return 0
+    if args.cmd == "manifest":
+        write_manifest()
         return 0
     found = problems()
     for line in found:

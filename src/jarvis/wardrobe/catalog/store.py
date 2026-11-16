@@ -23,29 +23,34 @@ is `WardrobeUnavailable` and is never overwritten. Logs carry ids, counts and er
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Create, Delete, Docs, DocTx, Op, Set
+from jarvis.storage.docs import Docs, DocTx, Op
 from jarvis.wardrobe.catalog import fold as folding
 from jarvis.wardrobe.catalog.logs import PAGE, LogPages
 from jarvis.wardrobe.catalog.sealed import VERSION, Sealer, aad_index, check_owner, dumps
+from jarvis.wardrobe.catalog.work import (
+    Work,
+    apply_op,
+    check_cap,
+    refold,
+    take_records,
+    too_many,
+)
 from jarvis.wardrobe.model import Event, Piece, WardrobeView, new_id
 from jarvis.wardrobe.ports import (
     ChangeObserver,
     Commit,
     Committed,
     HistoryItem,
-    Mark,
     PieceChange,
     Refused,
     ReviewNeeded,
     ReviewWriter,
 )
-from jarvis.wardrobe.states import State
 
 log = get_logger(__name__)
 
@@ -54,11 +59,9 @@ UNSAVED = "JARVIS couldn't save that to your wardrobe just now. Try again in a m
 FULL = "Your wardrobe list is full: archive or remove a few pieces first."
 NOT_IN = "That piece isn't in your wardrobe."
 NOT_IN_LOG = "That event isn't in this piece's history."
-# what only the fold sets: a record from a tool never changes them (the state is never by hand)
-FOLD_OWNED: tuple[str, ...] = (
-    *("state", "back_to", "place", "place_at", "hold", "expected_back", "wear", "wears"),
-    *("last_worn", "events", "created_at"),
-)
+OWN_BUTTON = "That change is undone with its own button: archive, restore or merge."
+# kinds only a card makes (D16, INV-17): `correct` never voids one (H1 of review A-1)
+CARD_ONLY = frozenset({"registered", "archived", "restored", "merged", "corrected"})
 _PASS = (Refused, ValueError, LookupError, PermissionError)
 
 
@@ -68,22 +71,6 @@ class WardrobeUnavailable(RuntimeError):
 
 def empty_view(uid: str) -> WardrobeView:
     return WardrobeView.model_validate({"uid": uid})
-
-
-def too_many(cap: int) -> str:
-    return f"Your wardrobe holds at most {cap} pieces: archive or remove a few pieces first."
-
-
-@dataclass
-class _Work:
-    """One commit's working set (private to `_fold_in`)."""
-
-    pieces: dict[str, Piece]
-    logs: dict[str, list[Event]] = field(default_factory=dict)
-    new: dict[str, list[Event]] = field(default_factory=dict)
-    marks: dict[str, Mark] = field(default_factory=dict)
-    needed: list[ReviewNeeded] = field(default_factory=list)
-    changes: list[PieceChange] = field(default_factory=list)
 
 
 class CatalogStore:
@@ -211,8 +198,12 @@ class CatalogStore:
             p = view.piece(piece)
             if p is None:
                 raise Refused(NOT_IN)
-            if all(e.id != event_id for e in await self._read_log(tx.get, uid, p)):
+            log_ = await self._read_log(tx.get, uid, p)
+            target = next((e for e in log_ if e.id == event_id), None)
+            if target is None:
                 raise Refused(NOT_IN_LOG)
+            if target.kind in CARD_ONLY:
+                raise Refused(OWN_BUTTON)
             now = self._now()
             fix = Event.model_validate(
                 {"id": new_id("we"), "piece": piece, "kind": "corrected", "at": now,
@@ -222,18 +213,8 @@ class CatalogStore:
 
         return await self.transact(uid, fn)
 
-    def _take_records(self, w: _Work, records: Sequence[Piece], now: datetime) -> None:
-        for rec in records:
-            old = w.pieces.get(rec.id)
-            # a new record has no log yet, whatever it says; an old one keeps the fold's fields
-            keep = {k: getattr(old, k) for k in FOLD_OWNED} if old is not None else {"events": 0}
-            fresh = rec.model_copy(update={**keep, "updated_at": now})
-            if old is None and fresh.created_at is None:
-                fresh = fresh.model_copy(update={"created_at": now})
-            w.pieces[rec.id] = fresh
-
     async def _append(
-        self, w: _Work, uid: str, tx: DocTx, events: Sequence[Event], as_stored: bool
+        self, w: Work, uid: str, tx: DocTx, events: Sequence[Event], as_stored: bool
     ) -> None:
         now = self._now()
         for raw in events:
@@ -252,40 +233,6 @@ class CatalogStore:
             known.append(e)
             w.new.setdefault(e.piece, []).append(e)
 
-    def _refold(self, w: _Work, uid: str, pid: str, now: datetime) -> None:
-        log_, added = w.logs[pid], w.new[pid]
-        f = folding.fold(log_)
-        for e in added:
-            w.marks[e.id] = f.marks[e.id]
-            if (need := folding.needs(e, f.marks[e.id], f)) is not None:
-                w.needed.append(need)
-        if any(e.kind == "corrected" for e in added):
-            ids = {e.id for e in added}
-            w.needed += folding.rescans(
-                pid, folding.fold(x for x in log_ if x.id not in ids).marks, f
-            )
-        before = w.pieces[pid]
-        after = before.model_copy(
-            update={
-                "state": f.state or before.state, "back_to": f.back_to,
-                "place": f.place or before.place, "place_at": f.place_at or before.place_at,
-                "hold": f.hold, "expected_back": f.expected_back, "wear": f.wear,
-                "wears": f.wears, "last_worn": f.last_worn, "events": len(log_), "updated_at": now,
-            }
-        )  # fmt: skip
-        w.pieces[pid] = after
-        if (before.state, before.place, before.wear) != (after.state, after.place, after.wear):
-            last = max(added, key=Event.sort_key)
-            prior: State | None = before.state if before.events else None
-            w.changes.append(PieceChange(uid, pid, last.kind, prior, after.state, last.plan))
-
-    def _check_cap(self, view: WardrobeView, pieces: Mapping[str, Piece]) -> None:
-        def active(ps: Mapping[str, Piece]) -> int:
-            return sum(p.state != "archived" and p.merged_into is None for p in ps.values())
-
-        if active(pieces) > max(self.max_pieces, active(view.pieces)):
-            raise Refused(too_many(self.max_pieces))
-
     async def _fold_in(
         self,
         uid: str,
@@ -295,12 +242,12 @@ class CatalogStore:
         more: tuple[Callable[[WardrobeView], WardrobeView] | None, tuple[ReviewNeeded, ...], bool],
     ) -> dict[str, Any]:
         now, (index, asked, as_stored) = self._now(), more
-        w = _Work(pieces=dict(view.pieces), needed=list(asked))
-        self._take_records(w, commit.records, now)
+        w = Work(pieces=dict(view.pieces), needed=list(asked))
+        take_records(w, commit.records, now)
         await self._append(w, uid, tx, commit.events, as_stored)
         for pid in w.new:
-            self._refold(w, uid, pid, now)
-        self._check_cap(view, w.pieces)
+            refold(w, uid, pid, now)
+        check_cap(view, w.pieces, self.max_pieces)
         fresh = view.model_copy(update={"pieces": w.pieces, "rev": view.rev + 1, "updated_at": now})
         if index is not None:
             fresh = index(fresh).model_copy(update={"pieces": w.pieces, "rev": fresh.rev})
@@ -314,7 +261,7 @@ class CatalogStore:
                          fresh, already)  # fmt: skip
         return {"committed": done, "changes": w.changes}
 
-    def _write(self, tx: DocTx, uid: str, fresh: WardrobeView, w: _Work, writes: list[Op]) -> None:
+    def _write(self, tx: DocTx, uid: str, fresh: WardrobeView, w: Work, writes: list[Op]) -> None:
         tx.set(self.index_path(uid), self._seal_index(uid, fresh))
         for pid, added in w.new.items():
             log_ = w.logs[pid]
@@ -370,18 +317,11 @@ class CatalogStore:
                     log.warning("a wardrobe observer failed", extra={"error": type(exc).__name__})
 
 
-def apply_op(tx: DocTx, op: Op) -> None:
-    if isinstance(op, Set):
-        tx.set(op.path, op.data)
-    elif isinstance(op, Create):
-        tx.create(op.path, op.data)
-    elif isinstance(op, Delete):
-        tx.delete(op.path)
-
-
 __all__ = [
+    "CARD_ONLY",
     "FULL",
     "NOT_IN",
+    "OWN_BUTTON",
     "PAGE",
     "UNAVAILABLE",
     "UNSAVED",

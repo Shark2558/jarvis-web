@@ -17,7 +17,7 @@ from jarvis.tools.gateway import GatewayOutcome
 from jarvis.tools.taint import context_trust
 from jarvis.undo.models import RestoreStatus
 from jarvis.wardrobe.catalog.edits import NewPiece
-from jarvis.wardrobe.ports import Commit
+from jarvis.wardrobe.ports import Commit, Refused
 from jarvis.wardrobe.redact import BIN_TITLE
 
 
@@ -119,6 +119,46 @@ async def test_inv17_archiving_a_belt_is_a_card_and_restoring_reuses_its_id_and_
     )
     assert ok.result["status"] == "done"
     assert (await cat.store.view(UID)).pieces[belt].state == "ready"
+
+
+async def test_h1_correct_refuses_the_card_only_kinds_so_an_archived_belt_stays_archived(
+    cat: Catalog,
+) -> None:
+    from jarvis.wardrobe.catalog.store import CARD_ONLY, OWN_BUTTON
+
+    assert {"registered", "archived", "restored", "merged", "corrected"} == CARD_ONLY
+    gw = gateway(cat)
+    [belt, sock, dup] = await _add(
+        cat, NewPiece(type="belt"), NewPiece(type="sock"), NewPiece(type="sock")
+    )
+    cat.clock.advance(minutes=1)
+    await approve(gw, await call(gw, "wardrobe_retire", piece=belt, action="archive"))
+    cat.clock.advance(minutes=1)
+    await desk(cat).merge.merge(UID, sock, dup)
+    cat.clock.advance(minutes=1)
+    dep = ev(sock, "deposited", cat.clock())
+
+    async def fn(view: object, tx: object) -> Commit:
+        return Commit(events=(dep,))
+
+    await cat.store.transact(UID, fn)
+    cat.clock.advance(minutes=1)
+    fix = (await cat.store.correct(UID, sock, dep.id)).events[0]  # an ordinary event: voided
+    cat.clock.advance(minutes=1)
+    tries = [(belt, h.event.id) for h in await cat.store.history(UID, belt)]  # registered, archived
+    tries += [(dup, h.event.id) for h in await cat.store.history(UID, dup)]  # registered, merged
+    tries.append((sock, fix.id))  # a correction is undone by its own button, too
+    for pid, eid in tries:
+        with pytest.raises(Refused) as got:
+            await cat.store.correct(UID, pid, eid)
+        assert str(got.value) == OWN_BUTTON
+    back = await approve(gw, await call(gw, "wardrobe_retire", piece=belt, action="restore"))
+    assert back.result["status"] == "done"
+    restored = [h.event.id for h in await cat.store.history(UID, belt)][-1]
+    with pytest.raises(Refused):
+        await cat.store.correct(UID, belt, restored)
+    view = await cat.store.view(UID)
+    assert view.pieces[belt].state == "review" and view.pieces[dup].merged_into == sock
 
 
 async def test_approve_all_never_covers_merge_or_archive() -> None:

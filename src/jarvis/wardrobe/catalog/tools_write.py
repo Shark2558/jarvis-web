@@ -2,9 +2,9 @@
 """Part A's write tools (docs/plans/r13-wardrobe.md "Tools", D1, D6, D10, D18): `wardrobe_add`,
 `wardrobe_edit` and `wardrobe_places`, all R2 in the `wardrobe` row, through the gateway.
 
-- Write tools take piece ids; `wardrobe_edit` also takes his words (`query`) for ONE thing only,
-  a move ("I put my watch in the travel bag", D6), resolved to a single piece or refused with the
-  candidates (never a guess).
+- Write tools take piece ids only (D10): "I put my watch in the travel bag" is `wardrobe_find`
+  first, then `wardrobe_edit(piece=<id>, place=...)` (D6 as amended by review A-1, deviation 6),
+  so his words never sit in a card's stored arguments.
 - A card's words never carry his label: `summarize` and `preview` go through `redact.card_words`
   (the approvals store is clear JSON, printed on Telegram).
 - His own words only: a label or a place name (by its words, not its id) proposed in a round
@@ -24,8 +24,7 @@ from jarvis.tools.context import require_tool_context
 from jarvis.tools.taint import content_tainted
 from jarvis.wardrobe.catalog.edits import Edit, NewPiece
 from jarvis.wardrobe.catalog.places import resolve_place, unknown_place
-from jarvis.wardrobe.catalog.search import rank
-from jarvis.wardrobe.catalog.tools import AGENT, PIECE, QUERY, guarded, line, uid
+from jarvis.wardrobe.catalog.tools import AGENT, PIECE, guarded, line, uid
 from jarvis.wardrobe.model import PLACE_ID, PRIVATE_BY_DEFAULT, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
 from jarvis.wardrobe.redact import card_words, fixed_words
@@ -93,10 +92,8 @@ def _check_add(a: dict[str, Any]) -> None:
 
 
 def _check_edit(a: dict[str, Any]) -> None:
-    if not isinstance(a.get("piece"), str) and not isinstance(a.get("query"), str):
-        raise ValueError("piece is a piece id (or query, for a move only)")
-    if "query" in a and (set(a) - {"query", "place"} or "place" not in a):
-        raise ValueError("query is only for a move: query and place")
+    if not isinstance(a.get("piece"), str):
+        raise ValueError("piece is a piece id: find it with wardrobe_find first")
     _own_words((a.get("label"), a.get("set_label")), (a.get("place"),))
 
 
@@ -152,16 +149,10 @@ class WriteTools:
         return await guarded(work)
 
     async def _piece(self, view: WardrobeView, a: dict[str, Any]) -> Piece:
-        if isinstance(a.get("piece"), str):
-            p = view.piece(a["piece"])
-            if p is None or p.merged_into is not None:
-                raise Refused("That piece isn't in your wardrobe.")
-            return p
-        found = rank(view, a["query"])
-        if found.best is None:
-            why = "Several pieces fit: say which one." if found.matches else "Not in your wardrobe."
-            raise Refused(why)
-        return found.best
+        p = view.piece(str(a.get("piece")))
+        if p is None or p.merged_into is not None:
+            raise Refused("That piece isn't in your wardrobe.")
+        return p
 
     async def preview_edit(self, a: dict[str, Any]) -> Preview:
         try:
@@ -258,7 +249,7 @@ class WriteTools:
 def _schema_edit() -> dict[str, Any]:
     s, b, i = {"type": "string"}, {"type": "boolean"}, {"type": "integer"}
     arr = {"type": "array", "items": s}
-    props: dict[str, Any] = {"piece": PIECE, "query": QUERY, "pair_with": PIECE}
+    props: dict[str, Any] = {"piece": PIECE, "pair_with": PIECE}
     props["place"] = {"type": "string", "description": "A place he named"}
     props["features"] = {"type": "object"}
     props["set_parts"] = {"type": "array", "items": {"type": "object"}}
@@ -268,7 +259,7 @@ def _schema_edit() -> dict[str, Any]:
     props |= dict.fromkeys(("unlock",), arr)
     props |= dict.fromkeys(("mess_ok", "delicate", "private", "read", "suggested", "unpair"), b)
     props["formality"] = i
-    return {"type": "object", "properties": props}
+    return {"type": "object", "required": ["piece"], "properties": props}
 
 
 def _schema_places() -> dict[str, Any]:
@@ -303,9 +294,8 @@ def write_tools(desk: Any) -> list[Tool]:
         ),  # fmt: skip
         Tool(
             "wardrobe_edit",
-            "Change one piece by its id: type, attributes, lock, a care or size field, private, "
-            "its place, its QR label, its pair or set. Only a move may name the piece by his "
-            "words (query + place).",
+            "Change one piece by its id (find it with wardrobe_find first): type, attributes, "
+            "lock, a care or size field, private, its place, its QR label, its pair or set.",
             _schema_edit(),
             r2,
             api.edit,

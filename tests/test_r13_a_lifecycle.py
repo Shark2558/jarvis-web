@@ -310,17 +310,25 @@ async def test_an_edit_card_shows_fixed_words_and_his_qr_number_never_his_label(
     assert asked.pending.summary == "Change a private basic (No. 17)"
 
 
-async def test_a_move_by_his_words_resolves_one_piece_or_names_none(cat: Catalog) -> None:
+async def test_dev6_a_move_by_his_words_is_a_find_then_an_edit_by_id_never_a_query(
+    cat: Catalog,
+) -> None:
     gw = gateway(cat)
     tray = await desk(cat).places.add(UID, "Accessory tray")
     bag = await desk(cat).places.add(UID, "Travel bag", "travel")
     [watch] = await _add(cat, NewPiece(type="watch", place=tray.id))
-    moved = await call(gw, "wardrobe_edit", query="watch", place="travel bag")
+    found = await call(gw, "wardrobe_find", query="watch")  # D's No-AI router: read first
+    moved = await call(gw, "wardrobe_edit", piece=found.result["best"], place="travel bag")
     assert moved.result["status"] == "done"
     assert (await cat.store.view(UID)).pieces[watch].place == bag.id
-    await _add(cat, NewPiece(type="watch"))
-    two = await call(gw, "wardrobe_edit", query="watch", place="accessory tray")
-    assert two.result == {"status": "refused", "message": "Several pieces fit: say which one."}
+    words = await call(gw, "wardrobe_edit", query="watch", place="accessory tray")
+    assert words.outcome is GatewayOutcome.ERROR  # D10: a write tool takes piece ids only
+    assert (
+        "query"
+        not in next(t for t in cat.part.tools if t.name == "wardrobe_edit").input_schema[
+            "properties"
+        ]
+    )
 
 
 async def test_marking_a_piece_private_deletes_its_photos_and_fingerprints_in_the_same_change(

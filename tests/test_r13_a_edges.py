@@ -144,7 +144,7 @@ async def test_the_edit_tool_links_labels_and_sets_and_refuses_in_words(cat: Cat
     gone = await call(gw, "wardrobe_edit", piece="wi_" + "9" * 12, colour="red")
     assert gone.result == {"status": "refused", "message": "That piece isn't in your wardrobe."}
     bad = await call(gw, "wardrobe_edit", query="sock", colour="red")
-    assert bad.outcome is GatewayOutcome.ERROR  # his words only for a move
+    assert bad.outcome is GatewayOutcome.ERROR  # piece ids only (D10)
 
 
 async def test_count_by_a_word_and_a_word_it_does_not_know(cat: Catalog) -> None:

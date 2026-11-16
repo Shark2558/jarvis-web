@@ -22,7 +22,7 @@ from jarvis.wardrobe.http import BatchView
 from jarvis.wardrobe.laundry import texts
 from jarvis.wardrobe.laundry.holds import tap
 from jarvis.wardrobe.laundry.store import Batch, Change, LaundryDoc, Origin
-from jarvis.wardrobe.model import Piece, WardrobeView
+from jarvis.wardrobe.model import Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
 from jarvis.wardrobe.states import State, allowed
 
@@ -119,6 +119,18 @@ def _check_out(piece: Piece) -> None:
         raise Refused(texts.wrong_state(piece, "basket"))
 
 
+def _out_events(p: Piece, batch: str, due: date | None, now: datetime) -> list[Event]:
+    """Plan review H1 (review M2): a piece he is wearing closes its wear first (`wear_done` to In
+    laundry, its plan named: counted, STY-17), and the send-out carries that plan too, so the
+    plan check hears "worn for that plan", never a change to it."""
+    if p.state != "in_use":
+        return [tap(p.id, "sent_out", now, batch=batch, due=due)]
+    return [
+        tap(p.id, "wear_done", now, to="in_laundry", plan=p.wear),
+        tap(p.id, "sent_out", now, batch=batch, due=due, plan=p.wear),
+    ]
+
+
 def plan_send(
     view: WardrobeView,
     doc: LaundryDoc,
@@ -146,7 +158,7 @@ def plan_send(
         due=due,
         sent_at=now,
     )
-    events = tuple(tap(p.id, "sent_out", now, batch=batch.id, due=due) for p in pieces)
+    events = tuple(e for p in pieces for e in _out_events(p, batch.id, due, now))
     return Change(
         events=events,
         laundry=_replace(doc, batch),

@@ -76,6 +76,20 @@ async def test_lnd_14_the_last_piece_back_closes_the_batch_and_may_need_pressing
     assert (await r.piece(JACKET)).expected_back is None
 
 
+async def test_h1_a_worn_blazer_to_the_dry_cleaner_closes_its_wear_for_its_plan() -> None:
+    r = await rig()
+    await r.wear(BLAZER, plan="pl_meeting")
+    r.clock.advance(hours=8)
+    r.observer.heard.clear()
+    await r.desk.send_out(UID, (BLAZER,), "Dry cleaner")
+    blazer = await r.piece(BLAZER)
+    assert blazer.state == "with_provider" and blazer.wear is None and blazer.wears == 1
+    kinds = [h.event.kind for h in await r.store.history(UID, BLAZER)][-2:]
+    assert kinds == ["wear_done", "sent_out"]  # the wear is counted (STY-17), then it goes out
+    (heard,) = r.observer.heard  # the wear's plan travels with it: C marks nothing
+    assert (heard.kind, heard.before, heard.plan) == ("sent_out", "in_use", "pl_meeting")
+
+
 async def test_a_piece_that_is_not_in_the_batch_is_refused() -> None:
     r = await rig()
     batch = (await _sent(r)).batch

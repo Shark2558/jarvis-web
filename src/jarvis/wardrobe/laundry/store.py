@@ -32,7 +32,7 @@ from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Create, Delete, DocExists, Docs, Query, Set
 from jarvis.undo.store import owner_ok
-from jarvis.wardrobe.laundry.texts import OFF, UNREADABLE
+from jarvis.wardrobe.laundry.texts import KEPT_NO_KEY, OFF, UNREADABLE
 from jarvis.wardrobe.model import Category, Event, PieceId, PlaceId
 from jarvis.wardrobe.states import State
 
@@ -149,6 +149,12 @@ class LaundryStore:
             raise LaundryUnavailable(OFF)
         return self.docs, self._ring
 
+    def _need_docs(self) -> Docs:
+        """The documents alone: a claim, a release, the claims' query and a delete need no key."""
+        if self.docs is None:
+            raise LaundryUnavailable(OFF)
+        return self.docs
+
     @staticmethod
     def _uid(uid: str) -> str:
         if not owner_ok(uid):
@@ -223,12 +229,11 @@ class LaundryStore:
         return True
 
     async def release(self, uid: str, key: str) -> None:
-        docs, _ = self._need()
-        await docs.write([Delete(self.told_path(uid, key))])
+        await self._need_docs().write([Delete(self.told_path(uid, key))])
 
     async def claims(self, uid: str) -> list[tuple[str, datetime]]:
         """B's claims for him: (path, when written)."""
-        docs, _ = self._need()
+        docs = self._need_docs()
         rows = await docs.query(Query(f"{self._p}wardrobe_told", where=("uid", uid)))
         out: list[tuple[str, datetime]] = []
         for doc_id, body in rows:
@@ -246,9 +251,20 @@ class LaundryData:
     def __init__(self, store: LaundryStore) -> None:
         self._s = store
 
+    async def _kept(self, uid: str) -> list[str]:
+        """Every document of B's for him (no key needed to find or delete them)."""
+        docs = self._s.docs
+        if docs is None:
+            return []
+        paths = [self._s.laundry_path(uid), self._s.review_path(uid)]
+        paths = [p for p in paths if await docs.get(p) is not None]
+        return paths + [p for p, _ in await self._s.claims(uid)]
+
     async def _docs(self, uid: str) -> tuple[LaundryDoc, ReviewDoc]:
         docs = self._s.docs
         if not self._s.available or docs is None:
+            if await self._kept(uid):  # review M7: never "nothing" while sealed records remain
+                raise LaundryUnavailable(KEPT_NO_KEY)
             return LaundryDoc(), ReviewDoc()
         return await self._s.read_laundry(docs.get, uid), await self._s.read_review(docs.get, uid)
 
@@ -269,13 +285,9 @@ class LaundryData:
         }
 
     async def delete(self, uid: str) -> int:
-        if not self._s.available or self._s.docs is None:
-            return 0
-        docs = self._s.docs
-        paths = [self._s.laundry_path(uid), self._s.review_path(uid)]
-        paths = [p for p in paths if await docs.get(p) is not None]
-        paths += [p for p, _ in await self._s.claims(uid)]
-        if paths:
+        """Everything of B's for him, with or without a key (a sealed document needs none to go)."""
+        docs, paths = self._s.docs, await self._kept(uid)
+        if paths and docs is not None:
             await docs.write([Delete(p) for p in paths])
         return len(paths)
 

@@ -17,6 +17,10 @@ from jarvis.wardrobe.redact import fixed_words
 
 WHERE = "in Helpers, Wardrobe"
 OFF = "Laundry is off: this server has no token key."
+KEPT_NO_KEY = (
+    "Laundry records are kept on this server, but it has no token key to read them. "
+    "They can still be deleted."
+)
 UNREADABLE = "JARVIS couldn't open your laundry list just now. Try again in a minute."
 NO_WARDROBE = "The wardrobe isn't ready yet: try again in a minute."
 NOT_SET_UP = "Laundry isn't set up yet."

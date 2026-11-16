@@ -10,11 +10,11 @@ from datetime import date
 
 import pytest
 from r13_fakes import UID, ev
-from r13_fakes_b import BLAZER, TEE, TROUSERS, rig
+from r13_fakes_b import BLAZER, TEE, TROUSERS, TWIN, WHITE_SHIRT, rig
 
 from jarvis.storage.docs import Set
 from jarvis.wardrobe.laundry.holds import admit
-from jarvis.wardrobe.laundry.store import LaundryUnavailable
+from jarvis.wardrobe.laundry.store import LaundryData, LaundryStore, LaundryUnavailable
 from jarvis.wardrobe.ports import WardrobeData
 
 
@@ -73,6 +73,30 @@ async def test_without_a_key_the_data_says_nothing_is_kept() -> None:
     r = await rig(keyring=False)
     (data,) = r.part.data
     assert await data.count(UID) == 0 and await data.export(UID) == {
+        "loads": [],
+        "batches": [],
+        "review": [],
+    }
+
+
+async def test_m7_without_a_key_delete_still_deletes_and_count_says_what_remains() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))  # the queue
+    await r.desk.send_out(UID, (BLAZER,), "Dry cleaner")  # the laundry list
+    await r.desk.store.claim(UID, "laundry_review_2026-11-16", r.clock())
+    prefix = r.desk.store.laundry_path(UID).split("wardrobe_laundry/")[0]
+    nokey = LaundryData(LaundryStore(r.docs, None, prefix=prefix))  # the key is gone
+    for read in (nokey.count, nokey.export):
+        with pytest.raises(LaundryUnavailable) as kept:
+            await read(UID)  # never "0" while sealed records remain
+        assert str(kept.value) == (
+            "Laundry records are kept on this server, but it has no token key to read them. "
+            "They can still be deleted."
+        )
+    assert await nokey.delete(UID) == 3  # deleting needs no key
+    bs = ("wardrobe_laundry/", "wardrobe_review/", "wardrobe_told/")
+    assert not [p for p in r.docs._data if any(c in p for c in bs)]  # noqa: SLF001
+    assert await nokey.count(UID) == 0 and await nokey.export(UID) == {
         "loads": [],
         "batches": [],
         "review": [],

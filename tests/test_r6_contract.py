@@ -34,6 +34,7 @@ ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("GET", "/v1/book/show/script", None),
     ("POST", "/v1/book/show/speak", {"line_id": "s01b01"}),
     ("POST", "/v1/book/show/hear", None),
+    ("POST", "/v1/book/show/heard", {"text": "How does JARVIS read e-mail?"}),  # R6.2 decision 4
     ("POST", "/v1/book/show/ask", {"text": "How does JARVIS read e-mail?"}),
     ("POST", "/v1/book/show/beat", {}),
     ("POST", "/v1/book/close", {}),

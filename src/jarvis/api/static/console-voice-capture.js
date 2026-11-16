@@ -18,7 +18,8 @@
 //                       true only inside a real click, tap or key press (user activation) and never
 //                       opens the microphone. Fires jarvis:mic-lock {locked, by}.
 //                       recognizer() is the only place SpeechRecognition is built (throws 'mic_off' or
-//                       'unsupported'). setInput(id | null) / inputId(): the next open() asks for that
+//                       'unsupported'); canRecognise() says whether this browser has one at all, without
+//                       building it (R6.2). setInput(id | null) / inputId(): the next open() asks for that
 //                       device, also when the microphone is already open (a conversation holds it):
 //                       that open() reopens on the new device, subscribers kept. If it is gone, one retry
 //                       on the default input fires jarvis:audio-route {input, reason: 'input_missing'};
@@ -26,7 +27,11 @@
 //                       (an id only, never a label). trackLabel(): the open track's name.
 //                       WORDS / words(code) (R6.2): the one table of plain words for each reason
 //                       the microphone can't listen ('blocked', 'no_mic', 'busy', 'unsupported',
-//                       'failed', 'ended', 'silent'); the console and the build book read it.
+//                       'failed', 'ended', 'silent', and for the browser's own recogniser
+//                       'rec_unsupported', 'rec_refused', 'rec_network', 'rec_language',
+//                       'rec_stopped'); recognition(error) turns a recogniser's Web Speech error
+//                       into one of them ('' for none or 'no-speech'). The console and the build
+//                       book read it.
 //                       The wake-word module consumes the same frames:
 //                       JarvisWake.start({subscribe: JarvisAudio.subscribe, sampleRate: 16000}, onWake).
 //   window.JarvisWav    encode(frames | Int16Array, rate = 16000) → ArrayBuffer (RIFF/WAVE PCM16 mono).
@@ -129,6 +134,8 @@
     lockSubs.add(fn);
     return () => { lockSubs.delete(fn); };
   }
+  /** Whether this browser has a speech recogniser at all (R6.2); nothing is built. */
+  const canRecognise = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   /** The only SpeechRecognition constructor in the console. */
   function recognizer() {
     if (locked) throw fail('mic_off');
@@ -293,13 +300,23 @@
     failed: 'The microphone didn\'t start. Please try again.',
     ended: 'The microphone stopped (unplugged or switched off). Check it, then tap the mic again.',
     silent: 'The microphone isn\'t sending any sound. Check it isn\'t muted or switched off, then tap the mic again.',
+    rec_unsupported: 'This browser can\'t recognise speech, so it can\'t listen here. Type your question.',
+    rec_refused: 'This browser won\'t let JARVIS use its speech recognition here. Type your question.',
+    rec_network: 'This browser\'s speech recognition couldn\'t reach its service. Check the connection, or type your question.',
+    rec_language: 'This browser can\'t recognise Indian English. Type your question.',
+    rec_stopped: 'Listening stopped before any words came. Tap the mic to try again, or type your question.',
   });
-  const words = (code) => WORDS[code] || WORDS.failed;
+  const words = (code) => (Object.prototype.hasOwnProperty.call(WORDS, code) ? WORDS[code] : WORDS.failed);
+  // A browser recogniser's Web Speech error as one of the reasons above (R6.2); '' when none, or none heard.
+  const RECOGNITION = Object.freeze({ 'not-allowed': 'blocked', 'service-not-allowed': 'rec_refused',
+    'audio-capture': 'no_mic', network: 'rec_network', 'language-not-supported': 'rec_language',
+    aborted: 'rec_stopped', 'no-speech': '' });
+  const recognition = (error) => (!error ? '' : Object.prototype.hasOwnProperty.call(RECOGNITION, error) ? RECOGNITION[error] : 'failed');
 
   window.JarvisAudio = Object.freeze({
-    SAMPLE_RATE, FRAME, WORDS, words,
+    SAMPLE_RATE, FRAME, WORDS, words, recognition,
     supported, prime, open, close, resume, subscribe, level, flush, onEnd,
-    lock, unlock, onLock, recognizer, setInput, trackLabel, switched,
+    lock, unlock, onLock, recognizer, canRecognise, setInput, trackLabel, switched,
     locked: () => locked,
     inputId: () => inputId,
     isOpen: () => !!live,

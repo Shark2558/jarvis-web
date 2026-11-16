@@ -159,6 +159,7 @@ async def test_tokens_end_with_their_session(app: Any) -> None:
 
 
 async def test_speaking_and_hearing(app: Any) -> None:
+    app.state.book_prefs.values.update(show_voice="cloud", listening="cloud")  # R6.2: the switch
     async with sign_in(app) as c:
         auth = await register_passkey(c)
         h = book((await open_book(c, auth, "owner"))["token"])

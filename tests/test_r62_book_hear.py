@@ -5,6 +5,8 @@
 # the owner's "Words to recognise" for an owner session ONLY: R6 D1). Each failure is said in plain
 # words by reason, and a guest never sees setup or admin text (no Cloud Shell command, no "Vitals",
 # no rupees). A limit that can't be read is a 503, not "the limit is reached" (G12). Fixed clocks.
+# Owner decision 4: this is the cloud path, behind the owner's switch (Listening: Cloud); the
+# browser default and its negative controls are in test_r62_book_listening.py.
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -47,6 +49,7 @@ async def _hear(
     async for app in book_app(settings):
         app.state.book_clock = Clock()  # never today's date
         app.state.voice = voice
+        app.state.book_prefs.values["listening"] = "cloud"  # decision 4: the cloud, switched on
         async with sign_in(app) as c:
             auth = await register_passkey(c)
             h = {**book((await open_book(c, auth, audience))["token"]), "Content-Type": "audio/wav"}
@@ -210,6 +213,7 @@ async def test_a_narration_failure_never_carries_setup_text(
     async for app in book_app(settings):
         app.state.book_clock = Clock()
         app.state.voice = Mouth(error=VoiceUnavailable("api_disabled"))
+        app.state.book_prefs.values["show_voice"] = "cloud"  # decision 4: the cloud, switched on
         async with sign_in(app) as c:
             auth = await register_passkey(c)
             h = book((await open_book(c, auth, audience))["token"])

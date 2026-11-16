@@ -86,6 +86,7 @@ DOWN_TTL_S = 600.0
 # Inside the Brain's own bound (1.5 s), so a hung read is remembered as a failure.
 SETTINGS_READ_S = 1.0
 VOICE_LIST_WAIT_S = 2.0  # GET /v1/voice waits this long for Google's list, then lists all
+FREE_ONLY_STEP_S = 15.0  # Google may bill a request in 15 s steps: free-only needs a whole step
 STICKY: frozenset[str] = frozenset({"api_disabled", "not_configured"})
 Api = Literal["tts", "stt"]
 State = Literal["ready", "off", "unavailable"]
@@ -414,6 +415,17 @@ class VoiceService:
             self._locks[(uid, api)] = lock
         return lock
 
+    async def _gate(self, uid: str, price: Price, units: float, *, free_only: bool) -> None:
+        """The spending gate. `free_only` (R6.2 decision 4, a build book guest's cloud question):
+        only while the free allowance covers a whole billing step, never priced."""
+        if free_only:
+            step = math.ceil(units / FREE_ONLY_STEP_S) * FREE_ONLY_STEP_S
+            await self.billing.ensure_free(key=price.key, units=step, free_units=price.free_units)
+            return
+        await self.billing.ensure_units_allowed(
+            uid, key=price.key, units=units, free_units=price.free_units
+        )
+
     async def _meter(self, uid: str, price: Price, units: float) -> UnitCharge:
         return await self.billing.record_units(
             uid,
@@ -502,12 +514,13 @@ class VoiceService:
         owner_phrases: bool = True,
         turn_hints: tuple[str, ...] = (),
         public_hints: tuple[str, ...] = (),
+        free_only: bool = False,
     ) -> TranscriptView:
         """`owner_phrases=False`: the base hints only (R6: a build book guest's question must not
         be biased toward the owner's own words). `turn_hints` (R11.1 D9): this turn's hints,
         already cleaned and capped by the caller; they sit between the base list and his words.
         `public_hints` (R6.2): words that hold nothing of the owner's (the build book's own
-        vocabulary), so they go along for a guest too, before any turn hint."""
+        vocabulary), so they go along for a guest too. `free_only`: see `_gate`."""
         audio = parse_wav(blob)
         engines = self._require("stt")
         owner = (await self.settings_of(uid)).phrases if owner_phrases else ()  # never raises
@@ -516,9 +529,7 @@ class VoiceService:
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …
         async with self._lock(uid, "stt"):
-            await self.billing.ensure_units_allowed(
-                uid, key=price.key, units=estimate, free_units=price.free_units
-            )
+            await self._gate(uid, price, estimate, free_only=free_only)
             t = await self._recognise(
                 engines, uid, price, estimate, audio, hints, bool(owner) or bool(turn)
             )

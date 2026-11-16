@@ -393,9 +393,18 @@ CLOSING = {
 }
 
 
-def script(audience: str = "guest", scenes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """GET /v1/book/show/script: {release, audience, scenes, lines, closing, costs, talk, until}."""
-    return {
+def script(
+    audience: str = "guest",
+    scenes: list[dict[str, Any]] | None = None,
+    *,
+    voice: str | None = "cloud",
+    listening: str | None = "cloud",
+) -> dict[str, Any]:
+    """GET /v1/book/show/script: {release, audience, scenes, lines, closing, costs, talk, until,
+    voice, listening}. R6.2 owner decision 4: the server says "browser" for both unless the owner
+    switched; these stubs default to the CLOUD so the R6 and R6.2 cloud-path tests run behind the
+    switch. None leaves a key out (the page then takes the free browser)."""
+    out = {
         "release": {k: RELEASE[k] for k in ("id", "label", "committed_at")},
         "audience": audience,
         "scenes": SCENES if scenes is None else scenes,
@@ -405,6 +414,7 @@ def script(audience: str = "guest", scenes: list[dict[str, Any]] | None = None) 
         "talk": {"on": True},
         "until": "2099-01-01T00:00:00+00:00",
     }
+    return {**out, **{k: v for k, v in (("voice", voice), ("listening", listening)) if v}}
 
 
 def wav(seconds: float = 0.15, rate: int = 16000) -> bytes:
@@ -470,6 +480,7 @@ class FakeBook:
         self.hear_answers: list[
             Any
         ] = []  # consumed in order ("abort" or (code, body)); then {text}
+        self.heard_answers: list[Any] = []  # /show/heard ("abort" or (code, body)); then echo
         self.speak_status = 200
         self.ask_answers: list[dict[str, Any]] = []
         self.lock: dict[str, Any] | None = {"on": False}  # None: a server without the lock route
@@ -478,7 +489,8 @@ class FakeBook:
         ] = []  # consumed in order ("abort" or (code, body)); then resumed
         self.settings = {
             "creator_name": "",
-            "show_voice": "cloud",
+            "show_voice": "browser",  # R6.2 owner decision 4: the browser's, Rs 0
+            "listening": "browser",
             "talk_on": True,
             "allow_training_brain": False,
         }
@@ -527,15 +539,18 @@ class FakeBook:
                 },
             )
         if p == "/v1/book/settings":
-            if m == "PUT" and isinstance(c["body"], dict):
-                self.settings.update(c["body"])
-            return j(route, 200, self.settings)
+            return self._settings(route, m, c["body"])
         if p == "/v1/book/show/script":
             if self.script_fails:
                 return self._fail(route, self.script_fails.pop(0))
             return j(route, *self.script_answer)
         if p == "/v1/book/show/hear" and m == "POST":
             got = self.hear_answers.pop(0) if self.hear_answers else (200, {"text": HEARD})
+            return self._fail(route, got) if got == "abort" else j(route, *got)
+        if p == "/v1/book/show/heard" and m == "POST":
+            said = str((c["body"] or {}).get("text", ""))
+            echo = (200, {"text": said, "heard": said, "changed": False, "no_speech": not said})
+            got = self.heard_answers.pop(0) if self.heard_answers else echo
             return self._fail(route, got) if got == "abort" else j(route, *got)
         if p == "/v1/book/show/speak":
             if self.speak_status != 200:
@@ -557,6 +572,15 @@ class FakeBook:
             got = self.resume_answers.pop(0) if self.resume_answers else (200, {"resumed": True})
             return self._fail(route, got) if got == "abort" else j(route, *got)
         return j(route, 404, {"error": "not_found", "detail": p})
+
+    def _settings(self, route: Any, method: str, body: Any) -> None:
+        """GET / PUT /v1/book/settings, with R6.2's rule: the cloud only with the cost confirmed."""
+        if method == "PUT" and isinstance(body, dict):
+            patch = {k: v for k, v in body.items() if k != "confirm_cost"}
+            if "cloud" in patch.values() and body.get("confirm_cost") is not True:
+                return j(route, 422, {"error": "confirm_needed", "detail": "Confirm the cost."})
+            self.settings.update(patch)
+        return j(route, 200, self.settings)
 
     @staticmethod
     def _fail(route: Any, how: Any) -> None:

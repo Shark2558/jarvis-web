@@ -1,6 +1,7 @@
 # tests/book_hear_fakes.py -- R6.2 Part 1: app.state.voice for POST /v1/book/show/hear. Records how
-# it was asked to transcribe (the owner's words or not, the book's own words) and whether the
-# owner's "Words to recognise" were read; answers with `heard` or raises `error`. No network.
+# it was asked to transcribe (the owner's words or not, the book's own words, free-only or not) and
+# whether the owner's "Words to recognise" were read; answers with `heard` or raises `error`. No
+# network.
 from __future__ import annotations
 
 import io
@@ -63,9 +64,15 @@ class Ears:
         owner_phrases: bool = True,
         turn_hints: tuple[str, ...] = (),
         public_hints: tuple[str, ...] = (),
+        free_only: bool = False,
     ) -> Heard:
         self.asked.append(
-            {"owner_phrases": owner_phrases, "turn_hints": turn_hints, "public_hints": public_hints}
+            {
+                "owner_phrases": owner_phrases,
+                "turn_hints": turn_hints,
+                "public_hints": public_hints,
+                "free_only": free_only,
+            }
         )
         if self.error is not None:
             raise self.error

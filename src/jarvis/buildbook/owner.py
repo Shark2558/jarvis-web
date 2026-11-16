@@ -1,17 +1,22 @@
 # src/jarvis/buildbook/owner.py
 """What the owner keeps beside his sealed build books (R6 D16, D9; builder B; Layer 7).
 
-    {prefix}book_settings/{uid}  creator_name, show_voice, talk_on, allow_training_brain,
-                                 updated_at
+    {prefix}book_settings/{uid}  creator_name, show_voice, listening, talk_on,
+                                 allow_training_brain, voice_rule, updated_at
     {prefix}book_tickets/{uid}   {grants: [], tickets: [{mac, item: <release id>,
                                  fid: "source", session: <bk id>, until}]}
 
 Book settings (D16): the creator's name for the closing credit (D13 `{by}`; empty = "my owner and
-creator"), the show's voice (cloud | browser), the talk-through on or off, and whether the
-talk-through may use a brain that trains on what it is told (off). A patch is checked before
-anything is written (`SettingsRejected`, plain words that never echo the input) and applied in a
-transaction; a stored field that isn't valid reads as its default, field by field. `get` lets a
-storage failure through (the panel must not show defaults as if they were saved);
+creator"), the show's voice and Listening ("Ask by voice"), each browser | cloud, the talk-through
+on or off, and whether the talk-through may use a brain that trains on what it is told (off).
+R6.2 owner decision 4: both voices are the BROWSER's by default (Rs 0), and a switch to the cloud
+needs `confirm_cost: true` in the same patch (`CostNotConfirmed` otherwise; never stored). Every
+write marks the document `voice_rule: 2`: a "cloud" stored before that rule (every R6 save wrote
+the old default, chosen or not) was never confirmed, so it reads as the browser. A patch is
+checked before anything is written (`SettingsRejected`, plain words that never echo the input)
+and applied in a transaction; a stored field that isn't valid reads as its default, field by
+field. `get` lets a storage failure through (the panel must not show defaults as if they were
+saved);
 `get_or_default` never raises and falls back to the safe defaults (for the talk lane: no
 training brain). `clear_name` is Privacy -> Delete of the creator name (the other choices stay: a
 privacy click never changes how the talk-through behaves).
@@ -48,14 +53,20 @@ from jarvis.voice.settings import clean_phrase
 log = get_logger(__name__)
 T = TypeVar("T")
 
-ShowVoice = Literal["cloud", "browser"]
+ShowVoice = Literal["cloud", "browser"]  # the show voice and Listening alike (R6.2)
 VOICES: tuple[ShowVoice, ...] = ("cloud", "browser")
+VOICE_RULE = 2  # R6.2: the voices in this document were chosen under decision 4's confirmation
+_PRICED: tuple[str, ...] = ("show_voice", "listening")  # a switch to "cloud" can cost money
 NAME_RAW_MAX = 400  # longer than this is refused before any cleaning work
 BAD_NAME = (
     f"The creator name needs 1 to {CREATOR_MAX} characters with at least one letter, and may use "
     "only letters, numbers, spaces and - ' . &"
 )
 DOWN = "Book settings can't be read right now."
+CONFIRM_COST = (
+    "The cloud voice and cloud listening use Google's free monthly allowance first, then cost "
+    "money. Confirm the cost to switch; nothing was changed."
+)
 
 
 def _utcnow() -> dt.datetime:
@@ -66,9 +77,14 @@ class SettingsRejected(BookError):
     """A Book settings change that can't be saved (422); the words never echo the input."""
 
 
+class CostNotConfirmed(SettingsRejected):
+    """A switch to the cloud without `confirm_cost: true` (422 confirm_needed, R6.2 decision 4)."""
+
+
 class BookSettings(Frozen):
     creator_name: str = Field(default="", max_length=CREATOR_MAX)
-    show_voice: ShowVoice = "cloud"
+    show_voice: ShowVoice = "browser"
+    listening: ShowVoice = "browser"
     talk_on: bool = True
     allow_training_brain: bool = False
 
@@ -80,8 +96,12 @@ class BookSettingsPatch(BaseModel):
 
     creator_name: StrictStr | None = Field(default=None, max_length=NAME_RAW_MAX)
     show_voice: ShowVoice | None = None
+    listening: ShowVoice | None = None
     talk_on: StrictBool | None = None
     allow_training_brain: StrictBool | None = None
+    confirm_cost: StrictBool | None = (
+        None  # a switch to the cloud: the cost was shown and confirmed
+    )
 
 
 def _name(raw: str) -> str:
@@ -95,22 +115,36 @@ def _name(raw: str) -> str:
 
 
 def apply(cur: BookSettings, patch: BookSettingsPatch) -> BookSettings:
-    """The settings after `patch`, or SettingsRejected."""
+    """The settings after `patch`, or SettingsRejected (CostNotConfirmed for an unconfirmed switch
+    to the cloud)."""
     changes: dict[str, Any] = patch.model_dump(exclude_none=True)
+    confirmed = changes.pop("confirm_cost", False) is True
+    if not confirmed and any(changes.get(k) == "cloud" for k in _PRICED):
+        raise CostNotConfirmed(CONFIRM_COST)
     if "creator_name" in changes:
         changes["creator_name"] = _name(changes["creator_name"])
     return cur.model_copy(update=changes)
 
 
+def _voice(doc: dict[str, Any], key: str) -> ShowVoice:
+    """A stored voice choice: "cloud" only when chosen under R6.2's confirmation, else free."""
+    return "cloud" if doc.get(key) == "cloud" and doc.get("voice_rule") == VOICE_RULE else "browser"
+
+
+def _doc(settings: BookSettings, at: str) -> dict[str, Any]:
+    return {**settings.model_dump(), "voice_rule": VOICE_RULE, "updated_at": at}
+
+
 def decode(doc: Any) -> BookSettings:
     if not isinstance(doc, dict):
         return BookSettings()
-    name, voice = doc.get("creator_name"), doc.get("show_voice")
+    name = doc.get("creator_name")
     talk, train = doc.get("talk_on"), doc.get("allow_training_brain")
     good_name = clean_phrase(name) if isinstance(name, str) else None
     return BookSettings(
         creator_name=good_name if good_name and len(good_name) <= CREATOR_MAX else "",
-        show_voice=voice if voice in VOICES else "cloud",
+        show_voice=_voice(doc, "show_voice"),
+        listening=_voice(doc, "listening"),
         talk_on=talk if isinstance(talk, bool) else True,
         allow_training_brain=train if isinstance(train, bool) else False,
     )
@@ -145,7 +179,7 @@ class BookSettingsStore:
         return decode(doc)
 
     async def get_or_default(self, uid: str) -> BookSettings:
-        """Never raises: the safe defaults (cloud voice, talk on, NO training brain) on failure."""
+        """Never raises: the safe defaults (browser voices, talk on, NO training brain)."""
         try:
             return await self.get(uid)
         except BookError:
@@ -158,7 +192,7 @@ class BookSettingsStore:
 
         async def fn(tx: DocTx) -> BookSettings:
             new = apply(decode(await tx.get(path)), patch)
-            tx.set(path, {**new.model_dump(), "updated_at": at})
+            tx.set(path, _doc(new, at))
             return new
 
         return await self._commit(fn)
@@ -172,9 +206,7 @@ class BookSettingsStore:
             cur = decode(await tx.get(path))
             if not cur.creator_name:
                 return False
-            tx.set(
-                path, {**cur.model_copy(update={"creator_name": ""}).model_dump(), "updated_at": at}
-            )
+            tx.set(path, _doc(cur.model_copy(update={"creator_name": ""}), at))
             return True
 
         return await self._commit(fn)
@@ -277,8 +309,11 @@ __all__ = [
     "BookSettingsStore",
     "BookTaken",
     "BookTickets",
+    "CONFIRM_COST",
+    "CostNotConfirmed",
     "SettingsRejected",
     "ShowVoice",
+    "VOICE_RULE",
     "apply",
     "decode",
 ]

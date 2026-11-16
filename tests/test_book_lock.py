@@ -121,7 +121,7 @@ async def test_an_unreadable_lock_is_never_unlocked(docs: FlakyDocs) -> None:
 )
 def test_the_allow_list(method: str, path: str, ok: bool) -> None:
     assert allowed(method, path) is ok
-    assert len(ALLOWED) == 15  # I1: + GET /v1/book/show/lock
+    assert len(ALLOWED) == 16  # I1: + GET /v1/book/show/lock; R6.2: + POST /v1/book/show/heard
 
 
 # ---- the middleware on the real app --------------------------------------------------------------

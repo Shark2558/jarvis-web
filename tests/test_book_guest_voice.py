@@ -44,7 +44,13 @@ class Ears:
         return None
 
     async def transcribe(
-        self, uid: str, blob: bytes, *, owner_phrases: bool = True, public_hints: Any = ()
+        self,
+        uid: str,
+        blob: bytes,
+        *,
+        owner_phrases: bool = True,
+        public_hints: Any = (),
+        free_only: bool = False,
     ) -> Any:
         self.asked.append(owner_phrases)  # R6.2: the book's own words go along for both
 
@@ -66,6 +72,7 @@ async def test_the_hear_route_drops_the_owners_words_for_a_guest(settings: Setti
         w.writeframes(b"\x00\x00" * 16_000)
     async for app in book_app(settings):
         app.state.voice = ears = Ears()
+        app.state.book_prefs.values["listening"] = "cloud"  # R6.2 decision 4: the owner's switch
         async with sign_in(app) as c:
             auth = await register_passkey(c)
             for audience in ("owner", "guest"):

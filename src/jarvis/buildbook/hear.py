@@ -107,6 +107,12 @@ _WORDS: Final[dict[str, str]] = {
     "rejected": (
         "The speech service couldn't take that recording. Try again, or type your question."
     ),
+    # R6.2 decision 4: a guest's cloud listening stops at the free allowance (never charged)
+    "free_used": "JARVIS can't listen right now. Type your question.",
+    "listening_browser": (
+        "Listening now uses this browser's own speech recognition. Reload this page to use it, "
+        "or type your question."
+    ),
 }
 _OWNER_TAIL: Final[dict[str, str]] = {
     "not_configured": " Vitals shows what cloud listening needs.",

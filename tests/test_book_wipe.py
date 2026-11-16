@@ -231,9 +231,10 @@ async def test_the_script_is_the_book_plus_the_fixed_lines(rig: Rig) -> None:
         "The credit is all his."
     )
     assert "month_inr" not in s["costs"] and s["audience"] == "guest"
-    assert s["release"]["id"] == "4a70683" and s["talk"]["on"] is True and s["voice"] == "cloud"
+    assert s["release"]["id"] == "4a70683" and s["talk"]["on"] is True and s["voice"] == "browser"
+    assert s["listening"] == "browser"  # R6.2 owner decision 4: Rs 0 by default
     assert s["until"] == guest.until and s["session"]["questions_left"] == guest.questions_left
-    rig.prefs.values.update(creator_name="Akash", show_voice="browser")
+    rig.prefs.values.update(creator_name="Akash", show_voice="cloud")
     owner = (await rig.open("owner")).session
     o = await rig.svc.script(UID, owner)
     assert o["costs"]["month_inr"] == 312.5 and "hand_back" not in o["lines"]
@@ -242,7 +243,7 @@ async def test_the_script_is_the_book_plus_the_fixed_lines(rig: Rig) -> None:
         == "The code is sealed in your vault, for the people you allow, Sir."
     )
     assert "Akash, my owner and creator" in o["closing"][0]["text"]
-    assert o["voice"] == "browser"
+    assert o["voice"] == "cloud"
 
 
 async def test_spoken_lines_are_beats_or_fixed_lines_only(rig: Rig) -> None:

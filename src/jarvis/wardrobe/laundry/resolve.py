@@ -92,14 +92,11 @@ def _pending(
     return _Res(events, None, (), texts.done("basket", back) if back else texts.CLOSED)
 
 
-def _confirmed(
-    p: Piece, e: Entry, originals: Mapping[str, Event], how: str, now: datetime
-) -> list[Event]:
+def _confirmed(p: Piece, originals: Mapping[str, Event], how: str, now: datetime) -> list[Event]:
     """The unverified change he says did happen, recorded again as his (verified) word."""
     out: list[Event] = []
-    for eid in e.events:
-        orig = originals.get(eid)
-        if orig is None or orig.piece != p.id:
+    for orig in originals.values():
+        if orig.piece != p.id:
             continue
         if orig.kind == "deposited":
             out.append(basket_event(_as(p, p.back_to), now))
@@ -120,24 +117,26 @@ def _hold(
     originals: Mapping[str, Event],
     now: datetime,
 ) -> _Res:
-    expected = "blind" if e.kind == "rescan" else e.reason
+    """A hold is matched on the PIECE's own hold, never the entry's reason (A's sweep repairs an
+    entry with reason "sweep"): `none` only when each piece's hold is an unconfirmed change."""
     targets = _chosen(chosen, e.pieces) or list(e.pieces)
     if outcome == "moved" and to is None:
         raise Refused(texts.MOVED_NEEDS)
+    live = [p for pid in targets if (p := view.pieces.get(pid)) and p.state == "review" and p.hold]
+    if outcome == "none" and any(p.hold != "unverified" for p in live):
+        raise Refused(texts.OUTCOME_BAD)
     events: list[Event] = []
-    for pid in targets:
-        p = view.pieces.get(pid)
-        if p is None or p.state != "review" or p.hold != expected:
-            continue  # answered another way meanwhile
+    for p in live:  # a piece no longer held was answered another way meanwhile
         if outcome == "moved":
-            events.append(tap(pid, "found", now, to=to, place=place, how=how))
+            events.append(tap(p.id, "found", now, to=to, place=place, how=how))
             continue
-        events.append(tap(pid, "released", now, how=how))
-        if outcome == "these" and e.reason == "unverified":
-            events += _confirmed(p, e, originals, how, now)
+        events.append(tap(p.id, "released", now, how=how))
+        if outcome == "these" and p.hold == "unverified":
+            events += _confirmed(p, originals, how, now)
     left = tuple(x for x in e.pieces if x not in targets)
-    words = texts.partly_checked(len(targets), len(left)) if left else texts.CLOSED
-    return _Res(events, None, left, words)
+    if left:
+        return _Res(events, None, left, texts.partly_checked(len(targets), len(left)))
+    return _Res(events, None, (), texts.CLOSED if live else texts.NOTHING_LEFT)
 
 
 def _stale(
@@ -202,9 +201,7 @@ def plan_resolve(
     if e is None:
         raise Refused(texts.ENTRY_GONE)
     fam = _family(e)
-    if outcome not in _OUTCOMES[fam] or (
-        fam == "hold" and outcome == "none" and e.reason != "unverified"
-    ):
+    if outcome not in _OUTCOMES[fam]:
         raise Refused(texts.OUTCOME_BAD)
     if fam == "pending_deposit":
         res = _pending(view, e, outcome, pieces, how, now)

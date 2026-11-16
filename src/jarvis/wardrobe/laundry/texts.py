@@ -56,6 +56,7 @@ NOTHING_TO_CORRECT = "There's no step to strike out for that piece."
 EVENT_UNKNOWN = "That step isn't in this piece's history."
 CORRECTED = "Done: that step is struck out and the piece's state worked out again."
 CLOSED = "Done: the check is closed."
+NOTHING_LEFT = "Nothing to change: it was answered another way. The check is closed."
 # the Activity words (`Tool.activity_words`): fixed, never a piece or a shop
 LOOKED = "Looked at the laundry"
 MOVED = "Moved pieces through the laundry"

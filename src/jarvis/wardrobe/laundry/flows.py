@@ -261,19 +261,28 @@ class Desk:
         return await self._commit(uid, plan, via=via)
 
     async def _originals(self, uid: str, entry_id: str, outcome: Outcome) -> dict[str, Event]:
-        """The unverified events a "yes, it happened" records again (read before the commit)."""
+        """The unverified events a "yes, it happened" records again (read before the commit):
+        for each piece whose OWN hold is an unconfirmed change, the events its entry names, else
+        its newest one the fold marked `held` (an entry A's sweep repaired names none)."""
         assert self.store.docs is not None
         queue = await self.store.read_review(self.store.docs.get, uid)
         entry = review.find(queue, entry_id)
         if entry is None:
             raise Refused(texts.ENTRY_GONE)
-        if not (entry.kind == "hold" and entry.reason == "unverified" and outcome == "these"):
+        if outcome != "these":
             return {}
+        wardrobe = self.wardrobe()
+        view = await wardrobe.view(uid)
         out: dict[str, Event] = {}
         for pid in entry.pieces:
-            for h in await self.wardrobe().history(uid, pid):
-                if h.event.id in entry.events:
-                    out[h.event.id] = h.event
+            p = view.pieces.get(pid)
+            if p is None or p.state != "review" or p.hold != "unverified":
+                continue
+            items = await wardrobe.history(uid, pid)
+            named = [h.event for h in items if h.event.id in entry.events]
+            held = [h.event for h in items if h.mark == "held"]
+            pick = named or ([max(held, key=Event.sort_key)] if held else [])
+            out.update({e.id: e for e in pick})
         return out
 
     async def resolve(

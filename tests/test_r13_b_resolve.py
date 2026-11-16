@@ -220,6 +220,61 @@ def test_h1_a_which_entry_without_its_step_takes_no_laundry_step() -> None:
     assert str(no.value) == "That answer doesn't fit this check."
 
 
+async def _hold_without_entry(r, event) -> None:  # type: ignore[no-untyped-def]
+    """A hold whose entry is gone (what A's 04:00 sweep repairs): no writer for one commit."""
+    r.store.bind(review_writer=None, observers=[r.observer])
+    await r.commit(event)
+    r.store.bind(review_writer=r.writer, observers=[r.observer])
+
+
+async def _sweep(r, pid: str) -> None:  # type: ignore[no-untyped-def]
+    """A's repair as on r13-a (`catalog/jobs.py`): the entry's reason is "sweep"."""
+    back = (await r.piece(pid)).back_to
+
+    async def fn(view: WardrobeView, tx: DocTx) -> Commit:
+        need = ReviewNeeded("hold", pid, back_to=back, reason="sweep")
+        return Commit(extra=tuple(await r.writer.entries(UID, view, tx, (need,))))
+
+    await r.store.transact(UID, fn)
+
+
+async def test_h2_a_hold_the_sweep_repaired_is_released_by_these() -> None:
+    r = await rig()
+    await _hold_without_entry(r, ev(WHITE_SHIRT, "held", r.clock()))
+    await _sweep(r, WHITE_SHIRT)
+    (entry,) = await r.open_entries()
+    assert entry.reason == "sweep" and (await r.piece(WHITE_SHIRT)).hold == "held"
+    r.clock.advance(minutes=1)
+    got = await r.desk.resolve(UID, entry.id, "these")
+    assert got.message == "Done: the check is closed." and await r.state(WHITE_SHIRT) == "ready"
+    assert await r.open_entries() == ()
+
+
+@pytest.mark.parametrize(("outcome", "state"), [("none", "ready"), ("these", "in_laundry")])
+async def test_h2_a_sweep_repaired_unverified_change_keeps_none_and_its_confirm(
+    outcome: str, state: str
+) -> None:
+    r = await rig()
+    await _hold_without_entry(r, admit(ev(TEE, "deposited", r.clock(), source="camera")))
+    await _sweep(r, TEE)
+    (entry,) = await r.open_entries()
+    assert entry.events == () and (await r.piece(TEE)).hold == "unverified"
+    r.clock.advance(minutes=1)
+    await r.desk.resolve(UID, entry.id, outcome)  # type: ignore[arg-type]
+    assert await r.state(TEE) == state and await r.open_entries() == ()
+
+
+async def test_h2_a_hold_answered_another_way_never_says_done() -> None:
+    r = await rig()
+    await r.commit(ev(WATCH, "missing", r.clock()))
+    (entry,) = await r.open_entries()
+    r.clock.advance(minutes=1)
+    await r.commit(ev(WATCH, "found", r.clock(), to="ready"))  # a scan found it meanwhile
+    got = await r.desk.resolve(UID, entry.id, "these")
+    assert got.message == "Nothing to change: it was answered another way. The check is closed."
+    assert await r.open_entries() == () and await r.state(WATCH) == "ready"
+
+
 def test_needs_from_another_part_still_become_entries() -> None:
     from r13_fakes import ist
 

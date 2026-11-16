@@ -261,7 +261,7 @@ def _brain_of(r):  # type: ignore[no-untyped-def]
 
 
 async def _sessions(*specs: tuple[str, str]) -> InMemorySessionStore:
-    store = InMemorySessionStore()
+    store = InMemorySessionStore(now=lambda: NOW)  # sessions are dated from NOW: so is their expiry
     for sid, brain in specs:
         s = session_with(*THREE, sid=sid, minutes_ago=30)
         s.metadata["brain"] = brain

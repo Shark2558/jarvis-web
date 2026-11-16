@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from jarvis.core.models import Session, SessionSummary
@@ -11,13 +12,18 @@ from jarvis.memory.base import SessionStore, summarize
 
 
 class InMemorySessionStore(SessionStore):
-    def __init__(self, ttl_s: int = 24 * 3600) -> None:
+    def __init__(
+        self, ttl_s: int = 24 * 3600, *, now: Callable[[], datetime] | None = None
+    ) -> None:
+        """`now`: the clock that decides expiry (tests with a fixed date pass theirs; default:
+        the real time)."""
+        self._now = now or (lambda: datetime.now(UTC))
         self._data: dict[str, Session] = {}
         self._ttl = timedelta(seconds=ttl_s)
         self._lock = asyncio.Lock()
 
     def _expired(self, s: Session) -> bool:
-        return datetime.now(UTC) - s.updated_at > self._ttl
+        return self._now() - s.updated_at > self._ttl
 
     async def get(self, session_id: str) -> Session | None:
         async with self._lock:

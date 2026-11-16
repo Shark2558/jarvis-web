@@ -1,4 +1,4 @@
-Version v6.2.1 · 15 Nov 2026, 20:15 IST · Release R6.2 · Status: Current · Owner: 🛠 Mark XXI
+Version v6.2.2 · 16 Nov 2026, 11:39 IST · Release R6.2 · Status: Current · Owner: 🛠 Mark XXI
 
 # R6.2 Part 1 — "The Build Book: Ask by voice fixed" (integration notes A)
 
@@ -19,6 +19,13 @@ no "Switch the microphone on" once the questions run out; an empty `K_SERVICE` c
 a race in the browser helper), added Phase A case 2 as its own test, moved the one version pin
 `f7fe775` missed (`cff2c07`: `test_r11_seams`), re-ran every check below and finished this
 document. Nothing from the first builder was discarded.
+
+**v6.2.2 (section 9).** The fresh-context security and code reviews (`REVIEW-SECURITY-1.md`,
+`REVIEW-CODE-1.md`) found 2 HIGH and 8 LOW; the owner then made decision 4 (the Book's voice costs
+nothing by default). A fixer took over the worktree after the previous fixer was stopped by a usage
+limit with decision 4 and some LOWs uncommitted. Section 9 lists every finding and how it was
+handled, what decision 4 built, and the tests and results. Sections 1–8 describe Part 1 as first
+built; where section 9 changes them, it says so.
 
 ## 1. What changed
 
@@ -193,35 +200,41 @@ tests stub the Book's routes (`book_mocks.FakeBook`), so neither needs the short
 
 ## 7. The live check for the go-live guide (for the Workshop to place)
 
-> **Build Book: Ask by voice (R6.2).** On the laptop, in Chrome: open the Book's show, go to
-> Questions, and tap the microphone once. The line under the box says "Listening…". Say "How
-> does JARVIS keep my data private?" and tap again: it says "Processing…", then "Done…", and your
-> words are in the box, not sent. Press Ask. If instead a sentence says the microphone is
-> blocked, follow its Chrome steps; if it says the microphone is switched off, tap "Switch the
-> microphone on" and try again. Tell the Workshop the sentence you saw if it is anything else.
+> **Build Book: Ask by voice (R6.2, v6.2.2: the browser listens by default, ₹0).** On the laptop,
+> in Chrome: open the Book's show, go to Questions, and tap the microphone once. The line under the
+> box says "Listening…". Say "How does JARVIS keep my data private?" and tap again: it says
+> "Processing…", then "Done…", and your words are in the box, not sent. Press Ask. If instead a
+> sentence says the microphone is blocked, follow its Chrome steps; if it says the microphone is
+> switched off, tap "Switch the microphone on" and try again; if it says this browser's speech
+> recognition can't be used, it also points you to Book settings. Then, in the console's Book
+> panel → Book settings, check that Show voice and Listening both say "Browser (free)"; choosing
+> "Cloud (₹)" asks first and shows what it costs ("Keep it free" changes nothing). Tell the
+> Workshop the sentence you saw if it is anything else.
 
 ## 8. For the reviewers, and open questions
 
-1. **Decision 4 (stop listening at the free minutes) is NOT built.** The brief asked for the
-   truth about today's billing: past the free 54 minutes a spoken question is charged until the
-   monthly limit (402). So the 402 now says both are used up, and the owner sees "this one was
-   charged" on a priced question; a guest is never told about costs. If the owner answers YES to
-   decision 4, the Book needs a free-only gate (a change in `billing`/`voice`, its own tests).
+1. **Decision 4 is built in v6.2.2 (section 9.2)**, in the owner's later wording: the Book's voice
+   is the browser's by default (₹0), with an owner-only switch to the cloud. A guest's cloud
+   listening is free-only (the gate this item foresaw: `Billing.ensure_free`), and a guest is
+   never told about spending (security L1). The owner still sees "this one was charged" on a priced
+   question, on the cloud path only.
 2. **Security review wanted** (auth): the G11 refusal (`book_show_access._opening`) and the
    Cloud Run guard (`config._refuse_dev_on_cloud_run`). The guard also closes, on Cloud Run, the
    other token-mode dev shortcuts that remain in the code and are outside this part (`api/phone.py`
    offer, `api/deleted.py` remove-now, `api/faces.py`); locally they are unchanged.
-3. `book_gate.console_only` (the owner routes in `api/book.py`) still lets token-mode dev read
-   `GET /v1/book` (status) and the Book settings, so the console's Book panel loads and then says
-   why the Book won't open. No session can be opened in token mode, so the reader, the old books
-   and the code download stay shut. Tell me if those two should refuse too.
+3. Answered by security review 1: `GET /v1/book` and the Book settings never called
+   `book_gate.console_only` (they take `require_auth` + `current_user`, as in every mode), carry
+   no book content, and stay as they are. The gate's own token-mode-dev clause, which the reader,
+   the old books and the code download pass, is removed in v6.2.2 (security L2, section 9.1).
 4. **The console's wording changed** (text only, no style): its "blocked" help now carries the
    Chrome / Windows / Android steps and is longer when shown. R5's own test of it is green.
 5. **The version goes down** (14.0.2 → 6.2.0, the owner's release numbering). Nothing compares
    versions (`selfwatch` tells a new revision or version by inequality; sealed books are ordered
    by time). The book's release label is now `R6.2`; the first plan it reads stays
    `docs/plans/r14-hardening.md` until a top-level `docs/plans/r6-2-*.md` lands (then
-   `test_r14_seams` / `test_r7_seams` need that path). Not updated here: the architecture guide
+   `test_r14_seams` / `test_r7_seams` need that path, and so does
+   `test_book_gen_plans::test_the_real_plans_parse`, which pins the first plan's path and its
+   `R14` label: code review 1, L4). Not updated here: the architecture guide
    (v14.0.3: its C57 card's "Where in the code" could add `buildbook/hear.py`; its "Outside
    services" is G2, Part 2) and the project's own release plan and progress docs (not in the repo).
 6. The "no sound" check waits 1.5 s for the first frame (Phase A 4.5). Frames are the capture
@@ -244,8 +257,138 @@ tests stub the Book's routes (`book_mocks.FakeBook`), so neither needs the short
    already covers the second). This part does only what the brief and decision 6 ask: `dev` or
    token mode with `K_SERVICE` set. Memory sessions on Cloud Run stay for Part 2.
 
+## 9. Version 6.2.2: the reviews' findings and owner decision 4
+
+On branch `r6-2` from `d237b8c` (this document's first edition). The previous fixer committed the
+two review files (`9a48161`) and both HIGH fixes (`f9dfce7`, `70ecc3a`), then was stopped by a
+usage limit with decision 4 and some LOWs uncommitted in the worktree (a safety copy is on
+`r6-2-wip` `eef1eb9`, never pushed to again). This fixer read that diff, kept all of it (nothing was
+reverted), finished it test first, and committed it in pieces. Nothing was rebased, stashed or
+force-pushed; the hook blocked nothing.
+
+### 9.1 Findings and how each was handled
+
+| # | Finding | Severity | How it was handled | Commit |
+|---|---|---|---|---|
+| Sec H1 | In a guest show, the guest's real tap on "Switch the microphone on" lifted the owner's persistent "Mic off" lock (guest isolation, R5 D11) | HIGH | The show tells the questions panel whose show it is (from the server's script); `#shMicOn` shows and unlocks for the owner's show only; a guest gets "The microphone is switched off on this device. Type your question." and even a real tap on a script-unhidden button leaves the lock. Tests first: the real-tap test moved to an owner show; a guest negative test; the static seam (`micOn` reads `S.owner` before `unlock`) | `f9dfce7` |
+| Code H1 | A typed question while listening left the microphone recording with no status line, then the transcript overwrote the next draft at the 15 s cap | HIGH | `ask()` stops and drops an open recording first (nothing is sent to `/hear`). Test first (`test_a_typed_question_while_listening_stops_the_microphone`), red before. Decision 4's browser recogniser has the same guarantee (`test_a_typed_question_while_the_browser_listens_drops_what_it_heard`) | `70ecc3a` |
+| Sec L1 | A guest was still told about the owner's spending state (`budget_reached`, `budget_unreadable`) | LOW | A guest gets "JARVIS can't listen right now. Type your question." for both (`hear._GUEST`); the owner's words and Vitals pointer are unchanged. Test first: a guest's words for every reason never say spending, limit, charged, minutes or rupee (2 red before) | `3a7ed26` |
+| Sec L2 | `book_gate.console_only` kept a token-mode-dev shortcut, so G11 could rest on one check | LOW | The gate passes a signed-in browser only. Test first: the four token-mode-dev rows of `test_r6_contract` (`/sections`, `/releases/{rid}/sections`, `/ticket`, `/download`) expect `403 console_only` (4 red before) | `48d437a` |
+| Sec L3 | `JARVIS_ENV` was free-form, so "Dev" or " dev" counted as a third environment | LOW | `Settings` strips and lower-cases it and refuses anything but `dev`, `staging`, `prod` at start-up. Every value in the repo is `dev` or `prod`. Test first (the previous fixer wrote it; 8 red before): read plainly, four unknown values refused, "Dev" with `K_SERVICE` refused as dev | `1fe9bc7` |
+| Sec L4 | Real place names in the new R6.2 test fixtures (a public repo; tests ship in the Book's source zip) | LOW | The R6.2 hear fixtures use made-up names (Riverton, Northvale, Eastmoor; decision 4's tests use Brightwater). The repo-wide sweep stays with Part 2's G8 scrubber, as the review advised: older test lines this branch re-touches still carry the owner's first name as a creator-name fixture (`test_book_owner`, `test_book_wipe`, unchanged from `main`) | `a1fb25b` |
+| Code L1 | `book_show.py`'s route table still listed `409 guest_needs_google` | LOW | The `POST /v1/book/open` row says `403 google_needed (token mode, R6.2 G11)`; the script row says it carries voice and listening | `a1fb25b` |
+| Code L2 | `buildbook/hear.py` was missing from the lane-import guard | LOW | `"hear"` joins `test_the_lane_imports_nothing_that_reaches_the_owner` (passes as is: a guard for later edits) | `a1fb25b` |
+| Code L3 | Two browser tests waited a fixed time for audio frames | LOW | Both wait for `JarvisBookVoice.record.frames() >= 3`; the negative "nothing sent" waits stay | `a1fb25b` |
+| Code L4 | Section 8 item 5 listed one test too few for the day a top-level R6.2 plan lands | LOW | Item 5 now names `test_book_gen_plans::test_the_real_plans_parse` too | this document |
+| Race | `test_book_lock_ui._locked_tab` awaited the 423 probe through `page.evaluate`, which raced the console's `location.replace('/book/show')` ("Execution context was destroyed"; seen once in the previous fixer's run) | test | The probe starts without being awaited, keeps its code in the tab's `sessionStorage` (the rejection runs before the navigation can commit), and the test reads it once the show is up. The four tests that use it passed three runs in a row | `84ee243` |
+| New | On the browser path, a blocked microphone, no microphone, an unknown recogniser error, or a recogniser whose `start()` throws did not offer typing (decision 4 asks every failure to) | — | Found while checking decision 4 against its wording. A line that doesn't already offer typing gets " Or type your question." (browser path only; the cloud path's words are unchanged). Tests first: 3 + 1 red before | `c972179` |
+
+Open question from the security review, answered: `GET /v1/book` and the Book settings stay as they
+are in token mode (section 8, item 3).
+
+### 9.2 Owner decision 4 (15 Nov 2026, 20:29 IST)
+
+> "I want the build book voice not to use the free minutes by default. Make it browser voice. It
+> should not cost anything at all but i should have the option to switch just incase any of it is
+> not working."
+
+Built in `c972179`, in the shared R5 code (no fork):
+
+| Where | What |
+|---|---|
+| `static/console-voice-capture.js` (R5, shared) | `JarvisAudio.canRecognise()` (is there a recogniser at all, without building one); the words for the browser recogniser's own reasons (`rec_unsupported`, `rec_refused`, `rec_network`, `rec_language`, `rec_stopped`) in the one `WORDS` table, each offering typing; `recognition(error)` maps a Web Speech error to one of them (`not-allowed` → the shared `blocked` steps, `audio-capture` → `no_mic`, `no-speech` → nothing heard). `recognizer()` stays the only `SpeechRecognition` constructor, and the lock still refuses and aborts it |
+| `static/console-book-voice.js` | `JarvisBookVoice.listen`: one utterance in THIS browser's recogniser through `JarvisAudio.recognizer()`, `lang = 'en-IN'`, 15 s at most; `stop()` keeps its last words, `cancel()` drops them; `dispose()` cancels it. The show voice starts as the browser's unless the script says `cloud` |
+| `static/console-book-talk.js` | Listening uses `listen` unless the owner set Cloud. One tap listens, a second stops; the words go to `POST /v1/book/show/heard` for the free corrections and land in the box, never sent; a failed correction still lands the words as heard. Each failure is said plainly with an offer to type; the owner alone is also pointed to "Cloud listening in Book settings" when it is the browser's recogniser that can't (not for a blocked or missing microphone, which the cloud needs too). The page never changes the setting |
+| `static/console-book-show.js` | The script's `voice` and `listening` are `cloud` only when the server says so; the questions panel is told `listening` |
+| `static/console-book-reader.js` | Book settings: Show voice and a new Listening row, each "Browser (free)" or "Cloud (₹)". Choosing Cloud opens the console's `.bdialog` with what it uses ("this month's free Google allowance first (shared with the console), then about ₹20–30 a tour" / "about ₹2.3 a minute of listening, up to your monthly limit") and "Keep it free" / "Use the cloud"; only "Use the cloud" saves, with `confirm_cost: true`. The Listening help: "This browser's recognition is free, but Chrome may send your audio to Google (the browser's maker) to turn it into text, unless it listens on the device." (the console's own browser-engine note says "your audio goes to the browser's maker"). Existing classes only; no CSS added |
+| `buildbook/owner.py` | `BookSettings.listening` beside `show_voice`, both defaulting to `browser`. A patch that sets either to `cloud` without `confirm_cost: true` raises `CostNotConfirmed` (422 `confirm_needed`); nothing is written. Every write marks the document `voice_rule: 2`; a stored `cloud` without that mark (every R6 save wrote the old default, chosen or not) reads as the browser. `confirm_cost` is never stored |
+| `api/book.py` `PUT /v1/book/settings` | 422 `confirm_needed` for an unconfirmed switch; the audit line names the fields changed and `cost_confirmed: true`, never a value. A guest's show-only browser can't read or set it (401/423, as before) |
+| `buildbook/show_script.py` | The script carries `voice` and `listening`: `cloud` only when the owner chose it. A guest show uses the owner's saved choice |
+| `api/book_show_hear.py` (new; `book_show.py` stays under its 400-line cap) | `POST /v1/book/show/hear` (moved from `book_show.py`): with Listening on the browser, `409 listening_browser` and no speech-to-text call. With Cloud, a guest's question is free-only. `POST /v1/book/show/heard {text}` (new; on the guest lock's allow-list): the console's free R11.1 rules on what this browser heard, against the book's public words plus the owner's "Words to recognise" for an OWNER session only (never read for a guest, R6 D1); text only, 500 characters (`422 too_long`), the JSON body capped, 10 a minute per owner, and the session's 30 spoken questions shared with `/hear`; never stored or logged |
+| `billing/service.py`, `voice/service.py` | `Billing.ensure_free` and `FreeAllowanceUsed`: a free-only call goes ahead only while the deployment's free allowance covers a whole 15-second billing step, whatever the limit; never priced; an unreadable counter fails closed (`BudgetUnavailable`). `VoiceService.transcribe(free_only=)` uses it (its spending gate moved to `_gate`; `transcribe` is 49 lines) |
+| `buildbook/hear.py` | `free_used` and `listening_browser` words (no money words for a guest) |
+| `api/r6_wiring.py`, `book_lock.py`, `book_show_wiring.py` | `install_book_hear` mounted beside the show routes; `/show/heard` on the lock's allow-list (16 entries); its own `heard` limit (10 a minute) |
+
+What it costs: ₹0 by default, for the owner and for guests (no Google Cloud speech minutes, free or
+paid). With Cloud chosen, the owner's narration and listening use the free allowance first and then
+his budget, as before; a guest's narration follows his choice; a guest's listening stops at the free
+allowance and is never charged (503 `free_used`, "JARVIS can't listen right now. Type your
+question.").
+
+Limits of the browser path, said plainly: Chrome's recognition is free of charge, but Chrome may
+send the audio to Google to recognise it (the settings help says so). Firefox has no Web Speech
+recognition: the mic button stays, disabled, with "This browser can't recognise speech, so it can't
+listen here. Type your question." (for the owner, plus the pointer to the switch).
+
+### 9.3 Tests added and changed in v6.2.2
+
+| File | Tests | What |
+|---|---|---|
+| `tests/test_r62_book_listening.py` (new) | 39 | Both voices default to the browser; a switch to Cloud without the cost confirmed writes nothing; a confirmed one is saved, the confirmation never stored; back to the browser needs no confirmation; an unconfirmed stored `cloud` reads as the browser; strict types. Over HTTP: the switch needs the confirmation, the audit line is content-free; a guest browser can never read or set it. The script says browser for both audiences by default and follows the owner's choice. **Negative controls** through the real `VoiceService` with fake engines: on the browser, `/hear` and `/speak` make no STT and no TTS call (owner and guest), and the positive control shows the same calls do reach the engines when switched. Free-only: a guest's cloud question is free-only and an owner's is not; past the allowance it never reaches the engine and nothing is priced; a whole billing step must be left; inside it, free; an unreadable counter fails closed. `/heard`: the owner's corrections with his words, a guest never biased (his words never read), the book's words, the caps (never echoing the input), nothing heard, the same rate limit as `/hear`, the session's spoken questions, the live session, the words never logged; the new reasons' words |
+| `tests/browser/test_r62_book_listen.py` (new) | 23 | A faked `SpeechRecognition`: the browser listens by default (en-IN, one utterance), the words land in the box unsent, the page never opens the microphone itself; the corrections; a recogniser that ends by itself; a failed correction; nothing heard; each Web Speech error (7) said plainly with typing offered and no pointer for a guest; a recogniser that won't start; the owner alone pointed to the switch and nothing switches by itself; an unsupported browser (owner and guest); "Mic off" builds no recogniser; a lock while listening aborts it and sends nothing; a typed question drops what it heard; Book settings: a switch to Cloud asks first with its cost, "Keep it free" saves nothing, "Use the cloud" saves `confirm_cost: true`, back to the browser asks nothing; the Listening row's privacy note. Every case checks no `/hear` and no `/speak` call |
+| `tests/test_r62_book_hear.py` | 48 (46 + 2: the two new reasons in the words test) | The cloud path behind the switch (`listening = cloud`); L1's guest words; L4's made-up names; the truthful monthly limit for the owner, neutral for a guest |
+| `tests/test_r62_cloud_run_guard.py` | 15 (7 + 8) | L3 |
+| `tests/test_r62_book_mic_static.py` | 8 (5 + 3) | The H1 seam; the Book listens only through the shared recogniser and never builds its own; the switch is pointed to for the owner only and never flipped by the page |
+| `tests/browser/test_r62_book_mic.py` | 31 (28 + 3) | H1 (sec and code); L3's frame waits; the cloud path keeps every case behind the switch (`book_mocks.script` defaults to `cloud`) |
+| `tests/test_r6_contract.py` | 52 | `/show/heard` in the contract; L2's four rows |
+| `tests/browser/test_book_lock_ui.py` | 1 helper | The race |
+| `tests/test_book_boundaries.py`, `test_book_owner.py`, `test_book_api.py`, `test_book_lock.py`, `test_book_wipe.py`, `test_book_show_api.py`, `test_book_guest_voice.py`, `test_r6_wiring.py`, `book_hear_fakes.py`, `browser/book_mocks.py`, `browser/test_book_show.py` | small | `book_show_hear` in the C modules and `hear` in the lane guard; the new defaults; the 16-entry allow-list; the cloud switched on where a test exercises the cloud path; `free_only` in the fakes; the stubbed settings route enforces the confirmation |
+
+Red first: L1 2, L2 4, L3 8 (run before each change); the browser path's typing offer 3 + 1; the
+decision-4 unit and browser tests were written by the previous fixer before its code (its red runs
+are not in the record; every one of them was re-run here on the final code).
+
+### 9.4 What was run on the final code, and the results
+
+All on this 2-CPU machine, each run behind `flock /tmp/heavy.lock`, `PYTHONPATH=$PWD/src`, on
+`84ee2433` (the code; this document follows it).
+
+| Run | Result |
+|---|---|
+| Unit, 3.11 (`/tmp/venv-b`): the R6 book and R5 voice unit files, every touched unit file, the R11.1 voice, rules and seam files, the four billing files: 80 files | **2,665 passed, 8 skipped** (2 warnings: FastAPI's duplicate operation id in `api/phone.py`, untouched) |
+| Unit, 3.12 (`/tmp/venv-12`): the 14 R6.2 and Book unit files this branch changed, plus `test_voice_service`, `test_voice_billing`, `test_billing_enforcement` | **432 passed** |
+| Book browser files, 3.13 + Chromium (`/tmp/venv-c`): `test_r62_book_listen`, `test_r62_book_mic`, `test_book_show`, `test_book_panel`, `test_book_lock_ui`, `test_book_show_hold`, `test_r6_fix_labels`, `test_r6_i1_console`, `test_r6_seams` | **137 passed** (23 + 31 + 83) |
+| R5 voice browser files: `test_voice`, `test_voice_barge`, `test_voice_commands`, `test_voice_devices`, `test_voice_devices_fixes`, `test_voice_fixes`, `test_voice_fixes_barge`, `test_voice_live`, `test_voice_loop`, `test_voice_micoff`, `test_voice_pace`, `test_voice_robust`, `test_wakeword`, `test_r5_seams` | **393 passed, 4 failed** in the full run (41 min, against 30 min for the same files at v6.2.1: the machine was loaded). The 4 are timer-driven waits in the conversation loop, none of which reads what decision 4 changed in `console-voice-capture.js`: `test_voice_barge::test_on_speakers_other_words_return_his_volume_and_he_reads_on` (the volume within 3 s), `test_voice_fixes::test_his_own_closing_words_coming_back_through_the_room_are_not_a_command_sm4` (an echo window), `test_voice_fixes::test_a_check_in_cancelled_by_another_question_is_asked_again_afterwards` and `test_voice_loop::test_saying_yes_to_the_check_in_carries_on_and_it_is_not_asked_again` (the check-in's timer). Re-run on their own: **4 passed, three runs in a row**. The Workshop's full browser run should confirm them |
+| The race's four tests (`test_book_lock_ui -k "lifted_elsewhere or second_console_tab or second_locked_tab"`), three runs in a row | 4 passed, three times |
+| `ruff check` and `ruff format --check` on `src tests evals` (ruff 0.17.5) | clean (1,741 files) |
+| `mypy` (the repo's strict config) on the 13 source modules changed since `d237b8c`, 3.11 and 3.12 | clean (no issues in 13 source files, both) |
+| `scripts/arch_coverage.py` | OK (65 packages and modules, 90 console modules, 2 Scheduler jobs, 30 outside services, 106 collections) |
+| `scripts/check_doc_versions.py` | all 28 top-level documents pass; this file checked with its `problems()` too: none |
+| Screenshots, 390×844 and 1440×900 (a scratch Playwright script outside the repo, with a check for overlapping, off-screen and overflowing elements before each shot) | The question footer in "Mic off" (owner: the status line and "Switch the microphone on" beside "No more questions", whose label wraps to two lines inside its button at both widths; guest: the line only) and while the browser listens (the pressed mic and "Listening… tap the mic again to stop."); the Book settings rows (Show voice and Listening, "Browser (free)") and the Cloud confirmation. No overlap, nothing off-screen or cut. The look is unchanged apart from the new messages and the two settings rows, which use the existing classes |
+
+Not run here (the Workshop runs them): the whole unit and browser suites, the evals, coverage,
+`python -m jarvis.buildbook.gen --check`, and the fresh-context review agents (this fixer has no
+agent tool). Seen while reading but out of this part's scope: `tests/browser/test_r7_c_lock.py`
+`test_show_locked_still_goes_to_the_show` awaits the same 423 probe through `page.evaluate`, the
+shape of the race fixed in `test_book_lock_ui` (not changed or run here).
+
+### 9.5 Sizes against their limits (v6.2.2)
+
+| File | Lines | Limit |
+|---|---|---|
+| `api/app.py` | 727 (unchanged since `main`) | ≤ 735 |
+| `tools/gateway.py` | 760 (unchanged) | not edited |
+| `static/console.html` | 782 (unchanged) | not edited |
+| `static/console-voice-capture.js` | 405 (388) | ≤ 800 |
+| `static/console-voice-mic.js` | 667 (unchanged) | ≤ 800 |
+| `static/console-book-talk.js` | 342 (305 at v6.2.1) | ≤ 400 (its header) |
+| `static/console-book-voice.js` | 294 (255) | ≤ 400 (its header) |
+| `static/console-book-reader.js` | 257 | ≤ 400 (its header) |
+| `static/console-book-show.js` | 390 | ≤ 400 (its header) |
+| `static/book.css` | 182 (no CSS added in v6.2.2) | ≤ 300 |
+| `api/book_show.py` | 306 (368) | ≤ 400 |
+| `api/book_show_hear.py` (new) | 172 | ≤ 400 |
+| `buildbook/hear.py` | 218 (208) | ≤ 400 |
+| `buildbook/owner.py` | 319 | — |
+| `config.py` | 763 (752) | ≤ 800 |
+| `voice/service.py` | 613 (602); `transcribe` 49 lines (was 50) | functions ≤ 50 |
+
+No new or changed function is over 50 lines (`VoiceService.view`, 52, and
+`Billing.ensure_units_allowed`, 51, are unchanged code).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.2.1 | 15 Nov 2026, 20:15 IST | R6.2 | First edition: Part 1 built (Ask by voice in the shared R5 code and the Book; the hear route's free corrections and plain words; G11's refusal and the Cloud Run guard; version 6.2.0), the 20 cases as tests, what was run, the wiring, the sizes, local development, the live check, the open questions. Finished at the takeover (the first builder's draft of 18:40 IST, never committed): the three uncommitted fixes finished test first, Phase A case 2 and the questions-run-out case as tests, the missed `test_r11_seams` pin, every run re-done on the final code with its results, the takeover's review and the guard's scope (section 8, items 8 and 9) | 🛠 Mark XXI |
+| v6.2.2 | 16 Nov 2026, 11:39 IST | R6.2 | Section 9: the fresh-context reviews' 2 HIGH and 8 LOW and how each was handled (H1s by the previous fixer; L1–L3 security, L1–L4 code and L4's names here), the redirect race in `test_book_lock_ui`, owner decision 4 built (the Book's listening and narration are the browser's by default, ₹0; an owner-only, cost-confirmed switch to the cloud; a guest's cloud listening free-only; `POST /v1/book/show/heard`), the browser path's typing offer, the tests and results, the sizes; sections 7 and 8 (items 1, 3, 5) updated. Taken over from a fixer stopped by a usage limit | 🛠 Mark XXI |

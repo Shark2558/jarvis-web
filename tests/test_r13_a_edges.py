@@ -118,8 +118,7 @@ async def test_the_places_tool_lists_adds_renames_removes_and_records_a_baseline
     assert listed == {"places": [{"id": rack, "kind": "storage", "baselined": True}]}
     with context_trust(untrusted=True):
         asked = await call(gw, "wardrobe_places", action="add", label="From an email")
-    done = await approve(gw, asked)
-    assert done.result["status"] == "refused"  # a place is named only in his own words
+    assert asked.outcome is GatewayOutcome.ERROR  # only his own words, refused before a card (M4)
 
 
 async def test_the_edit_tool_links_labels_and_sets_and_refuses_in_words(cat: Catalog) -> None:

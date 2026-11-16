@@ -7,29 +7,35 @@
   candidates (never a guess).
 - A card's words never carry his label: `summarize` and `preview` go through `redact.card_words`
   (the approvals store is clear JSON, printed on Telegram).
-- His own words only: a label or a place name proposed in a round that read other people's
-  content is not saved (the piece is, without it); a label he types locks (it vouches), one he
-  says does not.
+- His own words only: a label or a place name (by its words, not its id) proposed in a round
+  that read other people's content is refused in `check`, before any card stores it; a label he
+  types locks (it vouches), one he says does not.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from jarvis.belongings.tools import origin_of
 from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import require_tool_context
+from jarvis.tools.taint import content_tainted
 from jarvis.wardrobe.catalog.edits import Edit, NewPiece
 from jarvis.wardrobe.catalog.places import resolve_place, unknown_place
 from jarvis.wardrobe.catalog.search import rank
 from jarvis.wardrobe.catalog.tools import AGENT, PIECE, QUERY, guarded, line, uid
-from jarvis.wardrobe.model import PRIVATE_BY_DEFAULT, Piece, WardrobeView
+from jarvis.wardrobe.model import PLACE_ID, PRIVATE_BY_DEFAULT, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
 from jarvis.wardrobe.redact import card_words, fixed_words
 
 ADDED, CHANGED, PLACED = "Added to your wardrobe", "Changed your wardrobe", "Changed your places"
 NOT_OWN = "Saved without the label: labels and places are only ever your own words."
+TAINTED = (
+    "This round read other people's content, and labels and place names are only ever his own "
+    "words: leave the label out and name places by their id, or he types it in Helpers, Wardrobe."
+)
 _ATTRS = (
     *("type", "label", "colour", "second", "pattern", "features", "formality", "occasions"),
     *("weather", "mess_ok", "delicate", "private", "size", "brand", "fabric", "care", "read"),
@@ -61,6 +67,20 @@ def _card_places(a: dict[str, Any]) -> str:
     return f"{what.get(str(a.get('action')), 'Change your places')} in your wardrobe"
 
 
+def _by_name(place: object) -> bool:
+    """A place given by his words, not by its id."""
+    return isinstance(place, str) and bool(place.strip()) and not PLACE_ID.match(place)
+
+
+def _own_words(texts: Iterable[object], places: Iterable[object] = ()) -> None:
+    """On a round that read other people's content his free text never enters a card's stored
+    arguments (approvals are clear JSON, printed on Telegram; D10): refused before any card."""
+    if not content_tainted():
+        return
+    if any(isinstance(t, str) and t.strip() for t in texts) or any(map(_by_name, places)):
+        raise ValueError(TAINTED)
+
+
 def _check_add(a: dict[str, Any]) -> None:
     pieces = a.get("pieces")
     if not isinstance(pieces, list) or not 1 <= len(pieces) <= 20:
@@ -69,6 +89,7 @@ def _check_add(a: dict[str, Any]) -> None:
         raise ValueError("every piece needs its type")
     if any(set(p) - set(_NEW) for p in pieces):
         raise ValueError(f"a piece has only {', '.join(_NEW)}")
+    _own_words((p.get("label") for p in pieces), (p.get("place") for p in pieces))
 
 
 def _check_edit(a: dict[str, Any]) -> None:
@@ -76,6 +97,12 @@ def _check_edit(a: dict[str, Any]) -> None:
         raise ValueError("piece is a piece id (or query, for a move only)")
     if "query" in a and (set(a) - {"query", "place"} or "place" not in a):
         raise ValueError("query is only for a move: query and place")
+    _own_words((a.get("label"), a.get("set_label")), (a.get("place"),))
+
+
+def _check_places(a: dict[str, Any]) -> None:
+    named = a.get("label") if a.get("action") in ("add", "rename") else None
+    _own_words((named,), (a.get("place"),))
 
 
 def _edit_of(a: dict[str, Any], typed: bool) -> Edit | None:
@@ -296,10 +323,11 @@ def write_tools(desk: Any) -> list[Tool]:
             r2,
             api.places,
             agent=AGENT,
+            check=_check_places,
             summarize=_card_places,
             activity_words=PLACED,
         ),  # fmt: skip
     ]
 
 
-__all__ = ["ADDED", "CHANGED", "NOT_OWN", "PLACED", "WriteTools", "write_tools"]
+__all__ = ["ADDED", "CHANGED", "NOT_OWN", "PLACED", "TAINTED", "WriteTools", "write_tools"]

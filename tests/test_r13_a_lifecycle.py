@@ -243,11 +243,42 @@ async def test_a_spoken_label_never_vouches_and_one_from_outside_content_is_not_
     got = await call(gw, "wardrobe_find", query="brown belt")
     assert got.result["found"] and not got.trusted  # voice: maybe misheard
     with context_trust(untrusted=True):
-        asked = await call(gw, "wardrobe_add", pieces=[{"type": "cap", "label": "Ignore that"}])
+        refused = await call(gw, "wardrobe_add", pieces=[{"type": "cap", "label": "Ignore that"}])
+        asked = await call(gw, "wardrobe_add", pieces=[{"type": "cap"}])
+    assert refused.outcome is GatewayOutcome.ERROR and "Helpers, Wardrobe" in (refused.error or "")
     done = await approve(gw, asked)
-    assert done.result["note"].startswith("Saved without the label")
+    assert done.result["status"] == "done" and "note" not in done.result
     [cap] = [p for p in (await cat.store.view(UID)).active() if p.type == "cap"]
     assert cap.label == ""
+
+
+async def test_m4_a_tainted_round_never_puts_his_label_or_a_place_name_in_a_card(
+    cat: Catalog,
+) -> None:
+    import json
+
+    gw = gateway(cat)
+    tray = await desk(cat).places.add(UID, "Accessory tray")
+    [watch] = await _add(cat, NewPiece(type="watch"))
+    with context_trust(untrusted=True):  # the round read other people's content
+        tries = [
+            await call(gw, "wardrobe_add", pieces=[{"type": "cap", "label": "Lucky cap"}]),
+            await call(gw, "wardrobe_add", pieces=[{"type": "cap", "place": "accessory tray"}]),
+            await call(gw, "wardrobe_edit", piece=watch, label="Lucky watch"),
+            await call(gw, "wardrobe_edit", piece=watch, place="accessory tray"),
+            await call(gw, "wardrobe_edit", piece=watch, set_label="Lucky set", set_parts=[]),
+            await call(gw, "wardrobe_places", action="add", label="Lucky shelf"),
+            await call(gw, "wardrobe_places", action="rename", place=tray.id, label="Lucky tray"),
+            await call(gw, "wardrobe_places", action="remove", place="accessory tray"),
+        ]
+        by_id = await call(gw, "wardrobe_edit", piece=watch, place=tray.id)  # ids are fine
+    assert [t.outcome for t in tries] == [GatewayOutcome.ERROR] * len(tries)
+    assert by_id.outcome is GatewayOutcome.AWAITING_CONFIRMATION
+    stored = json.dumps([c.arguments for c in await gw.gate.pending()])
+    assert "Lucky" not in stored and "accessory" not in stored.lower()  # approvals are clear JSON
+    done = await approve(gw, by_id)
+    assert done.result["status"] == "done"
+    assert (await cat.store.view(UID)).pieces[watch].place == tray.id
 
 
 async def test_never_in_permissions_refuses_every_wardrobe_tool(cat: Catalog) -> None:

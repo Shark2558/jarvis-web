@@ -4,22 +4,25 @@
 "photos": "Wardrobe photos and fingerprints"; INTEGRATION-D 6.4).
 
 `CatalogData` (name "pieces"):
-- `count`: the pieces he owns (archived and merged-away records are not counted).
+- `count`: every piece record he keeps (archived and merged-away ones too: they hold his labels
+  until they are purged). It raises when the index can't be opened; Privacy then asks `kept`.
+- `kept`: how many documents are on disk for him, found with no key (existence and the plain
+  `owner` field), so Privacy never says "Nothing kept yet" for sealed data it can't open.
 - `export`: a plain JSON of his own records (pieces, pairs, sets, places, labels and each piece's
   history), WITHOUT photos or fingerprints (D17); Privacy scrubs it again on the way out.
 - `delete`: everything the catalog keeps for him (the index, every log page, every photo and
-  fingerprint, the purge count): the photos' and fingerprints' documents and the logs first, the
-  index LAST, so a delete cut halfway leaves a readable index that a second delete finishes.
+  fingerprint, the purge count), by path and with no key: the photos', fingerprints' and logs'
+  documents first, the index LAST, so a delete cut halfway leaves the index and a second delete
+  finishes. A readable index also names its pages (pages written before `owner` existed).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from jarvis.storage.docs import Delete, Op
-from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PhotoVault
-from jarvis.wardrobe.catalog.purges import PurgeCount
+from jarvis.wardrobe.catalog.photos import PhotoVault
 from jarvis.wardrobe.catalog.store import CatalogStore
+from jarvis.wardrobe.kept import PHOTOS_OWNED, PIECES_OWNED, PIECES_SINGLES, erase, kept_paths
 from jarvis.wardrobe.ports import PrivacyRow
 
 
@@ -31,7 +34,7 @@ class CatalogData:
         self.store, self.vault = store, vault
 
     async def count(self, uid: str) -> int:
-        return len((await self.store.view(uid)).active())
+        return len((await self.store.view(uid)).pieces)
 
     async def export(self, uid: str) -> dict[str, Any]:
         view = await self.store.view(uid)
@@ -53,17 +56,29 @@ class CatalogData:
             "history": history,
         }
 
+    async def kept(self, uid: str) -> int:
+        return len(await self._paths(uid))
+
+    async def _paths(self, uid: str) -> list[str]:
+        return await kept_paths(
+            self.store.docs, self.store.prefix, uid, singles=PIECES_SINGLES, owned=PIECES_OWNED
+        )
+
     async def delete(self, uid: str) -> int:
-        view = await self.store.view(uid)
-        ops: list[Op] = []
-        for p in view.pieces.values():
-            ops += self.store.logs.drops(uid, p)
-            ops += [Delete(self.vault.path(uid, ph)) for ph in p.photos]
-        ops += [Delete(self.vault.prints.path(uid, s)) for s in range(MAX_SHARDS)]
-        ops.append(Delete(PurgeCount(self.store).path(uid)))
-        ops.append(Delete(self.store.index_path(uid)))
-        await self.store.docs.write(ops)
-        return len(view.pieces)
+        paths = await self._paths(uid)
+        index = self.store.index_path(uid)
+        try:  # pages written before the plain owner field: named by a readable index
+            view = await self.store.view(uid)
+        except Exception:  # noqa: BLE001 - no key, or a changed key: the plain fields are enough
+            view = None
+        named: list[str] = []
+        if view is not None:
+            for p in view.pieces.values():
+                named += [op.path for op in self.store.logs.drops(uid, p)]
+        rest = [p for p in dict.fromkeys(named) if p not in paths]
+        body = [p for p in paths if p != index]
+        gone = await erase(self.store.docs, [*rest, *body, *([index] if index in paths else [])])
+        return len(view.pieces) if view is not None else gone  # pieces, or documents when unread
 
 
 class PhotoData:
@@ -82,8 +97,21 @@ class PhotoData:
     async def export(self, uid: str) -> dict[str, Any]:
         return {"photos": await self.vault.count(uid)}
 
+    async def kept(self, uid: str) -> int:
+        return len(await self._paths(uid))
+
+    async def _paths(self, uid: str) -> list[str]:
+        store = self.vault.store
+        return await kept_paths(store.docs, store.prefix, uid, owned=PHOTOS_OWNED)
+
     async def delete(self, uid: str) -> int:
-        return await self.vault.delete_all(uid)
+        store = self.vault.store
+        if await store.docs.get(store.index_path(uid)) is None:  # no index: don't make a new one
+            return await erase(store.docs, await self._paths(uid))
+        try:
+            return await self.vault.delete_all(uid)
+        except Exception:  # noqa: BLE001 - an index that can't be opened: erase them by path
+            return await erase(self.vault.store.docs, await self._paths(uid))
 
 
 __all__ = ["CatalogData", "PhotoData"]

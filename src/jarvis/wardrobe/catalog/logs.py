@@ -1,7 +1,7 @@
 # src/jarvis/wardrobe/catalog/logs.py
 """A piece's event log (docs/plans/r13-wardrobe.md D2): pages of 200 sealed events, append-only.
 
-    {prefix}wardrobe_log/{uid}_{piece}_{page}   {v, kid, n, blob, updated_at}
+    {prefix}wardrobe_log/{uid}_{piece}_{page}   {v, kid, owner, n, blob, updated_at}
         blob = AES-GCM(the page's events, short keys), purpose `wardrobe`,
         AAD `wardrobe/log/{uid}/{piece}/{page}/v1` (a page moved to another piece does not open)
 
@@ -54,7 +54,7 @@ class LogPages:
         for n in range(first_new // PAGE, pages(len(log))):
             page = [e.to_json() for e in log[n * PAGE : (n + 1) * PAGE]]
             blob = self._s.seal("wardrobe", aad_log(uid, pid, n), page)
-            body = {"v": VERSION, "kid": self._s.kid, "n": len(page), "blob": blob}
+            body = {"v": VERSION, "kid": self._s.kid, "owner": uid, "n": len(page), "blob": blob}
             ops.append(Set(self.path(uid, pid, n), {**body, "updated_at": stamp}))
         return ops
 

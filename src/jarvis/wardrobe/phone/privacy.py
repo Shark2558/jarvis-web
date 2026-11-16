@@ -31,10 +31,12 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, Literal, cast
 
+from jarvis.logging import get_logger
 from jarvis.privacy.ports import CategoryView, PrivacySource
 from jarvis.privacy.sources import OURS_ENC, CallbackSource, Look, Spec
 from jarvis.wardrobe.ports import WardrobeData
 
+log = get_logger(__name__)
 SECTION = "Wardrobe"
 PIECES_ID, HISTORY_ID = "wardrobe_pieces", "wardrobe_history"
 PLANS_ID = "wardrobe_plans"
@@ -53,6 +55,10 @@ _BY_NAME: tuple[tuple[Row, frozenset[str]], ...] = (
     ("photos", PHOTOS_DATA),
 )
 NOTHING_YET = "Nothing kept yet."
+CANT_OPEN = (
+    "Couldn't check right now. This is kept on this server, but it can't be opened just now "
+    "(the token key is missing or has changed). It can still be deleted."
+)
 DataFn = Callable[[], Sequence[WardrobeData]]
 
 
@@ -69,6 +75,12 @@ def row_of(d: WardrobeData) -> Row | None:
     return next((row for row, names in _BY_NAME if d.name in names), None)
 
 
+async def _kept(d: WardrobeData, uid: str) -> int:
+    """How many documents `d` keeps on disk, found with no key (0 for a source that can't say)."""
+    kept = getattr(d, "kept", None)
+    return int(await kept(uid)) if callable(kept) else 0
+
+
 def _row(spec: Spec, data: DataFn, row: Row) -> CallbackSource:
     def mine() -> list[WardrobeData]:
         every = list(data())
@@ -78,11 +90,26 @@ def _row(spec: Spec, data: DataFn, row: Row) -> CallbackSource:
 
     async def look(uid: str) -> Look:
         sources = mine()
-        counts = [await d.count(uid) for d in sources]
-        total = sum(counts)
         if not sources:
             return Look(0, deletable=False, note=NOTHING_YET)
-        return Look(total, [d.name for d in sources] + counts, deletable=total > 0)
+        counts: list[int] = []
+        shut = False  # kept on disk but can't be opened right now
+        for d in sources:
+            try:
+                counts.append(await d.count(uid))
+            except Exception as exc:
+                if not await _kept(d, uid):
+                    raise  # nothing to delete either: the registry says "Couldn't check right now"
+                log.warning("wardrobe data can't be opened", extra={"error": type(exc).__name__})
+                shut = True
+        held = sum([await _kept(d, uid) for d in sources]) if shut or not sum(counts) else 0
+        names = [d.name for d in sources]
+        if shut:  # count and export say so; delete still erases what is on disk (no key needed)
+            return Look(None, [names, held], note=CANT_OPEN, deletable=True, delete_count=held)
+        total = sum(counts)
+        if not total and not held:
+            return Look(0, [names, 0], deletable=False, note=NOTHING_YET)
+        return Look(total or held, [names, counts, held], deletable=True)
 
     async def export(uid: str) -> dict[str, Any]:
         return {d.name: await d.export(uid) for d in mine()}
@@ -99,7 +126,8 @@ PIECES_SPEC = Spec(
     "Wardrobe pieces and places",
     "Each piece you own (its type, colour, your own label, its state and place) and its own "
     "history (scans, taps and moves), its pairs and sets, your places and QR labels, and your "
-    "wardrobe settings. A private piece is counted like the others and never has a photo.",
+    "wardrobe settings. A private piece is counted like the others and never has a photo. "
+    "Deleting this row erases every wardrobe photo and fingerprint too.",
     "pieces and places",
     "Until you delete them; a removed piece waits 30 days in Recently deleted",
     OURS_ENC,
@@ -198,6 +226,7 @@ __all__ = [
     "DEVICE_ID",
     "HISTORY_DATA",
     "HISTORY_ID",
+    "CANT_OPEN",
     "NOTHING_YET",
     "PHOTOS_DATA",
     "PHOTOS_ID",

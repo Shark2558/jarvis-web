@@ -272,11 +272,13 @@ class LaundryData:
 
     async def count(self, uid: str) -> int:
         laundry, review = await self._docs(uid)
-        return (
-            sum(1 for x in laundry.loads if x.closed_at is None)
-            + sum(1 for b in laundry.batches if b.closed_at is None)
-            + sum(1 for e in review.entries if e.closed_at is None)
-        )
+        # closed loads, batches and checks are still kept (90 and 30 days, with his shop label):
+        # a count of the open ones alone would hide them and refuse the delete (code review)
+        return len(laundry.loads) + len(laundry.batches) + len(review.entries)
+
+    async def kept(self, uid: str) -> int:
+        """Documents on disk for him, found with no key (Privacy's "is anything kept")."""
+        return len(await self._kept(uid))
 
     async def export(self, uid: str) -> dict[str, Any]:
         laundry, review = await self._docs(uid)

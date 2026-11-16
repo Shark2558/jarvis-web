@@ -65,7 +65,7 @@ async def test_the_index_and_the_log_are_sealed_and_carry_updated_at() -> None:
     assert index is not None and set(index) == {"rev", "v", "kid", "blob", "updated_at"}
     assert index["rev"] == 1 and index["kid"] == "tk1"
     page = await docs.get(f"jarvis_wardrobe_log/{UID}_{SHIRT}_0")
-    assert page is not None and set(page) == {"v", "kid", "n", "blob", "updated_at"}
+    assert page is not None and set(page) == {"v", "kid", "owner", "n", "blob", "updated_at"}
     assert page["n"] == 1
 
 

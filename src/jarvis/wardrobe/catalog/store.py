@@ -4,7 +4,7 @@
     {prefix}wardrobe/{uid}                     {rev, v, kid, blob, updated_at}
         blob = AES-GCM(the index: `WardrobeView.to_json()`, short keys), purpose `wardrobe`,
         AAD `wardrobe/index/{uid}/v1`
-    {prefix}wardrobe_log/{uid}_{piece}_{page}  {v, kid, n, blob, updated_at}
+    {prefix}wardrobe_log/{uid}_{piece}_{page}  {v, kid, owner, n, blob, updated_at}
         blob = AES-GCM(200 events a page, append-only), AAD `wardrobe/log/{uid}/{piece}/{page}/v1`
 
 `transact(uid, fn)` runs `fn(view, tx)` inside one transaction: every read first (`fn` reads

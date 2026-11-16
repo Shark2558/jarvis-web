@@ -118,6 +118,10 @@ class SealedDoc(Generic[M]):
         docs, _ = self._ready()
         return await docs.get(self.path(uid)) is not None
 
+    async def present(self, uid: str) -> bool:
+        """Whether the document is on disk: no key needed (Privacy must see what it can't open)."""
+        return self._docs is not None and await self._docs.get(self.path(uid)) is not None
+
     async def delete(self, uid: str) -> int:
         if self._docs is None or await self._docs.get(self.path(uid)) is None:
             return 0

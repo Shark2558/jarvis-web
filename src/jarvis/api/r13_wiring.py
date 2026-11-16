@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from importlib import import_module
 from typing import Any, get_args
@@ -47,6 +48,7 @@ from jarvis.tools.audit import AuditTrail
 from jarvis.tools.background import BackgroundReads
 from jarvis.tools.base import Tool
 from jarvis.wardrobe.catalog.jobs import Closer, WardrobeSweep
+from jarvis.wardrobe.kept import stand_ins
 from jarvis.wardrobe.ports import (
     CLOCK_JOB_NAMES,
     JOB_OWNER,
@@ -128,7 +130,16 @@ def build_parts(ctx: WardrobeContext) -> dict[PartName, WardrobePart]:
                 extra={"part": name, "error": type(exc).__name__},
             )
             built[name] = WardrobePart(name, ready=SETUP_FAILED)
+        built[name] = _with_kept(built[name], ctx)
     return built
+
+
+def _with_kept(part: WardrobePart, ctx: WardrobeContext) -> WardrobePart:
+    """A part that is off or failed offers no data of its own: it still answers for what it left
+    on disk (Privacy says "Couldn't check right now" and can delete it; never "Nothing kept")."""
+    if part.data or ctx.docs is None:
+        return part
+    return replace(part, data=stand_ins(part.name, ctx.docs, ctx.s.firestore_prefix))
 
 
 def _parts(app: FastAPI) -> Mapping[PartName, WardrobePart]:

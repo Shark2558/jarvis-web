@@ -102,6 +102,11 @@ _HOLD_WORDS = {
     "restored": "Back from the archive: check its condition.",
     "blind": "Moved without a scan: check it.",
 }
+_RESCAN_WORDS = {
+    "blind": "Moved without a scan: check these.",
+    "which": "Which of these did you mean?",
+    "corrected": "Two later steps disagree: check this piece.",
+}
 
 
 def cap(text: str) -> str:
@@ -207,10 +212,8 @@ def entry_words(kind: str, reason: str, *, candidates: int) -> str:
             return "Which of these went into the basket?"
         return "Something more went into the basket: scan it or pick it when you can."
     if kind == "rescan":
-        return (
-            "Moved without a scan: check these."
-            if reason == "blind"
-            else ("Which of these did you mean?")
+        return _RESCAN_WORDS.get(
+            reason, "A quick check, please: is this piece where JARVIS thinks?"
         )
     if kind == "conflict":
         return "A step that didn't fit this piece was not applied: check it."

@@ -41,8 +41,13 @@ class _Res(NamedTuple):
 
 
 def _family(e: Entry) -> str:
+    """How an entry is answered. Only B's own "which one?" (it carries the step he asked for)
+    takes a laundry step; every other rescan (A's "corrected", another part's) is a check: a
+    sighting where it is, a new place, or dismissed (review H1: never a default clean return)."""
     if e.kind == "rescan":
-        return "hold" if e.reason == "blind" else "which"
+        if e.reason == "blind":
+            return "hold"
+        return "which" if e.reason == "which" and e.step else "stale"
     return "stale" if e.kind == "place" else e.kind
 
 
@@ -168,14 +173,14 @@ def _which(
     chosen: Sequence[str],
     now: datetime,
 ) -> _Res:
+    if e.step is None:  # only B's own "which one?" carries a step: never a default one
+        raise Refused(texts.OUTCOME_BAD)
     if outcome != "these":
         return _Res([], None, (), texts.CLOSED)
     picked = _chosen(chosen, e.candidates)
     if not picked:
         raise Refused(texts.NOT_A_CANDIDATE)
-    step = loads.plan_step(
-        view, laundry, e.step or "ready", picked, load=e.load, place=e.place, now=now
-    )
+    step = loads.plan_step(view, laundry, e.step, picked, load=e.load, place=e.place, now=now)
     return _Res(list(step.events), step.laundry, (), step.words)
 
 

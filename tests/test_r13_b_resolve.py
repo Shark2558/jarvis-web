@@ -165,6 +165,61 @@ async def test_the_unverified_change_resolved_as_his_word_keeps_its_place() -> N
     assert await r.state(TEE) == "in_laundry"
 
 
+async def _rescan(r, pid: str, reason: str) -> None:  # type: ignore[no-untyped-def]
+    """A's fold asks for a rescan (r13-a `catalog/fold.py`: a correction made later steps clash)."""
+
+    async def fn(view: WardrobeView, tx: DocTx) -> Commit:
+        need = ReviewNeeded("rescan", pid, "we_" + pid[-8:] * 2 + "aaaa", reason=reason)
+        return Commit(extra=tuple(await r.writer.entries(UID, view, tx, (need,))))
+
+    await r.store.transact(UID, fn)
+
+
+async def test_h1_as_rescan_answered_these_is_a_sighting_never_a_clean_return() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", pieces=(BLUE_SHIRT,))
+    r.clock.advance(minutes=5)
+    await _rescan(r, BLUE_SHIRT, "corrected")
+    (entry,) = await r.open_entries()
+    assert review.words_of(entry) == "Two later steps disagree: check this piece."
+    before = len(await r.store.history(UID, BLUE_SHIRT))
+    r.clock.advance(minutes=1)
+    got = await r.desk.resolve(UID, entry.id, "these", pieces=(BLUE_SHIRT,))
+    assert got.message == "Done: the check is closed." and await r.open_entries() == ()
+    assert await r.state(BLUE_SHIRT) == "in_laundry"  # still dirty: never Ready by a check
+    added = [h.event.kind for h in await r.store.history(UID, BLUE_SHIRT)][before:]
+    assert added == ["seen"]  # a sighting where it is, and nothing else
+
+
+async def test_h1_any_other_rescan_is_a_check_that_may_be_moved_or_dismissed() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", pieces=(BLUE_SHIRT, TEE))
+    await _rescan(r, BLUE_SHIRT, "which")  # another part's "which": no step of B's
+    await _rescan(r, TEE, "")
+    which, plain = await r.open_entries()
+    assert review.words_of(plain) == "A quick check, please: is this piece where JARVIS thinks?"
+    r.clock.advance(minutes=1)
+    await r.desk.resolve(UID, which.id, "moved", pieces=(BLUE_SHIRT,), place=DRAWER)
+    shirt = await r.piece(BLUE_SHIRT)
+    assert shirt.state == "in_laundry" and shirt.place == DRAWER
+    await r.desk.resolve(UID, plain.id, "dismiss")
+    assert await r.open_entries() == () and await r.state(TEE) == "in_laundry"
+
+
+def test_h1_a_which_entry_without_its_step_takes_no_laundry_step() -> None:
+    from r13_fakes import ist
+
+    from jarvis.wardrobe.laundry import resolve
+    from jarvis.wardrobe.laundry.store import Entry, LaundryDoc
+
+    now = ist(2026, 11, 16, 9, 0)
+    lost = Entry(id="rv_" + "0" * 10, kind="rescan", reason="which", candidates=(TEE,),
+                 opened_at=now)  # fmt: skip
+    with pytest.raises(Refused) as no:
+        resolve._which(WardrobeView(uid=UID), LaundryDoc(), lost, "these", (TEE,), now)  # noqa: SLF001
+    assert str(no.value) == "That answer doesn't fit this check."
+
+
 def test_needs_from_another_part_still_become_entries() -> None:
     from r13_fakes import ist
 

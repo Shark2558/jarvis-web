@@ -66,8 +66,9 @@ class AskReason(StrEnum):
 # the owner one card at a time (slice 11 review MEDIUM-1).
 MEMORY_TOOL_PREFIX = "memory_"
 # R14 D4 (Part A): each restore drill costs a restore, so he approves each on its own card
-# R13 D16: merging two wardrobe records and archiving / restoring a piece, one card each
-NO_BULK_TOOLS = frozenset({DRILL_START, "wardrobe_merge", "wardrobe_retire"})
+# R13 D16: merging two wardrobe records and archiving / restoring a piece, one card each; I1: a
+# whole outfit plan's release (security review C-1 M4) is always its own card
+NO_BULK_TOOLS = frozenset({DRILL_START, "wardrobe_merge", "wardrobe_retire", "outfit_plan"})
 # R14 I1 (integrated security review M4; the Workshop's decision): cards approved in the console
 # only, never with Telegram's one-tap buttons, however short (`telegram.service`)
 CONSOLE_ONLY_TOOLS = frozenset({DRILL_START})

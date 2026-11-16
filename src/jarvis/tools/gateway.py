@@ -525,7 +525,9 @@ class Gateway:
                 if hasattr(out, "__await__"):
                     out = await out
         except Exception as exc:  # noqa: BLE001 — tool failures are reported, not raised
-            log.exception("tool failed", extra={"tool": tool.name})
+            # the class only (R13 I1, security review C-1 M2): an exception's text and traceback
+            # can carry a tool's private argument (a label, a calendar title)
+            log.error("tool failed", extra={"tool": tool.name, "error": type(exc).__name__})
             failed = _tool_failed(exc)
             await self._audit_after_run(tool, call, risk, "error", _safe_detail(exc), scope, failed)
             return failed

@@ -15,6 +15,7 @@ from r13_fakes import UID, ev, ist
 from r13_fakes_b import BLAZER, JACKET, TROUSERS, VEST_A, rig
 
 from jarvis.notify.ports import Delivery
+from jarvis.ticks import FAILED_COUNT, JobOutcome, run_jobs
 from jarvis.wardrobe.laundry.holds import admit
 from jarvis.wardrobe.laundry.jobs import LaundryDaily
 
@@ -87,15 +88,18 @@ async def test_open_checks_are_told_the_morning_after_once_a_day() -> None:
     assert all("private" not in m and "Corner" not in m for _, _, m in r.notifier.sent)
 
 
-async def test_a_failed_send_releases_its_claim_and_is_tried_again() -> None:
+async def test_m6_a_notifier_that_raises_is_a_job_failure_self_health_sees() -> None:
     r, _ = await _overdue_rig()
     r.clock.set(ist(2026, 11, 19, 9, 0))
     r.notifier.fail = True
     counts = await _job(r).run([UID])
-    assert counts.get("failed", 0) == 0 and counts["not_sent"] == 1
+    assert counts == {FAILED_COUNT: 1} and _claims(r) == []  # its claim goes back
+    seen: list[JobOutcome] = []
+    ruled = await run_jobs([_job(r)], [UID], observer=seen.append)
+    assert ruled == {"laundry_daily": "failed"} and [o.outcome for o in seen] == ["failed"]
     r.notifier.fail = False
     await _job(r).run([UID])
-    assert [k for _, k, _ in r.notifier.sent] == ["laundry_overdue"]
+    assert [k for _, k, _ in r.notifier.sent] == ["laundry_overdue"]  # tried again, once
 
 
 async def _short_rig():  # type: ignore[no-untyped-def]

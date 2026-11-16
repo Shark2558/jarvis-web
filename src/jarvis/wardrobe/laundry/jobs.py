@@ -115,7 +115,9 @@ class LaundryDaily:
         """Claim, send, and keep the claim only when he has it (review H4): the codebase's one
         rule (`selfwatch.texts.reached`, Home's `watchdog.took`): a channel took it, it waits in
         the held summary, or his own setting dropped it. Anything else, a send that raised, or
-        one the tick's budget cancelled, gives the claim back: tried again at the next run."""
+        one the tick's budget cancelled, gives the claim back: tried again at the next run. A
+        send that raises is the job's failure (`failed`, review M6); "no channel took it" is
+        `not_sent`."""
         notifier = self._ctx.notifier()
         if notifier is None:
             return "no_notifier"
@@ -125,9 +127,9 @@ class LaundryDaily:
         try:
             got = await notifier.notify(uid, Signal(source="system", kind=kind), said)
             told = reached(got)
-        except Exception as exc:  # noqa: BLE001 - not sent: the claim goes back (finally)
+        except Exception as exc:  # noqa: BLE001 - review M6: a dead notifier fails the job
             log.warning("a laundry alert was not sent", extra={"error": type(exc).__name__})
-            return "not_sent"
+            return FAILED_COUNT  # the tick reports "failed": R14's self-health hears it
         finally:
             if not told:
                 await asyncio.shield(self._store.release(uid, key))

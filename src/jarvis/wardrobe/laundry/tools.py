@@ -185,6 +185,7 @@ class LaundryAPI:
                 a["batch"],
                 a.get("pieces", ()),
                 to=a.get("to", "ready"),
+                client_id=a.get("client_id"),
                 via=_via(),
             )
         elif ctx.outside:  # a card proposed in a round that read other people's words
@@ -197,6 +198,7 @@ class LaundryAPI:
                 bag=a.get("bag", ""),
                 due=checks.due_of(a),
                 origin=cast("Origin", origin_of(ctx)),
+                client_id=a.get("client_id"),
                 via=_via(),
             )
 

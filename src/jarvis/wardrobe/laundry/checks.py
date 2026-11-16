@@ -91,6 +91,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "due": {"type": "string", "description": "The day it is due back (YYYY-MM-DD)"},
             "batch": {"type": "string", "pattern": BATCH_ID},
             "to": {"type": "string", "enum": list(providers.RECEIVE_TO)},
+            "client_id": {"type": "string", "pattern": CLIENT.pattern},
         },
     },
 }
@@ -140,14 +141,19 @@ def check_status(a: dict[str, Any]) -> None:
         raise ValueError("query is his words for one piece, at most 80 characters")
 
 
+def _client_id(a: dict[str, Any]) -> None:
+    cid = a.get("client_id")
+    if cid is not None and not (isinstance(cid, str) and CLIENT.match(cid)):
+        raise ValueError("client_id is 8 to 56 letters, digits, - or _")
+
+
 def _check_extras(a: dict[str, Any]) -> None:
     _match(a, "place", PLACE_ID.pattern)
     _match(a, "load", LOAD_ID)
-    rev, cid = a.get("rev"), a.get("client_id")
+    rev = a.get("rev")
     if rev is not None and (not isinstance(rev, int) or isinstance(rev, bool) or rev < 0):
         raise ValueError("rev is the index revision he saw")
-    if cid is not None and not (isinstance(cid, str) and CLIENT.match(cid)):
-        raise ValueError("client_id is 8 to 56 letters, digits, - or _")
+    _client_id(a)
 
 
 def check_move(a: dict[str, Any]) -> None:
@@ -235,6 +241,7 @@ def check_send(a: dict[str, Any]) -> None:
         if not a.get("batch"):
             raise ValueError("batch is the batch's id (from laundry_status)")
         _enum(a, "to", providers.RECEIVE_TO)
+    _client_id(a)
 
 
 __all__ = [

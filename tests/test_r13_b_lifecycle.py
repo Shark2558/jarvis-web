@@ -335,3 +335,41 @@ async def test_a_private_piece_is_a_private_basic_in_every_sentence() -> None:
     with pytest.raises(Refused) as no:
         await r.desk.move(UID, "drying", pieces=(VEST_A,))
     assert str(no.value) == "A private basic isn't washing, so that step doesn't fit it."
+
+
+async def test_l2_a_piece_named_by_id_and_by_his_words_is_counted_once() -> None:
+    r = await rig()
+    got = await r.desk.move(UID, "basket", pieces=(NAVY_SHIRT,), query="navy shirt")
+    assert got.message == "Done: a navy shirt is in the laundry." and got.pieces == (NAVY_SHIRT,)
+
+
+async def test_l3_a_retried_load_send_or_receive_is_already_done() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", pieces=(BLUE_SHIRT, TEE))
+    await r.desk.move(UID, "load", pieces=(BLUE_SHIRT,), client_id="load-000001")
+    again = await r.desk.move(UID, "load", pieces=(BLUE_SHIRT,), client_id="load-000001")
+    assert (again.status, again.message) == ("already", "Already done: nothing changed.")
+    load = (await r.laundry()).loads[0].id
+    await r.desk.move(UID, "washing", pieces=(TEE,), load=load, client_id="wash-000001")
+    rewash = await r.desk.move(UID, "washing", pieces=(TEE,), load=load, client_id="wash-000001")
+    assert rewash.status == "already" and len((await r.laundry()).loads) == 1
+    sent = await r.desk.send_out(UID, (JACKET,), "Dry cleaner", client_id="send-0000001")
+    resent = await r.desk.send_out(UID, (JACKET,), "Dry cleaner", client_id="send-0000001")
+    assert resent.status == "already" and len((await r.laundry()).batches) == 1
+    assert sent.batch is not None
+    await r.desk.receive(UID, sent.batch, (JACKET,), client_id="back-0000001")
+    back = await r.desk.receive(UID, sent.batch, (JACKET,), client_id="back-0000001")
+    assert back.status == "already" and await r.state(JACKET) == "ready"
+
+
+async def test_l3_the_send_out_tool_takes_the_panels_client_id() -> None:
+    r = await rig()
+    args = {
+        "action": "send",
+        "pieces": [JACKET],
+        "shop": "Dry cleaner",
+        "client_id": "send-0000002",
+    }
+    first = await r.tool("laundry_send_out", **args)
+    again = await r.tool("laundry_send_out", **args)
+    assert first.result["status"] == "done" and again.result["status"] == "already"

@@ -95,6 +95,17 @@ class DeskCore:
         view = await wardrobe.view(uid)
         return view, await self.store.read_laundry(get, uid), await self.store.read_review(get, uid)
 
+    async def _retried(self, uid: str, pieces: Sequence[str], client_id: str | None) -> Done | None:
+        """Review L3: a retry carrying the same client id is "already done", before any state
+        check could refuse it with words about the state it already moved to (the first piece's
+        history is enough: one call stamps every event `{client_id}-{n}`)."""
+        if not client_id or not pieces:
+            return None
+        items = await self.wardrobe().history(uid, pieces[0])
+        if any((h.event.client_id or "").startswith(f"{client_id}-") for h in items):
+            return Done("already", texts.ALREADY, tuple(dict.fromkeys(pieces)), None)
+        return None
+
     # ---- the one commit --------------------------------------------------------------------
     def _extra(
         self, uid: str, tx: DocTx, change: Change, laundry: LaundryDoc, queue: ReviewDoc

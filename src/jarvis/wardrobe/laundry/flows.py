@@ -54,7 +54,10 @@ class Desk(DeskCore):
             ids, cands = holds.known(view, pieces), holds.known(view, one_of)
             if query:
                 hit = holds.resolve_query(view, step, query)
-                ids, cands = (ids + list(hit), cands) if len(hit) == 1 else (ids, list(hit))
+                one = len(hit) == 1  # L2: a piece named by id and by his words counts once
+                ids, cands = (
+                    (list(dict.fromkeys(ids + list(hit))), cands) if one else (ids, list(hit))
+                )
             if place is not None and place not in view.places:
                 raise Refused(texts.UNKNOWN_PLACE)
             if step == "basket":
@@ -65,6 +68,8 @@ class Desk(DeskCore):
                 return review.ask_which(step, cands, load=load, place=place, now=now)
             return loads.plan_step(view, laundry, step, ids, load=load, place=place, now=now)
 
+        if retried := await self._retried(uid, pieces, client_id):
+            return retried
         return await self._commit(uid, plan, client_id=client_id, rev=rev, via=via)
 
     async def send_out(
@@ -79,6 +84,8 @@ class Desk(DeskCore):
         client_id: str | None = None,
         via: str = "panel",
     ) -> Done:
+        if retried := await self._retried(uid, pieces, client_id):
+            return retried
         label, ref = providers.clean_shop(shop), providers.clean_bag(bag)
         now, today, _ = await self.today(uid)
         providers.check_due(due, today)
@@ -114,6 +121,8 @@ class Desk(DeskCore):
                 view, laundry, batch, holds.known(view, pieces), to=to, now=now
             )
 
+        if retried := await self._retried(uid, pieces, client_id):
+            return retried
         return await self._commit(uid, plan, client_id=client_id, via=via)
 
     async def blind(

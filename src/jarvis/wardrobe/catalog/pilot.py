@@ -6,8 +6,11 @@ counts only, never a piece, from his ledger.
   candidate chosen: those whose `how` is `match` (the phone sends `match` when his tap took
   candidate 1, `tap` with that score when he took another);
 - wrong status changes: corrections of state-setting events; events: every event;
-- suggested / unavailable suggested: Part C's plan log (`plan_counts`, joined at I1; 0 until then).
-The pass line: unavailable pieces suggested = 0 and at most 1 wrong status change in 50 events.
+- suggested / unavailable suggested: NOT MEASURED in v13.0.0 (None, never 0): Part C keeps no
+  log of what each suggestion named. They are Part C's `plan_counts` when one is given; the eval
+  (`evals/r13/e2e.py`, case 8) counts them from the live suggestions instead.
+The pass line (unavailable pieces suggested = 0, at most 1 wrong status change in 50 events) is
+checked there, not here: a count that is not measured can't pass.
 """
 
 from __future__ import annotations
@@ -19,10 +22,6 @@ from jarvis.wardrobe.http import Pilot
 from jarvis.wardrobe.states import STATE_SETTING
 
 PlanCounts = Callable[[str], Awaitable[tuple[int, int]]]
-
-
-def passes(p: Pilot) -> bool:
-    return p.unavailable_suggested == 0 and p.state_corrections * 50 <= max(p.events, 50)
 
 
 class PilotCounts:
@@ -42,7 +41,7 @@ class PilotCounts:
                     chosen += e.evidence.how == "match"
                 if e.kind == "corrected" and kinds.get(e.voids or "") in STATE_SETTING:
                     corrections += 1
-        suggested, unavailable = await self._plans(uid) if self._plans is not None else (0, 0)
+        suggested, unavailable = await self._plans(uid) if self._plans is not None else (None, None)
         return Pilot(
             scans_with_candidate=scored, first_candidate_chosen=chosen, events=events,
             state_corrections=corrections, suggested=suggested,
@@ -50,4 +49,4 @@ class PilotCounts:
         )  # fmt: skip
 
 
-__all__ = ["PilotCounts", "PlanCounts", "passes"]
+__all__ = ["PilotCounts", "PlanCounts"]

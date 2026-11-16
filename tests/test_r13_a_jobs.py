@@ -14,8 +14,6 @@ from r13_fakes_a import Catalog, catalog, fp, jpeg
 
 from jarvis.wardrobe.catalog import jobs as sweep_module
 from jarvis.wardrobe.catalog.edits import NewPiece
-from jarvis.wardrobe.catalog.pilot import passes
-from jarvis.wardrobe.http import Pilot
 from jarvis.wardrobe.ports import Commit
 
 
@@ -192,15 +190,5 @@ async def test_the_pilot_counts_candidates_choices_and_state_corrections() -> No
     got = await desk(cat).pilot.counts(UID)
     assert (got.scans_with_candidate, got.first_candidate_chosen) == (2, 1)
     assert (got.events, got.state_corrections) == (5, 1)
-    assert (got.suggested, got.unavailable_suggested) == (0, 0)  # Part C's half joins at I1
-
-
-def test_the_pass_line_is_no_unavailable_piece_and_one_wrong_change_in_fifty() -> None:
-    def pilot(**kw: int) -> Pilot:
-        base = dict.fromkeys(Pilot.model_fields, 0)
-        return Pilot(**(base | kw))
-
-    assert passes(pilot(events=100, state_corrections=2))
-    assert not passes(pilot(events=100, state_corrections=3))
-    assert not passes(pilot(events=100, unavailable_suggested=1))
-    assert passes(pilot(events=10, state_corrections=1))
+    # Part C keeps no log of what each suggestion named: not measured in v13.0.0 (None, never 0)
+    assert (got.suggested, got.unavailable_suggested) == (None, None)

@@ -28,6 +28,7 @@ from wired import World, running, want  # noqa: E402
 
 from jarvis.tools.gateway import GatewayOutcome  # noqa: E402
 from jarvis.wardrobe.model import Event  # noqa: E402
+from jarvis.wardrobe.styling import engine  # noqa: E402
 
 PART = "e2e"
 BUILT = True
@@ -205,7 +206,7 @@ async def _suggested_ok(w: World) -> tuple[int, int]:
     return len(named), sum(1 for i in named if states.get(i) != "ready")
 
 
-async def e2e8(*, plant: bool = False) -> list[str]:
+async def e2e8() -> list[str]:
     async with running() as w:
         ids = await _add(w, *SET)
         out: list[str] = []
@@ -216,13 +217,16 @@ async def e2e8(*, plant: bool = False) -> list[str]:
             suggested, unavailable = suggested + a, unavailable + b
             w.clock.advance(minutes=30)
             await w.ok("laundry_move", step="ready", pieces=[pid])
-        if plant:  # a recorded suggestion that names a piece in the basket
-            unavailable += 1
+        w.clock.advance(minutes=5)
+        await w.ok("laundry_correct", piece=ids[0])  # one real correction of a state-setting step
         pilot = await w.get("/v1/wardrobe/pilot")
         out += want(suggested > 0, "the run suggested something")
         out += want(unavailable == 0, f"{unavailable} unavailable pieces suggested")
         wrong, events = pilot["state_corrections"], pilot["events"]
+        out += want(wrong == 1, f"the one correction is counted: {wrong}")
         out += want(wrong * 50 <= max(events, 50), f"wrong status changes {wrong} in {events}")
+        said = (pilot["suggested"], pilot["unavailable_suggested"])
+        out += want(said == (None, None), f"the pilot says 'not measured', not {said}")
         return out
 
 
@@ -259,11 +263,13 @@ async def control() -> dict[str, Any]:
     with ExitStack() as stack:
         stack.enter_context(_arrival_order())
         failed += [r["id"] for r in await _run(["e2e_1", "e2e_3"]) if not r["passed"]]
-    planted = await e2e8(plant=True)
-    failed += [] if not planted else [f"{PART}:e2e_8"]
+    with mock.patch.object(
+        engine, "AVAILABILITY", False
+    ):  # the engine suggests a piece in the basket
+        failed += [r["id"] for r in await _run(["e2e_8"]) if not r["passed"]]
     want_failed = {f"{PART}:e2e_1", f"{PART}:e2e_3", f"{PART}:e2e_8"}
     return {
-        "name": "the fold in arrival order; a planted bad suggestion",
+        "name": "the fold in arrival order; availability off (a basket piece is suggested)",
         "suite_failed": want_failed <= set(failed),
         "failed_cases": failed,
     }

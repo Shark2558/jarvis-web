@@ -242,13 +242,12 @@ async def assign_label(
 async def pilot(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     if (busy := too_many(request, "pilot", uid, change=False)) is not None:
         return busy
-    desk, zero = desk_of(request), dict.fromkeys(http.Pilot.model_fields, 0)
-    if desk is None:
-        return ok(http.Pilot(**zero))
+    if (desk := desk_of(request)) is None:
+        return off(request)
     try:
         return ok(await desk.pilot.counts(uid))
-    except Exception:  # noqa: BLE001 - counts only; none readable: zeros
-        return ok(http.Pilot(**zero))
+    except Exception as exc:  # noqa: BLE001 - a broken read is a 503, never a row of zeros
+        return refused(exc)
 
 
 # ---- the panel's changes through the gateway (D1) ------------------------------------------------

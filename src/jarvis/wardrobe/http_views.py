@@ -334,8 +334,9 @@ class Pilot(_M):
     first_candidate_chosen: int = Field(ge=0)
     events: int = Field(ge=0)
     state_corrections: int = Field(ge=0)
-    suggested: int = Field(ge=0)
-    unavailable_suggested: int = Field(ge=0)
+    # None: not measured in v13.0.0 (Part C keeps no log of what each suggestion named)
+    suggested: int | None = Field(default=None, ge=0)
+    unavailable_suggested: int | None = Field(default=None, ge=0)
 
 
 class ToolCall(_M):

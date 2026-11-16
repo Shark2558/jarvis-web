@@ -359,3 +359,18 @@ async def test_the_pilot_is_counts_only(settings: Settings) -> None:
         got = await c.get("/v1/wardrobe/pilot", headers=AUTH)
         pilot = http.Pilot.model_validate(got.json())
         assert pilot.events == 1 and "Office" not in got.text
+        assert (pilot.suggested, pilot.unavailable_suggested) == (None, None)  # not measured
+
+
+async def test_a_pilot_that_cannot_be_read_is_a_503_never_a_row_of_zeros(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with running(_owner(settings)) as (app, c):
+        desk = app.state.r13_parts["catalog"].services["store"].desk
+
+        async def broken(uid: str) -> None:
+            raise RuntimeError("the store could not be read")
+
+        monkeypatch.setattr(desk.pilot, "counts", broken)
+        got = await c.get("/v1/wardrobe/pilot", headers=AUTH)
+        assert got.status_code == 503 and "events" not in got.text

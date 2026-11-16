@@ -90,7 +90,7 @@ ROUTES: tuple[tuple[str, str, str, object, object, tuple[int, ...]], ...] = (
     ("POST", "/v1/wardrobe/restore", "catalog", "application/octet-stream", RestoreDone,
      (*_E, 409, 413, 422)),
     ("PUT", "/v1/wardrobe/settings", "catalog", WardrobeSettingsIn, SettingsView, (*_E, 422, 503)),
-    ("GET", "/v1/wardrobe/pilot", "catalog", None, Pilot, _E),
+    ("GET", "/v1/wardrobe/pilot", "catalog", None, Pilot, (*_E, 503)),
     ("POST", "/v1/wardrobe/tools/{tool}", "any", ToolCall, ToolReply, (*_E, 404, 422)),
     ("GET", "/v1/laundry", "laundry", None, LaundryView, (*_E, 503)),
     ("GET", "/v1/laundry/review", "laundry", None, ReviewView, (*_E, 503)),

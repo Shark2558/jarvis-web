@@ -245,8 +245,20 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
 
     @r.get("/v1/wardrobe/pilot")
     async def pilot() -> JSONResponse:
-        zero = dict.fromkeys(http.Pilot.model_fields, 0)
-        return _ok(http.Pilot(**zero))
+        zero = dict.fromkeys(http.Pilot.model_fields, None)  # "not measured" is None
+        return _ok(
+            http.Pilot(
+                **(
+                    zero
+                    | {
+                        "scans_with_candidate": 0,
+                        "first_candidate_chosen": 0,
+                        "events": 0,
+                        "state_corrections": 0,
+                    }
+                )
+            )
+        )
 
     @r.post("/v1/wardrobe/tools/{tool}")
     async def tool(tool: str, body: http.ToolCall) -> JSONResponse:

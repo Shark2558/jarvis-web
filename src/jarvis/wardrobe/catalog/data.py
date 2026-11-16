@@ -6,8 +6,8 @@
 - `export`: a plain JSON of his own records (pieces, pairs, sets, places, labels and each piece's
   history), WITHOUT photos or fingerprints (D17); Privacy scrubs it again on the way out.
 - `delete`: everything the catalog keeps for him (the index, every log page, every photo and
-  fingerprint): the photos' and fingerprints' documents and the logs first, the index LAST, so a
-  delete cut halfway leaves a readable index that a second delete finishes.
+  fingerprint, the purge count): the photos' and fingerprints' documents and the logs first, the
+  index LAST, so a delete cut halfway leaves a readable index that a second delete finishes.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from typing import Any
 
 from jarvis.storage.docs import Delete, Op
 from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PhotoVault
+from jarvis.wardrobe.catalog.purges import PurgeCount
 from jarvis.wardrobe.catalog.store import CatalogStore
 
 
@@ -55,6 +56,7 @@ class CatalogData:
             ops += self.store.logs.drops(uid, p)
             ops += [Delete(self.vault.path(uid, ph)) for ph in p.photos]
         ops += [Delete(self.vault.prints.path(uid, s)) for s in range(MAX_SHARDS)]
+        ops.append(Delete(PurgeCount(self.store).path(uid)))
         ops.append(Delete(self.store.index_path(uid)))
         await self.store.docs.write(ops)
         return len(view.pieces)

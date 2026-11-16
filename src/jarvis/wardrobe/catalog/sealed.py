@@ -90,6 +90,10 @@ def aad_backup(uid: str) -> str:
     return f"wardrobe/backup/{uid}/v1"
 
 
+def aad_restore(uid: str) -> str:
+    return f"wardrobe/restore/{uid}/v1"
+
+
 __all__ = [
     "VERSION",
     "Purpose",
@@ -99,6 +103,7 @@ __all__ = [
     "aad_log",
     "aad_photo",
     "aad_prints",
+    "aad_restore",
     "check_owner",
     "check_photo",
     "check_piece",

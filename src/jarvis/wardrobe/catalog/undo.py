@@ -30,6 +30,7 @@ from jarvis.wardrobe.catalog.events import event
 from jarvis.wardrobe.catalog.fold import fold
 from jarvis.wardrobe.catalog.merge import Merge
 from jarvis.wardrobe.catalog.photos import Get, PhotoVault
+from jarvis.wardrobe.catalog.purges import PurgeCount
 from jarvis.wardrobe.catalog.store import NOT_IN, CatalogStore
 from jarvis.wardrobe.model import Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import Commit, Refused
@@ -61,6 +62,7 @@ class CatalogBin:
         self, store: CatalogStore, vault: PhotoVault, merge: Merge, undo: Callable[[], Any]
     ) -> None:
         self.store, self.vault, self.merges, self._undo = store, vault, merge, undo
+        self.purges = PurgeCount(store)
 
     def bin(self) -> UndoBin:
         found = self._undo()
@@ -141,6 +143,7 @@ class CatalogBin:
             if p is None or not await self._ours(uid, item, p, tx.get):
                 return view, []  # gone already, brought back or retired since: nothing to purge
             ops = self.store.logs.drops(uid, p) + await self.vault.drop_ops(uid, p, tx.get)
+            ops += await self.purges.purge_ops(uid, tx.get)  # a restore token covers it (L2)
             return _without(view, ref), ops
 
         await self.store.rewrite(uid, fn)

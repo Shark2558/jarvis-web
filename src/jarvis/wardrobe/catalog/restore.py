@@ -32,6 +32,7 @@ from jarvis.keyring import KEY_ID
 from jarvis.storage.docs import DocTx, Op, Set
 from jarvis.wardrobe.catalog.backup import FID, MAGIC, VERSION, aad_line
 from jarvis.wardrobe.catalog.photos import MAX_SHARDS, Get, PhotoVault, is_entry
+from jarvis.wardrobe.catalog.purges import PurgeCount
 from jarvis.wardrobe.catalog.sealed import aad_prints
 from jarvis.wardrobe.catalog.store import CatalogStore
 from jarvis.wardrobe.http import RestoreCheck, RestoreCounts, RestoreDone
@@ -119,24 +120,29 @@ def _take(out: Parsed, kind: str, d: Any) -> None:
 
 class Restore:
     def __init__(self, store: CatalogStore, vault: PhotoVault) -> None:
-        self.store, self.vault = store, vault
+        self.store, self.vault, self.purges = store, vault, PurgeCount(store)
 
     # ---- the token (stateless: the check writes nothing) --------------------------------------
-    def _token(self, uid: str, digest: str, expires: int, empty: bool) -> str:
+    def _token(self, uid: str, digest: str, expires: int, empty: bool, purged: int) -> str:
         """`empty`: the wardrobe was empty at the check, so every piece is added, also when a
-        restore cut halfway runs again (decided once, carried under the MAC)."""
-        mac = self.store.sealer.mac(f"restore/{uid}/{digest}/{expires}/{int(empty)}")
+        restore cut halfway runs again (decided once, carried under the MAC). `purged`: his
+        purge count then: a purge since makes the token stale, so "empty" is never replayed
+        over a piece he purged (L2)."""
+        mac = self.store.sealer.mac(f"restore/{uid}/{digest}/{expires}/{int(empty)}/{purged}")
         return f"{expires:x}-{int(empty)}-{mac[:40]}"
 
-    def _token_ok(self, uid: str, digest: str, token: str) -> bool | None:
-        """The check's `empty`, or None when the token is not for this file or has expired."""
+    def _token_ok(self, uid: str, digest: str, token: str, purged: int) -> bool | None:
+        """The check's `empty`, or None when the token is not for this file, has expired, or a
+        purge happened since; anything not plain ASCII is simply not a token."""
         head, _, rest = token.partition("-")
+        if not token.isascii() or not head.isalnum():
+            return None
         try:
             expires, empty = int(head, 16), rest[:1] == "1"
         except ValueError:
             return None
         fresh = self.store.now().timestamp() < expires
-        ok = hmac.compare_digest(self._token(uid, digest, expires, empty), token)
+        ok = hmac.compare_digest(self._token(uid, digest, expires, empty, purged), token)
         return empty if fresh and ok else None
 
     # ---- check ---------------------------------------------------------------------------------
@@ -149,7 +155,8 @@ class Restore:
             f"{counts.added} to add, {counts.already_there} already there, "
             f"{counts.events} new events; nothing is changed until you restore."
         )
-        token = self._token(uid, parsed.digest, expires, not current.pieces)
+        count = await self.purges.read(uid)
+        token = self._token(uid, parsed.digest, expires, not current.pieces, count)
         return RestoreCheck(token=token, counts=counts,
                             purged=purged, photos=parsed.has_photos, message=words)  # fmt: skip
 
@@ -180,7 +187,7 @@ class Restore:
         self, uid: str, body: bytes, token: str, include_purged: Sequence[str] = ()
     ) -> RestoreDone:
         parsed = await asyncio.to_thread(parse, self.store, uid, body)
-        empty = self._token_ok(uid, parsed.digest, token)
+        empty = self._token_ok(uid, parsed.digest, token, await self.purges.read(uid))
         if empty is None:
             raise Refused(EXPIRED)
         current, ticked = await self.store.view(uid), set(include_purged)

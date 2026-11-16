@@ -70,3 +70,47 @@ async def test_l1_a_line_from_another_of_his_files_does_not_open() -> None:
             await desk(cat).restore.check(UID, b"\n".join(spliced) + b"\n")
         assert str(got.value) == UNREADABLE
     assert (await desk(cat).restore.check(UID, one)).counts.already_there == 3  # whole: it opens
+
+
+async def test_l2_a_forged_empty_digit_another_owners_or_an_odd_token_is_refused() -> None:
+    from r13_fakes_a import OTHER
+
+    from jarvis.wardrobe.catalog.restore import EXPIRED
+    from jarvis.wardrobe.ports import Refused
+
+    cat = catalog()
+    await _shirts(cat)
+    body = await desk(cat).backup.file(UID)
+    token = (await desk(cat).restore.check(UID, body)).token
+    head, empty, mac = token.split("-")
+    await desk(cat).service.add(OTHER, [NewPiece(type="shirt")])
+    theirs = await desk(cat).backup.file(OTHER)
+    for bad in (
+        f"{head}-{'1' if empty == '0' else '0'}-{mac}",  # "it was empty" is not his to claim
+        (await desk(cat).restore.check(OTHER, theirs)).token,  # another owner's check
+        f"{head}-{empty}-{mac[:-1]}é",  # not ASCII: refused in words, never a crash
+        "",
+    ):
+        with pytest.raises(Refused) as got:
+            await desk(cat).restore.apply(UID, body, bad)
+        assert str(got.value) == EXPIRED
+
+
+async def test_l2_an_empty_check_replayed_after_a_purge_says_check_again() -> None:
+    from jarvis.wardrobe.catalog.restore import EXPIRED
+    from jarvis.wardrobe.ports import Refused
+
+    cat = catalog()
+    ids = await _shirts(cat)
+    body = await desk(cat).backup.file(UID)
+    fresh = catalog(clock=cat.clock)
+    token = (await desk(fresh).restore.check(UID, body)).token  # his wardrobe was empty
+    await desk(fresh).restore.apply(UID, body, token)
+    kept = await desk(fresh).bin.remove(UID, ids[0], owner_authored=True)
+    assert await fresh.undo.purge(UID, kept.id)
+    with pytest.raises(Refused) as got:
+        await desk(fresh).restore.apply(UID, body, token)  # within the hour, the same file
+    assert str(got.value) == EXPIRED
+    assert ids[0] not in (await fresh.store.view(UID)).pieces  # never back unticked
+    again = await desk(fresh).restore.check(UID, body)
+    assert again.purged == (ids[0],)  # checked again: purged since, his to tick

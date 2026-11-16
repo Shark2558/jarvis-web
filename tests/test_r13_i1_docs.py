@@ -70,4 +70,4 @@ def test_the_fixer_words_are_in_the_plan_and_the_guide() -> None:
         assert "cannot decode a picture" in text  # the face check is the console's (L2)
         assert "not measured in v13.0.0" in text or "Not measured in\n  v13.0.0" in text
     assert "Couldn't check right now" in PLAN and "delete still erases what is on disk" in PLAN
-    assert "never \"Nothing kept yet\"" in GUIDE
+    assert 'never "Nothing kept yet"' in GUIDE

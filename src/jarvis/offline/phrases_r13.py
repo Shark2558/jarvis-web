@@ -7,7 +7,7 @@ the audit all apply). No model, no clock: the day words go to the tool, which re
 
     what should I wear tomorrow / for Diwali    outfit_suggest(day?, occasion?)
     where is my black belt / my brown shoes     wardrobe_find(query), then belongings_where(item)
-    I put my watch in the travel bag            wardrobe_find(query), then wardrobe_edit(piece, place)
+    I put my watch in the travel bag            wardrobe_find(query), wardrobe_edit(piece, place)
     my navy shirt is in the laundry             laundry_move(step=basket, query)
     put the white shirt in the wash             laundry_move(step=basket, query)
     the white shirt is back / is clean          laundry_move(step=ready, query)
@@ -47,9 +47,10 @@ from jarvis.offline.rules import NoAICall, NoAIRoute
 @dataclass(frozen=True)
 class TakeCall(NoAICall):
     """A call that takes argument values from the step before's result: `take` pairs an argument
-    with a key of that result ("piece" from wardrobe_find's "best"). The runner fills them, or stops
-    the turn when the key holds no string id (INTEGRATION-D section 6: `offline/no_ai.py` reads it at
-    I1). Until then the call runs without them and A refuses it: nothing is moved on a guess."""
+    with a key of that result ("piece" from wardrobe_find's "best"). The runner fills them, or
+    stops the turn when the key holds no string id (INTEGRATION-D section 6: `offline/no_ai.py`
+    reads it at I1). Until then the call runs without them and A refuses it: nothing is moved on a
+    guess."""
 
     take: tuple[tuple[str, str], ...] = ()
 
@@ -255,8 +256,8 @@ WHERE = _p(
 # R14's put verbs and places, all of them ("on top of" before "on"), and "hung": a wardrobe word in
 # any form Things knows is the wardrobe's (M4); tests pin R14's lists inside these
 PUT_VERBS = ("kept", "put", "placed", "stored", "hid", "hidden", "hung")
-PUT_PREPS = ("in", "inside", "into", "on top of", "on", "under", "behind", "at", "with", "near")
-PUT_PREPS += ("beside", "next to")
+PUT_PREPS: tuple[str, ...] = ("in", "inside", "into", "on top of", "on", "under", "behind", "at")
+PUT_PREPS += ("with", "near", "beside", "next to")
 _PLAIN = frozenset(
     {"in", "inside", "into", "on", "at"}
 )  # the place itself; any other keeps its word

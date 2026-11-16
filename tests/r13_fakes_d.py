@@ -9,7 +9,8 @@
 #                                  of three pilot pieces, the tag estimate with AI tagging on
 #   d_app() -> FastAPI             I0's fake app with D's routes first; wardrobe_add registers a
 #                                  piece in I0's store, a saved fingerprint is offered next time;
-#                                  D's two split-out modules served until I1 lists them (asset_routes)
+#                                  D's two split-out modules served until I1 lists them
+#                                  (asset_routes)
 #   python tests/r13_fakes_d.py <port>   serve it (uvicorn; JARVIS_* as the browser tests set)
 #   serve_d(token) -> (url, stop)  start that server for a browser test module, healthy
 #   Picture(w, h)                  a drawn picture (a surface, stripes, a QR, a face, a
@@ -218,9 +219,10 @@ def d_routes(state: dict[str, Any], store: Any = None, clock: Any = None) -> API
     return r
 
 
-# D's two console modules split out at REVIEW-D-1 (each imported on first use by its parent). Until I1
-# lists them in `api/console.APP_ASSETS` (INTEGRATION-D section 6), this test server serves them the way
-# the app serves an asset; once listed, the app's own route answers and this one steps aside.
+# D's two console modules split out at REVIEW-D-1 (each imported on first use by its parent).
+# Until I1 lists them in `api/console.APP_ASSETS` (INTEGRATION-D section 6), this test server
+# serves them the way the app serves an asset; once listed, the app's own route answers and this
+# one steps aside.
 NEW_ASSETS = ("console-vision-r13.js", "console-wardrobe-words.js")
 
 

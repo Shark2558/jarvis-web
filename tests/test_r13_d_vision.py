@@ -9,8 +9,9 @@
 #   - the four tasks' checks are the server's schemas (WARDROBE_DATA): a well-formed result of each
 #     passes jarvis.vision.results.parse_result(wardrobe=True), the shapes the tasks return
 #   - each wardrobe model loads only through its self-check; a mismatch is "not installed"
-#   - REVIEW-D-1 split: the arithmetic is its own module (console-vision-r13.js), imported once, on a
-#     wardrobe task's first use, by the R13 section only; it holds no DOM, network, storage or clock
+#   - REVIEW-D-1 split: the arithmetic is its own module (console-vision-r13.js), imported once,
+#     on a wardrobe task's first use, by the R13 section only; it holds no DOM, network, storage
+#     or clock
 from __future__ import annotations
 
 import json

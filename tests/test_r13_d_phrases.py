@@ -9,8 +9,8 @@
 #   - every R14 phrase test still routes as before with R13's routers installed first; only the two
 #     moves D6 names change (a belt's "where" and a watch's "put")
 #   - the routers reach No-AI mode first and in their order through I0's wiring
-#   - M4 (REVIEW-D-1): R14's put verbs and places are inside R13's; every one of them with a wardrobe
-#     word stays the wardrobe's, never `belongings_put`; "wifes" is a person word
+#   - M4 (REVIEW-D-1): R14's put verbs and places are inside R13's; every one of them with a
+#     wardrobe word stays the wardrobe's, never `belongings_put`; "wifes" is a person word
 #   - M6: A's shapes: a count is `{type}` (a type or a category); the move resolves the piece with
 #     `wardrobe_find` and edits by id (`TakeCall`, D10: no `query` reaches `wardrobe_edit`); with
 #     I1's runner step (r13_fakes_d.run_taking) a name that fits several pieces moves nothing
@@ -217,7 +217,7 @@ def test_the_routers_go_first_and_in_their_order_through_the_wiring() -> None:
     assert all(r.__name__.startswith("r13_") for r in p13.ROUTERS)
 
 
-# ---- M4: R14's put forms never take a wardrobe word -----------------------------------------------
+# ---- M4: R14's put forms never take a wardrobe word ------------------------------------------
 def _r14_lists() -> tuple[set[str], set[str]]:
     pattern = p14.PUT.pattern
     verbs = re.search(r"\(\?:(kept\|[^)]*)\)", pattern)
@@ -247,7 +247,7 @@ def test_m4_every_r14_put_form_with_a_wardrobe_word_is_the_wardrobes(text: str) 
     assert tools == ["wardrobe_find", "wardrobe_edit"], text
 
 
-# ---- M6: the move edits by id; I1's runner step fills it, or stops -----------------------------------
+# ---- M6: the move edits by id; I1's runner step fills it, or stops ---------------------------
 async def test_m6_the_move_edits_the_piece_wardrobe_find_resolved_and_nothing_on_a_tie() -> None:
     from r13_fakes_d import run_taking
 

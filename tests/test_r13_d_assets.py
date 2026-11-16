@@ -7,7 +7,8 @@
 #   - the engine's own references (console-vision.js SELF13) are the manifest's
 #   - in Node, on the VENDORED onnxruntime-web: each model's self-check input (the engine's own
 #     ramp and silhouette) gives the manifest's reference; a drawn face fires UltraFace and a
-#     drawn silhouette fires SSD's "person" through the engine's own decoders (console-vision-r13.js); a
+#     drawn silhouette fires SSD's "person" through the engine's own decoders
+#     (console-vision-r13.js); a
 #     drawn striped shirt keeps its candidate under rotation and folding (INV-06's real half)
 #   - REVIEW-D-1 on the real models: H2, a 60-80 px face beside a piece in a 1600 x 1200 photo is
 #     missed by the whole-photo check and found in the crop the scan module cuts; M5, the scan

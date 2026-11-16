@@ -3,14 +3,15 @@
 EVERY part's `WardrobeData` (count, a plain export, delete), read late from the app, so a part
 built after D, or rebuilt, is always counted. No row reads a Firestore path itself.
 
-| Row (id)           | Holds                                                   | Its sources                  |
-|--------------------|---------------------------------------------------------|------------------------------|
-| `wardrobe_pieces`  | the index (pieces, pairs, sets, places, labels), each   | row "pieces", or the name    |
-|                    | piece's own history                                     | "pieces"                     |
-| `wardrobe_history` | laundry, the review queue, outfit plans, what he wore   | row "history", or "laundry", |
-|                    |                                                         | "outfits"                    |
-| `wardrobe_photos`  | the saved crops and their fingerprints                  | row "photos", or "photos"    |
-| `wardrobe_device`  | nothing on the server or the phone: page memory only    | none                         |
+| Row (id)           | Holds                                                | Its sources          |
+|--------------------|------------------------------------------------------|----------------------|
+| `wardrobe_pieces`  | the index (pieces, pairs, sets, places, labels) and  | row "pieces", else   |
+|                    | each piece's own history                             | the name "pieces"    |
+| `wardrobe_history` | laundry, the review queue, outfit plans, his wears   | row "history", else  |
+|                    |                                                      | "laundry", "outfits" |
+| `wardrobe_photos`  | the saved crops and their fingerprints               | row "photos", else   |
+|                    |                                                      | the name "photos"    |
+| `wardrobe_device`  | nothing on the server or the phone: page memory only | none                 |
 
 A source says its row with a `row` attribute (the contract's field at I1, INTEGRATION-D section 6),
 else by its name. FAIL CLOSED (REVIEW-D-1 H3): a source that says no known row, or has an unknown

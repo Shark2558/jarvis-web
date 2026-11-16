@@ -172,13 +172,37 @@ async def test_remove_keeps_the_piece_in_recently_deleted_under_a_fixed_title(ca
     res = await call(gw, "wardrobe_remove", piece=shirt)
     assert res.outcome is GatewayOutcome.EXECUTED and res.result["kind"] == "wardrobe_item"
     [item] = await cat.undo.recent(UID)
-    assert item.title == BIN_TITLE and item.snapshot == {"ref": shirt}
+    assert item.title == BIN_TITLE and set(item.snapshot) == {"ref", "ev"}
+    assert item.snapshot["ref"] == shirt  # ids only: the event it made, never a word of his
     assert "Office" not in str(item.model_dump())  # the bin is Firestore, in clear
     assert desk(cat).counts.of(await cat.store.view(UID)).owned == 0
     out = await cat.undo.restore(UID, item.id)
     assert out.status is RestoreStatus.RESTORED
     view = await cat.store.view(UID)
     assert view.pieces[shirt].state == "review"  # away up to 30 days: a quick check first
+
+
+async def test_h2_a_stale_bin_entry_never_purges_or_restores_a_piece_he_retired_since(
+    cat: Catalog,
+) -> None:
+    gw = gateway(cat)
+    [belt] = await _add(cat, NewPiece(type="belt", label="Brown belt"))
+    cat.clock.advance(minutes=1)
+    removed = await call(gw, "wardrobe_remove", piece=belt)
+    [entry] = await cat.undo.recent(UID)
+    assert entry.snapshot["ref"] == belt and entry.snapshot["ev"].startswith("we_")
+    cat.clock.advance(minutes=1)  # back through the retire card, not the bin: the entry stays live
+    back = await call(gw, "wardrobe_retire", piece=belt, action="restore", condition="ready")
+    assert (await approve(gw, back)).result["status"] == "done"
+    cat.clock.advance(minutes=1)  # then retired on purpose: INV-17 keeps the record
+    await approve(gw, await call(gw, "wardrobe_retire", piece=belt, action="archive"))
+    events = len(await cat.store.history(UID, belt))
+    out = await cat.undo.restore(UID, removed.result["undo_id"])
+    assert out.status is RestoreStatus.STILL_THERE  # never un-archived without the retire card
+    assert await cat.undo.purge(UID, removed.result["undo_id"])  # day 30: the entry goes ...
+    view = await cat.store.view(UID)
+    assert view.pieces[belt].state == "archived" and view.pieces[belt].label == "Brown belt"
+    assert len(await cat.store.history(UID, belt)) == events  # ... the record and history stay
 
 
 async def test_a_purge_takes_the_record_its_log_and_its_photos(cat: Catalog) -> None:

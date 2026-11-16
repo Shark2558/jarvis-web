@@ -2,12 +2,15 @@
 """Recently deleted for wardrobe pieces (docs/plans/r13-wardrobe.md D16; kind `wardrobe_item`).
 
 - `remove`: a copy goes into the bin FIRST (no copy, nothing is removed), under the fixed title
-  "A wardrobe piece" (the bin is Firestore, in clear: never his label) with `{ref: <piece id>}`;
-  then the piece is archived in place by an `archived` event (`via` "bin"): out of every count,
-  its record, log, photos and fingerprints kept sealed.
+  "A wardrobe piece" (the bin is Firestore, in clear: never his label) with `{ref: <piece id>,
+  ev: <the archived event's id>}` (ids only); then the piece is archived in place by that event
+  (`via` "bin"): out of every count, its record, log, photos and fingerprints kept sealed.
+- An entry acts only while ITS event is still the piece's newest applied state-setting event: a
+  piece brought back with the retire card and archived again on purpose since is his to keep
+  (INV-17), so a stale entry restores nothing ("still there") and purges nothing.
 - `restore` (the bin's restorer, in place: same id): the piece comes back "Missing or in review"
-  (it was away up to 30 days); a merge's entry (`{ref, merge}`) only drops the link. A piece that
-  is no longer archived was never removed ("still there"); one purged since is gone.
+  (it was away up to 30 days); a merge's entry (`{ref, merge}`) only drops the link. One purged
+  since is gone.
 - `purge` (the bin's purger, "Remove now" and the 30-day sweep; safe to repeat): the record, its
   pairs, sets and label, every log page, its photos and fingerprints go, in one commit. A merge's
   entry purges nothing: the tombstone keeps the merged history (the link is then for good).
@@ -24,16 +27,23 @@ from jarvis.tools.context import current_tool_context
 from jarvis.undo.models import DeletedItem, Kind
 from jarvis.undo.service import Gone, Restored, StillThere, UndoBin
 from jarvis.wardrobe.catalog.events import event
+from jarvis.wardrobe.catalog.fold import fold
 from jarvis.wardrobe.catalog.merge import Merge
-from jarvis.wardrobe.catalog.photos import PhotoVault
+from jarvis.wardrobe.catalog.photos import Get, PhotoVault
 from jarvis.wardrobe.catalog.store import NOT_IN, CatalogStore
-from jarvis.wardrobe.model import WardrobeView
+from jarvis.wardrobe.model import Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import Commit, Refused
 from jarvis.wardrobe.redact import BIN_TITLE
+from jarvis.wardrobe.states import STATE_SETTING
 
 KIND: Kind = "wardrobe_item"
 BIN_OFF = "Recently deleted is off on this server, so nothing was changed."
 BACK_WORDS = "It is back in your wardrobe, waiting for a quick check of its condition."
+STALE = "That piece is already back in your wardrobe, or was archived again since."
+
+
+class _Stale(Refused):
+    """The entry's removal is no longer what the piece is (never leaves `restore`)."""
 
 
 def _where() -> dict[str, str | None]:
@@ -70,13 +80,14 @@ class CatalogBin:
         p = view.piece(pid)
         if p is None or p.merged_into is not None:
             raise Refused(NOT_IN)
-        kept = await self.keep(uid, {"ref": pid}, owner_authored=owner_authored)
-        now = self.store.now()
+        gone = event(pid, "archived", self.store.now(), via="bin", note="removed")
+        # the entry names the event it makes: it acts only while that event is the newest (H2)
+        kept = await self.keep(uid, {"ref": pid, "ev": gone.id}, owner_authored=owner_authored)
 
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
             if view.piece(pid) is None:
                 raise Refused(NOT_IN)
-            return Commit(events=(event(pid, "archived", now, via="bin", note="removed"),))
+            return Commit(events=(gone,))
 
         try:
             await self.store.transact(uid, fn)
@@ -84,6 +95,17 @@ class CatalogBin:
             await self.bin().discard(uid, kept.id)
             raise
         return kept
+
+    async def _ours(self, uid: str, item: DeletedItem, p: Piece, get: Get) -> bool:
+        """The entry's removal is still what the piece is: its `archived` event is the newest
+        applied state-setting event (a later restore or a retire card makes the entry stale)."""
+        made = item.snapshot.get("ev")
+        if p.state != "archived" or not isinstance(made, str):
+            return False
+        log_ = await self.store.log_of(uid, p, get)
+        marks = fold(log_).marks
+        live = [e for e in log_ if marks[e.id] == "applied" and e.kind in STATE_SETTING]
+        return bool(live) and max(live, key=Event.sort_key).id == made
 
     async def restore(self, uid: str, item: DeletedItem, *, outside: bool = False) -> Restored:
         ref = str(item.snapshot.get("ref", ""))
@@ -95,14 +117,18 @@ class CatalogBin:
                 raise StillThere("That piece is already its own again.")
             await self.merges.unmerge(uid, ref)
             return Restored(ref, BACK_WORDS)
-        if p.state != "archived":
-            raise StillThere("That piece is already back in your wardrobe.")
         now = self.store.now()
 
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
+            found = view.piece(ref)
+            if found is None or not await self._ours(uid, item, found, tx.get):
+                raise _Stale(STALE)
             return Commit(events=(event(ref, "restored", now, via="bin"),))
 
-        await self.store.transact(uid, fn)
+        try:
+            await self.store.transact(uid, fn)
+        except _Stale:
+            raise StillThere(STALE) from None
         return Restored(ref, BACK_WORDS)
 
     async def purge(self, uid: str, item: DeletedItem) -> None:
@@ -112,8 +138,8 @@ class CatalogBin:
 
         async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
             p = view.piece(ref)
-            if p is None or p.state != "archived":
-                return view, []  # gone already, or brought back since: nothing to purge
+            if p is None or not await self._ours(uid, item, p, tx.get):
+                return view, []  # gone already, brought back or retired since: nothing to purge
             ops = self.store.logs.drops(uid, p) + await self.vault.drop_ops(uid, p, tx.get)
             return _without(view, ref), ops
 

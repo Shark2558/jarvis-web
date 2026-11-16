@@ -153,6 +153,12 @@ class CatalogStore:
             log.warning("wardrobe log unreadable", extra={"reason": type(exc).__name__})
             raise WardrobeUnavailable(UNAVAILABLE) from None
 
+    async def log_of(
+        self, uid: str, p: Piece, get: Callable[[str], Awaitable[Any]] | None = None
+    ) -> list[Event]:
+        """A piece's log as stored, read through a transaction's `get` when given."""
+        return await self._read_log(get or self.docs.get, uid, p)
+
     async def events(self, uid: str, pid: str) -> list[Event]:
         """The piece's whole log as stored (the backup and the pilot read it)."""
         p = (await self.view(uid)).piece(pid)

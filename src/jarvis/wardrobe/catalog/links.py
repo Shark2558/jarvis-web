@@ -35,10 +35,27 @@ def pair_of(view: WardrobeView, pid: str) -> Pair | None:
     return next((p for p in view.pairs.values() if pid in p.pieces), None)
 
 
-def _live(view: WardrobeView, pid: str) -> None:
-    p = view.piece(pid)
-    if p is None or p.merged_into is not None:
-        raise Refused(NOT_IN)
+def pair_refusal(view: WardrobeView, a: str, b: str, *, freeing: str | None = None) -> str | None:
+    """Why `a` and `b` can't be paired now (None: they can). `freeing`: a piece whose pair is
+    undone first, in the same change (an edit's `unpair` + `pair_with`)."""
+    for pid in (a, b):
+        p = view.piece(pid)
+        if p is None or p.merged_into is not None:
+            return NOT_IN
+    pa, pb = view.pieces[a], view.pieces[b]
+    if a == b or pa.type != pb.type or pa.type not in PAIRED_TYPES:
+        return NOT_A_PAIR
+    busy = {i for x in view.pairs.values() if freeing not in x.pieces for i in x.pieces}
+    return ALREADY_PAIRED if {a, b} & busy else None
+
+
+def set_refusal(view: WardrobeView, ids: Sequence[str]) -> str | None:
+    """Why these pieces can't be a set (None: they can)."""
+    low, high = SET_PARTS
+    if not low <= len(ids) <= high or len(set(ids)) != len(ids):
+        return f"A set is {low} to {high} different pieces."
+    found = [view.piece(pid) for pid in ids]
+    return NOT_IN if any(p is None or p.merged_into is not None for p in found) else None
 
 
 class Links:
@@ -49,13 +66,8 @@ class Links:
         out: list[Pair] = []
 
         async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
-            for pid in (a, b):
-                _live(view, pid)
-            pa, pb = view.pieces[a], view.pieces[b]
-            if a == b or pa.type != pb.type or pa.type not in PAIRED_TYPES:
-                raise Refused(NOT_A_PAIR)
-            if pair_of(view, a) is not None or pair_of(view, b) is not None:
-                raise Refused(ALREADY_PAIRED)
+            if (why := pair_refusal(view, a, b)) is not None:
+                raise Refused(why)
             made = Pair.model_validate(
                 {"id": new_id("wp"), "pieces": (a, b), "paired_on": self.store.now().date()}
             )
@@ -90,8 +102,8 @@ class Links:
         out: list[PieceSet] = []
 
         async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
-            for pid in ids:
-                _live(view, pid)
+            if (why := set_refusal(view, ids)) is not None:
+                raise Refused(why)
             made = PieceSet.model_validate(
                 {"id": new_id("ws"), "label": words, "parts": [
                     SetPart.model_validate({"piece": pid, "alone": bool(ok)}) for pid, ok in parts
@@ -114,4 +126,4 @@ class Links:
         return set_id
 
 
-__all__ = ["ALREADY_PAIRED", "NOT_A_PAIR", "Links", "pair_of"]
+__all__ = ["ALREADY_PAIRED", "NOT_A_PAIR", "Links", "pair_of", "pair_refusal", "set_refusal"]

@@ -189,3 +189,43 @@ async def test_m7_a_restore_card_never_hides_a_condition_he_did_not_confirm(cat:
     late = await approve(gw, mark)  # archived since the card was made: refused, nothing written
     assert late.outcome is GatewayOutcome.ERROR and RESTORE_FIRST in (late.error or "")
     assert (await cat.store.view(UID)).pieces[belt].state == "archived"
+
+
+async def test_l8_an_edit_a_later_part_refuses_writes_nothing_at_all(cat: Catalog) -> None:
+    gw = gateway(cat)
+    a, b, c, shirt = await _add(
+        cat, NewPiece(type="sock"), NewPiece(type="sock"), NewPiece(type="sock"),
+        NewPiece(type="shirt"),
+    )  # fmt: skip
+    await desk(cat).links.pair(UID, b, c)
+    before = await cat.store.view(UID)
+    for bad in (
+        {"label_code": "zzzzzzzz"},  # not one of his labels
+        {"place": "the moon"},  # not one of his places
+        {"pair_with": shirt},  # not a pair
+        {"pair_with": b},  # already in a pair
+        {"set_parts": [{"piece": a}]},  # a set is 2 to 6 pieces
+        {"set_parts": [{"piece": a}, {"piece": "wi_" + "9" * 12}]},
+    ):
+        got = await call(gw, "wardrobe_edit", piece=a, colour="navy", **bad)
+        assert got.result["status"] == "refused", bad  # the truth: nothing was changed
+    after = await cat.store.view(UID)
+    assert after.rev == before.rev and after.pieces[a].colour is None
+
+
+async def test_l8_a_step_that_fails_after_a_write_says_what_was_saved(
+    cat: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gw = gateway(cat)
+    a, b = await _add(cat, NewPiece(type="kurta"), NewPiece(type="pyjama"))
+
+    async def gone(*args: object, **kw: object) -> None:
+        raise Refused("That piece isn't in your wardrobe.")  # say, removed on his phone meanwhile
+
+    monkeypatch.setattr(desk(cat).links, "make_set", gone)
+    parts = [{"piece": a}, {"piece": b}]
+    got = await call(gw, "wardrobe_edit", piece=a, colour="navy", set_parts=parts)
+    assert got.result == {
+        "status": "partial", "saved": ["fields"], "message": "That piece isn't in your wardrobe."
+    }  # fmt: skip
+    assert (await cat.store.view(UID)).pieces[a].colour == "navy"

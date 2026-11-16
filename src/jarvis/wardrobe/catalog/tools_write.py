@@ -23,7 +23,10 @@ from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.taint import content_tainted
 from jarvis.wardrobe.catalog.edits import Edit, NewPiece
+from jarvis.wardrobe.catalog.labels import NOT_HIS
+from jarvis.wardrobe.catalog.links import pair_refusal, set_refusal
 from jarvis.wardrobe.catalog.places import resolve_place, unknown_place
+from jarvis.wardrobe.catalog.store import WardrobeUnavailable
 from jarvis.wardrobe.catalog.tools import AGENT, PIECE, guarded, line, uid
 from jarvis.wardrobe.model import PLACE_ID, PRIVATE_BY_DEFAULT, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
@@ -94,6 +97,9 @@ def _check_add(a: dict[str, Any]) -> None:
 def _check_edit(a: dict[str, Any]) -> None:
     if not isinstance(a.get("piece"), str):
         raise ValueError("piece is a piece id: find it with wardrobe_find first")
+    parts = a.get("set_parts", [])
+    if not isinstance(parts, list) or any(not isinstance(x, dict) for x in parts):
+        raise ValueError("set_parts is a list of {piece, alone}")
     _own_words((a.get("label"), a.get("set_label")), (a.get("place"),))
 
 
@@ -165,40 +171,69 @@ class WriteTools:
 
     async def edit(self, a: dict[str, Any]) -> Any:
         origin = origin_of(require_tool_context())
+        args = {k: v for k, v in a.items() if not (origin == "outside" and k == "label")}
 
         async def work() -> Any:
             view = await self.d.store.view(uid())
-            p = await self._piece(view, a)
-            if origin == "outside":
-                a.pop("label", None)
-            change = _edit_of(a, origin == "typed")
-            if change is not None:
-                done = await self.d.service.edit(uid(), p.id, change)
-                if done.status == "ask":
-                    return {"status": "ask", "question": done.question, "piece": p.id}
-            if a.get("place"):
-                await self.d.service.move(uid(), p.id, str(a["place"]))
-            await self._links(p.id, a)
+            p = await self._piece(view, args)
+            self._first(view, p, args)  # every part checked before the first commit (L8)
+            change = _edit_of(args, origin == "typed")
+            saved: list[str] = []
+            try:
+                if change is not None:
+                    done = await self.d.service.edit(uid(), p.id, change)
+                    if done.status == "ask":
+                        return {"status": "ask", "question": done.question, "piece": p.id}
+                    saved.append("fields")
+                await self._links(p.id, args, saved)
+            except (Refused, WardrobeUnavailable) as exc:
+                if not saved:
+                    raise
+                return {"status": "partial", "saved": saved, "message": str(exc)}  # the truth
             fresh = await self.d.store.view(uid())
             shown = line(fresh, fresh.pieces[p.id], self.d.views.place_words)
             return {"status": "done", "piece": shown}
 
         return await guarded(work)
 
-    async def _links(self, pid: str, a: dict[str, Any]) -> None:
+    def _first(self, view: WardrobeView, p: Piece, a: dict[str, Any]) -> None:
+        """What would refuse a later step, refused before anything is written."""
+        if a.get("place") and resolve_place(view, str(a["place"])) is None:
+            raise Refused(unknown_place(view))
+        code = str(a.get("label_code") or "")
+        if code and code not in view.labels and self.d.labels.number_of(uid(), code) is None:
+            raise Refused(NOT_HIS)
+        freeing = p.id if a.get("unpair") else None
+        if a.get("pair_with"):
+            why = pair_refusal(view, p.id, str(a["pair_with"]), freeing=freeing)
+            if why is not None:
+                raise Refused(why)
+        if a.get("set_parts"):
+            why = set_refusal(view, [str(x.get("piece")) for x in a["set_parts"]])
+            if why is not None:
+                raise Refused(why)
+
+    async def _links(self, pid: str, a: dict[str, Any], saved: list[str]) -> None:
+        if a.get("place"):
+            await self.d.service.move(uid(), pid, str(a["place"]))
+            saved.append("place")
         if "label_code" in a:
             code = str(a["label_code"] or "")
             if code:
                 await self.d.labels.assign(uid(), code, pid)
             elif (worn := (await self.d.store.view(uid())).pieces[pid].label_code) is not None:
                 await self.d.labels.assign(uid(), worn, None)  # "" frees the label it wears
+            saved.append("label")
         if a.get("unpair"):
             await self.d.links.unpair(uid(), pid)
+            saved.append("pair")
         if a.get("pair_with"):
             await self.d.links.pair(uid(), pid, str(a["pair_with"]))
+            saved.append("pair")
         if a.get("set_parts"):
             parts = [(str(x["piece"]), bool(x.get("alone"))) for x in a["set_parts"]]
             await self.d.links.make_set(uid(), parts, label=str(a.get("set_label") or ""))
+            saved.append("set")
 
     async def places(self, a: dict[str, Any]) -> Any:
         origin = origin_of(require_tool_context())

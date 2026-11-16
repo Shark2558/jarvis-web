@@ -99,16 +99,17 @@ class Labels:
         return tuple(out)
 
     async def assign(self, uid: str, code: str, pid: str | None) -> WardrobeLabel:
+        """A label in his index is his whatever today's key draws (it can still be moved or
+        freed after a key change); a new one must be one of today's codes."""
         out: list[WardrobeLabel] = []
 
-        number = self.number_of(uid, code)
-        if number is None:
-            raise Refused(NOT_HIS)
-
         async def fn(view: WardrobeView, tx: DocTx) -> Commit:
-            lb = view.labels.get(code) or WardrobeLabel.model_validate(
-                {"code": code, "number": number}
-            )
+            lb = view.labels.get(code)
+            if lb is None:
+                number = self.number_of(uid, code)
+                if number is None:
+                    raise Refused(NOT_HIS)
+                lb = WardrobeLabel.model_validate({"code": code, "number": number})
             recs = []
             if pid is not None:
                 p = view.piece(pid)

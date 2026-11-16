@@ -85,10 +85,11 @@ def build_desk(ctx: WardrobeContext, *, eyes: Any = None) -> Desk:
         per_piece=s.wardrobe_photos_per_piece,
     )  # fmt: skip
     views = Views(ctx.now, stale_days=s.wardrobe_stale_days, cap_inr=s.wardrobe_ai_tag_month_inr)
-    merge = Merge(store)
 
     async def private_ops(uid: str, piece: Any, tx: Any) -> list[Any]:
         return await vault.drop_ops(uid, piece, tx.get)
+
+    merge = Merge(store, drop_ops=private_ops)
 
     desk = Desk(
         ctx, store, CatalogService(store, private_ops=private_ops), Places(store), Links(store),

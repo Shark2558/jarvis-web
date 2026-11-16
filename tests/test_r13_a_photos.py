@@ -181,3 +181,17 @@ def test_two_identical_vests_are_twins_and_nothing_is_decided() -> None:
 
 def test_no_saved_fingerprint_means_no_candidate() -> None:
     assert candidates([], fp(1)) == ()
+
+
+async def test_l9_merging_into_a_private_piece_drops_the_others_photos_and_fingerprints(
+    cat: Catalog,
+) -> None:
+    vest, other = await _add(cat, NewPiece(type="vest"), NewPiece(type="vest", private=False))
+    await desk(cat).vault.save(UID, other, "front", jpeg())
+    await desk(cat).vault.prints.save(UID, other, "front", "mnv2-int8-1", fp(4))
+    await desk(cat).merge.merge(UID, vest, other)  # one piece now, and it is private (D9)
+    view = await cat.store.view(UID)
+    assert view.pieces[other].photos == () and view.pieces[other].fp_model is None
+    assert await desk(cat).vault.count(UID) == 0
+    assert await desk(cat).vault.prints._read(cat.docs.get, UID) == []  # noqa: SLF001
+    assert "wardrobe_photo/" not in _stored(cat)

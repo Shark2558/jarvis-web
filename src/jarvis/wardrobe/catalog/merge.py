@@ -5,7 +5,8 @@ A merge keeps ONE active id with both histories: the merged-away id gets a `merg
 Archived tombstone) and `merged_into` the kept id; its log pages never move, and `history` reads
 the kept piece's log with every log merged into it, in time order. Its QR label, its pairs and its
 sets go to the kept piece (a pair or set already holding the kept piece drops the other). Two
-labelled copies are two physical pieces: refused ("confirmed separate copies stay two"). It is a
+labelled copies are two physical pieces: refused ("confirmed separate copies stay two"). Merged
+into a private piece, the other's photos and fingerprints go in the same commit (D9). It is a
 card every time (`wardrobe_merge`: `ask_when` always, never "Approve all") and can be undone from
 Recently deleted for 30 days: the undo only drops the link, and the piece comes back "Missing or
 in review". Without the bin nothing is merged (there would be no undo).
@@ -13,12 +14,17 @@ in review". Without the bin nothing is merged (there would be no undo).
 
 from __future__ import annotations
 
-from jarvis.storage.docs import DocTx
+from collections.abc import Awaitable, Callable
+
+from jarvis.storage.docs import DocTx, Op
 from jarvis.wardrobe.catalog.events import event
 from jarvis.wardrobe.catalog.fold import fold
 from jarvis.wardrobe.catalog.store import NOT_IN, CatalogStore
-from jarvis.wardrobe.model import Event, Pair, PieceSet, WardrobeView
+from jarvis.wardrobe.model import Event, Pair, Piece, PieceSet, WardrobeView
 from jarvis.wardrobe.ports import Commit, HistoryItem, Refused
+
+# The photo vault's hook (D9): the deletes of a piece's photos and fingerprints, in this commit.
+DropOps = Callable[[str, Piece, DocTx], Awaitable[list[Op]]]
 
 TWO_COPIES = "These are two labelled copies: they stay two pieces."
 NOT_ONE = "Only two records of the same kind of piece can be merged."
@@ -47,8 +53,8 @@ def _moved_links(view: WardrobeView, keep: str, other: str) -> WardrobeView:
 
 
 class Merge:
-    def __init__(self, store: CatalogStore) -> None:
-        self.store = store
+    def __init__(self, store: CatalogStore, *, drop_ops: DropOps | None = None) -> None:
+        self.store, self._drop_ops = store, drop_ops
 
     async def merge(self, uid: str, keep: str, other: str) -> None:
         now = self.store.now()
@@ -65,8 +71,12 @@ class Merge:
                 raise Refused(TWO_COPIES)
             kept = a.model_copy(update={"label_code": a.label_code or b.label_code})
             gone = b.model_copy(update={"merged_into": keep, "label_code": None})
+            extra: list[Op] = []
+            if a.private and (b.photos or b.fp_model) and self._drop_ops is not None:
+                extra = await self._drop_ops(uid, b, tx)  # one piece now, and it is private
+                gone = gone.model_copy(update={"photos": (), "fp_model": None})
             e = event(other, "merged", now, via="merge")
-            return Commit(events=(e,), records=(kept, gone))
+            return Commit(events=(e,), records=(kept, gone), extra=tuple(extra))
 
         def links(fresh: WardrobeView) -> WardrobeView:
             return _moved_links(fresh, keep, other)

@@ -323,6 +323,8 @@ async def test_inv14_a_missing_sock_keeps_the_owned_count_and_drops_one_complete
         return Commit(events=(ev(socks[3], "missing", cat.clock()),))
 
     await cat.store.transact(UID, lost)
+    alone = desk(cat).counts.of(await cat.store.view(UID))  # the missing sock alone
+    assert (alone.owned, alone.pairs_complete) == (4, 1)
     await _deposit(cat, socks[0])  # laundry stays in owned totals
     counts = desk(cat).counts.of(await cat.store.view(UID))
     assert (counts.owned, counts.pairs, counts.pairs_complete, counts.review) == (4, 2, 0, 1)
@@ -353,3 +355,21 @@ async def test_a_sensitive_label_is_refused_and_ids_go_in_the_vault(cat: Catalog
     with pytest.raises(Refused) as got:
         await _add(cat, NewPiece(type="bag", label="PAN ABCDE1234F inside"))
     assert "Vault" in str(got.value)
+
+
+async def test_l9_a_label_already_his_moves_and_frees_after_a_key_change(
+    cat: Catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a, b = await _add(cat, NewPiece(type="vest"), NewPiece(type="vest"))
+    code = (await desk(cat).labels.sheet(UID))[0].code
+    await desk(cat).labels.assign(UID, code, a)
+    # after a key change today's key draws other codes: a printed label in his index still counts
+    monkeypatch.setattr(desk(cat).labels, "code_for", lambda uid, n: "z" * 8)
+    moved = await desk(cat).labels.assign(UID, code, b)
+    view = await cat.store.view(UID)
+    assert moved.number == 1 and view.pieces[b].label_code == code
+    assert view.pieces[a].label_code is None
+    freed = await desk(cat).labels.assign(UID, code, None)
+    assert freed.piece is None and (await cat.store.view(UID)).pieces[b].label_code is None
+    with pytest.raises(Refused):
+        await desk(cat).labels.assign(UID, "y" * 8, a)  # never in his index, not today's either

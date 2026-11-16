@@ -8,10 +8,11 @@ from typing import Any
 
 import pytest
 from r13_fakes import UID
-from r13_fakes_b import BLAZER, BLUE_SHIRT, TEE, TRAY, TWIN, WHITE_SHIRT, rig
+from r13_fakes_b import BLAZER, BLUE_SHIRT, TEE, TRAY, TWIN, VEST_A, VEST_B, WHITE_SHIRT, rig
 
 from jarvis.tools.external import FENCE_PREFIX
 from jarvis.wardrobe.laundry import cards, checks
+from jarvis.wardrobe.model import WardrobeLabel
 
 ENTRY = "rv_" + "0" * 10
 LOAD = "ld_" + "0" * 8
@@ -160,3 +161,29 @@ async def test_a_card_for_a_whole_tool_call_never_carries_his_words() -> None:
     one = await r.tool("laundry_status", query="grey tee")
     label = one.result["piece"]["label"]
     assert label.startswith(FENCE_PREFIX) and "Old grey tee" in label
+
+
+async def test_l12_two_private_pieces_on_a_card_are_never_twins() -> None:
+    r = await rig()
+    card = await r.tool("laundry_move", tainted=True, step="basket", pieces=[VEST_A, VEST_B])
+    assert card.pending.summary == "Put 2 private basics in the laundry basket"
+    view = await r.view()
+    codes = {VEST_A: "abcdefgh", VEST_B: "bcdefghi"}
+    numbered = view.model_copy(
+        update={
+            "pieces": {
+                k: (p.model_copy(update={"label_code": codes[k]}) if k in codes else p)
+                for k, p in view.pieces.items()
+            },
+            "labels": {
+                c: WardrobeLabel.model_validate({"code": c, "number": n, "piece": pid})
+                for n, (pid, c) in enumerate(codes.items(), start=17)
+            },
+        }
+    )
+    assert cards.move(numbered, {"step": "basket", "pieces": [VEST_A, VEST_B]}) == (
+        "Put a private basic (No. 17) and a private basic (No. 18) in the laundry basket"
+    )
+    assert cards.move(numbered, {"step": "drying", "pieces": [VEST_A]}) == (
+        "Note that a private basic (No. 17) is drying"
+    )

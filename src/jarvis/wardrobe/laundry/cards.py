@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from jarvis.tools.card import one_line
@@ -22,7 +23,7 @@ from jarvis.wardrobe.laundry import blind, checks, texts
 from jarvis.wardrobe.laundry.holds import resolve_query
 from jarvis.wardrobe.model import LABEL_MAX, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
-from jarvis.wardrobe.redact import fixed_words, model_view
+from jarvis.wardrobe.redact import PRIVATE_WORDS, card_words, fixed_words, model_view
 
 SOURCE = "your wardrobe"
 GENERIC = "Record a laundry step for wardrobe pieces"
@@ -54,6 +55,22 @@ def shown(view: WardrobeView, pid: str) -> dict[str, Any]:
     return fenced(model_view(p, place.label if place else None))
 
 
+def _number(view: WardrobeView, p: Piece) -> int | None:
+    found = view.labels.get(p.label_code) if p.label_code else None
+    return found.number if found is not None and found.piece == p.id else None
+
+
+def card_names(view: WardrobeView, pieces: Sequence[Piece]) -> str:
+    """D10's card form (`redact.card_words`): fixed words and his label's number ("a private
+    basic (No. 17)"); private pieces with no number are counted ("2 private basics"), never
+    named as twins (review L12)."""
+    words = [card_words(p, _number(view, p)) for p in pieces]
+    plain = sum(1 for w in words if w == PRIVATE_WORDS)
+    if plain > 1:
+        words = [w for w in words if w != PRIVATE_WORDS] + [f"{plain} private basics"]
+    return texts.join_words(words)
+
+
 def _pieces(view: WardrobeView, ids: Any) -> list[Piece]:
     return [view.pieces[i] for i in (ids or []) if isinstance(i, str) and i in view.pieces]
 
@@ -72,7 +89,7 @@ def move(view: WardrobeView | None, a: dict[str, Any]) -> str:
         pieces, cands = (pieces + found, cands) if len(found) == 1 else (pieces, found or cands)
     more = a.get("more") or 0
     if pieces:
-        base = texts.card(step, pieces)
+        base = texts.card(step, card_names(view, pieces), len(pieces))
         return f"{base}, and {more} more you couldn't show" if more else base
     if cands:
         return texts.card_one_of(step, len(cands))
@@ -99,7 +116,7 @@ def review(view: WardrobeView | None, a: dict[str, Any]) -> str:
         return f"Hold {texts.count_words(n)} for a quick check: moved without a scan"
     base = _OUTCOME.get(a.get("outcome", "these"), _OUTCOME["these"])
     pieces = _pieces(view, a.get("pieces")) if view else []
-    return f"{base} about {texts.names(pieces)}" if pieces else base
+    return f"{base} about {card_names(view, pieces)}" if view and pieces else base
 
 
 def correct(view: WardrobeView | None, a: dict[str, Any]) -> str:
@@ -113,7 +130,7 @@ def correct(view: WardrobeView | None, a: dict[str, Any]) -> str:
 
 def send(view: WardrobeView | None, a: dict[str, Any]) -> str:
     pieces = _pieces(view, a.get("pieces")) if view else []
-    what = texts.names(pieces) if pieces else "wardrobe pieces"
+    what = card_names(view, pieces) if view and pieces else "wardrobe pieces"
     if a.get("action", "send") == "receive":
         return f"Note that {what} came back from an outside laundry"
     try:
@@ -124,4 +141,15 @@ def send(view: WardrobeView | None, a: dict[str, Any]) -> str:
     return f"Note that {what} went to an outside laundry{when}"
 
 
-__all__ = ["GENERIC", "SOURCE", "correct", "fence", "fenced", "move", "review", "send", "shown"]
+__all__ = [
+    "GENERIC",
+    "SOURCE",
+    "card_names",
+    "correct",
+    "fence",
+    "fenced",
+    "move",
+    "review",
+    "send",
+    "shown",
+]

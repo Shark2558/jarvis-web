@@ -138,12 +138,16 @@ def day_words(d: date) -> str:
     return f"{d:%a} {d.day} {d:%b}"
 
 
-def names(pieces: Sequence[Piece]) -> str:
-    """ "a grey T-shirt and a private basic"; past three, "and N more"."""
-    words = [fixed_words(p) for p in pieces]
+def join_words(words: Sequence[str]) -> str:
+    """ "a, b and c"; past three, "a, b and N more"."""
     if len(words) > 3:
         return f"{', '.join(words[:2])} and {len(words) - 2} more"
     return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
+
+
+def names(pieces: Sequence[Piece]) -> str:
+    """ "a grey T-shirt and a private basic"; past three, "and N more"."""
+    return join_words([fixed_words(p) for p in pieces])
 
 
 def subject(pieces: Sequence[Piece]) -> str:
@@ -240,14 +244,14 @@ def entry_words(kind: str, reason: str, *, candidates: int) -> str:
     return _HOLD_WORDS.get(reason, "On hold until you check it.")
 
 
-def card(step: str, pieces: Sequence[Piece]) -> str:
-    """An approval card's words for a move of these pieces (stored in clear: fixed words)."""
+def card(step: str, what: str, n: int) -> str:
+    """An approval card's words for a move of `n` pieces named `what` (`cards.card_names`)."""
     verb = {"drying": ("is", "are"), "prep": ("needs", "need"), "ready": ("is", "are")}
     template = _CARD[step]
     if step in verb:
         one, many = verb[step]
-        return template.format(names(pieces), one if len(pieces) == 1 else many)
-    return template.format(names(pieces))
+        return template.format(what, one if n == 1 else many)
+    return template.format(what)
 
 
 def card_one_of(step: str, n: int) -> str:
@@ -322,6 +326,7 @@ __all__ = [
     "day_words",
     "done",
     "entry_words",
+    "join_words",
     "names",
     "overdue_alert",
     "received",

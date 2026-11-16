@@ -21,13 +21,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from datetime import datetime, time, tzinfo
+from datetime import date, datetime, time, tzinfo
 
 from jarvis.storage.docs import DocTx
 from jarvis.wardrobe.model import COLOURS, TYPES, Event, Evidence, Piece, WardrobeView, new_id
 from jarvis.wardrobe.ports import Commit, Committed, WardrobeStore
 from jarvis.wardrobe.styling import texts
-from jarvis.wardrobe.styling.reserve import unit_of
+from jarvis.wardrobe.styling.plans import Plan, StylingDoc
+from jarvis.wardrobe.styling.reserve import unit_of, window
 from jarvis.wardrobe.styling.rules import Rules
 
 _WORD = re.compile(r"[a-z]+")
@@ -42,6 +43,7 @@ _TYPE_WORDS: dict[str, tuple[str, ...]] = {
 }  # fmt: skip
 _COLOUR_WORDS = sorted(((c.replace("_", " "), c) for c in COLOURS), key=lambda x: -len(x[0]))
 _FAMILY = {"blue": ("blue", "light_blue", "navy"), "grey": ("grey", "charcoal")}
+_OUTFIT_WORDS = frozenset({"outfit", "plan"})
 CLOSE_ID = "wclose-{piece}-{day}"
 
 
@@ -75,6 +77,44 @@ async def commit(store: WardrobeStore, uid: str, events: tuple[Event, ...]) -> C
         return Commit(events=events)
 
     return await store.transact(uid, fn)
+
+
+# ---- the plan a wear is for (code review H1) -----------------------------------------------------
+def plan_for(
+    doc: StylingDoc, pieces: Sequence[str], day: date, zone: tzinfo, *, after: datetime | None
+) -> str | None:
+    """The earliest plan of `day` (not cancelled, not worn, not over by `after`) holding a named
+    piece. The whole-day hold puts a piece in at most one plan of a day, unless shared: then the
+    earlier plan, the one it is worn for first."""
+    named = set(pieces)
+    for p in doc.on(day):
+        if p.worn or (after is not None and window(p, zone)[1] <= after):
+            continue
+        if named & set(p.pieces()):
+            return p.id
+    return None
+
+
+def means_outfit(query: str) -> bool:
+    """His words name a plan ("the meeting outfit", "my plan"), not a piece."""
+    return bool(_OUTFIT_WORDS & set(_WORD.findall(query.lower())))
+
+
+def outfit_of(
+    doc: StylingDoc, day: date, zone: tzinfo, occasion: str | None, *, now: datetime, done: bool
+) -> Plan | None:
+    """The plan "the outfit" means on `day`: for a start, the current or next plan not yet worn;
+    for done, the plan worn (else any plan of the day). An occasion he names picks among them."""
+    plans = list(doc.on(day))
+    if done:
+        plans = [p for p in plans if p.worn] or plans
+    else:
+        plans = [p for p in plans if not p.worn and window(p, zone)[1] > now]
+    mine = [p for p in plans if occasion is not None and p.occasion == occasion]
+    found = mine or plans
+    if not found:
+        return None
+    return found[-1] if done else found[0]
 
 
 # ---- his words ----------------------------------------------------------------------------------
@@ -179,6 +219,9 @@ __all__ = [
     "closing_events",
     "commit",
     "done_events",
+    "means_outfit",
+    "outfit_of",
+    "plan_for",
     "resolve",
     "start_events",
 ]

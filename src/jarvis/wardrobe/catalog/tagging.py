@@ -5,13 +5,15 @@ Off by default. A tag runs only when ALL hold, checked here in this order:
 1. his setting is on, and the month's cap (`wardrobe_ai_tag_month_inr`, 0 = never) is not 0;
 2. the piece is SAVED, not private and not of a private-by-default type: from the RECORD in his
    sealed index, never from the client's word (422);
-3. month-to-date (his zone's month, in the sealed index) + this call's estimate <= the cap (402);
+3. month-to-date (his zone's month, in the sealed index) + this call's estimate <= the cap (402),
+   and the estimate is RESERVED in the same commit as the check (two calls at once can't both
+   pass), settled to the recorded cost after the call and given back when no look was made;
 4. the photo is a clean JPEG of the right size (the phone checked the SAME bitmap for a person
    and a face before it was sent, D9);
 5. `picture.eyes.BrainEyes.look()` (R11.1): No-AI refuses, a seeing and never-training brain
    only, `Billing.ensure_allowed` first, one recorded cost, its own timeout (503 / 402).
 The answer is a suggestion from the fixed lists (anything else is dropped), never a locked
-field; the recorded cost is added to the month's counter after the call; no picture is kept.
+field; no picture is kept.
 The estimate prices the brain that would answer (its fast tier) for a 512-px crop (about 350
 image tokens + 400 instruction + 120 out), in rupees.
 """
@@ -155,8 +157,8 @@ class Tagging:
         month = self.store.now().astimezone(await self._zone(uid)).strftime("%Y-%m")
         return month, view.tag_inr if view.tag_month == month else 0.0
 
-    async def _check(self, uid: str, pid: str) -> tuple[float, float]:
-        view = await self.store.view(uid)
+    def _allowed(self, view: WardrobeView, pid: str) -> None:
+        """Steps 1 and 2, from his sealed index (the record, never the client's word)."""
         if not view.settings.ai_tagging:
             raise TagRefused(OFF, 422)
         if self.cap <= 0:
@@ -166,11 +168,34 @@ class Tagging:
             raise TagRefused(NOT_IN, 422)
         if p.private or p.type in PRIVATE_BY_DEFAULT:
             raise TagRefused(NOT_FOR, 422)
+
+    def _room(self, so_far: float, inr: float) -> None:
+        """Step 3: a spent cap refuses even when the brain has no price (an estimate of 0)."""
+        if so_far >= self.cap or so_far + inr > self.cap:
+            raise TagRefused(OVER.format(cap=self.cap), 402)
+
+    async def _check(self, uid: str, pid: str) -> tuple[float, float]:
+        """Read-only (the estimate route): what `_reserve` would decide now."""
+        view = await self.store.view(uid)
+        self._allowed(view, pid)
         _, so_far = await self._month(uid, view)
         inr = await self._estimate_inr()
-        if so_far + inr > self.cap:
-            raise TagRefused(OVER.format(cap=self.cap), 402)
+        self._room(so_far, inr)
         return inr, so_far
+
+    async def _reserve(self, uid: str, pid: str) -> float:
+        """Steps 1-3 and the estimate added to the month in ONE commit, so two calls at once
+        can never both pass the cap (H2: the counter can't be raced)."""
+        inr = await self._estimate_inr()
+
+        async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
+            self._allowed(view, pid)
+            month, so_far = await self._month(uid, view)
+            self._room(so_far, inr)
+            return view.model_copy(update={"tag_month": month, "tag_inr": so_far + inr}), []
+
+        await self.store.rewrite(uid, fn)
+        return inr
 
     async def estimate(self, uid: str, pid: str) -> TagEstimate:
         view = await self.store.view(uid)
@@ -185,24 +210,28 @@ class Tagging:
         return TagEstimate(inr=inr, month_inr=so_far, cap_inr=self.cap, allowed=True)
 
     async def tag(self, uid: str, pid: str, data: bytes) -> TagReply:
-        await self._check(uid, pid)
-        picture = ImageBlock(media_type="image/jpeg", data=self.vault.clean(data))
+        reserved = await self._reserve(uid, pid)
         try:
+            picture = ImageBlock(media_type="image/jpeg", data=self.vault.clean(data))
             glance = await self.eyes().look(uid, SYSTEM, ASK, picture, max_tokens=MAX_TOKENS)
-        except CantLook as exc:
+        except CantLook as exc:  # no look was made: the reservation is given back
+            await self._add(uid, -reserved)
             raise TagRefused(str(exc), 402 if exc.why == "limit" else 503) from None
+        except Exception:
+            await self._add(uid, -reserved)
+            raise
         spent = await self._inr(float(getattr(glance, "cost_usd", 0.0) or 0.0))
-        month_inr = await self._record(uid, spent)
+        month_inr = await self._add(uid, spent - reserved)  # settled to what it cost
         return TagReply(piece=pid, suggestion=suggestion(glance.text), inr=round(spent, 4),
                         month_inr=round(month_inr, 4))  # fmt: skip
 
-    async def _record(self, uid: str, inr: float) -> float:
+    async def _add(self, uid: str, inr: float) -> float:
         out: list[float] = []
 
         async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:
             month, so_far = await self._month(uid, view)
-            out[:] = [so_far + inr]
-            return view.model_copy(update={"tag_month": month, "tag_inr": so_far + inr}), []
+            out[:] = [max(0.0, so_far + inr)]
+            return view.model_copy(update={"tag_month": month, "tag_inr": out[0]}), []
 
         await self.store.rewrite(uid, fn)
         return out[0]

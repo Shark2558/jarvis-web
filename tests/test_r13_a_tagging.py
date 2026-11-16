@@ -4,6 +4,7 @@
 # BrainEyes' refusals; the answer is a suggestion from the fixed lists, never a locked field.
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,14 +24,14 @@ from jarvis.wardrobe.catalog.tagging import (
 
 
 class _Brains:
-    """A registry whose default brain sees pictures, on Haiku 5.5's fast tier."""
+    """A registry whose default brain sees pictures, on Haiku 5.5's fast tier (or `model`)."""
 
-    def __init__(self) -> None:
+    def __init__(self, model: str = "claude-haiku-5-5") -> None:
         from jarvis.llm.router import ModelTier
 
         spec = type("Spec", (), {})()
         spec.sees_pictures = True
-        spec.tiers = {ModelTier.FAST: "claude-haiku-5-5"}
+        spec.tiers = {ModelTier.FAST: model}
         self.default = spec
 
     def list(self) -> list[Any]:
@@ -108,6 +109,51 @@ async def test_the_month_cap_refuses_before_the_call_and_resets_with_his_month()
     assert est.allowed and est.month_inr == 0.0
 
 
+class _SlowEyes(FakeEyes):
+    """Looks like the real one: it yields while the brain answers (no real time passes)."""
+
+    async def look(self, uid: str, system: str, ask: str, picture: Any, *, max_tokens: int) -> Any:
+        for _ in range(3):
+            await asyncio.sleep(0)
+        return await super().look(uid, system, ask, picture, max_tokens=max_tokens)
+
+
+async def _month_at(cat: Any, inr: float) -> None:
+    async def fn(view: Any, tx: Any) -> Any:
+        return view.model_copy(update={"tag_month": "2026-11", "tag_inr": inr}), []
+
+    await cat.store.rewrite(UID, fn)
+
+
+async def test_m1_five_tags_at_once_never_pass_the_cap_each_reserved_then_settled() -> None:
+    eyes = _SlowEyes(cost_usd=0.0)  # each look costs nothing: its reservation is given back
+    cat = catalog(eyes=eyes, s=settings(wardrobe_ai_tag_month_inr=1))
+    shirt = await _on(cat)
+    desk = cat.store.desk  # type: ignore[attr-defined]
+    est = (await desk.tagging.estimate(UID, shirt)).inr
+    near = 1 - 2.5 * est  # room for exactly two estimates under the ₹1 cap
+    await _month_at(cat, near)
+    got = await asyncio.gather(
+        *(desk.tagging.tag(UID, shirt, jpeg()) for _ in range(5)), return_exceptions=True
+    )
+    refused = [g for g in got if isinstance(g, TagRefused)]
+    assert len(eyes.calls) == 2 and len(refused) == 3  # the phone and the laptop at once
+    assert {r.status for r in refused} == {402}
+    assert (await cat.store.view(UID)).tag_inr == pytest.approx(near, abs=1e-9)
+
+
+async def test_m1_with_no_price_for_the_brain_a_spent_cap_still_refuses() -> None:
+    eyes = FakeEyes()
+    cat = catalog(eyes=eyes, s=settings(wardrobe_ai_tag_month_inr=1))
+    shirt = await _on(cat)
+    cat.state["brains"] = _Brains("a-model-with-no-price")
+    assert (await cat.store.desk.tagging.estimate(UID, shirt)).inr == 0.0  # type: ignore[attr-defined]
+    await _month_at(cat, 1.0)
+    with pytest.raises(TagRefused) as got:
+        await cat.store.desk.tagging.tag(UID, shirt, jpeg())  # type: ignore[attr-defined]
+    assert got.value.status == 402 and eyes.calls == []
+
+
 async def test_no_ai_or_no_seeing_brain_is_a_503_and_the_limit_a_402() -> None:
     for why, status in (("no_ai", 503), ("blind", 503), ("limit", 402)):
         eyes = FakeEyes(cant=CantLook(why, "plain words"))  # type: ignore[arg-type]
@@ -116,7 +162,7 @@ async def test_no_ai_or_no_seeing_brain_is_a_503_and_the_limit_a_402() -> None:
         with pytest.raises(TagRefused) as got:
             await cat.store.desk.tagging.tag(UID, shirt, jpeg())  # type: ignore[attr-defined]
         assert got.value.status == status
-        assert (await cat.store.view(UID)).tag_inr == 0.0  # nothing spent, nothing counted
+        assert (await cat.store.view(UID)).tag_inr == 0.0  # the reservation is given back
 
 
 async def test_a_cap_of_zero_means_never() -> None:

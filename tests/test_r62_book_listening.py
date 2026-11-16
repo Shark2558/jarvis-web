@@ -560,7 +560,8 @@ async def test_the_heard_route_never_logs_the_words(
     settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    await _heard(settings, "guest", [{"text": "NEEDLE7319 how does it work"}])
+    ((code, _),) = await _heard(settings, "guest", [{"text": "NEEDLE7319 how does it work"}])
+    assert code == 200  # the route really ran: a 404 would log nothing and pass vacuously
     assert "NEEDLE7319" not in caplog.text
 
 

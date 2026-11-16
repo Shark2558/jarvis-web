@@ -191,9 +191,12 @@ async def test_h2_a_stale_bin_entry_never_purges_or_restores_a_piece_he_retired_
     removed = await call(gw, "wardrobe_remove", piece=belt)
     [entry] = await cat.undo.recent(UID)
     assert entry.snapshot["ref"] == belt and entry.snapshot["ev"].startswith("we_")
-    cat.clock.advance(minutes=1)  # back through the retire card, not the bin: the entry stays live
-    back = await call(gw, "wardrobe_retire", piece=belt, action="restore", condition="ready")
+    cat.clock.advance(minutes=1)  # back through the retire cards, not the bin: the entry stays live
+    back = await call(gw, "wardrobe_retire", piece=belt, action="restore")
     assert (await approve(gw, back)).result["status"] == "done"
+    cat.clock.advance(minutes=1)
+    ready = await call(gw, "wardrobe_retire", piece=belt, action="restore", condition="ready")
+    assert (await approve(gw, ready)).result["status"] == "done"
     cat.clock.advance(minutes=1)  # then retired on purpose: INV-17 keeps the record
     await approve(gw, await call(gw, "wardrobe_retire", piece=belt, action="archive"))
     events = len(await cat.store.history(UID, belt))

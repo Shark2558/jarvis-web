@@ -3,7 +3,8 @@
 
 - `wardrobe_merge` and `wardrobe_retire` are R2 cards EVERY time (`ask_when` always; I0 put both
   in `NO_BULK_TOOLS`, so "Approve all" never covers them). Restore reuses the same id and lands
-  in "Missing or in review" until he says its condition (`condition`, or the question back).
+  in "Missing or in review" until he says its condition: a second card of its own ("Mark a
+  black belt Ready"); a condition for a piece still archived is refused before any card.
 - `wardrobe_remove` is R2 `undoable`: the piece goes to Recently deleted (`undo.CatalogBin`); the
   gateway's delete cap and tainted rounds make it a card.
 - Every card's words come from `preview` through `redact.card_words` ("Archive a black belt
@@ -22,7 +23,7 @@ from jarvis.wardrobe.catalog.tools import AGENT, PIECE, SOURCE, guarded, typed, 
 from jarvis.wardrobe.model import Piece, WardrobeView
 from jarvis.wardrobe.ports import Commit, Refused
 from jarvis.wardrobe.redact import card_words
-from jarvis.wardrobe.states import STATED_CHOICES
+from jarvis.wardrobe.states import STATE_WORDS, STATED_CHOICES
 
 MERGED, RETIRED, REMOVED = (
     "Merged two wardrobe records",
@@ -34,6 +35,7 @@ CONDITION = (
     "in Helpers, Wardrobe."
 )
 CONDITIONS = tuple(s for s in STATED_CHOICES["found"] if s != "in_use")
+RESTORE_FIRST = "Restore it first; then tell me its condition."
 
 
 def _always(_: dict[str, Any]) -> bool:
@@ -78,8 +80,17 @@ class LifeTools:
         return Preview(f"Merge {one} into {two}: one piece with both histories")
 
     async def preview_retire(self, a: dict[str, Any]) -> Preview:
-        verb = "Archive" if a.get("action") == "archive" else "Restore"
-        return Preview(f"{verb} {_words(await self._view(), a.get('piece'))}")
+        """A card says exactly what he approves: a condition is its own card, "Mark a black
+        belt Ready", never folded into a restore (INV-17: availability is confirmed apart)."""
+        view = await self._view()
+        if a.get("action") == "archive":
+            return Preview(f"Archive {_words(view, a.get('piece'))}")
+        p, condition = view.piece(str(a.get("piece"))), a.get("condition")
+        if condition is None:
+            return Preview(f"Restore {_words(view, a.get('piece'))}")
+        if p is not None and p.state == "archived":
+            raise Refused(RESTORE_FIRST)  # nothing is proposed
+        return Preview(f"Mark {_words(view, a.get('piece'))} {STATE_WORDS[condition]}")
 
     async def preview_remove(self, a: dict[str, Any]) -> Preview:
         words = _words(await self._view(), a.get("piece"))
@@ -110,16 +121,15 @@ class LifeTools:
             if a["action"] == "archive":
                 await self._events(p, ("archived", None))
                 return {"status": "done", "piece": p.id}
-            steps: list[tuple[str, str | None]] = (
-                [("restored", None)] if p.state == "archived" else []
-            )
-            if a.get("condition"):
-                steps.append(("found", a["condition"]))
-            if not steps:
+            if a.get("condition"):  # its own card, never with the restore (M7)
+                if p.state == "archived":
+                    raise Refused(RESTORE_FIRST)
+                await self._events(p, ("found", a["condition"]))
+                return {"status": "done", "piece": p.id}
+            if p.state != "archived":
                 raise Refused("That piece isn't archived.")
-            await self._events(p, *steps)
-            out = {"status": "done", "piece": p.id}
-            return out if a.get("condition") else out | {"question": CONDITION}
+            await self._events(p, ("restored", None))
+            return {"status": "done", "piece": p.id, "question": CONDITION}
 
         return await guarded(work)
 
@@ -199,4 +209,13 @@ def life_tools(desk: Any) -> list[Tool]:
     ]
 
 
-__all__ = ["CONDITION", "CONDITIONS", "MERGED", "REMOVED", "RETIRED", "LifeTools", "life_tools"]
+__all__ = [
+    "CONDITION",
+    "CONDITIONS",
+    "MERGED",
+    "REMOVED",
+    "RESTORE_FIRST",
+    "RETIRED",
+    "LifeTools",
+    "life_tools",
+]

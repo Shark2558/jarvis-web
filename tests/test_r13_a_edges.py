@@ -167,3 +167,25 @@ async def test_an_add_with_an_unknown_place_or_a_bad_type_is_refused_in_words(ca
     odd = await call(gw, "wardrobe_add", pieces=[{"type": "spaceship"}])
     assert odd.result["status"] == "refused"
     assert (await call(gw, "wardrobe_add", pieces=[])).outcome is GatewayOutcome.ERROR
+
+
+async def test_m7_a_restore_card_never_hides_a_condition_he_did_not_confirm(cat: Catalog) -> None:
+    from jarvis.wardrobe.catalog.tools_life import RESTORE_FIRST
+
+    gw = gateway(cat)
+    [belt] = await _add(cat, NewPiece(type="belt", colour="black", label="Old belt"))
+    await approve(gw, await call(gw, "wardrobe_retire", piece=belt, action="archive"))
+    both = await call(gw, "wardrobe_retire", piece=belt, action="restore", condition="ready")
+    assert both.outcome is GatewayOutcome.ERROR and RESTORE_FIRST in (both.error or "")
+    assert await gw.gate.pending() == []  # nothing proposed: availability is confirmed apart
+    back = await call(gw, "wardrobe_retire", piece=belt, action="restore")
+    assert back.pending is not None and back.pending.summary == "Restore a black belt"
+    assert (await approve(gw, back)).result["question"]
+    cat.clock.advance(minutes=1)
+    mark = await call(gw, "wardrobe_retire", piece=belt, action="restore", condition="ready")
+    assert mark.pending is not None and mark.pending.summary == "Mark a black belt Ready"
+    again = await call(gw, "wardrobe_retire", piece=belt, action="archive")  # his other card
+    await approve(gw, again)
+    late = await approve(gw, mark)  # archived since the card was made: refused, nothing written
+    assert late.outcome is GatewayOutcome.ERROR and RESTORE_FIRST in (late.error or "")
+    assert (await cat.store.view(UID)).pieces[belt].state == "archived"

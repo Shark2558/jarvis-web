@@ -51,7 +51,7 @@ NAVY, VEST = "wi_000000000003", "wi_000000000009"
 SENTENCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("what should I wear tomorrow", ("outfit_suggest",)),
     ("where is my black belt", ("wardrobe_find", "belongings_where")),
-    ("I put my watch in the travel bag", ("wardrobe_edit",)),
+    ("I put my watch in the travel bag", ("wardrobe_find", "wardrobe_edit")),
     ("my navy shirt is in the laundry", ("laundry_move",)),
     ("the white shirt is back", ("laundry_move",)),
     ("what's in the laundry", ("laundry_status",)),

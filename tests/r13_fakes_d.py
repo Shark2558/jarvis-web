@@ -266,6 +266,59 @@ def d_app() -> Any:
     return app
 
 
+# ---- No-AI: I1's runner step, and a Telegram gateway -------------------------------------------
+async def run_taking(route: Any, result: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """The runner step proposed for I1 (INTEGRATION-D section 6, `offline/no_ai.py`): each call in
+    order, a `TakeCall` filled from the result before it; a value that is not an id ends the turn
+    (that result's words are the reply). Every call here answers `result`."""
+    ran: list[tuple[str, dict[str, Any]]] = []
+    before: dict[str, Any] = {}
+    for call in route.calls:
+        args = dict(call.arguments)
+        for arg, key in getattr(call, "take", ()):
+            value = before.get(key)
+            if not isinstance(value, str) or not value:
+                return ran
+            args[arg] = value
+        ran.append((call.tool, args))
+        before = result
+    return ran
+
+
+async def telegram_gateway(*, personal: bool) -> tuple[Any, list[str]]:
+    """A gateway with fake No-AI tools behind Telegram's rules, paired, the personal switch set."""
+    from telegram_fakes import Clock
+
+    from jarvis.core.guardrails import ActionRisk, ConfirmationGate
+    from jarvis.storage.docs import MemoryDocs
+    from jarvis.telegram.rules import wrap_rules
+    from jarvis.telegram.store import TelegramStore
+    from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
+    from jarvis.tools.base import Tool
+
+    seen: list[str] = []
+    reads = {"wardrobe_find", "wardrobe_count", "laundry_status", "outfit_suggest"}
+    reg = ToolRegistry()
+
+    def tool(name: str) -> Tool:
+        async def run(a: dict[str, Any]) -> dict[str, Any]:
+            seen.append(name)
+            return {"found": True, "best": NAVY} if name == "wardrobe_find" else {"message": "ok"}
+
+        risk = ActionRisk.READ_ONLY if name in reads else ActionRisk.REVERSIBLE
+        return Tool(name, f"fake {name}", {"type": "object", "properties": {}}, risk, run)
+
+    for name in sorted(reads | {"wardrobe_edit", "laundry_move", "wear_log", "belongings_where"}):
+        reg.register(tool(name))
+    gw = Gateway(registry=reg, policy=Policy(), gate=ConfirmationGate(), audit=AuditLog())
+    store = TelegramStore(MemoryDocs(), prefix="t_", clock=Clock())
+    code, _ = await store.start_pairing(UID)
+    await store.finish_pairing(code, tg_user_id=1, chat_id=2)
+    await store.set_settings(UID, allow_private_reads=True, allow_personal_reads=personal)
+    gw.rules = wrap_rules(None, store)
+    return gw, seen
+
+
 # ---- drawn pictures (standard library only: CI's browser job has no Pillow) ----------------------
 class Picture:
     def __init__(self, w: int, h: int, bg: tuple[int, int, int] = (232, 228, 220)) -> None:

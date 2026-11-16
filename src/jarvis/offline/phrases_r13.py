@@ -7,14 +7,14 @@ the audit all apply). No model, no clock: the day words go to the tool, which re
 
     what should I wear tomorrow / for Diwali    outfit_suggest(day?, occasion?)
     where is my black belt / my brown shoes     wardrobe_find(query), then belongings_where(item)
-    I put my watch in the travel bag            wardrobe_edit(query, place)
+    I put my watch in the travel bag            wardrobe_find(query), then wardrobe_edit(piece, place)
     my navy shirt is in the laundry             laundry_move(step=basket, query)
     put the white shirt in the wash             laundry_move(step=basket, query)
     the white shirt is back / is clean          laundry_move(step=ready, query)
     what's in the laundry / laundry status      laundry_status
     I'm wearing the blue shirt                  wear_log(action=start, query)
     I wore the blue shirt today / done for today  wear_log(action=done, query?, day?)
-    how many shirts do I have / socks are ready wardrobe_count(type | category, ready?)
+    how many shirts do I have / socks are ready wardrobe_count(type: a type or a category)
 
 A phrase is the wardrobe's only when its LAST word is a wardrobe word (`WORDS`: the fixed types,
 their plurals and a few everyday names). Never a possessive ("my wife's watch", "the kids' shoes"),
@@ -23,17 +23,36 @@ spectacles, keys, wallet, umbrella): those stay with Things, so a watch is never
 "Where is my ..." asks the wardrobe and then Things, each through its own row (a "Never" on Things
 is kept). A name that fits several pieces is the tool's to settle (a review entry, never a guess).
 His words reach the tool as typed (bounded, whitespace folded); they are data, never instructions.
+
+The move (D6, D10; REVIEW-D-1 M4, M6): every put form R14 knows (hid, under, near, behind, next to,
+with, on top of ...) and "hung" take a wardrobe word, so Things never learns his watch. The piece is
+resolved first by `wardrobe_find`, and the edit takes its `best` id (`TakeCall`): no `query` reaches
+`wardrobe_edit`, and a name that fits several pieces stops the turn at the find's words. A place
+other than in, inside, into, on or at keeps its word ("under the pillow"); A refuses a place he
+does not have, with his places listed.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from jarvis.offline.phrases_r14 import _NOT_A_THING, _NOT_THINGS
 from jarvis.offline.rules import NoAICall, NoAIRoute
+
+
+@dataclass(frozen=True)
+class TakeCall(NoAICall):
+    """A call that takes argument values from the step before's result: `take` pairs an argument
+    with a key of that result ("piece" from wardrobe_find's "best"). The runner fills them, or stops
+    the turn when the key holds no string id (INTEGRATION-D section 6: `offline/no_ai.py` reads it at
+    I1). Until then the call runs without them and A refuses it: nothing is moved on a guess."""
+
+    take: tuple[tuple[str, str], ...] = ()
+
 
 Router = Callable[[str, datetime], NoAIRoute | None]
 MAX_TEXT = 400
@@ -111,6 +130,12 @@ def _words(item: str) -> list[str]:
     return item.casefold().split()
 
 
+def _person(word: str) -> bool:
+    """R14's not-a-thing words, also as a plural or a possessive typed without its apostrophe
+    ("wifes", M4), the way R14's `_a_thing` strips "'s"."""
+    return word in _NOT_A_THING or word.removesuffix("s") in _NOT_A_THING
+
+
 def _ours(item: str, *, outfit: bool = False) -> bool:
     """The wardrobe's: the last word a wardrobe word; never a possessive, a person, a place, a
     ride or money, and never one of the words that are usually Things."""
@@ -120,7 +145,7 @@ def _ours(item: str, *, outfit: bool = False) -> bool:
     whole = outfit and words[-1] in _OUTFIT_WORDS  # "the meeting outfit": the event names a plan
     if (_NOT_THINGS.intersection(words) and not whole) or THINGS_WORDS.intersection(words):
         return False
-    if any(w in _NOT_A_THING for w in words):
+    if any(_person(w) for w in words):
         return False
     return words[-1] in WORDS or whole
 
@@ -214,17 +239,12 @@ def count(text: str, now: datetime) -> NoAIRoute | None:
     m = COUNT.match(_line(text))
     if m is None:
         return None
-    word = m["what"].casefold()
-    args: dict[str, Any] = {}
+    word = m["what"].casefold()  # A's one argument, a type or a category: its counts say "ready"
     if word in _TYPES:
-        args["type"] = _TYPES[word]
-    elif word in _CATEGORIES:
-        args["category"] = _CATEGORIES[word]
-    else:
-        return None
-    if m["ready"]:
-        args["ready"] = True
-    return _call("wardrobe_count", **args)
+        return _call("wardrobe_count", type=_TYPES[word].replace("_", " "))
+    if word in _CATEGORIES:
+        return _call("wardrobe_count", type=_CATEGORIES[word])
+    return None
 
 
 # ---- where it is, where it went (A's wardrobe_find and wardrobe_edit; then Things) --------------
@@ -232,10 +252,20 @@ WHERE = _p(
     r"where(?:'s|\s+is|\s+are|\s+did\s+i\s+(?:put|keep|leave|store)|\s+do\s+i\s+keep"
     r"|\s+have\s+i\s+(?:put|kept))\s+" + _MY + _ITEM
 )
+# R14's put verbs and places, all of them ("on top of" before "on"), and "hung": a wardrobe word in
+# any form Things knows is the wardrobe's (M4); tests pin R14's lists inside these
+PUT_VERBS = ("kept", "put", "placed", "stored", "hid", "hidden", "hung")
+PUT_PREPS = ("in", "inside", "into", "on top of", "on", "under", "behind", "at", "with", "near")
+PUT_PREPS += ("beside", "next to")
+_PLAIN = frozenset(
+    {"in", "inside", "into", "on", "at"}
+)  # the place itself; any other keeps its word
 PUT = _p(
-    r"i(?:'ve|\s+have)?\s+(?:kept|put|placed|stored|hung)\s+" + _MY + _ITEM
-    + r"\s+(?:in|inside|on|at|into)\s+(?:the\s+|my\s+)?(?P<place>[A-Za-z0-9][\w' -]{0,39}?)"
+    r"i(?:'ve|\s+have)?\s+(?:" + "|".join(PUT_VERBS) + r")\s+" + _MY + _ITEM
+    + r"\s+(?P<prep>" + "|".join(p.replace(" ", r"\s+") for p in PUT_PREPS) + r")\s+"
+    + r"(?P<place>\S.{0,79}?)"
 )  # fmt: skip
+_ARTICLE = re.compile(r"^(?:the|my)\s+", _I)
 
 
 def where(text: str, now: datetime) -> NoAIRoute | None:
@@ -252,7 +282,10 @@ def put(text: str, now: datetime) -> NoAIRoute | None:
     m = PUT.match(_line(text))
     if m is None or not _ours(_item(m)):
         return None
-    return _call("wardrobe_edit", query=_item(m), place=" ".join(m["place"].split()))
+    prep, place = " ".join(m["prep"].casefold().split()), " ".join(m["place"].strip(" .").split())
+    where = _ARTICLE.sub("", place) if prep in _PLAIN else f"{prep} {place}"
+    find = NoAICall("wardrobe_find", {"query": _item(m)})
+    return NoAIRoute((find, TakeCall("wardrobe_edit", {"place": where}, (("piece", "best"),))))
 
 
 def _named(router: Router) -> Router:
@@ -265,9 +298,12 @@ def _named(router: Router) -> Router:
 ROUTERS: tuple[Router, ...] = tuple(_named(r) for r in (outfit, laundry, wear, count, where, put))
 
 __all__ = [
+    "PUT_PREPS",
+    "PUT_VERBS",
     "ROUTERS",
     "THINGS_WORDS",
     "WORDS",
+    "TakeCall",
     "count",
     "laundry",
     "outfit",

@@ -150,6 +150,49 @@ async def test_photos_come_back_only_when_ticked_and_only_with_their_pieces() ->
         assert len(prints) == (want or 0)
 
 
+async def _stored_prints(cat: Catalog) -> list[str]:
+    """Every fingerprint entry at rest, opened (not only those `items` would serve)."""
+    found = await desk(cat).vault.prints._read(cat.docs.get, UID)  # noqa: SLF001
+    return sorted(e["p"] for e in found)
+
+
+async def test_h4_a_restore_never_writes_back_a_private_or_unticked_pieces_fingerprint() -> None:
+    cat = catalog()
+    shirt, sock = (
+        await desk(cat).service.add(UID, [NewPiece(type="shirt"), NewPiece(type="sock")])
+    ).ids
+    await desk(cat).vault.prints.save(UID, shirt, "front", "mnv2-int8-1", fp(1))
+    await desk(cat).vault.prints.save(UID, sock, "front", "mnv2-int8-1", fp(2))
+    body = await desk(cat).backup.file(UID, photos=True)
+    await desk(cat).service.edit(UID, shirt, Edit(private=True))  # D9: its fingerprint goes
+    kept = await desk(cat).bin.remove(UID, sock, owner_authored=True)
+    assert await cat.undo.purge(UID, kept.id)
+    assert await _stored_prints(cat) == []
+    check = await desk(cat).restore.check(UID, body)
+    await desk(cat).restore.apply(UID, body, check.token)  # the sock NOT ticked (D17)
+    assert await _stored_prints(cat) == []  # not even sealed at rest
+    await desk(cat).restore.apply(UID, body, check.token, include_purged=[sock])
+    assert await _stored_prints(cat) == [sock]  # ticked: it comes back with its piece
+    assert (await cat.store.view(UID)).pieces[shirt].private  # the current record won
+
+
+async def test_h4_every_chunk_brings_back_its_own_pieces_fingerprints() -> None:
+    cat = catalog(s=settings(wardrobe_max_pieces=600))
+    ids = await _seed(cat, n=CHUNK + 5)
+    for n, pid in enumerate(ids):
+        await desk(cat).vault.prints.save(UID, pid, "front", "mnv2-int8-1", fp(n))
+    body = await desk(cat).backup.file(UID, photos=True)
+    fresh = catalog(clock=cat.clock, s=settings(wardrobe_max_pieces=600))
+    done = await desk(fresh).restore.apply(
+        UID, body, (await desk(fresh).restore.check(UID, body)).token
+    )
+    assert done.chunks == 2 and await _stored_prints(fresh) == sorted(ids)
+    again = await desk(fresh).restore.apply(
+        UID, body, (await desk(fresh).restore.check(UID, body)).token
+    )
+    assert again.counts.added == 0 and await _stored_prints(fresh) == sorted(ids)  # never twice
+
+
 async def test_a_backup_too_large_with_photos_is_refused_in_words() -> None:
     cat = catalog(s=settings(wardrobe_backup_max_mb=5))
     ids = (await desk(cat).service.add(UID, [NewPiece(type="shirt") for _ in range(20)])).ids

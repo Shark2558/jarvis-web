@@ -22,7 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import struct
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from jarvis.photos.errors import PickerError
@@ -30,7 +30,7 @@ from jarvis.photos.imaging import sanitise_jpeg
 from jarvis.storage.docs import Create, Delete, DocTx, Op, Set
 from jarvis.wardrobe.catalog.sealed import VERSION, aad_photo, aad_prints, check_owner, check_photo
 from jarvis.wardrobe.catalog.store import NOT_IN, CatalogStore
-from jarvis.wardrobe.model import Piece, WardrobeView, new_id
+from jarvis.wardrobe.model import PIECE_ID, Piece, WardrobeView, new_id
 from jarvis.wardrobe.ports import Commit, Refused
 
 PER_SHARD, MAX_SHARDS = 200, 9  # 600 pieces x 3 views = 1,800 fingerprints at most
@@ -115,6 +115,18 @@ class Prints:
         found = await self._read(self.store.docs.get, uid)
         return tuple(e for e in found if e["m"] == model and e["p"] in live)
 
+    async def merge_ops(self, uid: str, entries: Sequence[dict[str, str]], get: Get) -> list[Op]:
+        """The writes that add a restore's `entries` where that piece, view and model has none
+        yet (what is stored now wins), never past the shards' room; read through `get`."""
+        found = await self._read(get, uid)
+        have = {(e["p"], e["w"], e["m"]) for e in found}
+        new = [e for e in entries if (e["p"], e["w"], e["m"]) not in have]
+        room = MAX_SHARDS * PER_SHARD - len(found)
+        if not new or room <= 0:
+            return []
+        merged = [*found, *new[:room]]
+        return self._writes(uid, merged, (len(found) + PER_SHARD - 1) // PER_SHARD)
+
     async def drop_ops(self, uid: str, pids: set[str] | None, get: Get) -> list[Op]:
         """The writes that drop these pieces' fingerprints (None: every fingerprint)."""
         found = await self._read(get, uid)
@@ -129,6 +141,13 @@ def _is_print(v: object) -> bool:
         return isinstance(v, str) and len(base64.b64decode(v, validate=True)) == FP_BYTES
     except (binascii.Error, ValueError):
         return False
+
+
+def is_entry(e: object) -> bool:
+    """One stored fingerprint entry `{p, w, m, v}` of a piece id, a view and a model."""
+    if not isinstance(e, dict) or not PIECE_ID.match(str(e.get("p", ""))):
+        return False
+    return e.get("w") in VIEWS and e.get("m") in MODELS and _is_print(e.get("v"))
 
 
 class PhotoVault:
@@ -233,4 +252,5 @@ __all__ = [
     "PhotoVault",
     "Prints",
     "frame_size",
+    "is_entry",
 ]

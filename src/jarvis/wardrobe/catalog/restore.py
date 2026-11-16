@@ -13,7 +13,8 @@ OPS-06; plan review H3).
    the newer verified event wins, so a backup never undoes a later change); a piece missing now
    comes back only into an empty wardrobe or when he ticks it (purged since). Events are kept as
    they were stored (`as_stored`), so a restore cut after any chunk runs again and duplicates
-   nothing. Photos and fingerprints come back only with the pieces that come back.
+   nothing. Photos and fingerprints come back only with the pieces that come back (merged into
+   his shards chunk by chunk, never for a piece that is private: D9).
 """
 
 from __future__ import annotations
@@ -28,7 +29,8 @@ from typing import Any
 from jarvis.keyring import KEY_ID
 from jarvis.storage.docs import DocTx, Op, Set
 from jarvis.wardrobe.catalog.backup import MAGIC, VERSION, aad_line
-from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PhotoVault
+from jarvis.wardrobe.catalog.photos import MAX_SHARDS, Get, PhotoVault, is_entry
+from jarvis.wardrobe.catalog.sealed import aad_prints
 from jarvis.wardrobe.catalog.store import CatalogStore
 from jarvis.wardrobe.http import RestoreCheck, RestoreCounts, RestoreDone
 from jarvis.wardrobe.model import PHOTO_ID, Event, Piece, WardrobeView
@@ -164,9 +166,10 @@ class Restore:
         current, ticked = await self.store.view(uid), set(include_purged)
         ids = [p for p in parsed.view.pieces if p in current.pieces or empty or p in ticked]
         chunks = [ids[i : i + CHUNK] for i in range(0, len(ids), CHUNK)]
+        prints = self._file_prints(uid, parsed)
         added = there = events = 0
-        for n, chunk in enumerate(chunks):
-            got = await self._chunk(uid, parsed, chunk, first=n == 0)
+        for chunk in chunks:
+            got = await self._chunk(uid, parsed, chunk, prints)
             added, there = added + got[0], there + got[1]
             events += got[2]
         counts = RestoreCounts(added=added, already_there=there, superseded=0, back_from_bin=0,
@@ -175,7 +178,7 @@ class Restore:
         return RestoreDone(counts=counts, chunks=len(chunks), message=words)
 
     async def _chunk(
-        self, uid: str, parsed: Parsed, chunk: list[str], *, first: bool
+        self, uid: str, parsed: Parsed, chunk: list[str], prints: Sequence[dict[str, str]]
     ) -> tuple[int, int, int]:
         seen: list[int] = [0, 0]
 
@@ -184,7 +187,7 @@ class Restore:
             seen[:] = [len(new), len(chunk) - len(new)]
             recs = tuple(_record(parsed, parsed.view.pieces[pid]) for pid in new)
             events = tuple(e for pid in chunk for e in parsed.logs.get(pid, []))
-            extra = self._photo_ops(uid, parsed, recs, view, first)
+            extra = await self._photo_ops(uid, parsed, recs, prints, tx.get)
             return Commit(events=events, records=recs, extra=extra)
 
         def links(fresh: WardrobeView) -> WardrobeView:
@@ -193,16 +196,34 @@ class Restore:
         got = await self.store.transact(uid, fn, index=links, as_stored=True)
         return seen[0], seen[1], sum(m != "known" for m in got.marks.values())
 
-    def _photo_ops(
-        self, uid: str, parsed: Parsed, recs: Sequence[Piece], view: WardrobeView, first: bool
+    def _file_prints(self, uid: str, parsed: Parsed) -> list[dict[str, str]]:
+        """The file's fingerprint entries, opened once (a shard that won't open: the file is
+        refused before anything is written)."""
+        out: list[Any] = []
+        try:
+            for n in sorted(parsed.prints) if parsed.has_photos else ():
+                blob = parsed.prints[n].get("blob")
+                out += self.store.sealer.open("wardrobe_photos", aad_prints(uid, n), blob)
+        except Exception:  # noqa: BLE001 - a seal that doesn't open: the same plain words
+            raise Refused(UNREADABLE) from None
+        return [e for e in out if is_entry(e)]
+
+    async def _photo_ops(
+        self,
+        uid: str,
+        parsed: Parsed,
+        recs: Sequence[Piece],
+        prints: Sequence[dict[str, str]],
+        get: Get,
     ) -> tuple[Op, ...]:
+        """Photos and fingerprints come back ONLY with the pieces this chunk adds, and never
+        for one that is private (D9, D17; H4): merged into his shards, never written whole."""
         if not parsed.has_photos:
             return ()
         ops: list[Op] = [Set(self.vault.path(uid, ph), parsed.photos[ph])
                          for p in recs for ph in p.photos if ph in parsed.photos]  # fmt: skip
-        no_prints = not any(p.fp_model for p in view.pieces.values())
-        if first and no_prints:
-            ops += [Set(self.vault.prints.path(uid, n), doc) for n, doc in parsed.prints.items()]
+        allowed = {p.id for p in recs if not p.private}
+        ops += await self.vault.prints.merge_ops(uid, [e for e in prints if e["p"] in allowed], get)
         return tuple(ops)
 
 

@@ -78,6 +78,35 @@ async def test_the_view_is_the_owners_and_answers_its_model(settings: Settings) 
         assert status["parts"][0] == {"part": "catalog", "ready": view.ready}
 
 
+async def test_h3_paging_continues_from_the_cursor_so_260_pieces_each_show_once(
+    settings: Settings,
+) -> None:
+    from jarvis.api.identity import primary_user_id
+
+    kinds = ("shirt", "trousers", "sock", "belt", "watch", "kurta")
+    async with running(_owner(settings)) as (app, c):
+        for i in range(13):  # 13 adds of 20: under the route's 30 changes a minute
+            await _add(c, *({"type": kinds[(i * 20 + j) % len(kinds)]} for j in range(20)))
+        pages: list[list[str]] = []
+        after = ""
+        while len(pages) < 5:
+            got = await c.get(f"/v1/wardrobe?after={after}", headers=AUTH)
+            _allowed("GET", "/v1/wardrobe", got.status_code)
+            view = http.WardrobeView.model_validate(got.json())
+            pages.append([p.id for p in view.pieces])
+            if view.next is None:
+                break
+            after = view.next
+        shown = [pid for page in pages for pid in page]
+        assert [len(page) for page in pages] == [http.PAGE_MAX, 260 - http.PAGE_MAX]
+        assert len(set(shown)) == len(shown)  # disjoint pages: nothing repeated
+        desk = app.state.r13_parts["catalog"].services["store"].desk
+        stored = await desk.store.view(primary_user_id(app.state.settings))
+        assert set(shown) == {p.id for p in stored.active()}  # and nothing dropped
+        gone = await c.get("/v1/wardrobe?after=wi_" + "0" * 12, headers=AUTH)
+        assert http.WardrobeView.model_validate(gone.json()).pieces == ()  # an unknown cursor
+
+
 async def test_without_the_token_key_the_routes_say_the_wardrobe_is_off(settings: Settings) -> None:
     async with running(_owner(settings, key=False)) as (_, c):
         got = await c.get("/v1/wardrobe", headers=AUTH)

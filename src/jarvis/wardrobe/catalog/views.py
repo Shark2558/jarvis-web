@@ -71,9 +71,11 @@ class Views:
         self, view: WardrobeView, *, ready: str, show_private: bool, after: str | None = None
     ) -> http.WardrobeView:
         active = sorted(view.active(), key=lambda p: (p.category, p.type, p.id))
-        shown = [p for p in active if show_private or not p.private]
-        if after:
-            shown = [p for p in shown if p.id > after] if any(p.id == after for p in active) else []
+        rest = active
+        if after:  # from the cursor's place in the same order (ids are random: never `id >`)
+            at = next((i for i, p in enumerate(active) if p.id == after), None)
+            rest = active[at + 1 :] if at is not None else []
+        shown = [p for p in rest if show_private or not p.private]
         page, more = shown[:PAGE_MAX], len(shown) > PAGE_MAX
         return http.WardrobeView(
             ready=ready, rev=view.rev, pieces=tuple(self.piece_view(view, p) for p in page),

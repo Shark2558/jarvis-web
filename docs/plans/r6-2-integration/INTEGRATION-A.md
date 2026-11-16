@@ -425,6 +425,34 @@ Sizes: `console-book-talk.js` 366 (342), `console-book-voice.js` 301 (294), `con
 `voice/service.py` 640 (613; `transcribe` 49 lines), `billing/service.py` 506, `billing/meter.py`
 361, `api/app.py` 727 (unchanged); no CSS added.
 
+## 11. Version 6.2.4: the third review's findings, and a date bomb
+
+The third fresh-context review of `3f73fd2..c4431c2` is kept as `REVIEW-3.md` (scratch paths
+replaced; no personal data). No CRITICAL or HIGH; two MEDIUM, three LOW. Each fix was test first
+(run red for the right reason where it could be, then the fix, then green), one commit each. The
+code stays at version 6.2.0.
+
+| Finding | Fix | Test | Commit |
+|---|---|---|---|
+| MEDIUM: a free-only hold leaked on a clean 429, a TTS rejection and the owner-words retry | One rule, written once and commented in `VoiceService._engine`: the hold is given back when Google billed nothing (a clean error answer or a request that never left, `VoiceBusy`, `VoiceRejected`; a first rejection keeps it while the base-hints retry follows, and the retry owns it); it is kept when it is unclear (a timeout after the request went out, a cancel, an unexpected error), because over-counting the shared free allowance is the safe side for the owner's money. `_recognise` no longer releases by itself | `test_r62_book_hold.py`: 6 red of 13 (STT 429, TTS rejected, TTS busy, release to the count before, retry then 429, 429 with owner words); controls for the kept cases and for an owner's call | 4901705f |
+| MEDIUM: the mic could open after the panel closed or "Mic off" was set during the choice read | `mic()` takes the panel generation before `await refresh()`; the new `begin()` re-checks the generation and `A.locked()` after it and passes the generation to `listenHere(gen)` | `test_r62_book_start.py`: closing the panel during the read, browser and Cloud: 2 red; "Mic off" during the read, browser and Cloud: green before the fix too (the shared recorder and recogniser already refuse a locked mic), kept as guards | 7ffb9fec |
+| LOW: a second tap during the read | `S.starting` ignores taps from the first tap until recording is set (cleared in `finally`) | same file, browser and Cloud: green before the fix too (the shared recorder answers `busy` to a second start; the browser path is saved by `S.recording`), kept as guards | 7ffb9fec |
+| LOW: a release went to the current month | A `Hold` (key, units, Pacific month, released) is returned by `reserve_units` / `reserve_free`; `release_units(hold)` gives back to the hold's own month | `test_r62_book_meter.py` across the month boundary, meter and Billing: red (on the old code a hold made at 23:59 on 30 Nov left November at 15 and took 10 from December); the new API made the file red by signature too | 401170f8 |
+| LOW: no direct tests of the hold | `test_r62_book_meter.py`: a normal hold, a release to the exact prior count, the free limit (exact fit, one past, nothing written), fail closed when unreadable, never below 0, a second release a no-op (a flag on the `Hold`), a failed release can be tried again, `release_free` never raises | 16 tests; proved by mutation (no floor: 2 fail, no released guard: 1, limit off by one: 1) | 828b4676 |
+| Date bomb found by the full run (not R6.2) | `InMemorySessionStore(now=)`: an optional clock for expiry, default the real time. `tests/memory_fakes.py` pins `NOW` to 15 Nov 2026 06:00 UTC and `_sessions()` dated sessions from it, so from 16 Nov 06:00 UTC every one counted as expired (24 h TTL on the real clock) and the sweep found nothing. `_sessions()` now passes a clock tied to `NOW` | `test_recall_durable.py::test_the_sweep_learns_up_to_three_other_conversations` and `::test_the_sweep_respects_consent_and_the_daily_cap`: red on `c4431c2` (`0 == 3`), green after; green again with the clock moved to 20 Dec 2026, 2 Jan 2027 and 29 Feb 2028 (the clock-sweep plugin), as are the other files built on `memory_fakes` and the other files that save sessions into the in-memory store | 678f7326 |
+
+Accepted, unchanged: the shared 20-a-minute `script` limit across one owner's guests. Why: the
+panel's refresh swallows a 429 (the show keeps its current state), it cannot go past 20 a minute,
+and a guest gets the same payload as before, so the worst case is a refresh that waits a minute,
+not a leak or a cost. A separate bucket would be a new limiter for an annoyance; it can come if
+it is ever seen.
+
+Run on this code (each behind `flock /tmp/heavy.lock`): see the Workshop's full suites. The
+Book browser files `tests/browser/test_r62_*.py`: 67 passed.
+
+Sizes: `console-book-talk.js` 371 (366), `voice/service.py` 655 (640), `billing/meter.py` 382
+(361), `billing/service.py` 511 (506), `memory/inmemory.py` +6 lines; no function over 50 lines.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -432,3 +460,4 @@ Sizes: `console-book-talk.js` 366 (342), `console-book-voice.js` 301 (294), `con
 | v6.2.1 | 15 Nov 2026, 20:15 IST | R6.2 | First edition: Part 1 built (Ask by voice in the shared R5 code and the Book; the hear route's free corrections and plain words; G11's refusal and the Cloud Run guard; version 6.2.0), the 20 cases as tests, what was run, the wiring, the sizes, local development, the live check, the open questions. Finished at the takeover (the first builder's draft of 18:40 IST, never committed): the three uncommitted fixes finished test first, Phase A case 2 and the questions-run-out case as tests, the missed `test_r11_seams` pin, every run re-done on the final code with its results, the takeover's review and the guard's scope (section 8, items 8 and 9) | 🛠 Mark XXI |
 | v6.2.2 | 16 Nov 2026, 11:39 IST | R6.2 | Section 9: the fresh-context reviews' 2 HIGH and 8 LOW and how each was handled (H1s by the previous fixer; L1–L3 security, L1–L4 code and L4's names here), the redirect race in `test_book_lock_ui`, owner decision 4 built (the Book's listening and narration are the browser's by default, ₹0; an owner-only, cost-confirmed switch to the cloud; a guest's cloud listening free-only; `POST /v1/book/show/heard`), the browser path's typing offer, the tests and results, the sizes; sections 7 and 8 (items 1, 3, 5) updated. Taken over from a fixer stopped by a usage limit | 🛠 Mark XXI |
 | v6.2.3 | 16 Nov 2026 | R6.2 | Section 10: the second reviews' findings (security LOW-1, code M1, M2, L1-L4, L6 and the sibling lock test), each fixed test first; the reviews kept as `REVIEW-SECURITY-2.md` and `REVIEW-CODE-2.md` | 🛠 Mark XXI |
+| v6.2.4 | 16 Nov 2026 | R6.2 | Section 11: the third review's findings (the hold leak, the mic after close, the double tap, month drift, direct hold tests), the accepted script limit, and the date bomb in the in-memory session store found by the full run; the review kept as `REVIEW-3.md` | 🛠 Mark XXI |

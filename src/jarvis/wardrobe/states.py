@@ -142,6 +142,11 @@ STATED_DEFAULT: Mapping[EventKind, State | None] = MappingProxyType(
 )
 # Kinds that set a state (a sighting, a lift and a correction set none).
 STATE_SETTING: frozenset[EventKind] = frozenset(EVENT_KINDS) - {"seen", "lifted", "corrected"}
+# Kinds only a card makes (D16, INV-17): a correction never voids one. One set: A's store and
+# B's corrections and history import it (Workshop decision 2).
+CARD_ONLY: frozenset[EventKind] = frozenset(
+    {"registered", "archived", "restored", "merged", "corrected"}
+)
 # Kinds that remember the latest verified state, to go back to (LND-04, OPS-02).
 HOLDING: frozenset[EventKind] = frozenset({"held", "missing", "blind"})
 # Only Ready is eligible (and In use, for a later plan the same day that declares it shared with
@@ -214,6 +219,7 @@ def changes_availability(before: State | None, after: State | None) -> bool:
 
 
 __all__ = [
+    "CARD_ONLY",
     "BACK",
     "COUNTED",
     "ELIGIBLE",

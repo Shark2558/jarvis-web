@@ -20,12 +20,18 @@ from zoneinfo import ZoneInfo
 
 from jarvis.wardrobe.http import LaundryView
 from jarvis.wardrobe.laundry import loads, providers, review, texts
-from jarvis.wardrobe.laundry.corrections import CARD_ONLY
 from jarvis.wardrobe.laundry.store import LaundryDoc, ReviewDoc
 from jarvis.wardrobe.model import Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import HistoryItem, Refused
 from jarvis.wardrobe.redact import model_view
-from jarvis.wardrobe.states import STATE_SETTING, STATE_WORDS, State, eligible, target_of
+from jarvis.wardrobe.states import (
+    CARD_ONLY,
+    STATE_SETTING,
+    STATE_WORDS,
+    State,
+    eligible,
+    target_of,
+)
 
 SHOWN_EVENTS = 10
 LISTS: tuple[tuple[str, State], ...] = (

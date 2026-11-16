@@ -125,8 +125,12 @@ async def test_h1_correct_refuses_the_card_only_kinds_so_an_archived_belt_stays_
     cat: Catalog,
 ) -> None:
     from jarvis.wardrobe.catalog.store import CARD_ONLY, OWN_BUTTON
+    from jarvis.wardrobe.laundry import corrections, history
+    from jarvis.wardrobe.states import CARD_ONLY as ONE
 
     assert {"registered", "archived", "restored", "merged", "corrected"} == CARD_ONLY
+    # Workshop decision 2: ONE set, in states.py; A and B import it (no copy anywhere)
+    assert CARD_ONLY is ONE and corrections.CARD_ONLY is ONE and history.CARD_ONLY is ONE
     gw = gateway(cat)
     [belt, sock, dup] = await _add(
         cat, NewPiece(type="belt"), NewPiece(type="sock"), NewPiece(type="sock")

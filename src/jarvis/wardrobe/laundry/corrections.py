@@ -23,8 +23,7 @@ from jarvis.wardrobe.laundry.holds import tap
 from jarvis.wardrobe.laundry.store import Batch, Change, Entry, LaundryDoc, Load, ReviewDoc
 from jarvis.wardrobe.model import Event, WardrobeView
 from jarvis.wardrobe.ports import Refused
-
-CARD_ONLY = frozenset({"registered", "archived", "restored", "merged", "corrected"})
+from jarvis.wardrobe.states import CARD_ONLY
 
 
 def _drop(items: tuple[str, ...], pid: str) -> tuple[str, ...]:

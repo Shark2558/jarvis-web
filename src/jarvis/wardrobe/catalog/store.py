@@ -51,6 +51,7 @@ from jarvis.wardrobe.ports import (
     ReviewNeeded,
     ReviewWriter,
 )
+from jarvis.wardrobe.states import CARD_ONLY
 
 log = get_logger(__name__)
 
@@ -61,7 +62,6 @@ NOT_IN = "That piece isn't in your wardrobe."
 NOT_IN_LOG = "That event isn't in this piece's history."
 OWN_BUTTON = "That change is undone with its own button: archive, restore or merge."
 # kinds only a card makes (D16, INV-17): `correct` never voids one (H1 of review A-1)
-CARD_ONLY = frozenset({"registered", "archived", "restored", "merged", "corrected"})
 _PASS = (Refused, ValueError, LookupError, PermissionError)
 
 

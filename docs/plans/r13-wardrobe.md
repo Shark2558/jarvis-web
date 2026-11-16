@@ -1,4 +1,4 @@
-Version v13.0.2 · 15 Nov 2026, 17:28 IST · Release R13 · Status: Ready · Owner: 🛠 Mark XXI
+Version v13.0.3 · 16 Nov 2026, 23:30 IST · Release R13 · Status: Ready · Owner: 🛠 Mark XXI
 
 # Release R13 — Wardrobe & laundry, phone first (`v13.0.0`)
 
@@ -319,7 +319,7 @@ counts and samples them unchanged, fact 22): the **index** `wardrobe/{uid}` (pie
 places, labels, his custom types, settings, the month's tagging ₹) is one sealed document like
 Things'. **Its size is guarded in bytes, not only in pieces**: a change that would make the sealed
 index larger than 900 KB is refused in plain words ("Your wardrobe list is full: archive or remove a
-few pieces first"), whatever the count; `wardrobe_max_pieces` is **400** by default (50–600), and A's
+few pieces first"), whatever the count; `wardrobe_max_pieces` is **400** by default (50–500; maximal pieces with full histories fit only to 500, so the settings stop there), and A's
 test writes 600 maximal pieces (60-character Malayalam labels, every field) to show where the guard
 bites (the review's estimate: ≈ 1.14 MiB with long keys; short keys are required). Each piece's
 **event log** is `wardrobe_log/{uid}_{piece}_{page}`, pages of 200 sealed events, append-only. Not
@@ -434,8 +434,8 @@ Reused: `belongings.text.thing_key`, `recall.retrieval.bm25` (INV-09, INV-15),
   `belongings_where(item)`, each through the gateway with its own row (so a "Never" on Things is
   kept); the sentence says the wardrobe's answer and, when it has none, Things' ("Not in your
   wardrobe; Things has 'black belt' in Drawer 2");
-- R14's PUT form for a wardrobe type word ("I put my watch in the travel bag") → `wardrobe_edit(query,
-  place)` (a place he named before; an unknown place is refused with his places listed, so a watch is
+- R14's PUT form for a wardrobe type word ("I put my watch in the travel bag") → `wardrobe_find(query)`
+  and then `wardrobe_edit(piece, place)` (the move resolves the piece first and edits it by id; a place he named before; an unknown place is refused with his places listed, so a watch is
   never in two lists);
 - never a possessive ("my wife's watch", "the kids' shoes"), never R14's `_NOT_A_THING` words, and
   never the accessory words that are usually Things (bag, glasses, spectacles, keys, wallet, umbrella):
@@ -566,7 +566,7 @@ decides what each sink may show:
 
 Every write tool that can make a card takes **piece ids**; a free-text name is resolved by a read
 first (`wardrobe_find`, or the tool's own `preview`). The one exception is the spoken / No-AI one-step
-path: `laundry_move` and `wear_log` also take a `query`; if such a call becomes a card, its stored
+path: `laundry_move` and `wear_log` also take a `query` (`wardrobe_edit` does not: D6's move edits by id); if such a call becomes a card, its stored
 arguments keep his words as typed (R2's precedent for Things' put), while its summary and Telegram text
 come from `preview` through `redact.py`. The needles eval lists that as the one allowed place.
 
@@ -624,6 +624,9 @@ events with `singleEvents=true`, fact 15): an event fingerprint missing from a r
 window → "event cancelled", the plan kept as a draft, no `outfit_ready`; an edited one refreshes by its
 `updated` stamp. Disabling the calendar stops automatic plans from it at once; existing plans stay,
 marked "manual".
+**Owner's decision, 16 Nov 2026 (INTEGRATION-C 6.14b):** a calendar event he declined still gets an
+outfit plan, as built: his own response is not read and attendees stay unfetched (above), so a declined
+event is planned like any other and he drops the plan by hand (the plan's Release). No code changes.
 
 **D14 · Tomorrow's weather: R11's helper code, C's own small document.** R11's stored weather models
 are `extra="forbid"` (fact 16), so C adds nothing to R11's documents (a rollback to v14.0.2 would find
@@ -698,6 +701,10 @@ piece (D10):
 | `laundry_overdue` | important, daytime ring, held at night | an outside-laundry batch is past its `due`, or came back short; once a batch a day | "2 pieces at the laundry shop are a day overdue." |
 | `wardrobe_review` | info (feed only) | open review entries the morning after; once a day | "3 pieces wait for a quick check." |
 
+The evening's fourth and later `outfit_ready` alerts are ONE line on the same kind (I1, Workshop
+decision 4; INTEGRATION-C 5.13): "Tomorrow's outfits for 17 more events are ready in Helpers, Wardrobe."
+(a count, never a title).
+
 Each has an Alerts-card switch, held words, a Web Push target (`helpers`) and book words; the normal
 Telegram bucket; no storm-table change. `KIND_OWNER`: the two outfit kinds C, the other two B.
 
@@ -708,7 +715,7 @@ R14's (the whole message is the phrase), installed first (D6). Each ends in gate
 |---|---|
 | "what should I wear tomorrow / today / for Diwali / for the meeting" | `outfit_suggest(day, occasion)` |
 | "where is my black belt" / "where are my brown shoes" | `wardrobe_find(query)`, then `belongings_where(item)` (D6) |
-| "I put my watch in the travel bag" | `wardrobe_edit(query, place)` (D6) |
+| "I put my watch in the travel bag" | `wardrobe_find(query)`, then `wardrobe_edit(piece, place)` (D6: the move resolves the piece first, then edits it by id) |
 | "my navy shirt is in the laundry" / "put the white shirt in the wash" | `laundry_move(step=basket, query)` |
 | "the white shirt is back" / "the white shirt is clean" | `laundry_move(step=ready, query)` |
 | "what's in the laundry" / "laundry status" | `laundry_status` |
@@ -718,8 +725,9 @@ R14's (the whole message is the phrase), installed first (D6). Each ends in gate
 
 A name that fits several pieces makes a review entry (and holds, for the basket), never a guess. R14's
 `WITHOUT_AI` gains "your wardrobe: where a piece is, laundry, today's outfit" (I0, one line). The
-Privacy rows (section "Wardrobe", D's `wardrobe/phone/privacy.py` over each part's `WardrobeData`):
-"Wardrobe pieces and places", "Laundry, outfits and wear history", "Wardrobe photos and fingerprints",
+Privacy rows (section "Wardrobe", D's `wardrobe/phone/privacy.py` over each part's `WardrobeData`, each
+source saying its row): "Wardrobe pieces and places", "Laundry and wear history", "Outfit plans" (C's own
+row since I1: a key change costs plans only), "Wardrobe photos and fingerprints",
 "Only on this device: the Wardrobe mode's last choices"; export, and delete with the passkey.
 
 **D21 · Version, persona, guide.** `__version__ = "13.0.0"` at I0 (lower than 14.0.2: nothing compares
@@ -860,7 +868,7 @@ and `wear_log` also take a `query` (D10).
    names the wardrobe; `test_telegram_tool_guard.py` `linked_gateway` gains `r13=`.
 7. **Guardrails**: `NO_BULK_TOOLS` += `wardrobe_merge`, `wardrobe_retire` (`core/guardrails.py:69`).
 8. **Settings** (`config.py`, ≈ 14 lines, stays < 800): `wardrobe_enabled` (on), `wardrobe_max_pieces`
-   400 (50–600), `wardrobe_index_max_kb` 900 (fixed upper bound 950), `wardrobe_stale_days` 14 (3–90),
+   400 (50–500), `wardrobe_index_max_kb` 900 (fixed upper bound 950), `wardrobe_stale_days` 14 (3–90),
    `wardrobe_plan_evening` "20:00", `wardrobe_change_window_h` 36 (6–72),
    `wardrobe_calendar_refresh_min` 60 (15–360), `wardrobe_photo_side` 512 (256–512),
    `wardrobe_photo_max_kb` 200 (50–400), `wardrobe_photos_per_piece` 3 (1–3),
@@ -1217,3 +1225,4 @@ Run's egress for `asia-south1`; Telegram and Web Push delivery.
 |---|---|---|---|---|
 | v13.0.1 | 15 Nov 2026, 16:42 IST | R13 | First edition, from the code at `9a8392b`: the owner's summary with ₹, the 54 use cases mapped to four parts and all 80 IDs placed (R13, R13.1, Later, Declined), code facts with file:line, the three model files downloaded, hash-checked and run on the vendored runtime, D0–D22, the data model, 18 tools, the I0 seam list, the part split with OPS-03 to A and LND-16 to C, a test per acceptance check, the end-to-end, browser and needles suites with controls, size guards, risks, owner questions, the exit check | 🛠 Mark XXI |
 | v13.0.2 | 15 Nov 2026, 17:28 IST | R13 | Plan review 1 written in (H1–H6, M1–M15, L1–L10 but L3, which is declined with its reason); Status Ready. The wear lifecycle and the hand-off between events (H1); AI tagging gated by the piece record, the same bitmap's check, a named ₹ counter and `BrainEyes` (H2); the restore's body cap, 25 MB, streaming, check-then-confirm and chunked idempotent writes, `app.py` 732 (H3); the `transact` contract with holds and their entries in one commit and one conformance test (H4); the HTTP contract and a fake server at I0 (H5); R7's pixel guard widened in the open with a `PANELS` list and C63's new words (H6); one clock rule, a pure fold, duplicates, the private-data sinks, parsed labels and QR codes, the trust rule, Things and wardrobe routing, `vision/assets.py`, uint8 fingerprints with self-checks and the fp32 cut's sum, the byte guard and a 400 cap, `ctx.now()`, the staged eval gate and e2e 8's pass line, calendar reads and cancelled events, the check gating only what is kept or sent, the summary's limits, SSD's Apache-2.0 upstream (M1–M15); tomorrow's weather in C's own document, no R11 file edited (L4); a "Plan review 1" table | 🛠 Mark XXI |
+| v13.0.3 | 16 Nov 2026, 23:30 IST | R13 | I1: the owner's decision that a declined calendar event still gets its outfit plan (D13); `wardrobe_max_pieces` 50 to 500 (D1's list: maximal pieces fit only to 500); the Wardrobe Privacy section has five rows (Outfit plans on its own, so a key change costs plans only); persona p13.0 as built | 🛠 Mark XXI |

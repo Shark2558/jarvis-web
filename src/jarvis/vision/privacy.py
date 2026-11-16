@@ -6,7 +6,7 @@ through the part (`MobilePart.privacy`, I0 seam 20), so no privacy file is edite
   sealed by JARVIS (`vision`), 90 days; export lists them (never the sealed blob).
 - `vision_device`: what lives only in this browser (the camera-off switch): nothing on the server,
   nothing to delete here; each device switches its own camera.
-Both say what is never kept: a camera frame or a picture.
+Both say what is never kept: a camera frame (R13: a wardrobe photo has its own row).
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ RESULTS_ID = "vision_results"
 DEVICE_ID = "vision_device"
 OFF_NOTE = "Off: JARVIS has no token key, so no camera result is kept."
 NEVER = (
-    "Never kept: a camera frame or a picture. A picture you chose to send to the AI stays with its "
-    "conversation."
+    "Never kept: a camera frame. A picture you chose to send to the AI stays with its "
+    "conversation. A wardrobe photo you press Save on is kept only in the Wardrobe section, in "
+    "its own row."
 )
 
 

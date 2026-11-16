@@ -555,8 +555,8 @@ def test_lnd_03_more_i_couldnt_show_is_a_pending_deposit_with_no_id() -> None:
         vision={"codes": ["jw1:abcdefgh"]},
     )
     [call] = [n for n in out["net"] if n["path"] == "/v1/wardrobe/tools/laundry_move"]
-    assert json.loads(call["body"]) == {
-        "arguments": {"step": "basket", "unseen": 2, "category": "tops"}
+    assert json.loads(call["body"]) == {  # B's shape: `more`, an integer 1..10 (checks.MAX_MORE)
+        "arguments": {"step": "basket", "more": 2, "category": "tops"}
     }
 
 

@@ -96,8 +96,8 @@ function reviewRows() {
   const entries = Array.isArray(UI.review.entries) ? UI.review.entries : [];
   if (!entries.length) return [H.empty('Nothing waits for a check.')];
   return entries.map((e) => {
-    const picks = (e.candidates || []).map((id) => btn('This one: ' + nameOf(id), () => tool('laundry_review', { action: 'resolve', entry: e.id, piece: id })));
-    if (e.kind === 'hold' || e.kind === 'pending_deposit') picks.push(btn('There was no deposit', () => tool('laundry_review', { action: 'resolve', entry: e.id, none: true })));
+    const picks = (e.candidates || []).map((id) => btn('This one: ' + nameOf(id), () => tool('laundry_review', { action: 'resolve', entry: e.id, outcome: 'these', pieces: [id] })));
+    if (e.kind === 'hold' || e.kind === 'pending_deposit') picks.push(btn('There was no deposit', () => tool('laundry_review', { action: 'resolve', entry: e.id, outcome: 'none' })));
     const hidden = (e.candidates || []).some((id) => !pieceOf(id)) && !UI.priv;
     const box = H.mk('div', '');
     box.append(H.row(e.words, (e.pieces || []).map(nameOf).join(', ') + (e.opened_at ? ' \u00b7 since ' + when(e.opened_at, true) : '')), acts(...picks));

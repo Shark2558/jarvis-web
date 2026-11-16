@@ -464,7 +464,7 @@ function event(piece, kind, f, extra) {
 }
 async function send(kind) {
   const events = [...S.found.entries()].map(([id, f]) => (kind === 'laundry' ? event(id, 'deposited', f) : event(id, S.dry ? 'returned' : 'needs_prep', f, S.dry && S.place ? { place: S.place } : {})));
-  const more = kind === 'laundry' && S.more ? { step: 'basket', unseen: S.more, category: S.moreKind } : null;
+  const more = kind === 'laundry' && S.more ? { step: 'basket', more: S.more, category: S.moreKind } : null;
   clearList();
   if (events.length) S.queue.push(...events);
   await flush();

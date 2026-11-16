@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from r13_fakes_d import serve_d
+from r13_fakes_d import VEST1, serve_d
 from test_console import DESKTOP, PHONE, Console
 from test_ui_audit import NAMELESS_JS, WRAP_JS, _assert_clean
 from ui_checks import DOM_CHECKS_JS, FINISH_ANIMATIONS_JS, install_mocks
@@ -129,6 +129,25 @@ def test_a_change_goes_through_the_gateway_and_a_piece_shows_its_history(
         c.page.locator("#hpp-wardrobe").get_by_role("button", name="Details").first.click()
         until(c.page, lambda: "Now: Ready" in text(c), "the piece's history")
         assert "Added" in text(c)
+    finally:
+        c.close()
+
+
+def test_the_review_queue_answers_in_bs_own_argument_names(
+    browser: Any, d_url: str, token: str
+) -> None:
+    c = tab(browser, d_url, token)
+    try:
+        for press, args in (
+            ("There was no deposit", {"outcome": "none"}),
+            ("This one: A private basic (No. 2)", {"outcome": "these", "pieces": [VEST1]}),
+        ):
+            before = len(seen(d_url, token)["tools"])
+            button(c, press).click()
+            until(c.page, lambda n=before: len(seen(d_url, token)["tools"]) > n, press)
+            call = seen(d_url, token)["tools"][before]
+            want = {"action": "resolve", "entry": "rv_1", **args}  # r13-b checks.SCHEMAS
+            assert call == {"tool": "laundry_review", "arguments": want}, press
     finally:
         c.close()
 

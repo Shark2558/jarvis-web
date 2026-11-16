@@ -79,13 +79,17 @@ async def test_put_settings_answers_the_settings_view_and_is_audited_without_an_
     async with await _client(w) as c:
         refs = (await c.get("/v1/outfits/calendars")).json()["calendars"]
         got = await c.put("/v1/outfits/settings", json={
-            "calendar": refs[1]["id_ref"], "fields": ["title"], "lead_h": 6,
+            "calendar": refs[1]["id_ref"], "fields": ["title"],
             "plan_alerts": True, "auto_swap": True,
         })  # fmt: skip
     assert got.status_code == 200
     view = http.SettingsView.model_validate(got.json())
     assert (view.calendar_chosen, view.auto_swap, view.tag_cap_inr) == (True, True, 30)
-    assert view.lead_h == 12  # the contract's default: an alert lead is never stored (M8)
+    assert "lead_h" not in got.json()  # dropped from the contract at I1 (review C-1 M8)
+    async with await _client(w) as c:
+        shown = (await c.get("/v1/outfits/calendars")).json()["calendars"]
+    assert [x["chosen"] for x in shown] == [x["id_ref"] == refs[1]["id_ref"] for x in shown]
+    assert sum(x["chosen"] for x in shown) == 1  # the panel can show and keep the pick (H2)
     (line,) = [e for e in w.audit._entries if e.tool == "outfit_settings"]  # noqa: SLF001
     assert line.outcome == "changed" and line.agent == "outfits"
     assert "example.com" not in line.detail and "example.com" not in line.args_hash
@@ -94,5 +98,6 @@ async def test_put_settings_answers_the_settings_view_and_is_audited_without_an_
 async def test_a_bad_settings_body_is_refused() -> None:
     w = await world()
     async with await _client(w) as c:
-        got = await c.put("/v1/outfits/settings", json={"lead_h": 99})
-    assert got.status_code == 422
+        got = await c.put("/v1/outfits/settings", json={"lead_h": 6})
+        bad = await c.put("/v1/outfits/settings", json={"calendar": "x" * 99})
+    assert got.status_code == 422 and bad.status_code == 422  # lead_h is not in the contract

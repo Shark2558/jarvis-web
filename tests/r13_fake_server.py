@@ -238,6 +238,10 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
     async def restore() -> JSONResponse:
         return _ok(http.RestoreDone(counts=counts, chunks=0, message="Nothing to add."))
 
+    @r.put("/v1/wardrobe/settings")
+    async def wardrobe_settings(body: http.WardrobeSettingsIn) -> JSONResponse:
+        return _ok(http.SettingsView(ai_tagging=bool(body.ai_tagging)))
+
     @r.get("/v1/wardrobe/pilot")
     async def pilot() -> JSONResponse:
         zero = dict.fromkeys(http.Pilot.model_fields, 0)
@@ -274,7 +278,7 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
     @r.put("/v1/outfits/settings")
     async def settings(body: http.OutfitSettings) -> JSONResponse:
         return _ok(http.SettingsView(calendar_chosen=body.calendar is not None, fields=body.fields,
-                                     lead_h=body.lead_h, plan_alerts=body.plan_alerts,
+                                     plan_alerts=body.plan_alerts,
                                      auto_swap=body.auto_swap))  # fmt: skip
 
     return r

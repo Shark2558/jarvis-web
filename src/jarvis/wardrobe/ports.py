@@ -244,7 +244,9 @@ class WardrobeStore(Protocol):
         self, uid: str, piece: str, event_id: str, *, note: str = ""
     ) -> Committed: ...
 
-    async def history(self, uid: str, piece: str) -> tuple[HistoryItem, ...]: ...
+    async def history(
+        self, uid: str, piece: str, *, view: WardrobeView | None = None
+    ) -> tuple[HistoryItem, ...]: ...  # `view`: the index the caller holds (N pieces read it once)
 
     def bind(
         self,

@@ -403,7 +403,8 @@ def test_every_planned_route_has_its_models_under_its_parts_prefix() -> None:
         ("GET", "/v1/wardrobe/fingerprints"), ("POST", "/v1/wardrobe/fingerprints"),
         ("POST", "/v1/wardrobe/tag"), ("GET", "/v1/wardrobe/tag/estimate"),
         ("GET", "/v1/wardrobe/labels.svg"), ("POST", "/v1/wardrobe/labels"),
-        ("GET", "/v1/wardrobe/backup"), ("POST", "/v1/wardrobe/restore/check"),
+        ("GET", "/v1/wardrobe/backup"), ("PUT", "/v1/wardrobe/settings"),
+        ("POST", "/v1/wardrobe/restore/check"),
         ("POST", "/v1/wardrobe/restore"), ("GET", "/v1/wardrobe/pilot"),
         ("POST", "/v1/wardrobe/tools/{tool}"), ("GET", "/v1/laundry"),
         ("GET", "/v1/laundry/review"), ("GET", "/v1/outfits"), ("GET", "/v1/outfits/calendars"),
@@ -806,6 +807,7 @@ async def test_the_fake_server_answers_every_route_with_its_model(settings: obje
         "/v1/wardrobe/labels": {"code": "abcd2345", "piece": shirt},
         "/v1/wardrobe/tools/{tool}": {"arguments": {}},
         "/v1/outfits/settings": {"calendar": None},
+        "/v1/wardrobe/settings": {"ai_tagging": True},
     }  # fmt: skip
     query = {
         "/v1/wardrobe/photos": f"?piece={shirt}&view=front",

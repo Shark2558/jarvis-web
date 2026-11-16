@@ -128,13 +128,13 @@ class LabelView(_M):
 class SettingsView(_M):
     calendar_chosen: bool = False  # the id itself stays sealed on the server
     fields: tuple[Literal["title", "location"], ...] = ("title",)
-    lead_h: int = Field(default=12, ge=0, le=48)
     plan_alerts: bool = True
     ai_tagging: bool = False
     auto_swap: bool = False
     show_private: bool = False
     tag_month_inr: float = Field(default=0.0, ge=0.0)
     tag_cap_inr: int = Field(default=30, ge=0)
+    tag_estimate_inr: float | None = Field(default=None, ge=0.0)  # one photo, this brain
     custom_types: tuple[str, ...] = ()
 
 
@@ -343,6 +343,7 @@ class ToolCall(_M):
     same cards, rows and audit as the AI's call."""
 
     arguments: dict[str, object] = Field(default_factory=dict)
+    session_id: str | None = Field(default=None, max_length=64)  # his open conversation, if any
 
 
 class ToolReply(_M):

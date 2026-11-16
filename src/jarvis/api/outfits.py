@@ -7,8 +7,8 @@
                                 (a governed read on the Calendar row: "Allow" only), or why not
     PUT /v1/outfits/settings    the calendar (a reference from that list, or none: off), the
                                 fields JARVIS may read, the evening alert, auto-swap
-                                (`OutfitSettings` -> `SettingsView`); the contract's `lead_h`
-                                is accepted and never stored (code review M8: dropped)
+                                (`OutfitSettings` -> `SettingsView`); no alert lead (dropped
+                                at I1: code review M8)
 
 Owner-only (`require_auth`), `no-store`, limited per owner (30 changes and 60 reads a minute,
 `api.r13_status.limited`); the styling service is read per request from
@@ -40,7 +40,7 @@ from jarvis.wardrobe.styling.service import Answer, Here, Styling
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 NOT_SET_UP = "Outfits aren't set up on this JARVIS."
-SENT_FIELDS = frozenset({"fields", "plan_alerts", "auto_swap"})  # `lead_h`: never stored (M8)
+SENT_FIELDS = frozenset({"fields", "plan_alerts", "auto_swap"})  # no `lead_h` (dropped at I1)
 
 
 def _ok(model: Any) -> JSONResponse:
@@ -112,10 +112,17 @@ async def calendars(request: Request, uid: str = Depends(current_user)) -> JSONR
     if s is None or off or calendar is None:
         return _ok(http.Calendars(why=off or NOT_SET_UP))
     found, why = await calendar.calendars(uid)
+    try:
+        chosen = (await s.plans.read(uid)).choice.calendar
+    except Unreadable:  # a key change: nothing is shown as chosen (the route above says why)
+        chosen = None
     choices = tuple(
-        http.CalendarChoice(id_ref=ref, title=name or "A calendar", primary=primary)
-        for ref, _id, name, primary in found
-    )
+        http.CalendarChoice(
+            id_ref=ref, title=name or "A calendar", primary=primary,
+            chosen=chosen is not None and cal_id == chosen,
+        )
+        for ref, cal_id, name, primary in found
+    )  # fmt: skip
     return _ok(http.Calendars(calendars=choices, why=why))
 
 

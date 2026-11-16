@@ -287,14 +287,10 @@ class Event(_Rec):
 
 
 class WardrobeSettings(_Rec):
-    """His own choices, in the sealed index (D13, D7, D10, D12)."""
+    """His own wardrobe choices, in the sealed index (D7, D10). His calendar, its fields, the
+    evening alert and auto-swap are Part C's, in its own sealed document (D13; I1 item 11)."""
 
-    calendar: str | None = Field(default=None, alias="cal", max_length=300)  # from his list only
-    fields: tuple[Literal["title", "location"], ...] = Field(default=("title",), alias="fld")
-    lead_h: int = Field(default=12, alias="ld", ge=0, le=48)
-    plan_alerts: bool = Field(default=True, alias="pa")
     ai_tagging: bool = Field(default=False, alias="ai")
-    auto_swap: bool = Field(default=False, alias="as")
     show_private: bool = Field(default=False, alias="sp")
     custom_types: tuple[Annotated[str, Field(max_length=24)], ...] = Field(default=(), alias="ty")
 

@@ -188,7 +188,7 @@ function settingRows() {
   const v = UI.view, set = (v && v.settings) || {}, out = [];
   out.push(H.row('Outfits from a calendar', set.calendar_chosen ? 'One calendar is chosen: plans are made from its events.' : 'None: plan by hand, or choose one calendar.', [btn('Choose a calendar', calendars)]));
   if (UI.cal) out.push(UI.cal);
-  const outfit = (patch) => putSettings(Object.assign({ calendar: undefined, fields: set.fields || ['title'], lead_h: set.lead_h || 12, plan_alerts: set.plan_alerts !== false, auto_swap: !!set.auto_swap }, patch));
+  const outfit = (patch) => putSettings(Object.assign({ calendar: undefined, fields: set.fields || ['title'], plan_alerts: set.plan_alerts !== false, auto_swap: !!set.auto_swap }, patch));
   const has = (f) => (set.fields || ['title']).includes(f);
   out.push(H.row('Use the event\u2019s title', 'Matched to dress codes in code only; never stored, sent or logged.', [H.toggle('Use the event title', has('title'), (on) => outfit({ fields: fieldsWith('title', on, set) }))]));
   out.push(H.row('Use the event\u2019s location', 'Indoor or outdoor, for the weather. Off unless you switch it on.', [H.toggle('Use the event location', has('location'), (on) => outfit({ fields: fieldsWith('location', on, set) }))]));
@@ -226,7 +226,7 @@ async function calendars() { // a governed read (the Calendar row's Allow only);
   draw();
   const c = await get('/v1/outfits/calendars');
   if (c.failed || c.why || !(c.calendars || []).length) { box.replaceChildren(H.mk('p', 'snote warn', H.txt(c.why || c.words || 'No calendar to choose.', 200))); return; }
-  const pick = select([['', 'None: plan by hand'], ...c.calendars.map((x) => [x.id_ref, H.txt(x.title, 60) + (x.primary ? ' (your main one)' : '')])], '');
+  const pick = select([['', 'None: plan by hand'], ...c.calendars.map((x) => [x.id_ref, H.txt(x.title, 60) + (x.primary ? ' (your main one)' : '') + (x.chosen ? ' (chosen)' : '')])], (c.calendars.find((x) => x.chosen) || {}).id_ref || '');
   box.replaceChildren(field('Make plans from', pick), acts(btn('Use this calendar', () => { UI.cal = null; putSettings({ calendar: pick.value || null, fields: ((UI.view && UI.view.settings) || {}).fields || ['title'] }); }), btn('Cancel', () => { UI.cal = null; draw(); })));
 }
 function restoreRows() {

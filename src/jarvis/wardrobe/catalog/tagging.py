@@ -146,6 +146,10 @@ class Tagging:
         )
         return spec.tiers.get(ModelTier.FAST) if spec is not None else None
 
+    async def estimate_inr(self) -> float:
+        """The rupees one photo would cost on the brain that would answer (the panel says it)."""
+        return await self._estimate_inr()
+
     async def _estimate_inr(self) -> float:
         price = PRICES.get(self._model() or "")
         if price is None:

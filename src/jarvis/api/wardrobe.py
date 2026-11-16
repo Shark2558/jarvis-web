@@ -31,6 +31,8 @@ from fastapi.responses import JSONResponse, Response
 from jarvis.api.auth import require_auth
 from jarvis.api.identity import current_user
 from jarvis.api.r13_status import ready_of
+from jarvis.api.wardrobe_settings import joined
+from jarvis.api.wardrobe_settings import router as settings_router
 from jarvis.core.models import Session
 from jarvis.core.prompts import PERSONA_VERSION
 from jarvis.llm.base import ToolCall
@@ -56,6 +58,7 @@ from jarvis.wardrobe.states import EVENT_KINDS
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 router.routes.extend(files_router.routes)  # one router (an included one is lazy here)
+router.routes.extend(settings_router.routes)
 NOT_IN = "That piece isn't in your wardrobe."
 MERGED = "That piece was merged into another: refresh the list and scan again."
 # what a scan may record; registering, merging, archiving and corrections go through the tools
@@ -79,7 +82,9 @@ async def wardrobe(
     shown = desk.views.wardrobe_view(
         view, ready=_ready(request), show_private=bool(private), after=after or None
     )
-    return ok(shown)
+    return ok(
+        shown.model_copy(update={"settings": await joined(request, uid, desk, shown.settings)})
+    )
 
 
 def _ready(request: Request) -> str:

@@ -58,13 +58,12 @@ class Views:
             label_code=p.label_code, photos=p.photos, pair=pair.id if pair else None, sets=sets,
         )  # fmt: skip
 
-    def _settings(self, view: WardrobeView) -> http.SettingsView:
+    def settings_view(self, view: WardrobeView) -> http.SettingsView:
         st = view.settings
         return http.SettingsView(
-            calendar_chosen=st.calendar is not None, fields=st.fields, lead_h=st.lead_h,
-            plan_alerts=st.plan_alerts, ai_tagging=st.ai_tagging, auto_swap=st.auto_swap,
-            show_private=st.show_private, tag_month_inr=round(view.tag_inr, 2),
-            tag_cap_inr=self._cap, custom_types=st.custom_types,
+            ai_tagging=st.ai_tagging, show_private=st.show_private,
+            tag_month_inr=round(view.tag_inr, 2), tag_cap_inr=self._cap,
+            custom_types=st.custom_types,
         )  # fmt: skip
 
     def wardrobe_view(
@@ -91,7 +90,7 @@ class Views:
                 http.LabelView(code=lb.code, number=lb.number, piece=lb.piece)
                 for lb in view.labels.values()
             ),
-            settings=self._settings(view),
+            settings=self.settings_view(view),
         )  # fmt: skip
 
     def event_view(self, view: WardrobeView, h: HistoryItem) -> http.EventView:

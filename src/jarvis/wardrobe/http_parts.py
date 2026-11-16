@@ -5,9 +5,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StrictBool
 
 from jarvis.wardrobe.http_views import _M, Ready
 from jarvis.wardrobe.model import PieceId
@@ -104,6 +104,7 @@ class CalendarChoice(_M):
     id_ref: str = Field(min_length=8, max_length=64)  # a reference to one id from HIS list
     title: str = Field(max_length=200)  # shown live, never stored
     primary: bool = False
+    chosen: bool = False  # this is the calendar he picked
 
 
 class Calendars(_M):
@@ -118,9 +119,20 @@ class OutfitSettings(_M):
 
     calendar: str | None = Field(default=None, max_length=64)  # an `id_ref`, or None: off
     fields: tuple[Literal["title", "location"], ...] = ("title",)
-    lead_h: int = Field(default=12, ge=0, le=48)
     plan_alerts: bool = True
     auto_swap: bool = False
+
+
+class WardrobeSettingsIn(_M):
+    """PUT /v1/wardrobe/settings: his own wardrobe settings (D7, D10), what he sent changes and
+    what he did not send stays. The calendar, its fields, the alert and auto-swap are Part C's
+    (`PUT /v1/outfits/settings`). Owner-only: never a tool the model can call."""
+
+    ai_tagging: StrictBool | None = None
+    show_private: StrictBool | None = None
+    custom_types: tuple[Annotated[str, Field(max_length=24)], ...] | None = Field(
+        default=None, max_length=30
+    )
 
 
 class R13Status(_M):
@@ -144,4 +156,5 @@ __all__ = [
     "ReviewEntry",
     "ReviewView",
     "SlotPick",
+    "WardrobeSettingsIn",
 ]

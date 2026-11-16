@@ -309,13 +309,19 @@ async def test_m6_each_whole_wardrobe_read_opens_the_index_once_not_once_a_piece
     monkeypatch.setattr(cat.docs, "get", counting)
     [data] = cat.part.data
     [sweep] = cat.part.daily_jobs
+    from jarvis.api.r13_wiring import sweep_closer
+    from jarvis.wardrobe.styling.rules import load_rules
+
+    sweep.closer = sweep_closer(
+        cat.store, load_rules()
+    )  # C's closer, joined as the wiring joins it
     for name, read, want in (
         ("backup", lambda: desk.backup.file(UID), (1, n)),
         ("pilot", lambda: desk.pilot.counts(UID), (1, n)),
         ("export", lambda: data.export(UID), (1, n)),
         ("restore check", lambda: desk.restore.check(UID, body), (1, n)),
-        # the three pieces still In use, then its own commit (which reads them again)
-        ("sweep", lambda: sweep.sweep(UID), (2, 6)),
+        # the sweep's view, C's closer's view, then the commit's: three, never one a piece
+        ("sweep", lambda: sweep.sweep(UID), (3, 6)),
     ):
         reads.clear()
         await read()

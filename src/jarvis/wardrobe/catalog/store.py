@@ -165,8 +165,10 @@ class CatalogStore:
         p = (view if view is not None else await self.view(uid)).piece(pid)
         return [] if p is None else await self._read_log(self.docs.get, uid, p)
 
-    async def history(self, uid: str, piece: str) -> tuple[HistoryItem, ...]:
-        p = (await self.view(uid)).piece(piece)
+    async def history(
+        self, uid: str, piece: str, *, view: WardrobeView | None = None
+    ) -> tuple[HistoryItem, ...]:
+        p = (view if view is not None else await self.view(uid)).piece(piece)
         if p is None:
             return ()
         events = await self._read_log(self.docs.get, uid, p)

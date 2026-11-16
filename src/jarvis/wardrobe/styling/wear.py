@@ -199,7 +199,7 @@ async def closing_events(
     for p in sorted(view.active(), key=lambda x: x.id):
         if p.state != "in_use":
             continue
-        history = await store.history(uid, p.id)
+        history = await store.history(uid, p.id, view=view)
         starts = [
             h.event.at for h in history if h.event.kind == "wear_started" and h.mark == "applied"
         ]

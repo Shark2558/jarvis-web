@@ -48,16 +48,17 @@ async def test_a_document_that_fails_its_check_is_unreadable_with_no_value_in_th
     assert needle not in "".join(traceback.format_exception(got.value))
 
 
-async def test_the_settings_answer_the_contracts_lead_and_never_store_one() -> None:
+async def test_the_settings_have_no_lead_and_a_body_that_names_one_is_refused() -> None:
     from httpx import ASGITransport, AsyncClient
     from r13_fakes_c import app_of
 
     w = await world(at=ist(2026, 11, 16, 20, 0))
     async with AsyncClient(transport=ASGITransport(app=app_of(w)), base_url="http://t") as c:
-        got = await c.put("/v1/outfits/settings", json={"lead_h": 6, "auto_swap": True})
-    assert got.status_code == 200 and got.json()["lead_h"] == 12  # the contract's default
+        refused = await c.put("/v1/outfits/settings", json={"lead_h": 6, "auto_swap": True})
+        got = await c.put("/v1/outfits/settings", json={"auto_swap": True})
+    assert refused.status_code == 422 and "lead_h" not in got.json()
     stored = (await w.styling.plans.read(UID)).choice
-    assert stored.auto_swap is True and "lead_h" not in stored.model_dump()
+    assert got.status_code == 200 and stored.auto_swap is True
 
 
 # ---- security review M3: a key change or one unreadable cache never stops Part C ----------------

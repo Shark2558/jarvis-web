@@ -12,8 +12,8 @@ import pytest
 from r13_fakes import UID, FixedClock, RecordingWriter, ev, ist
 from r13_fakes_a import Catalog, catalog, fp, jpeg
 
+from jarvis.wardrobe.catalog import jobs as sweep_module
 from jarvis.wardrobe.catalog.edits import NewPiece
-from jarvis.wardrobe.catalog.jobs import after_wear
 from jarvis.wardrobe.catalog.pilot import passes
 from jarvis.wardrobe.http import Pilot
 from jarvis.wardrobe.ports import Commit
@@ -38,8 +38,13 @@ async def _worn_since(cat: Catalog, at: Any) -> tuple[str, str]:
     return shirt, belt
 
 
-def _sweep(cat: Catalog) -> Any:
+def _sweep(cat: Catalog, *, closer: bool = True) -> Any:
+    """The sweep, joined as the wiring joins it: C's checked rules close a forgotten wear."""
+    from jarvis.api.r13_wiring import sweep_closer
+    from jarvis.wardrobe.styling.rules import load_rules
+
     [job] = cat.part.daily_jobs
+    job.closer = sweep_closer(cat.store, load_rules()) if closer else None
     return job
 
 
@@ -76,35 +81,31 @@ async def test_a_wear_is_left_open_before_four_or_when_it_began_after_midnight(
     assert (await cat.store.view(UID)).pieces[shirt].state == "in_use"
 
 
-def test_the_rewear_rule_matches_the_owners_default() -> None:
-    from r13_fakes import piece
-
-    again = ("trousers", "jeans", "jacket", "belt", "dress_shoe", "sneaker", "watch")
-    again += ("festive_layer",)
-    laundry = ("shirt", "t_shirt", "vest", "underpants", "sock")
-    assert {after_wear(piece("wi_" + "1" * 12, t)) for t in again} == {"ready"}
-    assert {after_wear(piece("wi_" + "1" * 12, t)) for t in laundry} == {"in_laundry"}
+def test_the_rewear_rule_has_one_source_and_it_is_parts_cs() -> None:
+    """Workshop decision 1: A keeps no copy of the rewear rule (no WORN_AGAIN, no after_wear)."""
+    assert not hasattr(sweep_module, "WORN_AGAIN") and not hasattr(sweep_module, "after_wear")
 
 
-# Part C's `styling/rules.json` "reusable" (r13-c), by value: until I1 puts the one copy in I0's
-# `wardrobe/states.py` (REWEAR_DEFAULT), A's sweep and C's wear log must close a wear the same way.
-C_REUSABLE = (
-    *("trousers", "chinos", "jeans", "blazer", "jacket", "hoodie", "sweater", "coat"),
-    *("rainwear", "festive_layer", "belt", "watch", "dress_shoe", "sneaker", "sandal"),
-    *("slipper", "boot", "tie", "cap", "scarf", "jewellery", "bag", "eyewear"),
-)
+async def test_a_forgotten_wear_closes_by_cs_rule_a_festive_layer_stays_ready() -> None:
+    cat = catalog(clock=FixedClock(ist(2026, 11, 16, 20, 0)))
+    [layer, tee] = (
+        await desk(cat).service.add(UID, [NewPiece(type="festive_layer"), NewPiece(type="t_shirt")])
+    ).ids
+    await _commit(cat, ev(layer, "wear_started", cat.clock()), ev(tee, "wear_started", cat.clock()))
+    cat.clock.set(ist(2026, 11, 17, 4, 30))
+    assert (await _sweep(cat).run([UID]))["closed"] == 2
+    view = await cat.store.view(UID)
+    assert (view.pieces[layer].state, view.pieces[tee].state) == ("ready", "in_laundry")
+    assert (await _sweep(cat).run([UID]))["closed"] == 0  # once
 
 
-def test_m8_the_rewear_rule_is_exactly_parts_cs_reusable_list() -> None:
-    from pathlib import Path
-
-    from jarvis.wardrobe.catalog.jobs import WORN_AGAIN
-
-    assert frozenset(C_REUSABLE) == WORN_AGAIN  # festive_layer: worn again, never laundry
-    assert len(C_REUSABLE) == len(WORN_AGAIN)
-    rules = Path(__file__).parents[1] / "src/jarvis/wardrobe/styling/rules.json"
-    if rules.exists():  # once C is merged (I1): the two copies can never drift apart
-        assert frozenset(json.loads(rules.read_text())["reusable"]) == WORN_AGAIN
+async def test_without_the_styling_part_the_sweep_closes_nothing_and_goes_on() -> None:
+    cat = catalog(clock=FixedClock(ist(2026, 11, 16, 20, 0)))
+    shirt, _ = await _worn_since(cat, cat.clock())
+    cat.clock.set(ist(2026, 11, 17, 4, 30))
+    got = await _sweep(cat, closer=False).run([UID])
+    assert got == {"owners": 1, "closed": 0, "holds": 0, "failed": 0}
+    assert (await cat.store.view(UID)).pieces[shirt].state == "in_use"
 
 
 async def test_a_hold_without_its_entry_is_handed_to_bs_writer_again() -> None:

@@ -3,10 +3,9 @@
 `wardrobe_sweep`. No new Scheduler job: it rides R14's morning tick (`api/tick_wiring.py`).
 
 1. **A forgotten wear is closed** from `wardrobe_wear_close` (04:00) HIS local time: a piece
-   still In use whose wear started before local midnight gets `wear_done` by the rewear rule
-   (trousers, jeans, outerwear, a festive layer, belts, shoes and the watch are worn again:
-   Ready; shirts, T-shirts, vests, underwear and socks go to the laundry), one wear, never two.
-   Before 04:00 nothing is closed (he may still be out).
+   still In use whose wear started before local midnight gets `wear_done` by the rewear rule,
+   one wear, never two. The rule and the closing are Part C's (`close_forgotten`, joined by the
+   wiring as `closer`; A keeps no copy). Before 04:00 nothing is closed (he may still be out).
 2. **A hold without its entry gets one** (a crash between versions): each piece held in review
    is handed to B's review writer again in a commit of its own; the writer adds an entry only
    where none is open.
@@ -21,28 +20,17 @@ from zoneinfo import ZoneInfo
 
 from jarvis.logging import get_logger
 from jarvis.storage.docs import DocTx
-from jarvis.wardrobe.catalog.events import event
-from jarvis.wardrobe.catalog.fold import fold
 from jarvis.wardrobe.catalog.store import CatalogStore
-from jarvis.wardrobe.model import TYPES, Piece, WardrobeView
+from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import Commit, ReviewNeeded
-from jarvis.wardrobe.states import State
 
 log = get_logger(__name__)
 
 NAME = "wardrobe_sweep"
-# The rewear rule's default, EQUAL to Part C's `rules.json` "reusable" (a test pins the two by
-# value). At I1 the one copy moves to I0's `wardrobe/states.py` (`REWEAR_DEFAULT`) and this
-# imports it (review A-1 M8): a festive layer, like a jacket, is worn again.
-WORN_AGAIN: frozenset[str] = frozenset(
-    {"trousers", "chinos", "jeans", "festive_layer", *TYPES["outerwear"], *TYPES["footwear"]}
-    | set(TYPES["accessories"])
-)
-
-
-def after_wear(p: Piece) -> State:
-    """The rewear rule's default (owner question 6): worn again, or to the laundry."""
-    return "ready" if p.type in WORN_AGAIN else "in_laundry"
+# The rewear rule lives in ONE place: Part C's `styling/rules.json` (Workshop decision 1). The
+# wiring binds `WardrobeSweep.closer` to C's `close_forgotten` with C's checked rules; without
+# the styling part the step is skipped and the rest of the sweep goes on.
+Closer = Callable[[str, datetime, ZoneInfo, str], Awaitable[int]]
 
 
 def _close_at(text: str) -> time:
@@ -60,8 +48,10 @@ class WardrobeSweep:
         zone: Callable[[str], Awaitable[ZoneInfo]],
         *,
         close: str = "04:00",
+        closer: Closer | None = None,
     ) -> None:
         self.store, self._zone, self._close = store, zone, _close_at(close)
+        self.close_text, self.closer = close, closer
 
     async def run(self, owners: Sequence[str]) -> dict[str, int]:
         closed = holds = failed = 0
@@ -77,33 +67,12 @@ class WardrobeSweep:
 
     async def sweep(self, uid: str) -> tuple[int, int]:
         view = await self.store.view(uid)
-        return await self._close_wears(uid, view), await self._repair_holds(uid, view)
+        return await self._close_wears(uid), await self._repair_holds(uid, view)
 
-    async def _midnight(self, uid: str, now: datetime) -> datetime | None:
-        local = now.astimezone(await self._zone(uid))
-        if local.time() < self._close:
-            return None
-        return local.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    async def _close_wears(self, uid: str, view: WardrobeView) -> int:
-        now = self.store.now()
-        midnight = await self._midnight(uid, now)
-        if midnight is None:
+    async def _close_wears(self, uid: str) -> int:
+        if self.closer is None:  # no styling part: no rule to close by
             return 0
-        done = []
-        for p in (x for x in view.active() if x.state == "in_use"):
-            events = await self.store.events(uid, p.id, view=view)
-            marks = fold(events).marks
-            starts = [e for e in events if e.kind == "wear_started" and marks[e.id] == "applied"]
-            if starts and max(e.at for e in starts) < midnight:
-                done.append(event(p.id, "wear_done", now, to=after_wear(p), via="sweep"))
-        if done:
-
-            async def fn(v: WardrobeView, tx: DocTx) -> Commit:
-                return Commit(events=tuple(done))
-
-            await self.store.transact(uid, fn)
-        return len(done)
+        return await self.closer(uid, self.store.now(), await self._zone(uid), self.close_text)
 
     async def _repair_holds(self, uid: str, view: WardrobeView) -> int:
         held = [p for p in view.active() if p.state == "review" and p.hold]
@@ -118,4 +87,4 @@ class WardrobeSweep:
         return len(held)
 
 
-__all__ = ["NAME", "WORN_AGAIN", "WardrobeSweep", "after_wear"]
+__all__ = ["NAME", "Closer", "WardrobeSweep"]

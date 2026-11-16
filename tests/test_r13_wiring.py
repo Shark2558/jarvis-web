@@ -136,6 +136,31 @@ def test_every_stub_part_builds_through_the_real_modules(settings: Settings) -> 
     assert parts["phone"].ready == "ready"
 
 
+def test_the_sweep_is_bound_to_cs_rules_and_left_alone_without_them() -> None:
+    from types import SimpleNamespace
+
+    from jarvis.wardrobe.catalog.jobs import WardrobeSweep
+    from jarvis.wardrobe.ports import WardrobePart
+    from jarvis.wardrobe.styling.rules import load_rules
+
+    store = memory_store(MemoryDocs(), FixedClock(ist(2026, 11, 16, 9, 0)))
+    sweep = WardrobeSweep(store, lambda uid: None)  # type: ignore[arg-type,return-value]
+    app = FastAPI()
+    app.state.r13_parts = {
+        "catalog": WardrobePart("catalog", daily_jobs=(sweep,), services={"store": store}),
+        "styling": WardrobePart(
+            "styling",
+            services={"refresh": SimpleNamespace(styling=SimpleNamespace(rules=load_rules()))},
+        ),
+    }
+    wiring.join_sweep(app)
+    assert sweep.closer is not None
+    sweep.closer = None
+    app.state.r13_parts["styling"] = WardrobePart("styling", ready=wiring.SETUP_FAILED)
+    wiring.join_sweep(app)
+    assert sweep.closer is None  # no styling part: the step is skipped
+
+
 # ---- the joins -----------------------------------------------------------------------------------
 async def test_the_store_is_joined_with_bs_writer_and_every_observer_cs_refresh_first() -> None:
     clock = FixedClock(ist(2026, 11, 16, 9, 0))

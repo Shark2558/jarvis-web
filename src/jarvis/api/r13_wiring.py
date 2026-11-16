@@ -46,6 +46,7 @@ from jarvis.ticks import TickJob
 from jarvis.tools.audit import AuditTrail
 from jarvis.tools.background import BackgroundReads
 from jarvis.tools.base import Tool
+from jarvis.wardrobe.catalog.jobs import Closer, WardrobeSweep
 from jarvis.wardrobe.ports import (
     CLOCK_JOB_NAMES,
     JOB_OWNER,
@@ -60,6 +61,8 @@ from jarvis.wardrobe.ports import (
     WardrobeStore,
     tool_allowed,
 )
+from jarvis.wardrobe.styling.rules import Rules
+from jarvis.wardrobe.styling.wear import close_forgotten
 
 log = get_logger(__name__)
 
@@ -199,6 +202,7 @@ async def wire_r13(app: FastAPI, s: Settings, docs: Docs | None, audit: AuditTra
     st = app.state
     st.r13_parts = build_parts(context(app, s, docs, audit)) if s.wardrobe_enabled else {}
     join_store(app)
+    join_sweep(app)
     register_bin(app)
     install_r13_phrases(app)
 
@@ -215,6 +219,28 @@ def join_store(app: FastAPI) -> None:
     store.bind(
         review_writer=writer if isinstance(writer, ReviewWriter) else None, observers=observers
     )
+
+
+def sweep_closer(store: WardrobeStore, rules: Rules) -> Closer:
+    """A's sweep closes a forgotten wear by C's rule: the one source of the rewear rule."""
+
+    async def close(uid: str, now: datetime, zone: ZoneInfo, at: str) -> int:
+        return await close_forgotten(store, uid, now=now, zone=zone, close=at, rules=rules)
+
+    return close
+
+
+def join_sweep(app: FastAPI) -> None:
+    """Bind A's `wardrobe_sweep` to C's checked rules (C off or failed: the step is skipped)."""
+    store = wardrobe_store(app)
+    styling = getattr(service(app, "refresh"), "styling", None)
+    rules = getattr(styling, "rules", None)
+    catalog = _parts(app).get("catalog")
+    if store is None or rules is None or catalog is None:
+        return
+    for job in catalog.daily_jobs:
+        if isinstance(job, WardrobeSweep):
+            job.closer = sweep_closer(store, rules)
 
 
 def register_bin(app: FastAPI) -> None:
@@ -287,6 +313,7 @@ __all__ = [
     "install_r13_phrases",
     "install_r13_routes",
     "join_store",
+    "join_sweep",
     "owner_zone",
     "r13_clock_jobs",
     "r13_data",
@@ -295,6 +322,7 @@ __all__ = [
     "r13_tools",
     "register_bin",
     "service",
+    "sweep_closer",
     "wardrobe_store",
     "wire_r13",
 ]

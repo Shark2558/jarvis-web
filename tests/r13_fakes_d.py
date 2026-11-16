@@ -113,8 +113,13 @@ def d_routes(state: dict[str, Any], store: Any = None, clock: Any = None) -> API
     saved: list[tuple[str, str]] = []  # (piece, fingerprint) posted by "Remember how it looks"
 
     async def register(args: dict[str, Any]) -> str:
+        made = state.setdefault("clients", {})  # A: a piece's id is keyed by its client id
+        if args.get("client_id") in made:
+            return str(made[args["client_id"]])
         pid = f"wi_{0xF0 + len(state['added']):012x}"
         state["added"].append(pid)
+        if args.get("client_id"):
+            made[args["client_id"]] = pid
         if store is not None:
             colour = args.get("colour") if isinstance(args.get("colour"), str) else None
             rec = piece(pid, str(args.get("type") or "shirt"), colour=colour)
@@ -130,9 +135,17 @@ def d_routes(state: dict[str, Any], store: Any = None, clock: Any = None) -> API
     async def tool(tool: str, body: http.ToolCall) -> JSONResponse:
         state["tools"].append({"tool": tool, "arguments": body.arguments})
         result: dict[str, object] = {}
-        if tool == "wardrobe_add":
-            result = {"piece": await register(body.arguments)}
+        if tool == "wardrobe_add":  # A's shape: {pieces: [...]} -> {status, ids, new}
+            pieces = body.arguments.get("pieces")
+            items = [p for p in pieces if isinstance(p, dict)] if isinstance(pieces, list) else []
+            ids = [await register(p) for p in items]
+            result = {"status": "done", "ids": ids, "new": ids}
         return ok(http.ToolReply(status="executed", message="Done, Sir.", result=result))
+
+    @r.put("/v1/wardrobe/settings")  # A's settings route, proposed for I1 (INTEGRATION-D section 6)
+    async def wardrobe_settings(request: Request) -> JSONResponse:
+        state.setdefault("settings", []).append(await request.json())
+        return JSONResponse({"status": "saved"}, headers={"Cache-Control": "no-store"})
 
     @r.get("/v1/wardrobe/fingerprints")
     async def prints(model: str = "mnv2-int8-1") -> JSONResponse:

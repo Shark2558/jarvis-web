@@ -390,6 +390,55 @@ def test_m5_a_single_print_offers_its_piece_with_no_band_words() -> None:
     assert f"This one: {VIEW_NAME[NAVY]}" in out["steps"][-1]["buttons"]  # just his tap to make
 
 
+# ---- M6: A's tool shapes -------------------------------------------------------------------------
+ADD = [*PHOTO, press("Shirt"), press("Save as a new piece")]
+
+
+def _adds(out: dict[str, Any]) -> list[dict[str, Any]]:
+    return [a["arguments"] for a in posts(out, "/v1/wardrobe/tools/wardrobe_add")]
+
+
+def test_m6_a_new_piece_is_its_ids_first_and_a_second_press_is_never_a_second_piece() -> None:
+    out = scan([*ADD, press("Save as a new piece")], vision={"embed": _vec(11)})
+    assert len(_adds(out)) == 1 and ": this piece." in out["final"]  # then no button to press
+    out = scan([*ADD[:3], press("Save as a new piece", now=True), press("Save as a new piece")])
+    assert len(_adds(out)) == 1
+
+
+def test_m6_a_retry_after_a_failure_carries_the_same_client_id() -> None:
+    out = scan([*ADD, press("Save as a new piece")], vision={"embed": _vec(11)}, toolFail=1)
+    first, second = (a["pieces"][0]["client_id"] for a in _adds(out))
+    assert first == second  # A keys the piece by it: one piece, however often he presses
+
+
+def test_m6_a_result_that_refused_is_said_and_never_taken_for_done() -> None:
+    refused = {"status": "refused", "message": "That label text couldn’t be read as a size."}
+    raw = "SIZE M\n100% COTTON"
+    steps = [press("Read a label"), *PHOTO, press("Confirm")]
+    out = scan(steps, vision={"text": raw}, toolResult=refused)
+    assert "couldn’t be read as a size" in out["final"] and "Confirmed." not in out["final"]
+
+
+def test_m6_a_tap_on_another_candidate_says_tap_with_candidate_ones_score() -> None:
+    first = scan([*PHOTO], vision={"embed": _vec(11)})["steps"][-1]["buttons"]
+    second = [b for b in first if b.startswith("This one: ") and "label read" not in b][1]
+    out = scan([*PHOTO, press(second)], vision={"embed": _vec(11)})
+    [body] = posts(out, "/v1/wardrobe/scan")
+    [e] = body["events"]
+    top = scan(
+        [*PHOTO, press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")],
+        vision={"embed": _vec(11)},
+    )
+    [top_e] = posts(top, "/v1/wardrobe/scan")[0]["events"]
+    assert (e["how"], top_e["how"]) == ("tap", "match") and e["score"] == top_e["score"]
+
+
+def test_m6_helpers_sends_a_settings_change_to_the_settings_route_never_to_a_tool() -> None:
+    js = (SCAN.parent / "console-helpers-wardrobe.js").read_text(encoding="utf-8")
+    assert "settings: {" not in js and "label_field" not in SCAN.read_text(encoding="utf-8")
+    assert "H.api('/v1/wardrobe/settings', { method: 'PUT', body })" in js
+
+
 # ---- D10: private pieces ------------------------------------------------------------------------
 def test_d10_a_private_piece_never_gets_a_photo_a_fingerprint_or_a_tag() -> None:
     out = scan(
@@ -408,9 +457,9 @@ def test_d10_a_private_by_default_kind_asks_make_it_private() -> None:
     assert "Make it private?" in out["final"]
     out = scan([*PHOTO, press("Vest"), press("Make it private"), press("Save as a new piece")])
     [call] = [n for n in out["net"] if n["path"] == "/v1/wardrobe/tools/wardrobe_add"]
-    assert json.loads(call["body"]) == {
-        "arguments": {"type": "vest", "private": True, "colour": "navy"}
-    }
+    [one] = json.loads(call["body"])["arguments"]["pieces"]  # A's shape (M6)
+    assert re.fullmatch(r"wd[a-z2-7]{14}", one.pop("client_id"))
+    assert one == {"type": "vest", "private": True, "colour": "navy"}
     assert set(re.findall(r"'(\w+)'", _region("PRIVATE_TYPES = [", "];"))) == PRIVATE_BY_DEFAULT
 
 
@@ -575,8 +624,17 @@ def test_inv_10_label_words_are_offered_unverified_and_the_raw_text_never_leaves
         assert words in text, words
     assert "do not bleach" in text and "Unverified: read from the label" in text
     edits = [json.loads(n["body"])["arguments"] for n in out["net"] if "wardrobe_edit" in n["path"]]
-    assert edits[0]["value"] == {"v": "M", "ok": True} and edits[0]["label_field"] == "size"
-    assert all(e["value"]["ok"] is False for e in edits[1:]) and len(edits) == 7
+    piece = edits[0]["piece"]
+    assert edits == [  # A's shapes (M6): a field read off the photo; Confirm says which he checked
+        {"piece": piece, "size": "M", "read": True, "verify": ["size"]},
+        {
+            "piece": piece,
+            "size": "M",
+            "fabric": ["cotton 60%", "polyester 40%"],
+            "care": ["machine_wash", "cold_wash", "do_not_bleach"],
+            "read": True,
+        },
+    ]
     blob = json.dumps(out["net"])
     assert "BRANDNAME" not in blob and "MADE IN" not in blob and "MACHINE WASH" not in blob
 

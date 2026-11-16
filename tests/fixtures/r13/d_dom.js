@@ -86,6 +86,7 @@ const document = {
 let vision = Object.assign({ person: false, face: false, codes: [], embed: null, colour: { name: 'navy', share: 0.9 }, text: '', delay_ms: 0 }, input.vision || {});
 const missing = new Set(input.missing || []);
 let offline = !!input.offline;
+let toolFail = Number(input.toolFail) || 0; // the first n tool calls fail on the network (a retry follows)
 const ok = (task, data) => Object.freeze({ task, v: 1, ok: true, data, quality: { light: 0.5, sharp: 0.5 } });
 const JarvisVision = {
   async run(task, src) {
@@ -117,7 +118,8 @@ async function api(p, opts) {
   if (offline && p.startsWith('/v1/wardrobe/scan')) { const e = new TypeError('Failed to fetch'); throw e; }
   const answers = Object.assign({ '/v1/wardrobe?private=1': input.view, '/v1/wardrobe/fingerprints?model=mnv2-int8-1': { model: 'mnv2-int8-1', items: input.prints || [] },
     '/v1/wardrobe/scan': { applied: 1, duplicates: 0, review: 0, already_done: false, marks: {}, message: 'Saved.' } }, input.answers || {});
-  if (p.startsWith('/v1/wardrobe/tools/')) return { status: 'executed', message: 'Done, Sir.', result: p.endsWith('wardrobe_add') ? { piece: 'wi_0000000000ff' } : {} };
+  if (p.startsWith('/v1/wardrobe/tools/') && toolFail > 0) { toolFail -= 1; throw new TypeError('Failed to fetch'); }
+  if (p.startsWith('/v1/wardrobe/tools/')) return { status: 'executed', message: 'Done, Sir.', result: p.endsWith('wardrobe_add') ? { status: 'done', ids: ['wi_0000000000ff'], new: ['wi_0000000000ff'] } : (input.toolResult || {}) };
   if (p === '/v1/wardrobe/fingerprints' && o.body) return { piece: o.body.piece, view: o.body.view, model: o.body.model };
   const a = answers[p];
   if (a === undefined) { const e = new Error('Not found.'); e.status = 404; throw e; }

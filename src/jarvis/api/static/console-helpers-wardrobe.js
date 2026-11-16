@@ -8,8 +8,8 @@
 //   Settings             the calendar and its fields, the evening alert, auto-swap, AI tagging, backup and restore
 // Built only from window.JarvisHelpers' builders (row, toggle, section, note, empty) and existing classes, so the look
 // does not change. The routes and shapes are jarvis.wardrobe.http's; every change goes through
-// POST /v1/wardrobe/tools/{tool} (the gateway: its rows, cards and audit) except C's settings (PUT /v1/outfits/settings),
-// labels (POST /v1/wardrobe/labels) and the backup file. A calendar's title is shown while he looks and never stored.
+// POST /v1/wardrobe/tools/{tool} (the gateway: its rows, cards and audit) except the settings (C's PUT /v1/outfits/settings,
+// A's PUT /v1/wardrobe/settings: never a tool the model can call), labels (POST /v1/wardrobe/labels) and the backup file. A calendar's title is shown while he looks and never stored.
 // textContent only; nothing asked before sign-in; ASCII source.
 const H = window.JarvisHelpers;
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
@@ -195,7 +195,7 @@ function settingRows() {
   out.push(H.row('Tomorrow\u2019s outfit, the evening before', 'An alert at 20:00 for an event on your calendar.', [H.toggle('Evening outfit alert', set.plan_alerts !== false, (on) => outfit({ plan_alerts: on }))]));
   out.push(H.row('Swap a planned piece by itself', 'Off: JARVIS suggests a ready one and you tap.', [H.toggle('Auto-swap', !!set.auto_swap, (on) => outfit({ auto_swap: on }))]));
   out.push(H.row('AI tagging', 'Off. When on: only for a saved piece that is not private, after the photo check, at most \u20b9' + (set.tag_cap_inr || 30) + ' a month; \u20b9' + Number(set.tag_month_inr || 0).toFixed(2) + ' this month.',
-    [H.toggle('AI tagging', !!set.ai_tagging, (on) => tool('wardrobe_edit', { settings: { ai_tagging: on } }))]));
+    [H.toggle('AI tagging', !!set.ai_tagging, (on) => wardrobeSettings({ ai_tagging: on }))]));
   const photos = H.mk('input', '');
   photos.type = 'checkbox'; photos.id = 'wdBackupPhotos';
   const tick = H.mk('label', 'hp-field wd-tick');
@@ -205,6 +205,13 @@ function settingRows() {
   return out;
 }
 function fieldsWith(f, on, set) { const now = new Set(set.fields || ['title']); if (on) now.add(f); else now.delete(f); return ['title', 'location'].filter((x) => now.has(x)); }
+async function wardrobeSettings(body) { // A's own settings: owner-only, never a tool the model can call (M6; I1 adds the route)
+  UI.busy = true;
+  try { await H.api('/v1/wardrobe/settings', { method: 'PUT', body }); say('ok', 'Saved.'); } catch (e) {
+    if (e && (e.status === 404 || e.status === 405)) say('bad', 'This switch arrives with the next JARVIS update.'); else failed(e);
+  } finally { UI.busy = false; }
+  await load();
+}
 async function putSettings(body) {
   UI.busy = true;
   const b = Object.assign({}, body);

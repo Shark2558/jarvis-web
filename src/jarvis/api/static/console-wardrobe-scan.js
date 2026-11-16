@@ -292,6 +292,7 @@ function readCodes(r) { // his labels become ids; anything else is only counted,
 }
 async function cardFor(cv, b) {
   const piece = crop(cv, b, PHOTO_SIDE), card = { box: b, crop: piece, v: null, cands: { top: [], twins: false }, colour: null, piece: null, kind: '', private: null,
+    client: 'wd' + randomId(14), adding: false, // M6: one client id a card: a second press or a retry is the same piece at A
     whole: b.w * b.h > WHOLE_MAX }; // M2: no edges found: taps and matches only, nothing kept or sent
   try {
     const e = await run('embed', piece);
@@ -302,8 +303,8 @@ async function cardFor(cv, b) {
 }
 
 // ---- the server: his list and his fingerprints (after sign-in, on a press) -------------------------------------------------
-async function loadView() {
-  if (S.view) return S.view;
+async function loadView(fresh) {
+  if (S.view && !fresh) return S.view;
   S.view = await M.api('/v1/wardrobe?private=1');
   if (!S.place) { const home = (S.view.places || []).find((p) => p.kind === 'storage'); S.place = home ? home.id : ''; }
   return S.view;
@@ -355,7 +356,7 @@ function chooseActs(card) {
   const out = [];
   const label = [...S.found.keys()];
   if (card.cands.twins) out.push(mk('p', 'snote warn', TWINS_NOTE));
-  const picks = card.cands.top.map((c) => btn('This one: ' + nameOf(c.piece) + banded(c), c.band === 'likely' ? 'primary' : '', () => pick(card, c.piece, 'match', c.score)));
+  const picks = card.cands.top.map((c, i) => btn('This one: ' + nameOf(c.piece) + banded(c), c.band === 'likely' ? 'primary' : '', () => pick(card, c.piece, i ? 'tap' : 'match', card.cands.top[0].score)));
   label.forEach((id) => picks.unshift(btn('This one: ' + nameOf(id) + ' (label read)', 'primary', () => pick(card, id, 'qr', null))));
   if (picks.length) { const a = mk('div', 'sacts'); a.append(...picks); out.push(a); }
   const chips = mk('div', 'sacts wd-chips');
@@ -370,7 +371,9 @@ function chooseActs(card) {
     out.push(mk('p', 'snote', 'Make it private? A private piece is counted only, never named outside your Wardrobe tab, and keeps no photo.'), a);
   } else if (card.kind) {
     const a = mk('div', 'sacts');
-    a.append(btn('Save as a new piece', 'primary', () => addPiece(card)));
+    const add = btn('Save as a new piece', 'primary', () => addPiece(card));
+    add.disabled = card.adding;
+    a.append(add);
     out.push(a);
   }
   return out;
@@ -431,7 +434,7 @@ function pickRows(card) {
   const out = [];
   if (card.cands.twins) out.push(mk('p', 'snote warn', TWINS_NOTE));
   const a = mk('div', 'sacts');
-  card.cands.top.forEach((c) => a.append(btn(nameOf(c.piece) + banded(c), '', () => { S.found.set(c.piece, { how: 'match', score: c.score, at: new Date().toISOString() }); card.piece = c.piece; paintBody(); })));
+  card.cands.top.forEach((c, i) => a.append(btn(nameOf(c.piece) + banded(c), '', () => { S.found.set(c.piece, { how: i ? 'tap' : 'match', score: card.cands.top[0].score, at: new Date().toISOString() }); card.piece = c.piece; paintBody(); })));
   if (card.cands.twins) a.append(btn('Not sure which', '', () => { card.cands.top.slice(0, 2).forEach((c) => S.found.set(c.piece, { how: 'unsure', score: c.score, at: new Date().toISOString() })); card.piece = card.cands.top[0].piece; paintBody(); }));
   out.push(a);
   return out;
@@ -457,7 +460,7 @@ function paintFound(list) {
 // ---- sending: ids only, in memory until it is through ----------------------------------------------------------------------
 function event(piece, kind, f, extra) {
   return Object.assign({ client_id: 'wd' + randomId(14), piece, kind, at: (f && f.at) || new Date().toISOString(), source: 'phone', via: S.device,
-    how: f && f.how === 'qr' ? 'qr' : 'match', score: f && typeof f.score === 'number' ? f.score : null, verified: !(f && f.how === 'unsure') }, extra || {});
+    how: f && (f.how === 'qr' || f.how === 'tap') ? f.how : 'match', score: f && typeof f.score === 'number' ? f.score : null, verified: !(f && f.how === 'unsure') }, extra || {});
 }
 async function send(kind) {
   const events = [...S.found.entries()].map(([id, f]) => (kind === 'laundry' ? event(id, 'deposited', f) : event(id, S.dry ? 'returned' : 'needs_prep', f, S.dry && S.place ? { place: S.place } : {})));
@@ -487,11 +490,12 @@ function paintUnsent() {
   UI.unsent.hidden = !S.queue.length;
   UI.unsent.replaceChildren(...(S.queue.length ? [mk('p', 'snote warn', UNSENT + ' (' + S.queue.length + ')'), btn('Send now', '', flush)] : []));
 }
-async function tool(name, args) {
+async function tool(name, args, done) { // a result that refused (A's {status: refused | unavailable | ask}) is said, not taken
   const r = await M.api('/v1/wardrobe/tools/' + name, { body: { arguments: args } }).catch((e) => ({ status: 'error', message: failed(e) }));
-  const ok = r && r.status === 'executed';
-  say(UI.state, r && r.status === 'needs_approval' ? 'That needs your OK: the card is waiting.' : String((r && r.message) || '').slice(0, 200), ok ? 'ok' : 'bad');
-  return ok ? r.result || {} : null;
+  const res = (r && r.result) || {}, ok = !!r && r.status === 'executed' && !['refused', 'unavailable', 'ask'].includes(res.status);
+  const words = r && r.status === 'needs_approval' ? 'That needs your OK: the card is waiting.' : ok ? done || r.message : res.message || res.question || (r && r.message);
+  say(UI.state, String(words || '').slice(0, 200), ok ? 'ok' : 'bad');
+  return ok ? res : null;
 }
 async function pick(card, id, how, score) {
   card.piece = id;
@@ -500,14 +504,15 @@ async function pick(card, id, how, score) {
   await loadView();
   paintBody();
 }
-async function addPiece(card) {
-  const args = { type: card.kind, private: !!card.private };
-  if (card.colour && card.colour.name !== 'multicolour') args.colour = card.colour.name; // a suggestion, never locked
-  const got = await tool('wardrobe_add', args);
-  if (!got || typeof got.piece !== 'string') return;
-  S.view = null;
-  await loadView();
-  card.piece = got.piece;
+async function addPiece(card) { // A's shape: {pieces: [...]} -> {ids, new}; the card's client id makes a retry the same piece
+  if (card.adding) return;
+  card.adding = true; paintBody();
+  const one = { type: card.kind, private: !!card.private, client_id: card.client };
+  if (card.colour && card.colour.name !== 'multicolour') one.colour = card.colour.name; // a suggestion, never locked
+  const got = await tool('wardrobe_add', { pieces: [one] }, 'Added to your wardrobe.');
+  const id = got && Array.isArray(got.ids) && typeof got.ids[0] === 'string' ? got.ids[0] : null;
+  if (id) { await loadView(true).catch(() => null); card.piece = id; }
+  card.adding = false;
   paintBody();
 }
 
@@ -561,30 +566,28 @@ async function readLabel(cv, mine) {
   const got = W.parseLabel(r && r.ok ? r.data.text : '');
   const box = mk('section', 'hp-sec');
   box.append(mk('h3', 'hp-h', 'What the label says'));
-  const fields = [];
-  if (got.size) fields.push(['size', 'Size ' + got.size, { v: got.size }]);
-  got.fabric.forEach((f) => fields.push(['fabric', f.pct + '% ' + f.name, { v: f.name, pct: f.pct }]));
-  got.care.forEach((c) => fields.push(['care', c.replace(/_/g, ' '), { v: c }]));
+  const fields = []; // [A's field, his words, its parsed value]: each field is kept or confirmed whole (M6)
+  if (got.size) fields.push(['size', 'Size ' + got.size, got.size]);
+  if (got.fabric.length) fields.push(['fabric', got.fabric.map((f) => f.pct + '% ' + f.name).join(', '), got.fabric.map((f) => f.name + ' ' + f.pct + '%')]);
+  if (got.care.length) fields.push(['care', got.care.map((c) => c.replace(/_/g, ' ')).join(', '), got.care]);
   if (!fields.length) box.append(mk('p', 'sfine', 'No size, fabric or care words could be read. Type them in Helpers, Wardrobe.'));
   const pieces = ((S.view && S.view.pieces) || []).map((p) => [p.id, nameOf(p.id)]);
   let target = pieces.length ? pieces[0][0] : '';
   if (fields.length && pieces.length) box.append(select('Which piece', pieces, target, (v) => { target = v; }));
-  fields.forEach(([kind, words, value]) => {
-    const keep = btn('Confirm', '', () => labelEdit(target, kind, value, true));
-    box.append(row(words, 'Unverified: read from the label', [keep]));
-  });
+  fields.forEach(([field, words, value]) => box.append(row(words, 'Unverified: read from the label', [btn('Confirm', '', () => labelEdit(target, { [field]: value }, [field]))])));
   if (fields.length) {
     const a = mk('div', 'sacts');
-    a.append(btn('Keep these (unverified)', '', () => fields.forEach(([kind, , value]) => labelEdit(target, kind, value, false))));
+    a.append(btn('Keep these (unverified)', '', () => labelEdit(target, Object.fromEntries(fields.map(([f, , v]) => [f, v])), [])));
     box.append(a);
   }
   UI.labelBox = box;
   say(UI.state, '');
   paint();
 }
-function labelEdit(piece, kind, value, ok) {
+function labelEdit(piece, read, verify) { // A: read off a photo (unverified); Confirm says which fields he checked
   if (!piece) return null;
-  return tool('wardrobe_edit', { piece, label_field: kind, value: Object.assign({}, value, { ok }) });
+  const args = Object.assign({ piece }, read, { read: true }, verify.length ? { verify } : {});
+  return tool('wardrobe_edit', args, verify.length ? 'Confirmed.' : 'Kept, unverified until you confirm.');
 }
 
 // ---- joining the camera panel ----------------------------------------------------------------------------------------------

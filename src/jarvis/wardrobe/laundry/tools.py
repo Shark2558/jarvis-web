@@ -20,9 +20,12 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from pydantic import ValidationError
+
 from jarvis.belongings.tools import origin_of
 from jarvis.core.channel import on_telegram
 from jarvis.core.guardrails import ActionRisk
+from jarvis.logging import get_logger
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.provenance import vouch
@@ -33,6 +36,8 @@ from jarvis.wardrobe.laundry.flows import Desk, Done
 from jarvis.wardrobe.laundry.store import LaundryUnavailable, Origin
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import MAX_RESULT_PIECES, SPOKEN_OK, Refused
+
+log = get_logger(__name__)
 
 AGENT = "laundry"
 
@@ -72,6 +77,9 @@ async def _guarded(work: Any) -> Any:
         return {"status": "refused", "message": str(exc)}
     except LaundryUnavailable as exc:
         return {"status": "unavailable", "message": str(exc)}
+    except ValidationError as exc:  # review L5: a record past its limits, said plainly
+        log.warning("a laundry record was too big", extra={"errors": exc.error_count()})
+        return {"status": "refused", "message": texts.TOO_BIG}
 
 
 class LaundryAPI:

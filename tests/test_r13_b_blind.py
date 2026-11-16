@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from r13_fakes import UID, ev, ist
+from r13_fakes import UID, ev, ist, piece
 from r13_fakes_b import (
     BELT,
     BLUE_SHIRT,
@@ -24,7 +24,9 @@ from r13_fakes_b import (
     rig,
 )
 
-from jarvis.wardrobe.ports import Refused
+from jarvis.storage.docs import DocTx
+from jarvis.wardrobe.model import WardrobeView
+from jarvis.wardrobe.ports import Commit, Refused
 
 
 async def test_ops_02_the_pieces_touched_are_verified_before_they_reach_a_ready_plan() -> None:
@@ -153,3 +155,63 @@ async def test_ops_02_m4_already_only_when_a_blind_check_covers_every_touched_pi
     done = await r.desk.resolve(UID, blind.id, "these", how="qr")
     assert done.message == "Done: the check is closed." and await r.open_entries() == ()
     assert [await r.state(p) for p in (BELT, WATCH)] == ["ready", "ready"]
+
+
+async def test_l4_a_blind_report_for_today_before_noon_starts_now() -> None:
+    r = await rig()  # 16 Nov 2026, 09:01 IST
+    got = await r.desk.blind(UID, places=(TRAY,), day=date(2026, 11, 16))
+    assert got.status == "review"
+    (entry,) = await r.open_entries()
+    assert entry.since == r.clock()  # never "ahead": noon has not come yet
+    with pytest.raises(Refused) as ahead:
+        await r.desk.blind(UID, places=(RACK,), day=date(2026, 11, 17))
+    assert str(ahead.value) == "A time can be at most 30 days back and never ahead."
+
+
+async def _many_at_the_rack(r, n: int) -> None:  # type: ignore[no-untyped-def]
+    made = [piece(f"wi_{k:012x}", "shirt", colour="white", place=RACK) for k in range(900, 900 + n)]
+
+    async def fn(view: WardrobeView, tx: DocTx) -> Commit:
+        regs = tuple(ev(p.id, "registered", r.clock(), place=RACK) for p in made)
+        return Commit(events=regs, records=tuple(made))
+
+    await r.store.transact(UID, fn)
+
+
+async def test_l5_a_blind_report_over_200_pieces_is_held_in_checks_of_at_most_200() -> None:
+    r = await rig()
+    await _many_at_the_rack(r, 230)
+    at_rack = [p.id for p in (await r.view()).active() if p.place == RACK and p.state == "ready"]
+    r.clock.advance(minutes=1)
+    commits = len(r.docs.tx_sizes)
+    got = await r.desk.blind(UID, places=(RACK,))
+    assert got.status == "review" and got.message == (
+        f"Noted: {len(at_rack)} pieces wait for a quick check in Helpers, Wardrobe before "
+        "they're offered again."
+    )
+    checks = [e for e in await r.open_entries() if e.reason == "blind"]
+    assert [len(e.pieces) for e in checks] == [200, len(at_rack) - 200]
+    assert len(r.docs.tx_sizes) == commits + 2 and max(r.docs.tx_sizes[commits:]) < 500
+    view = await r.view()
+    assert all(view.pieces[p].hold == "blind" for p in at_rack)
+
+
+async def test_l5_a_record_too_big_to_note_is_refused_in_plain_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.wardrobe.laundry.store import Entry
+
+    r = await rig()
+
+    async def too_big(*_a: object, **_k: object) -> object:
+        return Entry.model_validate(
+            {"id": "rv_" + "0" * 10, "kind": "rescan", "opened_at": r.clock(),
+             "pieces": [f"wi_{k:012x}" for k in range(201)]}
+        )  # fmt: skip
+
+    monkeypatch.setattr(r.desk, "blind", too_big)
+    res = await r.tool("laundry_review", action="blind", places=[RACK])
+    assert res.result == {
+        "status": "refused",
+        "message": "That is more than JARVIS can note at once: name fewer pieces or places.",
+    }

@@ -135,16 +135,30 @@ class Desk(DeskCore):
         day: date | None = None,
         via: str = "panel",
     ) -> Done:
-        now, _, zone = await self.today(uid)
+        """OPS-02. A day without a time is 12:00 his time, or now for today before noon (L4).
+        Past `blind.CHUNK` pieces, each commit holds at most that many with its own check
+        (Entry and Firestore's 500 writes a commit, L5); a later chunk holds nothing twice."""
+        now, today, zone = await self.today(uid)
         if day is not None:
-            since = datetime.combine(day, time(12, 0), tzinfo=zone).astimezone(UTC)
+            noon = datetime.combine(day, time(12, 0), tzinfo=zone).astimezone(UTC)
+            since = min(noon, now) if day == today else noon
 
         def plan(view: WardrobeView, laundry: LaundryDoc, queue: ReviewDoc) -> Change:
             return blind.plan_blind(
                 view, queue, places=places, categories=categories, since=since, now=now
             )
 
-        return await self._commit(uid, plan, via=via)
+        first = last = await self._commit(uid, plan, via=via)
+        held = len(first.pieces) if first.status == "review" else 0
+        for _ in range(-(-self.ctx.s.wardrobe_max_pieces // blind.CHUNK)):
+            if last.status != "review" or len(last.pieces) < blind.CHUNK:
+                break
+            last = await self._commit(uid, plan, via=via)
+            held += len(last.pieces) if last.status == "review" else 0
+        if held <= len(first.pieces):
+            return first
+        words = texts.blind_noted(held)
+        return Done("review", words, first.pieces, first.committed, first.entry)
 
     async def _originals(self, uid: str, entry_id: str, outcome: Outcome) -> dict[str, Event]:
         """The unverified events a "yes, it happened" records again (read before the commit):

@@ -27,6 +27,7 @@ from jarvis.wardrobe.states import State
 
 AT_REST: frozenset[State] = frozenset({"ready", "in_laundry", "needs_prep"})
 STATED_WINDOW = timedelta(days=30)
+CHUNK = 200  # pieces one blind check (and one commit) holds: Entry's cap, < 500 writes a commit
 
 
 def check_since(since: datetime | None, now: datetime) -> None:
@@ -65,8 +66,8 @@ def plan_blind(
     check_since(since, now)
     found = touched(view, places, categories)
     cover = covered(queue)
-    affected = [p for p in found if p.state in AT_REST]
-    elsewhere = tuple(p.id for p in found if p.state == "review" and p.id not in cover)
+    elsewhere = tuple(p.id for p in found if p.state == "review" and p.id not in cover)[:CHUNK]
+    affected = [p for p in found if p.state in AT_REST][: CHUNK - len(elsewhere)]
     if not affected and not elsewhere:
         if any(p.state == "review" for p in found):  # a blind check covers every one of them
             return Change(words=texts.ALREADY, already=True)
@@ -133,4 +134,13 @@ def settle(doc: ReviewDoc, pid: str, skip: str, now: datetime) -> ReviewDoc:
     return put(doc, e.model_copy(update=update))
 
 
-__all__ = ["AT_REST", "check_since", "covered", "plan_blind", "rehold", "settle", "touched"]
+__all__ = [
+    "AT_REST",
+    "CHUNK",
+    "check_since",
+    "covered",
+    "plan_blind",
+    "rehold",
+    "settle",
+    "touched",
+]

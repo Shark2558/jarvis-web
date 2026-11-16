@@ -240,23 +240,29 @@ async def pilot(request: Request, uid: str = Depends(current_user)) -> JSONRespo
 
 
 # ---- the panel's changes through the gateway (D1) ------------------------------------------------
-async def _conversation(request: Request, uid: str) -> str | None:
+async def _conversation(request: Request, uid: str, session_id: str | None = None) -> str | None:
+    """The conversation a card waits in: his open one when it is his, else a new one of his own.
+    One that is gone, or not his, is never used and never loses the press."""
     store = getattr(request.app.state, "store", None)
     if store is None:
         return None
+    if session_id:
+        found = await store.get(session_id)
+        if found is not None and found.user_id == uid:
+            return session_id
     made = Session(user_id=uid, metadata={"persona": PERSONA_VERSION})
     await store.save(made)
     return str(made.id)
 
 
-def _tool_reply(res: GatewayResult) -> JSONResponse:
+def _tool_reply(res: GatewayResult, sid: str | None = None) -> JSONResponse:
     if res.outcome is GatewayOutcome.EXECUTED:
         result = res.result if isinstance(res.result, dict) else {"value": res.result}
         words = str(result.get("message") or result.get("status") or "Done.")
         return ok(http.ToolReply(status="executed", message=words, result=result))
     if res.outcome is GatewayOutcome.AWAITING_CONFIRMATION and res.pending is not None:
         return ok(http.ToolReply(status="needs_approval", message=res.pending.summary,
-                                 approval_id=res.pending.id))  # fmt: skip
+                                 approval_id=res.pending.id, session_id=sid))  # fmt: skip
     if res.outcome is GatewayOutcome.DENIED:
         return ok(http.ToolReply(status="denied", message="Switched off in your Permissions."))
     words = (res.error or "That couldn't be done.").split(" (")[0][:200]
@@ -285,10 +291,11 @@ async def tools(
     res = await run(PLAIN_SCOPE)
     if res.pending is not None:  # a card waits in a real conversation of his
         await gateway.gate.cancel(res.pending.id)
-        sid = await _conversation(request, uid)
+        sid = await _conversation(request, uid, body.session_id)
         if sid is None:
             return err(422, "That needs your OK, and there is no conversation to ask it in.")
         res = await run(sid)
+        return _tool_reply(res, sid)
     return _tool_reply(res)
 
 

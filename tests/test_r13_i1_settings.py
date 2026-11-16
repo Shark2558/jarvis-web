@@ -68,3 +68,38 @@ async def test_the_view_reads_the_calendar_choice_from_c_not_from_the_index(
         got = http.WardrobeView.model_validate((await c.get("/v1/wardrobe", headers=AUTH)).json())
         assert (got.settings.plan_alerts, got.settings.auto_swap) == (False, True)
         assert got.settings.fields == ("title",) and not got.settings.calendar_chosen
+
+
+async def test_a_panel_card_waits_in_his_open_conversation_never_a_strangers(
+    settings: Settings,
+) -> None:
+    """INTEGRATION-A 6.5: `ToolCall.session_id` and the reply's `session_id`."""
+    from test_r13_a_routes import _add
+
+    from jarvis.api.identity import primary_user_id
+    from jarvis.core.models import Session
+
+    async with running(_owner(settings)) as (app, c):
+        uid = primary_user_id(app.state.settings)
+        mine, theirs = Session(user_id=uid), Session(user_id="someone-else")
+        await app.state.store.save(mine)
+        await app.state.store.save(theirs)
+        keep, other = await _add(c, {"type": "watch", "label": "Steel watch"}, {"type": "watch"})
+        args = {"keep": keep, "merge": other}
+        got = await c.post(
+            "/v1/wardrobe/tools/wardrobe_merge",
+            json={"arguments": args, "session_id": str(mine.id)},
+            headers=AUTH,
+        )
+        reply = http.ToolReply.model_validate(got.json())
+        assert reply.status == "needs_approval" and reply.session_id == str(mine.id)
+        [card] = await app.state.gateway.gate.pending()
+        assert card.scope == f"{uid}:{mine.id}"
+        await app.state.gateway.gate.cancel(card.id)
+        alien = await c.post(
+            "/v1/wardrobe/tools/wardrobe_merge",
+            json={"arguments": args, "session_id": str(theirs.id)},
+            headers=AUTH,
+        )
+        again = http.ToolReply.model_validate(alien.json())
+        assert again.session_id not in (None, str(mine.id), str(theirs.id))  # a new one of his

@@ -351,6 +351,7 @@ class ToolReply(_M):
     message: str
     result: dict[str, object] | None = None
     approval_id: str | None = None
+    session_id: str | None = None  # the conversation a card waits in (the panel keeps it)
 
 
 __all__ = [

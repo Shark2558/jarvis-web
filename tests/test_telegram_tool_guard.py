@@ -251,9 +251,8 @@ def r14_tools(google: Any, docs: Any) -> tuple[Any, ...]:
 
 
 def r13_tools(docs: Any) -> tuple[Any, ...]:
-    """The four R13 parts built through the real wiring on fakes (none has a tool at I0; the 18
-    arrive here as Parts A-C build them, so every wardrobe read must pick a side: they are all
-    behind the personal switch, D18)."""
+    """The four R13 parts built through the real wiring on fakes (the 18 tools, so every wardrobe
+    read must pick a side: they are all behind the personal switch, D18)."""
     from datetime import UTC, datetime
     from zoneinfo import ZoneInfo
 
@@ -268,7 +267,7 @@ def r13_tools(docs: Any) -> tuple[Any, ...]:
     ctx = WardrobeContext(
         s=get_settings(),
         docs=docs,
-        keyring=None,
+        keyring=Keyring(bytes(range(1, 33))),  # R13 I1: A is on, so its tools and B's and C's exist
         audit=AuditLog(),
         now=lambda: datetime(2026, 11, 16, 6, 30, tzinfo=UTC),  # 12:00 IST, a fixed clock
         zone=zone,

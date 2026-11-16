@@ -46,29 +46,13 @@ async def test_the_registers_open_reads_agree_with_the_telegram_guard() -> None:
     assert R14_OPEN <= open_reads
 
 
-def _r13_staged() -> frozenset[str]:
-    """R13 I0: the wardrobe's 18 tools stay `planned` while Parts A-C build them on their own
-    branches, until I1 flips evals/r13/run.py's STUBS_PASS and empties the list (plan seam 13)."""
-    import importlib.util
-
-    from jarvis.wardrobe.ports import TOOL_OWNER
-
-    spec = importlib.util.spec_from_file_location("r13_run_flag", ROOT / "evals" / "r13" / "run.py")
-    assert spec is not None and spec.loader is not None
-    runner = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = runner
-    spec.loader.exec_module(runner)
-    return frozenset(TOOL_OWNER) if runner.STUBS_PASS else frozenset()
-
-
 async def test_the_planned_list_names_no_tool_that_is_built() -> None:
     """I1: every R14 part is built, so a tool still listed as `planned` would hide a rename
-    from the stale-name check (`SkillRegister.problems`). R13's planned tools may be built on a
-    part's branch until R13's I1 (`_r13_staged`)."""
+    from the stale-name check (`SkillRegister.problems`). R13's I1 emptied the list."""
     gw = await linked_gateway()
     register = SkillRegister(load_catalogue())
     built = {s.name for s in gw.registry.specs()}
-    stale = (register.catalogue.planned & built) - _r13_staged()
+    stale = register.catalogue.planned & built
     assert not stale, sorted(stale)
 
 

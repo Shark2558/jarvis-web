@@ -712,13 +712,13 @@ def test_the_book_still_reads_r7s_vision_versions_beside_the_wardrobe_release() 
 
 
 # ---- 13 · the skill register (D18) ---------------------------------------------------------------
-def test_the_register_files_the_18_planned_tools_in_three_groups() -> None:
+def test_the_register_files_the_18_wardrobe_tools_in_three_groups() -> None:
     from jarvis.skills.registry import SkillRegister, load_catalogue
     from jarvis.wardrobe.ports import NO_AI_TOOLS, TOOL_OWNER
 
     reg = SkillRegister(load_catalogue())
     cat = reg.catalogue
-    assert set(TOOL_OWNER) <= cat.planned  # I1 empties `planned` (test_r14_skill_coverage.py)
+    assert not cat.planned  # I1 emptied `planned`: every tool it named is built
     assert NO_AI_TOOLS <= cat.no_ai and not set(TOOL_OWNER) & set(cat.telegram_open)
     for tool in TOOL_OWNER:
         assert len(reg.filed(tool)) == 1, tool
@@ -735,13 +735,14 @@ def test_the_register_files_the_18_planned_tools_in_three_groups() -> None:
         assert word in groups["outfits"].words, word
 
 
-def test_a_pattern_may_wait_for_a_planned_tool_but_not_for_nothing() -> None:
-    from jarvis.skills.registry import SkillRegister, load_catalogue
-    from jarvis.tools.registry import ToolRegistry
+async def test_no_pattern_or_name_of_the_wardrobe_is_stale_once_planned_is_empty() -> None:
+    from test_r14_skill_coverage import linked_gateway
 
-    problems = SkillRegister(load_catalogue()).problems(ToolRegistry())
-    assert not any("wardrobe_*" in p or "laundry_*" in p or "outfit_*" in p for p in problems)
-    assert not any("wear_*" in p for p in problems)
+    from jarvis.skills.registry import SkillRegister, load_catalogue
+
+    gw = await linked_gateway()
+    problems = SkillRegister(load_catalogue()).problems(gw.registry)
+    assert not any(w in p for p in problems for w in ("wardrobe_", "laundry_", "outfit_", "wear_"))
 
 
 # ---- 15 · the eval runner, staged (M11) ----------------------------------------------------------
@@ -775,16 +776,25 @@ def test_the_r13_runner_passes_staged_and_its_contract_control_fails_it() -> Non
     assert "contract:refuses_another_parts_tool" in ids
     control = report["negative_control"]
     assert control["suite_failed"] is True and control["failed_cases"]["contract"]
-    assert control["stubs_pass"] is True  # I0 to I1
+    assert control["stubs_pass"] is False and control["parts_not_built"] == []  # after I1
 
 
-def test_the_gate_is_staged_until_i1_and_a_stub_fails_once_it_flips() -> None:
+def test_the_gate_is_flipped_at_i1_and_a_stub_fails_and_every_part_is_built() -> None:
     import asyncio
+    from types import SimpleNamespace
 
     runner = _runner()
-    assert runner.STUBS_PASS is True  # type: ignore[attr-defined]  # I1 sets False and this pins it
-    results, _ = asyncio.run(runner.run_parts(("catalog",), stubs_pass=False))  # type: ignore[attr-defined]
-    assert [(r["id"], r["passed"]) for r in results] == [("catalog:not_built_yet", False)]
+    assert runner.STUBS_PASS is False  # type: ignore[attr-defined]  # I1 flipped it: pinned
+    assert all(runner.load(p).BUILT for p in runner.PARTS)  # type: ignore[attr-defined]
+
+    async def not_built() -> list[dict[str, object]]:
+        return [{"id": "x:not_built_yet", "passed": True, "failures": []}]
+
+    stub = SimpleNamespace(BUILT=False, cases=not_built)
+    runner.load = lambda part: stub  # type: ignore[attr-defined]
+    results, controls = asyncio.run(runner.run_parts(("catalog",)))  # type: ignore[attr-defined]
+    assert [(r["id"], r["passed"]) for r in results] == [("x:not_built_yet", False)]
+    assert controls == {}
 
 
 def test_the_r13_suite_is_gated_in_run_all_mock() -> None:

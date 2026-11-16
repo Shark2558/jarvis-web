@@ -2,12 +2,7 @@
   "version": 1,
   "about": "R14 D11: the skill register (docs/plans/r14-hardening.md). Every tool is filed under one group of one of the 11 skills by its name: an exact name wins over a family (a pattern with *). 'words' choose the turn's tools (D9): a word matches at the start of a word in his message (three letters or fewer: the whole word, or with an s). 'core' is offered on every turn. 'telegram_open' names the read tools Telegram answers (every other read is refused there by a telegram/rules.py pattern). 'no_ai' names the tools No-AI mode reaches. 'planned' names tools another R14 part is building, so this list may name them before they exist. R13 I0 (docs/plans/r13-wardrobe.md D18): the wardrobe's 18 tools are 'planned' until Parts A-C build them (a group's pattern may wait for a planned tool); I1 empties the list.",
   "core": ["skills_open", "reminder_add", "calendar_list_events", "memory_search"],
-  "planned": [
-    "wardrobe_find", "wardrobe_count", "wardrobe_add", "wardrobe_edit", "wardrobe_places",
-    "wardrobe_merge", "wardrobe_retire", "wardrobe_remove", "laundry_status", "laundry_move",
-    "laundry_review", "laundry_correct", "laundry_send_out", "outfit_suggest", "outfit_plans",
-    "outfit_plan", "outfit_prefs", "wear_log"
-  ],
+  "planned": [],
   "telegram_open": [
     "calendar_free_slots", "calendar_list_events", "family_free_slots", "gmail_track_packages",
     "grocery_list", "list_tasks", "tasks_list", "reminders_list", "memory_search",

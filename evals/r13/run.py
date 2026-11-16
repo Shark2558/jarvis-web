@@ -22,10 +22,10 @@ Every part file exposes PART, BUILT, `async def cases() -> list[dict]` (each {"i
 "<part>:<case>", "passed", "failures"}) and `async def control() -> dict` ({"name",
 "suite_failed", "failed_cases"}: its cases re-run with its negative control applied).
 
-STAGED (plan seam 15, review M11): until I1 an unbuilt part reports "<part>:not_built_yet" and
-PASSES (`STUBS_PASS = True`, the R7 and R11 runners' rule before their I1s), so `make eval-mock`
-stays green on every branch while the parts are built. I1 sets `STUBS_PASS = False` (R14's rule:
-a stub never reads as green) and `tests/test_r13_seams.py` pins the flip from then on. The suite
+STAGED (plan seam 15, review M11): until I1 an unbuilt part reported "<part>:not_built_yet" and
+PASSED (`STUBS_PASS = True`, the R7 and R11 runners' rule before their I1s) while the parts were
+built. I1 set `STUBS_PASS = False` (R14's rule: a stub never reads as green): all seven parts are
+built now, and `tests/test_r13_seams.py` pins the flip. The suite
 passes when every case passes AND every BUILT part's control made that part fail (a suite that
 cannot fail proves nothing). Gated in `make eval-mock` (evals/run_all_mock.py) from I0.
 """
@@ -50,7 +50,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from r1d_common import finish  # noqa: E402
 
 PARTS = ("catalog", "laundry", "styling", "phone", "e2e", "needles", "contract")
-STUBS_PASS = True  # I0 to I1: an unbuilt part passes; I1 sets False (pinned by the seam test)
+STUBS_PASS = (
+    False  # a stub never reads as green (R14's rule; I1 flipped it, pinned by the seam test)
+)
 
 
 def load(part: str) -> ModuleType | None:

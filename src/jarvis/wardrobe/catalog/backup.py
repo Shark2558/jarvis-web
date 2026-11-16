@@ -3,23 +3,28 @@
 
 One file, made line by line and streamed (never whole in memory):
 
-    JWB1 {"v": 1, "kid": "tk1", "photos": false}\\n          the head, in clear (no data of his)
-    <base64 line 1>\\n ... <base64 line N>\\n                  each line sealed with the `wardrobe`
-                                                            key, AAD `wardrobe/backup/{uid}/v1/{n}`
+    JWB1 {"v": 2, "kid": "tk1", "photos": false, "fid": <16 hex>}\\n   the head, in clear
+    <base64 line 1>\\n ... <base64 line N>\\n       each line sealed with the `wardrobe` key,
+        AAD `wardrobe/backup/{uid}/v1/{fid}/{n}`; line 1's AAD also ends `|<SHA-256 of the head>`
 
 A line is `{"t": "index" | "log" | "photo" | "fp" | "end", "d": ...}`: the index (pieces, pairs,
 sets, places, labels, states, his settings), each piece's whole event log, and ONLY when he ticks
 "include photos" each photo's and fingerprint shard's stored document as it is (their own sealed
 blobs, never opened for the backup); the last line counts the lines before it. The line number
-in each AAD makes a reordered, spliced or cut file fail to open. It opens only on this JARVIS for
-him with today's key; after a key change (`keyring.KEY_ID`) older files can't be read.
+in each AAD makes a reordered, spliced or cut file fail to open; the file's own random id (`fid`)
+makes a line of another of his files fail to open; the head (its "photos" too) is bound into line
+1's seal, so it can't be changed (review A-1 L1). It opens only on this JARVIS for him with
+today's key; after a key change (`keyring.KEY_ID`) older files can't be read.
 A file larger than `wardrobe_backup_max_mb` with photos is refused in words: download it without
 photos (R14's Firestore backups keep them).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
+import secrets
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -29,13 +34,16 @@ from jarvis.wardrobe.catalog.store import CatalogStore
 from jarvis.wardrobe.ports import Refused
 
 MAGIC = b"JWB1 "
-VERSION = 1
+VERSION = 2  # 2: the head names its file (`fid`) and is bound into line 1's seal (L1)
+FID = re.compile(r"^[0-9a-f]{16}$")
 TOO_BIG = "With photos this backup is over {mb} MB: download it without photos."
 KEY_NOTE = "It opens only on this JARVIS; after a key change older backup files can't be read."
 
 
-def aad_line(uid: str, n: int) -> str:
-    return f"{aad_backup(uid)}/{n}"
+def aad_line(uid: str, fid: str, n: int, head: bytes | None = None) -> str:
+    """Line `n` of his file `fid`; line 1 also names the exact head it came with."""
+    base = f"{aad_backup(uid)}/{fid}/{n}"
+    return f"{base}|{hashlib.sha256(head).hexdigest()}" if head is not None else base
 
 
 class Backup:
@@ -43,8 +51,8 @@ class Backup:
         self.store, self.vault, self.max_bytes = store, vault, max_mb * 1024 * 1024
         self.max_mb = max_mb
 
-    def _line(self, uid: str, n: int, kind: str, data: Any) -> bytes:
-        blob = self.store.sealer.seal("wardrobe", aad_line(uid, n), {"t": kind, "d": data})
+    def _line(self, aad: str, kind: str, data: Any) -> bytes:
+        blob = self.store.sealer.seal("wardrobe", aad, {"t": kind, "d": data})
         return blob.encode() + b"\n"
 
     async def _photo_docs(self, uid: str) -> list[tuple[str, dict[str, Any]]]:
@@ -67,26 +75,28 @@ class Backup:
 
     async def lines(self, uid: str, *, photos: bool = False) -> AsyncIterator[bytes]:
         """The file, line by line (the route streams it)."""
-        head = {"v": VERSION, "kid": self.store.sealer.kid, "photos": photos}
-        yield MAGIC + dumps(head) + b"\n"
+        fid = secrets.token_hex(8)
+        head = MAGIC + dumps({"v": VERSION, "kid": self.store.sealer.kid, "photos": photos,
+                              "fid": fid})  # fmt: skip
+        yield head + b"\n"
         view = await self.store.view(uid)
         n = 1
-        yield self._line(uid, n, "index", view.to_json())
+        yield self._line(aad_line(uid, fid, n, head), "index", view.to_json())
         for pid in view.pieces:
             n += 1
             events = [e.to_json() for e in await self.store.events(uid, pid, view=view)]
-            yield self._line(uid, n, "log", {"p": pid, "e": events})
+            yield self._line(aad_line(uid, fid, n), "log", {"p": pid, "e": events})
         if photos:
             for ph, doc in await self._photo_docs(uid):
                 n += 1
-                yield self._line(uid, n, "photo", {"id": ph, "doc": doc})
+                yield self._line(aad_line(uid, fid, n), "photo", {"id": ph, "doc": doc})
             for shard in range(MAX_SHARDS):
                 found = await self.store.docs.get(self.vault.prints.path(uid, shard))
                 if found is None:
                     break
                 n += 1
-                yield self._line(uid, n, "fp", {"n": shard, "doc": found})
-        yield self._line(uid, n + 1, "end", {"lines": n})
+                yield self._line(aad_line(uid, fid, n), "fp", {"n": shard, "doc": found})
+        yield self._line(aad_line(uid, fid, n + 1), "end", {"lines": n})
 
     async def file(self, uid: str, *, photos: bool = False) -> bytes:
         """The whole file (tests and the eval; the route streams `lines`)."""
@@ -94,4 +104,4 @@ class Backup:
         return b"".join([chunk async for chunk in self.lines(uid, photos=photos)])
 
 
-__all__ = ["KEY_NOTE", "MAGIC", "TOO_BIG", "VERSION", "Backup", "aad_line"]
+__all__ = ["FID", "KEY_NOTE", "MAGIC", "TOO_BIG", "VERSION", "Backup", "aad_line"]

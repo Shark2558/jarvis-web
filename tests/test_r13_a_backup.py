@@ -44,9 +44,11 @@ async def test_the_file_is_sealed_line_by_line_and_says_nothing_in_clear() -> No
     await _seed(cat)
     body = await desk(cat).backup.file(UID)
     head, *rest = body.rstrip(b"\n").split(b"\n")
-    assert head.startswith(MAGIC) and json.loads(head[len(MAGIC) :]) == {
-        "v": 1, "kid": "tk1", "photos": False
+    fields = json.loads(head[len(MAGIC) :])
+    assert head.startswith(MAGIC) and fields == {
+        "v": 2, "kid": "tk1", "photos": False, "fid": fields["fid"]
     }  # fmt: skip
+    assert len(fields["fid"]) == 16  # this file's own id: its lines open in no other file
     assert b"Sock" not in body and b"Drawer" not in body and b"deposited" not in body
     assert len(rest) == 1 + 4 + 1  # the index, four logs, the end
 

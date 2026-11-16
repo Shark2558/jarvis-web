@@ -30,7 +30,7 @@ from typing import Any
 
 from jarvis.keyring import KEY_ID
 from jarvis.storage.docs import DocTx, Op, Set
-from jarvis.wardrobe.catalog.backup import MAGIC, VERSION, aad_line
+from jarvis.wardrobe.catalog.backup import FID, MAGIC, VERSION, aad_line
 from jarvis.wardrobe.catalog.photos import MAX_SHARDS, Get, PhotoVault, is_entry
 from jarvis.wardrobe.catalog.sealed import aad_prints
 from jarvis.wardrobe.catalog.store import CatalogStore
@@ -75,6 +75,8 @@ def _head(line: bytes) -> dict[str, Any]:
     head = json.loads(line[len(MAGIC) :])
     if head.get("v") != VERSION or head.get("kid") != KEY_ID:
         raise ValueError("version or key")
+    if not isinstance(head.get("photos"), bool) or not FID.match(str(head.get("fid", ""))):
+        raise ValueError("head")
     return dict(head)
 
 
@@ -82,7 +84,9 @@ def parse(store: CatalogStore, uid: str, body: bytes) -> Parsed:
     try:
         lines = body.rstrip(b"\n").split(b"\n")
         head = _head(lines[0])
-        rows = [store.sealer.open("wardrobe", aad_line(uid, n), ln.decode("ascii"))
+        fid = str(head["fid"])
+        rows = [store.sealer.open("wardrobe", aad_line(uid, fid, n, lines[0] if n == 1 else None),
+                                  ln.decode("ascii"))
                 for n, ln in enumerate(lines[1:], start=1)]  # fmt: skip
         if not rows or rows[-1].get("t") != "end" or rows[-1]["d"]["lines"] != len(rows) - 1:
             raise ValueError("cut")

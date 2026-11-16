@@ -38,3 +38,35 @@ async def test_l5_the_file_is_parsed_off_the_event_loop(monkeypatch: pytest.Monk
     check = await desk(cat).restore.check(UID, body)
     await desk(cat).restore.apply(UID, body, check.token)
     assert len(seen) == 2 and threading.get_ident() not in seen  # voice and chat keep running
+
+
+async def test_l1_the_head_is_bound_to_the_file_and_a_flipped_head_does_not_open() -> None:
+    from jarvis.wardrobe.catalog.restore import UNREADABLE
+    from jarvis.wardrobe.ports import Refused
+
+    cat = catalog()
+    await _shirts(cat)
+    body = await desk(cat).backup.file(UID)
+    flipped = body.replace(b'"photos":false', b'"photos":true', 1)
+    assert flipped != body
+    with pytest.raises(Refused) as got:
+        await desk(cat).restore.check(UID, flipped)  # "with photos" is not his to claim
+    assert str(got.value) == UNREADABLE
+
+
+async def test_l1_a_line_from_another_of_his_files_does_not_open() -> None:
+    from jarvis.wardrobe.catalog.restore import UNREADABLE
+    from jarvis.wardrobe.ports import Refused
+
+    cat = catalog()
+    await _shirts(cat)
+    one, two = await desk(cat).backup.file(UID), await desk(cat).backup.file(UID)
+    a, b = one.rstrip(b"\n").split(b"\n"), two.rstrip(b"\n").split(b"\n")
+    for spliced in (
+        [a[0], a[1], b[2], *a[3:]],  # line 2 of his other file, in its own place
+        [b[0], *a[1:]],  # the other file's head on this one's lines
+    ):
+        with pytest.raises(Refused) as got:
+            await desk(cat).restore.check(UID, b"\n".join(spliced) + b"\n")
+        assert str(got.value) == UNREADABLE
+    assert (await desk(cat).restore.check(UID, one)).counts.already_there == 3  # whole: it opens

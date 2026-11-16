@@ -30,7 +30,7 @@
   const Show = () => window.JarvisBookShow;
   const V = () => window.JarvisBookVoice;
   const S = { lines: {}, phase: 'show', busy: false, left: null, lockId: '', poll: 0, recording: false, wired: false, gen: 0, retry: null,
-    canRec: false, quiet: 0, owner: false, browser: true, voice: 'browser', hush: 0, syncing: false };
+    canRec: false, quiet: 0, owner: false, browser: true, voice: 'browser', hush: 0, syncing: false, starting: false };
   const SILENT_MS = 1500; // no frame this long after the microphone opened: no sound is coming
   const HEAR = {
     listening: 'Listening\u2026 tap the mic again to stop.',
@@ -163,16 +163,22 @@
   }
   async function mic() {
     const R = V() && V().record, A = AU();
-    if (!R || S.busy || !S.canRec) return;
+    if (!R || S.busy || S.starting || !S.canRec) return;
     if (S.recording) { if (S.browser) V().listen.stop(); else await sendRec(); return; }
     if (A && A.locked()) { refused('mic_off'); return; } // nothing opens while it is off
     S.hush += 1; V().stop(); // code review 2, L3: a reply still being spoken stops, so the mic never hears it
-    await refresh();
+    const gen = S.gen; S.starting = true; // review 3: the panel as it is now; a second tap waits for this one
+    try { await refresh(); await begin(R, gen); } finally { S.starting = false; }
+  }
+  /** After the choice was read again: only into the same panel, and only if "Mic off" is still off. */
+  async function begin(R, gen) {
+    const A = AU();
+    if (gen !== S.gen) return; // the panel closed (Finish, End, a jump) during the read: nothing starts
+    if (A && A.locked()) { refused('mic_off'); return; } // "Mic off" was set during the read
     if (S.recording || S.busy) return;
     if (!S.canRec) { micState(); return; } // the tap found no way to listen with the choice as it is now
-    if (S.browser) { listenHere(); return; }
-    const gen = S.gen; // the panel closed (a jump, End, the close) while the microphone was starting: it never records
-    try {
+    if (S.browser) { listenHere(gen); return; }
+    try { // the panel may also close while the microphone is starting: it never records
       if (!(await R.start())) return;
       if (gen !== S.gen) { R.cancel(); return; }
       S.recording = true; R.onFull(() => sendRec());
@@ -218,8 +224,7 @@
     S.busy = false; leftWords(); $('shQ').focus();
   }
   // ---- decision 4's default: this browser's own recogniser; its words get the free corrections --------------------
-  function listenHere() {
-    const gen = S.gen;
+  function listenHere(gen) {
     try { if (!V().listen.start((got) => heardHere(got, gen))) return; } catch (e) { refused(e && e.code); return; }
     S.recording = true; pressed(true); hearLine(HEAR.listening);
   }

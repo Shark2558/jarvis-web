@@ -11,7 +11,11 @@
 #   - a photo with a face or a person keeps and sends nothing
 #   - To laundry reads his label LIVE and sends one deposit; a network failure keeps it unsent in
 #     memory until "Send now"; Stop ends the camera
-#   - the visual gate at 1440x900 and 390x844, Night and Day; screenshots into /tmp/r13-d-shots
+#   - H2 (REVIEW-D-1): a 70 px face beside a piece in a 1600 x 1200 photo passes the whole-photo
+#     check, and the real UltraFace on the crop at Save keeps and sends nothing; M1: a step change
+#     ends the camera
+#   - the visual gate at 1440x900 and 390x844, Night and Day; screenshots only where R13_D_SHOTS says
+#   - the page clock is pinned (16 Nov 2026, 09:30 IST: the fake server's own time); no fixed sleeps
 # ruff: noqa: E501 -- JavaScript strings
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ import os
 import time
 import urllib.request
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +36,8 @@ from ui_checks import DOM_CHECKS_JS, FINISH_ANIMATIONS_JS, install_mocks
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 pytestmark = pytest.mark.browser
-SHOTS = Path(os.environ.get("R13_D_SHOTS", "/tmp/r13-d-shots"))
+SHOTS = os.environ.get("R13_D_SHOTS", "")  # screenshots only when asked for
+PAGE_NOW = datetime(2026, 11, 16, 4, 0, tzinfo=UTC)  # 09:30 IST, the fake server's SERVED_AT
 PERSON = (
     "This picture shows a person. Lay the piece on a surface or hang it, and take the photo again."
 )
@@ -105,6 +111,7 @@ def seen(url: str, token: str, path: str = "/v1/test/r13-d") -> Any:
 
 def wardrobe(browser: Any, url: str, token: str, viewport: dict[str, int] = DESKTOP) -> Console:
     c = Console(browser, url, token, viewport)
+    c.page.clock.set_system_time(PAGE_NOW)  # "today" on the door's counter is this day, every run
     install_mocks(c.page)
     c.open()
     c.open_panel("camera")
@@ -258,15 +265,56 @@ def test_to_laundry_reads_his_label_live_and_an_unsent_scan_waits(
         c.close()
 
 
+def test_h2_a_small_face_only_its_crop_shows_keeps_and_sends_nothing(
+    browser: Any, d_url: str, token: str, tmp_path: Path
+) -> None:
+    pic = Picture(1600, 1200).rect(500, 300, 500, 600, (28, 36, 78)).face(1080, 360, 70)
+    c = wardrobe(browser, d_url, token)
+    try:
+        before = seen(d_url, token)
+        choose(c, picture(tmp_path, "small-face", pic))
+        button(c, "Shirt").wait_for()
+        assert PERSON not in pane_text(c)  # the whole photo's check passed: the miss H2 closes
+        button(c, "Shirt").click()
+        button(c, "Save as a new piece").click()
+        button(c, SAVE).wait_for()  # offered: the crop's own check runs at the press
+        button(c, SAVE).click()
+        until(c.page, lambda: PERSON in pane_text(c), "the crop's refusal")
+        assert button(c, SAVE).count() == 0 and button(c, "Remember how it looks").count() == 0
+        after = seen(d_url, token)
+        assert (
+            after["photos"] == before["photos"] and after["fingerprints"] == before["fingerprints"]
+        )
+        assert "Pictures sent from this device today: 0" in pane_text(c)
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def test_m1_a_step_change_ends_the_live_camera(browser: Any, d_url: str, token: str) -> None:
+    c = wardrobe(browser, d_url, token)
+    try:
+        button(c, "To laundry").click()
+        button(c, "Start the camera").click()
+        until(c.page, lambda: "Its label was read" in pane_text(c), "his label read live")
+        button(c, "Add pieces").click()
+        until(c.page, lambda: c.page.evaluate("window.JarvisCamera.live()") is False, "camera off")
+        assert c.page.locator("#camp-wardrobe video").count() == 0
+        assert "Its label was read" not in pane_text(c)
+    finally:
+        c.close()
+
+
 def _audit(c: Console, vp: str, what: str, shot: str) -> None:
-    c.page.wait_for_timeout(400)
+    c.page.evaluate("() => document.fonts.ready.then(() => true)")
     c.page.evaluate(FINISH_ANIMATIONS_JS)
     sel = "#p-camera"
     res = c.page.evaluate(DOM_CHECKS_JS, sel)
     assert not res.get("missing"), what
     _assert_clean(res, c.page.evaluate(NAMELESS_JS, sel), c.page.evaluate(WRAP_JS, sel), vp, what)
-    SHOTS.mkdir(parents=True, exist_ok=True)
-    c.page.screenshot(path=str(SHOTS / f"{shot}.png"))
+    if SHOTS:
+        Path(SHOTS).mkdir(parents=True, exist_ok=True)
+        c.page.screenshot(path=str(Path(SHOTS) / f"{shot}.png"))
 
 
 @pytest.mark.parametrize("surface", ["night", "day"])

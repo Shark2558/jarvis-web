@@ -7,7 +7,8 @@
 #   - a change goes through POST /v1/wardrobe/tools/{tool} (the gateway); the calendar picker says
 #     the governed read's answer; the QR sheet downloads as a file
 #   - before sign-in the tab asks the server nothing
-#   - the visual gate at 1440x900 and 390x844, Night and Day; screenshots into /tmp/r13-d-shots
+#   - the visual gate at 1440x900 and 390x844, Night and Day; screenshots only if R13_D_SHOTS says
+#   - the page clock is pinned (16 Nov 2026, 09:30 IST); no fixed sleeps (L5)
 from __future__ import annotations
 
 import json
@@ -15,6 +16,7 @@ import os
 import time
 import urllib.request
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +28,8 @@ from ui_checks import DOM_CHECKS_JS, FINISH_ANIMATIONS_JS, install_mocks
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 pytestmark = pytest.mark.browser
-SHOTS = Path(os.environ.get("R13_D_SHOTS", "/tmp/r13-d-shots"))
+SHOTS = os.environ.get("R13_D_SHOTS", "")  # screenshots only when asked for
+PAGE_NOW = datetime(2026, 11, 16, 4, 0, tzinfo=UTC)  # 09:30 IST, the fake server's SERVED_AT
 TAB_KEY = "try { localStorage.setItem('jarvis_helpers_tab', 'wardrobe'); } catch (e) {}"
 
 
@@ -67,6 +70,7 @@ def seen(url: str, token: str) -> Any:
 
 def tab(browser: Any, url: str, token: str, viewport: dict[str, int] = DESKTOP) -> Console:
     c = Console(browser, url, token, viewport)
+    c.page.clock.set_system_time(PAGE_NOW)  # "today" and "tomorrow" are these days, every run
     install_mocks(c.page)
     c.open()
     c.open_panel("helpers")
@@ -171,12 +175,13 @@ def test_before_sign_in_the_tab_asks_the_server_nothing(
 ) -> None:
     c = Console(browser, d_url, token, DESKTOP)
     try:
+        c.page.clock.set_system_time(PAGE_NOW)
         c.page.add_init_script(TAB_KEY)  # last visit left Helpers on Wardrobe
         asked: list[str] = []
         c.page.on("request", lambda r: asked.append(r.url))
         c.page.goto(d_url + "/")
         c.page.locator("#tokIn").wait_for()
-        c.page.wait_for_timeout(1500)
+        c.page.wait_for_load_state("networkidle")  # every module the page starts has loaded
         wardrobe = ("/v1/wardrobe", "/v1/laundry", "/v1/outfits")
         assert not [u for u in asked if any(p in u for p in wardrobe)]
     finally:
@@ -184,15 +189,16 @@ def test_before_sign_in_the_tab_asks_the_server_nothing(
 
 
 def _audit(c: Console, vp: str, what: str, shot: str) -> None:
-    c.page.wait_for_timeout(400)
+    c.page.evaluate("() => document.fonts.ready.then(() => true)")
     c.page.evaluate(FINISH_ANIMATIONS_JS)
     sel = "#p-helpers"
     res = c.page.evaluate(DOM_CHECKS_JS, sel)
     assert not res.get("missing"), what
     _assert_clean(res, c.page.evaluate(NAMELESS_JS, sel), c.page.evaluate(WRAP_JS, sel), vp, what)
-    SHOTS.mkdir(parents=True, exist_ok=True)
-    c.page.screenshot(path=str(SHOTS / f"{shot}.png"))
-    c.page.locator("#p-helpers").screenshot(path=str(SHOTS / f"{shot}-panel.png"))
+    if SHOTS:
+        Path(SHOTS).mkdir(parents=True, exist_ok=True)
+        c.page.screenshot(path=str(Path(SHOTS) / f"{shot}.png"))
+        c.page.locator("#p-helpers").screenshot(path=str(Path(SHOTS) / f"{shot}-panel.png"))
 
 
 @pytest.mark.parametrize("surface", ["night", "day"])

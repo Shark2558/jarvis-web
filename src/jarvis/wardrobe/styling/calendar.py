@@ -18,7 +18,9 @@ the fields he picks.
   (`entries`): what is kept (`wardrobe_cal/{uid}`, sealed) is each event's keyed fingerprint, its
   times or day, its `updated` stamp, the dress code and occasion found, and outdoor or not. A
   title is never stored, sent or logged.
-- `sync(doc, entries, span, ...)` (pure): a new event makes a plan (tentative); an edited one
+- `sync(doc, entries, span, ...)` (pure): a new event makes a plan (tentative); a plan he kept
+  when he switched this calendar off, never edited (still tentative, not worn), is taken back
+  when he picks the same calendar again (code review H2); an edited one
   (its `updated` stamp) refreshes its times and, while tentative, its dress code; a calendar plan
   whose event is missing from a read that covers its window is cancelled: kept as a draft, never
   an `outfit_ready` (D13).
@@ -255,6 +257,9 @@ def sync(
     touched: list[str] = []
     for e in entries:
         plan = doc.by_event(e.k)
+        if plan is not None and plan.manual and plan.tentative and not plan.worn:
+            plan = plan.model_copy(update={"manual": False})  # his calendar again: taken back
+            doc, touched = doc.put(plan), [*touched, plan.id]
         if plan is None or plan.manual:
             if plan is None and len(doc.plans) < MAX_PLANS:  # past 60: no more, said in counts
                 made = _plan_of(e, zone, now)

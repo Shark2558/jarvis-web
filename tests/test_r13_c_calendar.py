@@ -213,3 +213,41 @@ async def test_no_evening_alert_when_he_turned_it_off_or_without_a_key() -> None
         "weather": 0,
     }
     assert RING is not None
+
+
+# ---- code review H2: a toggle keeps what it did not send; security review L5 ---------------------
+async def test_a_toggle_without_the_calendar_keeps_his_calendar_its_plans_and_his_choices() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=FakeGoogle(events={WORK: [_meeting()]}))
+    await _pick(w, auto_swap=True)
+    await _tick(w)
+    async with await _client(w) as c:  # D's panel: one toggle, `calendar` left out
+        got = await c.put("/v1/outfits/settings", json={"plan_alerts": True, "fields": ["title"]})
+    assert got.status_code == 200
+    assert (got.json()["calendar_chosen"], got.json()["auto_swap"]) == (True, True)
+    assert [p.manual for p in await _plans(w)] == [False]
+    w.clock.set(ist(2026, 11, 16, 20, 0))
+    await _tick(w)
+    assert [k for k, _ in w.notifier.sent] == ["outfit_ready"]
+
+
+async def test_choosing_the_same_calendar_again_takes_back_the_plans_he_never_edited() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=FakeGoogle(events={WORK: [_meeting()]}))
+    await _pick(w)
+    await _tick(w)
+    await _pick(w, cal="")  # off: its plan stays, his own
+    assert [p.manual for p in await _plans(w)] == [True]
+    await _pick(w)
+    await _tick(w)
+    assert [p.manual for p in await _plans(w)] == [False]  # the same one plan, not two
+    w.clock.set(ist(2026, 11, 16, 20, 0))
+    await _tick(w)
+    assert [k for k, _ in w.notifier.sent] == ["outfit_ready"]
+
+
+async def test_switching_the_calendar_off_deletes_its_last_read() -> None:
+    w = await world(at=ist(2026, 11, 16, 18, 0), google=FakeGoogle(events={WORK: [_meeting()]}))
+    await _pick(w)
+    await _tick(w)
+    assert await w.docs.get(f"jarvis_wardrobe_cal/{UID}") is not None
+    await _pick(w, cal="")
+    assert await w.docs.get(f"jarvis_wardrobe_cal/{UID}") is None

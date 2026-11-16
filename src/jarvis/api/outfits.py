@@ -38,6 +38,7 @@ from jarvis.wardrobe.styling.service import Answer, Here, Styling
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 NOT_SET_UP = "Outfits aren't set up on this JARVIS."
+SENT_FIELDS = frozenset({"fields", "lead_h", "plan_alerts", "auto_swap"})
 
 
 def _ok(model: Any) -> JSONResponse:
@@ -129,32 +130,39 @@ def _settings_view(s: Styling, choice: Choice, view: WardrobeView | None) -> htt
 async def put_settings(
     request: Request, body: http.OutfitSettings, uid: str = Depends(current_user)
 ) -> JSONResponse:
+    """What he sent changes; what he did not send stays (code review H2: D's panel sends one
+    toggle without `calendar`). An explicit `"calendar": null` switches his calendar off."""
     if (refused := limited(request, "outfits_settings", uid, change=True)) is not None:
         return refused
     s, off = _styling(request)
     if s is None or off:
         return _err(422, off or NOT_SET_UP)
+    keep_cal = "calendar" not in body.model_fields_set
+    calendar = getattr(_refresh(request), "calendar", None)
     cal_id: str | None = None
-    if body.calendar is not None:
-        calendar = getattr(_refresh(request), "calendar", None)
+    if not keep_cal and body.calendar is not None:
         cal_id, why = await calendar.resolve(uid, body.calendar) if calendar else (None, NOT_SET_UP)
         if cal_id is None:
             return _err(422, why)
-    here = await s.where(uid)
-    choice = Choice(calendar=cal_id, fields=body.fields, lead_h=body.lead_h,
-                    plan_alerts=body.plan_alerts, auto_swap=body.auto_swap)  # fmt: skip
+    sent = body.model_dump(include=set(body.model_fields_set) & SENT_FIELDS)
+    here, moved = await s.where(uid), {"calendar": False}
 
     def apply(d: StylingDoc) -> StylingDoc:
-        moved = d.choice.calendar != choice.calendar
-        out = manual_from_now(d, here.now) if moved and d.choice.calendar else d
-        reset = {"cal_read_at": None, "cal_failed_at": None} if moved else {}
-        return out.model_copy(update={"choice": choice, **reset})
+        cal = d.choice.calendar if keep_cal else cal_id
+        choice = d.choice.model_copy(update={**sent, "calendar": cal})
+        moved["calendar"] = d.choice.calendar != cal
+        if not moved["calendar"]:
+            return d.model_copy(update={"choice": choice})
+        out = manual_from_now(d, here.now) if d.choice.calendar else d
+        return out.model_copy(update={"choice": choice, "cal_read_at": None, "cal_failed_at": None})
 
-    await s.change(uid, apply)
-    fields = sorted(body.fields)
+    doc = await s.change(uid, apply)
+    if moved["calendar"] and calendar is not None:
+        await calendar.sealed.delete(uid)  # the last read of a calendar he left (security L5)
     await record_change(request, agent="outfits", tool="outfit_settings",
-                        args={"calendar": cal_id is not None, "fields": fields})  # fmt: skip
-    return _ok(_settings_view(s, choice, await s.view(uid)))
+                        args={"calendar": doc.choice.calendar is not None,
+                              "fields": sorted(doc.choice.fields)})  # fmt: skip
+    return _ok(_settings_view(s, doc.choice, await s.view(uid)))
 
 
 __all__ = ["router"]

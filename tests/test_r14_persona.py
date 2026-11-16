@@ -19,7 +19,7 @@ def _flat(rule: str) -> str:
 
 
 def test_the_persona_is_p14_0_with_its_note() -> None:
-    assert p.PERSONA_VERSION == "p14.0"
+    assert p.PERSONA_VERSION == "p13.0"  # R13 (v13.0.0) set it at its I1; the p14.0 note stays
     assert "# p14.0: R14" in PROMPTS.read_text(encoding="utf-8")
 
 

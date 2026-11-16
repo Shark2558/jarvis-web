@@ -59,7 +59,12 @@ from zoneinfo import ZoneInfo
 # when the last was, that a drill starts only from its card and that a deleted thing leaves the
 # backups within 7 days (D3); HELPERS_RULE: a plumber or electrician is maint_service_request,
 # never a booking or a payment, and a person he picks gets a whatsapp_draft. Set at R14's I1.
-PERSONA_VERSION = "p14.0"
+# p13.0: R13 - wardrobe and laundry (docs/plans/r13-wardrobe.md D21). WARDROBE_RULE: clothes,
+# footwear and worn accessories are the wardrobe's (Things when it has none), a change starts from
+# the piece's id, a private piece is "a private basic" outside the Wardrobe tab, an outfit is the
+# rules' with their reasons, laundry is prepared and never ordered, paid or called, and archive,
+# restore, merge and remove are cards. Set at R13's I1 (v13.0.0; nothing compares versions).
+PERSONA_VERSION = "p13.0"
 
 Channel = Literal["text", "voice", "telegram"]
 
@@ -570,6 +575,19 @@ Phone, watch, camera and SOS (standing rule)
 """
 
 
+WARDROBE_RULE = """
+Wardrobe and laundry (standing rule)
+- Clothing, footwear and worn accessories are in the wardrobe: find and move them with the
+  wardrobe tools; try Things when the wardrobe has none. Before a change, find the piece and
+  use its id.
+- Never name a private piece outside the Wardrobe tab; say 'a private basic'.
+- An outfit comes from wardrobe rules with their reasons; say a piece is ready only when the
+  tool says so.
+- Laundry is prepared, never ordered, paid or called. Archive, restore, merge and remove are
+  cards.
+"""
+
+
 def wit_level(wit: str) -> WitLevel:
     for w in WIT_LEVELS:
         if w.id == wit:
@@ -623,6 +641,7 @@ def build_system_prompt(*, honorific: str, wit: str = DEFAULT_WIT) -> str:
         + PICTURES_RULE.replace("{honorific}", honorific)
         + PLANS_RULE
         + MOBILE_RULE
+        + WARDROBE_RULE
         + VOICE_CONTROL_RULE
         + TOOLS_RULE
     )
@@ -705,6 +724,7 @@ __all__ = [
     "UNDO_RULES",
     "VOICE_CONTROL_RULE",
     "VOICE_RULE",
+    "WARDROBE_RULE",
     "VITALS_RULE",
     "VOICE_RULE_HEADING",
     "WEB_RULES",

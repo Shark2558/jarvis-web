@@ -747,7 +747,7 @@ def test_the_persona_opens_a_skill_while_the_offer_is_on_by_default() -> None:
         assert len(bullets) >= 5, bullets  # the rules, web, Drive, the tools rule, Maps/YouTube
         stale = [b[:70] for b in bullets if "skills_open" not in b]
         assert not stale, f"{wit}: {stale}"
-    assert PERSONA_VERSION == "p14.0"
+    assert PERSONA_VERSION == "p13.0"
 
 
 def test_the_common_brief_names_the_contract_the_guards_and_the_hook() -> None:

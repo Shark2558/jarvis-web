@@ -277,6 +277,40 @@ def test_m1_a_live_send_or_cancel_keeps_the_view_and_never_offers_that_label_aga
 LBL = "jw1:abcdefgh"
 
 
+# ---- M2: a "crop" that is the whole photo is never kept or sent; the crop is shown first -------
+BARE = {"bg": [230, 228, 220], "rects": []}  # a white shirt on a white sheet: no edges to find
+WIDE = {
+    "x": 0.04,
+    "y": 0.06,
+    "w": 0.92,
+    "h": 0.88,
+    "rgb": [28, 36, 78],
+}  # its box: 88 % of the photo
+SCENES = [BARE, {"bg": [230, 228, 220], "rects": [WIDE]}]
+WHOLE = (
+    "JARVIS couldn’t find the piece’s edges: lay it on a plain surface of another colour so the "
+    "photo can be cropped to it."
+)
+
+
+@pytest.mark.parametrize("scene", SCENES, ids=["bare", "wide"])
+def test_m2_a_whole_frame_box_offers_taps_only_and_sends_nothing(scene: dict[str, Any]) -> None:
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    on = _view(ai_tagging=True, tag_month_inr=0.02, tag_cap_inr=30)
+    out = scan([*PHOTO, pick], vision={"embed": _vec(11)}, view=on, scene=scene)
+    assert WHOLE in out["final"] and out["steps"][-1]["shown"] == []
+    for words in (SAVE, "Remember how it looks", TAG):
+        assert words not in out["final"]
+    assert kept_or_sent(out) == [] and len(posts(out, "/v1/wardrobe/scan")) == 1  # the tap
+
+
+def test_m2_the_card_shows_the_exact_crop_before_anything_is_sent() -> None:
+    pick = press(f"This one: {VIEW_NAME[NAVY]} (likely this one)")
+    out = scan([*PHOTO, pick, press(SAVE)], vision={"embed": _vec(11)})
+    [shown] = out["steps"][2]["shown"]  # drawn on the card, above Save, before any press
+    assert out["door"][0]["from"] == shown and "Save keeps exactly this crop:" in out["final"]
+
+
 # ---- D10: private pieces ------------------------------------------------------------------------
 def test_d10_a_private_piece_never_gets_a_photo_a_fingerprint_or_a_tag() -> None:
     out = scan(

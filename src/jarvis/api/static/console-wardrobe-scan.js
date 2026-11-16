@@ -33,6 +33,8 @@ const CHECKING = 'Checking\u2026';
 const UNSENT = 'Not sent yet: keep this page open.';
 const FOREIGN = 'A code here is not a JARVIS label, so it was ignored.';
 const PRIVATE_NOTE = 'A private piece keeps no photo and no fingerprint.';
+const WHOLE = 'JARVIS couldn\u2019t find the piece\u2019s edges: lay it on a plain surface of another colour so the photo can be cropped to it.';
+const WHOLE_MAX = 0.85; // a box over this share of the photo is not a crop of a piece (M2)
 const TWINS_NOTE = 'Identical copies: read its label or tap which one.';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const SIGN_IN = 'Sign in first.';
@@ -286,7 +288,8 @@ function readCodes(r) { // his labels become ids; anything else is only counted,
   if (UI.body) paintBody();
 }
 async function cardFor(cv, b) {
-  const piece = crop(cv, b, PHOTO_SIDE), card = { box: b, crop: piece, v: null, cands: { top: [], twins: false }, colour: null, piece: null, kind: '', private: null };
+  const piece = crop(cv, b, PHOTO_SIDE), card = { box: b, crop: piece, v: null, cands: { top: [], twins: false }, colour: null, piece: null, kind: '', private: null,
+    whole: b.w * b.h > WHOLE_MAX }; // M2: no edges found: taps and matches only, nothing kept or sent
   try {
     const e = await run('embed', piece);
     if (e.ok) { card.v = e.data.v; card.cands = W.candidates(W.unb64(e.data.v), await printsFor(e.data.model), (id) => (pieceOf(id) || {}).type); }
@@ -374,16 +377,22 @@ function chooseActs(card) {
 const colourWords = (c) => (c.name === 'multicolour' ? 'multicolour, mostly ' + String(c.second || '').replace(/_/g, ' ') : c.name.replace(/_/g, ' '));
 function allowed(card) { // D9: a saved piece that is not private, from a photo AND a crop whose checks found nobody
   const p = pieceOf(card.piece), cut = card.cropGate;
-  return !!(p && !p.private && !privateType(p.type) && S.gate && S.gate.checked && !S.gate.refused && !(cut && (!cut.checked || cut.refused))
+  return !!(p && !p.private && !privateType(p.type) && !card.whole && S.gate && S.gate.checked && !S.gate.refused && !(cut && (!cut.checked || cut.refused))
     && card.crop && card.crop.width && S.photo);
 }
-function whyNot(card) { const bad = [S.gate, card && card.cropGate].find((g) => g && g.refused); return bad && bad.checked ? PERSON : NO_CHECK; }
+function whyNot(card) { // the words for why this card keeps and sends nothing
+  if (card && card.whole) return WHOLE;
+  const bad = [S.gate, card && card.cropGate].find((g) => g && g.refused);
+  return bad && bad.checked ? PERSON : NO_CHECK;
+}
 const refuse = (card) => { say(UI.state, whyNot(card), 'bad'); paintBody(); };
 function savedActs(card) {
   const out = [mk('p', 'snote ok', nameOf(card.piece) + ': this piece.')];
   const p = pieceOf(card.piece);
   if (p && (p.private || privateType(p.type))) { out.push(mk('p', 'sfine', PRIVATE_NOTE)); return out; }
   if (!allowed(card)) { out.push(mk('p', 'sfine', whyNot(card))); return out; }
+  card.crop.className = 'wd-crop'; card.crop.setAttribute('role', 'img'); // M2: exactly what Save, Remember or the AI tag use
+  card.crop.setAttribute('aria-label', 'The crop of this piece, on this phone only'); out.push(mk('p', 'sfine', 'Save keeps exactly this crop:'), card.crop);
   const a = mk('div', 'sacts');
   a.append(btn(SAVE_WORDS, 'primary', () => savePhoto(card)));
   if (card.v) a.append(btn('Remember how it looks', '', () => remember(card)));

@@ -8,10 +8,15 @@
 #   - counts add up, the export is each source's plain export under its name, delete (passkey)
 #     empties exactly that row's sources; with nothing built the rows say so and delete nothing;
 #     a source that fails makes only its row "Couldn't check right now"
+#   - FAIL CLOSED (REVIEW-D-1 H3): a source is placed by its own `row`, else by its name (pieces,
+#     photos; laundry and outfits are history); a source that fits no row (A's "catalog" today, a
+#     typo, a row it doesn't know) lands in NO row: every server row is "Couldn't check right
+#     now", nothing is counted, exported or deleted, and no row says "Nothing kept yet"
 from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from r13_fakes import UID, wardrobe_context
 from r13_fakes_d import FakeData, parts_with
 
@@ -69,7 +74,7 @@ async def test_with_nothing_built_the_rows_say_so_and_delete_nothing() -> None:
 
 async def test_the_rows_read_every_parts_data_late_and_add_it_up() -> None:
     pieces = FakeData("pieces", [{"id": "wi_000000000001"}, {"id": "wi_000000000002"}])
-    history = FakeData("history", [{"e": 1}])
+    history = FakeData("wardrobe_log", [{"e": 1}], row="history")  # says its row itself
     laundry = FakeData("laundry", [{"load": 1}, {"load": 2}])
     outfits = FakeData("outfits", [{"plan": 1}])
     photos = FakeData("photos", [{"photo": "wh_000000000001"}])
@@ -84,7 +89,7 @@ async def test_the_rows_read_every_parts_data_late_and_add_it_up() -> None:
     assert all(got[k].encrypted_by_jarvis for k in privacy.ROW_IDS[:3])
     exported = await rows[privacy.HISTORY_ID].export(UID)
     assert exported == {
-        "history": {"items": [{"e": 1}]},
+        "wardrobe_log": {"items": [{"e": 1}]},
         "laundry": {"items": [{"load": 1}, {"load": 2}]},
         "outfits": {"items": [{"plan": 1}]},
     }
@@ -112,3 +117,48 @@ async def test_the_words_say_what_is_never_kept() -> None:
     device = await rows[privacy.DEVICE_ID].describe(UID)
     assert "memory only" in device.what and "closing the page" in device.what
     assert await rows[privacy.DEVICE_ID].export(UID) is None
+
+
+@pytest.mark.parametrize(
+    "stray",
+    [
+        FakeData("catalog", [{"id": "wi_000000000001"}, {"photo": "wh_000000000001"}]),  # A today
+        FakeData("historyy", [{"e": 1}]),  # a typo is not "history"
+        FakeData("pieces", [{"e": 1}], row="everything"),  # a row it doesn't know
+    ],
+    ids=["catalog", "typo", "unknown_row"],
+)
+async def test_a_source_that_fits_no_row_lands_in_none_and_nothing_is_deleted(
+    stray: FakeData,
+) -> None:
+    laundry, photos = FakeData("laundry", [{"load": 1}]), FakeData("photos", [{"p": 1}])
+    rows = _rows(_ctx(parts_with(stray, laundry, photos)))
+    reg = PrivacyRegistry()
+    for row in rows.values():
+        reg.register(row)
+    views = {v.id: v for v in await reg.describe_all(UID)}
+    for rid in privacy.ROW_IDS[:3]:  # never "Nothing kept yet", never deletable
+        assert views[rid].available is False and views[rid].delete == "none", rid
+        assert views[rid].note != privacy.NOTHING_YET and views[rid].count is None
+        with pytest.raises(privacy.UnsortedData):
+            await rows[rid].delete(UID)
+        with pytest.raises(privacy.UnsortedData):
+            await rows[rid].export(UID)
+    assert views[privacy.DEVICE_ID].available is True
+    assert stray.deleted == [] and laundry.deleted == [] and photos.deleted == []
+    assert stray.items and laundry.items and photos.items
+
+
+def test_each_source_finds_its_row_by_its_own_row_else_its_name() -> None:
+    row_of = privacy.row_of
+    assert row_of(FakeData("catalog", row="pieces")) == "pieces"  # A at I1 says its row
+    assert row_of(FakeData("photos")) == "photos" and row_of(FakeData("pieces")) == "pieces"
+    assert row_of(FakeData("laundry")) == row_of(FakeData("outfits")) == "history"
+    assert row_of(FakeData("catalog")) is None and row_of(FakeData("history")) is None
+    assert row_of(FakeData("laundry", row="photos")) == "photos"  # its own word wins
+    assert row_of(FakeData("photos", row="nothing")) is None
+    assert privacy.HISTORY_DATA == {"laundry", "outfits"} and privacy.ROWS == {
+        "pieces",
+        "history",
+        "photos",
+    }

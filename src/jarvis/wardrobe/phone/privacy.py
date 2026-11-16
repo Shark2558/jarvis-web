@@ -3,12 +3,20 @@
 EVERY part's `WardrobeData` (count, a plain export, delete), read late from the app, so a part
 built after D, or rebuilt, is always counted. No row reads a Firestore path itself.
 
-| Row (id)           | Holds                                                 | Its sources         |
-|--------------------|-------------------------------------------------------|---------------------|
-| `wardrobe_pieces`  | the index: pieces, pairs, sets, places, labels        | data named "pieces" |
-| `wardrobe_history` | each piece's events, laundry, the review queue, plans | every other source  |
-| `wardrobe_photos`  | the saved crops and their fingerprints                | data named "photos" |
-| `wardrobe_device`  | nothing on the server or the phone: page memory only  | none                |
+| Row (id)           | Holds                                                   | Its sources                  |
+|--------------------|---------------------------------------------------------|------------------------------|
+| `wardrobe_pieces`  | the index (pieces, pairs, sets, places, labels), each   | row "pieces", or the name    |
+|                    | piece's own history                                     | "pieces"                     |
+| `wardrobe_history` | laundry, the review queue, outfit plans, what he wore   | row "history", or "laundry", |
+|                    |                                                         | "outfits"                    |
+| `wardrobe_photos`  | the saved crops and their fingerprints                  | row "photos", or "photos"    |
+| `wardrobe_device`  | nothing on the server or the phone: page memory only    | none                         |
+
+A source says its row with a `row` attribute (the contract's field at I1, INTEGRATION-D section 6),
+else by its name. FAIL CLOSED (REVIEW-D-1 H3): a source that says no known row, or has an unknown
+name, is never counted, exported or deleted under another row, and while one exists every server
+row is "Couldn't check right now" and deletes nothing, so no row ever claims "Nothing kept yet"
+for data it can't see, and no passkey delete reaches data its label does not name.
 
 The first three are sealed by JARVIS and deleted with the passkey (they can't be brought back);
 the device row has nothing to delete. The export is each source's own plain export under its
@@ -18,7 +26,7 @@ name (`privacy/export.py` scrubs it again); photos are never in it, as bytes or 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Literal, cast
 
 from jarvis.privacy.ports import CategoryView, PrivacySource
 from jarvis.privacy.sources import OURS_ENC, CallbackSource, Look, Spec
@@ -28,27 +36,39 @@ SECTION = "Wardrobe"
 PIECES_ID, HISTORY_ID = "wardrobe_pieces", "wardrobe_history"
 PHOTOS_ID, DEVICE_ID = "wardrobe_photos", "wardrobe_device"
 ROW_IDS: tuple[str, ...] = (PIECES_ID, HISTORY_ID, PHOTOS_ID, DEVICE_ID)
-PIECES_DATA = frozenset({"pieces"})  # A's index
+Row = Literal["pieces", "history", "photos"]
+ROWS: frozenset[str] = frozenset({"pieces", "history", "photos"})
+PIECES_DATA = frozenset({"pieces"})  # A's index and its logs
 PHOTOS_DATA = frozenset({"photos"})  # A's photo vault (photos and fingerprints)
+HISTORY_DATA = frozenset({"laundry", "outfits"})  # B's and C's sources
+_BY_NAME: tuple[tuple[Row, frozenset[str]], ...] = (
+    ("pieces", PIECES_DATA),
+    ("history", HISTORY_DATA),
+    ("photos", PHOTOS_DATA),
+)
 NOTHING_YET = "Nothing kept yet."
 DataFn = Callable[[], Sequence[WardrobeData]]
 
 
-def _pieces(d: WardrobeData) -> bool:
-    return d.name in PIECES_DATA
+class UnsortedData(RuntimeError):
+    """A part's data fits no row: the server rows can't say what they hold (fail closed)."""
 
 
-def _photos(d: WardrobeData) -> bool:
-    return d.name in PHOTOS_DATA
+def row_of(d: WardrobeData) -> Row | None:
+    """The row `d` belongs to: its own `row` when it says one, else its name; None for anything
+    else (never a guess, never "history")."""
+    said = getattr(d, "row", None)
+    if said is not None:
+        return cast(Row, said) if isinstance(said, str) and said in ROWS else None
+    return next((row for row, names in _BY_NAME if d.name in names), None)
 
 
-def _history(d: WardrobeData) -> bool:
-    return not (_pieces(d) or _photos(d))
-
-
-def _row(spec: Spec, data: DataFn, pick: Callable[[WardrobeData], bool]) -> CallbackSource:
+def _row(spec: Spec, data: DataFn, row: Row) -> CallbackSource:
     def mine() -> list[WardrobeData]:
-        return [d for d in data() if pick(d)]
+        every = list(data())
+        if any(row_of(d) is None for d in every):
+            raise UnsortedData("a wardrobe data source fits no Privacy row")  # nothing counted
+        return [d for d in every if row_of(d) == row]
 
     async def look(uid: str) -> Look:
         sources = mine()
@@ -71,9 +91,9 @@ PIECES_SPEC = Spec(
     PIECES_ID,
     SECTION,
     "Wardrobe pieces and places",
-    "Each piece you own (its type, colour, your own label, its state and place), its pairs and "
-    "sets, your places and QR labels, and your wardrobe settings. A private piece is counted "
-    "like the others and never has a photo.",
+    "Each piece you own (its type, colour, your own label, its state and place) and its own "
+    "history (scans, taps and moves), its pairs and sets, your places and QR labels, and your "
+    "wardrobe settings. A private piece is counted like the others and never has a photo.",
     "pieces and places",
     "Until you delete them; a removed piece waits 30 days in Recently deleted",
     OURS_ENC,
@@ -84,9 +104,9 @@ HISTORY_SPEC = Spec(
     HISTORY_ID,
     SECTION,
     "Laundry, outfits and wear history",
-    "Each piece's history (scans, taps, laundry steps and wears), laundry loads and outside "
-    "batches with your label for the shop, the review queue, outfit plans and reservations. A "
-    "calendar event's title is never kept, only its time.",
+    "Laundry steps, loads and outside batches with your label for the shop, the review queue, "
+    "outfit plans, reservations and what you wore. A calendar event's title is never kept, only "
+    "its time.",
     "entries",
     "A piece's history until it is purged; closed laundry and past plans 90 days",
     OURS_ENC,
@@ -147,21 +167,28 @@ class DeviceRow:
 def privacy_rows(data: DataFn) -> tuple[PrivacySource, ...]:
     """The section's four rows over `data()` (every built part's `WardrobeData`, read late)."""
     return (
-        _row(PIECES_SPEC, data, _pieces),
-        _row(HISTORY_SPEC, data, _history),
-        _row(PHOTOS_SPEC, data, _photos),
+        _row(PIECES_SPEC, data, "pieces"),
+        _row(HISTORY_SPEC, data, "history"),
+        _row(PHOTOS_SPEC, data, "photos"),
         DeviceRow(),
     )
 
 
 __all__ = [
     "DEVICE_ID",
+    "HISTORY_DATA",
     "HISTORY_ID",
     "NOTHING_YET",
+    "PHOTOS_DATA",
     "PHOTOS_ID",
+    "PIECES_DATA",
     "PIECES_ID",
+    "ROWS",
     "ROW_IDS",
     "SECTION",
     "DeviceRow",
+    "Row",
+    "UnsortedData",
     "privacy_rows",
+    "row_of",
 ]

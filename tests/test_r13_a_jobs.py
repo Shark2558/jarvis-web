@@ -118,7 +118,12 @@ async def test_a_hold_without_its_entry_is_handed_to_bs_writer_again() -> None:
     got = await _sweep(cat).run([UID])
     assert got["holds"] == 1
     [(need,)] = writer.needed
-    assert (need.kind, need.piece, need.back_to, need.reason) == ("hold", shirt, "ready", "sweep")
+    assert (need.kind, need.piece, need.back_to, need.reason) == (
+        "hold",
+        shirt,
+        "ready",
+        "held",
+    )  # its own hold, so the words say why
 
 
 async def test_one_owner_that_cannot_be_read_never_stops_the_others() -> None:

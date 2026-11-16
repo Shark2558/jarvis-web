@@ -3,9 +3,8 @@
 
 - `tap(...)`: one event B records from his tap (source `tap`, verified, the server's now: one
   phone-clock rule, plan review M1: B never sends a device time, so nothing B writes needs `sent`).
-- `admit(event)`: LND-02. A deposit exists only when he presses "Put in laundry" (the phone sends
-  nothing for a scan he leaves); a `camera` deposit without a release seen over the rim becomes
-  unverified, so the fold holds it and B's writer opens its entry.
+- `admit(event)`: LND-02, now the contract's (`wardrobe.model.admit`, applied by the store to every
+  incoming event); re-exported here. A deposit exists only when he presses "Put in laundry".
 - `plausible(view, category, now)`: LND-03. For "and N more I couldn't show": the pieces of that
   category he is wearing or wore in the last 24 hours (never a guess beyond them).
 - `match(view, query)`: his words for a piece, matched strictly (every word he said must be one
@@ -28,7 +27,7 @@ from typing import Any, Literal
 from jarvis.belongings.text import thing_key
 from jarvis.wardrobe.laundry import texts
 from jarvis.wardrobe.laundry.store import Change, Entry, new_entry_id
-from jarvis.wardrobe.model import Event, Evidence, Piece, WardrobeView, new_id
+from jarvis.wardrobe.model import Event, Evidence, Piece, WardrobeView, admit, new_id
 from jarvis.wardrobe.ports import Refused
 from jarvis.wardrobe.states import EventKind, State, allowed, target_of
 
@@ -54,14 +53,6 @@ def tap(pid: str, kind: EventKind, now: datetime, **fields: Any) -> Event:
             **{k: v for k, v in fields.items() if v is not None},
         }
     )
-
-
-def admit(event: Event) -> Event:
-    """LND-02: a camera deposit counts only with a release seen; else it waits for a check."""
-    if event.source == "camera" and event.kind == "deposited":
-        if event.evidence.released is not True:
-            return event.model_copy(update={"verified": False})
-    return event
 
 
 def plausible(

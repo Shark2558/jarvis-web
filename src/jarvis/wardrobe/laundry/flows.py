@@ -233,12 +233,17 @@ class Desk(DeskCore):
         return await self._reopen(uid, piece, done.committed) or done
 
     async def _reopen(self, uid: str, piece: str, done: Committed) -> Done | None:
-        """Review H3's stop-gap: a correction that leaves the piece held gets its check in a
-        second commit (the atomic fix is I1's: the fold asks for it); A's sweep stays the
-        backstop if this one fails."""
+        """A correction that leaves the piece held has its check: the fold asked for it in the
+        correction's own commit (I1, H3), so the answer names that entry. The second commit
+        (review H3's stop-gap) stays as a backstop when none is open; A's sweep after it."""
         p = done.view.piece(piece)
         if p is None or p.state != "review":
             return None
+        _, _, queue = await self.read(uid)
+        cover = next((e for e in review.open_entries(queue) if piece in e.pieces), None)
+        if cover is not None:  # an open check answers it; the words say so only if this opened it
+            asked = any(n.kind == "hold" and n.piece == piece for n in done.needed)
+            return Done("review", texts.CORRECTED_HELD, (piece,), done, cover.id) if asked else None
         now = self.ctx.now()
 
         def plan(view: WardrobeView, laundry: LaundryDoc, queue: ReviewDoc) -> Change:

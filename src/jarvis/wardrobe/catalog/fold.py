@@ -126,7 +126,10 @@ def _move(f: _Acc, e: Event) -> Mark:
     target = target_of(e.kind, f.state, to=e.to, back_to=f.back_to)
     hand_off = e.kind == "wear_started" and f.state == "in_use" and (e.plan or e.id) != f.wear
     if target is not None and target == f.state and not hand_off:
-        return "applied" if _apply_place(f, e) else "duplicate"
+        moved = _apply_place(f, e)
+        if not moved and e.kind == "seen" and e.verified and f.place is not None:
+            f.place_at = e.at  # a verified sighting refreshes when it was last seen there
+        return "applied" if moved else "duplicate"
     if target is None or not allowed(e.kind, f.state):
         return "conflict"
     if not e.verified and changes_availability(f.state, target):

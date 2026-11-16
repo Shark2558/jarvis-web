@@ -56,9 +56,15 @@ def _asks(w: Work, pid: str, f: folding.Folded) -> None:
     for e in added:
         if (need := folding.needs(e, f.marks[e.id], f)) is not None:
             w.needed.append(need)
-    if any(e.kind == "corrected" for e in added):
+    fixes = [e for e in added if e.kind == "corrected"]
+    if fixes:
         ids = {e.id for e in added}
         w.needed += folding.rescans(pid, folding.fold(x for x in log_ if x.id not in ids).marks, f)
+        before = w.pieces[pid]  # a correction that leaves the piece held opens its check (H3)
+        if f.state == "review" and f.hold and before.state != "review":
+            w.needed.append(
+                ReviewNeeded("hold", pid, fixes[-1].id, back_to=f.back_to, reason=f.hold)
+            )
 
 
 def refold(w: Work, uid: str, pid: str, now: datetime, *, as_stored: bool = False) -> None:
@@ -71,7 +77,7 @@ def refold(w: Work, uid: str, pid: str, now: datetime, *, as_stored: bool = Fals
     if not as_stored:
         _asks(w, pid, f)
     elif f.state == "review" and f.hold:
-        w.needed.append(ReviewNeeded("hold", pid, back_to=f.back_to, reason="restore"))
+        w.needed.append(ReviewNeeded("hold", pid, back_to=f.back_to, reason=f.hold))
     before = w.pieces[pid]
     after = before.model_copy(
         update={

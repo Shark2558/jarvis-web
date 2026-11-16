@@ -40,7 +40,7 @@ from jarvis.wardrobe.catalog.work import (
     take_records,
     too_many,
 )
-from jarvis.wardrobe.model import Event, Piece, WardrobeView, new_id
+from jarvis.wardrobe.model import Event, Piece, WardrobeView, admit, new_id
 from jarvis.wardrobe.ports import (
     ChangeObserver,
     Commit,
@@ -239,7 +239,7 @@ class CatalogStore:
             ):
                 w.marks[raw.id] = "known"
                 continue
-            e = raw if as_stored else folding.settle(raw, now, known)
+            e = raw if as_stored else folding.settle(admit(raw), now, known)
             known.append(e)
             w.new.setdefault(e.piece, []).append(e)
 

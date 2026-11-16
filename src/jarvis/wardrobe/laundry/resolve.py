@@ -109,9 +109,9 @@ def _confirmed(p: Piece, a: _Ask) -> list[Event]:
 
 
 def _hold(view: WardrobeView, laundry: LaundryDoc, doc: ReviewDoc, e: Entry, a: _Ask) -> _Res:
-    """A hold is matched on the PIECE's own hold, never the entry's reason (A's sweep repairs an
-    entry with reason "sweep"): `none` only when each piece's hold is an unconfirmed change. A
-    piece he says is home from the shop comes off its batch (review M3)."""
+    """A hold is matched on the PIECE's own hold, never the entry's reason word: `none` only
+    when each piece's hold is an unconfirmed change. A piece he
+    says is home from the shop comes off its batch (review M3)."""
     targets = _chosen(a.chosen, e.pieces) or list(e.pieces)
     if not targets and e.waiting:
         raise Refused(texts.WAITS_OTHER)

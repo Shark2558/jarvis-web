@@ -3,7 +3,7 @@
 
 The resolver (`resolve.py`) and the panel's `ReviewEntry.answers` both read this, so the panel
 can never offer an answer the resolver refuses or hide one it accepts. An entry is answered by
-its FAMILY, never by its reason word (A's sweep repairs a hold with the reason "sweep"):
+its FAMILY, never by its reason word (an older repair used the reason "sweep"):
 
 - a hold is answered by the PIECES' own holds: `none` ("it didn't happen") only when every
   piece it names is held on an unconfirmed change;

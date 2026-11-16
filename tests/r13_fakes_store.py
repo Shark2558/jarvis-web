@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from jarvis.storage.docs import Create, Delete, DocTx, MemoryDocs, Op, Set
-from jarvis.wardrobe.model import Event, Piece, WardrobeView
+from jarvis.wardrobe.model import Event, Piece, WardrobeView, admit
 from jarvis.wardrobe.ports import (
     ChangeObserver,
     Commit,
@@ -94,7 +94,10 @@ def _move(f: Folded, e: Event) -> Mark:
     target = target_of(e.kind, f.state, to=e.to, back_to=f.back_to)
     plan_moves = e.kind == "wear_started" and f.state == "in_use" and (e.plan or e.id) != f.wear
     if target is not None and target == f.state and not plan_moves:
-        return "applied" if _apply_place(f, e) else "duplicate"
+        moved = _apply_place(f, e)
+        if not moved and e.kind == "seen" and e.verified and f.place is not None:
+            f.place_at = e.at  # a verified sighting refreshes when it was last seen there
+        return "applied" if moved else "duplicate"
     if target is None or not allowed(e.kind, f.state):
         return "conflict"
     if not e.verified and changes_availability(f.state, target):
@@ -253,7 +256,7 @@ class MemoryWardrobeStore:
             if any(x.id == raw.id or (raw.client_id and x.client_id == raw.client_id) for x in log):
                 marks[raw.id] = "known"
                 continue
-            e = self._settle(raw, now, log)
+            e = self._settle(admit(raw), now, log)
             log.append(e)
             new.setdefault(e.piece, []).append(e)
             stored.append(e)
@@ -264,6 +267,9 @@ class MemoryWardrobeStore:
             for e in added:
                 marks[e.id] = f.marks[e.id]
                 need = _need(e, f.marks[e.id], f)
+                if e.kind == "corrected" and f.state == "review" and f.hold:
+                    if pieces[pid].state != "review":  # it leaves the piece held: its check (H3)
+                        need = ReviewNeeded("hold", pid, e.id, back_to=f.back_to, reason=f.hold)
                 if need is not None:
                     needed.append(need)
             before = pieces[pid]

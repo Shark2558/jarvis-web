@@ -424,3 +424,88 @@ async def test_a_return_records_the_place_and_when_it_was_confirmed(rig: Rig) ->
     rig.clock.advance(minutes=1)
     again = await rig.commit(ev(SHIRT, "returned", rig.clock(), place=RACK))
     assert list(again.marks.values()) == ["duplicate"]
+
+
+# ---- I1: what B's writer, the camera rule, a sighting and a correction rest on -------------------
+async def test_the_writer_sees_the_tx_fn_saw_and_its_entries_land_after_extra(rig: Rig) -> None:
+    """INTEGRATION-B 6.2: one tx object for `fn` and the writer; the writer's Set lands last."""
+    await rig.register(SHIRT)
+    seen: list[object] = []
+
+    class Writer:
+        async def entries(self, uid, view, tx, needed):  # type: ignore[no-untyped-def]
+            seen.append(tx)
+            return [Set(REVIEW_DOC, {"from": "writer"})]
+
+    rig.store.bind(review_writer=Writer(), observers=[])  # type: ignore[arg-type]
+
+    async def fn(view: object, tx: object) -> Commit:
+        seen.append(tx)
+        held = ev(SHIRT, "deposited", rig.clock(), verified=False)
+        return Commit(events=(held,), extra=(Set(REVIEW_DOC, {"from": "extra"}),))
+
+    await rig.store.transact(UID, fn)
+    assert seen[0] is seen[1]  # one tx object for fn and the writer
+    assert await rig.docs.get(REVIEW_DOC) == {"from": "writer"}  # its entries land last
+
+
+async def test_a_camera_deposit_without_a_release_seen_is_held_with_its_entry(rig: Rig) -> None:
+    """INTEGRATION-B 6.3 (LND-02): the store, not a caller, makes it unverified."""
+    await rig.register(SHIRT, VEST)
+    rig.clock.advance(minutes=1)
+    bare = ev(SHIRT, "deposited", rig.clock(), source="camera")
+    got = await rig.commit(bare)
+    assert got.marks[bare.id] == "held" and await rig.state(SHIRT) == "review"
+    assert [(n.kind, n.piece) for n in got.needed] == [("hold", SHIRT)]
+    assert rig.writer.needed and await rig.docs.get(REVIEW_DOC) is not None  # same commit
+    seen = ev(VEST, "deposited", rig.clock(), source="camera")
+    seen = seen.model_copy(update={"evidence": seen.evidence.model_copy(update={"released": True})})
+    ok = await rig.commit(seen)
+    assert ok.marks[seen.id] == "applied" and await rig.state(VEST) == "in_laundry"
+    await rig.register(BELT)
+    tap = ev(BELT, "deposited", rig.clock(), source="tap")
+    assert (await rig.commit(tap)).marks[tap.id] == "applied"  # a tap is never touched by the rule
+
+
+async def test_a_verified_sighting_refreshes_when_it_was_last_seen_and_stays_a_duplicate(
+    rig: Rig,
+) -> None:
+    """INTEGRATION-B 6.4: `place_at` follows every verified sighting (C's staleness reads it)."""
+    await rig.register(SHIRT)
+    rig.clock.advance(minutes=1)
+    await rig.commit(ev(SHIRT, "seen", rig.clock(), place=RACK))
+    rig.writer.needed.clear()
+    rig.observer.heard.clear()
+    for place in (RACK, None):  # at the same place, then "where it is"
+        rig.clock.advance(days=2)
+        again = ev(SHIRT, "seen", rig.clock(), place=place)
+        got = await rig.commit(again)
+        assert got.marks[again.id] == "duplicate" and got.needed == ()
+        found = (await rig.store.view(UID)).piece(SHIRT)
+        assert found is not None and found.place == RACK and found.place_at == rig.clock()
+    assert rig.writer.needed == [] and rig.observer.heard == []  # no entry, no observer
+    unverified = ev(SHIRT, "seen", rig.clock() + timedelta(minutes=0), place=RACK, verified=False)
+    rig.clock.advance(days=1)
+    await rig.commit(unverified.model_copy(update={"at": rig.clock()}))
+    found = (await rig.store.view(UID)).piece(SHIRT)
+    assert found is not None and found.place_at != rig.clock()  # a guess never refreshes it
+
+
+async def test_striking_out_a_release_reopens_its_check_in_the_same_commit(rig: Rig) -> None:
+    """INTEGRATION-B 6.7 (H3): a correction that leaves the piece held asks for its entry."""
+    await rig.register(SHIRT)
+    rig.clock.advance(minutes=1)
+    await rig.commit(ev(SHIRT, "deposited", rig.clock()))
+    rig.clock.advance(minutes=1)
+    await rig.commit(ev(SHIRT, "held", rig.clock()))
+    rig.clock.advance(minutes=1)
+    release = ev(SHIRT, "released", rig.clock())
+    await rig.commit(release)
+    assert await rig.state(SHIRT) == "in_laundry"
+    rig.writer.needed.clear()
+    rig.clock.advance(minutes=1)
+    got = await rig.store.correct(UID, SHIRT, release.id)
+    assert await rig.state(SHIRT) == "review"
+    [need] = [n for n in got.needed if n.kind == "hold"]
+    assert (need.piece, need.reason) == (SHIRT, "held") and need.back_to == "in_laundry"
+    assert rig.writer.needed == [got.needed]  # asked of the writer in this commit

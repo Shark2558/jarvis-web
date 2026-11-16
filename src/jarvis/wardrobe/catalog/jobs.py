@@ -78,7 +78,9 @@ class WardrobeSweep:
         held = [p for p in view.active() if p.state == "review" and p.hold]
         if not held:
             return 0
-        needed = tuple(ReviewNeeded("hold", p.id, back_to=p.back_to, reason="sweep") for p in held)
+        needed = tuple(
+            ReviewNeeded("hold", p.id, back_to=p.back_to, reason=p.hold or "held") for p in held
+        )
 
         async def fn(v: WardrobeView, tx: DocTx) -> Commit:
             return Commit()

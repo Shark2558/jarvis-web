@@ -286,6 +286,16 @@ class Event(_Rec):
         return (self.at, self.recorded, self.id)
 
 
+def admit(event: Event) -> Event:
+    """LND-02, applied by the store to every incoming event (so no caller can skip it): a camera
+    deposit counts only with a release seen over the rim; else it waits for a check (unverified,
+    so the fold holds it and B's writer opens its entry in the same commit)."""
+    if event.source == "camera" and event.kind == "deposited":
+        if event.evidence.released is not True:
+            return event.model_copy(update={"verified": False})
+    return event
+
+
 class WardrobeSettings(_Rec):
     """His own wardrobe choices, in the sealed index (D7, D10). His calendar, its fields, the
     evening alert and auto-swap are Part C's, in its own sealed document (D13; I1 item 11)."""
@@ -322,6 +332,7 @@ class WardrobeView(_Rec):
 
 __all__ = [
     "BRAND_RE",
+    "admit",
     "CARE_WORDS",
     "CATEGORIES",
     "CATEGORY_WORDS",

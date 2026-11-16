@@ -21,7 +21,7 @@ from jarvis.api.auth import session_email
 from jarvis.api.book_http import BOOK_OFF
 from jarvis.buildbook.model import SessionView
 from jarvis.buildbook.ports import SessionGone
-from jarvis.config import AuthMode, Settings
+from jarvis.config import Settings
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -54,9 +54,10 @@ def need(request: Request, name: str) -> Any:
 
 
 def console_only(request: Request) -> None:
-    """The book opens in the console only: a signed-in browser (or token-mode dev)."""
+    """The book opens in the console only: a signed-in browser (R6.2 G11; security review 1, L2:
+    no token-mode-dev shortcut, so G11 never rests on one check)."""
     s: Settings = request.app.state.settings
-    if session_email(request, s) is not None or (s.auth_mode is AuthMode.TOKEN and s.env == "dev"):
+    if session_email(request, s) is not None:
         return
     raise BookRefused(
         403, "console_only", "The build book opens only in the JARVIS console, not from a script."

@@ -51,7 +51,11 @@ ANSWER_WHEN_OFF = {("GET", "/v1/book"), ("GET", "/v1/book/show/lock")}
 WIRED: dict[tuple[str, str], tuple[int, str | None]] = {
     ("GET", "/v1/book"): (200, None),
     ("POST", "/v1/book/open"): (403, "google_needed"),  # R6.2 G11: never without the passkey
-    ("GET", "/v1/book/download/" + TICKET): (410, "gone"),
+    # R6.2 security review 1, L2: the reader's second G11 gate has no token-mode-dev shortcut
+    ("GET", "/v1/book/sections"): (403, "console_only"),
+    ("GET", f"/v1/book/releases/{RID}/sections"): (403, "console_only"),
+    ("POST", f"/v1/book/releases/{RID}/ticket"): (403, "console_only"),
+    ("GET", "/v1/book/download/" + TICKET): (403, "console_only"),
     ("POST", "/v1/book/resume"): (403, "console_only"),
     ("GET", "/v1/book/settings"): (200, None),
     ("PUT", "/v1/book/settings"): (200, None),

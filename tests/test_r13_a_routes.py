@@ -146,6 +146,32 @@ async def test_a_scan_is_one_commit_a_retry_is_already_done_and_a_stated_day_is_
 
 
 @pytest.mark.parametrize(
+    ("now", "day"),
+    [
+        (ist(2026, 11, 16, 9, 0), "2026-11-16"),  # a morning: noon is still ahead
+        (ist(2026, 11, 17, 0, 30), "2026-11-17"),  # half an hour into his day
+    ],
+)
+async def test_m5_a_stated_day_of_today_before_noon_is_saved_at_now_never_refused(
+    settings: Settings, now: Any, day: str
+) -> None:
+    async with running(_owner(settings)) as (app, c):
+        app.state.wardrobe_now.set(now)
+        [shirt] = await _add(c, {"type": "shirt"})
+        dep = {"client_id": "tap-000010", "piece": shirt, "kind": "deposited"}
+        back = {"client_id": "tap-000011", "piece": shirt, "kind": "returned", "day": day}
+        for e in (dep, back):
+            got = await c.post("/v1/wardrobe/scan", json={"events": [e]}, headers=AUTH)
+            assert got.status_code == 200, got.json()
+        detail = http.PieceDetail.model_validate(
+            (await c.get(f"/v1/wardrobe/pieces/{shirt}", headers=AUTH)).json()
+        )
+        assert [h.kind for h in detail.history] == ["registered", "deposited", "returned"]
+        assert detail.history[-1].at == now  # 12:00 his time, or now while that is ahead
+        assert detail.piece.state == "ready"
+
+
+@pytest.mark.parametrize(
     ("event", "status"),
     [
         ({"kind": "archived"}, 422),  # archive, restore and merge are cards, never a scan

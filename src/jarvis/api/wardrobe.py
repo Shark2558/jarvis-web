@@ -112,14 +112,15 @@ async def piece(
 # ---- the scan (D4) -------------------------------------------------------------------------------
 async def _at(desk: Any, uid: str, e: http.EventIn, now: datetime) -> tuple[datetime, Any]:
     """(its time, the device's send clock): a device's capture with `sent`; a time he states;
-    a stated day at 12:00 HIS local time; else now."""
+    a stated day at 12:00 HIS local time, or now while that noon is still ahead (a "today" in
+    the morning is never refused as a time ahead, M5); else now."""
     if e.at is not None:
         return e.at, e.sent
     if e.stated_at is not None:
         return e.stated_at, None
     if e.day is not None:
         noon = datetime.combine(e.day, time(12, 0), tzinfo=await desk.ctx.zone(uid))
-        return noon, None
+        return min(noon, now), None
     return now, None
 
 

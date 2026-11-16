@@ -104,6 +104,8 @@ async def test_any_later_save_keeps_the_unconfirmed_cloud_off() -> None:
 
 
 def test_the_new_fields_take_strict_types() -> None:
+    ok = BookSettingsPatch.model_validate({"listening": "cloud", "confirm_cost": True})
+    assert (ok.listening, ok.confirm_cost) == ("cloud", True)  # fails if the fields go missing
     for bad in ({"listening": "robot"}, {"listening": 1}, {"confirm_cost": "yes"}):
         with pytest.raises(ValidationError):
             BookSettingsPatch.model_validate(bad)

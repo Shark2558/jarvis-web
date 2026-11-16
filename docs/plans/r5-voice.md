@@ -343,7 +343,7 @@ JarvisVoiceCommands.PHRASES             // frozen JSON between /*PHRASES-BEGIN*/
 | `device.input` (B) | use (my/the) X mic(rophone); listen through (my/the) X | any state except off | switches the input for this page only; with the mic open it takes effect at the next listening turn | "I'll listen through {kind}, {h}." or "I'll use that microphone from the next time I open the mic, {h}."; name on screen |
 | `device.list` (B) | what's connected; which devices are connected; list (my) (sound/audio) devices; which speaker are you using | any state except off | reads `current()` and the device list | "You have {n} outputs: {kind words}. I'm speaking through {kind}; the names are on screen, {h}."; names on screen |
 
-- **Device names are never spoken (I1, binding; B's security review H1).** Spoken text goes to the cloud voice (`POST /v1/voice/speak`), so a device label or nickname ("Akash's AirPods") never appears in it: spoken device lines use kind words only ("your earphones", "the laptop speakers", "that device"). The name is shown on screen only. The loop speaks a `device.*` result's `say` once and leaves `#voiceLine` to the devices module, which shows the named line, or the same name-free line when there is no name (so it is visible with Speak replies: Never).
+- **Device names are never spoken (I1, binding; B's security review H1).** Spoken text goes to the cloud voice (`POST /v1/voice/speak`), so a device label or nickname ("Ravi's AirPods") never appears in it: spoken device lines use kind words only ("your earphones", "the laptop speakers", "that device"). The name is shown on screen only. The loop speaks a `device.*` result's `say` once and leaves `#voiceLine` to the devices module, which shows the named line, or the same name-free line when there is no name (so it is visible with Speak replies: Never).
 
 - During a name-mode check clip, "Jarvis …" interrupts, and the rest (if any) becomes the next turn.
 - A transcript caught by the echo guard (D7) is never handled.
@@ -372,7 +372,7 @@ JarvisVoiceCommands.PHRASES             // frozen JSON between /*PHRASES-BEGIN*/
   - "Speaker" prefers an external speaker over the built-in one.
   - "Laptop", "computer", "desktop" and "built-in" mean the built-in output.
   - "Default" means the OS default.
-- **Privacy.** Device labels and ids stay in this browser's localStorage and the in-page event log. They are never sent to the server or written to the audit; labels can hold names such as "Akash's AirPods". A static test checks the module makes no `api()` or `fetch()` call.
+- **Privacy.** Device labels and ids stay in this browser's localStorage and the in-page event log. They are never sent to the server or written to the audit; labels can hold names such as "Ravi's AirPods". A static test checks the module makes no `api()` or `fetch()` call.
 
 ### D14 · Android and browsers that can't route output
 - Chrome for Android has no `setSinkId`, so `speaker.sinkSupported()` is false. The picker and `device.switch` say: "On this phone Android chooses where I sound, {h}: open Quick Settings and pick it under media output (the name varies by phone)."

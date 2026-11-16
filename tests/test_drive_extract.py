@@ -27,7 +27,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.storage.docs import MemoryDocs
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = "u_owner"
 
 

@@ -35,12 +35,12 @@ def _parse(raw: str) -> object:
 
 def test_message_is_plain_utf8_from_jarvis_to_the_owner_only() -> None:
     raw = build_brief_message(
-        owner="Akash@Example.com", subject="JARVIS morning brief — Fri 15 Jan", body=BODY, now=NOW
+        owner="Ravi@Example.com", subject="JARVIS morning brief — Fri 15 Jan", body=BODY, now=NOW
     )
     data, msg = _parse(raw)
     assert msg["From"].addresses[0].display_name == "JARVIS"  # type: ignore[attr-defined]
-    assert msg["From"].addresses[0].addr_spec == "akash@example.com"  # type: ignore[attr-defined]
-    assert str(msg["To"]) == "akash@example.com"  # type: ignore[index]
+    assert msg["From"].addresses[0].addr_spec == "ravi@example.com"  # type: ignore[attr-defined]
+    assert str(msg["To"]) == "ravi@example.com"  # type: ignore[index]
     assert msg["Cc"] is None and msg["Bcc"] is None  # type: ignore[index]
     assert str(msg["Subject"]) == "JARVIS morning brief — Fri 15 Jan"  # type: ignore[index]
     assert msg["Date"].datetime == NOW and msg["Message-ID"]  # type: ignore[index]

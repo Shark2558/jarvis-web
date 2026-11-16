@@ -11,7 +11,7 @@ from jarvis.core.guardrails import ActionRisk, InMemoryApprovalStore, PendingAct
 
 IST = ZoneInfo("Asia/Kolkata")
 DAY = date(2027, 1, 15)
-ME = {"email": "akash@example.com", "self": True}
+ME = {"email": "ravi@example.com", "self": True}
 
 
 async def _collect(fake: BriefGoogle, **kw: object) -> object:

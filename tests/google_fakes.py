@@ -8,7 +8,7 @@ from jarvis.integrations.vault import GoogleTokens
 
 GOOGLE_NOW = 1_800_000_000.0  # 2027-01-15T08:00:00Z
 GOOGLE_UID = "u_owner"
-GOOGLE_EMAIL = "akash@example.com"
+GOOGLE_EMAIL = "ravi@example.com"
 
 
 class FakeGoogle:

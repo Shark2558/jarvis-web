@@ -18,7 +18,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.recall.models import IMPORT_MAX_BYTES, MAX_ACTIVE
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 OTHER = "partner@example.com"
 UID = user_id_for_email(OWNER)
 CSRF = {"X-Requested-With": "JARVIS"}
@@ -176,9 +176,9 @@ async def test_settings_reject_wrong_types(gc: AsyncClient) -> None:
 
 async def test_profile_blocks(gc: AsyncClient) -> None:
     r = await gc.put(
-        "/v1/memory/profile/about", json={"text": "Akash\nProject lead"}, headers=BEARER
+        "/v1/memory/profile/about", json={"text": "Ravi\nProject lead"}, headers=BEARER
     )
-    assert r.status_code == 200 and r.json()["about"] == "Akash\nProject lead"
+    assert r.status_code == 200 and r.json()["about"] == "Ravi\nProject lead"
     assert set(r.json()) == {"about", "preferences", "people", "work"}
     r = await gc.put("/v1/memory/profile/secrets", json={"text": "x"}, headers=BEARER)
     assert r.status_code == 404
@@ -245,7 +245,7 @@ async def test_memory_full_is_409(gc: AsyncClient) -> None:
 async def test_export_forget_import_round_trip(gc: AsyncClient) -> None:
     await _add(gc, "Prefers tea", "preferences")
     await _add(gc, "Daughter is Anaya", "people")
-    await gc.put("/v1/memory/profile/about", json={"text": "Akash"}, headers=BEARER)
+    await gc.put("/v1/memory/profile/about", json={"text": "Ravi"}, headers=BEARER)
     before = (await gc.get("/v1/memory", headers=BEARER)).json()
     r = await gc.get("/v1/memory/export", headers=BEARER)
     assert r.status_code == 200

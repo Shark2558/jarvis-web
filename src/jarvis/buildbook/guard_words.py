@@ -354,7 +354,7 @@ SECRETS = re.compile(
     r"|\b\d{8,10}:[A-Za-z0-9_\-]{35}\b"
 )
 
-# spelled-out addresses ("akash dot kumar at gmail dot com", "x at the rate y dot in"): `spelled`
+# spelled-out addresses ("ravi dot kumar at gmail dot com", "x at the rate y dot in"): `spelled`
 # rewrites the words to symbols, then SPELLED_EMAIL is an ordinary strict address match
 SPELLED_DOT = re.compile(r"\s*(?:\b(?:dot|period)\b|[(\[{]\s*dot\s*[)\]}])\s*", re.IGNORECASE)
 SPELLED_AT = re.compile(

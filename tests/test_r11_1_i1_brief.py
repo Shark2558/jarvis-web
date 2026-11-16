@@ -150,7 +150,7 @@ async def test_the_app_s_deliveries_read_through_the_same_governed_path_as_the_i
             "auth_mode": AuthMode.GOOGLE,
             "google_client_id": "cid.apps.googleusercontent.com",
             "google_client_secret": SecretStr("gsecret"),
-            "owner_emails": ["akash@example.com"],
+            "owner_emails": ["ravi@example.com"],
             "session_secret": SecretStr("x" * 32),
             "public_base_url": "http://test",
         }

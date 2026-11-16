@@ -17,7 +17,7 @@ def _box(**kw: object) -> Inbox:
     base: dict[str, object] = {
         "folder_id": "inbox1",
         "name": "Vault inbox",
-        "email": "akash@example.com",
+        "email": "ravi@example.com",
         "confirmed_at": NOW,
     }
     return Inbox(**{**base, **kw})  # type: ignore[arg-type]
@@ -28,7 +28,7 @@ async def test_round_trip_and_remove() -> None:
     assert await st.load(UID) is None and await st.folder_id(UID) is None
     await st.change(UID, lambda _o: _box())
     got = await st.load(UID)
-    assert got is not None and got.folder_id == "inbox1" and got.email == "akash@example.com"
+    assert got is not None and got.folder_id == "inbox1" and got.email == "ravi@example.com"
     assert await st.folder_id(UID) == "inbox1"
     await st.change(UID, lambda _o: None)
     assert await st.load(UID) is None

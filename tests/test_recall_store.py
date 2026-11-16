@@ -64,10 +64,10 @@ async def test_empty_memory_loads_as_defaults(docs: Docs, prefix: str) -> None:
 async def test_changes_persist_across_a_cold_start(docs: Docs, prefix: str) -> None:
     store = MemoryStore(docs, prefix=prefix)
     await store.mutate(UID, _adder("Prefers window seats", "preferences"))
-    await store.mutate(UID, lambda s: set_profile(s, "about", "Akash, project lead"))
+    await store.mutate(UID, lambda s: set_profile(s, "about", "Ravi, project lead"))
     cold = await MemoryStore(docs, prefix=prefix).load(UID)
     assert [f.text for f in cold.active()] == ["Prefers window seats"]
-    assert cold.profile.about == "Akash, project lead"
+    assert cold.profile.about == "Ravi, project lead"
 
 
 async def test_replace_and_history_persist(docs: Docs, prefix: str) -> None:
@@ -154,7 +154,7 @@ async def test_one_change_is_at_most_three_writes(change: str) -> None:
             return delete_facts(cur, [first.id])[0]
         if change == "settings":
             return cur.with_settings(cur.settings.model_copy(update={"use": False}))
-        return set_profile(cur, "about", "Akash")
+        return set_profile(cur, "about", "Ravi")
 
     await store.mutate(UID, fn)
     assert docs.sets + docs.deletes - before <= 3

@@ -105,7 +105,7 @@ async def test_tickets_and_settings(docs: Docs, prefix: str) -> None:
     with pytest.raises(TicketGone):
         await tickets.take(UID, t.ticket)
     store = BookSettingsStore(docs, prefix=prefix)
-    saved = await store.update(UID, BookSettingsPatch(creator_name="Akash", talk_on=False))
+    saved = await store.update(UID, BookSettingsPatch(creator_name="Ravi", talk_on=False))
     assert await BookSettingsStore(docs, prefix=prefix).get(UID) == saved
 
 

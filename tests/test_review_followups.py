@@ -36,7 +36,7 @@ CAL = "https://www.googleapis.com/calendar/v3"
 EVENTS = f"{CAL}/calendars/primary/events"
 TZ_URL = f"{CAL}/users/me/calendarList/primary"
 SCOPE = f"{GOOGLE_UID}:sess_1"
-ME = {"email": "akash@example.com", "self": True}
+ME = {"email": "ravi@example.com", "self": True}
 TAG = {"private": {"jarvis": "reminder"}}
 
 

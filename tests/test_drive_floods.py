@@ -18,7 +18,7 @@ from jarvis.drive.roots import RootsStore
 from jarvis.drive.service import DriveRejected, DriveService
 from jarvis.storage.docs import MemoryDocs
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 STRANGER = "stranger@evil.example"
 EDITOR = "colleague@example.com"
 UID = "u_owner"
@@ -110,7 +110,7 @@ async def test_the_owners_address_is_compared_case_insensitively() -> None:
     d = FakeDrive()
     _mine(d)
     svc = _svc(d)
-    await svc.set_use(UID, "  Akash@Example.com ", "mine", True)
+    await svc.set_use(UID, "  Ravi@Example.com ", "mine", True)
     assert [r.id for r in await svc.roots.load(UID)] == ["mine"]
 
 

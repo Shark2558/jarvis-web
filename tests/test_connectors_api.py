@@ -25,7 +25,7 @@ from jarvis.photos.api import install_connectors
 from jarvis.photos.models import FaceHit
 from jarvis.photos.tools import ConnectorDeps
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = user_id_for_email(OWNER)
 CSRF = {"X-Requested-With": "JARVIS"}
 TOKEN = "ghp_SuperSecretTokenValue1234567890abcd"
@@ -98,13 +98,13 @@ async def test_connecting_github_never_echoes_or_logs_the_token(
     ctx: Ctx, caplog: pytest.LogCaptureFixture
 ) -> None:
     ctx.fake.on(
-        "GET", "https://api.github.com/user", httpx.Response(200, json={"login": "akash-dev"})
+        "GET", "https://api.github.com/user", httpx.Response(200, json={"login": "ravi-dev"})
     )
     with caplog.at_level(logging.DEBUG):
         r = await ctx.c.put("/v1/connectors/github", json={"token": TOKEN}, headers=CSRF)
-    assert r.json() == {"connected": True, "login": "akash-dev"}
+    assert r.json() == {"connected": True, "login": "ravi-dev"}
     assert TOKEN not in r.text and TOKEN not in caplog.text
-    assert (await ctx.c.get("/v1/connectors")).json()["github"]["login"] == "akash-dev"
+    assert (await ctx.c.get("/v1/connectors")).json()["github"]["login"] == "ravi-dev"
     assert (await ctx.c.delete("/v1/connectors/github", headers=CSRF)).json() == {
         "connected": False
     }

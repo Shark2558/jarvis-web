@@ -19,7 +19,7 @@ from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.storage import build_storage
 from jarvis.tools.setup import build_gateway
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 OTHER = "partner@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 KEY_B64 = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="

@@ -57,7 +57,7 @@ async def connect(client: GithubClient, fake: FakeGoogle, **kw: object) -> None:
     fake.on(
         "GET",
         f"{API}/user",
-        httpx.Response(200, json={"login": "akash-dev"}, headers=headers(**kw)),
+        httpx.Response(200, json={"login": "ravi-dev"}, headers=headers(**kw)),
     )  # type: ignore[arg-type]
     await client.connect(UID, SecretStr(TOKEN))
     fake.routes.clear()
@@ -88,7 +88,7 @@ async def test_connect_records_the_expiry_and_hourly_limit_in_clear_fields() -> 
     assert meta["expires_at"] == EXPIRES_TS
     assert (meta["rate_limit"], meta["rate_used"], meta["rate_reset"]) == (5000, 12, 1_800_003_600)
     text = json.dumps(stored(docs))
-    assert TOKEN not in text and "akash-dev" not in text
+    assert TOKEN not in text and "ravi-dev" not in text
     got = await client.token_meta(UID)
     assert got is not None and got.expires_at == EXPIRES_TS
 

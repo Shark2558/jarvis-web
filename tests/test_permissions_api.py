@@ -26,7 +26,7 @@ from jarvis.tools.base import Preview, Tool
 from jarvis.tools.builtin import InMemoryWorld, builtin_tools
 
 ORIGIN = "http://test"
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 BEARER = {"Authorization": "Bearer cli-token"}
 

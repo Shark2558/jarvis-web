@@ -37,7 +37,7 @@ from jarvis.buildbook.sealer import (
 from jarvis.storage.docs import MemoryDocs
 from jarvis.ticks import FAILED_COUNT, TickJob
 
-OWNER_EMAIL = "akash.owner2558@example.com"
+OWNER_EMAIL = "ravi.owner2558@example.com"
 
 
 class Rig:
@@ -178,9 +178,9 @@ def _book_saying(text: str) -> Any:
 @pytest.mark.parametrize(
     ("text", "what"),
     [
-        ("Built by AKASH.Owner2558@Example.com.", "your e-mail address"),
-        ("Ask akash.owner2558 about it.", "a word from your e-mail address"),  # D3 amendment
-        ("Mail: akash․owner2558@example．com", "your e-mail address"),  # look-alike dots: NFKC
+        ("Built by RAVI.Owner2558@Example.com.", "your e-mail address"),
+        ("Ask ravi.owner2558 about it.", "a word from your e-mail address"),  # D3 amendment
+        ("Mail: ravi․owner2558@example．com", "your e-mail address"),  # look-alike dots: NFKC
     ],
 )
 async def test_a_book_holding_an_owner_address_is_refused_and_told_once(
@@ -203,13 +203,13 @@ async def test_a_book_holding_an_owner_address_is_refused_and_told_once(
 
 def test_the_owner_address_check_matches_whole_words_only() -> None:
     emails = (OWNER_EMAIL, "me@example.com")
-    assert holds_owner_email(b'{"a":"akash.owner2558"}', emails)
-    assert holds_owner_email(b'{"a":"akash.owner2558\\u0040example.com"}', emails)
-    # D3 amendment: "akash" is the distinctive token ("owner" is JARVIS's own word), whole words
-    assert holds_owner_email(b'{"a":"akash.owner25589"}', emails)
-    assert not holds_owner_email(b'{"a":"xakash.owner2558 akashic owner"}', emails)
+    assert holds_owner_email(b'{"a":"ravi.owner2558"}', emails)
+    assert holds_owner_email(b'{"a":"ravi.owner2558\\u0040example.com"}', emails)
+    # D3 amendment: "ravi" is the distinctive token ("owner" is JARVIS's own word), whole words
+    assert holds_owner_email(b'{"a":"ravi.owner25589"}', emails)
+    assert not holds_owner_email(b'{"a":"xravi.owner2558 raviic owner"}', emails)
     assert not holds_owner_email(b'{"a":"tell me about it"}', emails)  # a 2-letter local part
-    assert not holds_owner_email(b'{"a":"akash.owner2558"}', ())
+    assert not holds_owner_email(b'{"a":"ravi.owner2558"}', ())
 
 
 async def test_a_seal_that_fails_is_told_once_and_retried_by_the_next_run() -> None:

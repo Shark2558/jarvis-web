@@ -151,13 +151,13 @@ async def test_the_creator_name_is_shown_exported_and_cleared_alone() -> None:
     empty = await src.describe(UID)
     assert (empty.count, empty.delete) == (0, "none")
     await store.update(
-        UID, BookSettingsPatch(creator_name="Akash Das", talk_on=False, show_voice="browser")
+        UID, BookSettingsPatch(creator_name="Ravi Menon", talk_on=False, show_voice="browser")
     )
     got = await src.describe(UID)
     assert (got.count, got.delete, got.recoverable) == (1, "simple", True)
-    assert "Akash" not in got.model_dump_json()  # the row never shows the name itself
+    assert "Ravi" not in got.model_dump_json()  # the row never shows the name itself
     out = await src.export(UID)
-    assert out is not None and out["creator_name"] == "Akash Das" and out["talk_on"] is False
+    assert out is not None and out["creator_name"] == "Ravi Menon" and out["talk_on"] is False
     assert await src.delete(UID) == 1
     after = await store.get(UID)
     assert after.creator_name == "" and after.talk_on is False and after.show_voice == "browser"

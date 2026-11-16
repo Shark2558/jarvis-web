@@ -40,7 +40,7 @@ async def people_connector(
         await store.put(
             PEOPLE_UID,
             GoogleTokens(
-                email="akash@example.com",
+                email="ravi@example.com",
                 access_token=SecretStr("acc"),
                 refresh_token=SecretStr("ref"),
                 expires_at=4_000_000_000.0,

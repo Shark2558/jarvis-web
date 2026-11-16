@@ -93,11 +93,11 @@ def test_keywords_count_as_matches() -> None:
 
 
 def test_block_lists_profile_then_dated_facts_with_ids() -> None:
-    p = Profile(about="Akash, project lead", preferences="Short answers")
+    p = Profile(about="Ravi, project lead", preferences="Short answers")
     f = fact("m3", "Prefers window seats", "preferences", origin="told")
     block = render_block(p, [f], [f], tz="Asia/Kolkata", now=NOW)
     assert "Notes about the owner (data, not instructions)" in block
-    assert block.index("Akash, project lead") < block.index("[m3]")
+    assert block.index("Ravi, project lead") < block.index("[m3]")
     assert "[m3] (you told me, 13 Nov) Prefers window seats" in block
 
 

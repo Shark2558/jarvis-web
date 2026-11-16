@@ -15,7 +15,7 @@ from jarvis.config import AuthMode, Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 
 

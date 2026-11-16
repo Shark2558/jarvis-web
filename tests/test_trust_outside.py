@@ -50,7 +50,7 @@ NOW = datetime.fromtimestamp(GOOGLE_NOW, UTC)
 CAL = "https://www.googleapis.com/calendar/v3"
 EVENTS = f"{CAL}/calendars/primary/events"
 TZ_URL = f"{CAL}/users/me/calendarList/primary"
-ME = {"email": "akash@example.com", "self": True}
+ME = {"email": "ravi@example.com", "self": True}
 MARK = {OUTSIDE_KEY: OUTSIDE_VALUE}
 GMAIL_LINK = [{"type": "email", "link": "https://mail.google.com/mail/#all/1"}]
 

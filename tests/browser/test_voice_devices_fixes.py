@@ -30,7 +30,7 @@ _pw = pytest.importorskip("playwright.sync_api")
 
 pytestmark = pytest.mark.browser
 
-SECRET_WORDS = ("akash", "airpods")
+SECRET_WORDS = ("ravi", "airpods")
 # A capturing stand-in for JarvisVoiceLoop: every say/ask is recorded with its speak flag.
 RECORDER = """
 window.__said = [];
@@ -45,9 +45,9 @@ window.__said = [];
   };
 })();
 """
-ADD_AKASH = """
-window.__devs.push({ kind: 'audiooutput', deviceId: 'akash', label: "Headphones (Akash's AirPods)" });
-window.__devs.push({ kind: 'audioinput', deviceId: 'akash-mic', label: "Headset (Akash's AirPods)" });
+ADD_RAVI = """
+window.__devs.push({ kind: 'audiooutput', deviceId: 'ravi', label: "Headphones (Ravi's AirPods)" });
+window.__devs.push({ kind: 'audioinput', deviceId: 'ravi-mic', label: "Headset (Ravi's AirPods)" });
 """
 
 
@@ -59,11 +59,11 @@ def ids(c: Console) -> list[str]:
     return [o["id"] for o in ev(c, "JarvisAudioRoute.refresh()")["outputs"]]
 
 
-def with_akash(c: Console) -> None:
+def with_ravi(c: Console) -> None:
     ready(c)
-    ev(c, ADD_AKASH)
+    ev(c, ADD_RAVI)
     ev(c, "JarvisAudioRoute.refresh()")
-    ev(c, "JarvisAudioRoutePrefs.setName('akash', 'Akash buds')")
+    ev(c, "JarvisAudioRoutePrefs.setName('ravi', 'Ravi buds')")
     ev(c, RECORDER)
 
 
@@ -72,21 +72,21 @@ def test_no_spoken_line_on_any_path_contains_a_label_or_nickname(
     make: Callable[..., Console],
 ) -> None:
     c = make()
-    with_akash(c)
+    with_ravi(c)
     results = [
-        say(c, "switch to akash buds"),
-        say(c, "use akash buds mic"),
+        say(c, "switch to ravi buds"),
+        say(c, "use ravi buds mic"),
         say(c, "list my devices"),
-        say(c, "switch to the akash tv"),
-        say(c, "use the akash tv mic"),
+        say(c, "switch to the ravi tv"),
+        say(c, "use the ravi tv mic"),
         say(c, "switch to airpods"),
     ]
-    ev(c, "window.__devs = window.__devs.filter(d => d.deviceId !== 'akash')")
+    ev(c, "window.__devs = window.__devs.filter(d => d.deviceId !== 'ravi')")
     devchange(c)
     wf(c, "window.__said.some(x => /disconnected/i.test(x.t))")
     ev(
         c,
-        "window.__devs.push({ kind: 'audiooutput', deviceId: 'akash2', label: \"Headphones (Akash's AirPods Pro)\" })",
+        "window.__devs.push({ kind: 'audiooutput', deviceId: 'ravi2', label: \"Headphones (Ravi's AirPods Pro)\" })",
     )
     devchange(c)
     wf(c, "window.__said.some(x => x.ask)")
@@ -97,7 +97,7 @@ def test_no_spoken_line_on_any_path_contains_a_label_or_nickname(
     for word in SECRET_WORDS:
         assert word not in blob, (word, lines)
     # the full name is still shown, on screen only
-    assert any(not x["speak"] and "Akash" in x["t"] for x in ev(c, "window.__said"))
+    assert any(not x["speak"] and "Ravi" in x["t"] for x in ev(c, "window.__said"))
 
 
 def test_the_auto_policy_and_the_chip_accept_say_a_kind_never_a_name(
@@ -106,12 +106,12 @@ def test_the_auto_policy_and_the_chip_accept_say_a_kind_never_a_name(
     c = make(route={"v": 1, "onConnect": "auto"})
     ready(c)
     ev(c, RECORDER)
-    ev(c, ADD_AKASH)
+    ev(c, ADD_RAVI)
     devchange(c)
-    wf(c, "JarvisVoice.speaker.sink() === 'akash'")
+    wf(c, "JarvisVoice.speaker.sink() === 'ravi'")
     lines = spoken(c)
     assert lines and not any(w in "\n".join(lines).lower() for w in SECRET_WORDS)
-    assert any("Akash" in x["t"] and not x["speak"] for x in ev(c, "window.__said"))
+    assert any("Ravi" in x["t"] and not x["speak"] for x in ev(c, "window.__said"))
 
 
 def test_router_results_keep_the_frozen_shape(make: Callable[..., Console]) -> None:
@@ -136,20 +136,20 @@ def test_cloud_speak_requests_never_carry_a_label_or_nickname(make: Callable[...
     fv = FakeVoice(c.page)
     c.open()
     wf(c, "window.__enum >= 1")
-    ev(c, ADD_AKASH)
+    ev(c, ADD_RAVI)
     ev(c, "JarvisAudioRoute.refresh()")
-    ev(c, "JarvisAudioRoutePrefs.setName('akash', 'Akash buds')")
+    ev(c, "JarvisAudioRoutePrefs.setName('ravi', 'Ravi buds')")
     seen: list[str] = []
     c.page.on(
         "request",
         lambda r: seen.append(r.url + " " + (r.post_data or "")) if r.method != "GET" else None,
     )
-    for phrase in ("switch to akash buds", "list my devices", "use akash buds mic"):
+    for phrase in ("switch to ravi buds", "list my devices", "use ravi buds mic"):
         r = say(c, phrase)
         ev(
             c, f"JarvisVoiceLoop.say({json.dumps(r['result']['say'])}, {{ speak: true }})"
         )  # what A's caller does
-    ev(c, "window.__devs = window.__devs.filter(d => d.deviceId !== 'akash')")
+    ev(c, "window.__devs = window.__devs.filter(d => d.deviceId !== 'ravi')")
     devchange(c)
     wf(c, "document.getElementById('voiceLine').textContent.includes('disconnected')")
     c.page.wait_for_timeout(1200)

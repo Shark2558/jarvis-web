@@ -81,7 +81,7 @@ from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry  # noqa: E402
 from jarvis.tools.builtin import InMemoryWorld, builtin_tools  # noqa: E402
 from jarvis.tools.external import FENCE_PREFIX  # noqa: E402
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 STRANGER = "stranger@evil.example"
 EDITOR = "colleague@example.com"
 UID = "owner"

@@ -60,7 +60,7 @@ async def test_status_when_connected_never_contains_tokens(
 ) -> None:
     await store.put(UID, _tokens())
     st = await conn.status(UID)
-    assert st["connected"] is True and st["email"] == "akash@example.com"
+    assert st["connected"] is True and st["email"] == "ravi@example.com"
     assert st["expires_at"] == NOW + 3600 and st["needs_reconnect"] is False
     assert "old-access" not in json.dumps(st) and "the-refresh" not in json.dumps(st)
 
@@ -326,7 +326,7 @@ async def test_save_from_oauth_token_response(
 ) -> None:
     await conn.save(
         UID,
-        email="akash@example.com",
+        email="ravi@example.com",
         token={
             "access_token": "a1",
             "refresh_token": "r1",
@@ -440,7 +440,7 @@ async def test_a_link_without_the_tasks_scope_stays_connected(
 ) -> None:
     await conn.save(
         UID,
-        email="akash@example.com",
+        email="ravi@example.com",
         token={
             "access_token": "a1",
             "refresh_token": "r1",
@@ -460,7 +460,7 @@ async def test_a_link_without_gmail_insert_stays_connected(
     slice 6 tool."""
     await conn.save(
         UID,
-        email="akash@example.com",
+        email="ravi@example.com",
         token={
             "access_token": "a1",
             "refresh_token": "r1",
@@ -478,7 +478,7 @@ async def test_save_refuses_a_partial_grant(conn: GoogleConnector, store: Memory
     with pytest.raises(GoogleScopesMissing) as ei:
         await conn.save(
             UID,
-            email="akash@example.com",
+            email="ravi@example.com",
             token={
                 "access_token": "a1",
                 "refresh_token": "r1",

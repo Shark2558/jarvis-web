@@ -21,7 +21,7 @@ from jarvis.drive.client import (
 )
 from jarvis.drive.ports import DriveError, DriveNotFound, DriveUnavailable
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 
 
 class Sleeps:

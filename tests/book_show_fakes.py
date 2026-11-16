@@ -22,7 +22,7 @@ BOOK_DIR = Path(__file__).resolve().parent / "fixtures" / "book" / "_book"
 T0 = datetime(2026, 11, 10, 8, 32, tzinfo=UTC)  # 14:02 in Asia/Kolkata
 UID = "u_0123456789abcdef"
 OTHER_UID = "u_fedcba9876543210"
-OWNER_EMAIL = "akash.owner@example.com"
+OWNER_EMAIL = "ravi.owner@example.com"
 
 
 def keyring() -> Keyring:
@@ -75,7 +75,7 @@ class NamingSource(FixtureSource):
     """A release whose book.json names an owner (A's scrub missed it): `text` is put into the
     first beat. `broken` makes the book unreadable."""
 
-    def __init__(self, text: str = "Written by akash.owner on a Sunday.", **kw: Any) -> None:
+    def __init__(self, text: str = "Written by ravi.owner on a Sunday.", **kw: Any) -> None:
         super().__init__(**kw)
         self.text, self.broken = text, False
 

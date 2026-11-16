@@ -290,7 +290,7 @@ async def test_unlink_wipes_the_camera_state_and_the_arm_rev_never_goes_back() -
 
 # ---- integrated review S4: unlinking while armed is a disarm ------------------------------------
 
-OWNER_EMAIL = "akash@example.com"
+OWNER_EMAIL = "ravi@example.com"
 
 
 def _google() -> Any:

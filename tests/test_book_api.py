@@ -41,7 +41,7 @@ from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.storage.docs import MemoryDocs
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 OTHER = "partner@example.com"
 UID = user_id_for_email(OWNER)
 OTHER_UID = user_id_for_email(OTHER)
@@ -453,18 +453,18 @@ async def test_settings_round_trip_and_the_audit_names_fields_only(rig: Rig) -> 
     }
     r = await rig.c.put(
         "/v1/book/settings",
-        json={"creator_name": "Akash Das", "show_voice": "browser"},
+        json={"creator_name": "Ravi Menon", "show_voice": "browser"},
         headers=CSRF,
     )
     assert r.status_code == 200, r.text
     no_store(r)
-    assert r.json()["creator_name"] == "Akash Das" and r.json()["show_voice"] == "browser"
-    assert (await rig.get("/v1/book/settings")).json()["creator_name"] == "Akash Das"
+    assert r.json()["creator_name"] == "Ravi Menon" and r.json()["show_voice"] == "browser"
+    assert (await rig.get("/v1/book/settings")).json()["creator_name"] == "Ravi Menon"
     row = rig.audit.rows[-1]
     assert row["tool"] == "book_settings" and row["args"] == {
         "fields": ["creator_name", "show_voice"]
     }
-    assert "Akash" not in str(rig.audit.rows)
+    assert "Ravi" not in str(rig.audit.rows)
 
 
 @pytest.mark.parametrize(

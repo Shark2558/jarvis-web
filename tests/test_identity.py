@@ -20,7 +20,7 @@ from jarvis.storage import doc_storage
 from jarvis.storage.docs import MemoryDocs
 from jarvis.tools.gateway import Gateway
 
-A, B = "akash@example.com", "partner@example.com"
+A, B = "ravi@example.com", "partner@example.com"
 CSRF = {"X-Requested-With": "JARVIS"}
 BEARER = {"Authorization": "Bearer cli-token"}
 
@@ -77,10 +77,10 @@ async def deck(
 
 
 def test_user_id_is_stable_case_insensitive_and_hides_the_email() -> None:
-    uid = user_id_for_email(" Akash@Example.com ")
+    uid = user_id_for_email(" Ravi@Example.com ")
     assert uid == user_id_for_email(A)
     assert uid.startswith("u_") and len(uid) == 18
-    assert "akash" not in uid and "@" not in uid
+    assert "ravi" not in uid and "@" not in uid
     assert user_id_for_email(B) != uid
 
 

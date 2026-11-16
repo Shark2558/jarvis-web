@@ -400,7 +400,7 @@ async def test_no_plaintext_metadata_in_any_document() -> None:
     svc, docs, _ = make()
     item = (await svc.add_file(UID, PDF, type_hint="passport")).item
     await svc.update(
-        UID, item.id, {"title": "Akash passport", "last4": "4821", "note": "blue folder"}
+        UID, item.id, {"title": "Ravi passport", "last4": "4821", "note": "blue folder"}
     )
-    for needle in ("Akash passport", "4821", "blue folder", "passport"):
+    for needle in ("Ravi passport", "4821", "blue folder", "passport"):
         assert not scan(docs, needle), needle

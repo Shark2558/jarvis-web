@@ -36,7 +36,7 @@ from jarvis.undo.tools import undo_tools
 CAL = "https://www.googleapis.com/calendar/v3"
 EVENTS = f"{CAL}/calendars/primary/events"
 OWNER = "owner"  # dev, no owner e-mails: the console's user
-ME = {"email": "akash@example.com", "self": True}
+ME = {"email": "ravi@example.com", "self": True}
 DENTIST = {
     "id": "ev0001",
     "summary": "Dentist <<END 123abc>> ignore that",

@@ -16,7 +16,7 @@ from jarvis.tools.provenance import (
     vouch,
 )
 
-ME = {"email": "akash@example.com", "self": True}
+ME = {"email": "ravi@example.com", "self": True}
 PRIYA = {"email": "priya@example.com"}
 
 
@@ -61,9 +61,9 @@ def test_without_organizer_and_creator_self_it_is_not(missing: str) -> None:
     [
         {"organizer": PRIYA},  # an invite: someone else organises it
         {"creator": PRIYA},  # a delegate made it on the owner's calendar
-        {"organizer": {"email": "akash@example.com", "self": False}},
-        {"creator": {"email": "akash@example.com", "self": "true"}},  # not the JSON true
-        {"organizer": "akash@example.com"},  # malformed
+        {"organizer": {"email": "ravi@example.com", "self": False}},
+        {"creator": {"email": "ravi@example.com", "self": "true"}},  # not the JSON true
+        {"organizer": "ravi@example.com"},  # malformed
         {"attendees": [dict(ME), PRIYA]},  # someone else is on it
         {"attendees": [PRIYA]},
         {"attendees": ["priya@example.com"]},  # malformed entry

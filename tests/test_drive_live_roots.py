@@ -15,7 +15,7 @@ from jarvis.drive.roots import RootsStore
 from jarvis.drive.service import DriveService
 from jarvis.storage.docs import MemoryDocs, Set
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 EDITOR = "colleague@example.com"
 UID = "u_owner"
 
@@ -58,7 +58,7 @@ def test_the_root_check_lasts_at_most_a_minute() -> None:
 async def test_the_confirming_owners_address_is_stored_with_the_root() -> None:
     d, clock = _drive(), Clock()
     svc = await _confirmed(d, clock)
-    await svc.set_use(UID, " Akash@Example.com", "root1", True)
+    await svc.set_use(UID, " Ravi@Example.com", "root1", True)
     (root,) = await svc.roots.load(UID)
     assert (root.id, root.email) == ("root1", OWNER)
 

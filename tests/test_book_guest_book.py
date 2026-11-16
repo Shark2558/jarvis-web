@@ -34,12 +34,12 @@ CLEAN = (BOOK_DIR / "book.json").read_bytes()
 @pytest.mark.parametrize(
     ("text", "named"),
     [
-        ("Mail Akash.Owner@Example.com for access.", True),
-        ("Written by akash.owner on a Sunday.", True),
-        ("Written by ａｋａｓｈ.ｏｗｎｅｒ.", True),  # full-width letters (NFKC)
-        ("akash.owner\\u0040example.com", True),  # a JSON escape
-        ("The akash.owners club", True),  # D3 amendment: "akash" is the distinctive token
-        ("The Akashic owners club", False),  # not a whole word; "owner" is JARVIS's own word
+        ("Mail Ravi.Owner@Example.com for access.", True),
+        ("Written by ravi.owner on a Sunday.", True),
+        ("Written by ｒａｖｉ.ｏｗｎｅｒ.", True),  # full-width letters (NFKC)
+        ("ravi.owner\\u0040example.com", True),  # a JSON escape
+        ("The ravi.owners club", True),  # D3 amendment: "ravi" is the distinctive token
+        ("The Raviic owners club", False),  # not a whole word; "owner" is JARVIS's own word
         ("The core loop sits in layer four.", False),
     ],
 )

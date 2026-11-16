@@ -76,7 +76,7 @@ def gmail_message(mail: dict[str, Any], *, full: bool = True) -> dict[str, Any]:
     """A fixture mail (snippet, labels and auth are optional) as Gmail shows it."""
     headers = [
         {"name": "From", "value": mail["from"]},
-        {"name": "To", "value": "akash@example.com"},
+        {"name": "To", "value": "ravi@example.com"},
         {"name": "Subject", "value": mail["subject"]},
         {"name": "Date", "value": mail["date"]},
         {"name": "Message-ID", "value": f"<{mail['id']}@mail.test>"},

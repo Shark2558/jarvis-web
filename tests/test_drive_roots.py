@@ -18,7 +18,7 @@ from jarvis.drive.ports import MAX_ROOTS, DriveError, NotInRoots, RootsUnreadabl
 from jarvis.drive.roots import Root, RootsStore
 from jarvis.storage.docs import DocTx, MemoryDocs, Set
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = "u_owner"
 NOW = datetime(2026, 11, 3, 6, 0, tzinfo=UTC)
 
@@ -39,7 +39,7 @@ async def test_roots_round_trip_and_are_per_owner() -> None:
     store = RootsStore(docs, now=lambda: NOW)
     assert await store.load(UID) == []
     await store.confirm(UID, "root1", "Registry", email=OWNER)
-    await store.confirm(UID, "root2", "Minutes", email="Akash@Example.com")
+    await store.confirm(UID, "root2", "Minutes", email="Ravi@Example.com")
     got = await store.load(UID)
     assert [(r.id, r.name, r.confirmed_at, r.email) for r in got] == [
         ("root1", "Registry", NOW, OWNER),

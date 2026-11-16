@@ -71,7 +71,7 @@ def memory_view(**over: Any) -> dict[str, Any]:
 
 
 FACTS = [
-    fact("m1", "My name is Akash; call me Sir.", "about_you"),
+    fact("m1", "My name is Ravi; call me Sir.", "about_you"),
     fact("m2", "I prefer tea to coffee.", "preferences", origin="learned", pinned=False),
     fact("m3", "Priya is my manager.", "people", origin="added"),
     fact("m4", "I lead the Unified Registry programme.", "work", origin="imported", pinned=False),
@@ -351,7 +351,7 @@ def test_facts_are_grouped_with_origin_badges_dates_and_pins(make: Callable[...,
     assert heads == ["About you· 1", "Preferences· 1", "People· 1", "Work· 1", "Other· 1"], heads
     expect(page.locator("#memFactsCount")).to_have_text("· 5 facts · 2 pinned")
     words = {
-        "My name is Akash": "you told me",
+        "My name is Ravi": "you told me",
         "I prefer tea": "learned",
         "Priya is my manager": "added by you",
         "Unified Registry": "imported",
@@ -361,9 +361,9 @@ def test_facts_are_grouped_with_origin_badges_dates_and_pins(make: Callable[...,
         expect(row.locator(".mbadge")).to_have_text(badge)
         assert _day(c, "2026-10-30T09:00:00Z") in str(row.locator(".mwhen").text_content())
     assert _row(c, "Odd category").locator(".mbadge").count() == 0  # unknown origin: no badge
-    pin = _row(c, "My name is Akash").get_by_role("button", name="Pin")
+    pin = _row(c, "My name is Ravi").get_by_role("button", name="Pin")
     assert pin.get_attribute("aria-pressed") == "true"
-    assert "Pinned" in str(_row(c, "My name is Akash").text_content())
+    assert "Pinned" in str(_row(c, "My name is Ravi").text_content())
     assert _row(c, "I prefer tea").get_by_role("button", name="Pin").get_attribute(
         "aria-pressed"
     ) == ("false")
@@ -491,21 +491,21 @@ def test_filter_box_narrows_the_facts(make: Callable[..., Console]) -> None:
 # ---- About you ----------------------------------------------------------------------------------
 def test_about_you_saves_each_block_and_keeps_unsaved_typing(make: Callable[..., Console]) -> None:
     c = make()
-    profile = {"about": "Akash, project lead.", "preferences": "", "people": "", "work": ""}
+    profile = {"about": "Ravi, project lead.", "preferences": "", "people": "", "work": ""}
     fake = FakeMemory(c.page, memory_view(profile=profile))
     c.open()
     _main(c)
     page = c.page
     about = page.locator("#memP-about")
-    assert about.input_value() == "Akash, project lead."
+    assert about.input_value() == "Ravi, project lead."
     expect(page.locator("#memC-about")).to_have_text("20 / 1,000")
-    about.fill("Akash, project lead in Thiruvananthapuram. Call me Sir.")
+    about.fill("Ravi, project lead in Thiruvananthapuram. Call me Sir.")
     assert page.locator("#memS-about").get_attribute("aria-disabled") is None
     page.locator("#memS-about").click()
     expect(page.locator("#memSt-about")).to_have_text("Saved.")
     puts = fake.to("PUT", "/v1/memory/profile/about")
     assert [x["body"] for x in puts] == [
-        {"text": "Akash, project lead in Thiruvananthapuram. Call me Sir."}
+        {"text": "Ravi, project lead in Thiruvananthapuram. Call me Sir."}
     ]
     assert puts[0]["headers"].get("x-requested-with") == "JARVIS"
     assert page.locator("#memS-about").get_attribute("aria-disabled") == "true"  # nothing new
@@ -518,7 +518,7 @@ def test_about_you_saves_each_block_and_keeps_unsaved_typing(make: Callable[...,
     page.wait_for_timeout(300)
     assert len(fake.to("GET", "/v1/memory")) == 2
     assert page.locator("#memP-work").input_value() == "Unified Registry, still typing"
-    assert about.input_value() == "Akash, project lead in Thiruvananthapuram. Call me Sir."
+    assert about.input_value() == "Ravi, project lead in Thiruvananthapuram. Call me Sir."
     assert _quiet_errors(c) == []
 
 
@@ -655,9 +655,9 @@ def test_import_previews_counts_then_asks_before_sending(make: Callable[..., Con
     assert page.locator("#memImportBox").is_hidden()
     export = {
         "version": 1,
-        "profile": {"about": "Akash.", "preferences": "", "people": "", "work": ""},
+        "profile": {"about": "Ravi.", "preferences": "", "people": "", "work": ""},
         "facts": [
-            fact("x1", "My name is Akash; call me Sir.", "about_you"),  # a duplicate: skipped
+            fact("x1", "My name is Ravi; call me Sir.", "about_you"),  # a duplicate: skipped
             fact("x2", "I take the 08:10 train.", "plans"),
             fact("x3", "I lived in Kochi.", "places", replaced_by="x4"),
         ],
@@ -685,7 +685,7 @@ def test_import_previews_counts_then_asks_before_sending(make: Callable[..., Con
 
 def test_forget_everything_needs_forget_typed(make: Callable[..., Console]) -> None:
     c = make()
-    profile = {"about": "Akash.", "preferences": "Short replies.", "people": "", "work": ""}
+    profile = {"about": "Ravi.", "preferences": "Short replies.", "people": "", "work": ""}
     fake = FakeMemory(c.page, memory_view(facts=copy.deepcopy(FACTS), profile=profile))
     c.open()
     _main(c)
@@ -775,7 +775,7 @@ def test_reply_shows_used_memories_as_an_expandable_text_list(make: Callable[...
     c = make()
     FakeMemory(c.page, memory_view(facts=copy.deepcopy(FACTS)))
     used = [
-        {"id": "m1", "text": "My name is Akash; call me Sir."},
+        {"id": "m1", "text": "My name is Ravi; call me Sir."},
         {"id": "m2", "text": "I prefer tea."},
     ]
     _with_memories(c, used)
@@ -797,7 +797,7 @@ def test_reply_shows_used_memories_as_an_expandable_text_list(make: Callable[...
     listing.wait_for(state="hidden")
     # one memory, then none: singular, then no chip at all
     page.unroute("**/v1/chat")
-    _with_memories(c, [{"id": "m1", "text": "My name is Akash; call me Sir."}])
+    _with_memories(c, [{"id": "m1", "text": "My name is Ravi; call me Sir."}])
     c.send("and my name?")
     expect(page.locator(".row.jarvis .mchip").last).to_have_text("Used 1 memory")
     page.unroute("**/v1/chat")

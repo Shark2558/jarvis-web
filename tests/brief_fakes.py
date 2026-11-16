@@ -16,7 +16,7 @@ from jarvis.integrations.google import GoogleConnector
 from jarvis.integrations.vault import GoogleTokens, MemoryTokenStore
 from jarvis.storage.docs import Doc, DocTx, MemoryDocs, Op, Query, T
 
-OWNER_EMAIL = "akash@example.com"
+OWNER_EMAIL = "ravi@example.com"
 OWNER_UID = "u_owner"
 CAL = "/calendar/v3"
 GM = "/gmail/v1/users/me"

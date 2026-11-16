@@ -31,7 +31,7 @@ from jarvis.tools.registry import ToolRegistry
 from jarvis.tools.setup import build_gateway
 from jarvis.tools.taint import result_trusted
 
-OWNER = "akash@example.com"
+OWNER = "ravi@example.com"
 UID = "u_owner"
 SCOPE = f"{UID}:s1"
 

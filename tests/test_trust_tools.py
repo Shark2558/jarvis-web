@@ -31,7 +31,7 @@ TZ_URL = f"{CAL}/users/me/calendarList/primary"
 FREEBUSY = f"{CAL}/freeBusy"
 SCOPE = "u_owner:sess_1"
 NOW = datetime.fromtimestamp(GOOGLE_NOW, UTC)
-ME = {"email": "akash@example.com", "self": True}
+ME = {"email": "ravi@example.com", "self": True}
 PRIYA = {"email": "priya@example.com"}
 VOUCHING = {
     "calendar_list_events",

@@ -131,8 +131,8 @@ def test_edit_and_delete() -> None:
 
 
 def test_set_profile_filters_and_caps() -> None:
-    s = set_profile(MemoryState.empty(), "about", "Akash\nProject lead")
-    assert s.profile.about == "Akash\nProject lead"
+    s = set_profile(MemoryState.empty(), "about", "Ravi\nProject lead")
+    assert s.profile.about == "Ravi\nProject lead"
     with pytest.raises(SensitiveRejected):
         set_profile(s, "work", "Salary a/c no 50100123456789")
     with pytest.raises(ValueError):
@@ -143,7 +143,7 @@ def test_set_profile_filters_and_caps() -> None:
 
 def test_wipe_keeps_settings() -> None:
     s = _add(MemoryState.empty(), "Prefers tea", "preferences")
-    s = set_profile(s, "about", "Akash")
+    s = set_profile(s, "about", "Ravi")
     s = s.with_settings(s.settings.model_copy(update={"learn": True}))
     w = wipe(s)
     assert w.all_facts() == [] and w.profile == Profile() and w.settings.learn is True
@@ -152,7 +152,7 @@ def test_wipe_keeps_settings() -> None:
 def test_export_import_round_trip_and_skip_rules() -> None:
     s = _add(MemoryState.empty(), "Prefers tea", "preferences", keywords=["drink"])
     s = _add(s, "Daughter is Anaya", "people")
-    s = set_profile(s, "about", "Akash")
+    s = set_profile(s, "about", "Ravi")
     data = export_data(s, NOW)
     assert data["version"] == 1 and len(data["facts"]) == 2
     back, added, skipped = import_data(wipe(s), data, NOW)
@@ -160,7 +160,7 @@ def test_export_import_round_trip_and_skip_rules() -> None:
     assert sorted((f.text, f.category, f.keywords) for f in back.active()) == sorted(
         (f.text, f.category, f.keywords) for f in s.active()
     )
-    assert back.profile.about == "Akash"
+    assert back.profile.about == "Ravi"
     assert all(f.origin == "imported" for f in back.active())
     # a second import skips duplicates; sensitive and malformed entries are skipped too
     data["facts"].append({"text": "My PIN is 4521", "category": "other"})

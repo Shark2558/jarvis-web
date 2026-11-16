@@ -15,7 +15,7 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from jarvis.tools.taint import content_tainted
+from jarvis.tools.taint import content_tainted, spoken_in_context
 from jarvis.wardrobe.laundry import providers, texts
 from jarvis.wardrobe.laundry.loads import WHOLE_LOAD
 from jarvis.wardrobe.laundry.store import BATCH_ID, ENTRY_ID, LOAD_ID
@@ -231,7 +231,7 @@ def check_send(a: dict[str, Any]) -> None:
     if not _ids(a, "pieces", MAX_PIECES):
         raise ValueError(texts.NOTHING_NAMED)
     if action == "send":
-        if content_tainted():  # R11's UPI rule: a shop's label never comes from a message
+        if content_tainted() or spoken_in_context():  # R11's UPI rule; Workshop 3: typed only
             raise ValueError(texts.TYPE_SHOP)
         providers.clean_shop(a.get("shop"))
         providers.clean_bag(a.get("bag", ""))

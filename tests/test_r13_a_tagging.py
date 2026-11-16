@@ -142,16 +142,18 @@ async def test_m1_five_tags_at_once_never_pass_the_cap_each_reserved_then_settle
     assert (await cat.store.view(UID)).tag_inr == pytest.approx(near, abs=1e-9)
 
 
-async def test_m1_with_no_price_for_the_brain_a_spent_cap_still_refuses() -> None:
+async def test_i1_l1_a_brain_with_no_price_is_never_tagged_with_never_asked() -> None:
+    """Security L1: with no price the estimate was 0, so the ₹ cap never moved. Fail closed."""
     eyes = FakeEyes()
     cat = catalog(eyes=eyes, s=settings(wardrobe_ai_tag_month_inr=1))
     shirt = await _on(cat)
     cat.state["brains"] = _Brains("a-model-with-no-price")
-    assert (await cat.store.desk.tagging.estimate(UID, shirt)).inr == 0.0  # type: ignore[attr-defined]
-    await _month_at(cat, 1.0)
+    est = await cat.store.desk.tagging.estimate(UID, shirt)  # type: ignore[attr-defined]
+    assert est.allowed is False and "price" in est.why
     with pytest.raises(TagRefused) as got:
         await cat.store.desk.tagging.tag(UID, shirt, jpeg())  # type: ignore[attr-defined]
-    assert got.value.status == 402 and eyes.calls == []
+    assert got.value.status == 503 and "price" in str(got.value) and eyes.calls == []
+    assert (await cat.store.view(UID)).tag_inr == 0.0
 
 
 async def test_no_ai_or_no_seeing_brain_is_a_503_and_the_limit_a_402() -> None:

@@ -50,6 +50,9 @@ IN_TOKENS, OUT_TOKENS, MAX_TOKENS = 750, 120, 200
 OFF = "AI tagging is off: switch it on in Helpers, Wardrobe, Settings."
 NEVER = "AI tagging is capped at ₹0 a month on this server."
 NOT_FOR = "AI tagging is only for a saved piece that isn't private."
+UNPRICED = (
+    "AI tagging is off for this brain: JARVIS has no price for it, so it cannot keep to your limit."
+)
 OVER = "This month's AI tagging has reached its ₹{cap} cap."
 ASK = "Look at this clothing item and answer with the JSON object."
 SYSTEM = (
@@ -173,6 +176,13 @@ class Tagging:
         if p.private or p.type in PRIVATE_BY_DEFAULT:
             raise TagRefused(NOT_FOR, 422)
 
+    def _priced(self) -> None:
+        """No price for the answering brain: fail closed (the estimate would be 0 and the ₹ cap
+        would never move, security review L1). No brain at all is `BrainEyes`' own refusal."""
+        model = self._model()
+        if model is not None and model not in PRICES:
+            raise TagRefused(UNPRICED, 503)
+
     def _room(self, so_far: float, inr: float) -> None:
         """Step 3: a spent cap refuses even when the brain has no price (an estimate of 0)."""
         if so_far >= self.cap or so_far + inr > self.cap:
@@ -182,6 +192,7 @@ class Tagging:
         """Read-only (the estimate route): what `_reserve` would decide now."""
         view = await self.store.view(uid)
         self._allowed(view, pid)
+        self._priced()
         _, so_far = await self._month(uid, view)
         inr = await self._estimate_inr()
         self._room(so_far, inr)
@@ -190,6 +201,7 @@ class Tagging:
     async def _reserve(self, uid: str, pid: str) -> float:
         """Steps 1-3 and the estimate added to the month in ONE commit, so two calls at once
         can never both pass the cap (H2: the counter can't be raced)."""
+        self._priced()
         inr = await self._estimate_inr()
 
         async def fn(view: WardrobeView, tx: DocTx) -> tuple[WardrobeView, list[Op]]:

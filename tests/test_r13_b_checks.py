@@ -187,3 +187,12 @@ async def test_l12_two_private_pieces_on_a_card_are_never_twins() -> None:
     assert cards.move(numbered, {"step": "drying", "pieces": [VEST_A]}) == (
         "Note that a private basic (No. 17) is drying"
     )
+
+
+def test_i1_l3_a_spoken_turn_cannot_name_a_shop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Security L3: a spoken turn's words are heard, not typed (Workshop 3): a shop's label is
+    typed only, like a place and a label in A."""
+    monkeypatch.setattr(checks, "spoken_in_context", lambda: True)
+    with pytest.raises(ValueError, match="Type the shop"):
+        checks.check_send({"action": "send", "pieces": [BLAZER], "shop": "Corner shop"})
+    checks.check_send({"action": "receive", "pieces": [BLAZER], "batch": "bt_00000001"})

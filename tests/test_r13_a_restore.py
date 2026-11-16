@@ -114,3 +114,45 @@ async def test_l2_an_empty_check_replayed_after_a_purge_says_check_again() -> No
     assert ids[0] not in (await fresh.store.view(UID)).pieces  # never back unticked
     again = await desk(fresh).restore.check(UID, body)
     assert again.purged == (ids[0],)  # checked again: purged since, his to tick
+
+
+async def test_l3_a_chunk_closes_by_bytes_as_well_as_by_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from r13_fakes import ev
+
+    from jarvis.wardrobe.ports import Commit
+
+    cat = catalog()
+    ids = await _shirts(cat, 12)
+    for pid in ids:  # heavy, old histories: 150 events each
+
+        async def seen(view: object, tx: object, pid: str = pid) -> Commit:
+            return Commit(events=tuple(ev(pid, "seen", cat.clock(), note="n" * 100)
+                                       for _ in range(150)))  # fmt: skip
+
+        await cat.store.transact(UID, seen)
+    body = await desk(cat).backup.file(UID)
+    limit = 250_000  # stands in for about 8 MiB, under Firestore's 10 MiB a commit
+    monkeypatch.setattr(restore_mod, "CHUNK_BYTES", limit)
+    fresh = catalog(clock=cat.clock)
+    real, sizes = fresh.docs.transaction, []
+
+    async def measured(fn: Any) -> Any:
+        async def inner(tx: Any) -> Any:
+            out = await fn(tx)
+            sizes.append(sum(len(json.dumps(op.data)) for op in tx.ops if hasattr(op, "data")))
+            return out
+
+        return await real(inner)
+
+    monkeypatch.setattr(fresh.docs, "transaction", measured)
+    done = await desk(fresh).restore.apply(
+        UID, body, (await desk(fresh).restore.check(UID, body)).token
+    )
+    assert done.chunks >= 3 and done.counts.added == 12  # 12 pieces: far under 50 a chunk
+    assert sizes and max(sizes) <= limit
+    for pid in ids:
+        assert len(await fresh.store.history(UID, pid)) == 151

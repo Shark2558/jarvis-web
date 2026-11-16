@@ -1,21 +1,22 @@
 # src/jarvis/wardrobe/catalog/restore.py
 """Restoring the wardrobe's backup file, confirm before commit (docs/plans/r13-wardrobe.md D17,
-OPS-06; plan review H3).
+OPS-06; plan review H3; review A-1 H4, M2, M3, L1-L5).
 
-1. `check(uid, file)` opens every line (the seal, the line order, the schema, his id, today's key;
-   up to 25 MB, so in a worker thread: voice and chat never wait on it)
-   and answers the counts (to add, already there, where his current record wins, in Recently
+1. `check(uid, file)` opens every line (the seal, the line order, the file's id, its head, the
+   schema, his id, today's key; up to 25 MB, so in a worker thread: voice and chat never wait on
+   it) and answers the counts (to add, already there, where his current record wins, in Recently
    deleted, purged since, events new to the logs) with a token: a MAC of his id, the file's
-   SHA-256 and an expiry an hour on. It WRITES NOTHING (the token is stateless, so nothing about
-   the file is kept either).
+   SHA-256, an expiry an hour on, whether his wardrobe was empty and his purge count. It WRITES
+   NOTHING (the token is stateless, so nothing about the file is kept either).
 2. `apply(uid, file, token, include_purged)` checks the token against the same file and applies
-   it in chunks of at most 50 pieces a transaction (each far under Firestore's 10 MiB): a piece in
-   both keeps his current record and gains the file's events (unioned by event id and re-folded:
-   the newer verified event wins, so a backup never undoes a later change); a piece missing now
-   comes back only into an empty wardrobe or when he ticks it (purged since). Events are kept as
-   they were stored (`as_stored`), so a restore cut after any chunk runs again and duplicates
-   nothing. Photos and fingerprints come back only with the pieces that come back (merged into
-   his shards chunk by chunk, never for a piece that is private: D9).
+   it in chunks of at most 50 pieces or about 8 MiB a transaction (under Firestore's 10 MiB): a
+   piece in both keeps his current record and gains the file's events (unioned by event id and
+   re-folded: the newer verified event wins, so a backup never undoes a later change); a piece
+   missing now comes back only into an empty wardrobe or when he ticks it (purged since). Events
+   are kept as they were stored (`as_stored`), so a restore cut after any chunk runs again and
+   duplicates nothing. Pairs, sets, labels, places, photos and fingerprints come back only with
+   the pieces that come back (fingerprints merged into his shards chunk by chunk, never for a
+   piece that is private: D9).
 """
 
 from __future__ import annotations
@@ -31,15 +32,20 @@ from typing import Any
 from jarvis.keyring import KEY_ID
 from jarvis.storage.docs import DocTx, Op, Set
 from jarvis.wardrobe.catalog.backup import FID, MAGIC, VERSION, aad_line
-from jarvis.wardrobe.catalog.photos import MAX_SHARDS, Get, PhotoVault, is_entry
+from jarvis.wardrobe.catalog.logs import PAGE
+from jarvis.wardrobe.catalog.photos import MAX_SHARDS, PER_SHARD, Get, PhotoVault, is_entry
 from jarvis.wardrobe.catalog.purges import PurgeCount
-from jarvis.wardrobe.catalog.sealed import aad_prints
+from jarvis.wardrobe.catalog.sealed import aad_prints, dumps
 from jarvis.wardrobe.catalog.store import CatalogStore
 from jarvis.wardrobe.http import RestoreCheck, RestoreCounts, RestoreDone
 from jarvis.wardrobe.model import PHOTO_ID, Event, Pair, Piece, WardrobeView
 from jarvis.wardrobe.ports import Commit, Refused
 
 CHUNK = 50
+# What one chunk may write (L3): its pieces' sealed log pages and photos, the index twice over
+# and, with photos, every fingerprint shard at its fullest, under Firestore's 10 MiB a commit.
+CHUNK_BYTES = 8 * 1024 * 1024
+PRINTS_BYTES = MAX_SHARDS * PER_SHARD * 2400
 TOKEN_LIFE = timedelta(hours=1)
 UNREADABLE = (
     "That file can't be opened: it isn't a wardrobe backup of yours from this JARVIS, or it was "
@@ -192,7 +198,7 @@ class Restore:
             raise Refused(EXPIRED)
         current, ticked = await self.store.view(uid), set(include_purged)
         ids = [p for p in parsed.view.pieces if p in current.pieces or empty or p in ticked]
-        chunks = [ids[i : i + CHUNK] for i in range(0, len(ids), CHUNK)]
+        chunks = _chunks(ids, parsed, _base(parsed, current))
         run = _Run(parsed, tuple(self._file_prints(uid, parsed)), frozenset(current.pieces), empty)
         added = there = events = 0
         for chunk in chunks:
@@ -252,6 +258,42 @@ class Restore:
         allowed = {p.id for p in recs if not p.private}
         ops += await self.vault.prints.merge_ops(uid, [e for e in prints if e["p"] in allowed], get)
         return tuple(ops)
+
+
+def _sealed(obj: Any) -> int:
+    return len(dumps(obj)) * 4 // 3 + 64
+
+
+def _base(parsed: Parsed, current: WardrobeView) -> int:
+    """What every chunk writes whatever its pieces: the index (his and the file's records)
+    and, with photos, his fingerprint shards."""
+    prints = PRINTS_BYTES if parsed.has_photos and parsed.prints else 0
+    return _sealed(parsed.view.to_json()) + _sealed(current.to_json()) + prints
+
+
+def _cost(parsed: Parsed, pid: str) -> int:
+    """About what bringing back one piece writes: its log pages, sealed, and its photos."""
+    events = parsed.logs.get(pid, [])
+    pages = _sealed([e.to_json() for e in events]) + 128 * (len(events) // PAGE + 1)
+    if not parsed.has_photos:
+        return pages
+    found = (parsed.photos[ph] for ph in parsed.view.pieces[pid].photos if ph in parsed.photos)
+    return pages + sum(len(dumps(doc)) for doc in found)
+
+
+def _chunks(ids: Sequence[str], parsed: Parsed, base: int) -> list[list[str]]:
+    """At most CHUNK pieces, closed early once CHUNK_BYTES would be passed (L3)."""
+    out: list[list[str]] = []
+    now: list[str] = []
+    size = base
+    for pid in ids:
+        cost = _cost(parsed, pid)
+        if now and (len(now) >= CHUNK or size + cost > CHUNK_BYTES):
+            out.append(now)
+            now, size = [], base
+        now.append(pid)
+        size += cost
+    return [*out, now] if now else out
 
 
 def _attrs(p: Piece) -> dict[str, Any]:

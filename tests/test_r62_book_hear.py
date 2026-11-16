@@ -202,7 +202,7 @@ async def test_the_sessions_spoken_questions_used_up_say_so(settings: Settings) 
 
 # ---- the narration route gives no setup text either ---------------------------------------------
 class Mouth(Ears):
-    async def speak(self, uid: str, req: Any) -> Any:
+    async def speak(self, uid: str, req: Any, *, free_only: bool = False) -> Any:
         assert self.error is not None
         raise self.error
 

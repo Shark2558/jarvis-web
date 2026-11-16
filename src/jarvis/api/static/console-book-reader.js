@@ -172,7 +172,7 @@
     ['show_voice', 'Show voice', 'The browser voice is free and works without the cloud.',
       [['browser', 'Browser (free)'], ['cloud', 'Cloud (\u20b9)']],
       ['The cloud voice uses this month\u2019s free Google allowance first (shared with the console), then costs about \u20b920\u201330 a tour, up to your monthly limit.',
-        'A guest show uses your choice.']],
+        'A guest show uses your choice, but a guest\u2019s tour stops at the free allowance and is never charged.']],
     ['listening', 'Listening', 'Ask by voice. This browser\u2019s recognition is free, but Chrome may send your audio to Google (the browser\u2019s maker) to turn it into text, unless it listens on the device.',
       [['browser', 'Browser (free)'], ['cloud', 'Cloud (\u20b9)']],
       ['Cloud listening uses this month\u2019s free Google allowance first (shared with the console), then costs about \u20b92.3 a minute of listening, up to your monthly limit.',

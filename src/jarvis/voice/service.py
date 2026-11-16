@@ -415,12 +415,15 @@ class VoiceService:
             self._locks[(uid, api)] = lock
         return lock
 
-    async def _gate(self, uid: str, price: Price, units: float, *, free_only: bool) -> None:
-        """The spending gate. `free_only` (R6.2 decision 4, a build book guest's cloud question):
-        only while the free allowance covers a whole billing step, never priced."""
+    async def _gate(
+        self, uid: str, price: Price, units: float, *, free_only: bool, step: float = 1.0
+    ) -> None:
+        """The spending gate. `free_only` (R6.2 decision 4, a build book guest's cloud question
+        or narration): only while the free allowance covers the call rounded up to a whole
+        billing `step`, never priced."""
         if free_only:
-            step = math.ceil(units / FREE_ONLY_STEP_S) * FREE_ONLY_STEP_S
-            await self.billing.ensure_free(key=price.key, units=step, free_units=price.free_units)
+            whole = math.ceil(units / step) * step
+            await self.billing.ensure_free(key=price.key, units=whole, free_units=price.free_units)
             return
         await self.billing.ensure_units_allowed(
             uid, key=price.key, units=units, free_units=price.free_units
@@ -452,7 +455,9 @@ class VoiceService:
             await self._meter(uid, price, estimate)  # shielded: completes despite the cancel
             raise
 
-    async def speak(self, uid: str, req: SpeakRequest) -> Speech:
+    async def speak(self, uid: str, req: SpeakRequest, *, free_only: bool = False) -> Speech:
+        """`free_only` (R6.2 security review 2): a build book guest's narration; only while the
+        free allowance covers the whole text, never priced (FreeAllowanceUsed otherwise)."""
         voice, rate, text = self._speech_input(req, await self.settings_of(uid))
         spoken = speakable(text)
         if not spoken:
@@ -461,9 +466,7 @@ class VoiceService:
         price = self.prices.tts(voice.type)
         chars = len(spoken)
         async with self._lock(uid, "tts"):
-            await self.billing.ensure_units_allowed(
-                uid, key=price.key, units=chars, free_units=price.free_units
-            )
+            await self._gate(uid, price, chars, free_only=free_only)
             audio = await self._engine(
                 "tts",
                 uid,
@@ -529,7 +532,7 @@ class VoiceService:
         price = self.prices.stt
         estimate = float(math.ceil(audio.seconds))  # gated on this …
         async with self._lock(uid, "stt"):
-            await self._gate(uid, price, estimate, free_only=free_only)
+            await self._gate(uid, price, estimate, free_only=free_only, step=FREE_ONLY_STEP_S)
             t = await self._recognise(
                 engines, uid, price, estimate, audio, hints, bool(owner) or bool(turn)
             )

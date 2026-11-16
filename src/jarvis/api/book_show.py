@@ -16,7 +16,8 @@ GET  /v1/book/show/script                ● {release, audience, scenes 1-13, cl
                                          the browser's unless the owner switched), session}
 POST /v1/book/show/speak {line_id}       ● audio/mpeg (a beat id of this book or a lines.LINES
                                          key; the server holds the text) · 404 unknown_line · 503
-                                         voice_unavailable (reason browser: Book settings) · 402
+                                         voice_unavailable (reason browser: Book settings;
+                                         free_used: a guest past the free allowance) · 402
 POST /v1/book/show/hear | /show/heard    ● a spoken question: api/book_show_hear.py (R6.2)
 POST /v1/book/show/ask {text}            ● {reply_id, reply, refused, follow_up, left} (<= 500
                                          characters, 6 a minute a session)
@@ -58,7 +59,7 @@ from jarvis.api.book_show_access import (
 )
 from jarvis.api.book_show_auth import require_show_auth, show_user
 from jarvis.api.identity import current_user
-from jarvis.billing.service import BudgetError, BudgetUnavailable
+from jarvis.billing.service import BudgetError, BudgetUnavailable, FreeAllowanceUsed
 from jarvis.buildbook import hear
 from jarvis.buildbook.lines import LINES
 from jarvis.buildbook.model import SessionView
@@ -208,7 +209,10 @@ async def show_speak(request: Request, uid: str = Depends(show_user)) -> Respons
             503,
         )
     try:
-        out = await voice.speak(uid, SpeakRequest(text=text))
+        # a guest's narration stays inside the free allowance, as a guest's listening does
+        out = await voice.speak(uid, SpeakRequest(text=text), free_only=view.audience != "owner")
+    except FreeAllowanceUsed:
+        return _unavailable("free_used", owner=view.audience == "owner", hearing=False)
     except (VoiceError, BudgetError) as exc:
         return _voice_failure(exc, owner=view.audience == "owner", hearing=False)
     return Response(content=out.audio, media_type="audio/mpeg", headers=NO_STORE)

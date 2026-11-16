@@ -34,11 +34,12 @@ from jarvis.buildbook.owner import (
 )
 from jarvis.config import Settings
 from jarvis.storage.docs import MemoryDocs
-from jarvis.voice.catalogue import PriceList
-from jarvis.voice.service import VoiceEngines, VoiceService
+from jarvis.voice.catalogue import Price, PriceList
+from jarvis.voice.service import SpeakRequest, VoiceEngines, VoiceService
 from jarvis.voice.settings import VoiceSettingsStore
 
 PATH = f"jarvis_book_settings/{UID}"
+HOW_BROWSER = "Use the browser's voice."
 MONEY = ("₹", "rupee", "charged", "spending", "limit", "minutes")  # never in a guest's words
 
 
@@ -247,6 +248,69 @@ async def test_switched_to_the_cloud_the_same_calls_do_reach_the_engines(
     assert len(stt.calls) == 1 and len(tts.calls) == 1
 
 
+# ---- a guest's narration (security review 2, LOW-1): inside the free allowance only --------------
+async def _use_up_tts(svc: VoiceService) -> None:
+    for price in (svc.prices.chirp3_hd, svc.prices.studio):
+        await _used(svc, price.free_units, price)
+
+
+async def test_free_only_narration_never_reaches_google_once_the_allowance_is_used() -> None:
+    stt, tts = FakeSTT(), FakeTTS()
+    svc = _voice(stt, tts)
+    await _use_up_tts(svc)
+    before = (await svc.billing.month(UID)).inr_total
+    with pytest.raises(FreeAllowanceUsed):
+        await svc.speak(UID, SpeakRequest(text="Welcome to the tour."), free_only=True)
+    assert tts.calls == [] and (await svc.billing.month(UID)).inr_total == before
+
+
+async def test_free_only_narration_inside_the_allowance_goes_ahead_free() -> None:
+    tts = FakeTTS()
+    svc = _voice(FakeSTT(), tts)
+    out = await svc.speak(UID, SpeakRequest(text="Welcome to the tour."), free_only=True)
+    assert len(tts.calls) == 1 and out.cost_inr == 0
+
+
+async def _narrate(
+    settings: Settings, audience: str, *, used_up: bool
+) -> tuple[FakeTTS, int, dict[str, Any]]:
+    tts, got = FakeTTS(), []
+    async for app in book_app(settings):
+        app.state.book_clock = Clock()
+        app.state.voice = svc = _voice(FakeSTT(), tts)
+        app.state.book_prefs.values.update(show_voice="cloud")
+        if used_up:
+            await _use_up_tts(svc)
+        async with sign_in(app) as c:
+            h = book((await open_book(c, await register_passkey(c), audience))["token"])
+            r = await c.post("/v1/book/show/speak", json={"line_id": "ask"}, headers=h)
+            got.append((r.status_code, r.json() if r.status_code != 200 else {}))
+    return tts, got[0][0], got[0][1]
+
+
+async def test_a_guests_narration_past_the_free_allowance_is_the_browsers_voice(
+    settings: Settings,
+) -> None:
+    tts, code, body = await _narrate(settings, "guest", used_up=True)
+    assert (code, body["error"], body["detail"]) == (503, "voice_unavailable", HOW_BROWSER)
+    assert tts.calls == [] and [w for w in MONEY if w in body["detail"].lower()] == []
+
+
+async def test_a_guests_narration_inside_the_free_allowance_is_the_cloud_voice(
+    settings: Settings,
+) -> None:
+    tts, code, _ = await _narrate(settings, "guest", used_up=False)
+    assert code == 200 and len(tts.calls) == 1
+
+
+async def test_the_owners_own_narration_is_not_cut_at_the_free_allowance(
+    settings: Settings,
+) -> None:
+    """He chose and confirmed Cloud: past the free allowance his own show goes on, priced."""
+    tts, code, _ = await _narrate(settings, "owner", used_up=True)
+    assert code == 200 and len(tts.calls) == 1
+
+
 # ---- a guest's cloud listening: inside the free allowance only, never charged --------------------
 async def _hear(settings: Settings, ears: Ears, audience: str) -> tuple[int, dict[str, Any]]:
     got: list[tuple[int, dict[str, Any]]] = []
@@ -279,12 +343,12 @@ async def test_a_guest_past_the_free_allowance_is_told_plainly(settings: Setting
     assert [w for w in MONEY if w in body["detail"].lower()] == [], body["detail"]
 
 
-async def _used(svc: VoiceService, seconds: float) -> None:
-    p = svc.prices.stt
+async def _used(svc: VoiceService, units: float, price: Price | None = None) -> None:
+    p = price or svc.prices.stt
     await svc.billing.record_units(
         UID,
         key=p.key,
-        units=seconds,
+        units=units,
         free_units=p.free_units,
         usd_per_unit=p.usd_per_unit,
         label="x",

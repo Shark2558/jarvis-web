@@ -387,6 +387,7 @@ def test_a_switch_to_the_cloud_asks_first_with_its_cost(
         dialog.wait_for()
         assert "free Google allowance first" in dialog.inner_text() and cost in dialog.inner_text()
         assert "₹" in dialog.inner_text()
+        assert "stops at the free allowance and is never charged" in dialog.inner_text()
         dialog.get_by_role("button", name="Keep it free").click()
         assert sel.input_value() == "browser" and fake.to("PUT", "/v1/book/settings") == []
         sel.select_option("cloud")

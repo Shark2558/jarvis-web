@@ -6,6 +6,7 @@
 # rules file (a tripwire for I1).
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -119,3 +120,29 @@ def test_the_rules_file_is_beside_the_module() -> None:
 def test_the_package_ships_the_rules_file() -> None:
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert '"jarvis.wardrobe.styling" = ["rules.json"]' in text
+
+
+# ---- code review M4: the rewear rule has ONE source, C's rules.json ------------------------------
+def test_the_rewear_rule_is_read_from_cs_rules_file_only() -> None:
+    raw = json.loads((Path(styling_rules.__file__).parent / "rules.json").read_text("utf-8"))
+    assert styling_rules.rewear_default() == frozenset(raw["reusable"])
+    assert load_rules().reusable_types == frozenset(raw["reusable"])
+    assert "festive_layer" in styling_rules.rewear_default()  # the outer layer of a festive set
+
+
+async def test_a_forgotten_festive_layer_wear_closes_to_ready_once() -> None:
+    from r13_fakes import piece
+
+    w = await world(at=ist(2026, 11, 16, 19, 0))
+    jacket = piece("wi_0000000000f1", "festive_layer", label="Festive jacket", colour="maroon")
+    await w.add(jacket)
+    got = await w.call("wear_log", action="start", pieces=[jacket.id])
+    assert got.outcome is GatewayOutcome.EXECUTED
+    w.clock.set(ist(2026, 11, 17, 4, 0))
+    zone, rules = await w.ctx.zone(UID), load_rules()
+    for want in (1, 0):
+        closed = await wear.close_forgotten(w.store, UID, now=w.clock(), zone=zone, close="04:00",
+                                            rules=rules)  # fmt: skip
+        assert closed == want
+    p = (await w.pieces())[jacket.id]
+    assert (p.state, p.wears) == ("ready", 1)

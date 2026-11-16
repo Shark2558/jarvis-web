@@ -11,6 +11,7 @@
 - a small colour-pairing table, colour families (a belt matches the shoes), heat and cold;
 - the rewear rule (`after_wear`): trousers, jeans, outerwear, belts, shoes and the watch are worn
   again (Ready); shirts, T-shirts, vests, underwear, socks and anything else go to the laundry.
+  This file is its ONE source (`rewear_default`, `Rules.reusable_types`; code review M4).
 
 `load_rules()` refuses a file that names an unknown type, slot or code (`RulesError`): the part is
 then "setup failed" and the other parts run. Pure: no clock, no I/O beyond reading the file.
@@ -18,6 +19,7 @@ then "setup failed" and the other parts run. Pure: no clock, no I/O beyond readi
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from collections.abc import Mapping
@@ -101,6 +103,11 @@ class Rules(_M):
 
     def formality_of(self, piece: Piece) -> int:
         return piece.formality or self.formality.get(piece.type, 2)
+
+    @property
+    def reusable_types(self) -> frozenset[str]:
+        """The types the rewear rule wears again (Ready after a wear)."""
+        return frozenset(self.reusable)
 
     def reusable_piece(self, piece: Piece) -> bool:
         return piece.type in self.reusable
@@ -193,4 +200,20 @@ def load_rules(path: Path | None = None) -> Rules:
         raise RulesError(f"the styling rules failed their check: {type(exc).__name__}") from exc
 
 
-__all__ = ["KNOWN_TYPES", "CodeRule", "EventRule", "Rules", "RulesError", "load_rules"]
+@functools.cache
+def rewear_default() -> frozenset[str]:
+    """The rewear rule's types, from `rules.json`: its ONE source (code review M4). A's sweep
+    takes C's checked rules from C's built part and calls `wear.close_forgotten` (Needs I1); this
+    is for a reader without the part. Raises `RulesError` when the file fails its check."""
+    return load_rules().reusable_types
+
+
+__all__ = [
+    "KNOWN_TYPES",
+    "CodeRule",
+    "EventRule",
+    "Rules",
+    "RulesError",
+    "load_rules",
+    "rewear_default",
+]

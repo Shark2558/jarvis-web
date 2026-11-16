@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from r13_fakes import UID, ist
+from r13_fakes import UID, ev, ist
 from r13_fakes_b import (
     BELT,
     BLUE_SHIRT,
@@ -16,6 +16,7 @@ from r13_fakes_b import (
     SOCK_L,
     TRAVEL,
     TRAY,
+    TWIN,
     UNDERPANTS,
     VEST_A,
     WATCH,
@@ -93,3 +94,62 @@ async def test_ops_02_a_second_report_does_not_hold_twice() -> None:
     again = await r.desk.blind(UID, places=(RACK,))
     assert len(await r.open_entries()) == first and again.status == "already"
     assert (await r.piece(WHITE_SHIRT)).hold == "blind" and (await r.piece(BLUE_SHIRT)).hold
+
+
+async def _blind_entry(r):  # type: ignore[no-untyped-def]
+    return next(e for e in await r.open_entries() if e.reason == "blind")
+
+
+async def test_ops_02_m4_a_piece_another_check_lets_go_is_held_again_by_the_blind_check() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))  # a pending deposit holds both
+    pending = (await r.open_entries())[0]
+    await r.desk.blind(UID, places=(RACK,))
+    blind = await _blind_entry(r)
+    assert set(blind.waiting) == {WHITE_SHIRT, TWIN} and WHITE_SHIRT not in blind.pieces
+    r.clock.advance(minutes=1)
+    await r.desk.resolve(UID, pending.id, "none")  # "there was no deposit"
+    for pid in (WHITE_SHIRT, TWIN):  # never back to Ready unchecked: the blind check holds them
+        p = await r.piece(pid)
+        assert (p.state, p.hold, p.back_to) == ("review", "blind", "ready")
+    blind = await _blind_entry(r)
+    assert blind.waiting == () and {WHITE_SHIRT, TWIN} <= set(blind.pieces)
+
+
+async def test_ops_02_m4_a_piece_he_names_for_the_basket_needs_no_blind_check() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))
+    pending = (await r.open_entries())[0]
+    await r.desk.blind(UID, places=(RACK,))
+    r.clock.advance(minutes=1)
+    await r.desk.resolve(UID, pending.id, "these", pieces=(WHITE_SHIRT,))
+    assert await r.state(WHITE_SHIRT) == "in_laundry"  # his word: verified
+    assert (await r.piece(TWIN)).hold == "blind"  # the other one: checked again
+    blind = await _blind_entry(r)
+    assert blind.waiting == () and WHITE_SHIRT not in blind.pieces and TWIN in blind.pieces
+
+
+async def test_ops_02_m4_already_only_when_a_blind_check_covers_every_touched_piece() -> None:
+    r = await rig()
+    await r.commit(ev(BELT, "missing", r.clock()), ev(WATCH, "missing", r.clock()))
+    got = await r.desk.blind(UID, places=(TRAY,))  # everything there is held elsewhere
+    assert got.status == "review" and got.message == (
+        "Noted: 2 pieces wait for a quick check in Helpers, Wardrobe before they're offered again."
+    )
+    blind = await _blind_entry(r)
+    assert blind.pieces == () and set(blind.waiting) == {BELT, WATCH}
+    again = await r.desk.blind(UID, places=(TRAY,))
+    assert again.status == "already"
+    with pytest.raises(Refused) as first:
+        await r.desk.resolve(UID, blind.id, "these")
+    assert str(first.value) == (
+        "These pieces wait for another check first: answer that one in Helpers, Wardrobe."
+    )
+    r.clock.advance(minutes=1)
+    for e in [e for e in await r.open_entries() if e.reason == "missing"]:
+        await r.desk.resolve(UID, e.id, "these")  # where they were: still the blind check's
+    assert [(await r.piece(p)).hold for p in (BELT, WATCH)] == ["blind", "blind"]
+    r.clock.advance(minutes=1)
+    done = await r.desk.resolve(UID, blind.id, "these", how="qr")
+    assert done.message == "Done: the check is closed." and await r.open_entries() == ()
+    assert [await r.state(p) for p in (BELT, WATCH)] == ["ready", "ready"]

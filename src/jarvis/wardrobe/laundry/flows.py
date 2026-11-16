@@ -132,7 +132,7 @@ class Desk(DeskCore):
 
         def plan(view: WardrobeView, laundry: LaundryDoc, queue: ReviewDoc) -> Change:
             return blind.plan_blind(
-                view, places=places, categories=categories, since=since, now=now
+                view, queue, places=places, categories=categories, since=since, now=now
             )
 
         return await self._commit(uid, plan, via=via)

@@ -95,6 +95,8 @@ class Entry(_Rec):
     reason: str = Field(default="", max_length=24)  # a fixed word, never his text
     pieces: tuple[PieceId, ...] = Field(default=(), max_length=200)
     candidates: tuple[PieceId, ...] = Field(default=(), max_length=200)
+    # a blind check's pieces another check holds: held again here when that one lets them go (M4)
+    waiting: tuple[PieceId, ...] = Field(default=(), max_length=200)
     events: tuple[str, ...] = Field(default=(), max_length=200)
     count: int = Field(default=0, ge=0, le=20)  # a pending deposit: how many he couldn't show
     step: str | None = Field(default=None, max_length=12)  # an ambiguous move's step

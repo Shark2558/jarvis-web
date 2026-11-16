@@ -46,7 +46,7 @@ def _waiting(queue: ReviewDoc, start: datetime) -> int:
     for e in review.open_entries(queue):
         if e.opened_at >= start:
             continue
-        named = set(e.pieces or e.candidates)
+        named = set(e.pieces) | set(e.waiting) or set(e.candidates)
         pieces |= named
         loose += 0 if named else 1
     return len(pieces) + loose

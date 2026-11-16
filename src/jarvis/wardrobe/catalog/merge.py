@@ -69,11 +69,16 @@ class Merge:
                 raise Refused(NOT_ONE)
             if a.label_code and b.label_code:
                 raise Refused(TWO_COPIES)
-            kept = a.model_copy(update={"label_code": a.label_code or b.label_code})
+            private = a.private or b.private  # one piece now: private if either was (review M2)
+            kept = a.model_copy(update={"label_code": a.label_code or b.label_code,
+                                        "private": private})  # fmt: skip
             gone = b.model_copy(update={"merged_into": keep, "label_code": None})
             extra: list[Op] = []
-            if a.private and (b.photos or b.fp_model) and self._drop_ops is not None:
-                extra = await self._drop_ops(uid, b, tx)  # one piece now, and it is private
+            if private and self._drop_ops is not None:
+                for side in (a, b):  # no photo or print stays on a private piece, either side
+                    if side.photos or side.fp_model:
+                        extra += await self._drop_ops(uid, side, tx)
+                kept = kept.model_copy(update={"photos": (), "fp_model": None})
                 gone = gone.model_copy(update={"photos": (), "fp_model": None})
             e = event(other, "merged", now, via="merge")
             return Commit(events=(e,), records=(kept, gone), extra=tuple(extra))

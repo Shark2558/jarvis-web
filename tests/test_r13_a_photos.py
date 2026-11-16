@@ -195,3 +195,19 @@ async def test_l9_merging_into_a_private_piece_drops_the_others_photos_and_finge
     assert await desk(cat).vault.count(UID) == 0
     assert await desk(cat).vault.prints._read(cat.docs.get, UID) == []  # noqa: SLF001
     assert "wardrobe_photo/" not in _stored(cat)
+
+
+async def test_i1_m2_merging_a_private_piece_into_a_public_one_keeps_it_private(
+    cat: Catalog,
+) -> None:
+    """Security M2: the survivor is private when either piece was, and its photos go with it."""
+    vest, other = await _add(cat, NewPiece(type="vest", private=False), NewPiece(type="vest"))
+    await desk(cat).vault.save(UID, vest, "front", jpeg())
+    await desk(cat).vault.prints.save(UID, vest, "front", "mnv2-int8-1", fp(4))
+    view = await cat.store.view(UID)
+    assert (view.pieces[vest].private, view.pieces[other].private) == (False, True)
+    await desk(cat).merge.merge(UID, vest, other)  # the public one keeps the id
+    kept = (await cat.store.view(UID)).pieces[vest]
+    assert kept.private is True and kept.photos == () and kept.fp_model is None
+    assert await desk(cat).vault.count(UID) == 0
+    assert "wardrobe_photo/" not in _stored(cat)

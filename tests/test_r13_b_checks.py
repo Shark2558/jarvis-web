@@ -38,7 +38,6 @@ BATCH = "bt_" + "0" * 8
         (checks.check_move, {"step": "drying", "load": "load-1"}),
         (checks.check_move, {"step": "basket", "pieces": [TEE], "rev": -1}),
         (checks.check_move, {"step": "basket", "pieces": [TEE], "client_id": "x"}),
-        (checks.check_move, {"step": "basket", "pieces": [TEE], "via": "fax"}),
         (checks.check_review, {"action": "resolve"}),
         (checks.check_review, {"action": "resolve", "entry": ENTRY}),
         (checks.check_review, {"action": "resolve", "entry": ENTRY, "outcome": "maybe"}),
@@ -83,7 +82,7 @@ def test_a_malformed_call_fails_fast_in_plain_words(check: Any, args: dict[str, 
     ("check", "args"),
     [
         (checks.check_move, {"step": "drying", "load": LOAD}),
-        (checks.check_move, {"step": "basket", "one_of": [TEE, TWIN], "via": "panel", "rev": 3}),
+        (checks.check_move, {"step": "basket", "one_of": [TEE, TWIN], "rev": 3}),
         (checks.check_review, {"action": "blind", "places": [TRAY], "day": "2026-11-15"}),
         (
             checks.check_review,

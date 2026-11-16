@@ -4,7 +4,9 @@
 fast in plain words and never reaches a card. Write tools take piece ids; only `laundry_move` also
 takes a `query` (D10's one exception). No argument could order, pay, call or send anything. A
 shop's label is his words: in a round that read other people's content it is refused before any
-card (R11's UPI rule), so it never comes from a message or waits in a card from one.
+card (R11's UPI rule), so it never comes from a message or waits in a card from one. Where a
+tap came from (`via`) is never offered to the model: the tools work it out from the call's
+context (review L1), and the gateway refuses an argument the schema doesn't name.
 """
 
 from __future__ import annotations
@@ -24,7 +26,6 @@ STEPS = ("basket", "lifted", "load", "washing", "drying", "prep", "ready")
 ACTIONS = ("list", "resolve", "blind")
 OUTCOMES = ("these", "none", "moved", "dismiss")
 HOWS = ("tap", "qr", "match", "label", "owner")
-VIAS = ("panel", "chat", "voice", "telegram")
 FOUND_TO = tuple(s for s in STATED_CHOICES["found"] if s != "with_provider")  # M3: via a batch
 CLIENT = re.compile(r"^[A-Za-z0-9_-]{8,56}$")
 QUERY_MAX, MAX_PIECES, MAX_ONE_OF, MAX_MORE = 80, 50, 6, 10
@@ -32,7 +33,6 @@ QUERY_MAX, MAX_PIECES, MAX_ONE_OF, MAX_MORE = 80, 50, 6, 10
 _ID = {"type": "string", "pattern": PIECE_ID.pattern}
 _IDS = {"type": "array", "items": _ID, "maxItems": MAX_PIECES}
 _PLACE = {"type": "string", "pattern": PLACE_ID.pattern, "description": "One of his place ids"}
-_VIA = {"type": "string", "enum": list(VIAS)}
 SCHEMAS: dict[str, dict[str, Any]] = {
     "laundry_status": {
         "type": "object",
@@ -54,7 +54,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "load": {"type": "string", "pattern": LOAD_ID},
             "rev": {"type": "integer", "minimum": 0},
             "client_id": {"type": "string", "pattern": CLIENT.pattern},
-            "via": _VIA,
         },
         "required": ["step"],
     },
@@ -72,7 +71,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "categories": {"type": "array", "items": {"type": "string", "enum": list(CATEGORIES)}},
             "since": {"type": "string", "description": "When the blind period began (ISO time)"},
             "day": {"type": "string", "description": "Or the day it began (YYYY-MM-DD)"},
-            "via": _VIA,
         },
     },
     "laundry_correct": {
@@ -93,7 +91,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "due": {"type": "string", "description": "The day it is due back (YYYY-MM-DD)"},
             "batch": {"type": "string", "pattern": BATCH_ID},
             "to": {"type": "string", "enum": list(providers.RECEIVE_TO)},
-            "via": _VIA,
         },
     },
 }
@@ -146,7 +143,6 @@ def check_status(a: dict[str, Any]) -> None:
 def _check_extras(a: dict[str, Any]) -> None:
     _match(a, "place", PLACE_ID.pattern)
     _match(a, "load", LOAD_ID)
-    _enum(a, "via", VIAS)
     rev, cid = a.get("rev"), a.get("client_id")
     if rev is not None and (not isinstance(rev, int) or isinstance(rev, bool) or rev < 0):
         raise ValueError("rev is the index revision he saw")
@@ -205,7 +201,6 @@ def check_review(a: dict[str, Any]) -> None:
         since, day = stated(a)
         if since is not None and day is not None:
             raise ValueError("give since or day, not both")
-    _enum(a, "via", VIAS)
 
 
 def check_correct(a: dict[str, Any]) -> None:
@@ -240,7 +235,6 @@ def check_send(a: dict[str, Any]) -> None:
         if not a.get("batch"):
             raise ValueError("batch is the batch's id (from laundry_status)")
         _enum(a, "to", providers.RECEIVE_TO)
-    _enum(a, "via", VIAS)
 
 
 __all__ = [

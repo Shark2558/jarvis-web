@@ -26,7 +26,7 @@ from jarvis.core.guardrails import ActionRisk
 from jarvis.tools.base import Preview, Tool
 from jarvis.tools.context import require_tool_context
 from jarvis.tools.provenance import vouch
-from jarvis.tools.taint import spoken_in_context
+from jarvis.tools.taint import owner_text, spoken_in_context
 from jarvis.wardrobe.laundry import cards, checks, history, texts
 from jarvis.wardrobe.laundry.cards import fence, fenced, shown
 from jarvis.wardrobe.laundry.flows import Desk, Done
@@ -38,10 +38,20 @@ AGENT = "laundry"
 
 
 def _via() -> str:
-    """Where a tap came from (the event's `via`): Telegram, a spoken turn, or the chat."""
+    """Where a tap came from (the event's `via`), from the call's context, never an argument
+    (review L1): Telegram, a spoken turn, a chat turn (his words in it), else his panel (A's
+    route and an approved card run with no turn's words)."""
     if on_telegram():
         return "telegram"
-    return "voice" if require_tool_context().spoken or spoken_in_context() else "chat"
+    if require_tool_context().spoken or spoken_in_context():
+        return "voice"
+    return "chat" if owner_text() is not None else "panel"
+
+
+def _how(a: dict[str, Any]) -> str:
+    """How a check was answered (`qr`, `label`, ...): only his panel says so; the model's call
+    is a tap (review L1)."""
+    return str(a.get("how", "tap")) if _via() == "panel" else "tap"
 
 
 def _answer(done: Done) -> dict[str, Any]:
@@ -114,7 +124,7 @@ class LaundryAPI:
             load=a.get("load"),
             client_id=a.get("client_id"),
             rev=a.get("rev"),
-            via=a.get("via") or _via(),
+            via=_via(),
         )
         return _answer(done)
 
@@ -142,7 +152,7 @@ class LaundryAPI:
             categories=a.get("categories", ()),
             since=since,
             day=day,
-            via=a.get("via") or _via(),
+            via=_via(),
         )
         return _answer(done)
 
@@ -154,8 +164,8 @@ class LaundryAPI:
             pieces=a.get("pieces", ()),
             to=a.get("to"),
             place=a.get("place"),
-            how=a.get("how", "tap"),
-            via=a.get("via") or _via(),
+            how=_how(a),
+            via=_via(),
         )
         return _answer(done)
 
@@ -175,7 +185,7 @@ class LaundryAPI:
                 a["batch"],
                 a.get("pieces", ()),
                 to=a.get("to", "ready"),
-                via=a.get("via") or _via(),
+                via=_via(),
             )
         elif ctx.outside:  # a card proposed in a round that read other people's words
             return {"status": "refused", "message": texts.TYPE_SHOP}
@@ -187,7 +197,7 @@ class LaundryAPI:
                 bag=a.get("bag", ""),
                 due=checks.due_of(a),
                 origin=cast("Origin", origin_of(ctx)),
-                via=a.get("via") or _via(),
+                via=_via(),
             )
 
         async def answered() -> dict[str, Any]:

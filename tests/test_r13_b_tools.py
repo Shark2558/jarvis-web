@@ -11,6 +11,7 @@ import json
 
 from r13_fakes import UID
 from r13_fakes_b import (
+    BELT,
     BLAZER,
     BLUE_SHIRT,
     JACKET,
@@ -18,8 +19,10 @@ from r13_fakes_b import (
     PILOT,
     RACK,
     TEE,
+    TRAY,
     TROUSERS,
     VEST_A,
+    WATCH,
     rig,
 )
 
@@ -154,6 +157,27 @@ async def test_m5_one_pieces_history_fences_its_place_and_a_private_piece_has_no
         "state": "ready",
         "words": "a private basic",
     }
+
+
+async def test_l1_the_model_cannot_say_where_a_tap_came_from_or_how_it_was_checked() -> None:
+    r = await rig()
+    assert not any("via" in t.input_schema["properties"] for t in r.part.tools)
+    claim = await r.tool("laundry_move", step="basket", pieces=[TEE], via="panel")
+    assert claim.outcome is GatewayOutcome.ERROR and await r.state(TEE) == "ready"
+    await r.tool("laundry_move", step="basket", pieces=[TEE])  # a chat turn
+    (dep,) = [h.event for h in await r.store.history(UID, TEE) if h.event.kind == "deposited"]
+    assert dep.via == "chat"
+    await r.desk.blind(UID, places=(TRAY,))
+    (entry,) = await r.open_entries()
+    r.clock.advance(minutes=1)
+    await r.tool("laundry_review", action="resolve", entry=entry.id, outcome="these",
+                 pieces=[BELT], how="qr")  # fmt: skip
+    (said,) = [h.event for h in await r.store.history(UID, BELT) if h.event.kind == "released"]
+    assert (said.via, said.evidence.how) == ("chat", "tap")  # the model's claim is not kept
+    await r.tool("laundry_review", panel=True, action="resolve", entry=entry.id, outcome="these",
+                 pieces=[WATCH], how="qr")  # fmt: skip
+    (seen,) = [h.event for h in await r.store.history(UID, WATCH) if h.event.kind == "released"]
+    assert (seen.via, seen.evidence.how) == ("panel", "qr")  # his scan, on his panel
 
 
 async def test_review_list_resolve_and_blind_through_the_tool() -> None:

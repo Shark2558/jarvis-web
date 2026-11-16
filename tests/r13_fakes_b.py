@@ -6,7 +6,8 @@
 #   rig(...)            B built on the seeded store (16 Nov 2026 09:00 IST), B's writer and an
 #                       observer bound into it, a keyring, a recording notifier and a REAL gateway
 #                       with B's five tools
-#   Rig.tool(name, **)  one call through the gateway (tainted / spoken rounds on request)
+#   Rig.tool(name, **)  one call through the gateway (tainted / spoken rounds, or the panel's
+#                       press with no owner words, on request)
 #   FakeNotifier        records (uid, kind, message); `fail` raises, `held` answers "hold",
 #                       `answer` any Delivery (a ring no channel took), `stall` never answers
 #   the pilot's pieces by name (BLUE_SHIRT ... SHORTS), its places and its first sock pair
@@ -136,10 +137,18 @@ class Rig:
         await self.commit(ev(pid, "wear_started", self.clock(), plan=plan))
 
     async def tool(
-        self, name: str, *, tainted: bool = False, spoken: bool = False, **args: Any
+        self,
+        name: str,
+        *,
+        tainted: bool = False,
+        spoken: bool = False,
+        panel: bool = False,
+        **args: Any,
     ) -> GatewayResult:
+        """One call: a chat turn (his words in it), or the panel's press (A's route: no words)."""
         call = ToolCall(id=f"t-{name}", name=name, arguments=dict(args))
-        with context_trust(untrusted=tainted, spoken=spoken, owner_text="test"):
+        said = None if panel else "test"
+        with context_trust(untrusted=tainted, spoken=spoken, owner_text=said):
             return await self.gateway.execute(call, scope=self.scope)
 
     def text(self) -> str:

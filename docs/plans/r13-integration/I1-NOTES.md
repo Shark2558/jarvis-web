@@ -44,10 +44,10 @@ States: done (commit), declined (reason), left (for the integrated reviews or th
 | 28 | Persona p13.0 with `WARDROBE_RULE`; the 21 pins move | D21 | done `6848d035` |
 | 29 | Owner decision 16 Nov: a declined calendar event still gets its outfit plan, recorded in plan D13 | owner | done `baee5527` |
 | 30 | Workshop 4 overflow sentence ("Tomorrow's outfits for 17 more events are ready in Helpers, Wardrobe.") written into plan D19 as built | Workshop 4 | done `baee5527` (the Workshop's own wording could not be re-read here; it equals INTEGRATION-C 5.13) |
-| 31 | `evals/r13/e2e.py` (tests 1-5, 7, 8) and `needles.py` (8 classes, 9 sinks) through the wired app, `evals/r13/wired.py`, `tests/test_r13_i1_e2e.py` | plan I1 | done `67a4487e` and the commit after it |
+| 31 | `evals/r13/e2e.py` (tests 1-5, 7, 8) and `needles.py` (8 classes, 9 sinks) through the wired app, `evals/r13/wired.py`, `tests/test_r13_i1_e2e.py` | plan I1 | done `67a4487e` `8e329bab` |
 | 32 | `STUBS_PASS` False, `planned` emptied, the gate test pins the flip; the Telegram guard's R13 tools built with a keyring | plan I1 | done `67a4487e` |
 | 33 | D's browser tests onto the wired app | D §6 | left: they still run on the contract fake server, which `test_the_fake_server_answers_every_route_with_its_model` ties to the real routes; the wired app is covered by the replay of D's recorded calls, the e2e and the needles |
-| 34 | Version pins (program 13.0.0, persona p13.0, guide and plan v13.0.3, build book ≤ 80-char library names) | plan I1 | done `baee5527` `6848d035` and the next commit |
+| 34 | Version pins (program 13.0.0, persona p13.0, guide and plan v13.0.3, build book ≤ 80-char library names) | plan I1 | done `baee5527` `6848d035` `8e329bab` |
 | 35 | D10 core `tell()` skip for photo-only wardrobe tasks | D §6 | declined: the core's hash is a contract (I0) and D's static test already refuses any console module that subscribes to `embed`, `colour`, `person` or `face` |
 | 36 | A16 and C12 integrated re-reviews (`code-reviewer`, `python-reviewer`, `security-reviewer`) in a fresh context | A/C §6 | left for the reviews |
 | 37 | The brief test's night is built from today (date bomb, found by the clock sweep on main too) | Workshop | done `361c8725` (passes at today's date and under the sweep at 2027-01-02) |

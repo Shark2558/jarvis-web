@@ -25,7 +25,7 @@ ACTIONS = ("list", "resolve", "blind")
 OUTCOMES = ("these", "none", "moved", "dismiss")
 HOWS = ("tap", "qr", "match", "label", "owner")
 VIAS = ("panel", "chat", "voice", "telegram")
-FOUND_TO = STATED_CHOICES["found"]
+FOUND_TO = tuple(s for s in STATED_CHOICES["found"] if s != "with_provider")  # M3: via a batch
 CLIENT = re.compile(r"^[A-Za-z0-9_-]{8,56}$")
 QUERY_MAX, MAX_PIECES, MAX_ONE_OF, MAX_MORE = 80, 50, 6, 10
 

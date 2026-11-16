@@ -188,3 +188,18 @@ async def test_the_holds_switch_is_one_function_the_eval_control_turns_off(
     r = await rig()
     await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))
     assert [await r.state(p) for p in (WHITE_SHIRT, TWIN)] == ["ready", "ready"]
+
+
+async def test_m3_one_of_never_holds_a_piece_at_the_shop_or_already_in_the_basket() -> None:
+    r = await rig()
+    await r.desk.send_out(UID, (TWIN,), "Dry cleaner")
+    with pytest.raises(Refused) as shop:
+        await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, TWIN))
+    assert (
+        str(shop.value) == "A white shirt is with an outside laundry: mark it back from its batch."
+    )
+    await r.desk.move(UID, "basket", pieces=(NAVY_SHIRT,))
+    with pytest.raises(Refused) as dirty:
+        await r.desk.move(UID, "basket", one_of=(WHITE_SHIRT, NAVY_SHIRT))
+    assert str(dirty.value) == "A navy shirt isn't ready or in use, so that step doesn't fit it."
+    assert await r.open_entries() == () and await r.state(TWIN) == "with_provider"

@@ -22,6 +22,7 @@ from r13_fakes_b import (
 )
 
 from jarvis.storage.docs import DocTx
+from jarvis.tools.gateway import GatewayOutcome
 from jarvis.wardrobe.laundry import review
 from jarvis.wardrobe.laundry.holds import admit
 from jarvis.wardrobe.model import WardrobeView
@@ -216,7 +217,8 @@ def test_h1_a_which_entry_without_its_step_takes_no_laundry_step() -> None:
     lost = Entry(id="rv_" + "0" * 10, kind="rescan", reason="which", candidates=(TEE,),
                  opened_at=now)  # fmt: skip
     with pytest.raises(Refused) as no:
-        resolve._which(WardrobeView(uid=UID), LaundryDoc(), lost, "these", (TEE,), now)  # noqa: SLF001
+        ask = resolve._Ask("these", (TEE,), None, None, "tap", {}, now)  # noqa: SLF001
+        resolve._which(WardrobeView(uid=UID), LaundryDoc(), lost, ask)  # noqa: SLF001
     assert str(no.value) == "That answer doesn't fit this check."
 
 
@@ -273,6 +275,21 @@ async def test_h2_a_hold_answered_another_way_never_says_done() -> None:
     got = await r.desk.resolve(UID, entry.id, "these")
     assert got.message == "Nothing to change: it was answered another way. The check is closed."
     assert await r.open_entries() == () and await r.state(WATCH) == "ready"
+
+
+async def test_m3_a_check_never_lands_a_piece_at_the_shop_without_a_batch() -> None:
+    r = await rig()
+    await r.commit(ev(BLUE_SHIRT, "missing", r.clock()))
+    (entry,) = await r.open_entries()
+    with pytest.raises(Refused) as no:
+        await r.desk.resolve(UID, entry.id, "moved", to="with_provider")
+    assert str(no.value) == (
+        "A piece goes to an outside laundry only with 'send out', so it has its batch."
+    )
+    bad = await r.tool(
+        "laundry_review", action="resolve", entry=entry.id, outcome="moved", to="with_provider"
+    )
+    assert bad.outcome is GatewayOutcome.ERROR and await r.state(BLUE_SHIRT) == "review"
 
 
 def test_needs_from_another_part_still_become_entries() -> None:

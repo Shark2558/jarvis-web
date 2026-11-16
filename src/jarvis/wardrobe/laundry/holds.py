@@ -140,6 +140,14 @@ def check_basket(piece: Piece) -> None:
         raise Refused(texts.wrong_state(piece, "basket"))
 
 
+def check_one_of(piece: Piece) -> None:
+    """A "one of these" candidate: Ready or In use (one held elsewhere is skipped by the caller)."""
+    if piece.state == "with_provider":
+        raise Refused(texts.with_provider(piece))
+    if piece.state not in BASKET_FROM:
+        raise Refused(texts.wrong_state(piece, "basket"))
+
+
 def pending(
     view: WardrobeView,
     candidates: Sequence[str],
@@ -148,9 +156,9 @@ def pending(
     count: int,
     category: str | None = None,
 ) -> tuple[Entry, tuple[Event, ...]]:
-    """A pending deposit with no piece id: its entry, and holds for its candidates that aren't
-    already waiting for another check (those stay that check's)."""
-    free = [view.pieces[c] for c in candidates if view.pieces[c].state != "review"]
+    """A pending deposit with no piece id: its entry, and holds for its candidates that could go
+    into the basket (Ready, In use); one already waiting for another check stays that check's."""
+    free = [view.pieces[c] for c in candidates if view.pieces[c].state in BASKET_FROM]
     holds = hold_events(free, "held", now)
     entry = Entry(
         id=new_entry_id(),
@@ -180,6 +188,9 @@ def plan_basket(
     sure = [view.pieces[i] for i in ids]
     for p in sure:
         check_basket(p)
+    for c in one_of:  # review M3: only a piece that could go in; never one at the shop
+        if view.pieces[c].state != "review":
+            check_one_of(view.pieces[c])
     events = [basket_event(p, now, place) for p in sure]
     entries: list[Entry] = []
     if one_of:
@@ -251,6 +262,7 @@ __all__ = [
     "admit",
     "basket_event",
     "check_basket",
+    "check_one_of",
     "fits",
     "hold_events",
     "known",

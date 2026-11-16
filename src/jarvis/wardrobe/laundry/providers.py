@@ -105,6 +105,20 @@ def _replace(doc: LaundryDoc, batch: Batch) -> LaundryDoc:
     return doc.model_copy(update={"batches": tuple(batches)})
 
 
+def _settled(batch: Batch, back: tuple[str, ...], now: datetime) -> Batch:
+    left = [p for p in batch.pieces if p not in back]
+    return batch.model_copy(
+        update={"back": back, "short": bool(left), "closed_at": None if left else now}
+    )
+
+
+def mark_back(doc: LaundryDoc, pid: str, now: datetime) -> LaundryDoc:
+    """A piece out on a batch that he says is home now (a check answered "moved"): it comes off
+    its batch, so the batch never says "overdue" for it (review M3)."""
+    batch = next((b for b in open_batches(doc) if pid in outstanding(b)), None)
+    return _replace(doc, _settled(batch, (*batch.back, pid), now)) if batch else doc
+
+
 def prune(doc: LaundryDoc, now: datetime) -> LaundryDoc:
     keep = tuple(b for b in doc.batches if b.closed_at is None or now - b.closed_at <= KEEP)
     return doc.model_copy(update={"batches": keep})
@@ -183,22 +197,18 @@ def plan_receive(
     pieces = [view.pieces[i] for i in dict.fromkeys(ids)]
     if not pieces:
         raise Refused(texts.NOTHING_NAMED)
-    for p in pieces:
+    for p in pieces:  # review M3: marked back only with its own `received`
         if p.id not in outstanding(batch):
             raise Refused(texts.not_in_batch(p))
+        if p.state == "review":
+            raise Refused(texts.held(p))
+        if p.state != "with_provider":
+            raise Refused(texts.not_at_the_shop(p))
     back = (*batch.back, *(p.id for p in pieces))
-    left = [p for p in batch.pieces if p not in back]
-    done = batch.model_copy(
-        update={"back": back, "short": bool(left), "closed_at": None if left else now}
-    )
-    events = tuple(
-        tap(p.id, "received", now, batch=batch.id, to=to)
-        for p in pieces
-        if p.state == "with_provider"
-    )
+    events = tuple(tap(p.id, "received", now, batch=batch.id, to=to) for p in pieces)
     return Change(
         events=events,
-        laundry=_replace(doc, done),
+        laundry=_replace(doc, _settled(batch, back, now)),
         words=texts.received(len(back), len(batch.pieces)),
         pieces=tuple(p.id for p in pieces),
         batch=batch.id,
@@ -214,6 +224,7 @@ __all__ = [
     "clean_bag",
     "clean_shop",
     "days_overdue",
+    "mark_back",
     "new_batch_id",
     "open_batches",
     "outstanding",

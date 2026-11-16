@@ -52,6 +52,7 @@ ENTRY_GONE = "That check is already closed."
 NOT_A_CANDIDATE = "Pick one of the pieces this check names."
 OUTCOME_BAD = "That answer doesn't fit this check."
 MOVED_NEEDS = "Say where it is now: a state and, if you like, a place."
+NOT_TO_SHOP = "A piece goes to an outside laundry only with 'send out', so it has its batch."
 NOTHING_TO_CORRECT = "There's no step to strike out for that piece."
 EVENT_UNKNOWN = "That step isn't in this piece's history."
 OWN_BUTTON = "That change is undone with its own button: archive, restore or merge."  # A's words
@@ -167,6 +168,10 @@ def not_in_load(piece: Piece) -> str:
 
 def not_in_batch(piece: Piece) -> str:
     return f"{cap(fixed_words(piece))} isn't in that batch."
+
+
+def not_at_the_shop(piece: Piece) -> str:
+    return f"{cap(fixed_words(piece))} isn't with an outside laundry now."
 
 
 def too_many_picked(n: int) -> str:

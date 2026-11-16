@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from r13_fakes import UID
+from r13_fakes import UID, ev
 from r13_fakes_b import BLAZER, BLUE_SHIRT, JACKET, TROUSERS, rig
 
 from jarvis.wardrobe.laundry import providers
@@ -88,6 +88,39 @@ async def test_h1_a_worn_blazer_to_the_dry_cleaner_closes_its_wear_for_its_plan(
     assert kinds == ["wear_done", "sent_out"]  # the wear is counted (STY-17), then it goes out
     (heard,) = r.observer.heard  # the wear's plan travels with it: C marks nothing
     assert (heard.kind, heard.before, heard.plan) == ("sent_out", "in_use", "pl_meeting")
+
+
+async def test_m3_a_piece_held_meanwhile_is_never_marked_back_without_its_return() -> None:
+    r = await rig()
+    batch = (await r.desk.send_out(UID, (BLUE_SHIRT,), "Dry cleaner")).batch
+    await r.commit(ev(BLUE_SHIRT, "missing", r.clock()))
+    with pytest.raises(Refused) as no:
+        await r.desk.receive(UID, batch, (BLUE_SHIRT,))
+    assert str(no.value) == (
+        "A light blue shirt waits for a check in Helpers, Wardrobe: resolve that first."
+    )
+    (b,) = (await r.laundry()).batches
+    assert b.back == () and b.closed_at is None  # nothing marked back without its `received`
+    (entry,) = await r.open_entries()
+    r.clock.advance(minutes=1)
+    await r.desk.resolve(UID, entry.id, "these")  # where it was: at the shop
+    assert await r.state(BLUE_SHIRT) == "with_provider"
+    await r.desk.receive(UID, batch, (BLUE_SHIRT,))
+    assert await r.state(BLUE_SHIRT) == "ready"
+
+
+async def test_m3_a_piece_from_the_shop_he_says_is_home_comes_off_its_batch() -> None:
+    r = await rig()
+    batch = (await r.desk.send_out(UID, (BLUE_SHIRT, BLAZER), "Dry cleaner")).batch
+    await r.commit(ev(BLUE_SHIRT, "missing", r.clock()))
+    (entry,) = await r.open_entries()
+    r.clock.advance(minutes=1)
+    await r.desk.resolve(UID, entry.id, "moved", to="ready")
+    (b,) = (await r.laundry()).batches
+    assert b.id == batch and b.back == (BLUE_SHIRT,) and b.short  # never "overdue" for it
+    await r.desk.receive(UID, batch, (BLAZER,))
+    (b,) = (await r.laundry()).batches
+    assert b.closed_at == r.clock()
 
 
 async def test_a_piece_that_is_not_in_the_batch_is_refused() -> None:

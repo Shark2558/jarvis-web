@@ -165,6 +165,15 @@ async def test_no_ai_or_no_seeing_brain_is_a_503_and_the_limit_a_402() -> None:
         assert (await cat.store.view(UID)).tag_inr == 0.0  # the reservation is given back
 
 
+async def test_l6_with_the_ai_off_the_estimate_never_offers_the_button() -> None:
+    for why in ("no_ai", "blind"):
+        eyes = FakeEyes(cant=CantLook(why, f"plain words: {why}"))  # type: ignore[arg-type]
+        cat = catalog(eyes=eyes)
+        shirt = await _on(cat)
+        est = await cat.store.desk.tagging.estimate(UID, shirt)  # type: ignore[attr-defined]
+        assert (est.allowed, est.why) == (False, f"plain words: {why}") and eyes.calls == []
+
+
 async def test_a_cap_of_zero_means_never() -> None:
     cat = catalog(eyes=FakeEyes(), s=settings(wardrobe_ai_tag_month_inr=0))
     shirt = await _on(cat)

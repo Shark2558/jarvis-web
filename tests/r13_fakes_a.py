@@ -7,7 +7,7 @@
 #   catalog(...)                   the whole Part A on fakes: store, service, photos, bin, tools
 #   jpeg(w, h, extra)              a structurally valid baseline JPEG of that size (no pixels)
 #   fp(seed)                       a 1,708-character base64 fingerprint (1,280 uint8)
-#   FakeEyes                       `BrainEyes.look` stand-in: records the call, answers JSON
+#   FakeEyes                       `BrainEyes` stand-in: `state`, and `look` records the call
 #   gateway(cat), call(...), approve(...)   a real Gateway over the part's tools, and its cards
 #
 # Every clock is FIXED (`r13_fakes.FixedClock`, `ist`); nothing here reads the real one.
@@ -131,6 +131,12 @@ class FakeEyes:
     cost_usd: float = 0.0001
     cant: Exception | None = None
     calls: list[dict[str, Any]] = field(default_factory=list)
+
+    async def state(self, uid: str) -> Any:
+        """Like the real one: No-AI and "no seeing brain" are known before a look; a limit is
+        found only when the look is tried."""
+        why = getattr(self.cant, "why", None)
+        return self.cant if why in ("no_ai", "blind") else None
 
     async def look(self, uid: str, system: str, ask: str, picture: Any, *, max_tokens: int) -> Any:
         self.calls.append({"uid": uid, "system": system, "ask": ask, "max_tokens": max_tokens})

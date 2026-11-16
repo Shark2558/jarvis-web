@@ -198,10 +198,14 @@ class Tagging:
         return inr
 
     async def estimate(self, uid: str, pid: str) -> TagEstimate:
+        """The ₹ button's words: never offered when the tag would be refused, by his record,
+        his cap, or the AI being off (No-AI, no seeing brain: L6)."""
         view = await self.store.view(uid)
         _, so_far = await self._month(uid, view)
         try:
             inr, _ = await self._check(uid, pid)
+            if (cant := await self.eyes().state(uid)) is not None:
+                raise TagRefused(str(cant), 503)
         except TagRefused as exc:
             inr = await self._estimate_inr()
             return TagEstimate(

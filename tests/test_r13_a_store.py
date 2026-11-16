@@ -278,3 +278,47 @@ def test_the_fold_result_is_frozen() -> None:
         folded.state = "washing"  # type: ignore[misc]
     with pytest.raises(TypeError):
         folded.marks["x"] = "applied"  # type: ignore[index]
+
+
+async def test_m6_each_whole_wardrobe_read_opens_the_index_once_not_once_a_piece(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from r13_fakes_a import catalog
+
+    from jarvis.wardrobe.catalog.edits import NewPiece
+
+    cat = catalog()
+    desk = cat.store.desk  # type: ignore[attr-defined]
+    n = 20
+    ids = (await desk.service.add(UID, [NewPiece(type="t_shirt")] * n)).ids
+    for pid in ids[:3]:  # three wears, forgotten overnight, for the sweep to close
+
+        async def wear(view: object, tx: object, pid: str = pid) -> Commit:
+            return Commit(events=(ev(pid, "wear_started", cat.clock()),))
+
+        await cat.store.transact(UID, wear)
+    cat.clock.set(ist(2026, 11, 17, 4, 30))
+    body = await desk.backup.file(UID)
+    reads: list[str] = []
+    real = cat.docs.get
+
+    async def counting(path: str) -> object:
+        reads.append(path)
+        return await real(path)
+
+    monkeypatch.setattr(cat.docs, "get", counting)
+    [data] = cat.part.data
+    [sweep] = cat.part.daily_jobs
+    for name, read, want in (
+        ("backup", lambda: desk.backup.file(UID), (1, n)),
+        ("pilot", lambda: desk.pilot.counts(UID), (1, n)),
+        ("export", lambda: data.export(UID), (1, n)),
+        ("restore check", lambda: desk.restore.check(UID, body), (1, n)),
+        # the three pieces still In use, then its own commit (which reads them again)
+        ("sweep", lambda: sweep.sweep(UID), (2, 6)),
+    ):
+        reads.clear()
+        await read()
+        index = [p for p in reads if p == INDEX]
+        logs = [p for p in reads if p.startswith("jarvis_wardrobe_log/")]
+        assert (name, len(index), len(logs)) == (name, *want)

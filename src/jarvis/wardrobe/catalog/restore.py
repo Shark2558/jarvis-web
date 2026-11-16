@@ -156,8 +156,12 @@ class Restore:
         missing = [pid for pid in parsed.view.pieces if pid not in current.pieces]
         empty = not current.pieces
         new_events = 0
+        there = set(both)
         for pid, events in parsed.logs.items():
-            known = {e.id for e in await self.store.events(uid, pid)} if pid in both else set()
+            if pid not in there:
+                new_events += len(events)
+                continue
+            known = {e.id for e in await self.store.events(uid, pid, view=current)}
             new_events += sum(e.id not in known for e in events)
         differ = sum(_attrs(current.pieces[p]) != _attrs(parsed.view.pieces[p]) for p in both)
         in_bin = sum(current.pieces[p].state == "archived" for p in both)

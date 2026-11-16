@@ -74,7 +74,7 @@ class Backup:
         yield self._line(uid, n, "index", view.to_json())
         for pid in view.pieces:
             n += 1
-            events = [e.to_json() for e in await self.store.events(uid, pid)]
+            events = [e.to_json() for e in await self.store.events(uid, pid, view=view)]
             yield self._line(uid, n, "log", {"p": pid, "e": events})
         if photos:
             for ph, doc in await self._photo_docs(uid):

@@ -33,7 +33,7 @@ class PilotCounts:
         view = await self.store.view(uid)
         scored = chosen = events = corrections = 0
         for pid in view.pieces:
-            log = await self.store.events(uid, pid)
+            log = await self.store.events(uid, pid, view=view)
             kinds = {e.id: e.kind for e in log}
             events += len(log)
             for e in log:

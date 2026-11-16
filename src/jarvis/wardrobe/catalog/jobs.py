@@ -92,7 +92,7 @@ class WardrobeSweep:
             return 0
         done = []
         for p in (x for x in view.active() if x.state == "in_use"):
-            events = await self.store.events(uid, p.id)
+            events = await self.store.events(uid, p.id, view=view)
             marks = fold(events).marks
             starts = [e for e in events if e.kind == "wear_started" and marks[e.id] == "applied"]
             if starts and max(e.at for e in starts) < midnight:

@@ -36,7 +36,7 @@ class CatalogData:
             for p in view.pieces.values()
         ]
         history = {
-            pid: [e.model_dump(mode="json") for e in await self.store.events(uid, pid)]
+            pid: [e.model_dump(mode="json") for e in await self.store.events(uid, pid, view=view)]
             for pid in view.pieces
         }
         return {

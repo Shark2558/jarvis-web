@@ -109,7 +109,7 @@ class Merge:
             todo += found
         items: list[HistoryItem] = []
         for i in ids:
-            events: list[Event] = await self.store.events(uid, i)
+            events: list[Event] = await self.store.events(uid, i, view=view)
             marks = fold(events).marks
             items += [HistoryItem(e, marks[e.id]) for e in events]
         return tuple(sorted(items, key=lambda h: h.event.sort_key()))

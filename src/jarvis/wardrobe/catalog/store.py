@@ -159,9 +159,10 @@ class CatalogStore:
         """A piece's log as stored, read through a transaction's `get` when given."""
         return await self._read_log(get or self.docs.get, uid, p)
 
-    async def events(self, uid: str, pid: str) -> list[Event]:
-        """The piece's whole log as stored (the backup and the pilot read it)."""
-        p = (await self.view(uid)).piece(pid)
+    async def events(self, uid: str, pid: str, *, view: WardrobeView | None = None) -> list[Event]:
+        """The piece's whole log as stored (the backup and the pilot read it). `view`: the
+        index the caller already holds, so N pieces read it once, not N times (M6)."""
+        p = (view if view is not None else await self.view(uid)).piece(pid)
         return [] if p is None else await self._read_log(self.docs.get, uid, p)
 
     async def history(self, uid: str, piece: str) -> tuple[HistoryItem, ...]:

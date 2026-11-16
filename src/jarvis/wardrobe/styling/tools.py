@@ -75,6 +75,7 @@ WEAR = _schema(
         "pieces": _IDS,
         "plan": _S,
         "query": {**_S, "maxLength": 80, "description": "his words (the spoken one-step path)"},
+        "day": {**_S, "description": "done only: today, yesterday or YYYY-MM-DD (30 days back)"},
     },
     ("action",),
 )

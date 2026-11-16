@@ -68,3 +68,121 @@ async def test_the_outfit_with_no_plan_today_asks_for_the_pieces() -> None:
         "message": "You have no outfit planned for today: say which pieces you are wearing.",
     }
     assert {p.state for p in (await w.pieces()).values()} == {"ready"}
+
+
+# ---- code review M3: "done" for a plan covers the substitute he wore -----------------------------
+async def test_done_for_a_plan_closes_the_substitute_he_actually_wore() -> None:
+    w = await world(at=ist(2026, 11, 17, 7, 0))
+    plan = await _meeting(w)
+    await w.move(N.shirt_white, "deposited")  # auto-swap off: the stored pick stays the white one
+    started = await ok(w, "wear_log", action="start", plan=plan["id"])
+    assert N.shirt_lb in started["pieces"]
+    w.clock.set(ist(2026, 11, 17, 19, 0))
+    done = await ok(w, "wear_log", action="done", plan=plan["id"])
+    assert N.shirt_lb in done["pieces"] and N.shirt_white not in done["pieces"]
+    lb = (await w.pieces())[N.shirt_lb]
+    assert (lb.state, lb.wears) == ("in_laundry", 1)
+
+
+# ---- code review M6: "I wore ... today / yesterday" after the fact -------------------------------
+async def _wear_at(w: World, pid: str) -> list[Any]:
+    return [h.event for h in await w.store.history(UID, pid) if h.event.kind.startswith("wear_")]
+
+
+async def test_i_wore_the_light_blue_shirt_today_is_one_wear_after_the_fact() -> None:
+    w = await world(at=ist(2026, 11, 17, 20, 0))
+    got = await ok(w, "wear_log", action="done", query="the light blue shirt")
+    assert got["message"] == "Noted: a light blue shirt, worn today: one wear."
+    lb = (await w.pieces())[N.shirt_lb]
+    assert (lb.state, lb.wears) == ("in_laundry", 1)
+    assert [e.at for e in await _wear_at(w, N.shirt_lb)] == [ist(2026, 11, 17, 12, 0)] * 2
+
+
+async def test_today_before_noon_is_now_never_ahead() -> None:
+    w = await world(at=ist(2026, 11, 17, 9, 30))
+    await ok(w, "wear_log", action="done", pieces=[N.trousers], day="today")
+    assert [e.at for e in await _wear_at(w, N.trousers)] == [ist(2026, 11, 17, 9, 30)] * 2
+
+
+async def test_yesterday_at_00_30_ist_is_his_local_yesterday_and_its_plan() -> None:
+    w = await world(at=ist(2026, 11, 17, 0, 30))  # 16 Nov 19:00 UTC
+    plan = await ok(w, "outfit_plan", action="save", day="2026-11-16", occasion="meeting")
+    assert N.shirt_white in _ids(plan["plan"])
+    got = await ok(w, "wear_log", action="done", query="the white shirt", day="yesterday")
+    assert got["message"] == "Noted: a white shirt, worn yesterday: one wear."
+    events = await _wear_at(w, N.shirt_white)
+    assert [(e.kind, e.at, e.plan) for e in events] == [
+        ("wear_started", ist(2026, 11, 16, 12, 0), plan["plan"]["id"]),
+        ("wear_done", ist(2026, 11, 16, 12, 0), plan["plan"]["id"]),
+    ]
+    assert (await w.pieces())[N.shirt_white].wears == 1
+
+
+async def test_a_stated_day_is_at_most_30_days_back_never_ahead_and_a_start_is_now() -> None:
+    w = await world(at=ist(2026, 11, 17, 20, 0))
+    for day in ("2026-10-17", "2026-11-18", "last week"):
+        got = await ok(w, "wear_log", action="done", pieces=[N.tee], day=day)
+        assert got == {
+            "refused": True,
+            "message": "A wear's day is today, yesterday or a date up to 30 days back.",
+        }, day
+    start = await ok(w, "wear_log", action="start", pieces=[N.tee], day="yesterday")
+    assert start == {
+        "refused": True,
+        "message": "A wear starts now: for an earlier day, say you wore it.",
+    }
+    assert (await w.pieces())[N.tee].wears == 0
+
+
+# ---- security review L8: the ledger's verdict is said --------------------------------------------
+async def test_the_ledgers_refusal_reaches_him_in_its_words(monkeypatch: Any) -> None:
+    from jarvis.wardrobe.ports import Refused
+
+    w = await world(at=ist(2026, 11, 17, 8, 0))
+
+    async def refuse(uid: str, fn: Any) -> Any:
+        raise Refused("A time can be at most 30 days back and never ahead.")
+
+    monkeypatch.setattr(w.store, "transact", refuse)
+    got = await ok(w, "wear_log", action="start", pieces=[N.tee])
+    assert got == {
+        "refused": True,
+        "message": "A time can be at most 30 days back and never ahead.",
+    }
+
+
+async def test_a_start_the_ledger_takes_as_a_duplicate_is_said_as_already_noted(
+    monkeypatch: Any,
+) -> None:
+    import dataclasses
+
+    w = await world(at=ist(2026, 11, 17, 8, 0))
+    real = w.store.transact
+
+    async def duplicate(uid: str, fn: Any) -> Any:
+        got = await real(uid, fn)
+        return dataclasses.replace(got, marks=dict.fromkeys(got.marks, "duplicate"))
+
+    monkeypatch.setattr(w.store, "transact", duplicate)
+    again = await ok(w, "wear_log", action="start", pieces=[N.tee])
+    assert again["message"] == "Already noted: you're wearing a grey T-shirt."
+
+
+# ---- code review L4: the forgotten wear's fixed client id ----------------------------------------
+async def test_two_sweeps_from_one_view_close_a_forgotten_wear_once() -> None:
+    from jarvis.wardrobe.styling import wear
+    from jarvis.wardrobe.styling.rules import load_rules
+
+    w = await world(at=ist(2026, 11, 16, 9, 0))
+    await ok(w, "wear_log", action="start", pieces=[N.shirt_lb])
+    w.clock.set(ist(2026, 11, 17, 4, 0))
+    zone, rules = await w.ctx.zone(UID), load_rules()
+    first = await wear.closing_events(w.store, UID, now=w.clock(), zone=zone, close="04:00",
+                                      rules=rules)  # fmt: skip
+    second = await wear.closing_events(w.store, UID, now=w.clock(), zone=zone, close="04:00",
+                                       rules=rules)  # fmt: skip
+    assert [e.client_id for e in first] == [e.client_id for e in second]
+    await wear.commit(w.store, UID, first)
+    await wear.commit(w.store, UID, second)
+    lb = (await w.pieces())[N.shirt_lb]
+    assert (lb.state, lb.wears) == ("in_laundry", 1)

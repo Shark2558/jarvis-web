@@ -102,9 +102,11 @@ def conflict(doc: StylingDoc, plan: Plan, unit: Sequence[str], zone: tzinfo) -> 
 def transfer(
     doc: StylingDoc, to: Plan, source: Plan, pid: str, view: WardrobeView, rules: Rules
 ) -> StylingDoc:
-    unit = unit_of(view, pid)
     if source.pick_of(pid) is None:
         raise PlanRefused(f"{pid} isn't in that plan.")
+    if pid not in view.pieces:  # purged since it was planned (security review L8)
+        raise PlanRefused("That piece isn't in your wardrobe any more.")
+    unit = unit_of(view, pid)
     slot = rules.slot_of(view.pieces[pid].type)
     if slot is None:
         raise PlanRefused(f"{pid} doesn't go in an outfit.")

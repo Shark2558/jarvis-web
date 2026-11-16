@@ -76,3 +76,20 @@ async def test_a_shared_base_comes_from_an_earlier_plan_the_same_day() -> None:
                    from_plan=late["plan"]["id"], pieces=[N.watch])  # fmt: skip
     words = "A shared base comes from an earlier plan the same day."
     assert got == {"refused": True, "message": words}
+
+
+async def test_transferring_a_piece_purged_since_it_was_planned_is_refused_in_words() -> None:
+    from jarvis.wardrobe.styling.plans import PlanPick
+
+    w = await world(at=ist(2026, 11, 16, 20, 0))
+    first = await _plan(w, occasion="meeting", start="10:00", end="12:00")
+    second = await _plan(w, start="15:00", end="16:00")
+    gone = "wi_ffffffffffff"  # purged since: no longer in his wardrobe
+    doc = await w.styling.plans.read(UID)
+    held = doc.plan(first["id"]).model_copy(  # type: ignore[union-attr]
+        update={"picks": (PlanPick(slot="cap", pieces=(gone,)),)}
+    )
+    await w.styling.change(UID, lambda d: d.put(held))
+    got = await ok(w, "outfit_plan", action="transfer", plan=second["id"], from_plan=first["id"],
+                   piece=gone)  # fmt: skip
+    assert got == {"refused": True, "message": "That piece isn't in your wardrobe any more."}

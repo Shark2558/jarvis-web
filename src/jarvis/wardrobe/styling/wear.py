@@ -72,6 +72,28 @@ def done_events(
     return tuple(out)
 
 
+def worn_events(
+    view: WardrobeView, pieces: Sequence[str], rules: Rules, at: datetime, plan: str | None, *,
+    via: str,
+) -> tuple[Event, ...]:  # fmt: skip
+    """A wear told after the fact ("I wore ... yesterday", code review M6): its start and its end
+    at one stated time, linked to the plan it was worn for; the store keeps their order."""
+    starts = start_events(view, pieces, plan, at, via=via)
+    ends = tuple(
+        _event(view.pieces[i], "wear_done", at, via=via, to=rules.after_wear(view.pieces[i]),
+               plan=plan)
+        for i in pieces
+    )  # fmt: skip
+    return (*starts, *ends)
+
+
+def counted(got: Committed, *, wear_done: bool) -> bool:
+    """Did the ledger take any of it? A start must be applied; an end applied or superseded (a
+    superseded `wear_done` still counts as a wear, D4)."""
+    took = ("applied", "superseded") if wear_done else ("applied",)
+    return not got.already and any(m in took for m in got.marks.values())
+
+
 async def commit(store: WardrobeStore, uid: str, events: tuple[Event, ...]) -> Committed:
     async def fn(view: WardrobeView, tx: DocTx) -> Commit:
         return Commit(events=events)
@@ -218,10 +240,12 @@ __all__ = [
     "close_forgotten",
     "closing_events",
     "commit",
+    "counted",
     "done_events",
     "means_outfit",
     "outfit_of",
     "plan_for",
     "resolve",
     "start_events",
+    "worn_events",
 ]

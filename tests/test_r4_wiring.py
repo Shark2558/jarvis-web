@@ -50,6 +50,8 @@ R4_ROUTES = (
 R11_JOBS = ("helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily")
 # R14 I1: the parts' daily jobs ride last on the tick (A's two, B's one; api/tick_wiring.py)
 R11_JOBS += ("backup_canary", "backup_drill", "selfwatch_daily")
+# R13: B's morning job needs no key (A's wardrobe_sweep needs the keyring, off in these apps)
+R11_JOBS += ("laundry_daily",)
 
 
 @dataclass

@@ -21,7 +21,7 @@ from jarvis.wardrobe.http import ReviewEntry, ReviewView
 from jarvis.wardrobe.laundry import texts
 from jarvis.wardrobe.laundry.store import Change, Entry, ReviewDoc, new_entry_id
 from jarvis.wardrobe.model import WardrobeView
-from jarvis.wardrobe.ports import ReviewNeeded
+from jarvis.wardrobe.ports import Refused, ReviewNeeded
 
 MAX_OPEN = 100
 _HOLDING = frozenset({"hold", "rescan", "pending_deposit"})
@@ -33,6 +33,15 @@ def open_entries(doc: ReviewDoc) -> tuple[Entry, ...]:
 
 def find(doc: ReviewDoc, entry_id: str) -> Entry | None:
     return next((e for e in open_entries(doc) if e.id == entry_id), None)
+
+
+def find_open(doc: ReviewDoc, entry_id: str) -> Entry:
+    """The open entry, or a refusal that says why not: closed, or never his (review L9)."""
+    found = find(doc, entry_id)
+    if found is not None:
+        return found
+    known = any(e.id == entry_id for e in doc.entries)
+    raise Refused(texts.ENTRY_GONE if known else texts.ENTRY_UNKNOWN)
 
 
 def words_of(e: Entry) -> str:
@@ -240,6 +249,7 @@ __all__ = [
     "covered",
     "entry_view",
     "find",
+    "find_open",
     "from_need",
     "open_entries",
     "prune",

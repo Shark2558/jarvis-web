@@ -9,9 +9,9 @@ write) and answers ONE `Set` of the whole sealed document (or nothing, when ever
 covered).
 
 Two calls in one commit see each other: each answer is staged on that `tx` object (held weakly,
-so it goes when the commit is over), and the next
-call in the same commit (B's own flow, C's stale check through this same method, then the fold's
-needs) starts from it, so the last `Set` A writes is the superset. That rests on two lines of A's
+so it goes when the commit is over), and the next call in the same commit (B's own flow, C's
+stale check through this same method, then the fold's needs) starts from it, so the last `Set` A
+writes is the superset. That rests on two lines of A's
 contract (ports: "writes the index, the log pages, `extra` and the entries LAST"): A passes the
 same `tx` to `fn` and to the writer, and writes `extra` before the writer's entries.
 

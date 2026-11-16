@@ -54,6 +54,7 @@ TOO_BIG = "That is more than JARVIS can note at once: name fewer pieces or place
 UNKNOWN_PLACE = "That place isn't one of yours."
 NOTHING_AT_REST = "Nothing rests there right now: nothing to check."
 ENTRY_GONE = "That check is already closed."
+ENTRY_UNKNOWN = "That check isn't in your list."
 NOT_A_CANDIDATE = "Pick one of the pieces this check names."
 OUTCOME_BAD = "That answer doesn't fit this check."
 MOVED_NEEDS = "Say where it is now: a state and, if you like, a place."
@@ -65,6 +66,7 @@ OWN_BUTTON = "That change is undone with its own button: archive, restore or mer
 CORRECTED = "Done: that step is struck out and the piece's state worked out again."
 CORRECTED_HELD = f"Done: that step is struck out. The piece waits for a check {WHERE}."
 CLOSED = "Done: the check is closed."
+BACK_WORDS = "Back as it was before its check"  # a release's state, when more has moved it since
 NOTHING_LEFT = "Nothing to change: it was answered another way. The check is closed."
 # the Activity words (`Tool.activity_words`): fixed, never a piece or a shop
 LOOKED = "Looked at the laundry"

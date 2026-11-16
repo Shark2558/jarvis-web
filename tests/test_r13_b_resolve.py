@@ -292,6 +292,30 @@ async def test_m3_a_check_never_lands_a_piece_at_the_shop_without_a_batch() -> N
     assert bad.outcome is GatewayOutcome.ERROR and await r.state(BLUE_SHIRT) == "review"
 
 
+async def test_l9_a_check_that_never_existed_is_not_in_his_list() -> None:
+    r = await rig()
+    with pytest.raises(Refused) as unknown:
+        await r.desk.resolve(UID, "rv_" + "0" * 10, "these")
+    assert str(unknown.value) == "That check isn't in your list."
+    await r.commit(ev(WATCH, "missing", r.clock()))
+    (entry,) = await r.open_entries()
+    await r.desk.resolve(UID, entry.id, "these")
+    with pytest.raises(Refused) as closed:
+        await r.desk.resolve(UID, entry.id, "these")
+    assert str(closed.value) == "That check is already closed."
+
+
+async def test_l10_an_answer_names_only_one_of_his_places() -> None:
+    r = await rig()
+    await r.commit(ev(BLUE_SHIRT, "missing", r.clock()))
+    (entry,) = await r.open_entries()
+    r.clock.advance(minutes=1)
+    with pytest.raises(Refused) as no:
+        await r.desk.resolve(UID, entry.id, "moved", to="ready", place="wl_deadbeef")
+    assert str(no.value) == "That place isn't one of yours."
+    assert await r.state(BLUE_SHIRT) == "review" and len(await r.open_entries()) == 1
+
+
 def test_needs_from_another_part_still_become_entries() -> None:
     from r13_fakes import ist
 

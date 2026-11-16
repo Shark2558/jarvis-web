@@ -52,9 +52,20 @@ def since_words(at: datetime, now: datetime, zone: ZoneInfo) -> str:
     return f"since {when_words(at, now, zone)}"
 
 
-def _after(item: HistoryItem, current: State) -> State:
+_MOVED = frozenset({"applied", "held"})  # the marks of an event that set the piece's state
+_BACK_KINDS = frozenset({"released", "found"})  # "back as it was": its state is the hold's back_to
+
+
+def _after_words(item: HistoryItem, ordered: Sequence[HistoryItem], current: State) -> str:
+    """The state the piece took after this event (review L11): the piece's own state when
+    nothing has moved it since; else the state the event names, or "back as it was"."""
     e = item.event
-    return target_of(e.kind, None, to=e.to) or current
+    since = ordered[ordered.index(item) + 1 :]
+    if not any(h.mark in _MOVED and h.event.kind in STATE_SETTING for h in since):
+        return STATE_WORDS[current]
+    if e.kind in _BACK_KINDS and e.to is None:
+        return texts.BACK_WORDS
+    return STATE_WORDS[target_of(e.kind, None, to=e.to) or current]
 
 
 def piece_history(
@@ -72,7 +83,7 @@ def piece_history(
         latest = {
             "kind": last.event.kind,
             "at": when_words(last.event.at, now, zone),
-            "words": STATE_WORDS[_after(last, p.state)],
+            "words": _after_words(last, ordered, p.state),
         }
     return {
         "found": True,

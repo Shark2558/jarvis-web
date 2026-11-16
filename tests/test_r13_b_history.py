@@ -69,3 +69,21 @@ async def test_lnd_15_place_and_return_words_come_from_his_places() -> None:
     got = await r.desk.history(UID, piece=WHITE_SHIRT)
     assert got["state"] == "ready" and got["place"] == "Shirt rack"
     assert got["step"] == "Ready since 09:01"
+
+
+async def test_l11_the_latest_verified_step_says_where_it_really_went() -> None:
+    r = await rig()
+    await r.desk.move(UID, "basket", pieces=(WHITE_SHIRT,))  # in the basket, at the shirt rack
+    await r.desk.blind(UID, places=(RACK,))
+    blind = next(e for e in await r.open_entries() if e.reason == "blind")
+    r.clock.advance(minutes=1)  # 09:02
+    await r.desk.resolve(UID, blind.id, "these", pieces=(WHITE_SHIRT,))  # still in the basket
+    got = await r.desk.history(UID, piece=WHITE_SHIRT)
+    assert got["state"] == "in_laundry"
+    assert got["latest_verified"] == {"kind": "released", "at": "09:02", "words": "In laundry"}
+    r.clock.advance(minutes=1)
+    await r.commit(ev(WHITE_SHIRT, "returned", r.clock(), source="camera", verified=False))
+    got = await r.desk.history(UID, piece=WHITE_SHIRT)  # an unconfirmed change holds it since
+    assert got["state"] == "review" and got["latest_verified"]["words"] == (
+        "Back as it was before its check"
+    )

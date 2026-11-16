@@ -166,9 +166,7 @@ class Desk(DeskCore):
         its newest one the fold marked `held` (an entry A's sweep repaired names none)."""
         assert self.store.docs is not None
         queue = await self.store.read_review(self.store.docs.get, uid)
-        entry = review.find(queue, entry_id)
-        if entry is None:
-            raise Refused(texts.ENTRY_GONE)
+        entry = review.find_open(queue, entry_id)
         if outcome != "these":
             return {}
         wardrobe = self.wardrobe()

@@ -19,7 +19,7 @@ from typing import NamedTuple
 
 from jarvis.wardrobe.laundry import blind, loads, providers, texts
 from jarvis.wardrobe.laundry.holds import basket_event, tap
-from jarvis.wardrobe.laundry.review import find, put
+from jarvis.wardrobe.laundry.review import find_open, put
 from jarvis.wardrobe.laundry.store import Change, Entry, LaundryDoc, Outcome, ReviewDoc
 from jarvis.wardrobe.model import Event, Piece, WardrobeView
 from jarvis.wardrobe.ports import Refused
@@ -218,9 +218,9 @@ def plan_resolve(
     originals: Mapping[str, Event] | None = None,
     now: datetime,
 ) -> Change:
-    e = find(doc, entry_id)
-    if e is None:
-        raise Refused(texts.ENTRY_GONE)
+    e = find_open(doc, entry_id)
+    if place is not None and place not in view.places:  # review L10, as `move` checks it
+        raise Refused(texts.UNKNOWN_PLACE)
     fam = _family(e)
     if outcome not in _OUTCOMES[fam]:
         raise Refused(texts.OUTCOME_BAD)

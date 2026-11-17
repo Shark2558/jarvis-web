@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import math
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from r131_fake_gemini import FakeGoogle, FakeTokens, project_of
@@ -181,6 +182,33 @@ async def test_done_keeps_the_last_fifty() -> None:
     assert len(done) == 50 and rid(0) not in done and rid(54) in done
 
 
+class KeySortedDocs(MemoryDocs):
+    """A store whose maps come back sorted by key, not in the order they were written (a
+    Firestore map is a protobuf map: it keeps no order). Transactions read through `get`."""
+
+    async def get(self, path: str) -> dict[str, Any] | None:
+        doc = await super().get(path)
+        if doc is None:
+            return None
+        return {k: dict(sorted(v.items())) if isinstance(v, dict) else v for k, v in doc.items()}
+
+
+async def test_done_keeps_the_last_fifty_in_answer_order_whatever_a_maps_order() -> None:
+    cap = _cap(KeySortedDocs())
+    for n in range(50):  # fifty answers whose ids sort after A's
+        hold = await cap.reserve(UID, "tq_f" + f"{n:015x}", 1.0, 2000)
+        await cap.release(hold, outcome={"error": "x"})
+    a = await cap.reserve(UID, rid(1), 1.0, 2000)  # A: the lowest id of all
+    await cap.settle(a, 1.0, outcome={"picture": "tp_00000000000a"}, picture=True)
+    b = await cap.reserve(UID, rid(2), 1.0, 2000)  # B: after A
+    await cap.settle(b, 1.0, outcome={"picture": "tp_00000000000b"}, picture=True)
+    again = await cap.reserve(UID, rid(1), 1.0, 2000)  # A's lost reply, retried after B
+    assert again == Done({"picture": "tp_00000000000a"})  # answered, never charged twice
+    month = await cap.month(UID)
+    assert month.spent_inr == 2.0 and month.pictures == 2 and len(month.done) == 50
+    assert "tq_f" + f"{0:015x}" not in month.done and "tq_f" + f"{1:015x}" not in month.done
+
+
 @pytest.mark.parametrize(
     "bad",
     [{"spent_inr": "lots"}, {"spent_inr": -1.0}, {"held_inr": float("nan")},
@@ -228,8 +256,9 @@ async def test_a_document_carries_only_numbers_and_a_plain_owner() -> None:
     await cap.settle(hold, 8.52, outcome={"picture": "tp_000000000001"}, picture=True)
     doc = await docs.get(f"{PREFIX}tryon_spend/{UID}_2026-11")
     assert doc is not None and doc["owner"] == UID and "updated_at" in doc
-    assert set(doc) == {"owner", "month", "spent_inr", "held_inr", "holds", "done", "pictures",
-                        "blocked", "updated_at"}  # fmt: skip
+    assert set(doc) == {"owner", "month", "spent_inr", "held_inr", "holds", "done", "done_order",
+                        "pictures", "blocked", "updated_at"}  # fmt: skip
+    assert doc["done_order"] == [rid(1)]  # ids only: the order of the answers
 
 
 async def test_old_holds_are_settled_at_their_hold() -> None:

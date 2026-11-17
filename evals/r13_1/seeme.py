@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
@@ -30,7 +31,7 @@ from jarvis.wardrobe.ports import WardrobePart
 from jarvis.wardrobe.seeme import consent as cmod
 from jarvis.wardrobe.seeme import make as makemod
 from jarvis.wardrobe.seeme import pair as pairmod
-from jarvis.wardrobe.seeme.cap import CapHold, Month, TryonCap, decode, encode
+from jarvis.wardrobe.seeme.cap import CapHold, TryonCap, decode, encode
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
 
 PART = "seeme"
@@ -305,7 +306,7 @@ async def _racy_reserve(self: TryonCap, uid: str, request_id: str, hold_inr: flo
     if done is not None:
         return done
     holds = {**m.holds, request_id: {"inr": hold_inr, "at": self.now().isoformat()}}
-    new = Month(key, m.spent_inr, m.held_inr + hold_inr, holds, m.done, m.pictures, m.blocked)
+    new = replace(m, held_inr=m.held_inr + hold_inr, holds=holds)
     await asyncio.sleep(0)  # a network write takes a round trip too
     await self.docs.write([Set(path, encode(uid, new, self.now()))])
     return CapHold(uid, request_id, hold_inr, key)

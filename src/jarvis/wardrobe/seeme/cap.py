@@ -3,8 +3,10 @@
 (docs/plans/r13-1-try-on.md D15; plan review M1, L9; R6.2's `Hold`, `billing/meter.py`).
 
     {prefix}tryon_spend/{uid}_{YYYY-MM}   {owner, month, spent_inr, held_inr, holds {request_id:
-                                          {inr, at}}, done {request_id: outcome} (<= 50), pictures,
-                                          blocked, updated_at}: numbers only, his IST month
+                                          {inr, at}}, done {request_id: outcome} (<= 50),
+                                          done_order [request_id, ...] (the answers' order: a
+                                          Firestore map keeps none), pictures, blocked,
+                                          updated_at}: numbers and ids only, his IST month
     {prefix}tryon_spend/{uid}_prefs       {owner, on, cap_inr, keep_days, updated_at}: his own
                                           See it on me switch, cap and keep days (None: the
                                           deployment's); kept with the spend, so a delete of his
@@ -25,7 +27,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -58,6 +60,7 @@ class Month:
     done: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     pictures: int = 0
     blocked: int = 0
+    order: tuple[str, ...] = ()  # `done`'s ids, oldest first (pruned from the front)
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,14 @@ def _holds(v: object) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _order(v: object, done: Mapping[str, Any]) -> tuple[str, ...]:
+    """`done_order` as written, then any answer it doesn't name (oldest: pruned first)."""
+    if not isinstance(v, list) or not all(isinstance(r, str) for r in v):
+        raise unreadable()
+    known = tuple(r for r in dict.fromkeys(v) if r in done)
+    return (*sorted(r for r in done if r not in set(known)), *known)
+
+
 def decode(doc: Mapping[str, Any] | None, month: str) -> Month:
     if doc is None:
         return Month(month)
@@ -126,16 +137,17 @@ def decode(doc: Mapping[str, Any] | None, month: str) -> Month:
         month=month, spent_inr=_money(doc.get("spent_inr", 0.0)),
         held_inr=_money(doc.get("held_inr", 0.0)), holds=_holds(doc.get("holds", {})),
         done=dict(done), pictures=_count(doc.get("pictures", 0)),
-        blocked=_count(doc.get("blocked", 0)),
+        blocked=_count(doc.get("blocked", 0)), order=_order(doc.get("done_order", []), done),
     )  # fmt: skip
 
 
 def encode(uid: str, m: Month, now: datetime) -> dict[str, Any]:
-    done = dict(list(m.done.items())[-DONE_MAX:])  # the last 50 answers
+    order = [r for r in m.order if r in m.done][-DONE_MAX:]  # the last 50 answers, in order
     return {
         "owner": uid, "month": m.month, "spent_inr": round(m.spent_inr, 2),
-        "held_inr": round(max(0.0, m.held_inr), 2), "holds": dict(m.holds), "done": done,
-        "pictures": m.pictures, "blocked": m.blocked, "updated_at": now.isoformat(),
+        "held_inr": round(max(0.0, m.held_inr), 2), "holds": dict(m.holds),
+        "done": {r: m.done[r] for r in order}, "done_order": order, "pictures": m.pictures,
+        "blocked": m.blocked, "updated_at": now.isoformat(),
     }  # fmt: skip
 
 
@@ -194,7 +206,7 @@ class TryonCap:
             if done is not None:
                 return done
             holds = {**m.holds, request_id: {"inr": hold, "at": self.now().isoformat()}}
-            new = Month(key, m.spent_inr, m.held_inr + hold, holds, m.done, m.pictures, m.blocked)
+            new = replace(m, held_inr=m.held_inr + hold, holds=holds)
             tx.set(path, encode(uid, new, self.now()))
             return None
 
@@ -215,10 +227,12 @@ class TryonCap:
             mine = held.pop(hold.request_id, None)
             spent = m.spent_inr + spend if mine is not None else m.spent_inr
             took = float(mine["inr"]) if mine is not None else 0.0
-            done = {**{k: v for k, v in m.done.items() if k != hold.request_id},
-                    hold.request_id: dict(outcome)}  # fmt: skip
-            new = Month(hold.month, spent, m.held_inr - took, held, done,
-                        m.pictures + picture, m.blocked + blocked)  # fmt: skip
+            rid = hold.request_id
+            new = replace(
+                m, spent_inr=spent, held_inr=m.held_inr - took, holds=held,
+                done={**m.done, rid: dict(outcome)}, order=(*(r for r in m.order if r != rid), rid),
+                pictures=m.pictures + picture, blocked=m.blocked + blocked,
+            )  # fmt: skip
             tx.set(path, encode(hold.uid, new, self.now()))
 
         try:

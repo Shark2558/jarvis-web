@@ -108,14 +108,20 @@ DOOR_LAST = (
     "person, garment, picture, garmentPhoto, myPhoto, sentToday: readCount, line }));"
 )
 DOOR_ADD = (
-    "// R13.1 D (I1): See it on me's press (ids and the rupees he confirmed), Keep, the deletes "
-    "and the garment list: ids checked, JSON only\n"
+    "// R13.1 D (I1): See it on me's press (PictureIn's five fields, each checked), Keep, the "
+    "deletes and the garment list: ids checked, JSON only\n"
     "const SEE = /^t[pg]_[0-9a-f]{12}$/, seeme = (p, o) => window.JarvisConsole.api('/v1/seeme/' "
-    "+ p, o), make = (b) => seeme('pictures', { body: b }), garments = () => seeme('garments');\n"
-    "const keep = (id, on) => (SEE.test(String(id)) && id[1] === 'p' ? seeme('pictures/' + id + "
-    "'/keep', { body: { keep: on === true } }) : no()), forget = (id) => (id === 'photo' ? "
-    "seeme('photo', { method: 'DELETE' }) : SEE.test(String(id)) ? seeme((id[1] === 'p' ? "
-    "'pictures/' : 'garments/') + id, { method: 'DELETE' }) : no());\n"
+    "+ p, o), garments = () => seeme('garments'), five = (b) => (b && /^tg_[0-9a-f]{12}$/.test("
+    "String(b.garment)) && Array.isArray(b.pieces) && b.pieces.length <= 2 && b.pieces.every((p) "
+    "=> PIECE.test(String(p))) && b.confirm_cost === true && Number.isFinite(b.inr_shown) && "
+    "b.inr_shown >= 0 && /^tq_[0-9a-f]{16}$/.test(String(b.request_id)) ? { garment: b.garment, "
+    "pieces: b.pieces.slice(), confirm_cost: true, inr_shown: b.inr_shown, request_id: "
+    "b.request_id } : null);\n"
+    "const make = (b) => (five(b) ? seeme('pictures', { body: five(b) }) : no()), keep = (id, on) "
+    "=> (SEE.test(String(id)) && id[1] === 'p' ? seeme('pictures/' + id + '/keep', { body: { "
+    "keep: on === true } }) : no()), forget = (id) => (id === 'photo' ? seeme('photo', { method: "
+    "'DELETE' }) : SEE.test(String(id)) ? seeme((id[1] === 'p' ? 'pictures/' : 'garments/') + id, "
+    "{ method: 'DELETE' }) : no());\n"
 )
 DOOR_NEW_LAST = DOOR_LAST.replace(
     "myPhoto, sentToday", "myPhoto, make, keep, forget, garments, sentToday"

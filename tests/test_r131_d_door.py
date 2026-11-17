@@ -118,6 +118,24 @@ def test_an_id_that_isnt_a_pictures_or_a_garments_is_refused_before_anything_is_
     assert got["out"] == ["refused"] * 8 and got["calls"] == []
 
 
+BODY = {"garment": GAR, "pieces": ["wi_000000000002"], "confirm_cost": True, "inr_shown": 8.9,
+        "request_id": "tq_0123456789abcdef"}  # fmt: skip
+
+
+def test_the_paid_press_sends_only_pictureins_five_checked_fields() -> None:
+    # review D-1 L11: `make` posted any body although its comment said "ids checked"
+    bad = [
+        {**BODY, "garment": "wi_0123456789ab"}, {**BODY, "garment": GAR + "/../x"},
+        {**BODY, "pieces": ["wi_000000000002"] * 3}, {**BODY, "pieces": ["../photo"]},
+        {**BODY, "pieces": "wi_000000000002"}, {**BODY, "confirm_cost": "true"},
+        {k: v for k, v in BODY.items() if k != "confirm_cost"}, {**BODY, "inr_shown": "8.9"},
+        {**BODY, "inr_shown": -1}, {**BODY, "request_id": "tq_0123"}, None,
+    ]  # fmt: skip
+    got = _door([["make", b] for b in bad] + [["make", {**BODY, "plan": "op_0000d001"}]])
+    assert got["out"] == ["refused"] * len(bad) + ["sent"]
+    assert got["calls"] == [["/v1/seeme/pictures", {"body": BODY}]]  # the extra key left behind
+
+
 def test_the_hooks_two_proposed_lines_keep_every_pin_of_the_hook() -> None:
     hook = patched_hook()
     assert len(hook.splitlines()) <= HOOK_LIMIT and hook.isascii()

@@ -183,7 +183,11 @@ async def test_avt09_a_ready_jacket_swaps_figure_and_checklist_together_and_one_
         assert watch.calls == []  # the server's fresh check: no outfit_plan call is made
         assert (await a.styling.plans.read(UID)).plan(pid) == before
         assert await a.w.gw.gate.pending() == []
+    await _the_race_is_refused_by_outfit_plan()
+    await _a_ready_jacket_is_one_lock_of_every_slot()
 
+
+async def _the_race_is_refused_by_outfit_plan() -> None:
     b = await a_world()  # the race: to the laundry between the check and the call (D20)
     pid = await b.plan()
 
@@ -199,6 +203,8 @@ async def test_avt09_a_ready_jacket_swaps_figure_and_checklist_together_and_one_
     assert (await b.styling.plans.read(UID)).plan(pid) == before  # the plan unchanged
     assert len(await b.w.gw.gate.pending()) <= 1  # one press makes at most one card
 
+
+async def _a_ready_jacket_is_one_lock_of_every_slot() -> None:
     ok = await a_world()  # a ready jacket is confirmed in one lock of every slot
     pid = await ok.plan()
     done = _Watch(ok)

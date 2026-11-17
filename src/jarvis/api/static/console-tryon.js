@@ -490,6 +490,7 @@ export function inline(el, card) { // resolves once the card is drawn
   S.H = S.H || window.JarvisHelpers;
   if (!el || !card || !H()) return Promise.resolve();
   if (S.card && S.card.stage) release(S.card); // an earlier reply's card gives the stage back (Show it here takes it again)
+  S.views.forEach((x) => { if (x.kind === 'card' && !x.view.isConnected) { dispose(x); if (x.ro) x.ro.disconnect(); S.views.delete(x); } }); // its row left (L3)
   S.card = viewer(el, 'card');
   return dressed(S.card, card).catch(() => {});
 }

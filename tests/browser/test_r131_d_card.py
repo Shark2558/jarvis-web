@@ -292,6 +292,36 @@ def test_avt15_the_card_shows_the_checklist_when_his_figure_cant_be_read(
         c.close()
 
 
+# every ResizeObserver the page makes, and how many were let go (test-only, in the page)
+RO_SPY = """(() => { const R = window.ResizeObserver; if (!R) return;
+  const rec = { made: 0, gone: 0 }; window.__ro = rec;
+  window.ResizeObserver = class extends R { constructor(cb) { super(cb); rec.made += 1; }
+    disconnect() { rec.gone += 1; return super.disconnect(); } }; })();"""
+
+
+def test_row388_a_card_whose_reply_left_the_page_is_let_go_by_the_next_one(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # integrated review L3: each card's viewer (its ResizeObserver) stayed alive after its row
+    # left the conversation (a new chat, a cleared history): a long day kept every one
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    try:
+        c.page.add_init_script(RO_SPY)
+        c.open()
+        c.ask()
+        until(c.page, lambda: c.card().count() == 1 and drawn(c), "the first card")
+        made = c.page.evaluate("() => window.__ro.made")
+        assert made >= 1 and c.page.evaluate("() => window.__ro.gone") == 0
+        c.page.evaluate("() => document.querySelector('.tr-card').closest('.row').remove()")
+        c.ask()
+        until(c.page, lambda: c.page.locator(".tr-card").count() == 1 and drawn(c, 2), "the next")
+        assert c.page.evaluate("() => window.__ro.gone") >= 1  # the gone card's viewer let go
+        assert c.engine()["live"] == 1 and c.errors == []
+    finally:
+        c.close()
+
+
 def test_row388_one_stage_on_the_page_the_card_and_the_section_take_turns(
     browser: Any, d_url: str, token: str
 ) -> None:

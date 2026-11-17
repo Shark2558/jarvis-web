@@ -18,7 +18,7 @@ const GL = ['no-webgl2', 'lost', 'asset', 'timeout'], RETRY = ['lost', 'asset', 
 const PREPARING = 'Preparing the 3D view\u2026';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const NO_PLAN = 'This look has no plan yet: ask JARVIS what to wear, or plan it in Today and tomorrow.';
-const FIRST_RENDER_MS = 10000, FILES_MS = 30000, WATCH_MS = 250, UNDO_MAX = 20, EVENING = 18;
+const FIRST_RENDER_MS = 10000, FILES_MS = 30000, WATCH_MS = 250, UNDO_MAX = 20, EVENING = 18, PLAN = /^op_[0-9a-f]{8}$/; // a saved plan's id (R13's 'suggestion' row is none)
 const LAYERS = [['all', 'All layers'], ['no_outer', 'Without the outer layer'], ['base', 'Base layer only']];
 const VIEWS = [['front', 'Front'], ['side', 'Side'], ['back', 'Back']];
 const S = { H: null, ctx: null, host: null, off: false, tryon: null, outfits: null, photos: null, sec: null, card: null, holder: null,
@@ -490,7 +490,7 @@ async function first() { // the first look "Today and tomorrow" shows: a plan's,
   if (!v) return;
   S.outfits = null;
   const o = await outfits();
-  const plan = [['Today', o.today], ['Tomorrow', o.tomorrow]].map(([d, l]) => [d, (l || []).find((p) => !p.cancelled)]).find(([, p]) => p);
+  const plan = [['Today', o.today], ['Tomorrow', o.tomorrow]].map(([d, l]) => [d, (l || []).find((p) => !p.cancelled && PLAN.test(p.id))]).find(([, p]) => p); // R13's 'suggestion' row is no plan
   const q = plan ? 'plan=' + encodeURIComponent(plan[1].id) : 'day=' + (new Date().getHours() >= EVENING ? 'tomorrow' : 'today');
   try {
     const look = await api('/v1/tryon/look?' + q + (S.priv ? '&private=1' : ''));
@@ -539,7 +539,7 @@ async function start() {
 }
 export async function open(plan) {
   const v = S.sec;
-  if (typeof plan !== 'string' || !plan) return;
+  if (typeof plan !== 'string' || !PLAN.test(plan)) return; // a saved plan's id only
   if (S.off) { S.host.hidden = false; S.host.replaceChildren(H().mk('h3', 'hp-h', 'Try it on'), H().empty('Try it on is off on this server.')); return; }
   if (!v || !v.look) { S.next = () => open(plan); return; } // pressed while the section loads: opened right after
   const o = await outfits(), found = [['Today', o.today], ['Tomorrow', o.tomorrow]].map(([d, l]) => [d, (l || []).find((p) => p.id === plan)]).find(([, p]) => p);

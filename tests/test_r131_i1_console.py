@@ -24,5 +24,7 @@ def test_show_in_3d_is_drawn_only_while_try_on_is_on() -> None:
     hook = (STATIC / "console-helpers-wardrobe.js").read_text(encoding="utf-8")
     assert len(hook.splitlines()) <= 306
     assert "UI.tryon.state() === 'on') box.append(acts(btn('Show in 3D'" in hook
+    # ... and only on a saved plan: R13's "suggestion" row has no plan for A's look to read
+    assert "!p.cancelled && /^op_[0-9a-f]{8}$/.test(p.id) && UI.tryon" in hook
     assert "document.addEventListener('jarvis:tryon-state'" in hook
     assert "if (!p.cancelled) box.append(acts(btn('Show in 3D'" not in hook

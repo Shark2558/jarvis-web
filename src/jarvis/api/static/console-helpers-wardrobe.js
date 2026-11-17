@@ -126,7 +126,7 @@ function plan(day, p) {
   if (why.length) box.append(H.mk('p', 'sfine', why.map((x) => H.txt(x, 160)).join('. ') + '.'));
   [].concat((p.look && p.look.gaps) || [], p.needs || []).forEach((g) => box.append(H.mk('p', 'snote warn', H.txt(g, 160))));
   if (!p.cancelled) box.append(acts(btn('Wearing it', () => tool('wear_log', { action: 'start', plan: p.id }, 'Enjoy the day.')), btn('Done for today', () => tool('wear_log', { action: 'done', plan: p.id }))));
-  if (!p.cancelled && UI.tryon && UI.tryon.state && UI.tryon.state() === 'on') box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free, while Try-on is on
+  if (!p.cancelled && /^op_[0-9a-f]{8}$/.test(p.id) && UI.tryon && UI.tryon.state && UI.tryon.state() === 'on') box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free, a saved plan, while Try-on is on
   return [box];
 }
 function laundryRows() {

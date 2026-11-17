@@ -151,6 +151,9 @@ def test_avt04_cards_a_kurta_shows_front_and_back_and_a_shirt_asks_for_its_back(
         assert "No back photo of it yet: add one in Camera, Wardrobe." in refs.inner_text()
         assert refs.get_by_role("button", name="Open Camera").count() == 1
         assert row(c, "top").get_attribute("data-piece") == T.striped  # still selectable, same id
+        bare = c.section().locator(".tr-item[data-slot='bottom'] + .tr-refs").inner_text()
+        assert "No front photo of it yet: add one in Camera, Wardrobe." in bare
+        assert "No photo yet" not in bare  # said once, not twice (review D-1 L12)
     finally:
         c.close()
 

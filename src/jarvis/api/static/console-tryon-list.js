@@ -129,8 +129,9 @@ function refs(H, s, o) { // AVT-04: the views kept, each its own card; the usefu
   const views = Array.isArray(s.views) ? s.views : [];
   if (views.length && ids.length === views.length) views.forEach((v, i) => box.append(thumb(H, o, ids[i], VIEW_WORDS[v] || 'Photo')));
   else if (s.photo) box.append(thumb(H, o, s.photo, VIEW_WORDS[s.texture_view] || 'Photo'));
-  else box.append(H.mk('p', 'sfine', 'No photo yet'));
-  (s.missing || []).filter((v) => VIEW_WORDS[v]).slice(0, 1).forEach((v) => {
+  const ask = (s.missing || []).filter((v) => VIEW_WORDS[v]).slice(0, 1);
+  if (!box.childElementCount && !ask.length) box.append(H.mk('p', 'sfine', 'No photo yet')); // said once (L12)
+  ask.forEach((v) => {
     box.append(H.mk('p', 'snote', 'No ' + v + ' photo of it yet: add one in Camera, Wardrobe.'));
     if (typeof o.toCamera === 'function') box.append(o.btn('Open Camera', () => o.toCamera()));
   });

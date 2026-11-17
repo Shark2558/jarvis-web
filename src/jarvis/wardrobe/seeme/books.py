@@ -12,12 +12,13 @@ and 12), out of `make.py` at I1 (its 400-line guard; the integrated reviews' fix
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
+Sending = Callable[[float], Awaitable[None]]  # the route's audit line before the call (its hold)
 
 
 async def closed(close: Awaitable[None]) -> None:
@@ -40,4 +41,16 @@ async def record(billing: Any, uid: str, usd: float) -> None:
         )
 
 
-__all__ = ["closed", "record"]
+async def announce(on_send: Sending | None, hold_inr: float) -> None:
+    """The route's "sending" line, after the reserve and BEFORE the call (I1's security review,
+    finding 7), so a process killed while Google works still leaves one. Never raises: a hold
+    is open, and an audit outage must not turn into a charge at the hold for nothing sent."""
+    if on_send is None:
+        return
+    try:
+        await on_send(hold_inr)
+    except Exception as exc:  # noqa: BLE001 - logged; the press goes on
+        log.error("see it on me: the sending line failed", extra={"error": type(exc).__name__})
+
+
+__all__ = ["Sending", "announce", "closed", "record"]

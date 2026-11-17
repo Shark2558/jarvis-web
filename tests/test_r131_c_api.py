@@ -297,6 +297,45 @@ async def test_a_press_keep_and_delete_are_audited_by_ids_code_and_rupees(
         assert rest["seeme_picture_delete"] == {"picture": pic.id}
 
 
+async def test_the_press_is_audited_irreversible_and_before_the_call_and_so_are_deletes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # integrated security review finding 7: every line was REVERSIBLE (D's "send, pay, delete"
+    # are IRREVERSIBLE), and the press was written only after the call: a process killed while
+    # Google worked left no line for a request that sent his photo and may be billed
+    from types import SimpleNamespace
+
+    from jarvis.core.guardrails import ActionRisk
+
+    async with real(monkeypatch) as r:
+        audit = _Audit()
+        r.app.state.gateway = SimpleNamespace(audit=audit)
+        gid = await _ready(r)
+        seen_at_call: list[list[str]] = []
+        real_make = r.provider.make
+
+        async def make(ask: Any) -> Any:  # what the audit holds while Google works
+            seen_at_call.append([a["tool"] for a in audit.seen])
+            return await real_make(ask)
+
+        monkeypatch.setattr(r.provider, "make", make)
+        pic = http.PictureView.model_validate((await _press(r, gid, [])).json())
+        assert seen_at_call and seen_at_call[0][-1] == "seeme_picture_sending"
+        press = [a for a in audit.seen if a["tool"].startswith("seeme_picture")]
+        assert [a["tool"] for a in press] == ["seeme_picture_sending", "seeme_picture"]
+        assert {a["risk"] for a in press} == {ActionRisk.IRREVERSIBLE}
+        sending = press[0]["args"]
+        assert sending["request_id"] == f"tq_{1:016x}" and sending["garment"] == gid
+        assert sending["inr"] > pic.inr and sending["pieces"] == []  # the hold: the worst case
+        await r.c.delete(f"/v1/seeme/pictures/{pic.id}")
+        await r.c.delete(f"/v1/seeme/garments/{gid}")
+        await r.c.delete("/v1/seeme/photo")
+        risk = {a["tool"]: a["risk"] for a in audit.seen}
+        for tool in ("seeme_picture_delete", "seeme_garment_delete", "seeme_photo_delete"):
+            assert risk[tool] is ActionRisk.IRREVERSIBLE, tool
+        assert risk["seeme_garment"] is ActionRisk.REVERSIBLE  # adding one stays as it was
+
+
 async def test_a_made_picture_that_cant_be_saved_is_audited_at_what_google_charged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

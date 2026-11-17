@@ -22,6 +22,7 @@ from jarvis.logging import get_logger
 from jarvis.storage.docs import Delete
 from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
 from jarvis.wardrobe.seeme import texts
+from jarvis.wardrobe.seeme.books import Sending
 from jarvis.wardrobe.seeme.cap import Prefs, TryonCap
 from jarvis.wardrobe.seeme.consent import Consent, day_words
 from jarvis.wardrobe.seeme.estimate import figures, quote, rate_of, rupees
@@ -144,8 +145,11 @@ class SeeMeService:
             return 0.0
         return max(0.0, float(limit) - float(used))
 
-    async def press(self, uid: str, body: http.PictureIn) -> http.PictureView:
-        return await self._press.press(uid, body)
+    async def press(
+        self, uid: str, body: http.PictureIn, *, on_send: Sending | None = None
+    ) -> http.PictureView:
+        """The paid press; `on_send(hold_inr)` runs after the reserve, before the call."""
+        return await self._press.press(uid, body, on_send=on_send)
 
     async def picture(self, uid: str, pid: str) -> tuple[bytes, str] | None:
         return await self.kit.pictures.get(uid, pid)

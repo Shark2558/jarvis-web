@@ -43,7 +43,7 @@ from jarvis.logging import get_logger
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
 from jarvis.wardrobe.seeme import texts
-from jarvis.wardrobe.seeme.books import closed, record
+from jarvis.wardrobe.seeme.books import Sending, announce, closed, record
 from jarvis.wardrobe.seeme.cap import CapHold, Done, Prefs, TryonCap
 from jarvis.wardrobe.seeme.consent import Consent
 from jarvis.wardrobe.seeme.estimate import (
@@ -231,7 +231,7 @@ class Press:
         status, code, words = REPEATED.get(first, REPEATED["provider_unavailable"])
         raise SeeMeRefused(status, code, words)
 
-    async def press(self, uid: str, body: PictureIn) -> PictureView:
+    async def press(self, uid: str, body: PictureIn, on_send: Sending | None = None) -> PictureView:
         done = await self.kit.cap.answered(uid, body.request_id)  # this month or just before
         if done is not None:
             return await self.answer(uid, done)
@@ -265,6 +265,7 @@ class Press:
         )
         ask = TryOnAsk(person=person, garments=garments, timeout_s=CALL_DEADLINE_S)
         call = Call(provider, ask, hold, fig, g, mine, view, prefs)
+        await announce(on_send, hold.inr)  # the audit's line before his photo leaves (finding 7)
         return await self._make(uid, call)
 
     async def _make(self, uid: str, call: Call) -> PictureView:

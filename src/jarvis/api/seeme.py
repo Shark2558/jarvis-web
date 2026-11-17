@@ -20,6 +20,7 @@ from jarvis.api.body import BodyTooLarge, read_capped
 from jarvis.api.identity import current_user
 from jarvis.api.r13_status import NO_STORE, limited, part_of
 from jarvis.api.settings_audit import record_change
+from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
 from jarvis.wardrobe.model import PIECE_ID
 from jarvis.wardrobe.seeme import texts
@@ -99,9 +100,13 @@ async def _run(fn: Any, *args: Any, **kw: Any) -> Any:
         return _failed(getattr(fn, "__name__", "seeme"), exc)
 
 
-async def _audit(request: Request, tool: str, args: dict[str, Any], detail: str) -> None:
-    """One audit line, ids and numbers only (`record_change` never raises)."""
-    await record_change(request, agent=AGENT, tool=tool, args=args, detail=detail)
+async def _audit(
+    request: Request, tool: str, args: dict[str, Any], detail: str, *, gone: bool = False
+) -> None:
+    """One audit line, ids and numbers only (`record_change` never raises); `gone`: a paid
+    press or a delete, IRREVERSIBLE as "send, pay, delete" are (security review finding 7)."""
+    risk = ActionRisk.IRREVERSIBLE if gone else ActionRisk.REVERSIBLE
+    await record_change(request, agent=AGENT, tool=tool, args=args, detail=detail, risk=risk)
 
 
 def _start(
@@ -191,7 +196,8 @@ async def photo_drop(request: Request, uid: str = Depends(current_user)) -> Resp
     got = await _run(svc.delete_photo, uid)
     if isinstance(got, Response):
         return got
-    await _audit(request, "seeme_photo_delete", {"deleted": got}, "his photo and his YES deleted")
+    await _audit(request, "seeme_photo_delete", {"deleted": got}, "his photo and his YES deleted",
+                 gone=True)  # fmt: skip
     return _ok(http.Deleted(deleted=bool(got), message=texts.PHOTO_GONE))
 
 
@@ -273,7 +279,8 @@ async def garment_drop(
         return got
     if not got:
         return _no(404, "no_garment", texts.GARMENT_GONE)
-    await _audit(request, "seeme_garment_delete", {"garment": id}, "a garment's photo deleted")
+    await _audit(request, "seeme_garment_delete", {"garment": id}, "a garment's photo deleted",
+                 gone=True)  # fmt: skip
     return _ok(http.Deleted(deleted=True, message=texts.GARMENT_DELETED))
 
 
@@ -312,17 +319,24 @@ async def pictures(request: Request, uid: str = Depends(current_user)) -> Respon
     body = await _json(request, http.PictureIn)
     if isinstance(body, Response):
         return body
+    ids = {"request_id": body.request_id, "garment": body.garment, "pieces": list(body.pieces)}
+
+    async def sending(hold_inr: float) -> None:  # after the reserve, BEFORE the call (finding 7)
+        said = "his photo and the garment's sent to Google: may be billed"
+        await _audit(request, "seeme_picture_sending", {**ids, "inr": round(hold_inr, 2)}, said,
+                     gone=True)  # fmt: skip
+
     try:  # the audit names what happened: made, or the refusal's code, and its ₹ (GST in)
-        got: Any = await svc.press(uid, body)
+        got: Any = await svc.press(uid, body, on_send=sending)
         code, inr = "made", got.inr
     except SeeMeRefused as exc:
         got, code, inr = _no(exc.status, exc.code, exc.words), exc.code, exc.inr
     except Exception as exc:  # noqa: BLE001 - see `_failed`
         got, code, inr = _failed("press", exc, body.request_id), "unavailable", 0.0
-    args = {"request_id": body.request_id, "garment": body.garment, "pieces": list(body.pieces),
-            "code": code, "inr": round(inr, 2)}  # fmt: skip
+    args = {**ids, "code": code, "inr": round(inr, 2)}
     made = code == "made"
-    await _audit(request, "seeme_picture", args, "a picture made" if made else "no picture")
+    await _audit(request, "seeme_picture", args, "a picture made" if made else "no picture",
+                 gone=True)  # fmt: skip
     return _ok(got) if made else got
 
 
@@ -373,7 +387,7 @@ async def picture_drop(
         return got
     if not got:
         return _no(404, "gone", texts.PICTURE_GONE)
-    await _audit(request, "seeme_picture_delete", {"picture": id}, "a picture deleted")
+    await _audit(request, "seeme_picture_delete", {"picture": id}, "a picture deleted", gone=True)
     return _ok(http.Deleted(deleted=True, message=texts.PICTURE_DELETED))
 
 

@@ -20,7 +20,8 @@ export const NEW_TYPES = Object.freeze(['shirt', 't_shirt', 'polo', 'top', 'kurt
   'shorts', 'mundu', 'dhoti', 'blazer', 'jacket', 'coat', 'hoodie', 'sweater', 'rainwear', 'festive_layer']);
 export const COLOURS = Object.freeze(['black', 'white', 'grey', 'charcoal', 'navy', 'blue', 'light_blue', 'green', 'olive', 'yellow',
   'orange', 'red', 'maroon', 'pink', 'purple', 'brown', 'beige', 'khaki', 'multicolour']);
-const SENDABLE = ['top', 'bottom', 'outer'], PAIR_MAX = 2;
+const SENDABLE = ['top', 'bottom', 'outer'], PAIR_MAX = 2, CAP_MAX = 2000;
+const SLOT_WORDS = { top: 'top', bottom: 'bottom', outer: 'outer layer' };
 const INTRO = 'For a garment you are thinking of buying: JARVIS pictures you in it with up to two pieces you own. About \u20b99 a picture with GST, shown before each one. The garment is never added to your wardrobe.';
 const ADVICE = 'One full-length photo of you: standing, head to feet, a plain background, fitted everyday clothes, good light. It is kept sealed by JARVIS until you delete it.';
 const MAKING = 'Making your picture\u2026 this can take up to two minutes.';
@@ -73,9 +74,33 @@ function render() {
   const h = H(), v = M.view, out = [h.mk('p', 'sfine', INTRO)];
   if (!v) { M.host.replaceChildren(...out, h.empty(M.why || 'See it on me couldn\u2019t load.')); return; }
   if (v.notice) out.push(h.mk('p', 'snote warn', txt(v.notice, 200)));
-  if (!v.on) { out.push(h.mk('p', 'snote warn', txt(v.why || 'See it on me is off.', 200))); M.host.replaceChildren(...out, ...pictures()); return; }
-  out.push(...mine(), ...garmentRows(), ...pairing(), M.note, ...result(), ...pictures());
-  M.host.replaceChildren(...out);
+  if (v.on) out.push(...mine(), ...garmentRows(), ...pairing(), M.note, ...result());
+  else out.push(h.mk('p', 'snote warn', txt(v.why || 'See it on me is off.', 200)), M.note);
+  M.host.replaceChildren(...out, ...pictures(), ...settings());
+}
+function settings() { // his switch and his monthly limit (rupees, GST included); raising it shows the rupees first (D15)
+  const h = H(), v = M.view, cap = h.mk('input', 'minput');
+  cap.type = 'number'; cap.name = 'cap'; cap.min = '0'; cap.max = String(CAP_MAX); cap.step = '1'; cap.inputMode = 'numeric';
+  cap.value = v.month ? String(v.month.cap_inr) : '';
+  const acts = h.mk('div', 'sacts');
+  acts.append(M.o.btn('Save the limit', () => limit(cap)));
+  return [h.mk('p', 'snote', 'See it on me settings'),
+    h.row('See it on me', v.on ? 'On: every picture shows its price first.' : 'Off: nothing is sent.', [h.toggle('See it on me pictures', !!v.on, (on) => setting({ on }))]),
+    field('Your monthly limit (\u20b9, GST included; \u20b90 makes no pictures)', cap), acts];
+}
+async function limit(cap) {
+  const n = Number(cap.value), now = Number((M.view.month || {}).cap_inr || 0), each = Number(M.view.typical_inr) || 0;
+  if (!Number.isInteger(n) || n < 0 || n > CAP_MAX) { say('bad', 'The limit can be \u20b90 to \u20b92,000 a month.'); return; }
+  if (n <= now) { await setting({ cap_inr: n }, n); return; }
+  const go = await ask('Raise your See it on me limit to \u20b9' + n + ' a month?', ['That is about ' + (each > 0 ? Math.floor(n / each) : 0)
+    + ' pictures at about ' + rupees(each) + ' each, GST included. Nothing is spent by this: every picture still shows its price first.'],
+  [['Cancel', false], ['Raise the limit', true, 'primary']]);
+  if (go === true) await setting({ cap_inr: n, confirm_cost: true }, n);
+}
+async function setting(body, cap) {
+  try { M.view = await M.o.api('/v1/seeme/settings', { method: 'PUT', body }); } catch (e) { failed(e); return; }
+  render();
+  if (cap !== undefined) say('ok', 'Your limit is \u20b9' + cap + ' a month, GST included.');
 }
 function mine() { // his photo: kept sealed on his server; checked on this device before it is sent
   const h = H(), p = M.view.photo || {}, out = [];
@@ -119,17 +144,22 @@ function candidates(slot) { // his non-private pieces in that slot, from the loo
   const list = [[s.piece, s.words]].concat((s.options || []).map((x) => [x.piece, x.words]));
   return list.filter(([p], i) => p && list.findIndex(([q]) => q === p) === i);
 }
-function pairing() { // up to two of his pieces with it: R13's pick, which he may swap or untick
+function slotOf(piece) { // which slot of the look above holds it ('' when none of its slots offers it)
+  const look = M.o.look(), s = look && (look.slots || []).find((x) => !x.private && (x.piece === piece || (x.options || []).some((o) => o.piece === piece)));
+  return s ? s.slot : '';
+}
+function pairing() { // up to two of his pieces with it: R13's pick, which he may swap or untick; every piece sent is shown here
   if (!M.garment) return [];
   const h = H(), out = [h.mk('p', 'snote', txt(M.garment.words, 120))];
   if (M.pair && M.pair.words) out.push(h.mk('p', 'sfine', txt(M.pair.words, 200)));
-  SENDABLE.filter((slot) => slot !== M.garment.slot).forEach((slot) => {
-    const got = M.mine.find((x) => x.slot === slot), list = candidates(slot);
+  const rows = SENDABLE.filter((slot) => slot !== M.garment.slot).map((slot) => [slot, M.mine.find((x) => x.slot === slot)]);
+  rows.concat(M.mine.filter((x) => !x.slot).map((x) => ['', x])).forEach(([slot, got]) => {
+    const list = slot ? candidates(slot) : [];
     if (!got && !list.length) return;
     const tick = h.mk('input', ''), f = h.mk('label', 'hp-field wd-tick');
-    tick.type = 'checkbox'; tick.checked = !!(got && got.on); tick.dataset.slot = slot;
-    tick.addEventListener('change', () => toggle(slot, tick));
-    f.append(h.mk('span', 'snote', 'With your ' + ({ top: 'top', bottom: 'bottom', outer: 'outer layer' })[slot] + ': ' + txt(got ? got.words : (list[0] || [])[1], 60)), tick);
+    tick.type = 'checkbox'; tick.checked = !!(got && got.on); tick.dataset.slot = slot || 'other';
+    tick.addEventListener('change', () => toggle(slot, got, tick));
+    f.append(h.mk('span', 'snote', 'With your ' + (SLOT_WORDS[slot] ? SLOT_WORDS[slot] + ': ' : '') + txt(got ? got.words : (list[0] || [])[1], 60)), tick);
     out.push(f);
     if (list.length > 1) {
       const pick = select(list.map(([p, w]) => [p, txt(w, 60)]), got ? got.piece : list[0][0], 'Another of your pieces for this');
@@ -144,26 +174,40 @@ function pairing() { // up to two of his pieces with it: R13's pick, which he ma
   out.push(acts, h.mk('p', 'sfine', 'Its price is shown before anything is sent. ' + rupees(M.view.typical_inr) + ' with GST is typical; this month ' + rupees((M.view.month || {}).spent_inr || 0) + ' of ' + rupees((M.view.month || {}).cap_inr || 0) + ' is used.'));
   return out;
 }
-function toggle(slot, tick) {
-  const on = M.mine.filter((x) => x.on && x.slot !== slot).length;
-  if (tick.checked && on >= PAIR_MAX) { tick.checked = false; say('bad', 'At most two of your pieces go with it.'); return; }
-  const got = M.mine.find((x) => x.slot === slot), first = candidates(slot)[0];
-  if (got) got.on = tick.checked; else if (first) M.mine.push({ slot, piece: first[0], words: first[1], on: tick.checked });
+function toggle(slot, got, tick) { // the entries change by copy: at most PAIR_MAX ticked
+  const others = M.mine.filter((x) => x.on && x !== got).length;
+  if (tick.checked && others >= PAIR_MAX) { tick.checked = false; say('bad', 'At most two of your pieces go with it.'); return; }
+  const first = slot ? candidates(slot)[0] : null;
+  if (got) M.mine = M.mine.map((x) => (x === got ? Object.assign({}, x, { on: tick.checked }) : x));
+  else if (first) M.mine = M.mine.concat([{ slot, piece: first[0], words: first[1], on: tick.checked }]);
   render();
 }
 function swapMine(slot, piece, list) {
   const w = (list.find(([p]) => p === piece) || [piece, ''])[1], rest = M.mine.filter((x) => x.slot !== slot);
-  M.mine = rest.concat([{ slot, piece, words: w, on: true }]).slice(-Math.max(PAIR_MAX, rest.length + 1));
-  if (M.mine.filter((x) => x.on).length > PAIR_MAX) M.mine.find((x) => x.on && x.slot !== slot).on = false;
+  const over = rest.filter((x) => x.on).length >= PAIR_MAX ? rest.find((x) => x.on) : null; // still at most two ticked
+  M.mine = rest.map((x) => (x === over ? Object.assign({}, x, { on: false }) : x)).concat([{ slot, piece, words: w, on: true }]);
   render();
 }
-function result() { // the picture just made: its label, time, rupees, the new garment and what was sent
+function thumbOf(cls, photo, words) { // his piece's image card: its crop through the door (read only), a data: URL
+  const f = H().mk('figure', 'tr-ref ' + cls), img = H().mk('img', 'tr-thumb');
+  img.alt = txt(words, 60) + ' photo'; img.width = 56; img.height = 56;
+  f.append(img, H().mk('figcaption', 'sfine', txt(words, 60)));
+  if (!photo || !has('thumb')) { f.append(H().mk('span', 'sfine', 'No photo yet')); return f; }
+  img.dataset.photo = photo;
+  door().thumb(photo).then((u) => { if (/^data:image\/(png|jpeg);base64,/.test(String(u))) img.src = u; }).catch(() => {});
+  return f;
+}
+function result() { // the picture just made: its label, time, rupees, the new garment and what was sent (with their cards)
   const h = H(), p = M.pic;
   if (!p) return [];
   const out = [image('tr-pic', M.picUrl, txt(p.label, 120)), h.mk('p', 'snote', txt(p.label, 120))];
   out.push(h.mk('p', 'sfine', 'Made ' + when(p.made_at) + ' \u00b7 ' + rupees(p.inr) + ' with GST \u00b7 ' + txt(p.garment && p.garment.words, 120)));
   out.push(h.mk('p', 'sfine', p.sent && p.sent.length ? 'Your pieces in it: ' + p.sent.map((s) => txt(s.words, 60)).join(', ') + '.' : 'None of your pieces is in it.'));
   (p.not_sent || []).forEach((n) => out.push(h.mk('p', 'sfine', 'Not in the picture: ' + txt(n.words, 80))));
+  const cards = h.mk('div', 'tr-refs');
+  (p.sent || []).forEach((s) => cards.append(thumbOf('tr-sent', (M.o.photosOf(s.piece) || [])[0], s.words)));
+  (p.not_sent || []).forEach((n) => cards.append(thumbOf('tr-notsent', n.photo, n.words)));
+  if (cards.childElementCount) out.push(cards);
   out.push(h.mk('p', 'sfine', txt(p.credentials || 'Google adds Content Credentials (C2PA)', 120)));
   const acts = h.mk('div', 'sacts');
   acts.append(M.o.btn(p.kept ? 'Don\u2019t keep' : 'Keep', () => keep(p, !p.kept)), M.o.btn('Delete', () => forget(p.id)), M.o.btn('Close', () => { M.pic = null; M.picUrl = ''; render(); }));
@@ -212,11 +256,8 @@ async function addGarment() {
 async function choose(g) {
   M.garment = g; M.pair = null; M.mine = [];
   try { M.pair = await M.o.api('/v1/seeme/pair?garment=' + encodeURIComponent(g.id)); } catch (e) { failed(e); }
-  const look = M.o.look();
-  M.mine = ((M.pair && M.pair.pieces) || []).slice(0, PAIR_MAX).map((p) => {
-    const s = look && (look.slots || []).find((x) => SENDABLE.includes(x.slot) && (x.piece === p.piece || (x.options || []).some((o) => o.piece === p.piece)));
-    return { slot: s ? s.slot : '', piece: p.piece, words: p.words, on: true };
-  });
+  M.mine = ((M.pair && M.pair.pieces) || []).map((p) => ({ slot: slotOf(p.piece), piece: p.piece, words: p.words, on: true }))
+    .filter((x) => x.slot !== g.slot && (!x.slot || SENDABLE.includes(x.slot))).slice(0, PAIR_MAX); // never one in its own slot
   render();
 }
 

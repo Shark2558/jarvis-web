@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 import pytest
 from r13_fakes_d import Picture
-from r131_fakes import T
-from r131_fakes_d import patched_door
+from r131_fakes import T, jpeg
+from r131_fakes_d import WATCH_PHOTO, patched_door
 from test_r131_d_card import Page, browser, call, d_url, drawn, reset, until
 
 from jarvis.wardrobe.model import COLOURS
@@ -203,4 +204,140 @@ def test_avt12_card_the_picture_is_a_labelled_2d_preview_of_a_new_garment_with_h
         refused = "the server responded with a status of 422"  # the lower-case "yes", by design
         assert [e for e in c.errors if refused not in e] == [] and c.csp_violations() == []
     finally:
+        c.close()
+
+
+# ---- set up through the fake server's own routes (no on-device check needed for these) ----------
+def put_bytes(url: str, token: str, path: str, data: bytes) -> Any:
+    req = urllib.request.Request(url + path, data=data, method="POST")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "image/jpeg")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
+
+def with_photo_yes_and(url: str, token: str, kind: str, colour: str) -> dict[str, Any]:
+    """His photo and YES kept, and one new garment: as if he had done it on an earlier day."""
+    put_bytes(url, token, "/v1/seeme/photo", jpeg(600, 1200))
+    call(url, token, "/v1/seeme/consent", {"typed": "YES", "template_version": "c2"})
+    got: dict[str, Any] = put_bytes(
+        url, token, f"/v1/seeme/garments?type={kind}&colour={colour}", jpeg(512, 512)
+    )
+    return got
+
+
+def use(c: Page, words: str) -> None:
+    row = seeme(c).locator(".hp-row", has_text=words).first
+    row.get_by_role("button", name="Use this one").click()
+
+
+def test_avt12_card_lists_his_pieces_sent_and_not_in_the_picture_with_their_thumbnails(
+    browser: Any, d_url: str, token: str
+) -> None:
+    reset(d_url, token)
+    with_photo_yes_and(d_url, token, "trousers", "black")  # pairs with his striped shirt
+    c = ready(browser, d_url, token)
+
+    def plus_a_watch(route: Any) -> None:  # a picture whose answer also names a piece left out
+        r = route.fetch()
+        pic = r.json()
+        pic["not_sent"] = [{"piece": T.watch, "slot": "watch", "words": "grey watch",
+                            "why": "not_a_garment", "photo": WATCH_PHOTO}]  # fmt: skip
+        route.fulfill(response=r, json=pic)
+
+    c.page.route("**/v1/seeme/pictures", plus_a_watch)
+    try:
+        use(c, "new black trousers")
+        until(c.page, lambda: "With your navy shirt." in text(c), "the pairing")
+        seeme(c).get_by_role("button", name="See it on me", exact=True).click()
+        dlg = c.page.locator("dialog.bdialog.tr-dlg")
+        until(c.page, lambda: "Make 1 picture?" in (dlg.text_content() or ""), "the confirm")
+        dlg.get_by_role("button", name="Make the picture").click()
+        until(c.page, lambda: "Generated 2D style preview" in text(c), "the picture")
+        sent = seeme(c).locator(".tr-sent img.tr-thumb")
+        until(c.page, lambda: sent.count() == 1, "his piece's thumbnail")
+        assert sent.first.get_attribute("data-photo") == "wh_00000000b001"  # the shirt's front
+        left = seeme(c).locator(".tr-notsent img.tr-thumb")
+        assert left.count() == 1 and left.first.get_attribute("data-photo") == WATCH_PHOTO
+        assert "Not in the picture: grey watch" in text(c)
+        until(c.page, lambda: (sent.first.get_attribute("src") or "").startswith("data:image/"),
+              "the thumbnail drawn")  # fmt: skip
+    finally:
+        c.close()
+
+
+def test_d22_pairing_lists_every_piece_it_would_send_and_never_one_in_the_garments_slot(
+    browser: Any, d_url: str, token: str
+) -> None:
+    reset(d_url, token)
+    with_photo_yes_and(d_url, token, "shirt", "white")
+    c = ready(browser, d_url, token)
+    pairing = {"pieces": [{"piece": T.rain_jacket, "words": "navy jacket"},
+                          {"piece": T.white, "words": "white shirt"}],
+               "not_sent": [], "words": "With your navy jacket."}  # fmt: skip
+
+    def pair(route: Any) -> None:
+        gid = route.request.url.split("garment=", 1)[1]
+        route.fulfill(json={**pairing, "garment": gid})
+
+    c.page.route("**/v1/seeme/pair?*", pair)
+    try:  # the festive look has no outer layer: the jacket is in none of its slots
+        c.page.locator("#hpp-wardrobe .wd-plan").nth(1).get_by_role(
+            "button", name="Show in 3D"
+        ).click()
+        until(c.page, lambda: drawn(c, 2), "the festive look")
+        use(c, "a new white shirt")
+        until(c.page, lambda: "With your navy jacket." in text(c), "the pairing")
+        ticks = seeme(c).locator("label.wd-tick", has=c.page.locator("input[type='checkbox']"))
+        shown = ticks.evaluate_all(
+            "l => l.filter(x => x.querySelector('input').checked).map(x => x.textContent)"
+        )
+        assert any("navy jacket" in t for t in shown)  # shown, though not in this look
+        assert not any("white shirt" in t for t in ticks.all_inner_texts())  # its own slot
+        seeme(c).get_by_role("button", name="See it on me", exact=True).click()
+        dlg = c.page.locator("dialog.bdialog.tr-dlg")
+        until(c.page, lambda: "Make 1 picture?" in (dlg.text_content() or ""), "the confirm")
+        [est] = [r for r in c.sent if "/v1/seeme/estimate" in r["url"]]
+        assert est["url"].endswith("&pieces=" + T.rain_jacket)  # exactly what is shown
+        dlg.get_by_role("button", name="Cancel").click()
+        assert not c.posts("/v1/seeme/pictures")
+    finally:
+        c.close()
+
+
+def test_seeme_settings_lower_the_limit_at_once_and_raise_it_only_after_the_rupees_are_shown(
+    browser: Any, d_url: str, token: str
+) -> None:
+    reset(d_url, token)
+    c = ready(browser, d_url, token)
+    try:
+        cap = seeme(c).locator("input[name='cap']")
+        assert cap.input_value() == "300"
+        cap.fill("200")
+        seeme(c).get_by_role("button", name="Save the limit").click()
+        until(c.page, lambda: c.posts("/v1/seeme/settings"), "lowered")
+        assert json.loads(c.posts("/v1/seeme/settings")[0]["body"]) == {"cap_inr": 200}
+        until(c.page, lambda: "Your limit is ₹200 a month, GST included." in text(c), "said")
+        seeme(c).locator("input[name='cap']").fill("500")
+        seeme(c).get_by_role("button", name="Save the limit").click()
+        dlg = c.page.locator("dialog.bdialog.tr-dlg")
+        until(c.page, lambda: "Raise your See it on me limit to ₹500 a month?" in (
+            dlg.text_content() or ""), "the confirm")  # fmt: skip
+        assert "about 56 pictures" in (dlg.text_content() or "")  # at the typical ₹8.90
+        dlg.get_by_role("button", name="Cancel").click()
+        assert len(c.posts("/v1/seeme/settings")) == 1  # Cancel sends nothing
+        seeme(c).get_by_role("button", name="Save the limit").click()
+        dlg.get_by_role("button", name="Raise the limit").click()
+        until(c.page, lambda: len(c.posts("/v1/seeme/settings")) == 2, "raised")
+        assert json.loads(c.posts("/v1/seeme/settings")[1]["body"]) == {
+            "cap_inr": 500, "confirm_cost": True}  # fmt: skip
+        until(c.page, lambda: call(d_url, token, "/v1/seeme")["month"]["cap_inr"] == 500, "kept")
+        seeme(c).locator("button.bsw[aria-label='See it on me pictures']").click()
+        until(c.page, lambda: "See it on me is off." in text(c), "off")
+        assert json.loads(c.posts("/v1/seeme/settings")[2]["body"]) == {"on": False}
+        assert seeme(c).locator("button.bsw[aria-label='See it on me pictures']").count() == 1
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        back = {"on": True, "cap_inr": 300, "confirm_cost": True}  # as before, for the next test
+        call(d_url, token, "/v1/seeme/settings", back, method="PUT")
         c.close()

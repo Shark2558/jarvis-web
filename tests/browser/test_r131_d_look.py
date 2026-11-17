@@ -1,0 +1,140 @@
+# tests/browser/test_r131_d_look.py -- R13.1 Part D: the look does not change
+# (docs/plans/r13-1-try-on.md D1, D21; BRIEF-D section 2 "The look does not change", section 4's
+# cases), in a real Chromium:
+#   - every target in Try it on and in the card under a reply is at least 44 x 44 px, on a laptop
+#     (1280 x 800) and a phone (360 x 800)
+#   - the stage is 480 px tall on a laptop and 56 % of the viewport's height on a phone, by night
+#     and by day, with no sideways scroll on the phone and no error or CSP report
+#   - row 388 on a phone: the card opens by itself under the reply, dressed in the card's pieces
+#   - with Try-on off on the server, the Wardrobe tab is laid out exactly as R13's (the section
+#     takes no room, and nothing of the 3D view loads)
+# Fake engine, fake server, pinned clock (test_r131_d_card.py's helpers).
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from test_r131_d_card import CARD_PIECES, Page, browser, d_url, drawn, reset, shown_pieces, until
+
+__all__ = ["browser", "d_url"]
+pytestmark = pytest.mark.browser
+LAPTOP = {"width": 1280, "height": 800}
+PHONE = {"width": 360, "height": 800}
+SIZES = {"laptop": LAPTOP, "phone": PHONE}
+TARGET_PX = 44
+SMALL = """(sel) => { // every target there under 44 x 44 px, with its words and size ([] when none)
+  const out = [];
+  const kinds = 'button, select, input:not([type=checkbox]):not([type=hidden]), label.wd-tick';
+  document.querySelectorAll(sel).forEach((root) => root.querySelectorAll(kinds).forEach((el) => {
+    if (el.closest('.tr-stage')) return; // the engine's own canvas (Part B)
+    const r = el.getBoundingClientRect();
+    if (!r.width && !r.height) return; // not on screen in this state
+    if (r.height < 44 || r.width < 44) {
+      const words = (el.textContent || el.getAttribute('aria-label') || el.tagName).trim();
+      out.push(words.slice(0, 40) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
+    }
+  }));
+  return out;
+}"""
+BOXES = """() => { // every Wardrobe section but Try it on, where it sits
+  const pane = document.getElementById('hpp-wardrobe');
+  return [...pane.querySelectorAll('.hp-sec')].filter((s) => !s.classList.contains('tr-sec'))
+    .map((s) => s.getBoundingClientRect())
+    .map((r) => [r.x, r.y, r.width, r.height].map(Math.round));
+}"""
+
+
+def stage_px(c: Page, where: str) -> float:
+    box = c.page.locator(f"{where} .tr-stage").first
+    return float(box.evaluate("e => e.getBoundingClientRect().height"))
+
+
+@pytest.mark.parametrize("size", ["laptop", "phone"])
+def test_every_target_is_44px_in_try_it_on_and_in_the_card(
+    browser: Any, d_url: str, token: str, size: str
+) -> None:
+    reset(d_url, token)
+    c = Page(browser, d_url, token, SIZES[size])
+    try:
+        c.open()
+        c.ask()
+        until(c.page, lambda: c.card().count() == 1 and drawn(c), "the card")
+        assert c.page.evaluate(SMALL, ".tr-card") == []
+        c.wardrobe()
+        until(c.page, lambda: drawn(c, 2), "the section's figure")
+        assert c.page.evaluate(SMALL, ".tr-sec") == []
+        outer = c.section().locator(".tr-item[data-slot='outer']")
+        outer.get_by_role("button", name="Change").click()
+        c.section().get_by_role("button", name="Show as a list").first.click()
+        assert c.page.evaluate(SMALL, ".tr-sec") == []  # the checklist and a slot's options
+    finally:
+        c.close()
+
+
+@pytest.mark.parametrize("surface", ["night", "day"])
+@pytest.mark.parametrize("size", ["laptop", "phone"])
+def test_the_stage_is_480px_on_a_laptop_and_56_percent_on_a_phone_by_night_and_day(
+    browser: Any, d_url: str, token: str, size: str, surface: str
+) -> None:
+    reset(d_url, token)
+    c = Page(browser, d_url, token, SIZES[size])
+    try:
+        c.open()
+        if surface == "day":
+            c.choose_day()
+        c.wardrobe()
+        until(c.page, lambda: drawn(c), "the section's figure")
+        want = 480.0 if size == "laptop" else 0.56 * PHONE["height"]
+        assert abs(stage_px(c, "#hpp-wardrobe .tr-sec") - want) <= 1
+        wide = c.page.evaluate(
+            "() => [document.documentElement.scrollWidth, window.innerWidth,"
+            " document.getElementById('hpp-wardrobe').scrollWidth,"
+            " document.getElementById('hpp-wardrobe').clientWidth]"
+        )
+        assert wide[0] <= wide[1] and wide[2] <= wide[3] + 1, wide  # nothing scrolls sideways
+        assert c.page.locator("html").get_attribute("data-surface") == surface
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def test_row388_on_a_phone_the_card_opens_by_itself_under_the_reply(
+    browser: Any, d_url: str, token: str
+) -> None:
+    reset(d_url, token)
+    c = Page(browser, d_url, token, PHONE)
+    try:
+        c.open()
+        c.ask()
+        until(c.page, lambda: c.card().count() == 1 and drawn(c), "the card")
+        assert shown_pieces(c.engine()["shown"][-1]["figures"][0]) == CARD_PIECES
+        assert abs(stage_px(c, ".row.jarvis .tr-card") - 0.56 * PHONE["height"]) <= 1
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+def test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s(
+    browser: Any, d_url: str, token: str
+) -> None:
+    c = Page(browser, d_url, token)
+    off = {"error": "not_found", "detail": "Try-on is off on this server."}
+    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=off))
+    try:
+        c.open()
+        c.open_panel("helpers")
+        c.page.locator("#hpt-wardrobe").click()
+        sec = c.page.locator("#hpp-wardrobe .tr-sec")
+        until(c.page, lambda: sec.count() == 1 and sec.get_attribute("hidden") is not None, "off")
+        until(c.page, lambda: c.page.locator("#hpp-wardrobe .wd-plan").count() >= 2, "R13's plans")
+        c.page.wait_for_timeout(500)
+        with_it = c.page.evaluate(BOXES)
+        c.page.evaluate("() => document.querySelector('#hpp-wardrobe .tr-sec').remove()")
+        assert c.page.evaluate(BOXES) == with_it  # the hidden section takes no room at all
+        assert sec.count() == 0 and c.engine() is None  # nothing of the 3D view loaded
+        assert not [r for r in c.sent if "/v1/tryon/look" in r["url"] or "/v1/seeme" in r["url"]]
+        by_design = "status of 404 (Not Found) @ " + d_url + "/v1/tryon"  # the browser's own line
+        assert [e for e in c.errors if not e.endswith(by_design)] == []
+        assert c.csp_violations() == []
+    finally:
+        c.close()

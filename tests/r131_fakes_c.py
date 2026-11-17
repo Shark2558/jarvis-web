@@ -14,15 +14,22 @@
 #   ready_world(...)              seeme_world + Part C built, his photo kept, his YES given and a
 #                                 new navy shirt's photo kept: (world, service, garment)
 #   ask(garment, pieces, ...)     a `PictureIn` for the press (confirm_cost, the ₹ shown, an id)
+#   gemini(script) / fake1(steps) a provider and how many requests reached it: C's adapter on
+#                                 recorded answers, I0's one-garment fake (it chains inside itself)
+#   SlowProvider(p)               p, a little slow (a real call takes seconds): presses overlap
+#   grab_logs()                   every log record's text while it is open
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from r13_fakes_c import World, world
+from r131_fake_gemini import FakeGoogle, FakeTokens, picture_answer, project_of
 from r131_fakes import CROPS, IST, NOW, PHOTOS, UID, VIEW_OF, FakePhotoVault, T, jpeg
 
 from jarvis.billing.fx import Rate
@@ -197,11 +204,58 @@ def ask(garment: str, pieces: tuple[str, ...] = (), *, inr: float = 8.9, n: int 
                      request_id=f"tq_{n:016x}")  # fmt: skip
 
 
+Prov = tuple[Any, Callable[[], int]]  # a provider, and how many requests reached it
+
+
+def gemini(script: list[Any] | None = None) -> Prov:
+    from jarvis.llm.tryon_gemini import GeminiTryOn
+
+    google = FakeGoogle(script or [picture_answer()])
+    p = GeminiTryOn(model="gemini-3.1-flash-image", location="us", tokens=FakeTokens(),
+                    project=project_of(), http=google.client())  # fmt: skip
+    return p, lambda: len(google.seen)
+
+
+def fake1(steps: list[Any] | None = None) -> Prov:
+    from r131_fake_tryon import ScriptedTryOn
+
+    p = ScriptedTryOn(max_garments=1, script=steps or ())
+    return p, lambda: len(p.calls)
+
+
+class SlowProvider:
+    def __init__(self, p: Any) -> None:
+        self.p, self.describe, self.estimate = p, p.describe, p.estimate
+
+    async def make(self, a: Any) -> Any:
+        await asyncio.sleep(0.01)
+        return await self.p.make(a)
+
+
+@contextmanager
+def grab_logs() -> Iterator[list[str]]:
+    found: list[str] = []
+
+    class Grab(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            found.append(record.getMessage() + str(record.__dict__))
+
+    grab, root = Grab(), logging.getLogger()
+    root.addHandler(grab)
+    try:
+        yield found
+    finally:
+        root.removeHandler(grab)
+
+
 __all__ = [
     "FRONT",
     "NEW_SHIRT",
     "PERSON",
     "ask",
+    "fake1",
+    "gemini",
+    "grab_logs",
     "ready_world",
     "MORE_CROPS",
     "RATE",
@@ -209,7 +263,9 @@ __all__ = [
     "FakeFx",
     "OffMode",
     "OnMode",
+    "Prov",
     "SeeMeWorld",
+    "SlowProvider",
     "YieldingDocs",
     "seeme_world",
 ]

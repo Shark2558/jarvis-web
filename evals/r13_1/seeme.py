@@ -2,47 +2,31 @@
 """R13.1 eval, Part C (See it on me), through the PORT (docs/plans/r13-1-try-on.md "Tests and
 evals"; BRIEF-C section 4). Every case runs on C's Gemini adapter (recorded answers through
 httpx.MockTransport) AND on I0's one-garment fake (`ScriptedTryOn(max_garments=1)`, which chains
-inside itself). No call reaches Google.
-
-Cases: zero calls without a current YES, and "yes", "Yes", "YES!" refused; a moved rate keeps
-consent, a model or location change asks again; the cap's boundary (on the adapter: settled at
-₹8.52 with a hold of ₹11.22, the 34th fits and the 35th is refused); 10 presses at once reserve
-exactly one; released on every non-200 and on "never sent", kept on a timeout after sending, a cut
-200 and a blocked 200; settled from usage, at the hold without; a text part read nowhere; a private
-piece and one without a front crop refused before any call; No-AI and the end date; a bearer token
-(console only); `price_changed` and an idempotent request id; D22 (the new garment and at most two
-of his, never his, a 21st garment photo, the pairing never private); AVT-12's exact pieces.
-
-Controls, each of which must turn its own case red (`control()`): the atomic reserve replaced by
-read-then-write; the consent check off; the private check moved to the console only; the ₹ hashed
-into the consent; the garment added to the wardrobe; and AVT-12's own (M8): the piece list taken
-from the look, not from what was sent.
+inside itself). No call reaches Google. The cases are BRIEF-C section 4's, one function each
+(`CASES`); `control()` applies each of its six controls (`CONTROLS`) and must see that control's
+own case turn red on both providers (AVT-12's own, M8, among them).
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
 import httpx
-from r131_fake_gemini import (
-    CUT,
-    INSTRUCTION,
-    FakeGoogle,
-    FakeTokens,
-    blocked_answer,
-    picture_answer,
-    project_of,
-)
+import r131_fakes_c as fakes
+from fastapi import FastAPI
+from r131_fake_gemini import CUT, INSTRUCTION, blocked_answer, picture_answer
 from r131_fake_tryon import ScriptedTryOn, Step
 from r131_fakes import UID, T, ist, jpeg
 from r131_fakes_c import FakeBilling, OffMode, YieldingDocs, ask, ready_world
 
+from jarvis.api import seeme as routes
+from jarvis.api.auth import require_auth
+from jarvis.api.identity import current_user
 from jarvis.llm.tryon import TryOnMaybeBilled, TryOnNotBilled
+from jarvis.wardrobe.ports import WardrobePart
 from jarvis.wardrobe.seeme import consent as cmod
 from jarvis.wardrobe.seeme import make as makemod
 from jarvis.wardrobe.seeme import pair as pairmod
@@ -51,30 +35,18 @@ from jarvis.wardrobe.seeme.texts import SeeMeRefused
 
 PART = "seeme"
 BUILT = True
-Prov = tuple[Any, Callable[[], int]]
-Mk = Callable[..., Prov]
+Mk = Callable[..., fakes.Prov]
+gemini, fake1 = fakes.gemini, fakes.fake1  # C's adapter on recorded answers; I0's one-garment fake
+NOT_200 = (400, 403, 404, 429, 500, 503)
 SCRIPTS = {  # billed or not: (the adapter's recorded answer, the fake's step, kept at the hold?)
-    "status_500": ([500], Step(error=TryOnNotBilled("status_500")), False),
+    **{f"status_{n}": ([n], Step(error=TryOnNotBilled(f"status_{n}")), False) for n in NOT_200},
     "never_sent": ([httpx.ConnectError("no")], Step(error=TryOnNotBilled("not_sent")), False),
     "timeout_after_sending": ([httpx.ReadTimeout("x")], Step(error=TryOnMaybeBilled("t")), True),
     "cut_200": ([CUT], Step(error=TryOnMaybeBilled("cut")), True),
     "blocked_200": ([blocked_answer()], Step(blocked="safety"), True),
 }
 SLOT = {"trousers": "bottom", "blazer": "outer", "kurta": "top", "shirt": "top"}
-
-
-def gemini(script: list[Any] | None = None) -> Prov:
-    from jarvis.llm.tryon_gemini import GeminiTryOn
-
-    google = FakeGoogle(script or [picture_answer()])
-    p = GeminiTryOn(model="gemini-3.1-flash-image", location="us", tokens=FakeTokens(),
-                    project=project_of(), http=google.client())  # fmt: skip
-    return p, lambda: len(google.seen)
-
-
-def fake1(steps: list[Step] | None = None) -> Prov:
-    p = ScriptedTryOn(max_garments=1, script=steps or ())
-    return p, lambda: len(p.calls)
+DAY: dict[str, float] = {"rate": 95.24}  # the day's rate, as a case moves it (C4's control)
 
 
 PROVIDERS: dict[str, Mk] = {"gemini": gemini, "fake1": fake1}
@@ -95,11 +67,6 @@ async def _code(coro: Awaitable[Any]) -> str:
 
 def _want(ok: bool, why: str) -> list[str]:
     return [] if ok else [why]
-
-
-DAY: dict[str, float] = {
-    "rate": 95.24
-}  # the day's rate, as a case moves it (C4's control reads it)
 
 
 def _set_rate(billing: FakeBilling, rate: float) -> None:
@@ -149,27 +116,9 @@ async def c_the_caps_boundary(mk: Mk) -> list[str]:
     return out
 
 
-class _Slow:
-    """The provider, a little slow (a real call takes seconds): the presses overlap for real."""
-
-    def __init__(self, p: Any) -> None:
-        self.p = p
-
-    def describe(self) -> Any:
-        return self.p.describe()
-
-    def estimate(self, n: int) -> tuple[float, float]:
-        got: tuple[float, float] = self.p.estimate(n)
-        return got
-
-    async def make(self, a: Any) -> Any:
-        await asyncio.sleep(0.01)
-        return await self.p.make(a)
-
-
 async def c_ten_at_once(mk: Mk) -> list[str]:
-    p, calls = mk()
-    sw, svc, g = await ready_world(provider=_Slow(p), docs=YieldingDocs())
+    p, calls = mk()  # a little slow, as a real call is, so the presses overlap for real
+    sw, svc, g = await ready_world(provider=fakes.SlowProvider(p), docs=YieldingDocs())
     shown = (await svc.estimate(UID, g.id, [])).typical_inr
     presses = (_code(svc.press(UID, ask(g.id, inr=shown, n=k))) for k in range(10))
     got = await asyncio.gather(*presses)
@@ -192,8 +141,7 @@ async def c_billed_or_not(mk: Mk) -> list[str]:
 
 async def c_settled_from_usage_or_the_hold(mk: Mk) -> list[str]:
     if mk is not gemini:  # the fake's model is not priced: always at the hold
-        p, _ = mk()
-        sw, svc, g = await ready_world(provider=p)
+        sw, svc, g = await ready_world(provider=mk()[0])
         hold = (await svc.estimate(UID, g.id, [])).hold_inr
         pic = await _press(svc, g.id)
         return _want(pic.inr == hold, f"settled {pic.inr}, not the hold {hold}")
@@ -206,25 +154,9 @@ async def c_settled_from_usage_or_the_hold(mk: Mk) -> list[str]:
 
 
 # ---- untrusted words, private pieces, the gates --------------------------------------------------
-@contextmanager
-def _logs() -> Iterator[list[str]]:
-    found: list[str] = []
-
-    class Grab(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            found.append(record.getMessage() + str(record.__dict__))
-
-    grab, root = Grab(), logging.getLogger()
-    root.addHandler(grab)
-    try:
-        yield found
-    finally:
-        root.removeHandler(grab)
-
-
 async def c_text_read_nowhere(mk: Mk) -> list[str]:
     p, calls = gemini([picture_answer(text=INSTRUCTION)]) if mk is gemini else mk()
-    with _logs() as lines:
+    with fakes.grab_logs() as lines:
         sw, svc, g = await ready_world(provider=p)
         drawn = jpeg(600, 800, 4)[:-2] + INSTRUCTION.encode() + b"\xff\xd9"  # text in its bytes
         g2 = await svc.add_garment(UID, "trousers", "khaki", drawn)
@@ -258,8 +190,7 @@ async def c_gates_before_any_call(mk: Mk) -> list[str]:
         sw, svc, g = await ready_world(provider=p, **kw)
         code = await _code(svc.press(UID, ask(g.id, inr=99.0)))
         out += _want((code, calls()) == (want, 0), f"{name}: {code}, {calls()} calls")
-    p, calls = mk()
-    sw, svc, g = await ready_world(provider=p, at=ist(2027, 5, 27, 23, 30))
+    sw, svc, g = await ready_world(provider=mk()[0], at=ist(2027, 5, 27, 23, 30))
     return out + _want(await _code(_press(svc, g.id)) == "made", "refused the day before its end")
 
 
@@ -280,14 +211,6 @@ async def c_price_changed_and_idempotent(mk: Mk) -> list[str]:
 
 
 async def c_bearer_token_is_refused(mk: Mk) -> list[str]:
-    from fastapi import FastAPI
-    from httpx import ASGITransport, AsyncClient
-
-    from jarvis.api import seeme as routes
-    from jarvis.api.auth import require_auth
-    from jarvis.api.identity import current_user
-    from jarvis.wardrobe.ports import WardrobePart
-
     p, calls = mk()
     sw, svc, g = await ready_world(provider=p)
     app = FastAPI()
@@ -298,7 +221,8 @@ async def c_bearer_token_is_refused(mk: Mk) -> list[str]:
     app.dependency_overrides[current_user] = lambda: UID
     body = {"garment": g.id, "pieces": [], "confirm_cost": True, "inr_shown": 99.0,
             "request_id": "tq_" + "9" * 16}  # fmt: skip
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
         got = await c.post("/v1/seeme/pictures", json=body, headers={"Authorization": "Bearer x"})
     refused = got.status_code == 403 and got.json().get("error") == "console_only"
     return _want(refused and not calls(), f"{got.status_code}, {calls()} calls")
@@ -308,22 +232,23 @@ async def c_bearer_token_is_refused(mk: Mk) -> list[str]:
 async def c_d22_the_garment_and_never_his(mk: Mk) -> list[str]:
     p, _ = mk()
     sw, svc, g = await ready_world(provider=p)
-    before = await sw.rev()
-    pair = await svc.pair(UID, g.id)
-    pic = await _press(svc, g.id, tuple(x.piece for x in pair.pieces))
-    await svc.delete_garment(UID, g.id)
-    out = _want(pic.garment.id == g.id and len(pic.sent) <= 2, "not the new garment")
-    out += _want(await sw.rev() == before, "the garment changed his wardrobe")
-    for n in range(20):
+    before = await sw.rev()  # then: an upload, the pairing, a picture, a delete, 20 more uploads
+    new = await svc.add_garment(UID, "shirt", "navy", jpeg(300, 400))
+    pair = await svc.pair(UID, new.id)
+    pic = await _press(svc, new.id, tuple(x.piece for x in pair.pieces))
+    out = _want(pic.garment.id == new.id and len(pic.sent) <= 2, "not the new garment")
+    await svc.delete_garment(UID, new.id)
+    for n in range(19):  # with g: 20 kept
         await svc.add_garment(UID, "shirt", "navy", jpeg(300, 300 + n))
     code = await _code(svc.add_garment(UID, "shirt", "navy", jpeg(300, 300)))
     out += _want(code == "too_many", f"a 21st: {code}")
+    out += _want(await sw.rev() == before, "a garment changed his wardrobe")
     view = await sw.w.store.view(UID)
-    model = (await svc.kit.garments.listed(UID, keep_days=30, kept=set())).garments[0]
     for kind, colour in (("trousers", "khaki"), ("blazer", "navy"), ("kurta", "maroon")):
-        asked = model.model_copy(update={"type": kind, "colour": colour, "slot": SLOT[kind]})
+        asked = g.model_copy(update={"type": kind, "colour": colour, "slot": SLOT[kind]})
         got = await svc.kit.pairer.pair(UID, asked)
-        bad = [x.piece for x in got.pieces if view.pieces[x.piece].private]
+        mine = [view.pieces[x.piece] for x in got.pieces]
+        bad = [x.id for x in mine if x.private or pairmod.slot_of_type(x.type) == asked.slot]
         out += _want(not bad and len(got.pieces) <= 2, f"pairing {kind}: {bad}")
     return out
 
@@ -415,9 +340,8 @@ def _into_the_wardrobe(real: Any) -> Any:
         piece = Piece.model_validate({"i": new_id("wi"), "c": "tops", "t": g.type, "co": g.colour})
 
         async def fn(view: Any, tx: Any) -> Commit:
-            return Commit(
-                events=(ev(piece.id, "registered", self.kit.ctx.now()),), records=(piece,)
-            )
+            return Commit(events=(ev(piece.id, "registered", self.kit.ctx.now()),),
+                          records=(piece,))  # fmt: skip
 
         await self.kit.ctx.store().transact(uid, fn)
         return await real(self, uid, call, result)

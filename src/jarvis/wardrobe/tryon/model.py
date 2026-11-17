@@ -225,6 +225,7 @@ TRYON, PERSON, CONSENT = "tryon", "tryon_person", "tryon_consent"
 PICTURE, SPEND = "tryon_picture", "tryon_spend"
 PURPOSE, PHOTO_PURPOSE = "tryon", "tryon_photos"  # keyring purposes
 SAVED_MAX, OPTIONS_MAX, KEPT_MAX, LISTED_MAX, DONE_MAX = 10, 12, 24, 50, 50
+PICTURE_KEEP_DAYS = 30  # owner question 3 (17 Nov 2026): 30 days unless Keep; `tryon_keep_days`
 TRYON_DOC_MAX_KB = 200
 PHOTO_SIDE_MAX = 1568
 ANSWER_MAX_BYTES = 16 * 1024 * 1024  # a picture in Google's answer
@@ -286,6 +287,7 @@ __all__ = [
     "PERSON",
     "PHOTO_PURPOSE",
     "PHOTO_SIDE_MAX",
+    "PICTURE_KEEP_DAYS",
     "PICTURE",
     "PICTURE_ID",
     "PRESSES_A_MINUTE",

@@ -27,7 +27,15 @@ from jarvis.privacy.ports import CategoryView, PrivacySource
 from jarvis.privacy.sources import OURS_ENC, CallbackSource, Look, Spec
 from jarvis.storage.docs import Docs
 from jarvis.wardrobe.kept import OWNER_FIELD, WardrobeUnavailable, erase, kept_paths
-from jarvis.wardrobe.tryon.model import CONSENT, KEPT_MAX, PERSON, PICTURE, SPEND, TRYON
+from jarvis.wardrobe.tryon.model import (
+    CONSENT,
+    KEPT_MAX,
+    PERSON,
+    PICTURE,
+    PICTURE_KEEP_DAYS,
+    SPEND,
+    TRYON,
+)
 
 SECTION = "Try-on"
 NOTHING_YET = "Nothing kept yet."
@@ -67,7 +75,8 @@ SPECS: dict[str, Spec] = {
         PICTURES_ID, SECTION, "See it on me pictures",
         "Each picture Google's image model made of you in a look, as Google returned it, with "
         "the pieces sent. The export lists them, never the pictures.",
-        "pictures", f"7 days unless you press Keep (at most {KEPT_MAX} kept)", OURS_ENC,
+        "pictures",
+        f"{PICTURE_KEEP_DAYS} days unless you press Keep (at most {KEPT_MAX} kept)", OURS_ENC,
         encrypted_by_jarvis=True, delete="passkey",
     ),
     SPEND_ID: Spec(

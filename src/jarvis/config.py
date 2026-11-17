@@ -643,7 +643,7 @@ class Settings(BaseSettings):
     tryon_model: str = Field(default="gemini-3.1-flash-image", pattern=r"^gemini-[a-z0-9.-]+$")
     tryon_location: Literal["us", "eu", "global"] = Field(default="us", description="Google's")
     tryon_model_retires: str = Field(default="2027-05-28", pattern=_DAY, description="D18")
-    tryon_keep_days: int = Field(default=7, ge=1, le=30, description="A picture, unless kept")
+    tryon_keep_days: int = Field(default=30, ge=1, le=30, description="A picture, unless kept")
     tryon_photo_max_kb: int = Field(default=700, ge=100, le=740, description="His photo's KB")
     tryon_cache: bool = Field(default=False, description="Google kept its 24-hour cache")
 

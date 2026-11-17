@@ -69,7 +69,7 @@ def test_the_r131_settings_have_safe_defaults() -> None:
     assert (s.tryon_month_cap_inr, s.tryon_tax_pct) == (300, 18)
     assert (s.tryon_model, s.tryon_location) == ("gemini-3.1-flash-image", "us")
     assert s.tryon_model_retires == "2027-05-28"
-    assert (s.tryon_keep_days, s.tryon_photo_max_kb) == (7, 700)
+    assert (s.tryon_keep_days, s.tryon_photo_max_kb) == (30, 700)  # owner question 3: 30 days
     assert s.tryon_cache is False  # the deploy sets it when Google refused to switch caching off
 
 
@@ -774,3 +774,11 @@ def test_no_r131_module_reads_the_real_clock_or_shows_a_dollar(path: Path) -> No
     assert not _CLOCK.search(text), path  # ctx.now() only
     strings = re.findall(r'"([^"\n]*)"', text)
     assert not [s for s in strings if re.search(r"\$\s?\d", s)], path  # ₹ only to the owner
+
+
+def test_a_picture_is_kept_30_days_unless_he_presses_keep() -> None:
+    from jarvis.wardrobe.tryon import kept, model
+
+    assert model.PICTURE_KEEP_DAYS == Settings(_env_file=None).tryon_keep_days == 30
+    words = kept.SPECS[kept.PICTURES_ID].retention
+    assert words.startswith("30 days unless you press Keep") and "7 days" not in words

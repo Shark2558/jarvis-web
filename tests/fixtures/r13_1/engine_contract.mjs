@@ -35,6 +35,10 @@ export const VARIANTS = Object.freeze({ shirt: ['tucked', 'untucked'], tee: ['tu
   wrap: ['ankle'], jacket: ['open', 'closed'] });
 export const LIMITS = Object.freeze({ triangles_one: 32000, triangles_two: 64000, dpr_max: 1.5, first_render_ms: 10000,
   zoom_steps: 4, undo_max: 20, figures_max: 2, gap_m: 0.9 });
+// The test hooks the engine honours (D8, AVT-15): window.__glFail set to one of these makes it fail that way, so
+// Part D's checklist path is tested without a broken GPU: supported() false ('no-webgl2'); onLost() fires after the
+// first show ('lost'); a file treated as failing its sum ('asset'); the first render never finishing ('timeout').
+export const GL_FAIL = Object.freeze(['no-webgl2', 'lost', 'asset', 'timeout']);
 export const RELEASE = 'm1';
 export const THREE_URL = '/static/vendor/three-0.187.0/three.module.min.js';
 export const ASSETS_URL = '/static/vendor/mannequin/';

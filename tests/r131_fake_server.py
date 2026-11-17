@@ -11,6 +11,7 @@
 #                                            console's CSP) and GET /r131/fixtures/{name}.mjs
 #   fake_app(...) -> FastAPI                 the real console app (mock brain) with R13's fake
 #                                            routes and these AHEAD of the parts' own
+#   serve(token) -> (url, stop)              it in a child process, for a browser test module
 #   python tests/r131_fake_server.py <port>  serve it (uvicorn)
 #
 # Not a test module (pytest does not collect it). Imported bare (`from r131_fake_server import`).
@@ -157,7 +158,7 @@ def _picture(st: FakeTryon, pieces: tuple[str, ...], view: WardrobeView, plan: s
     pic = http.PictureView(
         id=pid,
         made_at=NOW,
-        until=NOW + timedelta(days=7),
+        until=NOW + timedelta(days=m.PICTURE_KEEP_DAYS),
         inr=8.52,
         sent=sent,
         plan=plan,
@@ -399,7 +400,7 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
         pic = st.pictures.get(pid)
         if pic is None:
             return _no(404, "gone", "That picture isn't there any more.")
-        until = None if b.keep else NOW + timedelta(days=7)
+        until = None if b.keep else NOW + timedelta(days=m.PICTURE_KEEP_DAYS)
         st.pictures[pid] = pic.model_copy(update={"kept": b.keep, "until": until})
         return _ok(st.pictures[pid])
 
@@ -466,6 +467,55 @@ def fake_app(
         *r13_routes(wardrobe, clock).routes,
     ]
     return app
+
+
+def serve(token: str) -> tuple[str, Callable[[], None]]:
+    """This server in a child process for a browser test module: (url, stop). Token sign-in,
+    the mock brain, memory sessions, no live rate (as R13 D's `serve_d`)."""
+    import os
+    import socket
+    import subprocess
+    import time
+    import urllib.request
+
+    root = Path(__file__).resolve().parents[1]
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = int(s.getsockname()[1])
+    env = {
+        **os.environ, "PYTHONPATH": str(root / "src"), "JARVIS_ENV": "dev",
+        "JARVIS_LLM_BACKEND": "mock", "JARVIS_SESSION_BACKEND": "memory",
+        "JARVIS_AUTH_MODE": "token", "JARVIS_API_TOKEN": token, "JARVIS_LOG_LEVEL": "WARNING",
+        "JARVIS_USD_INR_LIVE": "0", "JARVIS_RATE_LIMIT_PER_MINUTE": "6000",
+    }  # fmt: skip
+    env.pop("JARVIS_ANTHROPIC_API_KEY", None)
+    proc = subprocess.Popen(
+        [sys.executable, str(root / "tests" / "r131_fake_server.py"), str(port)],
+        cwd=root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )  # fmt: skip
+    url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError("the R13.1 fake server exited early")
+        try:
+            with urllib.request.urlopen(url + "/health", timeout=1) as r:
+                if r.status == 200:
+                    break
+        except OSError:
+            time.sleep(0.2)
+    else:
+        proc.kill()
+        raise RuntimeError("the R13.1 fake server did not become healthy")
+
+    def stop() -> None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    return url, stop
 
 
 def main(argv: list[str]) -> int:

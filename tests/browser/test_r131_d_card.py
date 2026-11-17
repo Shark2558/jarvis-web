@@ -371,6 +371,32 @@ def test_avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_co
         c.close()
 
 
+def test_avt15_while_bs_files_are_still_on_their_way_the_figure_is_given_30_s_more(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # INTEGRATION-B section 8, "Needs I1" 3: B's files may take 30 s to arrive (a phone link), then
+    # 10 s for the frame, and B calls onLost('timeout') itself. While B says it is still loading,
+    # D's own 10 s watch must not give up first; an engine that says nothing keeps the 10 s rule.
+    reset(d_url, token)
+    c = Page(browser, d_url, token, clock=True)
+    c.page.add_init_script("window.__r131dSlowFiles = 25000;")  # the fake engine: 25 s of files
+    try:
+        c.open()
+        c.wardrobe()
+        view = c.section().locator(".tr-view")
+        until(c.page, lambda: c.engine() and c.engine()["mounts"] == 1, "the stage")
+        c.page.clock.run_for(10_500)
+        c.page.wait_for_timeout(300)
+        assert mode(view) == "3d"  # not the checklist yet
+        status = view.locator("p[role='status']")
+        assert "Still preparing the 3D view" in status.inner_text()
+        c.page.clock.run_for(15_000)  # the files are in and the frame drawn
+        until(c.page, lambda: status.inner_text() == "", "the figure drawn")
+        assert mode(view) == "3d"
+    finally:
+        c.close()
+
+
 def test_avt15_wearing_it_shows_r13s_refusal_and_never_claims_success(
     browser: Any, d_url: str, token: str
 ) -> None:

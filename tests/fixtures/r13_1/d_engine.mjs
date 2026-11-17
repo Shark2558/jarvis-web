@@ -6,6 +6,7 @@
 //   window.__r131d = { mounts, disposes, live, maxLive, shown: [{figures, opts}], views: [], spins: [], zooms: [],
 //                      closer: 0, snapshots: [{caption}], lost: 0 }
 //   show() answers {drawn, approx, cards, forced}: forced {top: 'tucked'} for a shirt or tee asked untucked over a wrap
+//   window.__r131dSlowFiles = ms: like B, stats() says state 'loading' (no triangles) for that long after the first show
 //   window.__glFail  'no-webgl2' -> supported() false; 'asset' -> mount() throws (a file failed its check);
 //                    'lost' -> onLost() after the first show; 'timeout' -> the first frame never draws (triangles 0)
 const VIEWS = { front: 0, side: 90, back: 180 };
@@ -45,7 +46,8 @@ function supported() { return fail() !== 'no-webgl2'; }
 function mount(host, o) {
   if (fail() === 'asset') throw new Error('A file of the 3D figure did not pass its check.');
   const opts = o || {};
-  let figures = [], view = 'front', yaw = 0, shown = 0, gone = false, last = { tucked: false, open: true, layers: 'all', view: 'front' };
+  let figures = [], view = 'front', yaw = 0, shown = 0, gone = false, last = { tucked: false, open: true, layers: 'all', view: 'front' }, since = 0;
+  const slow = Number(window.__r131dSlowFiles) || 0, loading = () => slow > 0 && (!since || Date.now() - since < slow); // B's files on their way
   rec.mounts += 1; rec.live += 1; rec.maxLive = Math.max(rec.maxLive, rec.live);
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 320 290'); svg.setAttribute('role', 'img');
@@ -69,7 +71,7 @@ function mount(host, o) {
       last = Object.assign({}, last, op || {});
       if (last.view && VIEWS[last.view] !== undefined) { view = last.view; yaw = VIEWS[view]; }
       rec.shown.push(JSON.parse(JSON.stringify({ figures, opts: last })));
-      shown += 1;
+      shown += 1; since = since || Date.now();
       if (fail() !== 'timeout') draw();
       if (shown === 1 && fail() === 'lost' && typeof opts.onLost === 'function') setTimeout(() => { rec.lost += 1; opts.onLost(); }, 0);
       const drawn = [], approx = {}, cards = [], forced = {};
@@ -97,7 +99,10 @@ function mount(host, o) {
       g.fillStyle = '#e8ecf2'; g.font = '13px sans-serif'; caption.forEach((t, i) => g.fillText(t, 10, 110 + i * 18));
       return new Promise((ok) => c.toBlob((b) => ok(b), 'image/png'));
     },
-    stats() { return { triangles: fail() === 'timeout' || !shown ? 0 : 12000 * figures.length, figures: figures.length, fps: 60, dpr: 1, shadows: true, yaw }; },
+    stats() {
+      const none = fail() === 'timeout' || !shown || loading();
+      return Object.assign({ triangles: none ? 0 : 12000 * figures.length, figures: figures.length, fps: 60, dpr: 1, shadows: true, yaw }, slow ? { state: none ? 'loading' : 'ready' } : {});
+    },
     dispose() { if (gone) return; gone = true; rec.disposes += 1; rec.live -= 1; svg.remove(); label.remove(); },
   };
   return stage;

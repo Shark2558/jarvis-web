@@ -20,7 +20,7 @@ const RETRY = ['lost', 'asset', 'timeout', 'engine'];
 const PREPARING = 'Preparing the 3D view\u2026';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const NO_PLAN = 'This look has no plan yet: ask JARVIS what to wear, or plan it in Today and tomorrow.';
-const FIRST_RENDER_MS = 10000, WATCH_MS = 250, UNDO_MAX = 20, EVENING = 18;
+const FIRST_RENDER_MS = 10000, FILES_MS = 30000, WATCH_MS = 250, UNDO_MAX = 20, EVENING = 18;
 const LAYERS = [['all', 'All layers'], ['no_outer', 'Without the outer layer'], ['base', 'Base layer only']];
 const VIEWS = [['front', 'Front'], ['side', 'Side'], ['back', 'Back']];
 const S = { H: null, ctx: null, host: null, off: false, tryon: null, outfits: null, photos: null, sec: null, card: null, holder: null,
@@ -145,15 +145,17 @@ function paint(v, first) {
   if (v.forced !== was) draw(v);
   if (first) watch(v);
 }
-function watch(v) { // the first frame within 10 s, else the checklist (D8); stats() reports triangles once drawn
-  const start = Date.now();
+function watch(v) { // the first frame within 10 s, else the checklist (D8); while B says its files are still on their way
+  const start = Date.now(); // (state 'loading': up to 30 s on a phone link, then B's own 10 s and onLost) it waits for B
   clearTimeout(v.watch);
   const tick = () => {
     if (!v.stage || v.mode !== '3d') return;
     let st = null;
     try { st = v.stage.stats(); } catch (_) { st = null; }
     if (st && Number(st.triangles) > 0) { say(v, '', ''); return; }
-    if (Date.now() - start >= FIRST_RENDER_MS) { toList(v, 'timeout'); return; }
+    const files = st && st.state === 'loading', late = Date.now() - start >= FIRST_RENDER_MS;
+    if (Date.now() - start >= FIRST_RENDER_MS + (files ? FILES_MS : 0)) { toList(v, 'timeout'); return; }
+    if (late && files) say(v, '', 'Still preparing the 3D view: its files are on their way\u2026');
     v.watch = setTimeout(tick, WATCH_MS);
   };
   v.watch = setTimeout(tick, 0);

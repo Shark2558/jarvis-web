@@ -9,6 +9,8 @@
 #                       route, a fake /v1/chat that answers "what should I wear?" with I0's real
 #                       `TryOnCard` (row 388), and the test hooks (/v1/test/r131-d: what was sent;
 #                       POST .../reset: the figure, his photo, the garments and pictures)
+#   _seeme_routes(...)  See it on me as C answers it, ahead of I0's: a repeated request_id replayed
+#                       (one picture, one spend); a picture and a garment photo a browser decodes
 #   d_app() -> FastAPI  I0's fake app, seeded: the rain jacket in the laundry (AVT-09), a photo on
 #                       both watches (AVT-06) and on the blazer, his measurements (178 cm typed)
 #   serve_d(token) -> (url, stop)   that server in a child process for a browser test module
@@ -19,6 +21,7 @@
 # Not a test module (pytest does not collect it).
 from __future__ import annotations
 
+import base64
 import struct
 import sys
 import zlib
@@ -29,6 +32,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from r13_fakes import ev
+from r131_fake_seeme import seeme_routes
 from r131_fake_server import look_slot
 from r131_fakes import IST, NOW, UID, VIEW_OF, FixedClock, T, seeded
 
@@ -163,6 +167,66 @@ def _ok(model: Any) -> JSONResponse:
     return JSONResponse(model.model_dump(mode="json"), headers=NO_STORE)
 
 
+# ---- See it on me as C's server answers, ahead of I0's fake (review D-1 M1, L2) ----------------
+# C answers a repeated request_id with the first outcome (D13.6, `done {request_id: outcome}`), so
+# a retry after a lost answer makes and pays for nothing new; I0's fake makes a new picture each
+# time, so D keeps the replay in front of it. A picture, and a garment photo a test sent with I0's
+# SOF-only `jpeg()`, read back as drawn images a browser can decode (a 48 px shirt, drawn here).
+GARMENT_JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4"
+    "UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2Nj"
+    "Y2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAwADADASIAAhEBAxEB/8QAGwAAAgIDAQAAAAAAAAAAAAAABQYABwECBAP/"
+    "xAA1EAABAgQEAwMKBwAAAAAAAAABAgMABAUREhMhUQYxQRVhshY1NmV0gYKj4vAUIjJxocHR/8QAGAEAAwEBAAAAAAAA"
+    "AAAAAAAAAAMEAQL/xAAbEQADAAMBAQAAAAAAAAAAAAAAAQIREiETMf/aAAwDAQACEQMRAD8AcowtaW0KWtQSlIuVE2AG"
+    "8aTEw1KsLffWG2kC6lHpCFXuInaqMhpJZlgblN9V66E/5vvpBMugbwPcvNy01i/DzDT2H9WWsKt+9o2fmGZZAXMPNtJJ"
+    "sFOKCRfbWKypVQcpk+3NNDFh0Ui5AUk8x99QI969V1VedzAkoZQMLaCem56XP9DaO/LpmxY7Trb7YcZcQ4hXJSFAg+8R"
+    "vFb0SuP0dxWFOawvVTRVbXcHofvaz/ITzFRlUzEsvEhWhB5pOx744qHJqeToWhLiFIWkKSoWKSLgjaEuucMtSEvNzrTp"
+    "yUhJbb6glQBBOwB06692rrAjiv0dmvg8aYIbTBrhXMSJEioWH6Fw8mrSiZgvlsJfKHBbmnCDp33P892r1Ly7UqwhhhAb"
+    "aQLJSOkAOB/M73tCvCmGOJrbbwMlcJAjiv0dmvg8aYLxx1aR7SpzspmZeZb82G9rEHl7o5njNZV0SG/yH9Y/I+qJ5D+s"
+    "fkfVFHpIvVnXwP5ne9oV4UwxwOodK7Ik1y+dnYnCvFhw9ALcztBGJ6eXkYvh/9k="
+)
+
+
+def _seeme_routes(state: dict[str, Any], store: Any, clock: Any) -> list[Any]:
+    """I0's See it on me half (`seeme_routes`, the same code), served by D's own instance with
+    the replay and the drawn read-backs in front of it."""
+
+    async def view() -> Any:
+        return await store.view(UID)
+
+    seeme = seeme_routes(view, clock)
+    at = {(m, x.path): x.endpoint for x in seeme.routes for m in getattr(x, "methods", ())}
+    make, picture = at["POST", "/v1/seeme/pictures"], at["GET", "/v1/seeme/pictures/{pid}"]
+    garment = at["GET", "/v1/seeme/garments/{gid}"]
+    r = APIRouter(dependencies=[Depends(require_auth)])
+
+    @r.post("/v1/seeme/pictures")
+    async def pictures(b: http.PictureIn) -> Response:
+        if b.request_id not in state["done"]:
+            out = await make(b)
+            if out.status_code >= 400:  # a refusal is not an outcome: nothing was made
+                return out
+            state["done"][b.request_id] = bytes(out.body).decode()
+        return Response(state["done"][b.request_id], media_type="application/json")
+
+    @r.get("/v1/seeme/pictures/{pid}")
+    async def picture_out(pid: str) -> Response:
+        out = await picture(pid)
+        if out.status_code != 200:
+            return out
+        drawn = png((90, 110, 160), 96, 128)
+        return Response(drawn, media_type="image/png", headers=http.PICTURE_HEADERS)
+
+    @r.get("/v1/seeme/garments/{gid}")
+    async def garment_out(gid: str) -> Response:
+        out = await garment(gid)
+        if out.status_code != 200 or b"\xff\xc4" in bytes(out.body):  # a JPEG a browser made
+            return out
+        return Response(GARMENT_JPEG, media_type="image/jpeg", headers=http.PICTURE_HEADERS)
+
+    return [*r.routes, *seeme.routes]
+
+
 def _plan(pid: str, day: Any, hour: int, code: str, look: tuple[tuple[str, str], ...]) -> Any:
     picks = tuple(
         wh.SlotPick(slot=s, piece=p, words="a private basic" if s == "base" else "")
@@ -237,7 +301,7 @@ def d_routes(state: dict[str, Any], store: Any, clock: Any) -> APIRouter:
         fake.body = _body() if b.get("figure", True) else http.BodyVersions()
         fake.saved.clear()
         fake.assets.clear()
-        for k in ("tools", "chats"):
+        for k in ("tools", "chats", "done"):
             state[k].clear()
         return JSONResponse({"reset": True})
 
@@ -294,7 +358,7 @@ async def d_store() -> tuple[Any, FixedClock]:
 
 
 def d_state() -> dict[str, Any]:
-    return {"tools": [], "chats": []}
+    return {"tools": [], "chats": [], "done": {}}
 
 
 def d_app() -> Any:
@@ -305,7 +369,8 @@ def d_app() -> Any:
     store, clock = asyncio.run(d_store())
     app = fake_app(store, clock)
     state = d_state()
-    app.router.routes[:0] = list(d_routes(state, store, clock).routes)
+    ahead = [*d_routes(state, store, clock).routes, *_seeme_routes(state, store, clock)]
+    app.router.routes[:0] = ahead
     app.state.r131_fake.body = _body()
     app.state.r131_d = state
     return app

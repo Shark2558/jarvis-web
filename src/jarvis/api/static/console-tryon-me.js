@@ -30,7 +30,7 @@ const MAKING = 'Making your picture\u2026 this can take up to two minutes.';
 const LATER = 'This arrives with the next JARVIS update.';
 const FILE_MAX = 25 * 1024 * 1024, TOO_BIG = 'This photo is over 25 MB: choose a smaller one.'; // before any decoding (L7)
 const M = { host: null, o: null, view: null, garments: [], garment: null, file: null, url: '', pair: null, mine: [], est: null, pic: null, picUrl: '',
-  busy: false, dlg: null, note: null, me: '' };
+  busy: false, dlg: null, note: null, me: '', why: '', pending: null };
 
 const H = () => M.o.H;
 const txt = (v, n = 200) => H().txt(String(v == null ? '' : v), n);
@@ -44,6 +44,11 @@ function failed(e) {
   say('bad', e && e.name === 'TypeError' ? 'Can\u2019t reach JARVIS. Check your connection.' : txt((e && e.message) || 'That didn\u2019t work.', 240));
 }
 function requestId() { const b = new Uint8Array(8); crypto.getRandomValues(b); return 'tq_' + Array.from(b, (x) => x.toString(16).padStart(2, '0')).join(''); }
+// ONE request_id per confirmed picture (review D-1 M1): after an answer that may have been lost (no answer, a 5xx, a
+// timeout, busy) the next confirmed press of the same picture sends it again, and C's replay shows the picture made
+// without paying twice (D13.6); a picture shown or a final refusal starts a new one.
+const unsure = (e) => !e || !e.status || e.status >= 500 || e.status === 408 || e.code === 'busy';
+function pending(key) { if (!M.pending || M.pending.key !== key) M.pending = { key, id: requestId(), again: false }; else M.pending.again = true; return M.pending; }
 function select(list, value, label) {
   const s = H().mk('select', 'minput');
   s.setAttribute('aria-label', label);
@@ -298,9 +303,13 @@ async function consent() {
   try { M.view = Object.assign({}, M.view, { consent: await M.o.api('/v1/seeme/consent', { body: { typed, template_version: c.version || '' } }) }); return !!M.view.consent.current; } catch (e) { failed(e); return false; }
 }
 function sentPieces() { return M.mine.filter((x) => x.on && x.piece).map((x) => x.piece).slice(0, PAIR_MAX); }
-async function press() {
+async function press() { // one press at a time, from the YES to the picture
   if (M.busy || !M.garment) return;
   if (!has('make')) { say('bad', LATER); return; }
+  M.busy = true;
+  try { await pressed(); } finally { M.busy = false; }
+}
+async function pressed() {
   if (!(M.view.consent && M.view.consent.current) && !(await consent())) return;
   const pieces = sentPieces();
   let est = null;
@@ -314,16 +323,20 @@ async function press() {
   await make(pieces, est);
 }
 async function make(pieces, est) {
-  M.busy = true; say('', MAKING);
+  const p = pending([M.garment.id, pieces.join(','), est.typical_inr].join('|')), id = p.id;
+  say('', p.again ? 'Checking whether the last picture was made\u2026 ' + MAKING : MAKING);
   try {
-    M.pic = await door().make({ garment: M.garment.id, pieces, confirm_cost: true, inr_shown: est.typical_inr, request_id: requestId() });
+    M.pic = await door().make({ garment: M.garment.id, pieces, confirm_cost: true, inr_shown: est.typical_inr, request_id: id });
+    M.pending = null;
     try { M.picUrl = await door().picture(M.pic.id); } catch (_) { M.picUrl = ''; }
     await read(); render(); say('ok', 'Here it is. It is kept 30 days unless you press Keep.');
   } catch (e) {
+    if (!unsure(e)) M.pending = null;
     if (e && e.code === 'consent_needed') { M.view.consent = Object.assign({}, M.view.consent, { current: false }); say('bad', txt(e.message, 200)); }
     else if (e && e.code === 'price_changed') say('bad', 'The price changed: press See it on me to see it again. Nothing was sent.');
+    else if (e && e.status !== 401 && unsure(e)) say('bad', (e.name === 'TypeError' ? 'Can\u2019t reach JARVIS.' : txt(e.message, 160)) + ' Press See it on me again: a picture already made is shown, not paid for twice.');
     else failed(e);
-  } finally { M.busy = false; }
+  }
 }
 async function showPicture(p) { M.pic = p; try { M.picUrl = await door().picture(p.id); } catch (e) { failed(e); } render(); }
 async function keep(p, on) {

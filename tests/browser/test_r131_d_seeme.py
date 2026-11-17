@@ -330,6 +330,55 @@ def test_avt12_card_lists_his_pieces_sent_and_not_in_the_picture_with_their_thum
         c.close()
 
 
+def make_one(c: Page) -> None:
+    seeme(c).get_by_role("button", name="See it on me", exact=True).click()
+    dlg = c.page.locator("dialog.bdialog.tr-dlg")
+    until(c.page, lambda: "Make 1 picture" in (dlg.text_content() or ""), "the confirm")
+    dlg.get_by_role("button", name="Make the picture").click()
+
+
+def test_avt12_a_retry_after_a_lost_answer_sends_the_same_request_id_and_pays_once(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 M1: the picture is made and paid for, its answer is lost on the way back; the
+    # next confirmed press must carry the SAME request_id, so C's replay (D13.6) shows that
+    # picture and charges nothing new. A picture shown clears it: the next press is a new one.
+    reset(d_url, token)
+    with_photo_yes_and(d_url, token, "trousers", "black")
+    spent = call(d_url, token, "/v1/seeme")["month"]["spent_inr"]  # the fake's month runs on
+    c = ready(browser, d_url, token)
+    answers: list[str] = []
+
+    def lose_the_first_answer(route: Any) -> None:
+        answers.append(route.request.url)
+        if len(answers) == 1:
+            route.fetch()  # it reaches JARVIS: the picture is made and paid for
+            route.abort("connectionreset")  # and the answer never comes back
+        else:
+            route.fallback()
+
+    c.page.route("**/v1/seeme/pictures", lose_the_first_answer)
+    try:
+        use(c, "new black trousers")
+        until(c.page, lambda: "With your navy shirt." in text(c), "the pairing")
+        make_one(c)
+        until(c.page, lambda: "Can’t reach JARVIS." in text(c), "the lost answer")
+        assert len(call(d_url, token, "/v1/seeme")["pictures"]) == 1  # made, though not shown
+        make_one(c)
+        until(c.page, lambda: "Generated 2D style preview" in text(c), "the same picture")
+        ids = [json.loads(p["body"])["request_id"] for p in c.posts("/v1/seeme/pictures")]
+        assert len(ids) == 2 and ids[0] == ids[1]
+        month = call(d_url, token, "/v1/seeme")
+        assert len(month["pictures"]) == 1
+        assert round(month["month"]["spent_inr"] - spent, 2) == 8.52  # paid once
+        make_one(c)  # he wants another: a new picture, a new id
+        until(c.page, lambda: len(call(d_url, token, "/v1/seeme")["pictures"]) == 2, "another")
+        ids = [json.loads(p["body"])["request_id"] for p in c.posts("/v1/seeme/pictures")]
+        assert len(ids) == 3 and ids[2] != ids[0]
+    finally:
+        c.close()
+
+
 def test_d22_pairing_lists_every_piece_it_would_send_and_never_one_in_the_garments_slot(
     browser: Any, d_url: str, token: str
 ) -> None:

@@ -69,8 +69,9 @@ def test_ds_modules_call_only_jarvis_paths_through_the_consoles_api(name: str) -
 
 def test_a_photo_is_chosen_from_a_file_and_no_web_address_is_asked_for() -> None:
     code = _code("console-tryon-me.js")
-    assert code.count("input.type = 'file'; input.accept = 'image/jpeg,image/png';") == 1  # picker()
-    assert "input.hidden = true; input.tabIndex = -1;" in code  # behind the console's own button (M4)
+    # one picker(): the console's own button over a hidden input (review D-1 M4)
+    assert code.count("input.type = 'file'; input.accept = 'image/jpeg,image/png';") == 1
+    assert "input.hidden = true; input.tabIndex = -1;" in code
     assert code.count("picker('trMyPhoto', ") == 1 and code.count("picker('trGarment', ") == 1
     assert 'input[type="file"]' not in _text("console-tryon.css")  # no raw file input is styled
     assert "capture" not in code  # the front camera can't take a full-length photo (D12)
@@ -110,7 +111,10 @@ def test_cancel_and_escape_send_nothing_and_make_the_picture_sends_the_contracts
     assert "if (go !== true) { say('', 'Nothing was sent.'); return; }" in code
     assert "d.addEventListener('close', () => resolve(null), { once: true });" in code
     body = "{ garment: M.garment.id, pieces, confirm_cost: true, inr_shown: est.typical_inr, "
-    assert body + "request_id: requestId() }" in code  # PictureIn's five fields, nothing more
+    assert body + "request_id: id }" in code  # PictureIn's five fields, nothing more
+    # one id per confirmed picture (review D-1 M1): kept only while the answer may have been lost
+    assert "M.pending = { key, id: requestId(), again: false }" in code
+    assert "e.status >= 500 || e.status === 408 || e.code === 'busy'" in code
 
 
 def test_the_card_registers_once_and_reads_only_the_card() -> None:

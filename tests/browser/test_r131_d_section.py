@@ -365,6 +365,39 @@ def test_avt10_toggles_close_the_jacket_untuck_and_a_kurta_says_it_is_worn_out(
         c.close()
 
 
+def test_a_shirt_over_a_mundu_drawn_tucked_says_so_and_offers_no_tuck_in_section_and_card(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # INTEGRATION-B section 8, "Needs I1" 1: B's show() answers forced {top: 'tucked'} when it can
+    # only draw the top tucked (a shirt over a wrap); D says so and switches the tuck control off
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+
+    def as_a_mundu(route: Any) -> None:  # the look's bottom is a white mundu, worn untucked
+        r = route.fetch()
+        look = r.json()
+        look["tucked"] = False
+        for s in look["slots"]:
+            if s["slot"] == "bottom":
+                s.update(template="wrap", words="white mundu", variants=[])
+        route.fulfill(response=r, json=look)
+
+    c.page.route("**/v1/tryon/look?*", as_a_mundu)
+    words = "Drawn tucked into the white mundu"
+    try:
+        opened(c)
+        until(c.page, lambda: words in c.section().inner_text(), "the section says it")
+        assert last(c)["opts"]["tucked"] is False  # what he asked stays his
+        tuck = c.section().locator(".tr-style").get_by_role("button", name="Tuck in")
+        assert tuck.count() == 0
+        assert c.section().locator(".tr-style").get_by_role("button", name="Untuck").count() == 0
+        c.ask()
+        until(c.page, lambda: words in c.card().inner_text(), "the card says it")
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
 def test_avt11_lists_a_formal_and_a_festive_look_with_both_lists_and_their_readiness(
     browser: Any, d_url: str, token: str
 ) -> None:

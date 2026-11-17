@@ -18,6 +18,17 @@
 //                           {slot, private: true} only)
 // The server's words reach the page by textContent only; this module draws no pixels and sends nothing. ASCII source.
 export const COVERED = 'Base layer (covered)';
+/** Why a viewer shows the checklist (or rests): its words. */
+export const WHY = Object.freeze({
+  'no-webgl2': 'This device can\u2019t show the 3D view: here is the checklist.',
+  asset: 'A file of the 3D figure didn\u2019t load: here is the checklist.',
+  lost: 'The 3D view stopped: here is the checklist.',
+  timeout: 'The 3D view took too long to draw: here is the checklist.',
+  engine: 'The 3D view isn\u2019t available right now: here is the checklist.',
+  nofigure: 'No figure yet: type your measurements in Helpers, Wardrobe, Try it on.',
+  elsewhere: 'The 3D view is open in another place.',
+  paused: 'The 3D view rests while it is out of sight.',
+});
 export const SLOT_WORDS = Object.freeze({ base: 'Base', underwear: 'Base', top: 'Top', bottom: 'Bottom', outer: 'Outer layer',
   shoes: 'Shoes', belt: 'Belt', watch: 'Watch', socks: 'Socks', extras: 'Extras' });
 const VIEW_WORDS = { front: 'Front', back: 'Back', detail: 'Detail' };

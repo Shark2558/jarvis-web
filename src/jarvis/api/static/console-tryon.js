@@ -10,23 +10,13 @@
 // and its list ('./console-tryon-list.js'), the checklist by itself when 3D can't run (Retry 3D once a page). ONE stage
 // on the page: the viewer taking it gives the other's back; a hidden viewer (its tab, the page) gives it back too.
 // Every change goes to the server; nothing is kept on this device; no pixel API (B's snapshot draws the caption).
-import { COVERED, MEASURE_WORDS, SHAPE_WORDS, caption, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, slotWord,
+import { COVERED, MEASURE_WORDS, SHAPE_WORDS, WHY, caption, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, slotWord,
   tomorrowIso, when } from './console-tryon-list.js';
 
 const engine3d = () => import('./console-tryon-3d.js');
 const seeMe = () => import('./console-tryon-me.js');
 const GL = ['no-webgl2', 'lost', 'asset', 'timeout'];
 const RETRY = ['lost', 'asset', 'timeout', 'engine'];
-const WHY = {
-  'no-webgl2': 'This device can\u2019t show the 3D view: here is the checklist.',
-  asset: 'A file of the 3D figure didn\u2019t load: here is the checklist.',
-  lost: 'The 3D view stopped: here is the checklist.',
-  timeout: 'The 3D view took too long to draw: here is the checklist.',
-  engine: 'The 3D view isn\u2019t available right now: here is the checklist.',
-  nofigure: 'No figure yet: type your measurements in Helpers, Wardrobe, Try it on.',
-  elsewhere: 'The 3D view is open in another place.',
-  paused: 'The 3D view rests while it is out of sight.',
-};
 const PREPARING = 'Preparing the 3D view\u2026';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const NO_PLAN = 'This look has no plan yet: ask JARVIS what to wear, or plan it in Today and tomorrow.';
@@ -93,7 +83,7 @@ function viewer(root, kind) {
   root.append(view);
   const v = { kind, view, el, look: null, second: null, titles: [], covered: [], plan: null, src: '', starts: '', planPairs: [],
     opts: { tucked: false, open: true, layers: 'all', view: 'front' }, undo: [], stage: null, mode: '3d', why: '', open: null,
-    spin: false, still: false, watch: 0, comparing: false, resume: false };
+    spin: false, still: false, watch: 0, comparing: false, resume: false, forced: '' };
   S.views.add(v);
   if (typeof ResizeObserver === 'function') { // its tab hidden (0 x 0: another Helpers tab, the panel shut): the context goes back
     new ResizeObserver(() => (view.offsetParent === null ? pause(v) : wake(v))).observe(view);
@@ -148,7 +138,11 @@ async function to3d(v) {
 function paint(v, first) {
   if (!v.stage || v.mode !== '3d') return;
   const figs = [v.look].concat(v.second ? [v.second] : []).map((l) => figure(l, v.opts, body(), assets()));
-  try { v.stage.show(figs, Object.assign({}, v.opts)); } catch (e) { toList(v, e && GL.includes(e.code) ? e.code : 'engine'); return; }
+  let a = null;
+  try { a = v.stage.show(figs, Object.assign({}, v.opts)); } catch (e) { toList(v, e && GL.includes(e.code) ? e.code : 'engine'); return; }
+  const was = v.forced; // B drew the top tucked though he asked otherwise (a shirt over a wrap): said, Tuck not offered
+  v.forced = a && a.forced && a.forced.top === 'tucked' ? 'tucked' : '';
+  if (v.forced !== was) draw(v);
   if (first) watch(v);
 }
 function watch(v) { // the first frame within 10 s, else the checklist (D8); stats() reports triangles once drawn
@@ -212,6 +206,7 @@ function render(v) { // a card (row 388) is compact: the figure, its pieces in o
     toCamera: () => { if (window.JarvisDeck) window.JarvisDeck.open('camera', { focus: true }); },
     onChange: (key) => { v.open = key; draw(v); }, onPick: (slot, piece) => swap(v, 0, slot, piece),
     onPick2: (slot, piece) => swap(v, 1, slot, piece), onRemove: (slot) => swap(v, 0, slot, null) });
+  if (card && three && tuckedIn(v)) el.list.append(h.mk('p', 'sfine tr-forced', tuckedIn(v)));
   if (v.kind === 'section' && v.src && v.covered.length) el.list.prepend(h.row('Private basics', S.priv ? 'Named in this list only: the figure stays covered.' // R13 D10's own row
     : 'Covered here and on the figure.', [h.toggle('Show private basics', S.priv, (on) => privy(v, on))]));
 }
@@ -236,10 +231,15 @@ function turn(v, id) { v.opts = Object.assign({}, v.opts, { view: id }); if (v.s
 function controls(v) { // a view or Turn around redraws its own buttons only: the list and its image cards stay (M2)
   keeping(v, () => (v.kind === 'card' ? v.el.acts.replaceChildren(...cardActs(v)) : v.el.tools.replaceChildren(...tools(v))));
 }
+function tuckedIn(v) { // INTEGRATION-B section 8: show() answered forced {top: 'tucked'}
+  const b = v.forced && ((v.look && v.look.slots) || []).find((s) => s.slot === 'bottom' && !s.private);
+  return b ? 'Drawn tucked into the ' + txt(b.words, 40) + ': the figure can only show it this way.' : '';
+}
 function style(v) {
   const out = [], top = (v.look && v.look.slots || []).find((s) => s.slot === 'top' && !s.private);
   const outer = (v.look && v.look.slots || []).find((s) => s.slot === 'outer' && !s.private);
-  if (top && (top.variants || []).includes('tucked')) out.push(btn(v.opts.tucked ? 'Untuck' : 'Tuck in', () => restyle(v, { tucked: !v.opts.tucked }), '', 'tuck'));
+  if (tuckedIn(v)) out.push(H().mk('p', 'sfine tr-forced', tuckedIn(v)));
+  else if (top && (top.variants || []).includes('tucked')) out.push(btn(v.opts.tucked ? 'Untuck' : 'Tuck in', () => restyle(v, { tucked: !v.opts.tucked }), '', 'tuck'));
   else if (top && top.template === 'kurta') out.push(H().mk('p', 'sfine', 'A kurta is worn out.'));
   if (outer && (outer.variants || []).includes('open')) out.push(btn(v.opts.open ? 'Close the jacket' : 'Open the jacket', () => restyle(v, { open: !v.opts.open }), '', 'open'));
   LAYERS.forEach(([id, label]) => out.push(pressed(btn(label, () => restyle(v, { layers: id })), v.opts.layers === id)));

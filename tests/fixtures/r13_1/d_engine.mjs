@@ -5,6 +5,7 @@
 //
 //   window.__r131d = { mounts, disposes, live, maxLive, shown: [{figures, opts}], views: [], spins: [], zooms: [],
 //                      closer: 0, snapshots: [{caption}], lost: 0 }
+//   show() answers {drawn, approx, cards, forced}: forced {top: 'tucked'} for a shirt or tee asked untucked over a wrap
 //   window.__glFail  'no-webgl2' -> supported() false; 'asset' -> mount() throws (a file failed its check);
 //                    'lost' -> onLost() after the first show; 'timeout' -> the first frame never draws (triangles 0)
 const VIEWS = { front: 0, side: 90, back: 180 };
@@ -71,14 +72,18 @@ function mount(host, o) {
       shown += 1;
       if (fail() !== 'timeout') draw();
       if (shown === 1 && fail() === 'lost' && typeof opts.onLost === 'function') setTimeout(() => { rec.lost += 1; opts.onLost(); }, 0);
-      const drawn = [], approx = {}, cards = [];
+      const drawn = [], approx = {}, cards = [], forced = {};
       figures.forEach((f) => ((f.look && f.look.slots) || []).forEach((s) => {
         if (s.private) { drawn.push(s.slot); return; }
         if (!s.template) { cards.push(s.slot); return; }
         drawn.push(s.slot);
         approx[s.slot] = ['template'].concat(s.photo ? ['texture'] : [], s.rgb ? [] : ['colour']);
       }));
-      return { drawn, approx, cards };
+      figures.forEach((f) => { // B's rule: a shirt or tee over a wrap can only be drawn tucked (INTEGRATION-B section 8)
+        const sl = (f.look && f.look.slots) || [], top = sl.find((s) => s.slot === 'top' && !s.private), bot = sl.find((s) => s.slot === 'bottom' && !s.private);
+        if (top && ['shirt', 'tee'].includes(top.template) && bot && bot.template === 'wrap' && last.tucked === false) { forced.top = 'tucked'; approx.top = (approx.top || []).concat(['tuck']); }
+      });
+      return { drawn, approx, cards, forced };
     },
     view(name) { if (VIEWS[name] === undefined) return; view = name; yaw = VIEWS[name]; last.view = name; rec.views.push(name); draw(); },
     spin(on) { rec.spins.push(!!on); },

@@ -1,0 +1,831 @@
+{
+ "release": "m1",
+ "files": {
+  "body.glb": {
+   "sha256": "d9697549280a01beaca9e9112e61dfa8d92a39afa80162cce91a72c8caee11fc",
+   "bytes": 1111032,
+   "type": "application/octet-stream",
+   "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
+   "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt",
+   "changes": "MakeHuman/MPFB2 base mesh, targets and standard rig weights read from the clone; a neutral shape solved for six measurements, posed, the private zone removed, garments cut from the helper-tights helper mesh and shaped, seven morph targets, quantised to int16 (JARVIS)"
+  },
+  "garments.glb": {
+   "sha256": "28ee08e38620e932abdeb565a90deed4dcb464bb650a0234f3802853800c1f44",
+   "bytes": 1207728,
+   "type": "application/octet-stream",
+   "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
+   "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt",
+   "changes": "MakeHuman/MPFB2 base mesh, targets and standard rig weights read from the clone; a neutral shape solved for six measurements, posed, the private zone removed, garments cut from the helper-tights helper mesh and shaped, seven morph targets, quantised to int16 (JARVIS)"
+  },
+  "LICENSE-mpfb2-CC0.txt": {
+   "sha256": "f6089cba01cb570a24712b41ab8a586ccd3cc5ef53dc266ca50b95c288956d2c",
+   "bytes": 6962,
+   "type": "text/plain",
+   "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
+   "licence": "CC0-1.0",
+   "changes": "none (copied as it is)"
+  },
+  "LICENSE-anny-Apache-2.0.txt": {
+   "sha256": "1d459b13c9650c763d6351ce21ad3b02433c80131195cf9d908de4fbc213cf27",
+   "bytes": 10875,
+   "type": "text/plain",
+   "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
+   "licence": "Apache-2.0",
+   "changes": "none (copied as it is)"
+  },
+  "NOTICE-mannequin.txt": {
+   "sha256": "3ff13d00cd8e9867bbb8955825f84a43f5c275c8ac9b5170a15d76578b4e8ef1",
+   "bytes": 255,
+   "type": "text/plain",
+   "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
+   "licence": "Apache-2.0",
+   "changes": "written by JARVIS"
+  }
+ },
+ "sliders": [
+  "height",
+  "shoulders",
+  "chest",
+  "waist",
+  "hips",
+  "inseam"
+ ],
+ "morphs": [
+  "height",
+  "shoulders",
+  "chest",
+  "waist",
+  "hips",
+  "inseam",
+  "waist_down"
+ ],
+ "ranges": {
+  "height": [
+   150,
+   195
+  ],
+  "shoulders": [
+   36,
+   54
+  ],
+  "chest": [
+   76,
+   124
+  ],
+  "waist": [
+   62,
+   120
+  ],
+  "hips": [
+   78,
+   126
+  ],
+  "inseam": [
+   66,
+   92
+  ]
+ },
+ "sample": {
+  "height": 172,
+  "shoulders": 44,
+  "chest": 96,
+  "waist": 82,
+  "hips": 96,
+  "inseam": 79
+ },
+ "sole": 0.016,
+ "templates": {
+  "shirt": {
+   "parts": [
+    "shirt",
+    "shirtButtons"
+   ],
+   "variants": [
+    "tucked",
+    "untucked"
+   ],
+   "state": "tuck"
+  },
+  "tee": {
+   "parts": [
+    "tee"
+   ],
+   "variants": [
+    "tucked",
+    "untucked"
+   ],
+   "state": "tuck"
+  },
+  "kurta": {
+   "parts": [
+    "kurta"
+   ],
+   "variants": [
+    "knee"
+   ],
+   "state": null
+  },
+  "trousers": {
+   "parts": [
+    "trousers"
+   ],
+   "variants": [],
+   "state": null
+  },
+  "shorts": {
+   "parts": [
+    "shortsG"
+   ],
+   "variants": [],
+   "state": null
+  },
+  "wrap": {
+   "parts": [
+    "wrap"
+   ],
+   "variants": [
+    "ankle"
+   ],
+   "state": null
+  },
+  "jacket": {
+   "parts": [
+    "jacket"
+   ],
+   "variants": [
+    "open",
+    "closed"
+   ],
+   "state": "open"
+  },
+  "shoe": {
+   "parts": [
+    "shoes",
+    "soles"
+   ],
+   "variants": [],
+   "state": null
+  },
+  "sandal": {
+   "parts": [
+    "sandals"
+   ],
+   "variants": [],
+   "state": null
+  },
+  "belt": {
+   "parts": [
+    "belt",
+    "buckle"
+   ],
+   "variants": [],
+   "state": null
+  },
+  "watch": {
+   "parts": [
+    "watchStrap",
+    "watchCase"
+   ],
+   "variants": [],
+   "state": null
+  },
+  "socks": {
+   "parts": [
+    "socks"
+   ],
+   "variants": [],
+   "state": null
+  }
+ },
+ "base": [
+  "vest",
+  "baseShorts"
+ ],
+ "body": [
+  "bodyCore",
+  "bodyArms",
+  "bodyShoulders",
+  "bodyShins",
+  "bodyThighs",
+  "bodyFeet"
+ ],
+ "triangles": {
+  "bodyCore": 15532,
+  "bodyArms": 1408,
+  "bodyShoulders": 1048,
+  "bodyShins": 1660,
+  "bodyThighs": 222,
+  "bodyFeet": 3944,
+  "vest": 1400,
+  "baseShorts": 920,
+  "trousers": 2184,
+  "belt": 384,
+  "buckle": 60,
+  "shortsG": 1060,
+  "wrap": 2176,
+  "shirt": 3952,
+  "shirtButtons": 530,
+  "tee": 2096,
+  "kurta": 4632,
+  "jacket": 2876,
+  "shoes": 756,
+  "soles": 560,
+  "sandals": 1040,
+  "socks": 1212,
+  "watchStrap": 192,
+  "watchCase": 200
+ },
+ "joints": {
+  "neck": [
+   0.0,
+   1.46444,
+   0.01198
+  ],
+  "head": [
+   0.0,
+   1.56469,
+   0.0494
+  ],
+  "shoulderL": [
+   0.18879,
+   1.34723,
+   0.01925
+  ],
+  "elbowL": [
+   0.24535,
+   1.09212,
+   0.02709
+  ],
+  "wristL": [
+   0.27837,
+   0.82216,
+   0.08206
+  ],
+  "hipL": [
+   0.11255,
+   0.87831,
+   -0.00792
+  ],
+  "kneeL": [
+   0.11714,
+   0.49156,
+   0.02789
+  ],
+  "ankleL": [
+   0.12775,
+   0.07418,
+   0.01578
+  ],
+  "shoulderR": [
+   -0.18879,
+   1.34723,
+   0.01925
+  ],
+  "elbowR": [
+   -0.24535,
+   1.09212,
+   0.02709
+  ],
+  "wristR": [
+   -0.27837,
+   0.82216,
+   0.08206
+  ],
+  "hipR": [
+   -0.11255,
+   0.87831,
+   -0.00792
+  ],
+  "kneeR": [
+   -0.11714,
+   0.49156,
+   0.02789
+  ],
+  "ankleR": [
+   -0.12775,
+   0.07418,
+   0.01578
+  ]
+ },
+ "levels": {
+  "crotch": 0.79,
+  "waist": 1.02507,
+  "trouser_top": 0.99707,
+  "zc": -0.03632
+ },
+ "measure": [
+  {
+   "case": "sample",
+   "want": [
+    172,
+    44,
+    96,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    96.0,
+    82.0,
+    96.0,
+    79.0
+   ],
+   "got": [
+    172.0,
+    44.0,
+    96.0,
+    81.999,
+    96.001,
+    79.0
+   ]
+  },
+  {
+   "case": "height min",
+   "want": [
+    150,
+    44,
+    96,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    150.0,
+    44.0,
+    99.334,
+    83.232,
+    96.736,
+    78.674
+   ],
+   "got": [
+    150.0,
+    44.0,
+    99.333,
+    83.231,
+    96.737,
+    78.674
+   ]
+  },
+  {
+   "case": "height max",
+   "want": [
+    195,
+    44,
+    96,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    195.0,
+    44.0,
+    96.0,
+    82.0,
+    96.0,
+    79.0
+   ],
+   "got": [
+    195.0,
+    44.0,
+    96.0,
+    81.998,
+    96.0,
+    79.0
+   ]
+  },
+  {
+   "case": "shoulders min",
+   "want": [
+    172,
+    36,
+    96,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    36.0,
+    97.63,
+    82.001,
+    96.0,
+    79.0
+   ],
+   "got": [
+    172.0,
+    36.0,
+    97.63,
+    81.999,
+    96.0,
+    79.0
+   ]
+  },
+  {
+   "case": "shoulders max",
+   "want": [
+    172,
+    54,
+    96,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    54.0,
+    96.001,
+    82.0,
+    96.0,
+    79.0
+   ],
+   "got": [
+    172.0,
+    54.0,
+    95.999,
+    81.999,
+    96.001,
+    79.0
+   ]
+  },
+  {
+   "case": "chest min",
+   "want": [
+    172,
+    44,
+    76,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    76.477,
+    82.025,
+    96.004,
+    78.993
+   ],
+   "got": [
+    172.0,
+    44.0,
+    76.476,
+    82.024,
+    96.005,
+    78.993
+   ]
+  },
+  {
+   "case": "chest max",
+   "want": [
+    172,
+    44,
+    124,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    124.0,
+    82.0,
+    96.0,
+    79.0
+   ],
+   "got": [
+    172.0,
+    44.0,
+    124.0,
+    81.999,
+    96.001,
+    79.0
+   ]
+  },
+  {
+   "case": "waist min",
+   "want": [
+    172,
+    44,
+    96,
+    62,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    96.001,
+    62.008,
+    96.0,
+    79.0
+   ],
+   "got": [
+    172.0,
+    44.0,
+    96.001,
+    62.006,
+    96.0,
+    79.0
+   ]
+  },
+  {
+   "case": "waist max",
+   "want": [
+    172,
+    44,
+    96,
+    120,
+    96,
+    79
+   ],
+   "float": [
+    171.984,
+    43.996,
+    95.996,
+    120.006,
+    95.993,
+    78.984
+   ],
+   "got": [
+    171.984,
+    43.996,
+    95.996,
+    120.005,
+    95.993,
+    78.985
+   ]
+  },
+  {
+   "case": "hips min",
+   "want": [
+    172,
+    44,
+    96,
+    82,
+    78,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    96.0,
+    82.019,
+    77.753,
+    79.0
+   ],
+   "got": [
+    172.0,
+    44.0,
+    96.0,
+    82.018,
+    77.753,
+    79.0
+   ]
+  },
+  {
+   "case": "hips max",
+   "want": [
+    172,
+    44,
+    96,
+    82,
+    126,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    96.0,
+    82.0,
+    126.0,
+    79.0
+   ],
+   "got": [
+    172.0,
+    44.0,
+    96.0,
+    81.999,
+    126.001,
+    79.0
+   ]
+  },
+  {
+   "case": "inseam min",
+   "want": [
+    172,
+    44,
+    96,
+    82,
+    96,
+    66
+   ],
+   "float": [
+    172.008,
+    44.002,
+    97.105,
+    82.396,
+    96.293,
+    65.836
+   ],
+   "got": [
+    172.008,
+    44.002,
+    97.105,
+    82.394,
+    96.294,
+    65.837
+   ]
+  },
+  {
+   "case": "inseam max",
+   "want": [
+    172,
+    44,
+    96,
+    82,
+    96,
+    92
+   ],
+   "float": [
+    171.992,
+    43.998,
+    96.011,
+    81.999,
+    95.998,
+    91.992
+   ],
+   "got": [
+    171.992,
+    43.998,
+    96.01,
+    81.998,
+    95.999,
+    91.992
+   ]
+  },
+  {
+   "case": "height 161",
+   "want": [
+    161,
+    44,
+    96,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    161.0,
+    44.0,
+    97.016,
+    82.469,
+    96.271,
+    78.845
+   ],
+   "got": [
+    161.0,
+    44.0,
+    97.015,
+    82.468,
+    96.272,
+    78.845
+   ]
+  },
+  {
+   "case": "chest 110",
+   "want": [
+    172,
+    44,
+    110,
+    82,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    109.948,
+    81.995,
+    96.0,
+    79.0
+   ],
+   "got": [
+    172.0,
+    44.0,
+    109.948,
+    81.994,
+    96.001,
+    79.0
+   ]
+  },
+  {
+   "case": "waist 72",
+   "want": [
+    172,
+    44,
+    96,
+    72,
+    96,
+    79
+   ],
+   "float": [
+    172.0,
+    44.0,
+    95.922,
+    71.654,
+    96.017,
+    79.0
+   ],
+   "got": [
+    172.0,
+    44.0,
+    95.922,
+    71.652,
+    96.018,
+    79.0
+   ]
+  },
+  {
+   "case": "waist 101",
+   "want": [
+    172,
+    44,
+    96,
+    101,
+    96,
+    79
+   ],
+   "float": [
+    171.992,
+    43.998,
+    96.038,
+    100.639,
+    95.957,
+    79.103
+   ],
+   "got": [
+    171.992,
+    43.998,
+    96.038,
+    100.638,
+    95.958,
+    79.102
+   ]
+  },
+  {
+   "case": "tall + heavy",
+   "want": [
+    190,
+    48,
+    108,
+    110,
+    110,
+    86
+   ],
+   "float": [
+    189.984,
+    47.996,
+    106.162,
+    108.455,
+    109.781,
+    86.429
+   ],
+   "got": [
+    189.984,
+    47.996,
+    106.161,
+    108.453,
+    109.782,
+    86.429
+   ]
+  },
+  {
+   "case": "short + slim",
+   "want": [
+    158,
+    40,
+    84,
+    68,
+    86,
+    72
+   ],
+   "float": [
+    158.004,
+    40.001,
+    85.454,
+    67.842,
+    86.205,
+    71.912
+   ],
+   "got": [
+    158.005,
+    40.001,
+    85.454,
+    67.841,
+    86.206,
+    71.912
+   ]
+  }
+ ]
+}

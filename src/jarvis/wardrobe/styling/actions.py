@@ -8,7 +8,8 @@ another writer changed meanwhile is refused ("That plan changed meanwhile: try a
   primary look (a code he names is his: not tentative; an occasion's is tentative, STY-03); with
   `plan`, that plan again; `setting` marks it indoors or outdoors (STY-07, code review M7);
 - lock: a slot's current pick, or a piece he names into its slot, kept from now on (STY-12); with
-  `pieces` (one a slot), every slot at once in the ONE change, all or nothing (R13.1 D20);
+  `pieces` (one a slot), every slot at once in the ONE change, all or nothing (R13.1 D20); every
+  way of naming it is checked alike (R13.1 integrated review M1);
 - change: one slot again, every other pick kept while still eligible (STY-12);
 - reserve: a piece (or its pair) into this plan, refused while another plan holds it (STY-14);
 
@@ -17,7 +18,8 @@ the engine's own rule (`unready`: only Ready; a pair whole; a set part that can'
 only with its whole set; an In-use piece only as the plan's declared shared base and reusable),
 before anything is written: "The navy jacket is in the laundry: it can't be locked into this
 plan." The check reads the view the tool itself just read: the guarantee behind any early check.
-- transfer: deliberately from another plan (that one then needs a new one, STY-14);
+- transfer: deliberately from another plan (that one then needs a new one, STY-14), the moved
+  piece ready by the same rule;
 - release: a piece out of the plan (its slot re-suggested), or the whole plan;
 - share: a shared base from an earlier plan the same day (STY-13).
 """
@@ -165,8 +167,11 @@ def _held(
         if words is not None:
             raise PlanRefused(words)
         return doc.put(reserve.with_pick(plan, PlanPick(slot=slot, pieces=unit, locked=True)))
-    if action == "transfer":
+    if action == "transfer":  # the moved piece is locked into this plan: D20 holds (review I1 M1)
         source = _plan(doc, a.get("from_plan"))
+        words = unready(s, view, plan, reserve.unit_of(view, asked) if asked in view.pieces else ())
+        if words is not None:
+            raise PlanRefused(words)
         return reserve.transfer(doc, plan, source, asked, view, s.rules)
     if action == "release":
         left, _slot = reserve.without(plan, [asked])
@@ -208,6 +213,10 @@ def _lock(
     current = plan.slot(a["slot"]) if isinstance(a.get("slot"), str) else None
     if current is None:
         raise PlanRefused("That slot isn't in this plan.")
+    words = unready(s, view, plan, current.pieces)  # the slot's pick, as by piece (review I1 M1)
+    words = words or reserve.conflict(doc, plan, current.pieces, here.zone)
+    if words is not None:
+        raise PlanRefused(words)
     return reserve.with_pick(plan, current.model_copy(update={"locked": True}))
 
 

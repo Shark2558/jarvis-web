@@ -47,6 +47,41 @@ async def test_a_piece_in_the_laundry_is_refused_and_the_plan_is_unchanged(actio
     assert await _stored(w) == before  # nothing written
 
 
+async def test_lock_by_slot_refuses_its_pick_once_it_went_to_the_laundry() -> None:
+    # integrated review M1: "lock the outer layer" locked the slot's pick unchecked ("Done.")
+    w = await world(at=ist(2026, 11, 16, 20, 0))
+    pid = await _plan(w)
+    assert (await _stored(w)).plan(pid).slot("outer").pieces == (N.blazer,)
+    await w.move(N.blazer, "deposited")  # the plan's blazer goes to the laundry
+    before = await _stored(w)
+    got = await ok(w, "outfit_plan", action="lock", plan=pid, slot="outer")
+    assert got["refused"] is True and got["message"] == IN_LAUNDRY
+    assert await _stored(w) == before  # nothing written: the plan doesn't hold it locked
+
+
+async def test_lock_by_slot_still_locks_a_ready_pick() -> None:
+    w = await world(at=ist(2026, 11, 16, 20, 0))
+    pid = await _plan(w)
+    got = await ok(w, "outfit_plan", action="lock", plan=pid, slot="outer")
+    assert _slot(got["plan"], "outer") == [N.blazer]
+    assert (await _stored(w)).plan(pid).slot("outer").locked is True
+
+
+async def test_transfer_refuses_a_piece_that_went_to_the_laundry() -> None:
+    # integrated review M1, its sibling: transfer locked the moved piece unchecked, and the
+    # repick then dropped it from the target while the source had already lost it
+    w = await world(at=ist(2026, 11, 16, 20, 0))
+    first = await _plan(w)
+    got = await ok(w, "outfit_plan", action="save", day="tomorrow", start="15:00", end="16:00")
+    second = str(got["plan"]["id"])
+    await w.move(N.blazer, "deposited")
+    before = await _stored(w)
+    got = await ok(w, "outfit_plan", action="transfer", plan=second, from_plan=first,
+                   piece=N.blazer)  # fmt: skip
+    assert got["refused"] is True and got["message"] == IN_LAUNDRY
+    assert await _stored(w) == before  # neither plan changed
+
+
 async def test_a_ready_piece_still_locks_and_reserves() -> None:
     w = await world(at=ist(2026, 11, 16, 20, 0))
     pid = await _plan(w)

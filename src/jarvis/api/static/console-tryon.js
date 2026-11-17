@@ -8,7 +8,7 @@
 // and its list ('./console-tryon-list.js'), the checklist by itself when 3D can't run (Retry 3D once a page). ONE stage
 // on the page: the viewer taking it gives the other's back; a hidden viewer (its tab, the page) gives it back too.
 // Every change goes to the server; nothing is kept on this device; no pixel API (B's snapshot draws the caption).
-import { COVERED, caption, hhmm, items, slotWord } from './console-tryon-list.js';
+import { COVERED, caption, chosen, covered, figure, hhmm, items, pairs, same, slotWord } from './console-tryon-list.js';
 
 const engine3d = () => import('./console-tryon-3d.js');
 const seeMe = () => import('./console-tryon-me.js');
@@ -41,6 +41,7 @@ const api = (path, opts) => window.JarvisConsole.api(path, opts);
 const door = () => { const M = window.JarvisMobile; return M && M.parts && M.parts.send ? M.parts.send : null; };
 const txt = (v, n = 200) => (H() ? H().txt(String(v == null ? '' : v), n) : String(v == null ? '' : v).slice(0, n));
 const body = () => (S.tryon && S.tryon.body ? S.tryon.body.draft || S.tryon.body.current : null);
+const assets = () => (S.tryon && S.tryon.assets) || [];
 function btn(label, onClick, cls) {
   const b = H().mk('button', 'btn sact' + (cls ? ' ' + cls : ''), label);
   b.type = 'button';
@@ -56,8 +57,6 @@ function failed(v, e) {
 }
 
 // ---- the server's look ------------------------------------------------------------------------------------------
-const pairs = (look) => ((look && look.slots) || []).filter((s) => !s.private && s.piece).map((s) => ({ slot: s.slot, piece: s.piece }));
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function query(v, list) {
   const q = list.map((p) => p.slot + ':' + p.piece).join(',');
   return 'pieces=' + encodeURIComponent(q) + (v.plan ? '&plan=' + encodeURIComponent(v.plan) : '');
@@ -102,13 +101,11 @@ function viewer(root, kind) {
   }
   return v;
 }
-const covered = (look) => (look.slots || []).filter((s) => s.private)
-  .map((s) => ({ slot: s.slot, private: true, words: COVERED, readiness: s.readiness || '', piece: (S.priv && s.piece) || null }));
 async function show(v, look, o) { // a new look in this viewer, then the figure (or the checklist)
   v.look = look; v.second = null; v.comparing = false; v.undo = []; v.open = null;
   v.plan = (o && o.plan) || look.plan || null; v.starts = (o && o.starts) || ''; v.src = (o && o.src) || '';
   v.titles = [txt((o && o.title) || 'This look', 80)];
-  v.covered = covered(look);
+  v.covered = covered(look, S.priv);
   v.planPairs = pairs(look);
   v.opts = { tucked: !!look.tucked, open: look.open !== false, layers: look.layers || 'all', view: v.opts.view || 'front' };
   await photosOf();
@@ -117,7 +114,7 @@ async function show(v, look, o) { // a new look in this viewer, then the figure 
 async function privy(v, on) { // R13 D10: his own checklist names a private basic only behind his tap; the figure never does
   S.priv = !!on;
   if (S.ctx && typeof S.ctx.show === 'function') S.ctx.show(S.priv); // R13's own words for it (nameOf) follow the same tap
-  if (S.priv && v.src) { try { v.covered = covered(await api('/v1/tryon/look?' + v.src + '&private=1')); } catch (e) { failed(v, e); } }
+  if (S.priv && v.src) { try { v.covered = covered(await api('/v1/tryon/look?' + v.src + '&private=1'), S.priv); } catch (e) { failed(v, e); } }
   if (!S.priv) v.covered = v.covered.map((c) => Object.assign({}, c, { piece: null }));
   v.look = Object.assign({}, v.look, { slots: (v.look.slots || []).filter((s) => !s.private).concat(v.covered) });
   draw(v);
@@ -130,27 +127,6 @@ async function refresh(v) { // after a swap, an undo, a fresh load: the same pic
   } catch (e) { failed(v, e); }
   draw(v); paint(v);
 }
-function chosen(look) { // his shape choice per piece (AVT-05), as GET /v1/tryon reads it back from the server
-  const assets = new Map(((S.tryon && S.tryon.assets) || []).map((a) => [a.piece, a]));
-  return Object.assign({}, look, { slots: (look.slots || []).map((s) => {
-    const a = !s.private && assets.get(s.piece);
-    if (!a) return s;
-    const only = !!(s.card_only || a.card_only);
-    return Object.assign({}, s, { card_only: only, template: only ? null : a.template || s.template || null });
-  }) });
-}
-function figure(raw, opts) { // the engine's figure: the contract's fields only; a private slot is {slot, private: true}
-  const b = body(), look = chosen(raw);
-  const slots = (look.slots || []).map((s) => {
-    if (s.private) return { slot: s.slot, private: true };
-    const template = s.card_only ? null : s.template || null;
-    const vs = Array.isArray(s.variants) ? s.variants : [];
-    const variant = vs.includes('tucked') ? (opts.tucked ? 'tucked' : 'untucked') : vs.includes('open') ? (opts.open ? 'open' : 'closed') : vs[0] || null;
-    return { slot: s.slot, piece: s.piece, template, variant, rgb: s.rgb || null, pattern: s.pattern || null, photo: s.photo || null, private: false };
-  });
-  return { body: { weights: Object.assign({}, b && b.weights), typed: (b && b.typed ? b.typed : []).slice() }, look: { slots } };
-}
-
 // ---- the stage (B's engine, through its contract only) ------------------------------------------------------------------
 async function to3d(v) {
   if (!v.look) return;
@@ -172,7 +148,7 @@ async function to3d(v) {
 }
 function paint(v, first) {
   if (!v.stage || v.mode !== '3d') return;
-  const figs = [figure(v.look, v.opts)].concat(v.second ? [figure(v.second, v.opts)] : []);
+  const figs = [v.look].concat(v.second ? [v.second] : []).map((l) => figure(l, v.opts, body(), assets()));
   try { v.stage.show(figs, Object.assign({}, v.opts)); } catch (e) { toList(v, e && GL.includes(e.code) ? e.code : 'engine'); return; }
   if (first) watch(v);
 }
@@ -219,7 +195,7 @@ function draw(v) {
   el.style.replaceChildren(...(three ? style(v) : []));
   el.acts.replaceChildren(...acts(v));
   el.extra.replaceChildren(...extra(v));
-  const looks = [v.look].concat(v.second ? [v.second] : []).filter(Boolean).map(chosen);
+  const looks = [v.look].concat(v.second ? [v.second] : []).filter(Boolean).map((l) => chosen(l, assets()));
   if (!v.look) { el.list.replaceChildren(h.empty('Loading the look\u2026')); return; }
   items(el.list, looks, { H: h, btn, priv: v.kind === 'section' && S.priv, nameOf: S.ctx && S.ctx.nameOf, open: v.open, layers: 'all', titles: v.second ? v.titles : null,
     photosOf: (id) => (S.photos && S.photos.get(id)) || [], thumb: (id) => { const d = door(); return d ? d.thumb(id) : Promise.reject(new Error('no door')); },

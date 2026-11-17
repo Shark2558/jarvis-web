@@ -9,6 +9,9 @@
 //                           (covered)" for a private slot; his own labels only when he ticked "Use my own labels";
 //                           never a piece id
 //   draft(look)             "" or the first draft's words: such a look can't be confirmed
+//   pairs, same, covered, chosen, figure   what a look becomes elsewhere (pure): its {slot, piece} picks, its covered
+//                           slots, his shape choices (AVT-05) and the engine contract's figure (a private slot is
+//                           {slot, private: true} only)
 // The server's words reach the page by textContent only; this module draws no pixels and sends nothing. ASCII source.
 export const COVERED = 'Base layer (covered)';
 export const SLOT_WORDS = Object.freeze({ base: 'Base', underwear: 'Base', top: 'Top', bottom: 'Bottom', outer: 'Outer layer',
@@ -29,6 +32,36 @@ export function worn(look, layers) {
   const slots = look && Array.isArray(look.slots) ? look.slots : [];
   if (layers === 'base') return slots.filter((s) => s.private);
   return layers === 'no_outer' ? slots.filter((s) => s.slot !== 'outer') : slots.slice();
+}
+
+// ---- what a look becomes elsewhere (pure: no DOM, no server) ----------------------------------------------------------
+/** The look's {slot, piece} picks, never a private slot: what a query, a confirm and a saved comparison carry. */
+export const pairs = (look) => ((look && look.slots) || []).filter((s) => !s.private && s.piece).map((s) => ({ slot: s.slot, piece: s.piece }));
+export const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** A look's private slots as a viewer keeps them: covered; his own piece only behind his tap (R13 D10). */
+export const covered = (look, priv) => ((look && look.slots) || []).filter((s) => s.private)
+  .map((s) => ({ slot: s.slot, private: true, words: COVERED, readiness: s.readiness || '', piece: (priv && s.piece) || null }));
+/** His shape choice per piece (AVT-05), as GET /v1/tryon's `assets` reads it back from the server. */
+export function chosen(look, assets) {
+  const by = new Map((assets || []).map((a) => [a.piece, a]));
+  return Object.assign({}, look, { slots: ((look && look.slots) || []).map((s) => {
+    const a = !s.private && by.get(s.piece);
+    if (!a) return s;
+    const only = !!(s.card_only || a.card_only);
+    return Object.assign({}, s, { card_only: only, template: only ? null : a.template || s.template || null });
+  }) });
+}
+/** The engine's figure (engine_contract.mjs): the contract's fields only; a private slot is {slot, private: true}. */
+export function figure(raw, opts, body, assets) {
+  const look = chosen(raw, assets);
+  const slots = (look.slots || []).map((s) => {
+    if (s.private) return { slot: s.slot, private: true };
+    const template = s.card_only ? null : s.template || null;
+    const vs = Array.isArray(s.variants) ? s.variants : [];
+    const variant = vs.includes('tucked') ? (opts.tucked ? 'tucked' : 'untucked') : vs.includes('open') ? (opts.open ? 'open' : 'closed') : vs[0] || null;
+    return { slot: s.slot, piece: s.piece, template, variant, rgb: s.rgb || null, pattern: s.pattern || null, photo: s.photo || null, private: false };
+  });
+  return { body: { weights: Object.assign({}, body && body.weights), typed: (body && body.typed ? body.typed : []).slice() }, look: { slots } };
 }
 
 export function draft(look) {

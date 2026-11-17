@@ -93,3 +93,40 @@ def test_tomorrows_card_asks_for_its_own_day_and_code_and_reads_ready_and_tucked
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()
+
+
+@pytest.fixture()
+def worn_url(token: str) -> Iterator[str]:
+    """A world of its own (tonight's meeting is worn in it): the module's stays as it is."""
+    if os.environ.get("JARVIS_BROWSER_TESTS") != "1":
+        pytest.skip("JARVIS_BROWSER_TESTS=1 not set")
+    url, stop = serve_wired(token, plan_day="today")
+    try:
+        yield url
+    finally:
+        stop()
+
+
+def test_once_he_wears_tonights_plan_the_section_opens_tomorrows_look_not_a_draft(
+    browser: Any, worn_url: str, token: str
+) -> None:
+    # integrated review M2: the section opened today's first saved plan whatever its state, so
+    # after "Wearing it" it drew this morning's outfit with every piece "Draft: in use"
+    [plan] = [p for p in call(worn_url, token, "/v1/outfits")["today"] if p["id"][:3] == "op_"]
+    worn = call(worn_url, token, "/v1/wardrobe/tools/wear_log",
+                {"arguments": {"action": "start", "plan": plan["id"]}})  # fmt: skip
+    assert worn["status"] == "executed", worn
+    assert [p["worn"] for p in call(worn_url, token, "/v1/outfits")["today"]] == [True]
+    c = Wired(browser, worn_url, token, gl_fail="no-webgl2")
+    try:
+        c.open()
+        c.wardrobe()
+        rows = c.section().locator(".tr-item")
+        until(c.page, lambda: rows.count() >= 1, "the section's look", SLOW_S)  # what is free
+        asked = [r["url"] for r in c.sent if "/v1/tryon/look?" in r["url"]]
+        assert asked and f"plan={plan['id']}" not in asked[0] and "day=tomorrow" in asked[0]
+        text = c.section().inner_text()
+        assert "Suggested for tomorrow" in text and "in use" not in text, text[:400]
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()

@@ -133,7 +133,7 @@ def plan_view(
     return http.PlanView(
         id=plan.id, day=plan.day, event=plan.event, starts=plan.starts, dress_code=plan.code,
         tentative=plan.tentative, look=look, needs=tuple(need_words(rules, s) for s in plan.needs),
-        manual=plan.manual, cancelled=plan.cancelled,
+        manual=plan.manual, cancelled=plan.cancelled, worn=plan.worn,
     )  # fmt: skip
 
 

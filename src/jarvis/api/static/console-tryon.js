@@ -426,7 +426,8 @@ async function first() { // the first look "Today and tomorrow" shows: a plan's,
   if (!v) return;
   S.outfits = null;
   const o = await outfits();
-  const plan = [['Today', o.today], ['Tomorrow', o.tomorrow]].map(([d, l]) => [d, (l || []).find((p) => !p.cancelled && PLAN.test(p.id))]).find(([, p]) => p); // R13's 'suggestion' row is no plan
+  const plan = [['Today', o.today], ['Tomorrow', o.tomorrow]].map(([d, l]) => [d, (l || []).find((p) => !p.cancelled && !p.worn && PLAN.test(p.id))]) // R13's
+    .find(([, p]) => p); // 'suggestion' row is no plan; a plan he has put on is behind him (review I1 M2)
   const q = plan ? 'plan=' + encodeURIComponent(plan[1].id) : 'day=' + (new Date().getHours() >= EVENING ? 'tomorrow' : 'today');
   try {
     const look = await api('/v1/tryon/look?' + q + (S.priv ? '&private=1' : ''));

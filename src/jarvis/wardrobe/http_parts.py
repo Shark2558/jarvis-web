@@ -94,6 +94,7 @@ class PlanView(_M):
     needs: tuple[str, ...] = ()  # "needs a new shirt"
     manual: bool = True
     cancelled: bool = False
+    worn: bool = False  # a wear started (R13.1 I1, review M2: Try it on opens the next look)
 
 
 class OutfitsView(_M):

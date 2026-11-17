@@ -5,6 +5,16 @@ from a garment's photo or Google's answer is ever put into one of these."""
 
 from __future__ import annotations
 
+
+class SeeMeRefused(Exception):  # noqa: N818 - a refusal in plain words, not a bug
+    """Every refusal of See it on me: an HTTP status, a code (`http.SEEME_ERRORS`, the console
+    branches on it) and fixed words. `str()` is the code only (never the words in a log)."""
+
+    def __init__(self, status: int, code: str, words: str) -> None:
+        super().__init__(code)
+        self.status, self.code, self.words = status, code, words
+
+
 # ---- off, and why (503) ---------------------------------------------------------------------
 OFF_NO_STORE = "See it on me needs JARVIS's storage, which isn't set up on this server."
 OFF_NO_KEY = "See it on me needs JARVIS's token key, which isn't set up on this server."

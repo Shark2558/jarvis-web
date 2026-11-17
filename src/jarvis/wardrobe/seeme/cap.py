@@ -42,10 +42,7 @@ PREFS_ID = "prefs"
 CAP_MAX, KEEP_MAX = 2000, 30
 
 
-class CapRefused(Exception):  # noqa: N818 - a refusal in plain words
-    def __init__(self, status: int, code: str, words: str) -> None:
-        super().__init__(code)
-        self.status, self.code, self.words = status, code, words
+CapRefused = texts.SeeMeRefused
 
 
 def unreadable() -> CapRefused:

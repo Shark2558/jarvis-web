@@ -28,9 +28,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from jarvis.wardrobe.model import Piece, WardrobeView
-from jarvis.wardrobe.styling import reserve, texts
-from jarvis.wardrobe.styling.look import sets_of, whole
+from jarvis.wardrobe.model import WardrobeView
+from jarvis.wardrobe.styling import ready, reserve
 from jarvis.wardrobe.styling.plans import Plan, PlanPick, PlanRefused, StylingDoc, strict
 from jarvis.wardrobe.styling.service import Here, Styling
 
@@ -54,41 +53,21 @@ def _slot_of(s: Styling, view: WardrobeView, pid: Any) -> tuple[str, tuple[str, 
 
 
 SETTINGS = {"indoor": False, "outdoor": True}
-NOT_READY: dict[str, str] = {
-    "in_laundry": "{is} in the laundry", "washing": "{is} in the laundry",
-    "drying": "{is} in the laundry", "needs_prep": "needs pressing",
-    "with_provider": "{is} at the laundry shop", "needs_repair": "needs a repair",
-    "review": "needs a quick check", "in_use": "{is} in use", "archived": "{is} archived",
-}  # fmt: skip
 CANT_LOCK = "it can't be locked into this plan."
 
 
-def _the(p: Piece) -> str:
-    words = texts.piece_words(p)
-    return "The " + (words[2:] if words.startswith("a ") else words)
-
-
-def _handed(s: Styling, plan: Plan, p: Piece) -> bool:
-    """In use for the very plan this one declared its shared base from, and reusable (D3)."""
-    shared = plan.shared_from is not None and p.id in plan.shared
-    return (
-        p.state == "in_use" and shared and p.wear == plan.shared_from and s.rules.reusable_piece(p)
-    )
-
-
 def unready(s: Styling, view: WardrobeView, plan: Plan, unit: tuple[str, ...]) -> str | None:
-    """The refusal's words when a piece of `unit` can't go into `plan` now, else None."""
+    """The refusal's words when a piece of `unit` can't go into `plan` now, else None: the ONE
+    readiness rule (`styling.ready`), which R13.1's figure reads too (review I1 M5)."""
     for pid in unit:
         p = view.pieces.get(pid)
         if p is None:
             return "That piece isn't in your wardrobe any more."
-        if not (p.eligible or _handed(s, plan, p)):
-            verb = "are" if p.type in texts.PLURAL_TYPES and not p.private else "is"
-            state = NOT_READY.get(p.state, "{is} not ready").replace("{is}", verb)
-            return f"{_the(p)} {state}: {CANT_LOCK}"
-        for sid, parts in sets_of(view, pid):
-            if not dict(parts).get(pid, True) and not whole(view, parts):
-                return f"{_the(p)} is worn only with its set {sid}, which isn't ready: {CANT_LOCK}"
+        if not ready.fits(s.rules, plan, p):
+            return f"{ready.the(p)} {ready.state_words(p)}: {CANT_LOCK}"
+        sid = ready.broken_set(view, pid)
+        if sid is not None:
+            return f"{ready.the(p)} is worn only with its set {sid}, which isn't ready: {CANT_LOCK}"
     return None
 
 

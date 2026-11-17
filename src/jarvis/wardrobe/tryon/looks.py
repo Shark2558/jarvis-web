@@ -37,7 +37,7 @@ from jarvis.undo.store import owner_ok
 from jarvis.wardrobe.model import View, WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
 from jarvis.wardrobe.styling import reserve, texts
-from jarvis.wardrobe.styling.look import LookOut, Pick
+from jarvis.wardrobe.styling.look import LookOut, Pick, covered  # AVT-14: R13's one rule (M5)
 from jarvis.wardrobe.styling.plans import Plan, StylingDoc
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.styling.sealed import Unreadable as PlansUnreadable
@@ -89,13 +89,6 @@ class NotPieces(ValueError):
 
 class StylingOff(RuntimeError):
     """R13's styling or store is off, failed or not ready: a 503 in its own words."""
-
-
-def covered(view: WardrobeView, slot: str, unit: Sequence[str]) -> bool:
-    """AVT-14: a private slot, or a slot holding a private piece, is never drawn as itself."""
-    if slot in PRIVATE_SLOTS:
-        return True
-    return any((p := view.pieces.get(i)) is None or p.private for i in unit)
 
 
 async def photo_views(

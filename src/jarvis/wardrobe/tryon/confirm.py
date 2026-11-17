@@ -24,9 +24,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, TypeVar
 
-from jarvis.wardrobe.model import Piece, WardrobeView
-from jarvis.wardrobe.styling import reserve, texts
-from jarvis.wardrobe.styling.actions import NOT_READY
+from jarvis.wardrobe.model import WardrobeView
+from jarvis.wardrobe.styling import ready, reserve
 from jarvis.wardrobe.styling.look import Pick
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.tryon import options as o
@@ -79,24 +78,19 @@ def units_of(view: WardrobeView, rules: Rules, slots: Sequence[ConfirmSlot]) -> 
     return [(slot, tuple(ids)) for slot, ids in by.items()]
 
 
-def _the(p: Piece) -> str:
-    words = texts.piece_words(p)
-    return "The " + (words[2:] if words.startswith("a ") else words)
-
-
 def words_of(f: o.Fresh, block: o.Block) -> str:
-    """ "The navy jacket is in the laundry: it can't be confirmed for this event." """
+    """ "The navy jacket is in the laundry: it can't be confirmed for this event." (R13's own
+    words for each state, `styling.ready`: review I1 M5)"""
     kind, p = block
     if p is None:
         return NOT_HIS
-    verb = "are" if p.type in texts.PLURAL_TYPES and not p.private else "is"
     if kind in ("state", "one_shoe"):
-        state = NOT_READY.get(p.state, "{is} not ready").replace("{is}", verb)
+        state = ready.state_words(p)
     elif kind == "set":
-        state = f"{verb} worn only with its set, which isn't ready"
+        state = f"{ready.verb(p)} worn only with its set, which isn't ready"
     else:
-        state = f"{verb} reserved for {reserve.held_words(f.held[p.id], f.zone)}"
-    return f"{_the(p)} {state}: {CANT}"
+        state = f"{ready.verb(p)} reserved for {reserve.held_words(f.held[p.id], f.zone)}"
+    return f"{ready.the(p)} {state}: {CANT}"
 
 
 def first_draft(f: o.Fresh, units: Units) -> str | None:

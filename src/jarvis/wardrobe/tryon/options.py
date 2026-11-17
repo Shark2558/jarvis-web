@@ -3,7 +3,8 @@
 
 `Fresh` is one read of the wardrobe view and his plans for the look's day and plan (R13's own
 records, read per request: never cached). `readiness(fresh, slot, pieces)` names the slot's
-state in fixed words, by R13's engine rules:
+state in fixed words, by R13's engine rules (the ONE copy, `styling.ready`, which `outfit_plan`
+itself reads: review I1 M5):
 
 - a piece that isn't Ready: its draft words (`model.DRAFT_WORDS`: "Draft: in the laundry" ...);
   a pair with one side not ready: "Draft: one shoe missing"; an In-use piece is fine only as the
@@ -26,8 +27,7 @@ from datetime import date, tzinfo
 from typing import Literal
 
 from jarvis.wardrobe.model import Piece, WardrobeView
-from jarvis.wardrobe.styling import reserve, texts
-from jarvis.wardrobe.styling.look import sets_of, whole
+from jarvis.wardrobe.styling import ready, reserve, texts
 from jarvis.wardrobe.styling.plans import Plan, StylingDoc
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.tryon.assets import effective
@@ -79,19 +79,6 @@ def unit_of(f: Fresh, pids: Sequence[str]) -> Unit:
     return tuple(out)
 
 
-def _handed(f: Fresh, p: Piece) -> bool:
-    """In use for the plan this one declared its shared base from, and reusable (STY-13)."""
-    plan = f.plan
-    if plan is None or plan.shared_from is None or p.id not in plan.shared:
-        return False
-    return p.state == "in_use" and p.wear == plan.shared_from and f.rules.reusable_piece(p)
-
-
-def _set_broken(f: Fresh, p: Piece) -> bool:
-    return any(not dict(parts).get(p.id, True) and not whole(f.view, parts)
-               for _, parts in sets_of(f.view, p.id))  # fmt: skip
-
-
 Kind = Literal["gone", "one_shoe", "state", "set", "held"]
 Block = tuple[Kind, Piece | None]  # why a slot isn't ready, and the piece that makes it so
 
@@ -102,11 +89,11 @@ def blocker(f: Fresh, slot: str, pids: Sequence[str]) -> Block | None:
     pieces = [p for p in found if p is not None and p.merged_into is None]
     if len(pieces) != len(found) or not pieces:
         return "gone", None
-    bad = [p for p in pieces if not (p.eligible or _handed(f, p))]
+    bad = [p for p in pieces if not ready.fits(f.rules, f.plan, p)]  # R13's own rule (M5)
     if bad:
         pair = slot == "shoes" and len(pieces) == 2 and len(bad) == 1
         return ("one_shoe" if pair else "state"), bad[0]
-    broken = next((p for p in pieces if _set_broken(f, p)), None)
+    broken = next((p for p in pieces if ready.broken_set(f.view, p.id) is not None), None)
     if broken is not None:
         return "set", broken
     held = next((p for p in pieces if p.id in f.held), None)

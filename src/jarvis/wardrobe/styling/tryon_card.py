@@ -20,7 +20,7 @@ from pydantic import ValidationError
 
 from jarvis.tools.reply_cards import TryOnCard, TryOnSlot, add_card
 from jarvis.wardrobe.model import WardrobeView
-from jarvis.wardrobe.styling.look import PRIVATE_SLOTS, Pick
+from jarvis.wardrobe.styling.look import Pick, covered
 from jarvis.wardrobe.styling.service import Answer
 
 log = logging.getLogger(__name__)
@@ -28,14 +28,8 @@ CODE = re.compile(r"[a-z_]{0,30}")
 MAX_SLOTS = 12
 
 
-def _covered(view: WardrobeView, pick: Pick) -> bool:
-    if pick.slot in PRIVATE_SLOTS:
-        return True
-    return any((p := view.piece(i)) is None or p.private for i in pick.pieces)
-
-
 def _slot(view: WardrobeView, pick: Pick) -> TryOnSlot:
-    if _covered(view, pick):
+    if covered(view, pick.slot, pick.pieces):  # AVT-14: the figure's own rule (review I1 M5)
         return TryOnSlot(slot=pick.slot, private=True)
     return TryOnSlot(slot=pick.slot, pieces=tuple(pick.pieces))
 

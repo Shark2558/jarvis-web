@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from jarvis.wardrobe.model import TYPES, View
 from jarvis.wardrobe.states import State
+from jarvis.wardrobe.styling.look import PRIVATE_SLOTS  # never drawn as themselves (D6): R13's
 from jarvis.wardrobe.styling.texts import PLURAL_TYPES
 
 # ---- measurements (D4) -------------------------------------------------------------------------
@@ -169,7 +170,6 @@ GARMENTS: frozenset[Template] = frozenset(
 TUCKABLE: frozenset[Template] = frozenset({"shirt", "tee"})
 TUCKED_CODES = frozenset({"business_formal", "business_casual"})  # tucked by default (D6)
 REMOVABLE_SLOTS = frozenset({"outer", "belt", "watch", "socks"})  # "Remove" (D7)
-PRIVATE_SLOTS = frozenset({"base", "underwear"})  # never drawn as themselves (D6)
 Layers = Literal["all", "no_outer", "base"]
 LAYERS: tuple[Layers, ...] = get_args(Layers)
 VIEW_YAW: Mapping[str, int] = {"front": 0, "side": 90, "back": 180}  # degrees (AVT-02)

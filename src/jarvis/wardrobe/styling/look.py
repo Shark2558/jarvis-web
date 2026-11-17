@@ -120,6 +120,15 @@ def never_hit(r: Run, p: Piece) -> tuple[str, str] | None:
     return None
 
 
+def covered(view: WardrobeView, slot: str, pieces: Sequence[str]) -> bool:
+    """R13.1 AVT-14: a private slot, or one holding a private (or unknown) piece, is never drawn
+    or named as itself. The ONE rule: row 388's card and the figure's look both ask here (R13.1
+    integrated review M5)."""
+    if slot in PRIVATE_SLOTS:
+        return True
+    return any((p := view.pieces.get(i)) is None or p.private for i in pieces)
+
+
 __all__ = [
     "FILL_ORDER",
     "FORMAL_SLOTS",
@@ -132,6 +141,7 @@ __all__ = [
     "Run",
     "Suggestion",
     "Unit",
+    "covered",
     "never_hit",
     "sets_of",
     "whole",

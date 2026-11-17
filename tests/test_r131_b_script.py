@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +17,20 @@ import pytest
 np = pytest.importorskip("numpy")
 pytest.importorskip("scipy")
 
-from r131_fakes_b import SCRIPTS, fake_clone, mannequin, tube  # noqa: E402
+from r131_fakes_b import (  # noqa: E402
+    M1,
+    SCRIPTS,
+    SOURCE_FIXTURE,
+    called_functions,
+    fake_clone,
+    fixture_human,
+    manifest,
+    manifest_problems,
+    mannequin,
+    node_cases,
+    pack_source,
+    tube,
+)
 
 mq = mannequin()
 from mannequin import build, carry, core, glb, measure, mesh  # noqa: E402
@@ -357,3 +372,89 @@ def test_the_builds_template_table_is_the_servers() -> None:
     )
     assert build.SOURCE.endswith(core.ANNY_COMMIT) and core.ANNY_COMMIT in build.NOTICE
     assert json.dumps(build.TEMPLATES)  # plain data: it goes into the manifest
+
+
+# ---- the whole build from a small committed source: no clone needed (review B-1, finding 7) -----
+SOURCE_SHA = "a0d1b585f051065d4fed6322e978513854e8c38e24a56aa071a19fc3dfb3d908"
+NOT_IN_A_FIXTURE_BUILD = {  # each is covered above, on made-up files, or is the command line
+    "build.build", "build.licence_texts", "build.main", "core.Human.__init__", "core.Human._read",
+    "core.Human.target", "core.Human.neutral", "core.Human.directions", "core.parse_obj",
+    "core.parse_target", "core.read_source", "core.skin_matrix", "glb.dequantise",
+}  # fmt: skip
+_BUILT: dict[str, Any] = {}
+
+
+def _fixture_build() -> dict[str, Any]:
+    """The release built once from the small source, and the functions that ran."""
+    if not _BUILT:
+        licences = {n: (M1 / n).read_bytes() for n in build.LICENCES}
+        box: dict[str, Any] = {}
+        _BUILT["called"] = called_functions(
+            lambda: box.update(files=build.build_files(fixture_human(), licences))
+        )
+        _BUILT["files"] = box["files"]
+    return _BUILT
+
+
+def test_the_small_source_is_the_pinned_one() -> None:
+    assert hashlib.sha256(SOURCE_FIXTURE.read_bytes()).hexdigest() == SOURCE_SHA
+    assert SOURCE_FIXTURE.stat().st_size < 400 * 1024  # small: the clone's files are 4.2 MB
+    h = fixture_human()
+    assert h.V0.shape == (core.NV, 3) and len(h.Q) == 18486 and len(h.bones) == 163
+    assert h.rest(np.zeros(6)) == pytest.approx(h.V0) and len(h._r) == 5
+
+
+def test_the_build_runs_from_the_small_source_and_gives_the_committed_release(
+    tmp_path: Path,
+) -> None:
+    """What CI can run: every garment cut, shaped and carried, the files written and measured,
+    with no clone. The small source is the pinned files in 16-bit steps, so the result is the
+    committed release to within a millimetre (the opt-in rebuild from the clone is exact)."""
+    files = _fixture_build()["files"]
+    for name, data in files.items():
+        (tmp_path / name).write_bytes(data)
+    assert manifest_problems(tmp_path) == []
+    new, old = json.loads(files["MANIFEST.json"]), manifest()
+    assert new["templates"] == old["templates"] and list(new["triangles"]) == list(old["triangles"])
+    for part, count in old["triangles"].items():  # a 0.06 mm step can move a cut by a quad or two
+        assert abs(new["triangles"][part] - count) <= max(16, count // 100), part
+    for a, b in zip(new["measure"], old["measure"], strict=True):
+        assert a["case"] == b["case"]
+        assert max(abs(x - y) for x, y in zip(a["got"], b["got"], strict=True)) <= 0.1, a["case"]
+    assert sum(len(d) for d in files.values()) <= 3_670_016
+    cases = node_cases("none", tmp_path)  # the same Node checks, on this build
+    assert all(c["passed"] for c in cases.values()), [
+        k for k, c in cases.items() if not c["passed"]
+    ]
+
+
+def test_a_build_from_the_small_source_calls_every_function_of_the_script() -> None:
+    """The coverage CI lacked: each function of scripts/mannequin runs in the fixture build,
+    but the few that read the clone's own files (tested above on made-up files)."""
+    called = _fixture_build()["called"]
+    defined = set()
+    for path in sorted((SCRIPTS / "mannequin").glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                defined.add(f"{path.stem}.{node.name}")
+            if isinstance(node, ast.ClassDef):
+                defined |= {
+                    f"{path.stem}.{node.name}.{f.name}"
+                    for f in node.body
+                    if isinstance(f, ast.FunctionDef)
+                }
+    assert len(defined) > 120
+    assert defined - called - NOT_IN_A_FIXTURE_BUILD == set()
+    for module in ("tops", "bottoms", "outer", "feet", "accessories", "figure", "pose", "carry"):
+        assert {f for f in defined if f.startswith(module + ".")} <= called, module
+
+
+def test_a_wrong_licence_text_is_refused_by_the_build() -> None:
+    with pytest.raises(core.SourceRefused, match="SHA-256 differs"):
+        build.build_files(fixture_human(), {n: b"another licence" for n in build.LICENCES})
+
+
+@pytest.mark.skipif(not os.environ.get("JARVIS_ANNY_DIR"), reason="set JARVIS_ANNY_DIR to repack")
+def test_the_small_source_is_what_the_pinned_clone_packs_to() -> None:
+    assert pack_source(Path(os.environ["JARVIS_ANNY_DIR"])) == SOURCE_FIXTURE.read_bytes()

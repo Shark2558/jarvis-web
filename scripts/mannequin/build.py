@@ -255,9 +255,19 @@ def manifest(files: dict[str, bytes], facts: dict[str, Any]) -> dict[str, Any]:
     return dict(release=RELEASE, files=entries, **facts)
 
 
+def licence_texts(clone: Path) -> dict[str, bytes]:
+    """The clone's two licence texts, as they are."""
+    return {name: (Path(clone) / rel).read_bytes() for name, (rel, _) in LICENCES.items()}
+
+
 def build(clone: Path) -> dict[str, bytes]:
-    """Everything the release folder holds, by file name."""
-    h = Human(clone)
+    """Everything the release folder holds, by file name, from a clone of the pinned commit."""
+    return build_files(Human(clone), licence_texts(clone))
+
+
+def build_files(h: Human, licences: dict[str, bytes]) -> dict[str, bytes]:
+    """The release's files from a source already read (and the two licence texts, each refused
+    unless it is the pinned one)."""
     ms = Measurer(h)
     a0 = solve(ms.of_shape, np.array([SAMPLE[k] for k in MEASURES], float), np.zeros(6))
     fig = Figure(h, ms, a0)
@@ -273,10 +283,9 @@ def build(clone: Path) -> dict[str, bytes]:
     worn = {n: m for n, m in meshes.items() if n not in body}
     files = {"body.glb": write_glb(body, facts), "garments.glb": write_glb(worn, facts)}
     for name, (rel, sha) in LICENCES.items():
-        data = (Path(clone) / rel).read_bytes()
-        if hashlib.sha256(data).hexdigest() != sha:
+        if hashlib.sha256(licences.get(name, b"")).hexdigest() != sha:
             raise SourceRefused(f"{rel}: its SHA-256 differs from the build's table")
-        files[name] = data
+        files[name] = licences[name]
     files["NOTICE-mannequin.txt"] = NOTICE.encode()
     facts.update(
         templates=TEMPLATES,

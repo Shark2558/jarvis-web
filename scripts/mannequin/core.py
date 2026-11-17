@@ -166,15 +166,33 @@ class Human:
         )
         self.rig: dict[str, Any] = json.loads(self._read("rigs/standard/rig.default.json"))
         wj = json.loads(self._read("rigs/standard/weights.default.json"))["weights"]
+        self._rigged(skin_matrix(wj, list(self.rig), len(self.V0)))
+        self._tc: dict[str, Arr] = {}
+        self._n: Arr | None = None
+        self._r: list[Arr] = []
+
+    def _rigged(self, w: Any) -> None:
+        """The rig's bones in order and the skinning weights `w` (points x bones)."""
         self.bones = list(self.rig)
         self.parent: dict[str, str | None] = {b: self.rig[b]["parent"] or None for b in self.rig}
         self.order = bone_order(self.parent)
         self.bi = {b: i for i, b in enumerate(self.bones)}
-        self.W = skin_matrix(wj, self.bones, len(self.V0))
+        self.W = w
         self.Wc = self.W.tocsc()
-        self._tc: dict[str, Arr] = {}
-        self._n: Arr | None = None
-        self._r: list[Arr] = []
+
+    @classmethod
+    def of_parts(cls, parts: dict[str, Any]) -> Human:
+        """A Human from what a source ALREADY READ holds (a test's small committed fixture, made
+        from the same pinned files): the quads and their groups, the vertex groups, the rig, the
+        skinning weights, and the shape space itself (`neutral`, `directions`) in place of the
+        targets. No file is read."""
+        h = cls.__new__(cls)
+        h.root, h._sums, h._tc = Path("."), {}, {}
+        h.V0, h.Q, h.G = parts["neutral"], parts["quads"], parts["quad_groups"]
+        h.groups, h.rig = parts["groups"], parts["rig"]
+        h._rigged(parts["weights"])
+        h._n, h._r = parts["neutral"], list(parts["directions"])
+        return h
 
     def _read(self, rel: str) -> bytes:
         return read_source(self.root, rel, self._sums)

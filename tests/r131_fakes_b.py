@@ -92,6 +92,124 @@ def fake_clone(root: Path, sources: dict[str, str], data_dir: str) -> dict[str, 
     return sums
 
 
+# ---- a small source for the build's own tests (review B-1, finding 7) ----------------------------
+# The build's shape code used to run only in an opt-in rebuild from a 69 MB clone, so CI covered
+# 44 % of scripts/mannequin. `b_source.bin.xz` is what the build needs of the pinned CC0 files,
+# packed small (about 0.3 MB): the neutral body and the five shape directions instead of the 19
+# targets (16-bit steps of 0.06 mm), the quads and their groups, the vertex groups, the rig and its
+# skinning weights. It is MakeHuman/MPFB2 data (CC0 1.0) as shipped in NAVER's Anny at ANNY; made by
+# `pack_source(<a local clone>)`, pinned by its SHA-256 in tests/test_r131_b_script.py.
+SOURCE_FIXTURE = FIXTURES / "b_source.bin.xz"
+_SPAN = 2.0  # metres: the neutral body's coordinates are stored as int16 / 32767 * _SPAN
+
+
+def _packed(arrays: dict[str, Any], meta: dict[str, Any]) -> bytes:
+    import lzma
+    import struct
+
+    head: dict[str, Any] = {"meta": meta, "arrays": {}}
+    body = b""
+    for name, a in arrays.items():
+        head["arrays"][name] = [a.dtype.str, list(a.shape), len(body)]
+        body += a.tobytes()
+    js = json.dumps(head, separators=(",", ":"), sort_keys=True).encode()
+    return lzma.compress(struct.pack("<I", len(js)) + js + body, preset=9)
+
+
+def pack_source(clone: Path) -> bytes:
+    """The small source fixture's bytes, from a local clone of naver/anny at the pinned commit
+    (every file read through the build's own SHA-checked door)."""
+    import numpy as np
+
+    mannequin()
+    from mannequin import core
+
+    h = core.Human(Path(clone))
+    arrays: dict[str, Any] = {
+        "neutral": np.round(h.neutral() / _SPAN * 32767).astype("<i2"),
+        "quads": h.Q.astype("<u2"),
+    }
+    names, inverse = np.unique(h.G, return_inverse=True)
+    arrays["quad_group"] = inverse.astype("u1")
+    spans = []
+    for i, d in enumerate(h.directions()):
+        at = np.where(np.abs(d).max(1) > 2e-5)[0]
+        spans.append(float(np.abs(d).max()))
+        arrays[f"dir{i}_at"] = np.diff(at, prepend=0).astype("<u2")
+        arrays[f"dir{i}_by"] = np.round(d[at] / spans[-1] * 32767).astype("<i2")
+    w = h.W.tocoo()
+    keep = w.data > 5e-4
+    order = np.lexsort((w.col[keep], w.row[keep]))
+    arrays["w_row"] = np.diff(w.row[keep][order], prepend=0).astype("<u2")
+    arrays["w_col"] = w.col[keep][order].astype("u1")
+    arrays["w_val"] = np.round(w.data[keep][order] * 65535).astype("<u2")
+    meta = dict(
+        source=f"naver/anny@{core.ANNY_COMMIT}", licence="CC0-1.0 (MakeHuman/MPFB2 assets)",
+        group_names=[str(n) for n in names], groups=h.groups, rig=h.rig, spans=spans,
+    )  # fmt: skip
+    return _packed(arrays, meta)
+
+
+def fixture_human() -> Any:
+    """The build's `Human` from the small committed source (no clone, no file but the fixture)."""
+    import lzma
+    import struct
+
+    import numpy as np
+    import scipy.sparse as sp
+
+    mannequin()
+    from mannequin import core
+
+    raw = lzma.decompress(SOURCE_FIXTURE.read_bytes())
+    (n,) = struct.unpack("<I", raw[:4])
+    head, body = json.loads(raw[4 : 4 + n]), raw[4 + n :]
+    a = {}
+    for name, (dtype, shape, at) in head["arrays"].items():
+        count = int(np.prod(shape))
+        a[name] = np.frombuffer(body, dtype, count, at).reshape(shape)
+    meta = head["meta"]
+    neutral = a["neutral"].astype(float) / 32767 * _SPAN
+    directions = []
+    for i, span in enumerate(meta["spans"]):
+        d = np.zeros_like(neutral)
+        d[np.cumsum(a[f"dir{i}_at"].astype(int))] = a[f"dir{i}_by"].astype(float) / 32767 * span
+        directions.append(d)
+    rows = np.cumsum(a["w_row"].astype(int))
+    w = sp.csr_matrix(
+        (a["w_val"].astype(float) / 65535, (rows, a["w_col"].astype(int))),
+        shape=(len(neutral), len(meta["rig"])),
+    )
+    w = sp.diags(1 / np.maximum(np.asarray(w.sum(1)).ravel(), 1e-9)) @ w
+    return core.Human.of_parts(
+        dict(
+            neutral=neutral, quads=a["quads"].astype(int), groups=meta["groups"], rig=meta["rig"],
+            quad_groups=np.array(meta["group_names"])[a["quad_group"]], weights=w,
+            directions=directions,
+        )
+    )  # fmt: skip
+
+
+def called_functions(run: Any, package: str = "mannequin") -> set[str]:
+    """Run `run()` and name every function of the build's package that was called: "module.name"
+    (a coverage check that needs no plug-in and no clone)."""
+    seen: set[str] = set()
+    root = str(SCRIPTS / package)
+
+    def spy(frame: Any, event: str, arg: Any) -> None:
+        code = frame.f_code
+        if event == "call" and code.co_filename.startswith(root):
+            seen.add(f"{Path(code.co_filename).stem}.{code.co_qualname}")
+
+    old = sys.getprofile()
+    sys.setprofile(spy)
+    try:
+        run()
+    finally:
+        sys.setprofile(old)
+    return seen
+
+
 CONTROLS = (
     "swap_morphs", "no_waist_down", "no_shorts", "long_sleeve", "side_is_front",
     "back_resets_tuck", "closed_is_open", "unsoftened_rig", "input_cadence", "thin_trousers",

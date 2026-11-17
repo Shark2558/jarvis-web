@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import struct
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -176,7 +175,3 @@ def read_glb(data: bytes) -> dict[str, Any]:
             mode=prim.get("mode", TRIANGLES),
         )
     return dict(extras=doc["asset"].get("extras", {}), meshes=meshes)
-
-
-def read_file(path: Path) -> dict[str, Any]:
-    return read_glb(Path(path).read_bytes())

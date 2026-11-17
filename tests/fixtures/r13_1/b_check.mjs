@@ -268,8 +268,10 @@ check('avt07_a_blazer_covers_the_shirt_but_not_its_collar_or_the_watch', (need) 
     for (const i of range(shirt.mesh, 'collar')) need(!under(at(shirt.pos, i), at(shirt.nrm, i), jk, 0.012), word + ': a shirt collar point lies under the blazer (cloth within 12 mm over it)');
     for (const part of [watch, strap]) for (let i = 0; i < part.pos.length / 3; i++) need(!under(at(part.pos, i), armOf(at(part.pos, i)).out, sleeve), word + ': the watch is under the blazer sleeve');
     const round = (p) => Math.atan2(p[0], p[2] - J.neck[2]), leaf = range(shirt.mesh, 'collar').map((i) => at(shirt.pos, i));
-    for (const i of range(jk.mesh, 'collar')) { // the blazer's collar sits under the shirt's: the shirt's stands above it all round
-      const p = at(jk.pos, i), top = Math.max(...leaf.filter((q) => Math.abs(Math.atan2(Math.sin(round(q) - round(p)), Math.cos(round(q) - round(p)))) < 0.3).map((q) => q[1]));
+    for (const i of range(jk.mesh, 'trunk')) { // the blazer's neck edge sits under the shirt's collar: the collar stands above it all round
+      const p = at(jk.pos, i);
+      if (Math.hypot(...sub(p, J.neck)) > 0.15) continue;
+      const top = Math.max(...leaf.filter((q) => Math.abs(Math.atan2(Math.sin(round(q) - round(p)), Math.cos(round(q) - round(p)))) < 0.3).map((q) => q[1]));
       need(p[1] <= top - 0.01, word + ': the blazer collar rises to the top of the shirt collar (' + p[1].toFixed(3) + ' against ' + top.toFixed(3) + ')');
     }
   }

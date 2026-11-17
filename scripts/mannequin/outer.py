@@ -1,16 +1,16 @@
 # scripts/mannequin/outer.py
 """R13.1 Part B (docs/plans/r13-1-try-on.md D5, D6, AVT-07, AVT-10): the outer layer, ONE
 approximate shape, `jacket` (a blazer, jacket, coat, hoodie, sweater, rainwear, festive layer): a
-V neck that shows the shirt's collar, a front cut down the middle, lapels, a collar that sits UNDER
-the shirt's, and sleeves that end above the shirt cuff (so the cuff and the watch stay in view).
-The part is the CLOSED jacket; its `open` state lets the two fronts hang apart."""
+V neck that shows the shirt's collar, a front cut down the middle, lapels, a neck edge that sits
+UNDER the shirt's collar, and sleeves that end above the shirt cuff (so the cuff and the watch
+stay in view). The part is the CLOSED jacket; its `open` state lets the two fronts hang apart."""
 
 from __future__ import annotations
 
 from typing import Any
 
 import numpy as np
-from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator, RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator
 
 from .figure import TH, Ctx, Figure, torso_uv
 from .mesh import (
@@ -30,7 +30,7 @@ from .tops import CUFF_END, arm_tris, part_ranges, sleeve_ends, trunk_shell
 
 SLEEVE_ABOVE_CUFF = 0.015  # the jacket's sleeve ends this far above the shirt cuff's end (AVT-07)
 V_DROP = 0.20  # the V's point below the neck joint (m)
-NECK_HOLE = 0.110  # the neck opening (m from the neck's axis): wider than the shirt's collar
+NECK_HOLE = 0.118  # the neck opening (m from the neck's base): wider than the shirt's collar
 FALL = 0.95  # the fronts are shaped within this angle (rad) of the centre: short of the shoulders
 
 
@@ -50,7 +50,7 @@ def cut(fig: Figure) -> dict[str, Any]:
     r = np.hypot(p[:, 0], p[:, 2] - zc)
     shaped = np.stack([r * np.sin(th), p[:, 1], zc + r * np.cos(th)], 1)
     c = np.where(fig.arm[:, None], p, shaped)[q].mean(1)
-    scoop = (np.hypot(c[:, 0], c[:, 2] - neck[2]) < NECK_HOLE) & (c[:, 1] > neck[1] - 0.09)
+    scoop = np.linalg.norm(c - (neck - [0, 0.015, 0]), axis=1) < NECK_HOLE  # round the neck's base
     q = q[~scoop]
     vid = np.unique(q)
     re = np.full(len(p), -1)
@@ -105,7 +105,13 @@ def radius_field(ctx: Ctx, x: Arr, trunk_t: Arr, lo: float, hi: float) -> Any:
     """The shell's radius about the trunk's axis over the front, as a smooth function of (angle,
     height) sampled on a regular grid: a point moved round the axis is put back ON the shell."""
     ys = np.linspace(lo, hi, 26)
-    grid = np.array([slice_r(x, trunk_t, ctx.vert, float(y), GRID_TH, rmax=0.3) for y in ys])
+    rows: list[Arr] = []
+    for y in ys:
+        try:
+            rows.append(slice_r(x, trunk_t, ctx.vert, float(y), GRID_TH, rmax=0.3))
+        except RuntimeError:  # above the neck edge there is no shell: the last radius holds
+            rows.append(rows[-1])
+    grid = np.array(rows)
     return RegularGridInterpolator((ys, GRID_TH), grid, bounds_error=False, fill_value=None)
 
 
@@ -174,35 +180,14 @@ def lapel(ctx: Ctx, x: Arr, trunk_t: Arr, side: int, opened: bool) -> tuple[Arr,
     return loft([np.array(c) for c in cols], closed=False)
 
 
-def back_collar(ctx: Ctx, shirt_x: Arr) -> tuple[Arr, Arr]:
-    """The collar round the back of the neck: a band lying on the shirt's yoke just outside and
-    BELOW the shirt collar's edge (the shirt's collar stays whole), its outer edge on the jacket."""
-    neck = ctx.J["neck"]
-    fig = ctx.fig
-    vid = fig.g["shirt"]["vid"]
-    away = np.hypot(shirt_x[:, 0], shirt_x[:, 2] - neck[2])  # the yoke, not the neck's column
-    top = (~fig.arm[vid]) & (shirt_x[:, 1] > neck[1] - 0.14) & (away > 0.066)
-    lin = LinearNDInterpolator(shirt_x[top][:, [0, 2]], shirt_x[top, 1])
-    near = NearestNDInterpolator(shirt_x[top][:, [0, 2]], shirt_x[top, 1])
-    phi = np.linspace(0.95, 2 * np.pi - 0.95, 33)  # round the back, from lapel to lapel
-    rings = []
-    for rho, lift in ((0.103, 0.003), (0.113, 0.009), (NECK_HOLE + 0.015, 0.016)):
-        x, z = rho * np.sin(phi), neck[2] + rho * np.cos(phi)
-        y = lin(x, z)
-        rings.append(np.stack([x, np.where(np.isnan(y), near(x, z), y) + lift, z], 1))
-    return loft(rings, closed=False)
-
-
 def _state(ctx: Ctx, g: dict[str, Any], opened: bool) -> list[tuple[Arr, Arr]]:
     fig = ctx.fig
     x = _shell(ctx, g, opened)
     trunk_t = g["T"][(~fig.arm[g["vid"]][g["T"]]).all(1)]
-    sx, _ = trunk_shell(ctx, "shirt", 0.0055, tucked=False)
     return [
         (x, g["T"]),
         lapel(ctx, x, trunk_t, 1, opened),
         lapel(ctx, x, trunk_t, -1, opened),
-        back_collar(ctx, sx),
     ]
 
 
@@ -212,5 +197,5 @@ def jacket(ctx: Ctx) -> None:
     parts = _state(ctx, g, opened=False)
     x, t = merge(parts)
     uv = torso_uv(ctx, x, t, arm_tris(ctx, g, parts, t, None)) if ctx.first else None
-    ctx.put("jacket", x, t, uv, ranges=part_ranges(parts, ("trunk", "lapelL", "lapelR", "collar")))
+    ctx.put("jacket", x, t, uv, ranges=part_ranges(parts, ("trunk", "lapelL", "lapelR")))
     ctx.state("jacket", "open", merge(_state(ctx, g, opened=True))[0])

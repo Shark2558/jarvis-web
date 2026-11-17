@@ -46,8 +46,8 @@ from jarvis.privacy.ports import PrivacyRegistry  # noqa: E402
 from jarvis.privacy.service import CONFIRM_WORD, PrivacyService  # noqa: E402
 from jarvis.storage.docs import DocTx  # noqa: E402
 from jarvis.wardrobe.ports import Commit  # noqa: E402
-from jarvis.wardrobe.styling import actions  # noqa: E402
-from jarvis.wardrobe.tryon import assets, confirm, erase, kept, looks, versions  # noqa: E402
+from jarvis.wardrobe.styling import actions, reserve  # noqa: E402
+from jarvis.wardrobe.tryon import assets, confirm, erase, kept, looks, options, versions  # noqa: E402
 from jarvis.wardrobe.tryon import model as m  # noqa: E402
 from jarvis.wardrobe.tryon.http import AssetChoice, SavedIn, TryonLook  # noqa: E402
 from jarvis.wardrobe.tryon.store import TryonDoc  # noqa: E402
@@ -57,6 +57,7 @@ BUILT = True
 Case = Callable[[], Awaitable[list[str]]]
 IN_LAUNDRY = "The navy jacket is in the laundry: it can't be confirmed for this event."
 LOCK_REFUSED = "The navy jacket is in the laundry: it can't be locked into this plan."
+MAROON_RGB = json.dumps(list(m.rgb_of("maroon")))  # a look serves colour as numbers, never words
 FIGURE = f"jarvis_tryon/{UID}"
 
 
@@ -147,7 +148,7 @@ async def avt09_fresh_check_refuses_without_a_call() -> list[str]:
     async with a.client() as c:
         got = await c.post("/v1/tryon/confirm", json=await a.whole(pid, outer=T.rain_jacket))
     if got.status_code != 409 or got.json().get("detail") != IN_LAUNDRY:
-        out.append(f"not refused in words: {got.status_code}")
+        out.append(f"not refused in words before the call: {got.status_code} {got.json()}")
     if calls.n:
         out.append("an outfit_plan call was made for a draft")
     return out
@@ -202,9 +203,22 @@ async def avt14_private_slots_covered() -> list[str]:
         await a.service.looks.for_pieces(UID, f"top:{T.shirt},base:{T.vest},underwear:{T.under}"),
         await a.service.looks.for_pieces(UID, f"top:,bottom:{T.trousers}"),  # a card's covered top
     ]
+    out += _private_served(served, (T.vest, T.under))
+    await a.w.edit(T.white, private=True, label="Lucky shirt", colour="maroon")  # private since
+    later = [  # the plan's top now covered; another top shown, whose options must skip it
+        await a.service.looks.for_plan(UID, pid),
+        await a.service.looks.for_pieces(UID, f"top:{T.shirt}"),
+    ]
+    return out + _private_served(later, (T.vest, T.under, T.white))
+
+
+def _private_served(served: list[TryonLook], ids: tuple[str, ...]) -> list[str]:
+    """Each private piece's id, label or colour (as words, or as the `rgb` a look serves) found
+    in a look, and each covered slot drawn."""
+    out: list[str] = []
     for look in served:
         text = json.dumps(look.model_dump(mode="json"))
-        out += [f"{n} served" for n in (T.vest, T.under, "maroon", "Lucky") if n in text]
+        out += [f"{n} served" for n in (*ids, "maroon", MAROON_RGB, "Lucky") if n in text]
         for s in look.slots:
             if (s.slot in m.PRIVATE_SLOTS or s.private) and (
                 s.template or s.rgb or s.photo or s.options or s.piece
@@ -339,11 +353,25 @@ def _takes_photos(real: Any) -> Any:
     return erase_all
 
 
+def _keeps_private(f: Any, slot: str) -> list[tuple[str, ...]]:
+    """AVT-14's second control (review A-1 F4): a slot's options keep private pieces."""
+    seen: set[str] = set()
+    out: list[tuple[str, ...]] = []
+    for p in sorted(f.view.active(), key=lambda x: x.id):  # no `p.private` here
+        if p.id in seen or f.rules.slot_of(p.type) != slot:
+            continue
+        unit = (p.id, *(i for i in reserve.unit_of(f.view, p.id) if i != p.id))
+        seen.update(unit)
+        out.append(unit)
+    return out
+
+
 def _controls() -> list[tuple[str, Any, str, Any]]:
     """(the case it must turn red, module, name, the stand-in)."""
     no_d20 = (actions, "unready", lambda *a, **k: None)
     return [
         ("avt14_private_slots_covered", looks, "covered", lambda *a: False),
+        ("avt14_private_slots_covered", options, "_units", _keeps_private),
         ("avt09_fresh_check_refuses_without_a_call", confirm, "first_draft", lambda *a: None),
         ("avt09_race_refused_by_outfit_plan", *no_d20),
         ("d20_lock_and_reserve_refuse_a_laundry_piece", *no_d20),

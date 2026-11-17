@@ -19,6 +19,8 @@ from jarvis.wardrobe.tryon.http import LookSlot, TryonLook
 from jarvis.wardrobe.tryon.ports import TryonLooks
 from jarvis.wardrobe.tryon.store import Asset
 
+MAROON = json.dumps(list(m.rgb_of("maroon")))  # "[110, 30, 40]": no other piece has it
+
 
 def _slots(look: TryonLook) -> dict[str, LookSlot]:
     return {s.slot: s for s in look.slots}
@@ -260,7 +262,7 @@ async def test_avt14_looks_carry_no_private_id_colour_photo_or_label_anywhere() 
         await a.service.looks.for_pieces(UID, f"top:{T.shirt},base:{T.vest},underwear:{T.under}"),
     ):
         text = json.dumps(look.model_dump(mode="json"))
-        for needle in (T.vest, T.under, "maroon", "Lucky"):
+        for needle in (T.vest, T.under, "maroon", MAROON, "Lucky"):  # a colour is served as rgb
             assert needle not in text, needle
         for s in look.slots:
             if s.slot in m.PRIVATE_SLOTS:
@@ -275,6 +277,21 @@ async def test_avt14_looks_a_gap_naming_a_private_piece_is_said_without_it() -> 
     look = await a.service.looks.for_day(UID, "tomorrow")
     assert look.gaps and all(T.under not in g for g in look.gaps)
     assert looks.PRIVATE_GAP in look.gaps
+
+
+async def test_avt14_looks_a_piece_made_private_is_never_another_slots_option() -> None:
+    a = await a_world()
+    pid = await a.plan()  # the plan's top is the white shirt
+    await a.w.edit(T.white, private=True, label="Lucky shirt", colour="maroon")  # private since
+    plan = await a.service.looks.for_plan(UID, pid)
+    shown = await a.service.looks.for_pieces(UID, f"top:{T.shirt}")  # another top is shown
+    top = _slots(shown)["top"]
+    assert top.piece == T.shirt and len(top.options) > 1  # the slot offers other tops ...
+    for look in (plan, shown):
+        assert all(o.piece != T.white for s in look.slots for o in s.options)  # ... never it
+        text = json.dumps(look.model_dump(mode="json"))
+        for needle in (T.white, "Lucky", MAROON):
+            assert needle not in text, needle
 
 
 async def test_avt14_looks_a_piece_he_made_private_is_covered_in_any_slot() -> None:

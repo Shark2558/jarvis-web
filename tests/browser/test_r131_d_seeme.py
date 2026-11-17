@@ -128,6 +128,7 @@ CANT = {
     "tryon_off": "To switch it on, set JARVIS_TRYON_ENABLED=true on the server and restart it.",
     "seeme_off": "See it on me is off: switch it on under See it on me settings",
     "webp": "See it on me takes a JPEG or PNG photo of the garment.",
+    "seeme_module": "load right now: try again in a moment.",  # its module failed (I1 L4)
 }  # fmt: skip
 TRAY_BUTTON = "See it on me (a garment to buy)"
 
@@ -145,6 +146,8 @@ def test_d22_garment_a_picture_shared_in_that_see_it_on_me_cant_take_stays_and_s
         c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=off))
     if why == "seeme_off":
         call(d_url, token, "/v1/seeme/settings", {"on": False}, method="PUT")
+    if why == "seeme_module":  # integrated review L4: the tray had already deleted its copy
+        c.page.route("**/static/console-tryon-me.js*", lambda r: r.abort())
     kind = "image/webp" if why == "webp" else "image/jpeg"
     try:
         c.page.goto(d_url + "/health")

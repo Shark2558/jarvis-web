@@ -515,6 +515,7 @@ async function handOver(file) { // the picture waits for See it on me ({ok: true
   let me = null;
   try { me = await api('/v1/seeme'); } catch (e) { return { ok: false, code: e && e.name === 'TypeError' ? 'offline' : 'seeme_down' }; }
   if (!me || !me.on) return { ok: false, code: 'seeme_off', why: me && me.why ? txt(me.why, 160) : '' };
+  try { await seeMe(); } catch (_) { return { ok: false, code: 'seeme_down' }; } // the tray keeps it until it can be taken (L4)
   if (S.me && S.el.me && document.contains(S.el.me)) S.me.take(file); else S.file = file;
   helpers(() => S.el.me);
   return { ok: true };

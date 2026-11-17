@@ -10,6 +10,9 @@
 #     that isn't a picture's (`tp_`) or a garment's (`tg_`) is refused before anything is sent,
 #     and Keep sends a real boolean
 # Once I1 has applied the lines, `patched_door()` returns the door unchanged and this still holds.
+# Review D-1 M7 adds two lines for I0's hook (console-helpers-wardrobe.js): a plan's "Show in 3D"
+# only while Try-on's state() is "on", drawn again on `jarvis:tryon-state`; `patched_hook()` keeps
+# every pin the seam tests put on the hook.
 from __future__ import annotations
 
 import json
@@ -18,9 +21,10 @@ import shutil
 import subprocess
 from typing import Any
 
-from r131_fakes_d import DOOR, patched_door
+from r131_fakes_d import DOOR, HOOK, patched_door, patched_hook
 
 DOOR_LIMIT = 165  # tests/test_r131_seams.py and tests/test_r13_seams.py
+HOOK_LIMIT = 306  # tests/test_r131_seams.py
 PIC, GAR = "tp_0123456789ab", "tg_0123456789ab"
 
 
@@ -112,3 +116,19 @@ def test_an_id_that_isnt_a_pictures_or_a_garments_is_refused_before_anything_is_
         ["keep", "tp_0123456789AB", True], ["forget", "tp_0123"],
     ])  # fmt: skip
     assert got["out"] == ["refused"] * 8 and got["calls"] == []
+
+
+def test_the_hooks_two_proposed_lines_keep_every_pin_of_the_hook() -> None:
+    hook = patched_hook()
+    assert len(hook.splitlines()) <= HOOK_LIMIT and hook.isascii()
+    assert "'review', 'plans', 'tryon', 'laundry', 'pieces', 'labels', 'settings'" in hook
+    mount = hook[hook.index("function mount(host)") :]
+    assert "import('./console-tryon.js')" in mount and "m.mount(UI.secs.tryon, ctx())" in mount
+    draw = hook[hook.index("function draw()") : hook.index("function down(")]
+    assert "tryon" not in draw  # never rebuilt by draw() (L7)
+    assert "new CustomEvent('jarvis:wardrobe-fresh')" in hook
+    assert "btn('Show in 3D', () => tryOn(p.id))" in hook  # free, on every plan, while Try-on is on
+    assert "UI.tryon.state() === 'on'" in hook and "'jarvis:tryon-state'" in hook
+    assert "btn('See it on me'" not in hook and "seeOn" not in hook
+    was, now = set(HOOK.read_text(encoding="utf-8").splitlines()), set(hook.splitlines())
+    assert len(now - was) == 2 and len(was - now) == 1  # one line changed, one added

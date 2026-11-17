@@ -11,6 +11,7 @@
 # Fake engine, fake server, pinned clock (test_r131_d_card.py's helpers).
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import pytest
@@ -161,12 +162,17 @@ def test_row388_the_card_fits_the_conversation_with_the_reply_and_the_whole_figu
         c.close()
 
 
+PLAN_BUTTONS = """() => [...document.querySelectorAll('#hpp-wardrobe .wd-plan')]
+  .map((p) => [...p.querySelectorAll('button')].map((b) => b.textContent))"""
+R13_PLAN = ["Wearing it", "Done for today"]  # R13's own plan row
+OFF = {"error": "not_found", "detail": "Try-on is off on this server."}
+
+
 def test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s(
     browser: Any, d_url: str, token: str
 ) -> None:
     c = Page(browser, d_url, token)
-    off = {"error": "not_found", "detail": "Try-on is off on this server."}
-    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=off))
+    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=OFF))
     try:
         c.open()
         c.open_panel("helpers")
@@ -175,6 +181,7 @@ def test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s(
         until(c.page, lambda: sec.count() == 1 and sec.get_attribute("hidden") is not None, "off")
         until(c.page, lambda: c.page.locator("#hpp-wardrobe .wd-plan").count() >= 2, "R13's plans")
         c.page.wait_for_timeout(500)
+        assert c.page.evaluate(PLAN_BUTTONS) == [R13_PLAN, R13_PLAN]  # no Show in 3D (M7)
         with_it = c.page.evaluate(BOXES)
         c.page.evaluate("() => document.querySelector('#hpp-wardrobe .tr-sec').remove()")
         assert c.page.evaluate(BOXES) == with_it  # the hidden section takes no room at all
@@ -187,12 +194,37 @@ def test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s(
         c.close()
 
 
-def test_with_try_on_off_show_in_3d_says_so_and_loads_nothing(
+@pytest.mark.parametrize("on", [True, False], ids=["on", "off"])
+def test_show_in_3d_follows_try_ons_state_even_when_the_tab_draws_first(
+    browser: Any, d_url: str, token: str, on: bool
+) -> None:
+    # review D-1 M7: hiding the button on the section's `hidden` raced the tab's own reads
+    c = Page(browser, d_url, token)
+
+    def slow(route: Any) -> None:  # Try-on's answer comes after the tab has drawn its plans
+        time.sleep(1.5)
+        route.continue_() if on else route.fulfill(status=404, json=OFF)
+
+    c.page.route("**/v1/tryon", slow)
+    try:
+        c.open()
+        c.open_panel("helpers")
+        c.page.locator("#hpt-wardrobe").click()
+        until(c.page, lambda: c.page.locator("#hpp-wardrobe .wd-plan").count() >= 2, "R13's plans")
+        assert c.page.evaluate(PLAN_BUTTONS) == [R13_PLAN, R13_PLAN]  # not known yet: not drawn
+        want = R13_PLAN + ["Show in 3D"] if on else R13_PLAN
+        until(c.page, lambda: c.page.evaluate(PLAN_BUTTONS) == [want, want], "the state", 15)
+        c.page.wait_for_timeout(500)
+        assert c.page.evaluate(PLAN_BUTTONS) == [want, want]
+    finally:
+        c.close()
+
+
+def test_before_i1_with_i0s_hook_show_in_3d_with_try_on_off_says_so_and_loads_nothing(
     browser: Any, d_url: str, token: str
 ) -> None:
-    c = Page(browser, d_url, token)
-    off = {"error": "not_found", "detail": "Try-on is off on this server."}
-    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=off))
+    c = Page(browser, d_url, token, hook=False)  # I0's hook as it is, without M7's two lines
+    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=OFF))
     try:
         c.open()
         c.open_panel("helpers")

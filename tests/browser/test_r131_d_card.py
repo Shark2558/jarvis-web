@@ -24,7 +24,7 @@ from urllib.parse import unquote
 
 import pytest
 from r131_fakes import T
-from r131_fakes_d import CARD, ENGINE, PLAN, SHOE, SHOE2, serve_d
+from r131_fakes_d import CARD, ENGINE, PLAN, SHOE, SHOE2, patched_hook, serve_d
 from test_console import CSP_SPY, DESKTOP, Console
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
@@ -98,6 +98,7 @@ class Page(Console):
         gl_fail: str = "",
         fake_engine: bool = True,
         clock: bool = False,
+        hook: bool = True,
     ) -> None:
         self.url, self.token, self.errors = url, token, []
         # his phone and laptop keep India's time: the plan times and the caption read in IST
@@ -118,6 +119,9 @@ class Page(Console):
         if fake_engine:
             self.page.route("**/static/console-tryon-3d.js*", lambda r: r.fulfill(
                 path=str(ENGINE), content_type="application/javascript"))  # fmt: skip
+        if hook:  # I0's hook with the two lines proposed for I1 (r131_fakes_d.patched_hook, M7)
+            self.page.route("**/static/console-helpers-wardrobe.js*", lambda r: r.fulfill(
+                body=patched_hook(), content_type="application/javascript"))  # fmt: skip
         self.page.on("request", self._log)
 
     def _log(self, req: Any) -> None:

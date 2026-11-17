@@ -4,6 +4,8 @@
 //                     tomorrow" shows (a plan's, else ?day=). open(plan): a plan's "Show in 3D" ('jarvis:tryon-open')
 //   inline(el, card)  row 388: a reply's checked 'tryon' card; the figure wears exactly its pieces (?pieces=slot:wi_...)
 //   garment(file)     D22: a picture shared in opens See it on me with it (this call sends nothing)
+//   state()           'on' | 'off' | 'unknown': Try-on on this server, as GET /v1/tryon last said; 'jarvis:tryon-state'
+//                     fires when it changes (R13's plan rows draw Show in 3D only while it is 'on', review D-1 M7)
 // A viewer (the section's, a card's) holds one look on B's stage, through the engine contract only, with its controls
 // and its list ('./console-tryon-list.js'), the checklist by itself when 3D can't run (Retry 3D once a page). ONE stage
 // on the page: the viewer taking it gives the other's back; a hidden viewer (its tab, the page) gives it back too.
@@ -69,12 +71,14 @@ async function photosOf() { // the views' crop ids, for the reference cards (R13
   catch (_) { S.photos = new Map(); }
   return S.photos;
 }
+export const state = () => (S.off ? 'off' : S.tryon ? 'on' : 'unknown');
 async function readTryon() {
+  const was = state();
   try { S.tryon = await api('/v1/tryon'); S.off = false; } catch (e) {
     if (e && (e.status === 404 || e.status === 503)) S.off = true;
     S.tryon = null;
     throw e;
-  }
+  } finally { if (state() !== was) document.dispatchEvent(new CustomEvent('jarvis:tryon-state', { detail: { state: state() } })); }
   return S.tryon;
 }
 

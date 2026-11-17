@@ -128,6 +128,37 @@ def patched_door() -> str:
     return s.replace(DOOR_LAST, DOOR_ADD + DOOR_NEW_LAST)
 
 
+# ---- I0's hook: two lines proposed for I1 (INTEGRATION-D "Fix (review D-1)", M7) ---------------
+# With Try-on off, R13's plan rows must look as R13's: no "Show in 3D". Hiding it on the section's
+# `hidden` races the tab's own reads, so D says Try-on's state (`state()`: on, off or unknown) and
+# fires `jarvis:tryon-state` when it changes; the hook draws the button only while it is "on" and
+# draws again on the event. The browser tests serve the hook with them applied (`patched_hook`).
+HOOK = ROOT / "src" / "jarvis" / "api" / "static" / "console-helpers-wardrobe.js"
+HOOK_PLAN = (
+    "  if (!p.cancelled) box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); "
+    "// R13.1 D1: free (See it on me is for a garment to buy, D22)"
+)
+HOOK_PLAN_NEW = (
+    "  if (!p.cancelled && UI.tryon && UI.tryon.state && UI.tryon.state() === 'on') "
+    "box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free, while Try-on is on"
+)
+HOOK_READY = "  document.addEventListener('jarvis:ready', () => { if (UI.host) load(); });"
+HOOK_STATE = (
+    "  document.addEventListener('jarvis:tryon-state', () => { if (UI.host && UI.outfits) "
+    "draw(); }); // R13.1: Show in 3D follows it"
+)
+
+
+def patched_hook() -> str:
+    """I0's hook with the two proposed lines (unchanged once I1 has applied them)."""
+    s = HOOK.read_text(encoding="utf-8")
+    if "jarvis:tryon-state" in s:
+        return s
+    if s.count(HOOK_PLAN) != 1 or s.count(HOOK_READY) != 1:
+        raise AssertionError("the hook's lines moved: update HOOK_PLAN / HOOK_READY")
+    return s.replace(HOOK_PLAN, HOOK_PLAN_NEW).replace(HOOK_READY, HOOK_READY + "\n" + HOOK_STATE)
+
+
 def _ok(model: Any) -> JSONResponse:
     return JSONResponse(model.model_dump(mode="json"), headers=NO_STORE)
 

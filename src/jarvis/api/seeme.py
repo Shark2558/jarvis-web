@@ -1,10 +1,10 @@
 # src/jarvis/api/seeme.py
 """R13.1 Part C's routes, under `/v1/seeme` (docs/plans/r13-1-try-on.md "The HTTP contract"):
 exactly the "seeme" rows of `wardrobe.tryon.http.ROUTES`, owner-only (`require_auth`, CSRF),
-no-store, limited per owner (30 changes, 60 reads, 6 presses a minute), every refusal a `Refusal`. Console
-rows pass a signed-in browser only (`auth.session_email`, `book_gate.console_only`'s rule), checked
-FIRST, before any body is read. The work is the part's `seeme` service; bodies, pictures and his
-photo never reach a log; owner changes are audited by ids only (`settings_audit.record_change`).
+no-store, limited per owner (30 changes, 60 reads, 6 presses a minute), every refusal a
+`Refusal`. Console rows pass a signed-in browser only (`auth.session_email`, the rule of
+`book_gate.console_only`), checked FIRST, before any body is read. The work is the part's `seeme`
+service; bodies, pictures and his photo never reach a log; owner changes are audited by ids only.
 """
 
 from __future__ import annotations

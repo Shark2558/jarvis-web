@@ -28,6 +28,7 @@ const INTRO = 'For a garment you are thinking of buying: JARVIS pictures you in 
 const ADVICE = 'One full-length photo of you: standing, head to feet, a plain background, fitted everyday clothes, good light. It is kept sealed by JARVIS until you delete it.';
 const MAKING = 'Making your picture\u2026 this can take up to two minutes.';
 const LATER = 'This arrives with the next JARVIS update.';
+const FILE_MAX = 25 * 1024 * 1024, TOO_BIG = 'This photo is over 25 MB: choose a smaller one.'; // before any decoding (L7)
 const M = { host: null, o: null, view: null, garments: [], garment: null, file: null, url: '', pair: null, mine: [], est: null, pic: null, picUrl: '',
   busy: false, dlg: null, note: null, me: '' };
 
@@ -53,6 +54,15 @@ function select(list, value, label) {
 function field(label, control) { const f = H().mk('label', 'hp-field'); f.append(H().mk('span', 'snote', label), control); return f; }
 function dataUrl(file) { return new Promise((ok) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.onerror = () => ok(''); f.readAsDataURL(file); }); }
 function image(cls, url, alt) { const i = H().mk('img', cls); i.alt = alt; if (/^data:image\/(png|jpeg);base64,/.test(url)) i.src = url; return i; }
+function picker(id, label, onFile) { // the console's way (Camera, Wardrobe; the paperclip): its own button over a hidden input (M4)
+  const input = H().mk('input', ''), acts = H().mk('div', 'sacts');
+  input.type = 'file'; input.accept = 'image/jpeg,image/png'; input.id = id; input.hidden = true; input.tabIndex = -1;
+  input.addEventListener('change', () => { const f = input.files && input.files[0]; input.value = ''; if (f && f.size > FILE_MAX) say('bad', TOO_BIG); else if (f) onFile(f); });
+  acts.append(M.o.btn(label, () => input.click()), input);
+  return acts;
+}
+const chosen = (f) => 'A photo is chosen (' + ({ 'image/png': 'PNG', 'image/jpeg': 'JPEG' }[f.type] || 'not a JPEG or PNG') + ', '
+  + (f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB') + ').'; // never its name (D22.4)
 
 // ---- the server -------------------------------------------------------------------------------------------------------
 async function read() {
@@ -108,10 +118,7 @@ function mine() { // his photo: kept sealed on his server; checked on this devic
   const acts = p.kept ? [M.o.btn('Show it', showMine), M.o.btn('Delete my photo and my YES', dropMine)] : [];
   out.push(h.row('Your photo', p.kept ? 'Kept, sealed, since ' + when(p.at) + ' \u00b7 ' + Math.round((p.bytes || 0) / 1024) + ' KB' : 'No photo yet.', acts));
   if (M.me) out.push(image('tr-pic', M.me, 'Your photo'));
-  const input = h.mk('input', 'minput');
-  input.type = 'file'; input.accept = 'image/jpeg,image/png'; input.id = 'trMyPhoto';
-  input.addEventListener('change', () => { const f = input.files && input.files[0]; input.value = ''; if (f) sendMine(f); });
-  out.push(field(p.kept ? 'Replace your photo' : 'Take or choose a photo of you', input), h.mk('p', 'sfine', ADVICE));
+  out.push(picker('trMyPhoto', p.kept ? 'Replace your photo' : 'Choose a photo of you', sendMine), h.mk('p', 'sfine', ADVICE));
   const P = M.photoWords || {};
   out.push(h.mk('p', 'sfine', P.ages || 'JARVIS can\u2019t tell an adult from a child: use only your own photo.'));
   const c = M.view.consent || {};
@@ -119,11 +126,8 @@ function mine() { // his photo: kept sealed on his server; checked on this devic
   return out;
 }
 function garmentRows() { // the new garment: its photo, its type and colour from lists; then the list of those kept
-  const h = H(), out = [h.mk('p', 'snote', 'Add a garment you\u2019re thinking of buying')];
-  const input = h.mk('input', 'minput');
-  input.type = 'file'; input.accept = 'image/jpeg,image/png'; input.id = 'trGarment';
-  input.addEventListener('change', () => { const f = input.files && input.files[0]; input.value = ''; if (f) take(f); });
-  out.push(field('A photo of the garment: a shop photo, a website picture or a screenshot', input));
+  const h = H(), out = [h.mk('p', 'snote', 'Add a garment you\u2019re thinking of buying'), h.mk('p', 'sfine', 'A shop photo, a website picture or a screenshot of it.')];
+  out.push(picker('trGarment', 'Choose a photo of the garment', take));
   if (M.file) {
     const grid = h.mk('div', 'hp-grid');
     M.type = M.type || 'shirt'; M.colour = M.colour || 'navy';
@@ -132,7 +136,7 @@ function garmentRows() { // the new garment: its photo, its type and colour from
     grid.append(field('What it is', t), field('Its colour', c));
     const acts = h.mk('div', 'sacts');
     acts.append(M.o.btn('Check and add this garment', addGarment), M.o.btn('Cancel', () => { M.file = null; M.url = ''; render(); }));
-    out.push(image('tr-garment', M.url, 'The garment you chose'), grid, acts);
+    out.push(h.mk('p', 'sfine', chosen(M.file)), image('tr-garment', M.url, 'The garment you chose'), grid, acts);
   }
   if (!has('garments')) out.push(h.mk('p', 'sfine', 'Your garment photos will be listed here. ' + LATER));
   M.garments.forEach((g) => out.push(h.row(txt(g.words, 120), 'Added ' + when(g.at) + (g.until ? ' \u00b7 kept until ' + when(g.until) : ' \u00b7 kept while a kept picture shows it'),
@@ -224,7 +228,7 @@ function pictures() {
 
 // ---- his photo ----------------------------------------------------------------------------------------------------------
 async function sendMine(file) {
-  say('', 'Checking the photo on this device\u2026');
+  say('', chosen(file) + ' Checking the photo on this device\u2026');
   let P = null;
   try { P = await photo(); M.photoWords = P.WORDS; } catch (_) { say('bad', 'The photo check isn\u2019t available on this device, so nothing was sent.'); return; }
   const r = await P.person(file, M.view.photo_max_kb);
@@ -238,6 +242,7 @@ async function dropMine() { await forget('photo'); M.me = ''; }
 // ---- the new garment ------------------------------------------------------------------------------------------------------
 export async function take(file) { // shared in or chosen: shown with the lists; nothing is sent until he presses
   if (!(file instanceof Blob)) return;
+  if (file.size > FILE_MAX) { if (M.host && M.view) say('bad', TOO_BIG); return; }
   M.file = file; M.url = await dataUrl(file);
   if (M.host && M.view) { render(); say('', 'Say what it is and its colour, then press Check and add this garment.'); }
 }

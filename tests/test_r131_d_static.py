@@ -69,7 +69,10 @@ def test_ds_modules_call_only_jarvis_paths_through_the_consoles_api(name: str) -
 
 def test_a_photo_is_chosen_from_a_file_and_no_web_address_is_asked_for() -> None:
     code = _code("console-tryon-me.js")
-    assert code.count("input.type = 'file'; input.accept = 'image/jpeg,image/png';") == 2
+    assert code.count("input.type = 'file'; input.accept = 'image/jpeg,image/png';") == 1  # picker()
+    assert "input.hidden = true; input.tabIndex = -1;" in code  # behind the console's own button (M4)
+    assert code.count("picker('trMyPhoto', ") == 1 and code.count("picker('trGarment', ") == 1
+    assert "input[type" not in _text("console-tryon.css")  # no raw file input is styled or shown
     assert "capture" not in code  # the front camera can't take a full-length photo (D12)
     for name in D_JS:
         assert "'url'" not in _code(name) and "href" not in _code(name).replace("a.href = url", "")

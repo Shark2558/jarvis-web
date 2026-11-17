@@ -164,6 +164,27 @@ def test_d22_garment_a_picture_shared_in_that_see_it_on_me_cant_take_stays_and_s
         c.close()
 
 
+def test_photos_are_chosen_with_the_consoles_own_buttons_never_a_raw_file_input(
+    browser: Any, d_url: str, token: str, tmp_path: Path
+) -> None:
+    # review D-1 M4: "Choose File · No file chosen" broke the look; the console's way is a .btn
+    # over a hidden input (Camera, Wardrobe's "Choose a photo"; the chat's paperclip)
+    reset(d_url, token)
+    c = ready(browser, d_url, token)
+    try:
+        assert seeme(c).locator("input[type='file']").count() == 2
+        assert seeme(c).locator("input[type='file']:visible").count() == 0
+        assert seeme(c).get_by_role("button", name="Choose a photo of you").count() == 1
+        with c.page.expect_file_chooser() as chooser:
+            seeme(c).get_by_role("button", name="Choose a photo of the garment").click()
+        chooser.value.set_files(png(tmp_path, "my-shirt-from-the-shop", a_shirt()))
+        until(c.page, lambda: "A photo is chosen (PNG, " in text(c), "the chosen line")
+        assert "my-shirt-from-the-shop" not in c.page.locator("#p-helpers").inner_text()
+        assert seeme(c).locator("input[type='file']:visible").count() == 0
+    finally:
+        c.close()
+
+
 def test_seeme_his_photo_one_person_passes_and_two_are_refused(
     browser: Any, d_url: str, token: str, tmp_path: Path
 ) -> None:

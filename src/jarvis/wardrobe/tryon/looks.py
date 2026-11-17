@@ -70,6 +70,7 @@ WRONG_SLOT = "A piece of that look isn't one for the place it was put."
 TWO = "One piece a slot (or its pair)."
 NOT_SET_UP = "Outfits aren't set up on this JARVIS."
 PRIVATE_GAP = "A private basic isn't ready: see Helpers, Wardrobe."
+UNCHECKED = "Not checked here"  # a covered slot with no piece to check (a card with no plan)
 MAX_ENTRIES = 24
 _ENTRY = re.compile(r"([a-z_]{2,20}):(wi_[0-9a-f]{12})?")
 
@@ -153,6 +154,12 @@ def picks_of(view: WardrobeView, rules: Rules, raw: str) -> tuple[Pick, ...]:
     return tuple(Pick(slot, tuple(ids)) for slot, ids in by_slot.items())
 
 
+def _held_by(plan: Plan, pick: Pick) -> Pick:
+    """A slot a reply card covers (no id) with the piece its plan holds there, if any."""
+    held = plan.slot(pick.slot) if not pick.pieces else None
+    return Pick(pick.slot, held.pieces) if held is not None else pick
+
+
 def _alt(ans: Answer, alt: int) -> LookOut:
     if alt == 0:
         return ans.suggestion.primary
@@ -180,7 +187,9 @@ def _approx(template: Template | None, photo: str | None) -> tuple[Approx, ...]:
 
 
 def _covered_slot(f: o.Fresh, slot: str, unit: Sequence[str], private: bool) -> LookSlot:
-    words, ok = o.readiness(f, slot, unit) if unit else ("", False)
+    """Covered: fixed words only, its readiness from the piece (UNCHECKED when there is none to
+    check: a reply card's covered slot with no plan, review A-1 F6)."""
+    words, ok = o.readiness(f, slot, unit) if unit else (UNCHECKED, False)
     first = f.view.pieces.get(unit[0]) if unit else None
     if not private or first is None:
         return LookSlot(slot=slot, words=COVERED, private=True, readiness=words, eligible=ok)
@@ -190,10 +199,11 @@ def _covered_slot(f: o.Fresh, slot: str, unit: Sequence[str], private: bool) -> 
 
 
 def slot_of(
-    f: o.Fresh, pick: Pick, chosen: Mapping[str, Asset], views: Mapping[str, View], private: bool
-) -> LookSlot:
+    f: o.Fresh, pick: Pick, chosen: Mapping[str, Asset], views: Mapping[str, View], private: bool,
+    cover: frozenset[str] = frozenset(),
+) -> LookSlot:  # fmt: skip
     unit = o.unit_of(f, pick.pieces) if pick.pieces else ()
-    if not unit or covered(f.view, pick.slot, unit):
+    if not unit or pick.slot in cover or covered(f.view, pick.slot, unit):
         return _covered_slot(f, pick.slot, unit, private)
     p = f.view.pieces[unit[0]]
     words, ok = o.readiness(f, pick.slot, unit)
@@ -312,7 +322,11 @@ class Looks:
         else:
             chosen = rules.code_of(None, event=False)
         picks = picks_of(r.view, rules, pieces)
-        return await self.build(uid, r.fresh(day=when, code=chosen, plan=found), picks, (), private)
+        cover = frozenset(p.slot for p in picks if not p.pieces)  # the card covers: never drawn
+        if found is not None:  # ... but its readiness is its plan's piece's, read now (F6)
+            picks = tuple(_held_by(found, p) for p in picks)
+        f = r.fresh(day=when, code=chosen, plan=found)
+        return await self.build(uid, f, picks, (), private, cover=cover)
 
     async def _answer(self, uid: str, r: Read, ans: Answer, alt: int, private: bool) -> TryonLook:
         look = _alt(ans, alt)
@@ -326,13 +340,15 @@ class Looks:
             return {}  # his choices can't be read now: the table's defaults
 
     async def build(
-        self, uid: str, f: o.Fresh, picks: Sequence[Pick], gaps: Sequence[str], private: bool
-    ) -> TryonLook:
+        self, uid: str, f: o.Fresh, picks: Sequence[Pick], gaps: Sequence[str], private: bool,
+        cover: frozenset[str] = frozenset(),
+    ) -> TryonLook:  # fmt: skip
         chosen = await self.assets(uid, f.view)
-        shown = [p.pieces[0] for p in picks if p.pieces and not covered(f.view, p.slot, p.pieces)]
+        shown = [p.pieces[0] for p in picks if p.pieces and p.slot not in cover
+                 and not covered(f.view, p.slot, p.pieces)]  # fmt: skip
         photos = [ph for pid in shown if pid in f.view.pieces for ph in f.view.pieces[pid].photos]
         views = await photo_views(self.ctx.docs, self.ctx.s.firestore_prefix, uid, photos)
-        slots = tuple(slot_of(f, p, chosen, views, private) for p in picks)
+        slots = tuple(slot_of(f, p, chosen, views, private, cover) for p in picks)
         return TryonLook(
             plan=f.plan.id if f.plan is not None else None, day=f.day, dress_code=f.code,
             slots=slots, tucked=f.code in TUCKED_CODES, gaps=gaps_of(f.view, gaps, private),
@@ -348,6 +364,7 @@ __all__ = [
     "NOT_SET_UP",
     "PRIVATE_GAP",
     "TWO",
+    "UNCHECKED",
     "WRONG_SLOT",
     "BadDay",
     "Looks",

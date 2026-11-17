@@ -151,6 +151,31 @@ async def test_row388_a_slot_the_card_covers_for_its_private_piece_comes_without
     assert got["top"].template is None and got["top"].rgb is None and got["top"].options == ()
     assert T.white not in json.dumps(look.model_dump(mode="json"))
     assert got["bottom"].piece == T.trousers and got["shoes"].piece == SHOES[0]
+    assert got["top"].readiness == m.READY and got["top"].eligible  # its plan's piece, fresh
+
+
+async def test_row388_a_cards_covered_slot_reads_its_plans_piece_else_one_fixed_word() -> None:
+    a = await a_world()
+    pid = await a.plan()  # its underwear is the private briefs
+    await a.move(T.under)  # gone to the laundry since the card was made
+    q = f"top:{T.white},underwear:"
+    under = _slots(await a.service.looks.for_pieces(UID, q, plan=pid))["underwear"]
+    assert under.private and under.piece is None and under.words == m.COVERED  # still covered
+    assert under.readiness == "Draft: in the laundry" and not under.eligible  # real words
+    mine = _slots(await a.service.looks.for_pieces(UID, q, plan=pid, private=True))["underwear"]
+    assert mine.piece == T.under and mine.template is None  # his "Show private basics": named
+    await a.w.edit(T.white, private=False)
+    loose = _slots(await a.service.looks.for_pieces(UID, q))["underwear"]  # no plan: no piece
+    assert loose.readiness == looks.UNCHECKED and not loose.eligible and loose.piece is None
+
+
+async def test_row388_a_slot_the_card_covered_stays_covered_if_its_piece_isnt_private_now() -> None:
+    a = await a_world()
+    pid = await a.plan()
+    top = _slots(await a.service.looks.for_pieces(UID, "top:", plan=pid))["top"]  # the card said so
+    assert top.private and top.piece is None and top.template is None and top.rgb is None
+    assert top.readiness == m.READY  # the plan's white shirt, checked, never drawn or named
+    assert T.white not in json.dumps(top.model_dump(mode="json"))
 
 
 @pytest.mark.parametrize("q", [

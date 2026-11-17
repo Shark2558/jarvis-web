@@ -424,7 +424,7 @@ function form() {
   if (t.body && t.body.draft) {
     out.push(h.mk('p', 'snote', 'The figure shows your new measurements; your looks and saved comparisons keep their pieces.'));
     const a = h.mk('div', 'sacts');
-    a.append(btn('Use these measurements', () => bodyStep('/v1/tryon/body/use', 'POST')), btn('Keep the current', () => bodyStep('/v1/tryon/body/draft', 'DELETE')));
+    a.append(btn('Use these measurements', () => bodyStep('/v1/tryon/body/use?at=' + encodeURIComponent(t.body.draft.at), 'POST')), btn('Keep the current', () => bodyStep('/v1/tryon/body/draft', 'DELETE'))); // the draft he saw (409 if it changed)
     out.push(a);
   }
   box.replaceChildren(...out);

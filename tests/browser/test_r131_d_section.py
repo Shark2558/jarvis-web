@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 from r131_fakes import T
 from r131_fakes_d import BLAZER_PHOTO, FESTIVE, PLAN, WATCH2_PHOTO, WATCH_PHOTO
@@ -108,6 +110,10 @@ def test_avt03_form_correcting_height_redraws_and_keeps_every_piece(
         assert after["figures"][0]["body"]["weights"]["height"] > 0.3
         press(c, "Use these measurements")
         until(c.page, lambda: c.posts("/v1/tryon/body/use"), "Use these measurements")
+        # I1 (INTEGRATION-A 11.4 item 2): the press names the draft he was shown (`?at=`), so a
+        # draft changed on another screen meanwhile is refused (409 changed), never used blind
+        used = urlsplit(c.posts("/v1/tryon/body/use")[0]["url"]).query
+        assert datetime.fromisoformat(parse_qs(used)["at"][0]).tzinfo is not None
         until(
             c.page,
             lambda: c.section().get_by_role("button", name="Keep the current").count() == 0,

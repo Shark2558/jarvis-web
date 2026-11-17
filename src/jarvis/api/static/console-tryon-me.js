@@ -295,11 +295,12 @@ function dialog() {
 function ask(title, lines, buttons, input) { // a .bdialog: resolves with the button's value; Escape and Cancel give null
   const d = dialog();
   return new Promise((resolve) => {
-    const done = (v) => { if (d.open) d.close(); resolve(v); };
+    const closed = () => { if (d.open) return; d.removeEventListener('close', closed); resolve(null); }; // never a queued close of the last one
+    const done = (v) => { d.removeEventListener('close', closed); if (d.open) d.close(); resolve(v); };
     const acts = H().mk('div', 'sacts actions');
     buttons.forEach(([label, value, cls]) => acts.append(M.o.btn(label, () => done(value === 'typed' ? input.value : value), cls)));
     d.replaceChildren(H().mk('h2', '', title), ...lines.map((l) => (l instanceof Node ? l : H().mk('p', '', txt(l, 300)))), ...(input ? [input] : []), acts);
-    d.addEventListener('close', () => resolve(null), { once: true });
+    d.addEventListener('close', closed);
     if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', '');
     (input || acts.firstChild).focus();
   });

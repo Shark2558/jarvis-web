@@ -109,7 +109,8 @@ def test_a_request_id_is_tq_and_16_hex_from_the_browsers_random_source() -> None
 def test_cancel_and_escape_send_nothing_and_make_the_picture_sends_the_contracts_body() -> None:
     code = _code("console-tryon-me.js")
     assert "if (go !== true) { say('', 'Nothing was sent.'); return; }" in code
-    assert "d.addEventListener('close', () => resolve(null), { once: true });" in code
+    assert "d.addEventListener('close', closed);" in code  # Escape: closed, answered with nothing
+    assert "if (d.open) return; d.removeEventListener('close', closed); resolve(null);" in code
     body = "{ garment: M.garment.id, pieces, confirm_cost: true, inr_shown: est.typical_inr, "
     assert body + "request_id: id }" in code  # PictureIn's five fields, nothing more
     # one id per confirmed picture (review D-1 M1): kept only while the answer may have been lost

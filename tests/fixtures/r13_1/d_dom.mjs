@@ -143,6 +143,30 @@ async function card(list) {
 
 // ---- the cases ---------------------------------------------------------------------------------------------------------------
 const SCENARIOS = {
+  async stale_close() { // a confirm's queued close event never answers the NEXT confirm (Cancel, then See it on me at once,
+    const me = await import(pathToFileURL(path.join(IN.dir, 'console-tryon-me.js')).href); // the estimate answering at once)
+    const G = { id: 'tg_0123456789ab', slot: 'top', words: 'a new navy shirt, not in your wardrobe', at: '2026-11-17T03:30:00Z' };
+    const V = { on: true, photo: { kept: true }, consent: { current: true }, month: { cap_inr: 300, spent_inr: 0 }, typical_inr: 8.9, photo_max_kb: 700, pictures: [] };
+    const EST = { typical_inr: 8.9, hold_inr: 11.2, words: 'About \u20b99 with GST.', sent: [], not_sent: [] }, made = [];
+    const fast = async (p) => (p === '/v1/seeme' ? V : p.startsWith('/v1/seeme/estimate') ? EST : p.startsWith('/v1/seeme/pair') ? { garment: G.id, pieces: [], words: '' } : {});
+    const d = { garments: async () => ({ garments: [G] }), picture: async () => '',
+      make: async (b) => { made.push(b); return { id: 'tp_0123456789ab', garment: G, made_at: G.at, inr: 8.52, sent: [], label: 'Generated' }; } };
+    const btn = (label, fn, cls) => { const b = mk('button', 'btn sact' + (cls ? ' ' + cls : ''), label); b.addEventListener('click', () => fn(b)); return b; };
+    const host = mk('div', ''); DOC.body.append(host);
+    me.draw(host, { H, api: fast, door: () => d, btn, thumb: () => '', look: () => null, photosOf: () => [] });
+    await press(host, 'Use this one');
+    const dlg = () => DOC.body.children.find((e) => e.tagName === 'DIALOG');
+    await press(host, 'See it on me'); await until(() => dlg() && dlg().open);
+    buttonIn(dlg(), 'Cancel').click(); // its close event is queued (a task), as the browser does
+    for (let i = 0; i < 20; i += 1) await null; // microtasks only: the queued close event has not run yet
+    buttonIn(host, 'See it on me').click(); // the next confirm opens before it runs
+    for (let i = 0; i < 20; i += 1) await null;
+    const opened = !!dlg().open;
+    await wait(50); // now the stale close event runs
+    if (buttonIn(dlg(), 'Make the picture')) buttonIn(dlg(), 'Make the picture').click();
+    await until(() => made.length > 0, 1000);
+    return { second_confirm_opened: opened, second_confirm_answered: made.length === 1 };
+  },
   async row388() { // the reply's card opens by itself (no press), dressed in exactly its pieces; its private slot covered
     const row = await card(IN.control === 'row388' ? [] : [{ kind: 'places' }, IN.card]);
     await until(() => rec().live === 1 && rec().shown.length > 0);

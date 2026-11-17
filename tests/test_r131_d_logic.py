@@ -241,3 +241,24 @@ def test_a_shared_picture_see_it_on_me_cant_take_throws_the_words_that_say_why()
         "See it on me takes a JPEG or PNG photo of the garment. The picture stays here."
     )  # a WebP is never handed on
     assert all(s.endswith("The picture stays here.") for s in said[1:])
+
+
+# ---- See it on me's dialogs (console-tryon-me.js ask(), in tests/fixtures/r13_1/d_dom.mjs) -----
+def test_a_confirms_close_event_still_queued_never_answers_the_next_confirm() -> None:
+    # found by the console eval (2 of 25 runs): Cancel queues the dialog's `close` event; when he
+    # presses again and the estimate answers before that event runs, it answered the NEW confirm
+    # with "nothing", and its Make the picture then made nothing
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("node is not installed")
+    spec = {"dir": str(STATIC), "base": "http://127.0.0.1:9", "token": "-", "how": "",
+            "scenario": "stale_close", "control": None}  # fmt: skip
+    dom = ROOT / "tests" / "fixtures" / "r13_1" / "d_dom.mjs"
+    got = subprocess.run(
+        [node, str(dom), json.dumps(spec)], capture_output=True, text=True, timeout=60,
+        check=False, cwd=ROOT,
+    )  # fmt: skip
+    line = [x for x in got.stdout.splitlines() if x.startswith("R131D-DOM ")]
+    assert line, got.stderr
+    out = json.loads(line[-1][len("R131D-DOM ") :])
+    assert out["checks"] == {"second_confirm_opened": True, "second_confirm_answered": True}, out

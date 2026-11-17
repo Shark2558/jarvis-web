@@ -11,6 +11,8 @@
 //                           (covered)" for a private slot; his own labels only when he ticked "Use my own labels";
 //                           never a piece id
 //   draft(look)             "" or the first draft's words: such a look can't be confirmed
+//   crop(id, read)          an image card's data: URL, read ONCE a page (page memory only, dropCrops() on a fresh load):
+//                           a control press never fetches a card again, and a known card is shown at once (M2)
 //   pairs, same, covered, chosen, figure   what a look becomes elsewhere (pure): its {slot, piece} picks, its covered
 //                           slots, his shape choices (AVT-05) and the engine contract's figure (a private slot is
 //                           {slot, private: true} only)
@@ -85,13 +87,26 @@ function subline(s) {
   return out.filter(Boolean).join(' \u00b7 ');
 }
 
+const CROPS = new Map(); // photo id -> its data: URL, or the read in flight (page memory; nothing kept on the device)
+export function crop(id, read) {
+  const got = CROPS.get(id);
+  if (got) return got;
+  const p = Promise.resolve().then(() => read(id)).then((u) => { CROPS.set(id, u); return u; }, (e) => { CROPS.delete(id); throw e; });
+  CROPS.set(id, p);
+  return p;
+}
+export const dropCrops = () => CROPS.clear();
+/** An <img> for a card: its data: URL at once when known, else when read (until then it shows nothing: the CSS). */
+export function shownAs(img, got, failed) {
+  const set = (url) => { if (/^data:image\/(png|jpeg);base64,/.test(String(url))) img.src = url; };
+  if (typeof got === 'string') set(got); else Promise.resolve(got).then(set).catch(failed || (() => {}));
+}
 function thumb(H, o, photo, label) { // an image card: the crop through the door, as a data: URL (blob: is not in img-src)
   const fig = H.mk('figure', 'tr-ref');
   const img = H.mk('img', 'tr-thumb');
   img.alt = label + ' photo'; img.dataset.photo = photo; img.width = 56; img.height = 56; img.decoding = 'async';
   fig.append(img, H.mk('figcaption', 'sfine', label));
-  const shown = (url) => { if (/^data:image\/(png|jpeg);base64,/.test(String(url))) img.src = url; };
-  if (typeof o.thumb === 'function') o.thumb(photo).then(shown).catch(() => fig.append(H.mk('span', 'sfine', 'Photo not shown')));
+  if (typeof o.thumb === 'function') shownAs(img, o.thumb(photo), () => fig.append(H.mk('span', 'sfine', 'Photo not shown')));
   return fig;
 }
 function refs(H, s, o) { // AVT-04: the views kept, each its own card; the useful view still missing, asked for once

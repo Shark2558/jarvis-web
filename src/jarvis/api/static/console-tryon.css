@@ -24,6 +24,7 @@
 .tr-ref{display:flex;flex-direction:column;align-items:center;gap:2px;margin:0}
 .tr-ref .sfine{margin:0}
 .tr-thumb{display:block;width:56px;height:56px;object-fit:cover;border-radius:var(--r-md);border:1px solid var(--line-2)}
+.tr-thumb:not([src]){visibility:hidden}
 .tr-opts{margin:0 0 10px}
 .tr-shot{display:block;max-width:100%;height:auto;margin:8px 0 0;border-radius:var(--r-md)}
 .tr-extra:empty{display:none}

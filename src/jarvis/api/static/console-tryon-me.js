@@ -1,6 +1,6 @@
 // src/jarvis/api/static/console-tryon-me.js -- R13.1 Part D (docs/plans/r13-1-try-on.md D11-D13, D22; AVT-12): "See it
 // on me", for a garment he is thinking of BUYING, in Helpers -> Wardrobe -> Try it on.
-//   draw(host, o)   o = {H, api, door, btn, look, photosOf}: his photo (checked on this device by './console-tryon-photo.js',
+//   draw(host, o)   o = {H, api, door, btn, thumb, look, photosOf} (thumb: a crop read once a page): his photo (checked on this device by './console-tryon-photo.js',
 //                   sent only by the door's person()), the new garment's photo (a file, or a picture shared in: take()),
 //                   its type and colour from fixed lists (never free text; no web address: JARVIS fetches none), the
 //                   pairing with up to two of his own non-private pieces (GET /v1/seeme/pair; swap or untick), his
@@ -14,6 +14,8 @@
 // The garment is never added to his wardrobe here. Refusals branch on err.code (Refusal's `error`). The door is the only
 // caller of the photo, picture and garment routes: its make, keep, forget and garments are proposed for I1
 // (INTEGRATION-D "Needs I1"); until they exist this says so and sends nothing. textContent only; no pixel API; ASCII.
+import { shownAs } from './console-tryon-list.js';
+
 const photo = () => import('./console-tryon-photo.js');
 // the fixed lists: wardrobe/tryon/model.py NEW_TYPES and wardrobe/model.py COLOURS (tests/test_r131_d_static.py pins both)
 export const NEW_TYPES = Object.freeze(['shirt', 't_shirt', 'polo', 'top', 'kurta', 'trousers', 'chinos', 'jeans', 'joggers', 'pyjama',
@@ -194,7 +196,7 @@ function thumbOf(cls, photo, words) { // his piece's image card: its crop throug
   img.alt = txt(words, 60) + ' photo'; img.width = 56; img.height = 56;
   f.append(img, H().mk('figcaption', 'sfine', txt(words, 60)));
   img.dataset.photo = photo;
-  door().thumb(photo).then((u) => { if (/^data:image\/(png|jpeg);base64,/.test(String(u))) img.src = u; }).catch(() => {});
+  shownAs(img, M.o.thumb(photo));
   return f;
 }
 function result() { // the picture just made: its label, time, rupees, the new garment and what was sent (with their cards)

@@ -8,7 +8,7 @@
 // and its list ('./console-tryon-list.js'), the checklist by itself when 3D can't run (Retry 3D once a page). ONE stage
 // on the page: the viewer taking it gives the other's back; a hidden viewer (its tab, the page) gives it back too.
 // Every change goes to the server; nothing is kept on this device; no pixel API (B's snapshot draws the caption).
-import { COVERED, caption, chosen, covered, figure, hhmm, items, pairs, same, slotWord } from './console-tryon-list.js';
+import { COVERED, caption, chosen, covered, crop, dropCrops, figure, hhmm, items, pairs, same, slotWord } from './console-tryon-list.js';
 
 const engine3d = () => import('./console-tryon-3d.js');
 const seeMe = () => import('./console-tryon-me.js');
@@ -39,6 +39,8 @@ const S = { H: null, ctx: null, host: null, off: false, tryon: null, outfits: nu
 const H = () => S.H || (S.H = window.JarvisHelpers || null);
 const api = (path, opts) => window.JarvisConsole.api(path, opts);
 const door = () => { const M = window.JarvisMobile; return M && M.parts && M.parts.send ? M.parts.send : null; };
+const reading = (fn) => (id) => crop(id, (x) => { const d = door(); return d && typeof d[fn] === 'function' ? d[fn](x) : Promise.reject(new Error('no door')); });
+const thumb = reading('thumb'); // a crop read once a page (M2): no fetch, no alt text on a control press
 const txt = (v, n = 200) => (H() ? H().txt(String(v == null ? '' : v), n) : String(v == null ? '' : v).slice(0, n));
 const body = () => (S.tryon && S.tryon.body ? S.tryon.body.draft || S.tryon.body.current : null);
 const assets = () => (S.tryon && S.tryon.assets) || [];
@@ -199,7 +201,7 @@ function draw(v) { // a card (row 388) is compact: the figure, its pieces in one
   const looks = [v.look].concat(v.second ? [v.second] : []).filter(Boolean).map((l) => chosen(l, assets()));
   if (!v.look) { el.list.replaceChildren(h.empty('Loading the look\u2026')); return; }
   items(el.list, looks, { H: h, btn, compact: card, summary: card && three, priv: !card && S.priv, nameOf: S.ctx && S.ctx.nameOf, open: v.open, layers: 'all', titles: v.second ? v.titles : null,
-    photosOf: (id) => (S.photos && S.photos.get(id)) || [], thumb: (id) => { const d = door(); return d ? d.thumb(id) : Promise.reject(new Error('no door')); },
+    photosOf: (id) => (S.photos && S.photos.get(id)) || [], thumb,
     toCamera: () => { if (window.JarvisDeck) window.JarvisDeck.open('camera', { focus: true }); },
     onChange: (key) => { v.open = key; draw(v); }, onPick: (slot, piece) => swap(v, 0, slot, piece),
     onPick2: (slot, piece) => swap(v, 1, slot, piece), onRemove: (slot) => remove(v, slot) });
@@ -221,9 +223,12 @@ function spin(v) { // Motion Off: Turn around stays still (L7), and says so
   v.spin = !v.still && !was;
   if (v.stage && v.spin !== was) v.stage.spin(v.spin);
   if (v.still && v.kind === 'card') say(v, '', 'Motion is off: the figure stays still. Drag it to turn it.');
-  draw(v);
+  controls(v);
 }
-function turn(v, id) { v.opts = Object.assign({}, v.opts, { view: id }); if (v.stage) v.stage.view(id); draw(v); }
+function turn(v, id) { v.opts = Object.assign({}, v.opts, { view: id }); if (v.stage) v.stage.view(id); controls(v); }
+function controls(v) { // a view or Turn around redraws its own buttons only: the list and its image cards stay (M2)
+  if (v.kind === 'card') v.el.acts.replaceChildren(...cardActs(v)); else v.el.tools.replaceChildren(...tools(v));
+}
 function style(v) {
   const out = [], top = (v.look && v.look.slots || []).find((s) => s.slot === 'top' && !s.private);
   const outer = (v.look && v.look.slots || []).find((s) => s.slot === 'outer' && !s.private);
@@ -474,7 +479,7 @@ async function deleteAll() { // OPS-05: Privacy's own delete of tryon_all (its p
   obs.observe(document.body, { childList: true });
 }
 async function reload() { // after Privacy's delete: the figure, the looks and See it on me as the server has them now
-  S.photos = null;
+  S.photos = null; dropCrops();
   try { await readTryon(); } catch (_) { S.tryon = null; }
   form(); await first(); savedList();
   if (S.me && S.el.me) S.me.refresh();
@@ -527,7 +532,7 @@ async function start() {
   if (S.next) { const go = S.next; S.next = null; await go(); } // a press made while the section loaded
   try {
     S.me = await seeMe();
-    S.me.draw(S.el.me, { H: H(), api, door, btn, look: () => (S.sec && S.sec.look) || null, photosOf: (id) => (S.photos && S.photos.get(id)) || [] });
+    S.me.draw(S.el.me, { H: H(), api, door, btn, thumb, look: () => (S.sec && S.sec.look) || null, photosOf: (id) => (S.photos && S.photos.get(id)) || [] });
     if (S.file) { S.me.take(S.file); S.file = null; }
   }
   catch (_) { S.el.me.replaceChildren(H().empty('See it on me couldn\u2019t load.')); }
@@ -580,7 +585,7 @@ function full(v) { // a card's look in full (layers, tuck, swap, compare): the s
   helpers(() => S.host);
 }
 document.addEventListener('jarvis:tryon-open', (e) => open((e.detail || {}).plan));
-document.addEventListener('jarvis:wardrobe-fresh', () => { S.photos = null; if (S.sec && S.sec.look) refresh(S.sec); });
+document.addEventListener('jarvis:wardrobe-fresh', () => { S.photos = null; dropCrops(); if (S.sec && S.sec.look) refresh(S.sec); });
 document.addEventListener('visibilitychange', () => rest(document.hidden));
 window.addEventListener('pagehide', () => { S.gone = true; rest(true); });
 window.addEventListener('pageshow', () => { S.gone = false; rest(false); }); // back from the cache: the figure returns

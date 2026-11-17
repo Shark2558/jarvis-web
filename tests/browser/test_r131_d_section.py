@@ -197,6 +197,40 @@ def test_avt06_swap_the_watch_changes_its_wrist_piece_and_its_thumbnail(
         c.close()
 
 
+EMPTY_IMAGES = """() => [...document.querySelectorAll('#hpp-wardrobe .tr-sec img.tr-thumb')]
+  .filter((i) => !i.getAttribute('src') && i.getBoundingClientRect().height
+    && getComputedStyle(i).visibility !== 'hidden').length"""  # an <img> painting its alt text
+
+
+def crops(c: Page) -> int:
+    return len([r for r in c.sent if "/v1/wardrobe/photos/" in r["url"]])
+
+
+def test_a_control_press_fetches_no_image_card_again_and_shows_no_empty_one(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 M2: three view presses made 12 crop requests, and 50 ms after each every card
+    # had no src (Chromium painted "Front photo", "Detail photo" and a broken-image icon)
+    reset(d_url, token)
+    c = opened(Page(browser, d_url, token))
+    try:
+        cards = c.section().locator("img.tr-thumb[src^='data:image/png']")
+        until(c.page, lambda: cards.count() >= 3, "the image cards")
+        before = crops(c)
+        for name in ("Side", "Back", "Front"):
+            press(c, name)
+            c.page.wait_for_timeout(50)
+            assert c.page.evaluate(EMPTY_IMAGES) == 0, name
+        row(c, "watch").get_by_role("button", name="Change").click()  # the list is drawn again
+        assert c.page.evaluate(EMPTY_IMAGES) == 0
+        press(c, "Cancel")
+        c.page.wait_for_timeout(300)
+        assert c.page.evaluate(EMPTY_IMAGES) == 0
+        assert crops(c) == before  # every card from page memory, none fetched again
+    finally:
+        c.close()
+
+
 def test_avt08_front_to_back_keeps_the_pieces_the_styling_and_the_figure(
     browser: Any, d_url: str, token: str
 ) -> None:

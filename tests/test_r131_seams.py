@@ -851,18 +851,18 @@ def test_ci_runs_the_figure_build_scripts_tests_on_the_312_leg_only() -> None:
 
 
 # ---- 14 · the guide and the book -----------------------------------------------------------------
-def test_the_guide_plans_c72_and_c73_with_every_collection_and_console_module() -> None:
+def test_the_guide_has_c72_and_c73_with_every_collection_and_console_module() -> None:
     from jarvis.wardrobe.ports import COLLECTIONS
 
     guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
-    assert guide.splitlines()[0].startswith("Version v13.1.2 · ") and "Release R13.1" in guide[:200]
+    assert guide.splitlines()[0].startswith("Version v13.1.3 · ") and "Release R13.1" in guide[:200]
     for card in ("#### C72 · Try-on figure (R13.1)", "#### C73 · See it on me (R13.1)"):
         assert card in guide, card
     for name in (*COLLECTIONS["tryon"], *COLLECTIONS["seeme"]):
         assert f"`{name}/" in guide, name
     for name in TRYON_JS:
         assert f"`{name}`" in guide, name
-    assert "C72 Try-on figure, C73 See it on me (R13.1, PLANNED)" in guide
+    assert "C72 Try-on figure, C73 See it on me (R13.1)" in guide  # built at I1
     assert "from R13.1 `tryon` and `tryon_photos`" in guide
 
 

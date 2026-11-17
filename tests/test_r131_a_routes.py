@@ -160,6 +160,18 @@ async def test_saved_comparisons_over_http() -> None:
         _refusal(await c.post("/v1/tryon/saved", json={"looks": [look]}), 409, "too_many")
 
 
+@pytest.fixture
+def frozen_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R13's limiter on a FIXED clock: no token refills while a slow machine runs the requests
+    (its real clock refills one read a second, so 60 reads taking over a second would let the
+    61st through)."""
+    from jarvis.api import r13_status
+    from jarvis.api.ratelimit import RateLimiter
+
+    monkeypatch.setattr(r13_status, "RateLimiter", lambda per: RateLimiter(per, now=lambda: 0.0))
+
+
+@pytest.mark.usefixtures("frozen_limits")
 async def test_reads_are_limited_to_60_and_changes_to_30_a_minute() -> None:
     a = await a_world()
     async with a.client() as c:
@@ -248,6 +260,7 @@ async def test_a_body_nested_past_reason_is_a_refusal_not_a_crash() -> None:
         _refusal(await c.post("/v1/tryon/saved", content=deep), 422, "bad_request")
 
 
+@pytest.mark.usefixtures("frozen_limits")
 async def test_reads_and_changes_of_one_route_keep_their_own_allowances() -> None:
     a = await a_world()
     async with a.client() as c:

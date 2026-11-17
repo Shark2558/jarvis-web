@@ -283,7 +283,8 @@ def put_bytes(url: str, token: str, path: str, data: bytes) -> Any:
 def with_photo_yes_and(url: str, token: str, kind: str, colour: str) -> dict[str, Any]:
     """His photo and YES kept, and one new garment: as if he had done it on an earlier day."""
     put_bytes(url, token, "/v1/seeme/photo", jpeg(600, 1200))
-    call(url, token, "/v1/seeme/consent", {"typed": "YES", "template_version": "c2"})
+    shown = call(url, token, "/v1/seeme")["consent"]["version"]  # never a literal (I1)
+    call(url, token, "/v1/seeme/consent", {"typed": "YES", "template_version": shown})
     got: dict[str, Any] = put_bytes(
         url, token, f"/v1/seeme/garments?type={kind}&colour={colour}", jpeg(512, 512)
     )

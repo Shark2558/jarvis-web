@@ -152,7 +152,17 @@ class SeeMeService:
         return await self._press.press(uid, body, on_send=on_send)
 
     async def picture(self, uid: str, pid: str) -> tuple[bytes, str] | None:
+        await self.tidy(uid)
         return await self.kit.pictures.get(uid, pid)
+
+    async def tidy(self, uid: str) -> None:
+        """A picture of a piece now private or gone goes before anything shows it (finding 4).
+        His wardrobe unreadable just now: the panel still opens; the morning job is the backstop."""
+        store = self.kit.ctx.store()
+        try:
+            await self.kit.pictures.drop_taken(uid, await store.view(uid) if store else None)
+        except Exception as exc:  # noqa: BLE001 - logged; seeme_daily deletes it in the morning
+            log.warning("see it on me: pictures not tidied", extra={"error": type(exc).__name__})
 
     async def keep(self, uid: str, pid: str, keep: bool) -> http.PictureView:
         return await self.kit.pictures.keep(uid, pid, keep, keep_days=await self._keep_days(uid))
@@ -169,6 +179,7 @@ class SeeMeService:
         provider = k.provider() if s.tryon_pictures else None
         soon, _ = await k.ends(uid)
         month = await self._month(uid)
+        await self.tidy(uid)
         out: dict[str, Any] = {
             "ready": READY if provider is not None else READY_OFF, "on": refused is None,
             "why": "" if refused is None else refused.words, "photo": await k.photo.view(uid),

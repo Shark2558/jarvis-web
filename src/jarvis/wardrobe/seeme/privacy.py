@@ -68,6 +68,7 @@ def _pictures_row(svc: SeeMeService) -> CallbackSource:
 
     async def export(uid: str) -> dict[str, Any]:
         days = await svc._keep_days_safe(uid)  # noqa: SLF001 - the part's own helper
+        await svc.tidy(uid)  # a picture of a piece now private is gone first (finding 4)
         pictures = [
             {"id": p.id, "made_at": p.made_at.isoformat(), "kept": p.kept,
              "garment": p.garment.words, "with": [s.words for s in p.sent], "inr": p.inr}

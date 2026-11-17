@@ -58,6 +58,24 @@ async def test_a_piece_made_private_or_gone_takes_its_pictures_with_it() -> None
     assert await svc.picture(UID, pic.id) is None
 
 
+async def test_a_picture_of_a_piece_made_private_is_gone_at_once_not_the_next_morning() -> None:
+    # integrated security review finding 4: until the morning job it stayed listed, served and in
+    # the Privacy export, naming the piece in fixed words (D14: "when a piece in it is later made
+    # private"); now the overview, the picture route and the export drop it first
+    from jarvis.wardrobe.seeme.privacy import rows
+
+    sw, svc, g = await ready_world()
+    pic = await _picture(svc, g, (T.jeans,))
+    other = await _picture(svc, g, (), n=2)  # a picture of the new garment alone stays
+    await sw.w.edit(T.jeans, private=True)
+    assert [p.id for p in (await svc.overview(UID)).pictures] == [other.id]
+    assert await svc.picture(UID, pic.id) is None and await svc.picture(UID, other.id)
+    [row] = [r for r in rows(svc) if r.spec.id == "tryon_pictures"]
+    exported = await row.export(UID)
+    assert [p["id"] for p in exported["pictures"]] == [other.id]
+    assert [i for i, _ in await svc.kit.pictures.rows(UID)] == [other.id]  # deleted by path
+
+
 async def test_an_old_hold_is_settled_at_its_hold() -> None:
     sw, svc, g = await ready_world()
     hold = await svc.kit.cap.reserve(UID, "tq_00000000000000aa", 11.22, 300)

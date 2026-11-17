@@ -243,6 +243,17 @@ class PictureStore:
     async def kept_garments(self, uid: str) -> set[str]:
         return {str(d.get("garment")) for _, d in await self.rows(uid) if d.get("kept") is True}
 
+    async def drop_taken(self, uid: str, view: WardrobeView | None) -> int:
+        """Every picture showing a piece now private or gone, deleted by path at once (D14; I1's
+        security review, finding 4): never listed, served or exported until the morning job."""
+        if view is None:
+            return 0
+        rows = await self.rows(uid)
+        paths = [self.path(uid, i) for i, d in rows if _taken(d.get("pieces", ()), view)]
+        if paths:
+            await self.docs.write([Delete(p) for p in paths])
+        return len(paths)
+
     async def expired(self, uid: str, *, keep_days: int, view: WardrobeView | None) -> list[str]:
         """Past its time and not kept, unreadable, or showing a piece now private or gone."""
         cutoff = self.now() - timedelta(days=keep_days)

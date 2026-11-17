@@ -11,6 +11,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from r131_console_query import card_query
 from r131_fakes_a import SHOES, UID, AWorld, N, T, a_world
 
 from jarvis.wardrobe.tryon import looks
@@ -125,14 +126,6 @@ async def test_row388_a_private_piece_on_the_card_is_covered_unless_he_asks() ->
     assert shown["base"].template is None and shown["base"].rgb is None  # still never drawn
 
 
-def card_query(card: Any) -> str:
-    """A reply card's slots as the console sends them: `slot:wi_...` a piece, `slot:` covered."""
-    return ",".join(
-        f"{s.slot}:" if s.private else ",".join(f"{s.slot}:{pid}" for pid in s.pieces)
-        for s in card.slots
-    )
-
-
 async def test_row388_a_slot_the_card_covers_for_its_private_piece_comes_without_an_id() -> None:
     from jarvis.wardrobe.styling import tryon_card
 
@@ -144,7 +137,9 @@ async def test_row388_a_slot_the_card_covers_for_its_private_piece_comes_without
     ans = await s.answer(UID, await s.where(UID), doc, view, doc.plan(pid))
     card = tryon_card.card_of(view, ans)
     assert card.slots[0].slot == "top" and card.slots[0].private and card.slots[0].pieces == ()
-    look = await a.service.looks.for_pieces(UID, card_query(card), plan=card.plan)
+    async with a.client() as c:  # the route, asked EXACTLY as the console asks (review I1 H1)
+        got_json = (await c.get("/v1/tryon/look?" + card_query(card))).json()
+    look = TryonLook.model_validate(got_json)
     got = _slots(look)
     assert [x.slot for x in look.slots] == [x.slot for x in card.slots]  # every slot of the card
     assert got["top"].private and got["top"].piece is None and got["top"].words == m.COVERED
@@ -152,6 +147,28 @@ async def test_row388_a_slot_the_card_covers_for_its_private_piece_comes_without
     assert T.white not in json.dumps(look.model_dump(mode="json"))
     assert got["bottom"].piece == T.trousers and got["shoes"].piece == SHOES[0]
     assert got["top"].readiness == m.READY and got["top"].eligible  # its plan's piece, fresh
+
+
+async def test_row388_tomorrows_card_with_no_plan_reads_its_own_day_and_code() -> None:
+    """Review I1 H1: today has a plan, tomorrow none. Tomorrow's business formal card, asked for
+    EXACTLY as the console asks (its own `cardQuery`), reads tomorrow's readiness (not "reserved"
+    by today's plan) and its code (the shirt tucked), never today's default."""
+    from jarvis.wardrobe.styling import tryon_card
+
+    a = await a_world()
+    await a.plan(day="today", occasion="meeting")  # today's plan holds its look all day
+    s, view = a.styling, await a.view()
+    here, doc = await s.where(UID), await s.plans.read(UID)
+    tomorrow = here.today + timedelta(days=1)
+    ans = await s.fresh(UID, here, doc, view, day=tomorrow, occasion=None, code="business_formal")
+    card = tryon_card.card_of(view, ans)
+    assert card.plan is None and card.day == "2026-11-18" and card.code == "business_formal"
+    async with a.client() as c:
+        look = TryonLook.model_validate((await c.get("/v1/tryon/look?" + card_query(card))).json())
+    assert look.day == tomorrow and look.dress_code == "business_formal" and look.tucked
+    mine = [x for x in look.slots if not x.private]
+    assert mine and {x.readiness for x in mine} == {m.READY}, [x.readiness for x in mine]
+    assert [x.slot for x in look.slots] == [x.slot for x in card.slots]  # covered ones too
 
 
 async def test_row388_a_cards_covered_slot_reads_its_plans_piece_else_one_fixed_word() -> None:

@@ -13,6 +13,7 @@
 //   draft(look)             "" or the first draft's words: such a look can't be confirmed
 //   crop(id, read)          an image card's data: URL, read ONCE a page (page memory only, dropCrops() on a fresh load):
 //                           a control press never fetches a card again, and a known card is shown at once (M2)
+//   query, cardQuery        A's look by pieces: a look's picks again, or row 388's card, each on its own day and code
 //   pairs, same, covered, chosen, figure   what a look becomes elsewhere (pure): its {slot, piece} picks, its covered
 //                           slots, his shape choices (AVT-05) and the engine contract's figure (a private slot is
 //                           {slot, private: true} only)
@@ -190,9 +191,22 @@ function dayWords(iso) {
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   return DAYS[d.getUTCDay()] + ' ' + (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
 }
-/** The look by its pieces for A's GET /v1/tryon/look ("pieces=slot:wi_...,..."), in a plan's context when one is given. */
-export const query = (list, plan) => 'pieces=' + encodeURIComponent(list.map((p) => p.slot + ':' + p.piece).join(','))
-  + (plan ? '&plan=' + encodeURIComponent(plan) : '');
+// The look by its pieces for A's GET /v1/tryon/look: "pieces=slot:wi_...,slot:,..." (a slot it covers as "slot:", no id,
+// so A reads it covered and, with a plan, as that plan holds it), read in its plan's context, else on ITS OWN day and dress
+// code (a card's `day` and `code`, a look's `day` and `dress_code`): never today's default (integrated review H1).
+const DAY = /^\d{4}-\d{2}-\d{2}$/, CODE = /^[a-z_]{1,30}$/, SLOT = /^[a-z_]{2,20}$/;
+function context(plan, at) {
+  if (plan) return '&plan=' + encodeURIComponent(plan);
+  const a = at || {}, day = String(a.day || ''), code = String(a.code || a.dress_code || '');
+  return (DAY.test(day) ? '&day=' + day : '') + (CODE.test(code) ? '&code=' + code : '');
+}
+const shut = (slots) => (slots || []).filter((s) => s && s.private && SLOT.test(String(s.slot))).map((s) => s.slot + ':');
+/** A look's {slot, piece} picks again (a swap, an undo, a refresh): `at` is the look they belong to (its covered slots). */
+export const query = (list, plan, at) => 'pieces=' + encodeURIComponent(list.map((p) => p.slot + ':' + p.piece)
+  .concat(shut(at && at.slots)).join(',')) + context(plan, at);
+/** Row 388's card as the console asks for it: its slots in the card's own order, its plan, else its day and code. */
+export const cardQuery = (card) => 'pieces=' + encodeURIComponent(((card && card.slots) || []).flatMap((s) => (s.private
+  ? shut([s]) : (s.pieces || []).map((p) => s.slot + ':' + p))).join(',')) + context(card && card.plan, card);
 /** "Today \u00b7 10:00 \u00b7 business formal": a plan's title. */
 export const planTitle = (day, p) => [day, hhmm(p.starts), String(p.dress_code || '').replace(/_/g, ' ')].filter(Boolean).join(' \u00b7 ');
 /** Tomorrow's date (yyyy-mm-dd) in this device's own time. */

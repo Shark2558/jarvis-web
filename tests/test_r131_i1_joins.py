@@ -16,6 +16,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from r131_console_query import look_query
 from r131_fake_tryon import Step
 from r131_fakes import UID, T
 from r131_fakes_a import a_world
@@ -47,9 +48,9 @@ async def test_a_swap_inside_a_plans_look_reads_readiness_in_that_plans_context(
         held = {s["slot"]: s.get("piece") for s in look["slots"]}
         assert held["outer"] == PLANNED_JACKET
         swapped = {**held, "outer": OTHER_JACKET}
-        q = ",".join(f"{slot}:{pid or ''}" for slot, pid in swapped.items())
-        mine = (await c.get(f"/v1/tryon/look?pieces={q}&plan={plan}")).json()
-        bare = (await c.get(f"/v1/tryon/look?pieces={q}&day={look['day']}")).json()
+        picks = [{"slot": k, "piece": v} for k, v in swapped.items() if v]  # the console's swap
+        mine = (await c.get("/v1/tryon/look?" + look_query(picks, plan, look))).json()
+        bare = (await c.get("/v1/tryon/look?" + look_query(picks, None, look))).json()
     got = {s["slot"]: (s.get("piece"), s["readiness"]) for s in mine["slots"]}
     assert mine["plan"] == plan and got["outer"] == (OTHER_JACKET, "Ready")
     assert all(r == "Ready" for _, r in got.values())  # the plan's own pieces are its own

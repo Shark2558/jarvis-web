@@ -11,16 +11,20 @@
 #   - The console-only routes (C's) see his signed-in console only when the request carries the
 #     cookie `r131_console=1` (the browser test sets it); a script with the token is refused.
 #   - `WearBrain`: the mock brain answers any "...wear..." question with ONE `outfit_suggest` for
-#     tomorrow, then a short sentence (row 388); anything else is echoed as the mock does.
+#     tomorrow (business formal when he says "formal"), then a short sentence (row 388); anything
+#     else is echoed as the mock does.
 #   - Seeded at start through the real tools and routes: a made-up pilot set (13 pieces, the
 #     shoes and socks paired, the vest and briefs private), blue jeans, tomorrow's 10:00 meeting
-#     planned, drawn crops (`tests/fixtures/r13_1/i1/*.jpg`: cloth swatches, no person) on the
-#     shirt, blazer, watch, shoes, trousers and jeans, and his measurements (178 cm typed).
+#     planned (or, with `serve_wired(plan_day="today")`, tonight's 20:00 meeting and nothing
+#     planned tomorrow: the integrated review's H1), drawn crops (`tests/fixtures/r13_1/i1/*.jpg`:
+#     cloth swatches, no person) on the shirt, blazer, watch, shoes, trousers and jeans, and his
+#     measurements (178 cm typed).
 from __future__ import annotations
 
 import asyncio
 import base64
 import importlib.util
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -31,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CROPS = ROOT / "tests" / "fixtures" / "r13_1" / "i1"
 KEY = base64.b64encode(bytes(range(64, 96))).decode()  # made up: a test key, never a secret
 COOKIE = "r131_console"
+PLAN_DAY = "R131_WIRED_PLAN_DAY"  # "today": tonight's meeting planned instead of tomorrow's
 for _p in (ROOT / "src", ROOT / "tests"):
     if str(_p) not in sys.path:
         sys.path.append(str(_p))
@@ -53,9 +58,10 @@ class WearBrain(MockProvider):
         )
         if answered:
             return "Here is tomorrow's look, Sir.", []
-        if last is not None and last.role == "user" and "wear" in last.text().lower():
-            call = ToolCall(id=f"wear{len(self.calls)}", name="outfit_suggest",
-                            arguments={"day": "tomorrow"})  # fmt: skip
+        said = last.text().lower() if last is not None and last.role == "user" else ""
+        if "wear" in said:
+            args = {"day": "tomorrow", **({"code": "business_formal"} if "formal" in said else {})}
+            call = ToolCall(id=f"wear{len(self.calls)}", name="outfit_suggest", arguments=args)
             return "", [call]
         return super()._reply(messages)
 
@@ -115,8 +121,12 @@ async def seed(app: Any) -> dict[str, str]:
                            ("trousers", "trousers"), ("jeans", "jeans")):  # fmt: skip
             got = await w.crop(ids[name], "front", (CROPS / f"{crop}.jpg").read_bytes())
             assert got.status_code == 200, (name, got.status_code, got.text[:200])
-        await w.ok("outfit_plan", action="save", day="tomorrow", occasion="meeting",
-                   start="10:00", end="12:00")  # fmt: skip
+        if os.environ.get(PLAN_DAY) == "today":  # tonight's meeting, nothing planned tomorrow
+            await w.ok("outfit_plan", action="save", day="today", occasion="meeting",
+                       start="20:00", end="21:30")  # fmt: skip
+        else:
+            await w.ok("outfit_plan", action="save", day="tomorrow", occasion="meeting",
+                       start="10:00", end="12:00")  # fmt: skip
         got = await w.send("PUT", "/v1/tryon/body", json={"height": 178})
         assert got.status_code == 200, got.text[:200]
         await w.send("POST", "/v1/tryon/body/use")
@@ -160,10 +170,10 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-def serve_wired(token: str) -> tuple[str, Callable[[], None]]:
+def serve_wired(token: str, *, plan_day: str = "tomorrow") -> tuple[str, Callable[[], None]]:
     """The wired app in a child process for a browser test module: (url, stop). Ready once
-    `/v1/tryon` shows his figure (the seed is done)."""
-    import os
+    `/v1/tryon` shows his figure (the seed is done). `plan_day` "today": tonight's meeting is
+    planned and tomorrow has no plan."""
     import socket
     import subprocess
     import time
@@ -178,6 +188,7 @@ def serve_wired(token: str) -> tuple[str, Callable[[], None]]:
         "JARVIS_AUTH_MODE": "token", "JARVIS_API_TOKEN": token, "JARVIS_LOG_LEVEL": "WARNING",
         "JARVIS_USD_INR_LIVE": "0", "JARVIS_RATE_LIMIT_PER_MINUTE": "6000",
         "JARVIS_TOKEN_KEY": KEY, "JARVIS_TRYON_PICTURES": "true", "JARVIS_TRYON_CACHE": "false",
+        PLAN_DAY: plan_day,
     }  # fmt: skip
     env.pop("JARVIS_ANTHROPIC_API_KEY", None)
     proc = subprocess.Popen(

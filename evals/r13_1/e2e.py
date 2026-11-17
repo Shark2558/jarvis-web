@@ -55,6 +55,7 @@ def _wired() -> ModuleType:
 _W = _wired()
 World, running, seed, want, b64 = _W.World, _W.running, _W.seed, _W.want, _W.b64
 from r13_fakes_a import jpeg  # noqa: E402
+from r131_console_query import card_query  # noqa: E402
 from r131_fake_gemini import PNG_OUT  # noqa: E402
 
 from jarvis.llm.base import ToolCall  # noqa: E402
@@ -265,8 +266,11 @@ async def what_to_wear_388() -> list[str]:
             mine = {p["slot"]: list(p["ids"]) for p in look if p["slot"] not in COVERED}
             shown = {s["slot"]: s["pieces"] for s in card["slots"] if not s.get("private")}
             out += want(shown == mine, f"{channel}: the card's pieces are the look's")
-            q = ",".join(f"{s['slot']}:{p}" for s in card["slots"] for p in s["pieces"] or [""])
-            fig = await w.get(f"/v1/tryon/look?pieces={q}&day={card['day']}&code={card['code']}")
+            fig = await w.get("/v1/tryon/look?" + card_query(card))  # as the console asks (H1)
+            out += want(
+                (fig["day"], fig["dress_code"]) == (card["day"], card["code"]),
+                f"{channel}: the figure's look is the card's day and code: {fig['day']}",
+            )
             drawn = {s["slot"]: s["piece"] for s in fig["slots"] if s.get("piece")}
             first = {k: v[0] for k, v in mine.items()}
             out += want(drawn == first, f"{channel}: the figure wears exactly the card: {drawn}")

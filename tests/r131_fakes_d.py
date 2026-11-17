@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from r13_fakes import ev
 from r131_fake_seeme import seeme_routes
-from r131_fake_server import look_slot
+from r131_fake_server import NO_DAY, _chosen, card_slot, day_of
 from r131_fakes import IST, NOW, UID, VIEW_OF, FixedClock, T, seeded
 
 from jarvis.api.auth import require_auth
@@ -265,12 +265,15 @@ def _look_routes(r: APIRouter, store: Any, clock: Any) -> None:
 
     @r.get("/v1/tryon/look")
     async def look(
-        plan: str = "", day: str = "today", alt: int = 0, private: int = 0, pieces: str = ""
+        plan: str = "", day: str = "", alt: int = 0, private: int = 0, pieces: str = ""
     ) -> JSONResponse:
         v = await store.view(UID)
+        if pieces and not plan and not day:  # never read for today by default (review I1 H1)
+            return JSONResponse({"error": "bad_day", "detail": NO_DAY}, 422)
+        when = day_of(day, clock())
         if pieces:
-            pairs = [x.split(":", 1) for x in pieces.split(",") if x]
-            if any(len(x) != 2 or x[1] not in v.pieces for x in pairs):
+            found = _chosen(pieces, v)
+            if found is None or when is None:
                 return JSONResponse(
                     {
                         "error": "not_a_piece",
@@ -278,7 +281,7 @@ def _look_routes(r: APIRouter, store: Any, clock: Any) -> None:
                     },
                     422,
                 )
-            chosen = tuple((s, p) for s, p in pairs)
+            chosen = found
         elif plan:
             if plan not in plans:
                 return JSONResponse(
@@ -287,8 +290,8 @@ def _look_routes(r: APIRouter, store: Any, clock: Any) -> None:
             chosen = plans[plan]
         else:
             chosen = FESTIVE_LOOK if (day == "tomorrow") != bool(alt) else FORMAL
-        slots = tuple(look_slot(v, s, p, private=bool(private)) for s, p in chosen)
-        when = clock().astimezone(IST).date() + timedelta(days=1 if day == "tomorrow" else 0)
+        held = dict(plans.get(plan, ()))
+        slots = tuple(card_slot(v, s, p, held, private=bool(private)) for s, p in chosen)
         code = "festive" if chosen is FESTIVE_LOOK else "business_formal"
         return _ok(http.TryonLook(plan=plan or None, day=when, dress_code=code, slots=slots,
                                   tucked=code != "festive"))  # fmt: skip

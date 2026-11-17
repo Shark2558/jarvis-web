@@ -22,7 +22,7 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -152,11 +152,38 @@ def look_slot(view: WardrobeView, slot: str, pid: str, *, private: bool = False)
 
 
 def _chosen(pieces: str, v: WardrobeView) -> tuple[tuple[str, str], ...] | None:
-    """`?pieces=top:wi_...,bottom:wi_...` (D21, the card's slots) -> (slot, piece) pairs."""
+    """`?pieces=top:wi_...,base:` (D21, the card's slots; a slot it covers as `slot:`, no id)
+    -> (slot, piece or "") pairs."""
     pairs = [x.split(":", 1) for x in pieces.split(",") if x]
-    if any(len(x) != 2 or x[1] not in v.pieces for x in pairs):
+    if any(len(x) != 2 or (x[1] and x[1] not in v.pieces) for x in pairs):
         return None
     return tuple((s, pid) for s, pid in pairs)
+
+
+UNCHECKED = "Not checked here"  # A's words: a slot the card covers, with no plan to check it in
+NO_DAY = "A look by its pieces needs its plan, or its own day."  # A reads it on its own day (H1)
+
+
+def day_of(day: str, now: datetime) -> date | None:
+    """A's look's day: today (also when none is said), tomorrow, or a date (yyyy-mm-dd)."""
+    today = now.astimezone(IST).date()
+    if day in ("", "today"):
+        return today
+    if day == "tomorrow":
+        return today + timedelta(days=1)
+    try:
+        return date.fromisoformat(day)
+    except ValueError:
+        return None
+
+
+def card_slot(
+    v: WardrobeView, slot: str, pid: str, held: dict[str, str], *, private: bool
+) -> http.LookSlot:
+    """A card's entry: its piece, or a covered slot (as its plan holds it, else unchecked)."""
+    if pid or held.get(slot):
+        return look_slot(v, slot, pid or held[slot], private=private)
+    return http.LookSlot(slot=slot, private=True, words=m.COVERED, readiness=UNCHECKED)
 
 
 def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> APIRouter:
@@ -224,14 +251,17 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
 
     @r.get("/v1/tryon/look")
     async def look(
-        plan: str = "", day: str = "today", alt: int = 0, private: int = 0, pieces: str = ""
+        plan: str = "", day: str = "", alt: int = 0, private: int = 0, pieces: str = ""
     ) -> JSONResponse:
         v = await view()
+        if pieces and not plan and not day:  # never read for today by default (review I1 H1)
+            return _no(422, "bad_day", NO_DAY)
         chosen = _chosen(pieces, v) if pieces else LOOK_SLOTS  # row 388: the card's own pieces
-        if chosen is None:
+        when = day_of(day, clock())
+        if chosen is None or when is None:
             return _no(422, "not_a_piece", "A piece of that look isn't in your wardrobe.")
-        slots = tuple(look_slot(v, s, p, private=bool(private)) for s, p in chosen)
-        when = clock().astimezone(IST).date() + timedelta(days=1 if day == "tomorrow" else 0)
+        held = dict(LOOK_SLOTS) if plan else {}
+        slots = tuple(card_slot(v, s, p, held, private=bool(private)) for s, p in chosen)
         return _ok(
             http.TryonLook(
                 plan=plan or None, day=when, dress_code="business_formal", slots=slots, tucked=True

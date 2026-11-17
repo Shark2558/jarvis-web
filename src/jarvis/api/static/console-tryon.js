@@ -11,7 +11,8 @@
 // on the page: the viewer taking it gives the other's back; a hidden viewer (its tab, the page) gives it back too.
 // The section's forms (measurements, shapes, OPS-05) are './console-tryon-form.js'. Every change goes to the server;
 // nothing is kept on this device; no pixel API (B's snapshot draws the caption).
-import { COVERED, WHY, caption, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, tomorrowIso, when } from './console-tryon-list.js';
+import { COVERED, WHY, caption, cardQuery, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, tomorrowIso, when }
+  from './console-tryon-list.js';
 import * as F from './console-tryon-form.js';
 
 const engine3d = () => import('./console-tryon-3d.js'), seeMe = () => import('./console-tryon-me.js');
@@ -49,10 +50,10 @@ function failed(v, e) {
 
 // ---- the server's look ------------------------------------------------------------------------------------------
 async function lookOf(v, q) { // a fresh read: readiness comes from the server, never the render; covered slots kept
-  const look = await api('/v1/tryon/look?' + q);
-  const slots = Array.isArray(look.slots) ? look.slots : [];
-  const covered = (v.covered || []).filter((c) => !slots.some((s) => s.slot === c.slot));
-  return Object.assign({}, look, { slots: slots.concat(covered) });
+  const look = await api('/v1/tryon/look?' + q), mine = new Map((v.covered || []).map((c) => [c.slot, c]));
+  const slots = (Array.isArray(look.slots) ? look.slots : []).map((s) => (s.private && mine.has(s.slot) // his own tap (R13 D10)
+    ? Object.assign({}, s, { piece: mine.get(s.slot).piece || null }) : s));
+  return Object.assign({}, look, { slots: slots.concat([...mine.values()].filter((c) => !slots.some((s) => s.slot === c.slot))) });
 }
 async function photosOf() { // the views' crop ids, for the reference cards (R13's own read of his wardrobe)
   if (S.photos) return S.photos;
@@ -110,9 +111,9 @@ async function refresh(v) { // a fresh load: the same picks re-read, or the plan
   await photosOf();
   try {
     const own = !!v.src && same(pairs(v.look), v.planPairs);
-    v.look = await lookOf(v, own ? v.src : query(pairs(v.look), v.plan));
+    v.look = await lookOf(v, own ? v.src : query(pairs(v.look), v.plan, v.look));
     if (own) v.planPairs = pairs(v.look); // what the plan holds now
-    if (v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query(pairs(v.second)));
+    if (v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query(pairs(v.second), v.second.plan, v.second));
   } catch (e) { failed(v, e); }
   draw(v); paint(v);
 }
@@ -283,7 +284,7 @@ async function swap(v, which, slot, piece) { // piece null: Remove (outer, belt,
   const order = (look.slots || []).map((s) => s.slot);
   list.sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
   try {
-    const fresh = await lookOf(which ? { covered: v.covered, plan: null } : v, query(list, which ? null : v.plan));
+    const fresh = await lookOf(which ? { covered: v.covered, plan: null } : v, query(list, which ? look.plan : v.plan, look)); // its own day (H1)
     if (which) v.second = fresh; else v.look = fresh;
   } catch (e) { v.undo.pop(); failed(v, e); return; }
   v.open = null; draw(v); paint(v);
@@ -292,8 +293,8 @@ async function undo(v) { // a pick no longer eligible comes back as a draft: the
   const last = v.undo.pop();
   if (!last) return;
   try {
-    v.look = await lookOf(v, query(last.first, v.plan));
-    if (last.second && v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query(last.second));
+    v.look = await lookOf(v, query(last.first, v.plan, v.look));
+    if (last.second && v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query(last.second, v.second.plan, v.second));
   } catch (e) { failed(v, e); }
   v.opts = last.opts; draw(v); paint(v);
 }
@@ -491,14 +492,12 @@ export function inline(el, card) { // resolves once the card is drawn
   S.card = viewer(el, 'card');
   return dressed(S.card, card).catch(() => {});
 }
-async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pieces=); its covered slots stay covered
+async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pieces=), on ITS day and code (review I1 H1);
   v.covered = (card.slots || []).filter((s) => s.private).map((s) => ({ slot: s.slot, private: true, words: COVERED, readiness: '' }));
-  v.plan = card.plan || null;
-  const list = [];
-  (card.slots || []).forEach((s) => { if (!s.private) s.pieces.forEach((p) => list.push({ slot: s.slot, piece: p })); });
+  v.plan = card.plan || null; // its covered slots stay covered (sent as "slot:", read so by A)
   try {
     if (!S.tryon) await readTryon();
-    const look = await lookOf(v, query(list, v.plan));
+    const look = await lookOf(v, cardQuery(card));
     const code = String(card.code || '').replace(/_/g, ' ');
     await show(v, look, { plan: card.plan, title: 'Your look' + (code ? ' \u00b7 ' + code : '') });
   } catch (e) { failed(v, e); draw(v); }

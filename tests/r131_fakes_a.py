@@ -9,7 +9,10 @@
 #                            `photos` service; Part A's part built through `tryon.part.build`;
 #                            optionally C's `seeme` service (a FakeSeeMe)
 #   AWorld.app() / .client() the routes of `api/tryon.py` on a bare app, signed in as the owner,
-#                            the gateway, his conversations in memory
+#                            the gateway, his conversations in memory; and R13's own
+#                            `GET /v1/wardrobe` (`api/wardrobe.py`) over a `CatalogDesk`: the
+#                            world's store with R13's real `Views` (OPS-05's "the same pieces
+#                            and rev")
 #   FakeSeeMe                C's `seeme` service as A sees it (`ports.SeeMeErase`): records calls
 #   seeme_docs(docs)         one of each of C's documents for him (photo, YES, a picture, a
 #                            garment photo, the month's spend) and their paths
@@ -31,6 +34,7 @@ from jarvis.config import Settings
 from jarvis.keyring import Keyring
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.storage.docs import DocTx, Set
+from jarvis.wardrobe.catalog.views import Views
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import Commit, Committed, WardrobeContext, WardrobePart
 from jarvis.wardrobe.states import EventKind
@@ -57,6 +61,26 @@ class FakeSeeMe:
 
         await self.docs.write([Delete(p) for p in found])
         return len(found)
+
+
+class _NoTagging:
+    async def estimate_inr(self) -> float | None:
+        return None  # no AI tagging in these fakes: the settings show no estimate
+
+
+@dataclass(frozen=True)
+class CatalogDesk:
+    """R13 catalog's desk as `GET /v1/wardrobe` reads it (`routes_common.desk_of`): the store
+    and R13's real `Views`, nothing else."""
+
+    store: Any
+    views: Views
+    tagging: _NoTagging = field(default_factory=_NoTagging)
+
+
+@dataclass(frozen=True)
+class _CatalogStore:
+    desk: CatalogDesk  # the catalog part's `store` service carries its desk (R13's routes)
 
 
 def seeme_paths(uid: str = UID) -> tuple[str, ...]:
@@ -124,6 +148,7 @@ class AWorld:
         from jarvis.api.auth import require_auth
         from jarvis.api.identity import current_user
         from jarvis.api.tryon import router
+        from jarvis.api.wardrobe import router as wardrobe_router
 
         app = FastAPI()
         app.state.settings = self.ctx.s
@@ -131,6 +156,7 @@ class AWorld:
         app.state.gateway = self.w.gw
         app.state.store = self.sessions
         app.include_router(router)
+        app.include_router(wardrobe_router)
         app.dependency_overrides[require_auth] = lambda: None
         app.dependency_overrides[current_user] = lambda: UID
         return app
@@ -182,8 +208,11 @@ async def a_world(
     w = await world(at=NOW, s=s)
     await _photos(w)
     vault = FakePhotoVault()
+    st = w.ctx.s
+    views = Views(w.clock, stale_days=st.wardrobe_stale_days, cap_inr=st.wardrobe_ai_tag_month_inr)
+    desk = _CatalogStore(CatalogDesk(w.store, views))
     parts: dict[str, WardrobePart] = {
-        "catalog": WardrobePart("catalog", services={"photos": vault}),
+        "catalog": WardrobePart("catalog", services={"photos": vault, "store": desk}),
         "styling": w.part,
     }
     fake = FakeSeeMe(w.docs) if seeme else None

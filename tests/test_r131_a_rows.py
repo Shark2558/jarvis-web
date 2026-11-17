@@ -221,6 +221,8 @@ async def test_ops05_deleting_the_figure_empties_the_viewer_disables_previews_an
         await c.put(f"/v1/tryon/assets/{T.striped}", json={"piece": T.striped, "card_only": True})
         await c.post("/v1/tryon/saved", json={"looks": [{"slots": [
             {"slot": "top", "piece": T.white}]}]})  # fmt: skip
+        catalog = await c.get("/v1/wardrobe")  # R13's own route, as his check says
+    assert catalog.status_code == 200 and catalog.json()["pieces"]
     paths = await seeme_docs(a.docs)  # his photo, YES, a picture, a garment photo, the spend
     before, crops = await a.view(), dict(a.vault.crops)
 
@@ -237,6 +239,11 @@ async def test_ops05_deleting_the_figure_empties_the_viewer_disables_previews_an
     async with a.client() as c:
         view = TryonView.model_validate((await c.get("/v1/tryon")).json())
         saved = (await c.get("/v1/tryon/saved")).json()
+        kept_catalog = await c.get("/v1/wardrobe")
+    assert kept_catalog.status_code == 200  # GET /v1/wardrobe: the same pieces and rev
+    assert [kept_catalog.json()[k] for k in ("pieces", "rev")] == [
+        catalog.json()[k] for k in ("pieces", "rev")
+    ]
     assert view.words == m.NO_FIGURE  # the viewer says "No figure yet"
     assert view.body.current is None and view.body.draft is None and view.body.earlier == ()
     assert view.saved == () and view.assets == () and saved == {"saved": []}

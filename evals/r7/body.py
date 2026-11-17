@@ -81,11 +81,14 @@ DAY = {
 
 
 class Capture(logging.Handler):
-    """Every log record (message and every extra field), as text, less the clock's own numbers:
-    `created`, `msecs`, `relativeCreated`, a thread or process id and a line number are digits a
-    short needle matches by chance (the r7 `131 in clear` that was no leak, R13 I1)."""
+    """Every log record (message and every extra field), as text, less the clock's own numbers
+    and the code's own location: `created`, `msecs`, `relativeCreated`, a thread or process id,
+    a line number, and the file, module and function a record came from are digits and names a
+    short needle matches by chance (the r7 `131 in clear` that was no leak, R13 I1; a checkout
+    path holding "131", R13.1's integrated code review L8). None is ever a value of his."""
 
-    CLOCK = frozenset({"created", "msecs", "relativeCreated", "thread", "process", "lineno"})
+    CLOCK = frozenset({"created", "msecs", "relativeCreated", "thread", "process", "lineno",
+                       "pathname", "filename", "module", "funcName"})  # fmt: skip
 
     def __init__(self) -> None:
         super().__init__(logging.DEBUG)

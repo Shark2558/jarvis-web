@@ -15,8 +15,12 @@ measurements and their versions, his figure choices, saved comparisons, the fres
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
+
 from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
-from jarvis.wardrobe.tryon.http import TryonLook
+from jarvis.wardrobe.tryon import confirm
+from jarvis.wardrobe.tryon.http import ConfirmIn, TryonLook
 from jarvis.wardrobe.tryon.looks import Looks
 from jarvis.wardrobe.tryon.store import TryonStore
 
@@ -24,6 +28,7 @@ READY = "ready"
 OFF_NO_STORE = "Off: no storage is set up, so Try-on keeps nothing."
 OFF_NO_KEY = "Off: JARVIS has no token key to seal your measurements."
 OFF_SWITCHED = "Off: Try-on is switched off on this server."
+R = TypeVar("R")
 
 
 class TryonService:
@@ -37,6 +42,12 @@ class TryonService:
     async def look(self, uid: str, plan: str) -> TryonLook:
         """`ports.TryonLooks`: a plan's look as the figure shows it, read fresh (for C)."""
         return await self.looks.for_plan(uid, plan)
+
+    async def confirm(
+        self, uid: str, body: ConfirmIn, call: Callable[[dict[str, Any]], Awaitable[R]]
+    ) -> R:
+        """ "Use this look": the fresh check, then ONE `outfit_plan` lock through `call`."""
+        return await confirm.check_and_lock(self.looks, uid, body, call)
 
 
 def off_words(ctx: WardrobeContext) -> str | None:

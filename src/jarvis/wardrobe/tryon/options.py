@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, tzinfo
+from typing import Literal
 
 from jarvis.wardrobe.model import Piece, WardrobeView
 from jarvis.wardrobe.styling import reserve, texts
@@ -91,23 +92,42 @@ def _set_broken(f: Fresh, p: Piece) -> bool:
                for _, parts in sets_of(f.view, p.id))  # fmt: skip
 
 
-def readiness(f: Fresh, slot: str, pids: Sequence[str]) -> tuple[str, bool]:
-    """(the slot's readiness words, eligible) from this fresh read."""
+Kind = Literal["gone", "one_shoe", "state", "set", "held"]
+Block = tuple[Kind, Piece | None]  # why a slot isn't ready, and the piece that makes it so
+
+
+def blocker(f: Fresh, slot: str, pids: Sequence[str]) -> Block | None:
+    """Why the slot can't be worn for this look now, and which piece; None: it can."""
     found = [f.view.pieces.get(i) for i in unit_of(f, pids)]
     pieces = [p for p in found if p is not None and p.merged_into is None]
     if len(pieces) != len(found) or not pieces:
-        return GONE, False
+        return "gone", None
     bad = [p for p in pieces if not (p.eligible or _handed(f, p))]
     if bad:
-        if slot == "shoes" and len(pieces) == 2 and len(bad) == 1:
-            return ONE_SHOE, False
-        return DRAFT_WORDS.get(bad[0].state, NOT_READY), False
-    if any(_set_broken(f, p) for p in pieces):
+        pair = slot == "shoes" and len(pieces) == 2 and len(bad) == 1
+        return ("one_shoe" if pair else "state"), bad[0]
+    broken = next((p for p in pieces if _set_broken(f, p)), None)
+    if broken is not None:
+        return "set", broken
+    held = next((p for p in pieces if p.id in f.held), None)
+    return ("held", held) if held is not None else None
+
+
+def readiness(f: Fresh, slot: str, pids: Sequence[str]) -> tuple[str, bool]:
+    """(the slot's readiness words, eligible) from this fresh read."""
+    block = blocker(f, slot, pids)
+    if block is None:
+        return READY, True
+    kind, p = block
+    if kind == "gone" or p is None:
+        return GONE, False
+    if kind == "one_shoe":
+        return ONE_SHOE, False
+    if kind == "state":
+        return DRAFT_WORDS.get(p.state, NOT_READY), False
+    if kind == "set":
         return SET_WORDS, False
-    held = next((f.held[p.id] for p in pieces if p.id in f.held), None)
-    if held is not None:
-        return reserved_words(reserve.held_words(held, f.zone)), False
-    return READY, True
+    return reserved_words(reserve.held_words(f.held[p.id], f.zone)), False
 
 
 def unit_words(f: Fresh, unit: Sequence[str]) -> str:
@@ -151,9 +171,12 @@ def options(
 
 __all__ = [
     "GONE",
+    "Block",
+    "Kind",
     "NOT_READY",
     "SET_WORDS",
     "Fresh",
+    "blocker",
     "fresh_of",
     "options",
     "readiness",

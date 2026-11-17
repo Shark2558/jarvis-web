@@ -19,10 +19,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
-from jarvis.wardrobe.tryon import confirm
-from jarvis.wardrobe.tryon.http import ConfirmIn, TryonLook
+from jarvis.wardrobe.tryon import confirm, saved
+from jarvis.wardrobe.tryon.http import ConfirmIn, Deleted, SavedIn, SavedList, SavedView, TryonLook
 from jarvis.wardrobe.tryon.looks import Looks
-from jarvis.wardrobe.tryon.store import TryonStore
+from jarvis.wardrobe.tryon.store import Saved, TryonDoc, TryonStore
 
 READY = "ready"
 OFF_NO_STORE = "Off: no storage is set up, so Try-on keeps nothing."
@@ -48,6 +48,38 @@ class TryonService:
     ) -> R:
         """ "Use this look": the fresh check, then ONE `outfit_plan` lock through `call`."""
         return await confirm.check_and_lock(self.looks, uid, body, call)
+
+    # ---- saved comparisons (AVT-11) ---------------------------------------------------------
+    async def save(self, uid: str, body: SavedIn) -> SavedView:
+        r = await self.looks.read(uid)
+        made: list[Saved] = []
+
+        def fn(doc: TryonDoc) -> TryonDoc:
+            new, one = saved.add(doc, r, body, self.ctx.now())
+            made[:] = [one]  # a retried transaction keeps only its last run's
+            return new
+
+        await self.store.change(uid, fn)
+        return saved.saved_view(r, made[0])
+
+    async def saved_list(self, uid: str) -> SavedList:
+        doc, r = await self.store.read(uid), await self.looks.read(uid)
+        return SavedList(saved=tuple(saved.saved_view(r, x) for x in doc.saved))
+
+    async def saved_one(self, uid: str, sid: str) -> SavedView:
+        found = saved.find(await self.store.read(uid), sid)
+        return saved.saved_view(await self.looks.read(uid), found)
+
+    async def saved_drop(self, uid: str, sid: str) -> Deleted:
+        gone: list[bool] = []
+
+        def fn(doc: TryonDoc) -> TryonDoc:
+            new, went = saved.drop(doc, sid)
+            gone[:] = [went]
+            return new
+
+        await self.store.change(uid, fn)
+        return saved.deleted(gone[0])
 
 
 def off_words(ctx: WardrobeContext) -> str | None:

@@ -10,11 +10,12 @@ Every case runs Part A's real part and routes on R13's real styling part, store 
   it stays selectable;
 - AVT-05: his figure choice is saved against the piece id (`tryon/{uid}.assets`) and drawn from
   its own crop;
-- AVT-09: the fresh check refuses a laundry jacket with no `outfit_plan` call; the race (to the
-  laundry between the check and the call) is refused by `outfit_plan` itself, the plan unchanged;
-  one press makes at most one card;
+- AVT-09: the laundry jacket offered as "Draft: in the laundry"; the fresh check refuses it with
+  no `outfit_plan` call; the race (to the laundry between the check and the call) is refused by
+  `outfit_plan` itself, the plan unchanged; one press makes at most one card;
 - AVT-11: a saved comparison keeps both lists and is re-checked on opening ("Draft");
-- AVT-14: no private piece's id, colour, photo or label in any look, option or words served;
+- AVT-14: no private piece's id, colour, photo or label in any look, option or words served (a
+  reply card's covered slot, row 388, included);
 - OPS-05: C's half first, `tryon/{uid}` last, the spend kept, the catalog's `rev` unchanged;
 - D20: `outfit_plan`'s `lock` and `reserve` refuse a piece in the laundry.
 
@@ -143,6 +144,10 @@ async def avt09_fresh_check_refuses_without_a_call() -> list[str]:
     a, out = await a_world(), []
     pid = await a.plan()
     await a.move(T.rain_jacket)
+    outer = _slot(await a.service.looks.for_plan(UID, pid), "outer")
+    offered = next((o for o in getattr(outer, "options", ()) if o.piece == T.rain_jacket), None)
+    if offered is None or offered.eligible or offered.readiness != "Draft: in the laundry":
+        out.append("the laundry jacket isn't offered as a draft")
     calls = _Calls(a)
     async with a.client() as c:
         got = await c.post("/v1/tryon/confirm", json=_confirm_body(pid))
@@ -199,12 +204,15 @@ async def avt14_private_slots_covered() -> list[str]:
         await a.service.looks.for_plan(UID, pid),
         await a.service.looks.for_day(UID, "today"),
         await a.service.looks.for_pieces(UID, f"top:{T.shirt},base:{T.vest},underwear:{T.under}"),
+        await a.service.looks.for_pieces(UID, f"top:,bottom:{T.trousers}"),  # a card's covered top
     ]
     for look in served:
         text = json.dumps(look.model_dump(mode="json"))
         out += [f"{n} served" for n in (T.vest, T.under, "maroon", "Lucky") if n in text]
         for s in look.slots:
-            if s.slot in m.PRIVATE_SLOTS and (s.template or s.rgb or s.photo or s.options):
+            if (s.slot in m.PRIVATE_SLOTS or s.private) and (
+                s.template or s.rgb or s.photo or s.options or s.piece
+            ):
                 out.append(f"the {s.slot} slot is drawn")
     return out
 

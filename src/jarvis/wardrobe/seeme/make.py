@@ -12,13 +12,17 @@ the fresh typical ₹ at most `inr_shown` + ₹0.01 (409 `price_changed`); his o
 hold (`busy` and `cap_reached` inside it). Then ONE `make` (a 120 s deadline): settled from its
 usage into the cap and his usage month (label `tryon`), at the hold without one; released in full on
 `TryOnNotBilled`; kept at the hold on `TryOnMaybeBilled` and a blocked 200. A repeated request id
-answers its first outcome (`done`), so a retry never charges twice.
+answers its first outcome (`done`), so a retry never charges twice. A picture is kept only while
+his photo, his YES and the garment's photo are still there after the call (review C-1, finding 3:
+OPS-05, his withdrawal or a Privacy delete during the call wins); it is still settled, as made.
+A settle or release that fails after the cap's tries is kept by the cap for later; his usage
+month hears every billed call whatever the settle did (finding 5).
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -247,7 +251,9 @@ class Press:
             async with asyncio.timeout(CALL_DEADLINE_S + DEADLINE_SLACK_S):  # whatever the provider
                 result = await call.provider.make(call.ask)
         except TryOnNotBilled as exc:
-            await self.kit.cap.release(call.hold, outcome={"error": "provider_unavailable"})
+            await _closed(
+                self.kit.cap.release(call.hold, outcome={"error": "provider_unavailable"})
+            )
             said = texts.GOOGLE_BUSY if str(exc) == "status_429" else texts.UNAVAILABLE
             raise SeeMeRefused(503, "provider_unavailable", said) from None
         except Exception as exc:  # noqa: BLE001 - maybe billed (or unknown): kept at the hold
@@ -264,10 +270,13 @@ class Press:
         return await self._keep(uid, call, result)
 
     async def _at_hold(self, uid: str, call: Call, code: str, *, blocked: bool) -> None:
-        await self.kit.cap.settle(
-            call.hold, call.hold.inr, outcome={"error": code}, blocked=blocked
-        )
-        await _record(self.kit, uid, call.provider.estimate(MAX_GARMENTS)[1])
+        hold = call.hold
+        try:
+            await _closed(
+                self.kit.cap.settle(hold, hold.inr, outcome={"error": code}, blocked=blocked)
+            )
+        finally:  # his usage month hears it, whatever the settle did
+            await _record(self.kit, uid, call.provider.estimate(MAX_GARMENTS)[1])
 
     async def _keep(self, uid: str, call: Call, result: TryOnResult) -> PictureView:
         usd = settled_usd(call.provider, result.usage)
@@ -290,10 +299,11 @@ class Press:
                 raise SeeMeRefused(422, "no_photo", words)
             return view
         finally:
-            await self.kit.cap.settle(call.hold, inr, outcome=outcome, picture=True)
-            await _record(
-                self.kit, uid, usd if usd is not None else call.provider.estimate(MAX_GARMENTS)[1]
-            )
+            try:
+                await _closed(self.kit.cap.settle(call.hold, inr, outcome=outcome, picture=True))
+            finally:  # his usage month hears it, whatever the settle did
+                worst = call.provider.estimate(MAX_GARMENTS)[1]
+                await _record(self.kit, uid, usd if usd is not None else worst)
 
     async def _save(self, uid: str, pid: str, call: Call, made: Made) -> PictureView | None:
         """Kept only while his photo, his YES (still current) and the garment's photo are his;
@@ -351,11 +361,28 @@ def _piece_refusal(n: NotSent) -> SeeMeRefused:
     return SeeMeRefused(422, "not_a_garment", texts.NOT_SENDABLE)
 
 
+async def _closed(close: Awaitable[None]) -> None:
+    """A settle or release. The cap tries it three times, then logs it at ERROR with its request
+    id and keeps it for his next press and the daily job: never the reason a made picture, or the
+    refusal he is owed, becomes "can't be reached"."""
+    try:
+        await close
+    except Exception:  # noqa: BLE001 - logged and kept by the cap (`TryonCap.pending`)
+        return
+
+
 async def _record(kit: Kit, uid: str, usd: float) -> None:
-    """His usage month, label `tryon` (Vitals: "Try-on"). `Billing.record` never raises."""
+    """His usage month, label `tryon` (Vitals: "Try-on"). `Billing.record` never raises; if it
+    ever did, it is logged and the press goes on (the cap has counted the call)."""
     billing = kit.billing()
-    if billing is not None and usd > 0:
+    if billing is None or usd <= 0:
+        return
+    try:
         await billing.record(uid, "tryon", usd)
+    except Exception as exc:  # noqa: BLE001 - belt and braces
+        log.error(
+            "see it on me: his usage month missed a call", extra={"error": type(exc).__name__}
+        )
 
 
 __all__ = ["ENDS_SOON_DAYS", "Call", "Kit", "Press", "no_ai", "off_reason", "sent_of"]

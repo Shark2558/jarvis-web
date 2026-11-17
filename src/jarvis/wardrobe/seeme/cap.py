@@ -18,30 +18,40 @@ in a rollout can't both pass) or when spent + held + the hold would pass the cap
 "This month's try-on limit of ₹300 is used: ..."). A counter that isn't a finite number >= 0 is
 unreadable and refuses (never "₹0 spent"). `settle` moves the hold into spend; `release` gives it
 back (never below 0). Both set `released` before the first await and undo it when the write fails,
-so a failed one can be tried again and a second one is a no-op. `settle_old` (the daily job) turns
-holds older than an hour into spend at their hold: a call that may have been billed.
+so a failed one can be tried again and a second one is a no-op. A settle or a release is tried
+three times (`CLOSE_WAITS_S` between); one that still fails is logged at ERROR with its request
+id and kept in `pending` (this process's memory), which the next `reserve` of his and the daily
+job close first, as they were meant: a release never becomes spend (review C-1, finding 5).
+`settle_old` (the daily job) turns holds older than an hour into spend at their hold: a call that
+may have been billed. It records nothing in his usage month: the press records every billed call
+whatever its settle did, so only a crash in the call is left out (recording here would count a
+press whose settle failed twice).
 """
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from jarvis.billing.meter import UsageMeter
+from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, DocTx, Query
 from jarvis.wardrobe.seeme import texts
 from jarvis.wardrobe.seeme.estimate import rupees
 from jarvis.wardrobe.tryon.model import BUSY_MINUTES, DONE_MAX, SETTLE_HOURS, SPEND
 
+log = get_logger(__name__)
 _MONTH = re.compile(r"_(\d{4}-\d{2})$")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 PREFS_ID = "prefs"
 CAP_MAX, KEEP_MAX = 2000, 30
+CLOSE_WAITS_S = (0.05, 0.25)  # between the three tries of a settle or a release
 
 
 CapRefused = texts.SeeMeRefused
@@ -77,6 +87,17 @@ class CapHold:
     inr: float
     month: str
     released: bool = False
+
+
+@dataclass(frozen=True)
+class Later:
+    """A settle or release that failed after its tries: closed later, as it was meant."""
+
+    hold: CapHold
+    spend: float
+    outcome: Mapping[str, Any]
+    picture: int
+    blocked: int
 
 
 @dataclass(frozen=True)
@@ -164,6 +185,7 @@ class TryonCap:
     def __init__(self, docs: Docs, prefix: str, *, tz: str, now: Callable[[], datetime]) -> None:
         self.docs, self.prefix, self.tz, self.now = docs, prefix, tz, now
         self._meter = UsageMeter(docs, prefix=prefix, tz=tz)
+        self.pending: dict[str, Later] = {}  # request id -> a close still to do
 
     def month_of(self, at: datetime) -> str:
         return self._meter.month_of(at)
@@ -197,6 +219,8 @@ class TryonCap:
         self, uid: str, request_id: str, hold_inr: float, cap_inr: int
     ) -> CapHold | Done:
         hold = _money(hold_inr)
+        if self.pending:
+            await self.close_later(uid)  # a close kept from before goes first (never "busy")
         key = self.month_of(self.now())
         path = self.path(uid, key)
 
@@ -236,10 +260,14 @@ class TryonCap:
             tx.set(path, encode(hold.uid, new, self.now()))
 
         try:
-            await self.docs.transaction(fn)
-        except BaseException:
-            hold.released = False  # a failed one may be tried again
+            await _tries(lambda: self.docs.transaction(fn))
+        except BaseException as exc:
+            hold.released = False  # a failed one may be tried again: now, later or by the job
+            self.pending[hold.request_id] = Later(hold, spend, outcome, picture, blocked)
+            why = {"request_id": hold.request_id, "error": type(exc).__name__}
+            log.error("see it on me: a hold couldn't be closed, kept for later", extra=why)
             raise
+        self.pending.pop(hold.request_id, None)
 
     async def settle(
         self, hold: CapHold, billed_inr: float, *, outcome: Mapping[str, Any],
@@ -250,12 +278,28 @@ class TryonCap:
     async def release(self, hold: CapHold, *, outcome: Mapping[str, Any]) -> None:
         await self._close(hold, 0.0, outcome, 0, 0)
 
+    async def close_later(self, uid: str) -> int:
+        """His closes kept from a failed try, closed now as they were meant (a release stays a
+        release); one that fails again stays kept. How many closed."""
+        closed = 0
+        for later in [x for x in self.pending.values() if x.hold.uid == uid]:
+            try:
+                await self._close(later.hold, later.spend, later.outcome, later.picture,
+                                  later.blocked)  # fmt: skip
+            except Exception:  # noqa: BLE001 - logged by _close and kept for the next try
+                continue
+            closed += 1
+        return closed
+
     async def settle_old(self, uid: str) -> int:
-        """Holds older than an hour become spend at their hold (the daily job)."""
+        """Holds older than an hour become spend at their hold (the daily job); a close kept from
+        this process goes first, as it was meant. Nothing is recorded in his usage month."""
+        await self.close_later(uid)
         cutoff = self.now() - timedelta(hours=SETTLE_HOURS)
         moved = 0
         for m in await self.months(uid):
-            old = {r: h for r, h in m.holds.items() if _when(h["at"]) <= cutoff}
+            old = {r: h for r, h in m.holds.items()
+                   if _when(h["at"]) <= cutoff and r not in self.pending}  # fmt: skip
             for rid, h in old.items():
                 hold = CapHold(uid, rid, float(h["inr"]), m.month)
                 await self.settle(hold, float(h["inr"]), outcome={"error": "maybe_billed"})
@@ -287,6 +331,19 @@ class TryonCap:
         await self.docs.transaction(fn)
 
 
+async def _tries(write: Callable[[], Awaitable[None]]) -> None:
+    """The write, tried again after each wait of `CLOSE_WAITS_S` (three tries in all)."""
+    for wait in CLOSE_WAITS_S:
+        try:
+            await write()
+            return
+        except Exception as exc:  # noqa: BLE001 - a store blip: tried again
+            log.warning("see it on me: a hold's close failed, trying again",
+                        extra={"error": type(exc).__name__})  # fmt: skip
+            await asyncio.sleep(wait)
+    await write()
+
+
 def _bounded(v: object, lo: int, hi: int) -> bool:
     return v is None or (isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi)
 
@@ -295,6 +352,7 @@ __all__ = [
     "CapHold",
     "CapRefused",
     "Done",
+    "Later",
     "Month",
     "Prefs",
     "TryonCap",

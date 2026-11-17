@@ -1,9 +1,9 @@
-Version v13.1.1 · 17 Nov 2026, 20:05 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 17 Nov 2026, 21:50 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 Part A: Try-on data (AVT-03, AVT-04, AVT-05, AVT-09, AVT-11, AVT-14, OPS-05)
 
 This is builder A's report for I1. Branch `r13-1-a`, cut from `r13-1-i0` @ `eb8b7e4`. It is built
-against these documents:
+against these documents (review A-1's fixes, and what changed for C, D and I1, are in section 11):
 
 - `BRIEF-COMMON.md` v13.1.2, `BRIEF-A.md` v13.1.2, `I0-NOTES.md` v13.1.1;
 - the plan `r13-1-try-on.md` v13.1.3: D4–D7, D11's no-go list, D14, D16, D20, D21, the data model,
@@ -219,7 +219,9 @@ A piece with photos, the kurta by `?pieces=top:wi_000000000007` (options cut to 
 ```json
 {"slot": "top", "piece": "wi_000000000007", "words": "a beige kurta", "private": false,
  "template": "kurta", "variants": ["knee"], "rgb": [215, 200, 170], "pattern": null,
- "texture_view": "front", "photo": "wh_00000000a001", "views": ["front", "back"], "missing": [],
+ "texture_view": "front", "photo": "wh_00000000a001", "views": ["front", "back"],
+ "refs": [{"view": "front", "photo": "wh_00000000a001"}, {"view": "back", "photo": "wh_00000000a002"}],
+ "missing": [],
  "readiness": "Ready", "eligible": true, "approximate": ["template", "texture"],
  "card_only": false, "removable": false,
  "options": [{"piece": "wi_000000000007", "words": "a beige kurta", "readiness": "Ready",
@@ -237,6 +239,10 @@ A piece with photos, the kurta by `?pieces=top:wi_000000000007` (options cut to 
     the piece's label, colour or id, so his checklist can say a basic isn't ready.
   - With `&private=1` (his "Show private basics"), the covered slot adds its `piece` and R13's
     private words ("a black vest"). It is still never drawn.
+  - A reply card's covered slot (`slot:` with no id) reads, when the card carries `&plan=`, the
+    piece that plan holds there: its readiness is real, and `&private=1` names it. It stays
+    covered whatever that piece is now. With no plan its readiness is `looks.UNCHECKED`, "Not
+    checked here" (review A-1 F6).
 - **`?pieces=`.** The format is `slot:wi_…` for each piece; a pair repeats its slot
   (`shoes:wi_a,shoes:wi_b`); a slot the card covers is `slot:` with no id, for ANY of R13's slots
   (I0's card does this for a top he made private). The card's `plan`, `day` and `code` may come
@@ -254,8 +260,12 @@ A piece with photos, the kurta by `?pieces=top:wi_000000000007` (options cut to 
   `detail`, else `front`. It is NOT always the front crop. `views` lists the views kept and
   `missing` the useful ones not kept (front for every garment, back for tops, outerwear and
   traditional; `model.useful_views`).
-- **Colour.** `rgb` is `model.rgb_of(colour)`. A piece with no colour gets `model.NO_COLOUR_RGB`
-  (128, 128, 128); see section 8.3.
+- **Reference cards (AVT-04).** `refs` names each kept crop, `[{"view", "photo"}]`, in the order
+  front, back, detail; empty on a covered slot. It is built from the same map as `views`, so the
+  two never disagree. D's front and back cards and C's front crop come from it.
+- **Colour.** `rgb` is `model.rgb_of(colour)`. A drawn piece with no colour has `rgb: null`: B
+  draws it mid-grey, and D says "no colour set" for a slot with a `template`, not `private`, whose
+  `rgb` is null (section 8.3, chosen at review A-1).
 - **Options.** The current pick comes first, then the ready ones, then the drafts; at most 12. A
   pair is offered once, by its first side. Each option has its readiness, its first photo (the
   thumbnail) and his template.
@@ -276,18 +286,23 @@ A piece with photos, the kurta by `?pieces=top:wi_000000000007` (options cut to 
 
 ### 7.5 Refusals (`{"error", "detail"}`, `Cache-Control: no-store`)
 
-Every route can also answer `401`, and `429 rate_limited` "Too many requests; wait a minute.".
+Every route can also answer `401`, `429 rate_limited` "Too many requests; wait a minute.", and
+`500 internal` "Something went wrong inside JARVIS. Try again later." (a bug: logged at ERROR with
+where it happened, never its message). Off, unreadable and storage trouble are 503 on every route
+(review A-1 F5). Every route with a body answers a body over 16 KB with `413 too_large` "That
+request is too big." before reading it (F8).
 
 | Route | Status · code |
 |---|---|
-| `GET /v1/tryon` | 503 `off` (the part's Off words) · 503 `unreadable` (the key changed) |
-| `PUT /v1/tryon/body` | 422 `out_of_range` (`model.range_words`) · 422 `nothing_typed` · 422 `bad_request` · 422 `full` · 503 `off` / `unavailable` |
-| `POST /body/use` · `DELETE /body/draft` | 404 `no_draft` · 503 |
-| `GET /v1/tryon/look` | 404 `gone` ("That plan isn't there any more.", or an `alt` that isn't there) · 422 `bad_day` · 422 `not_a_piece` · 422 `bad_request` (`alt` not 0–2, a value over 1,000 characters) · 503 `off` (R13's own words when styling is off) |
-| `PUT /v1/tryon/assets/{piece}` | 404 `not_in` · 422 `wrong_shape` (a private piece, another slot's shape, both a shape and card only, a type with no template) · 422 `bad_request` / `off` |
-| `POST /v1/tryon/confirm` | 409 `draft` ("The navy jacket is in the laundry: it can't be confirmed for this event.") · 404 `gone` · 422 `not_a_look` · 422 `bad_request` · 404 `unavailable` (no gateway or tool) · 422 `no_conversation` · 422 `tool_error` (the gateway's error, in R13's words) · 422 `off` |
-| `GET/POST /v1/tryon/saved` | 409 `too_many` ("You keep at most 10 comparisons: delete one first.") · 422 `not_a_look` · 422 `bad_request` · 503 |
-| `GET/DELETE /v1/tryon/saved/{id}` | 404 `gone` ("That comparison isn't there any more.") |
+| `GET /v1/tryon` | 503 `off` (the part's Off words) · 503 `unreadable` ("Your try-on data can't be opened on this server. Nothing was changed; ...") · 503 `unavailable` |
+| `PUT /v1/tryon/body` | 422 `out_of_range` (`model.range_words`) · 422 `not_whole` ("Type each measurement in whole centimetres, for example 172.": "172", 172.0, 172.5, true) · 422 `nothing_typed` · 422 `bad_request` · 422 `full` · 413 · 503 `off` / `unavailable` |
+| `POST /body/use?at=<draft.at>` | 404 `no_draft` · 409 `changed` (the draft isn't the one he saw: "Your new measurements changed on another screen: check them, then press Use again.") · 422 `bad_request` (an `at` that isn't a time with its zone) · 503. Without `at`, the draft is used as before (F7). |
+| `DELETE /body/draft` | 404 `no_draft` · 503 |
+| `GET /v1/tryon/look` | 404 `gone` ("That plan isn't there any more.", or an `alt` that isn't there) · 422 `bad_day` · 422 `not_a_piece` · 422 `bad_request` (`alt` not 0–2, a value over 1,000 characters) · 503 `off` (R13's own words when styling is off) / `unavailable` |
+| `PUT /v1/tryon/assets/{piece}` | 404 `not_in` · 422 `wrong_shape` (a private piece, another slot's shape, both a shape and card only, a type with no template) · 422 `bad_request` · 413 · 503 `off` / `unavailable` |
+| `POST /v1/tryon/confirm` | 409 `draft` ("The navy jacket is in the laundry: it can't be confirmed for this event.") · 409 `left_out` ("This plan can't leave out its watch yet: put the watch back on the figure to use this look for it.") · 409 `refused` (`outfit_plan`'s own refusal, R13's words) · 404 `gone` · 404 `unavailable` (no gateway or tool) · 422 `not_a_look` · 422 `bad_request` · 422 `no_conversation` · 422 `tool_error` (the gateway's error, in R13's words) · 413 · 503 `off` / `unavailable` |
+| `GET/POST /v1/tryon/saved` | 409 `too_many` ("You keep at most 10 comparisons: delete one first.") · 422 `not_a_look` · 422 `bad_request` · 413 (POST) · 503 |
+| `GET/DELETE /v1/tryon/saved/{id}` | 404 `gone` ("That comparison isn't there any more.") · 503 `off` / `unavailable` |
 
 **"Use this look" when it passes the fresh check** answers R13's `ToolReply` (200):
 
@@ -295,9 +310,14 @@ Every route can also answer `401`, and `429 rate_limited` "Too many requests; wa
 - `needs_approval` with `approval_id` and `session_id` (the card waits in his conversation);
 - or `denied`.
 
-**The race (D20)** is a 200 `executed` whose `result.refused` is true and whose `message` is
-R13's words ("The navy jacket is in the laundry: it can't be locked into this plan."). D must show
-that message and not report success.
+**The race (D20), and any refusal by `outfit_plan` itself** ("That plan changed meanwhile: try
+again.", ...) is `409 refused` with R13's words as `detail` ("The navy jacket is in the laundry:
+it can't be locked into this plan."), never a 200 (review A-1 F1). The fake server answers it the
+same way for a confirm of `r131_fake_server.RACE_PLAN`, or when its state's `refuse` is set.
+
+**A look that leaves out a removable slot the plan's look holds** (D7's Remove: outer, belt,
+watch, socks) is `409 left_out`, before any call: R13's plans can't keep a slot empty (section
+11, F2). The console sends every slot it shows (a covered slot has no id and is never asked for).
 
 ### 7.6 For C
 
@@ -307,8 +327,8 @@ that message and not report success.
   words).
 - A slot C may send is one with `private: false`, a `template` in `model.GARMENTS`, and `"front"`
   in `views`.
-- The FRONT crop's photo id is in the slot only when `texture_view == "front"`. Section 8.2's
-  `refs` gives it always.
+- The FRONT crop's photo id is the `refs` entry whose `view` is `front` (the slot's `photo` is the
+  texture's crop, which may be `detail`).
 
 ## 8. Needs I1
 
@@ -345,6 +365,8 @@ changes again when C merges (INTEGRATION-C):
 
 ### 8.2 A contract gap: each kept view's photo id (AVT-04's two reference cards; C's front crop)
 
+**Done at review A-1 (`d1deaf2`), as named pairs `RefCard {view, photo}`, not the 2-tuples below.**
+
 `LookSlot` names the views kept (`views`) but carries only ONE photo id: the texture crop. D's
 `test_avt04_cards_*` ("both reference cards") can't show a front AND a back card with their ids,
 and R13's `PieceView.photos` does not say which photo is which view. C needs the front crop's id
@@ -375,6 +397,8 @@ test (`kurta.refs == (("front", "wh_…a001"), ("back", "wh_…a002"))`) and to 
 
 ### 8.3 "no colour set" (D5) has no signal in the contract
 
+**Done at review A-1 (`c604823`): choice (a), `rgb: null`.**
+
 The brief says `rgb` is `model.rgb_of` with "no colour set" when there is none; A serves
 `NO_COLOUR_RGB`. D can say "no colour set" only by keeping a copy of (128, 128, 128), which the one
 source rule forbids. I1 can choose either of these:
@@ -387,6 +411,9 @@ source rule forbids. I1 can choose either of these:
 I left it as the brief says (a) would change what B and D build against.
 
 ### 8.4 The `tryon_figure` export and I1's `needles` suite
+
+**Decided at review A-1 (`fc19a86`): the export keeps his numbers (the first choice below); the
+needles rule is in section 11.**
 
 D16 gives `tryon_figure` "count, export, delete with a confirm". The export carries his
 measurements: his own data, as R13's pieces row carries his labels. It is not passkey-gated (a
@@ -481,9 +508,166 @@ D's tests of these UI halves should be checked on the wired app.
 - **R13's limiter clock.** It refills on the real clock, so any R13 or R13.1 limit test that
   doesn't freeze it can flake under load. I0's notes saw one in `test_voice_api.py`.
 
+## 11. Fix (review A-1)
+
+The fixer of review A-1 (`REVIEW-A-1.md` v13.1.1, made at `08d4ed0`) worked on `r13-1-a` from
+`1bc62fc`. Each finding was done test first: a failing test, seen red for its own reason, then the
+fix, a commit, a push. The Workshop agreed the reviewer's recommendations on sections 8.2–8.4.
+
+### 11.1 Each finding
+
+| Finding | Outcome | Commits |
+|---|---|---|
+| F1 HIGH | **Fixed.** An EXECUTED result with `refused` is `409 refused`, R13's words as `detail`; `denied` stays R13's `ToolReply`. The fake server can send it (`RACE_PLAN`, or its state's `refuse`), and `test_r131_a_contract.py` pins the console-facing reply on both A's real race and the fake. The AVT-09 named test and the eval's race case pin `409 {"error": "refused", "detail": LOCK_REFUSED}`. | `2d5e992`, `5623f96` |
+| F2 MEDIUM | **Fixed by the review's option (b), not (a)**: section 11.2. A look that leaves out a removable slot the plan's fresh look holds is `409 left_out`, before any call. | `0aa0ad7` |
+| F3 MEDIUM | **Fixed.** `store.storage_trouble` and `store.where`. Storage trouble stays a warning and 503; anything else is `log.error` with `route`, `error` and `at` ("wardrobe/tryon/looks.py:327:build"), answered `500 internal`; never `str(exc)` or `exc_info`. `part._read` degrades on storage trouble only. | `8ee9cae` |
+| F4 MEDIUM | **Fixed.** `test_avt14_looks_a_piece_made_private_is_never_another_slots_option` (red under the review's mutation, run as a scratch plugin outside the tree); the colour needle is `json.dumps(rgb_of("maroon"))`, "[110, 30, 40]"; the eval's AVT-14 case reads a top made private, and a control "options keep private pieces" turns it red. | `c53a26f` |
+| F5 LOW | **Fixed.** 503 on the five rows; `down=` and the `down` parameter are gone. | `708be16` |
+| F6 LOW | **Fixed.** A card's covered slot reads its plan's piece fresh (still covered); with no plan, "Not checked here". | `2224cb6` |
+| F7 LOW | **Fixed**, with `at` optional (11.4). | `e41f4f4` |
+| F8 LOW | **Fixed.** 16 KB cap, `413 too_large`, before any parse; `not_whole` for "172", 172.0, 172.5, true. `StrictInt` on `BodyIn` is left to I1 (A no longer depends on it). | `e904839` |
+| F9 LOW | **A's half fixed**: count and export tidied against R13's view when it can be read; the row deletable whenever the document is on disk. I0's words are for I1 (11.4). | `4f5e6d7` |
+| F10 LOW | **The words fixed** (no cause named). `Body` reading `extra="ignore"` is I0's (11.4). | `5d3c6f5` |
+| F11 LOW | **Fixed.** A tenth control (`saved.look_view` answers Ready, never re-checked) turns the AVT-11 case red. | `b82dafc` |
+| F12 LOW | **Not fixed here**: I1 with C (11.4). | none |
+| 8.2 `refs` | **Done**, as `RefCard {view, photo}`, front, back, detail; empty when covered. | `d1deaf2` |
+| 8.3 no colour | **Done**: `rgb: null`. | `c604823` |
+| 8.4 export | **Kept** his numbers; A's needles guard states the rule (11.4, item 7). | `fc19a86` |
+| Found while fixing | The needles guard flaked about once in a dozen runs: "93" (his waist) inside the random audit hash "...2b93d7...". Random hex is now masked before the numeric search, and each `args_hash` is checked to be a digest. | `8ee9cae` |
+| Sizes | The eval (427) and the route tests (409) back under 400: `PlanCalls` in A's fakes replaces three copies of a call counter; the body tests move to `test_r131_a_bodies.py`. | `824cbb8` |
+
+### 11.2 F2: why the refusal, not "release the removed slot"
+
+The review's option (a) was to drop the removed slots' picks inside R13's `lock`. That cannot keep a
+slot empty. R13's engine fills every slot of the dress code again on each read, both required
+slots and optional ones that have a fitting piece. Probed on the fakes (the meeting plan,
+business formal):
+
+- a watch, outer layer, belt or socks pick dropped from the stored plan comes back in the plan's
+  look as the same piece;
+- R13's own `release` of the watch re-picks the same watch.
+
+So after (a) the stored picks would lack the watch, but "Today and tomorrow", the figure by
+`?plan=` and `outfit_plans` would still show it. That test would pass while the behaviour was
+still wrong. A plan can't hold "no watch" without an R13 plan field and an engine change, and
+R13's packages are not Part A's (BRIEF-COMMON section 3).
+
+So A does (b): the confirm reads the plan's look as it is now, and refuses in words, before any
+call, a look that leaves out a removable slot that look holds:
+
+- "This plan can't leave out its watch yet: put the watch back on the figure to use this look for
+  it." (the slot is named in R13's slot words);
+- a covered slot (a private piece: no id to send) is never asked for;
+- nor is a slot the plan's look doesn't hold now.
+
+The screen therefore never says "used" while the plan keeps a watch. Remove still works on the
+figure, in compare and in saved comparisons. The durable fix is 11.4, item 1.
+
+### 11.3 Contract changes for I1 to check against B, C and D (I0's files, the smallest change)
+
+- `wardrobe/tryon/http_figure.py` (+8): `class RefCard(_M): view: View; photo: PhotoId`, and
+  `LookSlot.refs: tuple[RefCard, ...] = Field(default=(), max_length=3)`.
+- `wardrobe/tryon/http.py` (+11 −7):
+  - it re-exports `RefCard`;
+  - it adds the aliases `_A = "/v1/tryon/assets/{piece}"` and `_B = (413, 422)`;
+  - row errors: `PUT /body` +413; `POST /body/use` +409 +422; `PUT /assets/{piece}` +413 +503;
+    `POST /confirm` +413 +503; `POST /saved` +413 +503; `GET/DELETE /saved/{id}` +503. Every
+    `tryon` row now lists 503.
+- `tests/r131_fake_server.py` (+21 −2):
+  - `RACE_PLAN`, `FakeTryon.refuse` and `_race`: the confirm answers `409 refused`;
+  - `look_slot` serves `refs` (in A's order) and `rgb: null` for no colour;
+  - `use` honours `?at=` (`409 changed`).
+- Unchanged: `ConfirmIn`, `BodyIn`, `LookSlot.rgb` (already optional).
+- New refusal codes (the contract doesn't list codes): `refused`, `left_out` (confirm, 409),
+  `changed` (body/use, 409), `not_whole` (body, 422), `too_large` (413), `internal` (500).
+
+What each part needs:
+
+- **D** must:
+  - branch on those codes and show `detail`, and report success only on a 200;
+  - send `?at=<draft.at>` with "Use these measurements";
+  - draw AVT-04's cards from `refs`;
+  - say "no colour set" for a drawn slot whose `rgb` is null;
+  - send every slot it shows on "Use this look".
+- **B**: nothing (null `rgb` is already mid-grey).
+- **C**: take the front crop from `refs`.
+
+### 11.4 For I1 (not done here, with reasons)
+
+1. **F2's durable Remove** needs R13's packages, not A's. The smallest change:
+   - `Plan.omit: tuple[str, ...]` (at most 4 slots; R13's sealed records ignore unknown fields,
+     so a rollback still opens them);
+   - `Ask.omit`, filled from it in `service.ask`, and `engine._slots` skips those slots;
+   - `lock` with `pieces` takes `omit` (only `REMOVABLE_SLOTS`) in the same `s.change`, and
+     `reserve.with_pick` clears a slot from `omit` when he picks one again;
+   - `plan_schema` gains `omit`.
+
+   Then `ConfirmIn.removed` replaces A's `left_out`, and R13's styling tests and evals must stay
+   green.
+2. **F7**: once D sends `?at=`, make it required (one line in `api/tryon._seen`).
+3. **F8**: `BodyIn`'s fields may become `StrictInt` (optional now).
+4. **F9** (I0's `kept.SPECS`): `tryon_all`'s unit is "documents", and its words gain "The month's
+   Try-on spend (numbers only) stays 13 months for your monthly limit." (D16).
+5. **F10** (I0's `model.Body`): read stored bodies with `extra="ignore"`, and keep `forbid` on
+   `BodyIn`.
+6. **F12**, with C:
+   - C's picture write checks his YES again in the same transaction (it is gone after OPS-05)
+     and drops the picture when it is gone;
+   - the OPS-05 test gains a press that finishes after the erase.
+7. **The `needles` suite** (`evals/r13_1/needles.py`, I1's stub):
+   - his measurements are allowed only in `tryon_figure`'s export payload: the single export's
+     `data` and `export_all`'s `categories.tryon_figure`;
+   - they are allowed nowhere else: no other category, not `unavailable`, not the export's audit
+     line, no log;
+   - its positive control is the needle planted in another category's export, found;
+   - `tests/test_r131_a_needles.py::outside_the_figure` is that rule, and I1 may reuse it;
+   - a log record's `at` (`store.where`) is a code location: check it by its shape, not by
+     numbers (a line number may equal one of his).
+8. **Unchanged:** the two wiring pins of 8.1.
+9. **I0's `fake_routes`** is 126 lines long (it was over 50 before A's +5). It is listed here and
+   not refactored, because it is I0's file.
+10. **The reviews of the fix:** this session could not start another agent, so the fix was not
+    reviewed in a fresh context. I1 should run `security-reviewer` on F1 and F2 (the confirm
+    path), and `code-reviewer` and `python-reviewer` on the fix.
+
+### 11.5 The checks (code at `824cbb8`; one at a time, the heavier behind the shared lock)
+
+| Check | Result |
+|---|---|
+| A's tests, `tests/test_r131_a_*.py` (13 files), Python 3.12 | **184 passed** |
+| the same, Python 3.11 | **184 passed** |
+| coverage of A's 11 modules (3.12) | **98.1 %** (1,119 statements, 21 missed); each 95–100 % (`looks.py` 95 %, `api/tryon.py` 99 %) |
+| `evals/r13_1/run.py --mock --part looks`, 3.11 and 3.12 | **9/9 passed; the negative control failed the suite.** Each of the 10 controls turned its own case red for its own reason (each failure list printed and read). |
+| the areas A touches (43 files: every `test_r131_*`, `test_r13_c_*`, `test_r13_a_routes`, every `test_privacy_*`, `test_r13_seams`, `test_r13_wiring`), 3.11 and 3.12 | **1,080 passed, 2 failed**: the two I0 pins of 8.1, as before |
+| `ruff check` and `ruff format --check`, the 20 Python files changed since `1bc62fc` | clean |
+| `mypy src/jarvis/wardrobe/tryon src/jarvis/api/tryon.py` | the baseline error only (`memory/redis_store.py:67`) |
+| `scripts/arch_coverage.py` · `scripts/check_doc_versions.py` | OK, 115 collections · 30 documents OK |
+| static checks: no real clock, no `$`, every function ≤ 50 lines, A's modules ≤ 400 | clean (largest: the eval at 391, `looks.py` at 380) |
+
+### 11.6 Not test first (each commit says so)
+
+- **Written with the code they pin** (their unit tests were red first):
+  - the fake server's `refs` pin;
+  - the `left_out` route pin.
+- **Guards**, where the code already held:
+  - F4's options test, red under a scratch mutation;
+  - the needles allowance, with its positive control.
+- **Controls:** the eval's new controls; a control's red is its test.
+- **No assertion changed:** the `PlanCalls` and size refactor.
+
+### 11.7 What could not be verified here
+
+- D's console and how it handles the new codes;
+- a browser;
+- C's branch;
+- real Firestore errors: they are classified by their module (`google.`), and tested only with a
+  stand-in class;
+- R13's engine with an `omit` field (11.4, item 1, not built).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.0 | 17 Nov 2026, 19:40 IST | R13.1 | The plan section, before any code | 🛠 Mark XXIII |
 | v13.1.1 | 17 Nov 2026, 20:05 IST | R13.1 | Current, at the end of Part A. It records: what was built (files with line counts, the second builder's eight commits); BRIEF-A item by item; the rows' named tests; the eval's 9 cases and 8 controls; the checks with their numbers; what C and D get (the pilot's look, the look's rules, readiness words, refusals per route, the race's reply); Needs I1 (the two wiring pins, a `refs` field for AVT-04, "no colour set", the export against the needles suite, the fresh-context reviews, the fake server's differences); deviations; known limits | 🛠 Mark XXIII |
+| v13.1.2 | 17 Nov 2026, 21:50 IST | R13.1 | Section 11, the fix of review A-1: each finding's outcome and commits (F1 409 refused, and the fake server sends it; F2 a 409 left_out, with why not option (a); F3 bugs logged where they happened and answered 500; F4 AVT-14 pinned; F5 503 everywhere; F6 a card's covered slot readiness; F7 Use bound to the draft seen; F8 the 16 KB cap and whole centimetres; F9 A's half; F10 the words; F11 the AVT-11 control; F12 for I1), sections 8.2 to 8.4 done, the contract changes for I1 to check against B, C and D, what is left for I1, the checks with their numbers. Section 7's contract lines brought up to date (refs, rgb null, the refusals table, the race reply, C's front crop) | 🛠 Mark XXIII (fix A-1) |

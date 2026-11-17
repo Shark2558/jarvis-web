@@ -268,6 +268,43 @@ async def test_a_tool_error_on_the_one_call_is_a_refusal_in_r13s_words() -> None
     assert _refusal(got, 422, "tool_error").detail == "The plan is busy"  # R13's words, cut
 
 
+@pytest.mark.parametrize("words", [
+    "That plan changed meanwhile: try again.",  # R13's M1 conflict
+    "Your wardrobe isn't ready yet: try again in a minute.",
+    "One piece a slot: top has two.",
+])  # fmt: skip
+async def test_any_refusal_by_outfit_plan_is_a_409_refused_never_executed(words: str) -> None:
+    from jarvis.tools.gateway import GatewayOutcome, GatewayResult
+
+    a = await a_world()
+    pid = await a.plan()
+
+    async def refusing(call: Any, **kw: Any) -> GatewayResult:  # R13 refuses as a result
+        return GatewayResult(GatewayOutcome.EXECUTED, result={"refused": True, "message": words})
+
+    a.w.gw.execute = refusing  # type: ignore[method-assign]
+    async with a.client() as c:
+        got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
+            {"slot": "top", "piece": T.white}]})  # fmt: skip
+    assert _refusal(got, 409, "refused").detail == words
+
+
+async def test_switched_off_in_his_permissions_stays_r13s_denied_reply() -> None:
+    from jarvis.tools.gateway import GatewayOutcome, GatewayResult
+
+    a = await a_world()
+    pid = await a.plan()
+
+    async def denied(call: Any, **kw: Any) -> GatewayResult:
+        return GatewayResult(GatewayOutcome.DENIED)
+
+    a.w.gw.execute = denied  # type: ignore[method-assign]
+    async with a.client() as c:
+        got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
+            {"slot": "top", "piece": T.white}]})  # fmt: skip
+    assert got.status_code == 200 and got.json()["status"] == "denied"
+
+
 async def test_a_body_nested_past_reason_is_a_refusal_not_a_crash() -> None:
     a = await a_world()
     deep = b"[" * 100_000 + b"]" * 100_000

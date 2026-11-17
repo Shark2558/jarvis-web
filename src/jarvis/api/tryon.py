@@ -43,6 +43,7 @@ from jarvis.api.r13_status import NO_STORE, limited, part_of
 from jarvis.api.settings_audit import record_change
 from jarvis.api.wardrobe import PanelRun, panel_reply, run_panel_tool
 from jarvis.logging import get_logger
+from jarvis.tools.gateway import GatewayOutcome
 from jarvis.wardrobe.model import PIECE_ID
 from jarvis.wardrobe.tryon import assets, confirm, looks, saved, store, versions
 from jarvis.wardrobe.tryon.http import AssetChoice, BodyIn, ConfirmIn, Refusal, SavedIn
@@ -239,10 +240,16 @@ PANEL_CODES = {404: "unavailable", 422: "no_conversation"}
 
 def _panel(run: PanelRun) -> JSONResponse:
     """R13's `ToolReply` for the one call (executed, a card, or denied); every refusal in the
-    contract's shape, in R13's own words (the gateway's error too)."""
+    contract's shape, in R13's own words: the gateway's error, and `outfit_plan`'s own refusal
+    (D20's race, "That plan changed meanwhile", ...), which R13 returns as an EXECUTED result
+    and which must never read as done (review A-1 F1)."""
     if run.result is None:  # refused before any call
         status, words = run.refusal or (422, DOWN)
         return no(status, PANEL_CODES.get(status, "unavailable"), words)
+    res = run.result
+    if res.outcome is GatewayOutcome.EXECUTED and isinstance(res.result, dict):
+        if res.result.get("refused"):
+            return no(409, "refused", str(res.result.get("message") or DOWN))
     reply = panel_reply(run)
     if reply.status_code < 400:
         return reply

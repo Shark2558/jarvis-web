@@ -56,6 +56,7 @@ PART = "looks"
 BUILT = True
 Case = Callable[[], Awaitable[list[str]]]
 IN_LAUNDRY = "The navy jacket is in the laundry: it can't be confirmed for this event."
+LOCK_REFUSED = "The navy jacket is in the laundry: it can't be locked into this plan."
 FIGURE = f"jarvis_tryon/{UID}"
 
 
@@ -169,8 +170,8 @@ async def avt09_race_refused_by_outfit_plan() -> list[str]:
     before = (await a.styling.plans.read(UID)).plan(pid)
     async with a.client() as c:
         got = await c.post("/v1/tryon/confirm", json=_confirm_body(pid))
-    if not (got.json().get("result") or {}).get("refused"):
-        out.append("outfit_plan took a jacket that went to the laundry")
+    if got.status_code != 409 or got.json() != {"error": "refused", "detail": LOCK_REFUSED}:
+        out.append(f"not refused in R13's words: {got.status_code}")  # never 200 "executed"
     if (await a.styling.plans.read(UID)).plan(pid) != before:
         out.append("the plan changed")
     if len(await a.w.gw.gate.pending()) > 1:

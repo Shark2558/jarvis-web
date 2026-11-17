@@ -199,7 +199,8 @@ async def _the_race_is_refused_by_outfit_plan() -> None:
     async with b.client() as c:
         got = await c.post("/v1/tryon/confirm", json=_confirm(pid, T.rain_jacket))
     assert race.calls == ["lock"]  # ONE call, and outfit_plan's own check refused it
-    assert got.json()["result"]["refused"] is True and got.json()["message"] == LOCK_REFUSED
+    assert got.status_code == 409 and got.headers["cache-control"] == "no-store"  # never "done"
+    assert got.json() == {"error": "refused", "detail": LOCK_REFUSED}  # R13's own words
     assert (await b.styling.plans.read(UID)).plan(pid) == before  # the plan unchanged
     assert len(await b.w.gw.gate.pending()) <= 1  # one press makes at most one card
 

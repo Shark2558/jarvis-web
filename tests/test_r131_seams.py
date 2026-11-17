@@ -778,10 +778,14 @@ async def test_the_fake_server_answers_every_route_with_its_model(settings: Sett
             look = http.TryonLook.model_validate((await c.get("/v1/tryon/look")).json())
             base = next(s for s in look.slots if s.slot == "base")
             assert base.private and base.piece is None and base.rgb is None  # covered only
-            card = await c.get(f"/v1/tryon/look?pieces=top:{T.shirt},base:{T.vest}")  # row 388
+            q = f"pieces=top:{T.shirt},base:{T.vest}"  # row 388, on the card's own day (I1 H1)
+            card = await c.get(f"/v1/tryon/look?{q}&day=today")
             got = http.TryonLook.model_validate(card.json())
             assert [(s.slot, s.piece) for s in got.slots] == [("top", T.shirt), ("base", None)]
-            assert (await c.get("/v1/tryon/look?pieces=top:wi_000000000999")).status_code == 422
+            bare = await c.get(f"/v1/tryon/look?{q}")  # never read for today by default
+            assert bare.status_code == 422 and bare.json()["error"] == "bad_day"
+            stranger = await c.get("/v1/tryon/look?pieces=top:wi_000000000999&day=today")
+            assert stranger.status_code == 422 and stranger.json()["error"] == "not_a_piece"
             refused = await c.post(
                 "/v1/seeme/consent", json={"typed": "yes", "template_version": "c2"}
             )

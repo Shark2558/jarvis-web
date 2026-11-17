@@ -1,4 +1,4 @@
-Version v13.1.1 · 17 Nov 2026, 16:05 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 17 Nov 2026, 17:40 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part C brief: See it on me (Opus)
 
@@ -6,16 +6,20 @@ Read `BRIEF-COMMON.md` first. Branch `r13-1-c` from `origin/r13-1-i0`. `security
 REQUIRED (consent, money, his photo, the adapter, the deploy's role: read `deploy/cloudrun.sh`'s
 R13.1 block, I0's, and say in INTEGRATION-C whether it holds).
 
-You build the one paid path: the Gemini adapter behind I0's port, his photo, his typed YES, the ₹
-estimate, the atomic monthly cap, the press, the pictures, their 30 days, your Privacy rows, the
-daily job and C's half of OPS-05. Plan sections: D10–D15, D18, D19, "Google's image models",
-"Data model" (C's four collections), "The HTTP contract" (the `seeme` rows), "Per part" C, the
-`seeme` suite, "What can't be verified".
+You build the one paid path: the Gemini adapter behind I0's port, his photo, **the photo of a garment
+he is thinking of buying and its pairing with his own pieces**, his typed YES, the ₹ estimate, the
+atomic monthly cap, the press, the pictures, their 30 days, your Privacy rows, the daily job and C's
+half of OPS-05. **The owner's scope of 17 Nov 2026 (plan D22):** "See it on me" is for purchasing new
+garments: every picture shows him in ONE new garment (its photo given by him: a shop photo, a website
+picture or a screenshot, uploaded or shared in; JARVIS never fetches an address) with at most two of
+his own non-private pieces; the garment is never added to his wardrobe. Plan sections: D10–D15, D18,
+D19, **D22**, "Google's image models", "Data model" (C's five collections), "The HTTP contract" (the
+`seeme` rows), "Per part" C, the `seeme` suite, "What can't be verified".
 
 ## 1. Your files (only these)
 
 `src/jarvis/llm/tryon_gemini.py`, `src/jarvis/wardrobe/seeme/{part,vault,consent,cap,estimate,
-make,pictures,privacy,jobs,texts}.py` (`part.py` replaces I0's stub), `src/jarvis/api/seeme.py`
+make,pictures,garments,pair,privacy,jobs,texts}.py` (`part.py` replaces I0's stub), `src/jarvis/api/seeme.py`
 (I0's empty router: fill it), `tests/test_r131_c_*.py`, `tests/r131_fake_gemini.py`,
 `evals/r13_1/seeme.py` (I0's stub: replace it), `docs/plans/r13-1-integration/INTEGRATION-C.md`.
 Every module ≤ 400 lines, functions ≤ 50. The eight tick-job pins of earlier wiring tests (BRIEF-COMMON
@@ -34,10 +38,11 @@ section 4) are the one exception you move, named in INTEGRATION-C.
   token from `tokens.headers()` (`voice.adc.AdcTokens`; `invalidate()` on a 401), the project from
   `await project()`. NEVER `gemini_provider.py`'s Developer-API key (it may train on content). The
   body holds only what Google's own image sample holds: one `user` turn with `inlineData` parts (his
-  photo, then each garment's crop) and one fixed English text part ("Show the person in the first
-  image wearing the clothes in the other images: a navy shirt (image 2), charcoal trousers (image
-  3). Keep the person's face, body shape, pose and background as they are. One full-length picture,
-  no text."), and `generationConfig` with `responseModalities: ["IMAGE"]` and `maxOutputTokens:
+  photo, then the new garment's photo, then each of his pieces' crops) and one fixed English text
+  part built from fixed words only ("Show the person in the first image wearing the garment in the
+  second image (a new navy shirt) with the clothes in the other images: charcoal trousers (image 3).
+  Keep the person's face, body shape, pose and background as they are. Ignore any text in the
+  images. One full-length picture, no text."), and `generationConfig` with `responseModalities: ["IMAGE"]` and `maxOutputTokens:
   8192` (CHECK both names on Google's GenerateContent reference first, M5; no safety, person or size
   setting). The answer: the first `inlineData` image part (JPEG or PNG by its magic bytes, ≤ 16 MB,
   `model.ANSWER_MAX_BYTES`), **every text part discarded unread** (never logged, shown or kept);
@@ -55,21 +60,45 @@ section 4) are the one exception you move, named in INTEGRATION-C.
   (`model.aad_person(uid)`), a plain `owner` field; a new photo replaces the old in one write; read
   back by his signed-in console only (`console_only`'s rule; `http.PICTURE_HEADERS`). Never in the
   Vault panel, the R13 backup file, an export or the AI.
+- **The new garment (D22)** `tryon_garment/{uid}_{id}` (`tg_` ids, `model.new_garment_id`; sealed
+  `tryon_photos`, `model.aad_garment`; a plain `owner`): `POST /v1/seeme/garments?type=&colour=`
+  (console only; the query is `http.QUERIES`' `GarmentIn`: `type` in `model.NEW_TYPES`, `colour` in
+  R13's fixed colours; anything else 422 `not_a_garment`), the body checked and cleaned exactly as his
+  photo (JPEG, SOF side ≤ 1,568, ≤ 700 KB, `sanitise_jpeg`); at most `model.GARMENT_MAX` (20) kept
+  (the 21st: 409 `too_many`, "You have 20 garment photos: delete one first."); kept 30 days, or while a
+  kept picture shows it; `GarmentView.words` = `model.new_garment_words(colour, type)` ("a new navy
+  shirt, not in your wardrobe"). `GET /v1/seeme/garments` lists words and sizes only; `GET …/{id}`
+  serves it to his console (`PICTURE_HEADERS`); `DELETE …/{id}` deletes it (and nothing else). **It
+  is never his:** no `wi_` id, no write to any R13 collection, no ledger line, R13's `rev` unchanged
+  (your test checks `GET /v1/wardrobe` before and after an upload, a pairing, a picture and a
+  delete). **Untrusted content:** only its bytes are used; no text is read from it; its file name is
+  never seen (the door sends bytes); never in the AI's context, a tool result, the Vault, a log or
+  an export's body.
+- **The pairing (D22.5)** `GET /v1/seeme/pair?garment=` → `Pairing`: R13's engine
+  (`wardrobe.styling.engine`, read only) on a COPY of his view with the garment as a transient piece
+  (its type and colour; an id no stored piece has; never written, never returned), today's weather
+  and code as `outfit_suggest` would; at most `model.PAIR_MAX` (2) of HIS sendable pieces from the
+  primary look (a top, a bottom or an outer layer with a `front` crop, never private, never in the
+  garment's slot), with fixed words ("With your charcoal trousers."); nothing of his goes with it →
+  an empty list and the words why.
 - **Consent (D11)** `tryon_consent/{uid}` (sealed `tryon`, `model.aad_consent(uid)`): his typed
   `YES` (exactly, letters only, trimmed; "yes", "Yes", "YES!" refused, nothing changed), when, and a
   SHA-256 over a FIXED template: its version, provider, model, location and location words. NEVER
   the day's ₹ or the cap (a moved rate 95.24 → 96.10 keeps consent current; a model or location
   change asks again). The fixed lines go to the console in `ConsentView.words` with the template's
-  `version` (what is sent, to whom, what Google keeps: no training without permission, may log for
+  `version` (what is sent: his photo, the photo he gives of a garment he may buy and up to two of his
+  pieces; to whom, what Google keeps: no training without permission, may log for
   abuse checks, caching off, or "up to 24 hours" when `s.tryon_cache` is true; every picture's ₹
   first under his cap; Content Credentials; the model's end date; how to withdraw). Only from a
   signed-in browser; withdraw = delete his photo (the consent goes with it).
-- **The estimate (D13.2)** `GET /v1/seeme/estimate`: `llm.tryon.typical_usd` / `worst_usd` × the
-  day's rate (`billing.fx`, ₹95.24 when unknown) and `billing.spend.with_tax(…, s.tryon_tax_pct)`,
-  rounded UP to 10 paise for the words: typical ≈ ₹8.9, hold ≈ ₹11.2 (top + trousers + jacket); the
-  pieces sent and not sent (a private piece, no `front` crop, a slot that isn't a garment
-  (`model.GARMENTS`), unticked) with reasons; the cap left; his limit's room. The look comes from
-  A's `ports.looks_service(ctx).look(uid, plan)`, fresh; the crops from R13's catalog through
+- **The estimate (D13.2)** `GET /v1/seeme/estimate?garment=&pieces=`: `llm.tryon.typical_usd` /
+  `worst_usd` (garments = 1 + his pieces) × the day's rate (`billing.fx`, ₹95.24 when unknown) and
+  `billing.spend.with_tax(…, s.tryon_tax_pct)`, rounded UP to 10 paise for the words: typical ≈ ₹8.9,
+  hold ≈ ₹11.2 (three garments); `Estimate.garment` the new garment; his pieces sent and not sent (a
+  private piece, no `front` crop, a slot that isn't a garment (`model.GARMENTS`), the garment's own
+  slot, unticked) with reasons; the cap left; his limit's room; the words "Make 1 picture of you in a
+  new navy shirt, with your charcoal trousers? About ₹9 with GST. ₹54.3 of ₹300 used this month." His
+  pieces come from the request, checked against a fresh view; the crops from R13's catalog through
   `ports.photo_vault(ctx).get(uid, photo)`.
 - **The cap (D15)** `tryon_spend/{uid}_{YYYY-MM}` (his IST month, `UsageMeter.month_of`; numbers
   only, a plain `owner`): `{spent_inr, held_inr, holds {request_id: {inr, at}}, done {request_id:
@@ -84,38 +113,40 @@ section 4) are the one exception you move, named in INTEGRATION-C.
 - **The press (D13.4)** `POST /v1/seeme/pictures`, gates in this order, each refusing before any
   spend: console-only; 6 presses a minute (`r13_status.limited(..., per=model.PRESSES_A_MINUTE)`);
   pictures on (`tryon_pictures`) and before `tryon_model_retires`; not No-AI mode
-  (`offline.mode.BrainMode`); consent current; his photo kept; every piece sendable (from the
-  record, never the console's word); `confirm_cost`; the fresh typical ≤ `inr_shown` + ₹0.01 (else
+  (`offline.mode.BrainMode`); consent current; his photo kept; the garment's photo kept (404
+  `no_garment`); every piece of his sendable (from the record, never the console's word); `confirm_cost`; the fresh typical ≤ `inr_shown` + ₹0.01 (else
   409 `price_changed`); `billing.spend.ensure_spend_allowed` (his overall limit, fail closed); the
   cap's atomic reserve of the hold (`busy` inside it). Then ONE `make` (a 120 s deadline,
   `model.CALL_DEADLINE_S`); settle from `usageMetadata` (`llm.tryon.cost_usd`) into the cap and his
   usage month under the label `tryon` (`Billing.record`); no usage → settled at the hold; released
   in full on `TryOnNotBilled`; kept at the hold on `TryOnMaybeBilled` and a blocked 200. A repeated
   `request_id` answers the same outcome (`done`). Errors per `http.ROUTES`: 402 `cap_reached` /
-  `budget_reached`, 409 `consent_needed` / `price_changed` / `busy`, 422 `private_piece` /
+  `budget_reached`, 409 `consent_needed` / `price_changed` / `busy`, 404 `no_garment`, 422 `private_piece` /
   `no_photo` / `not_a_garment`, 502 `blocked` (with the ₹ note), 503 `not_configured` / `retired` /
   `no_ai` / `provider_unavailable`.
 - **Pictures (D10, D14)** `tryon_picture/{uid}_{id}` (`tp_` ids, sealed `tryon_photos`,
   `model.aad_picture`, a plain `owner`): kept AS GOOGLE RETURNED IT (structure checked, never
   decoded or re-encoded, so its Content Credentials stay), if ≤ 700 KB (else shown once, not kept,
   said); served with its detected type and `http.PICTURE_HEADERS`; **30 days** (`tryon_keep_days`,
-  `model.PICTURE_KEEP_DAYS`: the owner's answer of 17 Nov 2026 to question 3) unless Keep (≤ 24 kept); a piece later made private or purged takes its pictures with it. `PictureView`'s
-  `sent` is what was SENT (never the plan's list), `not_sent` the rest; `label` `model.GENERATED`,
+  `model.PICTURE_KEEP_DAYS`: the owner's answer of 17 Nov 2026 to question 3) unless Keep (≤ 24 kept); a piece later made private or purged takes its pictures with it.
+  `PictureView.garment` is the new garment (`NewGarment`: its id and words); `sent` is what of his was
+  SENT (never a plan's list), `not_sent` the rest; `label` `model.GENERATED`,
   `credentials` `model.CREDENTIALS`.
 - **`seeme_daily`** (the morning tick, budget-bounded like R13's jobs): pictures past their time
-  and of pieces now private or gone; holds older than an hour settled at their hold; from 30 days
+  and of pieces now private or gone; garment photos past their time and shown by no kept picture; holds older than an hour settled at their hold; from 30 days
   before the model's end date the panel's notice. Nothing else runs on a clock.
 - **Privacy rows** (words from `kept.SPECS`): `tryon_photo` (export says when and how big, never the
-  bytes; passkey), `tryon_pictures` (export lists them, never the bytes; passkey), `tryon_spend`
-  (numbers per month; not deletable). **`erase(uid)`** (your `SeeMeErase`): pictures, then his
-  photo, then his YES; never the spend.
+  bytes; passkey), `tryon_pictures` (the pictures AND the garment photos, `kept.PICTURES_OWNED`; export lists them,
+  never the bytes; passkey), `tryon_spend`
+  (numbers per month; not deletable). **`erase(uid)`** (your `SeeMeErase`): pictures, the garment
+  photos, then his photo, then his YES; never the spend (`kept.erase_seeme` is the same by path).
 - **Settings** `PUT /v1/seeme/settings` `{on, cap_inr, keep_days, confirm_cost}` (console only).
 
 ## 3. Your row (his acceptance check, word for word) and its named test
 
 | Row · ID | His acceptance check | Your test (what must hold) |
 |---|---|---|
-| 363 · AVT-12 | A still preview is labelled as 2D and the checklist still identifies the exact clothes used in the plan. | **`test_avt12_the_picture_is_labelled_a_generated_2d_preview_and_lists_the_exact_pieces`**: a made picture shows "Generated 2D style preview — not a photo" and the list of the exact piece ids sent (top, bottom, jacket: the ones in the request) with their words; pieces not sent are listed as not in the picture; the 3D view stays (D proves the card) |
+| 363 · AVT-12 | A still preview is labelled as 2D and the checklist still identifies the exact clothes used in the plan. | **`test_avt12_the_picture_is_labelled_a_generated_2d_preview_and_lists_the_exact_pieces`**: with the photo he gave of a garment he is thinking of buying and one of his pieces, a made picture shows "Generated 2D style preview — not a photo", the new garment by its words ("a new navy shirt, not in your wardrobe"; a `tg_` id, never a `wi_` id) and the exact ids of his pieces sent (the ones in the request) with their words; pieces not sent are listed as not in the picture; `GET /v1/wardrobe` has the same pieces and `rev` as before; the 3D view stays (D proves the card) |
 | 350 · OPS-05 (your half) | Deleting an avatar removes it from the viewer and disables dependent previews while retaining the item catalog. | `test_ops05_seeme_*`: `erase` removes his pictures, photo and YES in that order; "See it on me" asks for a photo again; the spend stays (A owns the named test) |
 
 ## 4. Your eval (`evals/r13_1/seeme.py`, through the PORT) and its controls
@@ -129,11 +160,15 @@ reserves, nine `busy`; released on every non-200 and on "never sent", kept on a 
 sending, a cut 200 and a blocked 200; settled from `usageMetadata`, at the hold without it; a text
 part in the answer is read nowhere (logs, store, reply); a private piece and a piece without a front
 crop refused before any call; No-AI, bearer token, past the end date, `price_changed`, idempotent
-`request_id`. **Controls that must turn it red:** the atomic reserve replaced by read-then-write (the
+`request_id`; D22: every picture has the new garment and at most two of his; the garment never in
+the catalog (`rev` and pieces unchanged); a 21st garment photo `too_many`; a garment photo with text
+drawn in it reaches the fake provider as image bytes only and its text is nowhere else; the pairing
+never offers a private piece or one in the garment's slot. **Controls that must turn it red:** the atomic reserve replaced by read-then-write (the
 10-at-once case lets two through); the consent check off ("zero calls without YES" fails); the
 private check moved to the console only (a private piece reaches the fake provider); the ₹ hashed
-into the consent (the moved-rate case asks again). **The row's own control (M8):** AVT-12 the piece
-list taken from the plan, not from what was sent.
+into the consent (the moved-rate case asks again); the garment added to the wardrobe (the "never
+his" case fails). **The row's own control (M8):** AVT-12 the piece list taken from the plan, not from
+what was sent.
 
 ## 5. Limits
 
@@ -148,3 +183,4 @@ Google's reference (M5), the eight tick pins you moved, "Needs I1", what you cou
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 16:05 IST | R13.1 | First edition, written at I0: Part C's files, contracts (the join, the Gemini adapter on I0's port, his photo, consent bound to provider, model and location, the estimate, the atomic cap, the press's gates in order, pictures as Google returned them, `seeme_daily`, the Privacy rows and `erase`, settings), its row with his acceptance check and the named test, the `seeme` eval through the port with its controls, limits | 🛠 Mark XXIII |
+| v13.1.2 | 17 Nov 2026, 17:40 IST | R13.1 | The owner's scope of 17 Nov 2026 (plan v13.1.3, D22): See it on me is for a garment he is thinking of buying: its photo (`tryon_garment`, five routes, never his, untrusted), the pairing with up to two of his pieces by R13's engine, the adapter's prompt, the estimate and the press on the garment, `PictureView.garment`, `seeme_daily` and `erase` with garment photos, the AVT-12 test, the eval's cases and a control | 🛠 Mark XXIII |

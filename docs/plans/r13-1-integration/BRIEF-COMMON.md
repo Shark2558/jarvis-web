@@ -1,10 +1,10 @@
-Version v13.1.1 · 17 Nov 2026, 15:45 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 17 Nov 2026, 17:55 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — the common builder brief (Parts A–D)
 
 Read this, then your part's own brief (`BRIEF-A.md` … `BRIEF-D.md`, in this folder), then the plan
-`docs/plans/r13-1-try-on.md` (v13.1.3, Status Ready: the summary, the 14 rows and their named tests,
-D0–D20, the data model, the HTTP contract, your part's row in "Part split", the suites and their
+`docs/plans/r13-1-try-on.md` (v13.1.3, Status Ready: the summary, the 15 rows and their named tests,
+D0–D22, the data model, the HTTP contract, your part's row in "Part split", the suites and their
 controls, the size guards), `docs/plans/r13-1-integration/I0-NOTES.md` (what I0 built, the stale lines
 it found, what it left for I1), `PLAN-REVIEW-1.md` (why the plan says what it says), then
 `CLAUDE.md`, `.claude/rules/ecc/common/*.md`, `.claude/rules/ecc/python/*.md` and
@@ -16,6 +16,17 @@ else's. When in doubt, don't edit: write it in your `INTEGRATION-<PART>.md` for 
 Flash Image, processed in the United States** (question 12, the default, confirmed), and a "See it on
 me" picture is kept **30 days** unless he presses Keep (question 3: `tryon_keep_days` 30,
 `model.PICTURE_KEEP_DAYS`). Every other owner question keeps its safe default.
+
+**The owner's scope** (17 Nov 2026, ≈ 15:33–15:45 IST; in the plan v13.1.3 as D21 and D22), in his
+words: "the see it on me is for purchasing new garments, But I need the 3D model to be created and
+within Jarvis so that whenever I ask what to wear, jarvis should open up the card, decide and show me
+on the 3D model". So: **row 388** (new, R13.1, free): when he asks what to wear (chat or voice, laptop
+or phone), JARVIS decides by R13's rules and the try-on card opens by itself under the answer, the
+figure dressed in that look (I0 built the server half and the hooks; D builds the card, A the look by
+ids, B the figure); and **"See it on me"** (AVT-12) is for a garment he is thinking of BUYING: he gives
+its photo (uploaded or shared in; JARVIS never fetches an address), JARVIS pairs it with up to two of
+his own pieces, and the garment is never added to his wardrobe (C builds it, D its console). A
+garment's photo is untrusted content: its bytes only, no text read from it.
 
 **Agents:** Part B (the 3D figure) is built by ONE builder on **Fable 5.2** (the owner's rule of 15 Nov
 2026): its brief is self-contained. Every other part, review and fix is on Opus.
@@ -107,7 +118,7 @@ INTEGRATION file (C: the eight tick-job pins, section 4).
 - **The parts' contract** (`wardrobe/ports.py`): `PARTS` = R13's four + `tryon` (A) + `seeme` (C);
   `TOOL_FAMILIES` of both `()` (no new model-callable tool); `ROUTE_PREFIX` `/v1/tryon`,
   `/v1/seeme`; `COLLECTIONS` `tryon` (A) and `tryon_person`, `tryon_consent`, `tryon_picture`,
-  `tryon_spend` (C); `JOB_OWNER["seeme_daily"] = "seeme"` (daily, the morning tick);
+  `tryon_spend`, `tryon_garment` (C; the last is D22's new-garment photo); `JOB_OWNER["seeme_daily"] = "seeme"` (daily, the morning tick);
   `SERVICE_OWNER["tryon_looks"] = "tryon"`, `["seeme"] = "seeme"`; `PRIVACY_OWNER` (A:
   `tryon_figure`, `tryon_all`, `tryon_device`; C: `tryon_photo`, `tryon_pictures`, `tryon_spend`);
   `NO_DATA_PARTS`: **your Privacy rows ride `WardrobePart.privacy`, never `data`** (the wiring
@@ -119,11 +130,14 @@ INTEGRATION file (C: the eight tick-job pins, section 4).
   `estimated(height)`, `range_words`; the template table (`TEMPLATE_OF`, `VARIANTS`,
   `TEMPLATE_SLOT`, `GARMENTS`, `useful_views`), the palette (`PALETTE`, `rgb_of`), the words
   (`READY`, `DRAFT_WORDS`, `reserved_words`, `COVERED`, `GENERATED`, `CREDENTIALS`, `YES`), ids
-  (`tp_` + 12 hex, `tq_` + 16 hex, `tc_` + 8 hex), the collections, the AAD of every sealed
+  (`tp_` + 12 hex, `tq_` + 16 hex, `tc_` + 8 hex, `tg_` + 12 hex a new garment), D22's
+  `NEW_TYPES`, `new_garment_words`, `GARMENT_MAX` 20 and `PAIR_MAX` 2, the collections, the AAD of every sealed
   document, the limits. **The one source**: never keep a copy.
 - **The HTTP contract** (`wardrobe/tryon/http.py`, the models in `http_figure.py` and
-  `http_seeme.py`): 22 routes, `ROUTES` = (method, path, part, request, reply, errors, console
-  only); every refusal is `Refusal` `{"error": <code>, "detail": <plain words>}` (the console
+  `http_seeme.py`): 27 routes (D22 added the garments' four and `pair`), `ROUTES` = (method, path,
+  part, request, reply, errors, console only), `QUERIES` (the garment upload's `GarmentIn`);
+  `PictureIn` = `{garment, pieces (0–2), confirm_cost, inr_shown, request_id}`, `PictureView.garment`;
+  A's look also takes `?pieces=slot:wi_…,…` (row 388's card); every refusal is `Refusal` `{"error": <code>, "detail": <plain words>}` (the console
   branches on `err.code`); your route tests assert the models exactly; D draws exactly them;
   `tests/r131_fake_server.py` answers every row from the fakes until I1.
 - **The seams between A and C** (`wardrobe/tryon/ports.py`): `SeeMeErase.erase(uid)` (C's pictures,
@@ -141,10 +155,22 @@ INTEGRATION file (C: the eight tick-job pins, section 4).
   ("The charcoal blazer is in the laundry: it can't be locked into this plan."); `lock` with
   `pieces` (one a slot) locks every slot in ONE change, all or nothing; `api.wardrobe.run_panel_tool
   (request, uid, tool, arguments, session_id) -> PanelRun` and `panel_reply(run)`: the panel's ONE
-  gateway call (at most one card a press). `outfit_suggest` carries `see_it` while Try-on is on.
+  gateway call (at most one card a press). `outfit_suggest` carries `see_it` while Try-on is on
+  ("In the app this look opens on your 3D figure by itself, free. To see a garment you are thinking
+  of buying on you, use See it on me in Helpers, Wardrobe; its price is shown before each
+  picture.").
+- **Row 388's card** (D21, I0's server half): `outfit_suggest` adds ONE `TryOnCard` (kind `tryon`,
+  `tools/reply_cards.py`; `{day, plan, code, slots: [{slot, pieces, private}]}`, piece ids only, a
+  private slot covered; one a reply; never on Telegram; never in the AI's result) through
+  `wardrobe/styling/tryon_card.py` (`show`, `card_of`, and `missing`: row 388's check, which the
+  contract eval and its control use). In the console, `console-media.js`'s `cards()` calls
+  `window.JarvisTryOnCard.cards(row, list)` (`console-tryon-card.js`, D's, loaded at start by
+  `console-r7.js`), which calls `console-tryon.js`'s `inline(el, card)`. The share tray's "See it on
+  me (a garment to buy)" calls `window.JarvisTryOnCard.garment(file)` → `console-tryon.js`'s
+  `garment(file)` (that press sends nothing).
 - **The console** (D's and B's files are I0's stubs): Helpers → Wardrobe mounts `console-tryon.js`
-  ONCE (`mount(host, ctx)`), each plan row has "Show in 3D" and, while `seeOn()` says so, "See it
-  on me" (both fire `jarvis:tryon-open` `{plan, see}`); a fresh wardrobe load fires
+  ONCE (`mount(host, ctx)`), each plan row has "Show in 3D" only (it fires `jarvis:tryon-open`
+  `{plan}`; See it on me is not a plan's button any more, D22); a fresh wardrobe load fires
   `jarvis:wardrobe-fresh`. The engine contract is `tests/fixtures/r13_1/engine_contract.mjs`
   (`window.JarvisTryOn3D`; I0's stub's `mount()` throws "The 3D view is not built yet.").
   Loads that tests pin (keep them when you replace a stub): `console-tryon.js` loads
@@ -159,14 +185,16 @@ INTEGRATION file (C: the eight tick-job pins, section 4).
   `console-tryon-3d.js` and `console-tryon-cloth.js` draw only on their own canvases (never the
   vision engine, the camera or the door's senders). Every other module (D's three) uses no pixel
   API at all: the share caption is drawn by B's `snapshot({caption})` (M9). The door is the only
-  caller of `/v1/seeme/photo` and `/v1/seeme/pictures`.
+  caller of `/v1/seeme/photo`, `/v1/seeme/pictures` and `/v1/seeme/garments` (its `person()`,
+  `garment()`, `picture()`, `garmentPhoto()`, `myPhoto()`).
 - **The mannequin's files** are served by `GET /static/vendor/mannequin/{release}/{name}` (I0):
   a file only when its release's `MANIFEST.json` lists it with a matching SHA-256 and a data type
   (never JavaScript), a year's immutable cache; a sum mismatch is a 404.
 - **The fakes**: `tests/r131_fakes.py` (`NOW` = 17 Nov 2026 09:00 IST, `T.<piece>` owner question
   11's pilot over R13's PILOT with a second watch, photos on the kurta and the striped shirt, two
   private basics, `jpeg(w, h)`, `FakePhotoVault`, `sample_body`, `seeded`, `tryon_context`);
-  `tests/r131_fake_server.py` (`fake_app`, `serve(token)`, the stage page `/r131/stage`).
+  `tests/r131_fake_server.py` (`fake_app`, `serve(token)`, the stage page `/r131/stage`), its See it
+  on me half in `tests/r131_fake_seeme.py` (the garments and the pairing too).
 - **The eval runner** `evals/r13_1/run.py` is STAGED (`STUBS_PASS = True` until I1): your part's
   file exposes `PART`, `BUILT`, `async def cases()` and `async def control()`; set `BUILT = True`
   only once its control really fails it. **Every row's own control** (the plan's M8 table) is a case
@@ -235,7 +263,8 @@ byte-identical; `config.py` ≤ 790; `console-helpers.js` 238; `console-helpers-
 `console-r7-send.js` ≤ 165; `console-r111-files.js` ≤ 335; `console-privacy.js` ≤ 268;
 `console-tryon.js` ≤ 600, `console-tryon-list.js` ≤ 300, `console-tryon-me.js` ≤ 400,
 `console-tryon-photo.js` ≤ 300, `console-tryon-3d.js` ≤ 600, `console-tryon-glb.js` ≤ 200,
-`console-tryon-cloth.js` ≤ 300; every `console*.js` ≤ 800; `console-tryon*.css` ≤ 200 in all;
+`console-tryon-cloth.js` ≤ 300, `console-tryon-card.js` ≤ 150; `console-media.js` ≤ 415,
+`console-r7.js` ≤ 95, `console-r7-share.js` ≤ 295, `tools/reply_cards.py` ≤ 400; every `console*.js` ≤ 800; `console-tryon*.css` ≤ 200 in all;
 every module under `src/jarvis/wardrobe/` ≤ 400; `api/r13_wiring.py` ≤ 400; `api/console.py` ≤ 475;
 `styling/actions.py` ≤ 400; new Python modules ≤ 400; `static/vendor/mannequin/m1/` ≤ 3.5 MB.
 
@@ -253,3 +282,4 @@ plan with its reason, "Needs I1" with exact diffs, and honestly what you could n
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 15:45 IST | R13.1 | First edition, written at I0: the loop, branches, the hook and the four trailers, the files no part edits, the seams (the contract with two new parts, R13.1's types, the HTTP contract, the A–C seams, the provider port, money, the R13 fix and `run_panel_tool`, the console's hook and loads, the three pixel panels and two drawing modules, the mannequin route, the fakes and the fake server, the staged runner, C's tick pins), the house rules (₹ only, no real Google call, fixed clocks, bare and unique fakes, the look unchanged), the commands behind the shared lock, the size guards, done | 🛠 Mark XXIII |
+| v13.1.2 | 17 Nov 2026, 17:55 IST | R13.1 | The owner's scope of 17 Nov 2026 (plan v13.1.3, D21 and D22): row 388's card and its hooks; See it on me for a garment he is thinking of buying (`tryon_garment`, 27 routes, the door's `garment()`); the plan rows keep Show in 3D only; the new `see_it` words; the fake server's See it on me half; the new size guards | 🛠 Mark XXIII |

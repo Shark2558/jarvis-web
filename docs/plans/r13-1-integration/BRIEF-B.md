@@ -1,4 +1,4 @@
-Version v13.1.1 · 17 Nov 2026, 16:40 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 17 Nov 2026, 17:55 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part B brief: the 3D figure and garments (Fable 5.2, one builder)
 
@@ -17,7 +17,11 @@ framework, a strict Content Security Policy). Release R13 gave him a wardrobe (e
 Release R13.1, "Try-on", adds a **free 3D figure** in Helpers → Wardrobe → "Try it on": a plain grey
 mannequin shaped from six measurements he types, dressed in ready-made garment shapes coloured and
 textured from his own pieces, that he can turn, zoom, tuck, open, layer, swap and compare. It is
-drawn on his phone or laptop; nothing about it leaves the device.
+drawn on his phone or laptop; nothing about it leaves the device. **The owner's scope of 17 Nov 2026
+(row 388):** when he asks JARVIS "what should I wear?", the answer opens a card with this same figure
+under the chat reply by itself, already dressed in the look JARVIS chose (Part D mounts your engine
+there through the same contract). "See it on me" (Part C, paid) is now for a garment he is thinking of
+buying; it does not touch your engine.
 
 **You (Part B) build the figure: the asset build script, the committed GLB files and their
 manifest, the 3D engine module, its GLB reader and its texture module, their tests, the `figure`
@@ -113,6 +117,13 @@ opts = { tucked, open, layers: 'all' | 'no_outer' | 'base', view: 'front' | 'sid
   frames the upper body. `snapshot({caption})` draws the current figure(s) and, beneath them on the
   SAME canvas, the caption lines Part D passes (fixed words only), and resolves to a PNG Blob (D
   previews it from a `data:` URL or a canvas: `blob:` is not allowed in the console's `img-src`).
+- **Mounted in two places, one at a time (row 388):** Part D mounts your Stage either in the "Try it
+  on" section or in a card under a chat reply. Only one Stage lives on the page at a time: D calls
+  `dispose()` on one before `mount()` of the other, so `dispose()` must free everything (the WebGL
+  context with `WEBGL_lose_context`, every listener through the AbortController, every texture and
+  buffer), and a second `mount()` after a `dispose()` must work. Row 388's test reads `stats()` and
+  the slots of `show`'s answer to check the figure wears exactly the card's pieces: keep `drawn`
+  exact.
 - **The failure hooks** (`GL_FAIL` in the contract file) that Part D's tests use: with
   `window.__glFail` set, `'no-webgl2'` makes `supported()` false, `'lost'` fires `onLost()` after the
   first show, `'asset'` treats a file as failing its sum, `'timeout'` makes the first render never
@@ -351,3 +362,4 @@ how close the figure looks to him). Push it.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 16:40 IST | R13.1 | First edition, written at I0 for the Fable 5.2 builder, self-contained: JARVIS and the part in two paragraphs, the branch, hook and trailers, the files and their limits, the engine contract with the morph weights' meaning and the failure hooks, the console's facts (three r187 only, the CSP, the patterns of `console-3d.js`, the pixel and drawing rules, R7's camera-words trap), the assets (the sources, preview v2's measured facts and what not to port, the script, the output and manifest, the six first steps with the private zone, `waist_down`, the budget's drop order, the templates and AVT-07's shape), the rows with his acceptance checks, the `figure` eval with its controls, the commands, done | 🛠 Mark XXIII |
+| v13.1.2 | 17 Nov 2026, 17:55 IST | R13.1 | The owner's scope of 17 Nov 2026 (plan v13.1.3, D21): the figure also opens under a chat reply (row 388), mounted by Part D through the same contract, one Stage at a time: `dispose()` frees everything and a second `mount()` works; See it on me is for a garment to buy and does not touch the engine | 🛠 Mark XXIII |

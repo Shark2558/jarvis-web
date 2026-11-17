@@ -1,4 +1,4 @@
-Version v13.1.1 · 17 Nov 2026, 15:55 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 17 Nov 2026, 17:55 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part A brief: Try-on data (Opus)
 
@@ -40,8 +40,10 @@ list, D14, D16, D20, "Data model", "The HTTP contract" (the `tryon` rows), the `
   (the old current becomes the first earlier), `DELETE /v1/tryon/body/draft` drops it. Each is
   audited with `api.settings_audit.record_change` (an argument hash, never the numbers). Saved
   selections (plans' piece ids, saved comparisons) NEVER change with a version.
-- **The look (D5, D7):** `GET /v1/tryon/look?plan=` or `?day=today|tomorrow&alt=0|1|2`
-  (`&private=1`) → `http.TryonLook`. Read the plan and its look from R13's styling service
+- **The look (D5, D7, D21):** `GET /v1/tryon/look?plan=` or `?day=today|tomorrow&alt=0|1|2` or
+  `?pieces=slot:wi_…,…` (row 388: exactly the pieces on a reply's try-on card, each re-read fresh; a
+  piece that isn't his any more → 422 in words; a private slot covered) (`&private=1`) →
+  `http.TryonLook`. Read the plan and its look from R13's styling service
   (`ports.service_of(ctx, "refresh").styling`: `plans.read(uid)`, `answer(...)`; the wardrobe view
   from `ctx.store()`), each slot a `LookSlot`: template from his choice, else `model.template_of`;
   `variants`; `rgb` (`model.rgb_of`, "no colour set" when none); `pattern`; texture view (`detail`
@@ -74,7 +76,7 @@ list, D14, D16, D20, "Data model", "The HTTP contract" (the `tryon` rows), the `
   OPS-05; `tryon_device`: `kept.DeviceRow`). **OPS-05** is the Privacy delete of `tryon_all`
   through the existing `PrivacyService` (its passkey ceremony bound to the category id and `rev`,
   its IRREVERSIBLE audit line, its words; no new passkey code, no erase route): the row's delete
-  calls your `erase_all(uid)`: C's pictures, his photo and his YES through
+  calls your `erase_all(uid)`: C's pictures, the garment photos (D22), his photo and his YES through
   `ports.seeme_service(ctx).erase(uid)`, else `kept.erase_seeme(docs, prefix, uid)` (C off or
   failed), then `tryon/{uid}` LAST; the spend counters stay; the wardrobe catalog is untouched (its
   `rev` the same). The backups sentence is `kept.BACKUP_WORDS` (read from R14's `RETENTION_DAYS`).
@@ -125,3 +127,4 @@ fakes in `tests/r131_fakes_a.py` (bare imports). INTEGRATION-A.md lists what C a
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 15:55 IST | R13.1 | First edition, written at I0: Part A's files, contracts (the join, the sealed document, versions, the look and its fresh readiness, assets, the confirm through `run_panel_tool`, saved comparisons, the `tryon_looks` service, the Privacy rows and OPS-05's order, the routes), its rows with his acceptance checks and the named tests, the `looks` eval with its controls and each row's own, limits | 🛠 Mark XXIII |
+| v13.1.2 | 17 Nov 2026, 17:55 IST | R13.1 | The owner's scope of 17 Nov 2026 (plan v13.1.3): the look by `?pieces=` for row 388's card (D21); OPS-05's erase includes C's garment photos (D22) | 🛠 Mark XXIII |

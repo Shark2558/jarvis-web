@@ -10,8 +10,8 @@
 // first frame is drawn). One Stage at a time: dispose() frees the WebGL context, every listener, texture and buffer.
 // CSP-clean: three.js only from the vendored file (no addon), our own GLB reader, turntable and lights; files only
 // from /static/vendor/mannequin/<release>/, which the server checks against MANIFEST.json's SHA-256. Rendering is on demand (a
-// change, a drag, the spin), never a loop at rest; device pixel ratio <= 1.5; the governor steps down (shadows off
-// and DPR 1), then retires 3D. Any failure calls onLost(reason) once: no WebGL2, a file missing or failing its sum,
+// change, a drag, the spin), never a loop at rest; device pixel ratio <= 1.5; the governor judges what each frame cost
+// (never how often he touched a key) and steps down (shadows off and DPR 1), then retires 3D. Any failure calls onLost(reason) once: no WebGL2, a file missing or failing its sum,
 // the context lost, a first frame over 10 s, the governor. Test hooks: window.__glFail = 'no-webgl2' | 'lost' |
 // 'asset' | 'timeout'. A drawing module: it draws only on its own canvases and never calls the door's senders.
 import { parse, geometry } from './console-tryon-glb.js';
@@ -25,7 +25,7 @@ const LABEL = 'Estimated from your measurements';
 const BODY_GREY = 0xC3C9D2, BASE_GREY = 0x66748A; // preview v2's mannequin and base-layer greys (not theme colours)
 const PITCH = [0.22 * Math.PI, 0.56 * Math.PI], PITCH0 = 0.468 * Math.PI;
 const ZOOM_MAX = 4, GAP = 0.9, DPR_MAX = 1.5, FIRST_MS = 10000, SPIN_DEG_S = 40;
-const SLOW_GAP_MS = 45, WINDOW_MS = 2000; // the governor: two slow windows in a row -> one step down
+const SLOW_MS = 45, WINDOW_MS = 2000, WINDOW_FRAMES = 8, AWAY_MS = 1000; // the governor (createGovernor)
 const fail = () => (typeof window !== 'undefined' && window.__glFail) || '';
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const flag = (v) => (typeof v === 'boolean' ? v : undefined);
@@ -79,6 +79,34 @@ function createModel() {
   return { state: m, show, view, turn, zoom, closer, reset, identity };
 }
 
+/** The performance governor, without a pixel (tests replay it). It judges what a frame COST: the wait for its turn
+ *  (from the moment it was asked for to the moment the browser ran it) plus the drawing itself; never the gap between
+ *  two frames, which with drawing on demand is only how often he touched a key. A window is at least `windowMs` and
+ *  `frames` judged frames; its MEDIAN cost over `slowMs` makes it slow (one long frame is a hiccup). Two slow windows
+ *  in a row: frame() answers 'down' once (shadows off, DPR 1), and after two more 'retire'. A wait over a second is
+ *  the page being away (a hidden tab), not a frame. */
+function createGovernor(o) {
+  const { slowMs = SLOW_MS, windowMs = WINDOW_MS, frames = WINDOW_FRAMES } = o || {};
+  let costs = [], start = 0, slow = 0, tier = 0, last = 0;
+  const reset = () => { costs = []; slow = 0; };
+  function frame(now, cost) {
+    const wait = Number(cost && cost.wait) || 0, draw = Number(cost && cost.draw) || 0;
+    if (wait > AWAY_MS || tier > 1) return 'ok';
+    if (costs.length && now - start > 4 * windowMs) costs = []; // a stale window: too few frames to judge
+    if (!costs.length) start = now;
+    last = wait + draw;
+    costs.push(last);
+    if (costs.length < frames || now - start < windowMs) return 'ok';
+    const mid = costs.sort((a, b) => a - b)[costs.length >> 1];
+    costs = [];
+    slow = mid > slowMs ? slow + 1 : 0;
+    if (slow < 2) return 'ok';
+    slow = 0; tier++;
+    return tier === 1 ? 'down' : 'retire';
+  }
+  return { frame, reset, tier: () => tier, fps: () => (last > 0 ? Math.min(60, Math.round(1000 / last)) : 0) };
+}
+
 const FILES = ['body.glb', 'garments.glb']; // scripts/mannequin/build.py's two files of a release
 const cache = new Map(); // release -> Promise of {meshes}: the files are immutable, parsed once a page
 async function file(release, name) {
@@ -121,9 +149,10 @@ function createStage(host, release, onLost) {
   label.textContent = LABEL;
   host.append(canvas, label);
   let T = null, A = null, renderer = null, scene = null, camera = null, key = null, pal = palette(host);
-  let groups = [], owned = [], figureH = 1.75, dpr = 1, shadows = true, tier = 0;
+  const gov = createGovernor();
+  let groups = [], owned = [], figureH = 1.75, dpr = 1, shadows = true;
   let raf = 0, timer = 0, dead = false, lost = false, drawnOnce = false, serial = 0;
-  let triangles = 0, fps = 0, lastT = 0, winStart = 0, winFrames = 0, slowWins = 0;
+  let triangles = 0, lastT = 0, askedAt = 0, warm = true; // warm: the next frame uploads or compiles, so it is not judged
   let readyOk, readyNo;
   const ready = new Promise((ok, no) => { readyOk = ok; readyNo = no; });
   ready.catch(() => {});
@@ -162,11 +191,12 @@ function createStage(host, release, onLost) {
   function size() {
     if (!renderer) return;
     const w = Math.max(1, host.clientWidth), h = Math.max(1, Math.round(clamp(host.clientHeight - label.offsetHeight, 240, 1200)));
-    dpr = tier ? 1 : Math.min(window.devicePixelRatio || 1, DPR_MAX);
+    dpr = gov.tier() ? 1 : Math.min(window.devicePixelRatio || 1, DPR_MAX);
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
     canvas.style.height = h + 'px';
     camera.aspect = w / h; camera.updateProjectionMatrix();
+    warm = true;
     invalidate();
   }
 
@@ -231,6 +261,7 @@ function createStage(host, release, onLost) {
       group.position.x = two ? (i ? GAP / 2 : -GAP / 2) : 0;
       scene.add(group); groups.push(group);
     });
+    warm = true; gov.reset();
     invalidate();
   }
 
@@ -244,33 +275,29 @@ function createStage(host, release, onLost) {
     for (const g of groups) g.userData.worn.rotation.y = (-m.yaw * Math.PI) / 180; // camera yaw = the figure turned the other way
   }
 
-  function govern(now) {
-    const gap = now - lastT;
-    lastT = now;
-    if (!(gap > 0 && gap < 500)) { winStart = now; winFrames = 0; return; } // not a run of frames
-    fps = Math.round(1000 / gap);
-    winFrames++;
-    if (now - winStart < WINDOW_MS) return;
-    const avg = (now - winStart) / Math.max(1, winFrames);
-    winStart = now; winFrames = 0;
-    slowWins = avg > SLOW_GAP_MS ? slowWins + 1 : 0;
-    if (slowWins < 2) return;
-    slowWins = 0;
-    if (tier === 0) { tier = 1; shadows = false; renderer.shadowMap.enabled = false; key.castShadow = false; size(); } else gone('slow');
+  /** The governor's step for a frame that cost `wait` + `draw` ms (review B-1, finding 2: the cost, not the cadence). */
+  function govern(now, wait, draw) {
+    if (warm) { warm = false; return; }
+    const step = gov.frame(now, { wait, draw });
+    if (step === 'down') { shadows = false; renderer.shadowMap.enabled = false; key.castShadow = false; size(); }
+    if (step === 'retire') gone('slow');
   }
 
   function frame(now) {
     raf = 0;
     if (dead || lost || !renderer || !groups.length) return;
     if (!drawnOnce && fail() === 'timeout') return; // the test hook: the first frame never finishes
+    const wait = Math.max(0, now - askedAt), t0 = performance.now();
     if (m.spin && !motionOff()) { const dt = lastT ? Math.min(100, now - lastT) : 16; model.turn((dt / 1000) * SPIN_DEG_S); }
-    govern(now);
+    lastT = now;
     aim();
     renderer.render(scene, camera);
+    govern(now, wait, performance.now() - t0);
+    if (lost) return;
     if (!drawnOnce) { drawnOnce = true; clearTimeout(timer); readyOk(); if (fail() === 'lost') { gone('lost'); return; } }
     if (m.spin && !motionOff()) invalidate();
   }
-  function invalidate() { if (!raf && !dead && !lost) raf = requestAnimationFrame(frame); }
+  function invalidate() { if (!raf && !dead && !lost) { askedAt = performance.now(); raf = requestAnimationFrame(frame); } }
 
   function controls() {
     const pts = new Map();
@@ -314,6 +341,7 @@ function createStage(host, release, onLost) {
   controls();
   document.addEventListener('jarvis:theme', repaint, on);
   document.addEventListener('jarvis:motion', invalidate, on);
+  document.addEventListener('visibilitychange', () => gov.reset(), on);
   window.addEventListener('pagehide', (e) => { if (!e.persisted) dispose(); }, on);
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(size) : null;
   if (ro) ro.observe(host);
@@ -334,7 +362,7 @@ function createStage(host, release, onLost) {
     return picture(canvas, (o && o.caption) || [], pal);
   }
   function stats() {
-    return { triangles, figures: m.figures.length, fps, dpr, shadows, yaw: m.yaw, pitch: m.pitch, zoom: m.zoom, closer: m.closer, spin: m.spin,
+    return { triangles, figures: m.figures.length, fps: gov.fps(), dpr, shadows, yaw: m.yaw, pitch: m.pitch, zoom: m.zoom, closer: m.closer, spin: m.spin,
       state: dead ? 'disposed' : lost ? 'lost' : drawnOnce ? 'ready' : 'loading', label: LABEL, looks: model.identity() };
   }
   function dispose() {
@@ -362,5 +390,5 @@ function mount(host, opts) {
 
 const engine = Object.freeze({ supported, mount });
 if (typeof window !== 'undefined') window.JarvisTryOn3D = engine;
-export { supported, mount, createModel, VIEWS, LABEL };
+export { supported, mount, createModel, createGovernor, VIEWS, LABEL };
 export default engine;

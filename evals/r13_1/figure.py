@@ -11,14 +11,17 @@ only, without a browser:
   that is DRAWN measured itself (its height; the rig is made of its points); the reader's
   refusals (an unknown accessor type); the private zone covered in every layer state x slot set x
   variant x view; AVT-07's geometry; tucked/untucked and open/closed; AVT-02, 03, 05, 06, 08, 09,
-  10, 11, 14, 15's halves; triangles <= 32,000 a figure.
+  10, 11, 14, 15's halves; triangles <= 32,000 a figure; the governor replayed on a fast laptop
+  (key taps, a slow drag) and on a slow device.
 
 Negative controls (each must turn its own case red; `control()` re-runs the Node cases with each
 applied and names what failed): two morphs swapped (the measure table); `waist_down` dropped
 (waist 62 reads 63.9); the base shorts dropped in "All" (the privacy walk); the blazer sleeve 2 cm
 longer (AVT-07); and the rows' own: Side returns Front's yaw (AVT-02), Back resets the tuck
 (AVT-08), the closed jacket is the open one (AVT-10); the rig's top and floor taken before the
-head is softened, as the first build did (the drawn figure's height, review B-1 finding 1)."""
+head is softened, as the first build did (the drawn figure's height, review B-1 finding 1); the
+governor fed the gap between two frames instead of a frame's cost (a fast laptop is retired by
+key taps, finding 2)."""
 
 from __future__ import annotations
 
@@ -49,6 +52,7 @@ WANTED: dict[str, str] = {  # control -> the case it must turn red
     "back_resets_tuck": "avt08_front_to_back_keeps_the_same_pieces_layers_and_figure",
     "closed_is_open": "avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket",
     "unsoftened_rig": "drawn_figure_measures_what_was_typed",
+    "input_cadence": "governor_judges_render_cost_not_input_cadence",
 }
 
 

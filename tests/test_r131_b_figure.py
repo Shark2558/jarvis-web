@@ -204,6 +204,12 @@ def test_avt15_signals_without_a_browser_the_engine_says_not_supported() -> None
     _passed("avt15_signals_without_a_browser")
 
 
+def test_the_governor_judges_what_a_frame_cost_not_how_often_he_touched_a_key() -> None:
+    """Review B-1, finding 2: replays of a fast laptop (key taps at 3 Hz, a slow drag, a 60 fps
+    spin: never a step) and of a slow device (60 ms a frame: shadows off, then retired)."""
+    _passed("governor_judges_render_cost_not_input_cadence")
+
+
 def test_a_dressed_figure_draws_at_most_32000_triangles_and_two_at_most_64000() -> None:
     _passed("triangles_within_the_budget")
     assert node_cases()["facts"]["worst_triangles"] <= 32000
@@ -226,6 +232,8 @@ def test_a_dressed_figure_draws_at_most_32000_triangles_and_two_at_most_64000() 
         ("closed_is_open",
          "avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket",
          "closed: the shirt placket still shows"),
+        ("input_cadence", "governor_judges_render_cost_not_input_cadence",
+         "an arrow key tapped three times a second: down@5.0,retire@10.3"),
         ("unsoftened_rig", "drawn_figure_measures_what_was_typed",
          "sample: the rig reads 173.3"),
     ],

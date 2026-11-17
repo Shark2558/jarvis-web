@@ -62,7 +62,13 @@ class Stage:
     """One stage page: its console errors, its requests, and helpers over window.__b."""
 
     def __init__(
-        self, browser: Any, url: str, query: str = "", scale: float = 1, frozen: bool = False
+        self,
+        browser: Any,
+        url: str,
+        query: str = "",
+        scale: float = 1,
+        frozen: bool = False,
+        init: str = "",
     ) -> None:
         self.page: Page = browser.new_page(
             viewport={"width": 620, "height": 760}, device_scale_factor=scale
@@ -79,6 +85,8 @@ class Stage:
             "window.__frames = 0; const raf = window.requestAnimationFrame.bind(window);"
             "window.requestAnimationFrame = (f) => raf((t) => { window.__frames++; f(t); });"
         )
+        if init:
+            self.page.add_init_script(init)
         self.page.goto(f"{url}/r131/stage?mod=b_stage.mjs&{query}")
         self.page.wait_for_function(LOADED, timeout=30000)
         assert self.js("b.error") == "", self.js("b.error")
@@ -377,6 +385,65 @@ def test_the_figure_draws_on_demand_and_stays_still_with_motion_off(
         s.js("b.stage.spin(true)")
         s.page.wait_for_timeout(500)
         assert s.stats()["yaw"] == 0  # Motion Off: "Turn around" stays still
+    finally:
+        s.close()
+
+
+# A slow device, made in the page and not in the engine: every draw call burns 4 ms, so a frame
+# of a dressed figure really takes well over the governor's 45 ms (review B-1, finding 2).
+SLOW_DEVICE = (
+    "const draw = WebGL2RenderingContext.prototype.drawElements;"
+    "WebGL2RenderingContext.prototype.drawElements = function (...a) {"
+    " const t = performance.now(); let n = 0;"
+    " while (performance.now() - t < 4 && n++ < 4e6) { /* burn */ }"
+    " return draw.apply(this, a); };"
+)
+
+
+def test_the_governor_never_retires_a_fast_device_for_key_taps_or_a_slow_drag(
+    browser: Any, stage_url: str
+) -> None:
+    """The first build timed the gap between inputs: an arrow key tapped three times a second
+    switched the shadows off at 5.7 s and retired 3D at 10.3 s; a slow drag did at 9.2 s."""
+    s = _open(browser, stage_url, "w=260&h=300")
+    try:
+        s.show("'formal'")
+        s.page.locator("#stage canvas").focus()
+        for _ in range(36):  # 12 s of taps, three a second
+            s.page.keyboard.press("ArrowRight")
+            s.page.wait_for_timeout(333)
+        assert s.js("b.lost") == [] and s.stats()["state"] == "ready"
+        box = s.page.locator("#stage canvas").bounding_box()
+        assert box is not None
+        s.page.mouse.move(box["x"] + 60, box["y"] + 150)
+        s.page.mouse.down()
+        for k in range(180):  # 11 s of a slow drag: a move every 60 ms
+            s.page.mouse.move(box["x"] + 60 + (k % 120), box["y"] + 150)
+            s.page.wait_for_timeout(60)
+        s.page.mouse.up()
+        st = s.stats()
+        assert s.js("b.lost") == [] and st["state"] == "ready"
+        assert st["shadows"] is True, st  # not even the first step
+        assert s.errors == []
+    finally:
+        s.close()
+
+
+def test_the_governor_steps_a_slow_device_down_and_then_retires_3d(
+    browser: Any, stage_url: str
+) -> None:
+    s = _open(browser, stage_url, scale=1.5, init=SLOW_DEVICE)
+    try:
+        s.show("'formal'")
+        assert s.stats()["dpr"] == 1.5 and s.stats()["shadows"] is True
+        s.js("b.stage.spin(true)")
+        s.page.wait_for_function("() => window.__b.stage.stats().shadows === false", timeout=30000)
+        st = s.stats()
+        assert st["dpr"] == 1 and st["state"] == "ready" and s.js("b.lost") == []  # the first step
+        assert st["fps"] < 25, st  # the real rate of a slow frame, not the rate of his input
+        s.page.wait_for_function("() => window.__b.lost.length > 0", timeout=30000)
+        assert s.js("b.lost") == ["slow"] and s.stats()["state"] == "lost"
+        assert s.errors == []
     finally:
         s.close()
 

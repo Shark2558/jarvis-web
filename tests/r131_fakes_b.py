@@ -94,7 +94,7 @@ def fake_clone(root: Path, sources: dict[str, str], data_dir: str) -> dict[str, 
 
 CONTROLS = (
     "swap_morphs", "no_waist_down", "no_shorts", "long_sleeve", "side_is_front",
-    "back_resets_tuck", "closed_is_open", "unsoftened_rig",
+    "back_resets_tuck", "closed_is_open", "unsoftened_rig", "input_cadence",
 )  # fmt: skip
 _RUNS: dict[str, dict[str, dict[str, Any]]] = {}
 

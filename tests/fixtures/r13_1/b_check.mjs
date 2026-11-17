@@ -9,6 +9,8 @@
 //   side_is_front     Side returns Front's yaw                         -> AVT-02 fails
 //   back_resets_tuck  Back resets the tuck                             -> AVT-08 fails
 //   closed_is_open    the closed jacket is the open one                -> AVT-10 fails
+//   input_cadence     the governor is fed the gap between frames, as the first build did (review B-1, finding 2)
+//                                                                      -> a fast laptop is retired: the governor case fails
 //   unsoftened_rig    the rig's top and floor taken before the head is softened (review B-1, finding 1: the
 //                     old build)                                     -> the drawn figure's height fails
 import { readFileSync } from 'node:fs';
@@ -446,6 +448,38 @@ check('triangles_within_the_budget', (need) => {
   need(worst <= C.LIMITS.triangles_one, 'a dressed figure draws ' + worst + ' triangles');
   need(2 * worst <= C.LIMITS.triangles_two, 'two figures draw ' + 2 * worst);
   cases.push({ id: 'figure:facts', passed: true, failures: [], worst_triangles: worst });
+});
+
+// review B-1, finding 2: the governor judges what a frame COST (the wait for its turn and the drawing), never the gap
+// between two inputs. Each replay is [frames a second, seconds, wait ms, draw ms]; frames are drawn on demand.
+function replay(perSecond, seconds, wait, draw) {
+  const g = E.createGovernor(), steps = [], gap = 1000 / perSecond;
+  for (let t = 1000; t <= 1000 + seconds * 1000; t += gap) {
+    const step = g.frame(t, control === 'input_cadence' ? { wait: gap, draw: 0 } : { wait, draw });
+    if (step !== 'ok') steps.push(step + '@' + ((t - 1000) / 1000).toFixed(1));
+  }
+  return { steps, words: steps.map((x) => x.split('@')[0]).join(), fps: g.fps() };
+}
+check('governor_judges_render_cost_not_input_cadence', (need) => {
+  const taps = replay(3, 20, 8, 4), drag = replay(1000 / 60, 20, 6, 5), spin = replay(60, 20, 12, 4);
+  need(taps.words === '', 'a fast laptop, an arrow key tapped three times a second: ' + taps.steps);
+  need(drag.words === '', 'a fast laptop, a slow drag (a move every 60 ms): ' + drag.steps);
+  need(spin.words === '' && spin.fps === 60, 'a 60 fps spin: ' + spin.steps + ' at ' + spin.fps + ' fps');
+  const slow = replay(1000 / 60, 20, 55, 5), heavy = replay(3, 30, 4, 70);
+  need(slow.words === 'down,retire', 'a slow device (60 ms a frame): shadows off and DPR 1, then retired: ' + slow.steps);
+  need(parseFloat(slow.steps[0].split('@')[1]) <= 4.2 && parseFloat((slow.steps[1] || '@99').split('@')[1]) <= 8.4, 'two slow windows a step: ' + slow.steps);
+  need(heavy.words === 'down,retire', 'a slow draw (70 ms) is slow at any input rate: ' + heavy.steps);
+  const g = E.createGovernor(), out = [];
+  for (let t = 0; t < 20000; t += 16) out.push(g.frame(t, { wait: 10, draw: t % 2000 === 0 ? 400 : 4 })); // a hiccup every 2 s (a crop arriving)
+  need(out.every((x) => x === 'ok'), 'one long frame in a window is a hiccup, not a slow device');
+  const away = E.createGovernor(), got = [];
+  for (let t = 0; t < 400000; t += 20000) got.push(away.frame(t, { wait: 19990, draw: 3 })); // the tab was hidden
+  need(got.every((x) => x === 'ok'), 'a wait of many seconds is the page being away, not a slow frame');
+  const w = E.createGovernor();
+  for (let t = 0; t < 4200; t += 60) w.frame(t, { wait: 55, draw: 5 });
+  need(w.tier() === 1, 'after the first step the tier is 1');
+  w.reset();
+  need(w.tier() === 1 && w.frame(5000, { wait: 55, draw: 5 }) === 'ok', 'a reset (a new look) starts the windows afresh and keeps the tier');
 });
 
 check('avt15_signals_without_a_browser', (need) => {

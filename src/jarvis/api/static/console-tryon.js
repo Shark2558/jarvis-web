@@ -330,7 +330,7 @@ async function outfits() {
 async function chooser(v) {
   const o = await outfits(), out = [H().mk('p', 'snote', 'Compare this look with:')];
   [['Today', o.today], ['Tomorrow', o.tomorrow]].forEach(([day, list]) => (list || []).forEach((p) => {
-    if (p.id !== v.plan && !p.cancelled) out.push(btn(planTitle(day, p), () => compare(v, 'plan=' + encodeURIComponent(p.id), planTitle(day, p))));
+    if (p.id !== v.plan && !p.cancelled) out.push(btn(planTitle(day, p), () => compare(v, PLAN.test(p.id) ? 'plan=' + encodeURIComponent(p.id) : 'day=' + day.toLowerCase(), planTitle(day, p)))); // R13's suggestion: by its day
   }));
   const day = v.look && v.look.day === tomorrowIso() ? 'tomorrow' : 'today';
   out.push(btn('Another idea for this day', () => compare(v, 'day=' + day + '&alt=1', 'Another idea')), btn('Cancel', () => { v.choosing = null; draw(v); }));

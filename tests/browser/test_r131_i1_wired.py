@@ -187,6 +187,26 @@ def test_the_section_opens_dressed_in_tomorrows_planned_look_with_server_readine
         c.close()
 
 
+def test_compare_with_todays_suggestion_shows_two_figures(
+    browser: Any, w_url: str, token: str
+) -> None:
+    # tonight's "Today" row is R13's suggestion (no plan): compare reads it by its day (I1)
+    c = Wired(browser, w_url, token)
+    try:
+        c.open()
+        c.wardrobe()
+        until(c.page, c.drawn, "the section's figure", SLOW_S)
+        c.section().get_by_role("button", name="Compare", exact=True).click()
+        until(c.page, lambda: "Compare this look with:" in c.section().inner_text(), "the choice")
+        choice = c.section().locator("button", has_text="Today").first
+        choice.click()
+        until(c.page, lambda: len(c.figure()["figures"]) == 2, "two figures", SLOW_S)
+        assert "isn't there any more" not in c.section().inner_text().replace("\u2019", "'")
+        assert [r for r in c.sent if "plan=suggestion" in r["url"]] == []
+    finally:
+        c.close()
+
+
 def test_with_no_webgl2_the_section_and_the_card_are_the_checklist(
     browser: Any, w_url: str, token: str
 ) -> None:

@@ -58,7 +58,7 @@ async function lookOf(v, q) { // a fresh read: readiness comes from the server, 
 async function photosOf() { // the views' crop ids, for the reference cards (R13's own read of his wardrobe)
   if (S.photos) return S.photos;
   try { const w = await api('/v1/wardrobe'); S.photos = new Map((w.pieces || []).map((p) => [p.id, Array.isArray(p.photos) ? p.photos : []])); }
-  catch (_) { S.photos = new Map(); }
+  catch (_) { return new Map(); } // a failed read is never kept: the next look reads it again (review I1 L5)
   return S.photos;
 }
 export const state = () => (S.off ? 'off' : S.tryon ? 'on' : 'unknown');
@@ -325,12 +325,14 @@ async function wearing(v) { // R13's wear_log, its answer said here; then R13's 
 }
 
 // ---- compare two looks (one show() with two figures), saved comparisons ---------------------------------------------
+const NO_PLANS = { today: [], tomorrow: [], failed: true }; // his plans couldn't be read: said, never kept (L5)
 async function outfits() {
-  if (!S.outfits) { try { S.outfits = await api('/v1/outfits'); } catch (_) { S.outfits = { today: [], tomorrow: [] }; } }
+  if (!S.outfits) { try { S.outfits = await api('/v1/outfits'); } catch (_) { return NO_PLANS; } }
   return S.outfits;
 }
 async function chooser(v) {
   const o = await outfits(), out = [H().mk('p', 'snote', 'Compare this look with:')];
+  if (o.failed) out.push(H().mk('p', 'sfine', 'Your plans can\u2019t be read just now, so only another idea for this day is offered.'));
   [['Today', o.today], ['Tomorrow', o.tomorrow]].forEach(([day, list]) => (list || []).forEach((p) => {
     if (p.id !== v.plan && !p.cancelled) out.push(btn(planTitle(day, p), () => compare(v, PLAN.test(p.id) ? 'plan=' + encodeURIComponent(p.id) : 'day=' + day.toLowerCase(), planTitle(day, p)))); // R13's suggestion: by its day
   }));
@@ -364,7 +366,10 @@ async function savedList() {
   const box = S.el.saved;
   if (!box) return;
   let list = [];
-  try { list = (await api('/v1/tryon/saved')).saved || []; } catch (_) { list = []; }
+  try { list = (await api('/v1/tryon/saved')).saved || []; } catch (e) { // said, with Try again: never "none yet" (L5)
+    if (!(e && e.status === 401)) box.replaceChildren(H().row('Your saved comparisons can\u2019t be read just now.', '', [btn('Try again', () => savedList())]));
+    return;
+  }
   if (!list.length) { box.replaceChildren(H().mk('p', 'sfine', 'No saved comparisons yet.')); return; }
   box.replaceChildren(...list.map((s) => H().row('A saved comparison' + (s.draft ? ' \u00b7 Draft' : ''), when(s.at) + (s.draft ? ' \u00b7 a piece in it isn\u2019t ready now' : ''),
     [btn('Open', () => openSaved(s)), btn('Delete', () => dropSaved(s.id))])));

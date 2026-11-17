@@ -552,3 +552,78 @@ def test_ops05_button_deletes_through_privacy_empties_the_viewer_and_keeps_the_c
         assert BLAZER_PHOTO in json.dumps(after)  # the wardrobe's own photos stay
     finally:
         c.close()
+
+
+# ---- integrated code review L5: a failed read is said, and never kept for the page ---------------
+def _fail(c: Page, path: str, *, after: str = "", times: int = 99) -> dict[str, int]:
+    """GET `path` answers 503 (the first `times` reads, only once `after` was asked for)."""
+    seen = {"after": 0 if after else 1, "failed": 0}
+
+    def handle(r: Any) -> None:
+        url = urlsplit(r.request.url).path
+        if after and url == after:
+            seen["after"] += 1
+        if url == path and r.request.method == "GET" and seen["after"] and seen["failed"] < times:
+            seen["failed"] += 1
+            r.fulfill(status=503, json={"error": "unavailable", "detail": "Not just now."})
+            return
+        r.continue_()
+
+    c.page.route("**/v1/**", handle)
+    return seen
+
+
+def test_saved_comparisons_that_cant_be_read_say_so_and_try_again(
+    browser: Any, d_url: str, token: str
+) -> None:
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    try:
+        seen = _fail(c, "/v1/tryon/saved", times=1)
+        opened(c)
+        box = c.section().locator(".tr-saved")
+        until(c.page, lambda: "can’t be read just now" in box.inner_text(), "the words")
+        assert "No saved comparisons yet." not in box.inner_text() and seen["failed"] == 1
+        box.get_by_role("button", name="Try again").click()
+        until(c.page, lambda: "No saved comparisons yet." in box.inner_text(), "read again")
+    finally:
+        c.close()
+
+
+def test_plans_that_cant_be_read_are_said_in_compare_and_read_again_next_time(
+    browser: Any, d_url: str, token: str
+) -> None:
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    try:
+        seen = _fail(c, "/v1/outfits", times=3)  # R13's tab's read, the section's, compare's
+        opened(c)
+        press(c, "Compare")
+        until(c.page, lambda: "plans can’t be read just now" in c.section().inner_text(), "it")
+        assert seen["failed"] == 3
+        press(c, "Cancel")
+        press(c, "Compare")  # read again, never the failed read kept for the page
+        plan = c.section().get_by_role("button", name="Today · 10:00 · business formal")
+        until(c.page, lambda: plan.count() == 1, "the plans")
+    finally:
+        c.close()
+
+
+def test_his_photos_that_cant_be_read_are_read_again_for_the_next_look(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # the section's own read of his wardrobe (after its first look) fails once: the next look's
+    # reference cards are whole again, not collapsed to one photo for the rest of the page
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    try:
+        seen = _fail(c, "/v1/wardrobe", after="/v1/tryon/look", times=1)
+        opened(c)
+        assert seen["failed"] == 1
+        c.page.locator("#hpp-wardrobe .wd-plan").nth(1).get_by_role(
+            "button", name="Show in 3D"
+        ).click()
+        refs = c.section().locator(".tr-item[data-slot='top'] + .tr-refs")
+        until(c.page, lambda: refs.locator("img.tr-thumb").count() == 2, "both of the kurta's")
+    finally:
+        c.close()

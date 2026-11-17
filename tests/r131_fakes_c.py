@@ -6,6 +6,11 @@
 #   FakeBilling(limit, used)      `billing.spend.ensure_spend_allowed`'s view: budgets, meter, fx;
 #                                 `recorded` keeps each `record(uid, label, usd)`
 #   OffMode / OnMode              `offline.mode.BrainMode.load` answering "none" / "ai"
+#   FRONT, MORE_CROPS             made-up front crops for the trousers, the jeans and the blazer
+#   seeme_world(...)              R13's styling part on the seeded pilot (r13_fakes_c.world) at
+#                                 NOW, his photos with their views in R13's `wardrobe_photo`
+#                                 documents, I0's photo vault over the crops, and a context for
+#                                 Part C: `state("r13_parts")`, `billing`, `brain_mode`, `tryon`
 from __future__ import annotations
 
 import asyncio
@@ -14,11 +19,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from r131_fakes import NOW
+from r13_fakes_c import World, world
+from r131_fakes import CROPS, IST, NOW, PHOTOS, UID, VIEW_OF, FakePhotoVault, T, jpeg
 
 from jarvis.billing.fx import Rate
 from jarvis.billing.meter import MonthUsage, UsageMeter
-from jarvis.storage.docs import MemoryDocs
+from jarvis.config import Settings
+from jarvis.storage.docs import MemoryDocs, Set
+from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
 
 RATE = 95.24
 
@@ -93,4 +101,72 @@ class OnMode:
         return "ai"
 
 
-__all__ = ["RATE", "FakeBilling", "FakeFx", "OffMode", "OnMode", "YieldingDocs"]
+FRONT = {T.trousers: "wh_00000000c001", T.jeans: "wh_00000000c002", T.blazer: "wh_00000000d001"}
+MORE_CROPS = {ph: jpeg(512, 512, 4) for ph in FRONT.values()}
+VIEWS = {**VIEW_OF, **dict.fromkeys(FRONT.values(), "front")}
+OWNER_OF = {ph: pid for pid, ids in PHOTOS.items() for ph in ids} | {v: k for k, v in FRONT.items()}
+
+
+@dataclass
+class SeeMeWorld:
+    w: World
+    ctx: WardrobeContext
+    vault: FakePhotoVault
+    state: dict[str, Any]
+
+    @property
+    def docs(self) -> Any:
+        return self.ctx.docs
+
+    async def rev(self) -> tuple[int, dict[str, Any]]:
+        view = await self.w.store.view(UID)
+        return view.rev, {k: v.model_dump(mode="json") for k, v in view.pieces.items()}
+
+
+async def _photos(w: World, docs: MemoryDocs, prefix: str) -> None:
+    for pid, ids in {**PHOTOS, **{k: (v,) for k, v in FRONT.items()}}.items():
+        await w.edit(pid, photos=tuple(ids))
+    rows = [
+        Set(f"{prefix}wardrobe_photo/{UID}_{ph}",
+            {"owner": UID, "piece": OWNER_OF[ph], "view": VIEWS[ph], "bytes": 64, "blob": "x"})
+        for ph in VIEWS
+    ]  # fmt: skip
+    await docs.write(rows)
+
+
+async def seeme_world(
+    *, at: datetime = NOW, s: Settings | None = None, provider: Any = None,
+    billing: Any = None, mode: Any = None, docs: MemoryDocs | None = None,
+) -> SeeMeWorld:  # fmt: skip
+    """R13's styling on the seeded pilot at `at`, the photos with views, and Part C's context
+    (its own documents in `docs` when given: a yielding store for the race)."""
+    settings = s or Settings(_env_file=None, tryon_pictures=True)  # type: ignore[call-arg]
+    w = await world(at=at, s=settings)
+    mine = docs if docs is not None else w.docs
+    await _photos(w, mine, settings.firestore_prefix)
+    vault = FakePhotoVault({**CROPS, **MORE_CROPS})
+    parts = {"catalog": WardrobePart("catalog", services={"photos": vault}), "styling": w.part}
+    state: dict[str, Any] = {"r13_parts": parts, "billing": billing, "brain_mode": mode}
+
+    async def zone(uid: str) -> Any:
+        return IST
+
+    ctx = WardrobeContext(
+        s=settings, docs=mine, keyring=w.ctx.keyring, audit=None, now=w.clock, zone=zone,
+        state=state.get, store=lambda: w.store, tryon=lambda: state.get("provider", provider),
+    )  # fmt: skip
+    return SeeMeWorld(w, ctx, vault, state)
+
+
+__all__ = [
+    "FRONT",
+    "MORE_CROPS",
+    "RATE",
+    "FakeBilling",
+    "FakeFx",
+    "OffMode",
+    "OnMode",
+    "SeeMeWorld",
+    "YieldingDocs",
+    "seeme_world",
+]

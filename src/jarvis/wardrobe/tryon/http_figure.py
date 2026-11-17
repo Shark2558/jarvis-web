@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from jarvis.wardrobe.model import PhotoId, PieceId, View
 from jarvis.wardrobe.tryon.model import (
@@ -99,12 +99,12 @@ class BodyIn(_M):
     """PUT /v1/tryon/body: the measurements he typed (a draft); each is range-checked in words by
     A (`model.range_words`), so the bounds here only stop nonsense."""
 
-    height: int | None = Field(default=None, ge=0, le=300)
-    shoulders: int | None = Field(default=None, ge=0, le=300)
-    chest: int | None = Field(default=None, ge=0, le=300)
-    waist: int | None = Field(default=None, ge=0, le=300)
-    hips: int | None = Field(default=None, ge=0, le=300)
-    inseam: int | None = Field(default=None, ge=0, le=300)
+    height: StrictInt | None = Field(default=None, ge=0, le=300)  # whole cm only (I1, F8)
+    shoulders: StrictInt | None = Field(default=None, ge=0, le=300)
+    chest: StrictInt | None = Field(default=None, ge=0, le=300)
+    waist: StrictInt | None = Field(default=None, ge=0, le=300)
+    hips: StrictInt | None = Field(default=None, ge=0, le=300)
+    inseam: StrictInt | None = Field(default=None, ge=0, le=300)
 
 
 class LookOption(_M):

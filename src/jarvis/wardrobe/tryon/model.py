@@ -97,9 +97,11 @@ def estimated(height: int) -> dict[Measure, int]:
 
 
 class Body(BaseModel):
-    """One version of his measurements; `typed` names the ones he typed (the rest estimated)."""
+    """One version of his measurements; `typed` names the ones he typed (the rest estimated).
+    A stored version ignores a field it doesn't know, so a rollback still opens his figure (I1,
+    review A-1 F10); what he sends is `http_figure.BodyIn`, which stays strict."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     height: int
     shoulders: int

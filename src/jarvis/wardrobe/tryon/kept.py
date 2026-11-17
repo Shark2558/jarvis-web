@@ -92,8 +92,9 @@ SPECS: dict[str, Spec] = {
     ALL_ID: Spec(
         ALL_ID, SECTION, "All your try-on data",
         "Your figure and measurements, your photo, your YES, every See it on me picture and "
-        "every garment photo you gave, in one delete. Your wardrobe stays as it is.",
-        "items", f"Until you delete them. {BACKUP_WORDS}", OURS_ENC, encrypted_by_jarvis=True,
+        "every garment photo you gave, in one delete. Your wardrobe stays as it is. The month's "
+        "Try-on spend (numbers only) stays 13 months for your monthly limit.",
+        "documents", f"Until you delete them. {BACKUP_WORDS}", OURS_ENC, encrypted_by_jarvis=True,
         delete="passkey",
     ),
 }  # fmt: skip

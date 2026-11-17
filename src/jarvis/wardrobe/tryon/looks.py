@@ -43,7 +43,7 @@ from jarvis.wardrobe.styling.sealed import Unreadable as PlansUnreadable
 from jarvis.wardrobe.styling.service import Answer, Here, Styling
 from jarvis.wardrobe.tryon import options as o
 from jarvis.wardrobe.tryon.assets import effective, tidy
-from jarvis.wardrobe.tryon.http import LookSlot, TryonLook
+from jarvis.wardrobe.tryon.http import LookSlot, RefCard, TryonLook
 from jarvis.wardrobe.tryon.model import (
     COVERED,
     OPTIONS_MAX,
@@ -199,6 +199,7 @@ def slot_of(
         variants=VARIANTS.get(template, ()) if template else (), rgb=rgb_of(p.colour),
         pattern=p.pattern, texture_view=texture, photo=photo,
         views=tuple(v for v in VIEWS if v in kept),
+        refs=tuple(RefCard(view=v, photo=kept[v]) for v in VIEWS if v in kept),
         missing=tuple(v for v in useful_views(p.type) if v not in kept),
         readiness=words, eligible=ok, approximate=_approx(template, photo), card_only=card,
         removable=pick.slot in REMOVABLE_SLOTS, options=o.options(f, pick.slot, unit, chosen),

@@ -113,6 +113,9 @@ async def avt04_kurta_front_and_back() -> list[str]:
     kurta = _slot(await a.service.looks.for_pieces(UID, f"top:{T.kurta}"), "top")
     if kurta is None or kurta.piece != T.kurta or kurta.views != ("front", "back"):
         out.append(f"the kurta's views: {getattr(kurta, 'views', None)}")
+    cards = [(r.view, r.photo) for r in getattr(kurta, "refs", ())]
+    if cards != [("front", "wh_00000000a001"), ("back", "wh_00000000a002")]:
+        out.append(f"the kurta's reference cards: {cards}")  # AVT-04's front and back cards
     await a.w.edit(T.kurta, photos=("wh_00000000a001",))
     front = _slot(await a.service.looks.for_pieces(UID, f"top:{T.kurta}"), "top")
     if front is None or front.missing != ("back",) or not front.eligible:

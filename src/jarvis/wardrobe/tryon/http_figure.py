@@ -116,6 +116,13 @@ class LookOption(_M):
     template: Template | None = None
 
 
+class RefCard(_M):
+    """One kept reference crop of a piece and its view (AVT-04's front and back cards)."""
+
+    view: View
+    photo: PhotoId
+
+
 class LookSlot(_M):
     """One slot of a look for the figure. A private slot (`base`, `underwear`) is covered only:
     no template, colour, pattern, photo or option; its piece and words only with `?private=1`."""
@@ -131,6 +138,7 @@ class LookSlot(_M):
     texture_view: View | None = None
     photo: PhotoId | None = None  # the crop the texture comes from (detail, else front)
     views: tuple[View, ...] = ()  # the views kept
+    refs: tuple[RefCard, ...] = Field(default=(), max_length=3)  # each kept crop, front first
     missing: tuple[View, ...] = ()  # a useful view not kept yet (AVT-04)
     readiness: str = ""
     eligible: bool = False

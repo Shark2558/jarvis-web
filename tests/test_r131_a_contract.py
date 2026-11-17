@@ -94,3 +94,14 @@ async def test_the_fakes_early_refusal_still_comes_first() -> None:
         got = await c.post("/v1/tryon/confirm", json={"plan": RACE_PLAN, "slots": [
             {"slot": "top", "piece": "wi_ffffffffffff"}]})  # fmt: skip
     assert got.status_code == 409 and got.json()["error"] == "draft"  # before any call (D7)
+
+
+async def test_the_fake_serves_the_same_reference_cards_as_a() -> None:
+    a = await a_world()
+    client, _ = await _fake_client()
+    async with client as c:
+        for pid in (T.kurta, T.striped):
+            ours = (await a.service.looks.for_pieces(UID, f"top:{pid}")).slots[0]
+            got = await c.get(f"/v1/tryon/look?pieces=top:{pid}")
+            fake = http.TryonLook.model_validate(got.json()).slots[0]
+            assert fake.refs == ours.refs and len(ours.refs) == 2  # D draws what A serves

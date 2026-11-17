@@ -88,6 +88,9 @@ async def test_avt04_a_kurta_shows_its_front_and_back_references_under_its_own_i
         kurta = _slot(look, "top")
         assert kurta.piece == catalog.id == T.kurta  # the same wi_ id as in the catalog
         assert kurta.views == ("front", "back") and kurta.missing == ()
+        assert [(r.view, r.photo) for r in kurta.refs] == [  # its two reference cards, named
+            ("front", "wh_00000000a001"), ("back", "wh_00000000a002")
+        ]  # fmt: skip
         assert kurta.photo in catalog.photos  # a reference card from its own crops
         assert {o.photo for o in kurta.options if o.piece == T.kurta} <= set(catalog.photos)
 
@@ -97,6 +100,7 @@ async def test_avt04_a_kurta_shows_its_front_and_back_references_under_its_own_i
         )
     front = _slot(only, "top")
     assert front.views == ("front",) and front.missing == ("back",)  # asks for the back only
+    assert [(r.view, r.photo) for r in front.refs] == [("front", "wh_00000000a001")]
     assert front.eligible is True and front.readiness == m.READY  # and stays selectable
     assert any(o.piece == T.kurta and o.eligible for o in front.options)
 

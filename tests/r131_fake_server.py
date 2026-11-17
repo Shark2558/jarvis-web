@@ -135,6 +135,12 @@ def look_slot(view: WardrobeView, slot: str, pid: str, *, private: bool = False)
         texture_view=("detail" if detail else "front") if p.photos else None,
         photo=detail or (p.photos[0] if p.photos else None),
         views=views,
+        refs=tuple(
+            http.RefCard(view=v, photo=x)  # type: ignore[arg-type]
+            for v in ("front", "back", "detail")  # A's order (review A-1, I1 item 8.2)
+            for x in p.photos
+            if VIEW_OF.get(x) == v
+        ),
         missing=missing,  # type: ignore[arg-type]
         readiness=_readiness(p),
         eligible=p.eligible,

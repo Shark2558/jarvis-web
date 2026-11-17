@@ -190,6 +190,20 @@ async def test_avt04_views_a_kurta_lists_front_and_back_under_its_own_id() -> No
     assert kurta.texture_view == "front" and kurta.photo == "wh_00000000a001"
 
 
+async def test_avt04_views_refs_name_each_kept_crop_front_back_detail_and_none_when_covered() -> (
+    None
+):
+    a = await a_world()
+    got = _slots(await a.service.looks.for_pieces(UID, f"top:{T.striped},base:{T.vest}"))
+    shirt, vest = got["top"], got["base"]
+    assert [(r.view, r.photo) for r in shirt.refs] == [  # front first, then detail
+        ("front", "wh_00000000b001"), ("detail", "wh_00000000b002")
+    ]  # fmt: skip
+    assert tuple(r.view for r in shirt.refs) == shirt.views  # one map: they never disagree
+    assert shirt.photo == "wh_00000000b002"  # the texture's crop is the detail, not the front
+    assert vest.private and vest.refs == ()  # a covered slot: no reference card
+
+
 async def test_avt04_views_a_kurta_with_only_a_front_asks_for_the_back_and_stays_selectable() -> (
     None
 ):

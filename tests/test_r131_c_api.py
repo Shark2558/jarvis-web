@@ -100,7 +100,10 @@ async def real(monkeypatch: pytest.MonkeyPatch, **over: Any) -> AsyncIterator[Re
 async def _ready(r: Real) -> str:
     """His photo, his YES and a new navy shirt's photo, through the routes: the garment id."""
     assert (await r.c.post("/v1/seeme/photo", content=PHOTO, headers=JPEG)).status_code == 200
-    yes = await r.c.post("/v1/seeme/consent", json={"typed": "YES", "template_version": "c2"})
+    shown = http.SeeMeView.model_validate((await r.c.get("/v1/seeme")).json()).consent
+    assert shown is not None and shown.version.startswith("c2-") and not shown.given
+    body = {"typed": "YES", "template_version": shown.version}  # what his console was shown
+    yes = await r.c.post("/v1/seeme/consent", json=body)
     assert yes.status_code == 200 and http.ConsentView.model_validate(yes.json()).current
     g = await r.c.post("/v1/seeme/garments?type=shirt&colour=navy", content=SHIRT, headers=JPEG)
     assert g.status_code == 200, g.text

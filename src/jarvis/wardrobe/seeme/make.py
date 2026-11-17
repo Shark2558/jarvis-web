@@ -149,7 +149,8 @@ class Press:
             raise SeeMeRefused(503, "no_ai", texts.NO_AI)
         provider = self.kit.provider()
         assert provider is not None  # off_reason checked it
-        if not await self.kit.consent.current(uid, provider.describe()):
+        cache = self.kit.ctx.s.tryon_cache  # what Google keeps is part of what he agreed to
+        if not await self.kit.consent.current(uid, provider.describe(), cache=cache):
             raise SeeMeRefused(409, "consent_needed", texts.CONSENT_NEEDED)
         return provider
 

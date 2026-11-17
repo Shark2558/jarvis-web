@@ -13,6 +13,7 @@
 #                                 Part C: `state("r13_parts")`, `billing`, `brain_mode`, `tryon`
 #   ready_world(...)              seeme_world + Part C built, his photo kept, his YES given and a
 #                                 new navy shirt's photo kept: (world, service, garment)
+#   shown_version(svc)            the consent version his console is shown (sent back with YES)
 #   ask(garment, pieces, ...)     a `PictureIn` for the press (confirm_cost, the ₹ shown, an id)
 #   gemini(script) / fake1(steps) a provider and how many requests reached it: C's adapter on
 #                                 recorded answers, I0's one-garment fake (it chains inside itself)
@@ -196,7 +197,6 @@ async def ready_world(
 ) -> tuple[SeeMeWorld, Any, Any]:  # fmt: skip
     """Part C built on `seeme_world`, his photo kept, his YES (unless `consent=False`) and a new
     navy shirt's photo: (world, the `seeme` service, the new garment's view)."""
-    from jarvis.wardrobe.seeme import consent as cmod
     from jarvis.wardrobe.seeme.part import build
 
     sw = await seeme_world(
@@ -207,9 +207,16 @@ async def ready_world(
     svc = build(sw.ctx).services["seeme"]
     await svc.save_photo(UID, PERSON)
     if consent:
-        await svc.give_consent(UID, "YES", cmod.VERSION)
+        await svc.give_consent(UID, "YES", shown_version(svc))
     garment = await svc.add_garment(UID, "shirt", "navy", NEW_SHIRT)
     return sw, svc, garment
+
+
+def shown_version(svc: Any) -> str:
+    """The consent version his console shows (and sends back with his YES)."""
+    from jarvis.wardrobe.seeme import consent as cmod
+
+    return cmod.shown_version(svc.kit.provider().describe(), cache=svc.kit.ctx.s.tryon_cache)
 
 
 def ask(garment: str, pieces: tuple[str, ...] = (), *, inr: float = 8.9, n: int = 1,
@@ -294,4 +301,5 @@ __all__ = [
     "YieldingDocs",
     "add_front",
     "seeme_world",
+    "shown_version",
 ]

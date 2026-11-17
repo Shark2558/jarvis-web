@@ -79,7 +79,7 @@ async def c_no_call_without_yes(mk: Mk) -> list[str]:
     sw, svc, g = await ready_world(provider=p, consent=False)
     out = _want(await _code(svc.press(UID, ask(g.id, inr=99.0))) == "consent_needed", "sent")
     for typed in ("yes", "Yes", "YES!"):
-        refused = await _code(svc.give_consent(UID, typed, cmod.VERSION)) == "not_yes"
+        refused = await _code(svc.give_consent(UID, typed, fakes.shown_version(svc))) == "not_yes"
         out += _want(refused, f"{typed!r} accepted")
     return out + _want(calls() == 0, f"{calls()} calls without a YES")
 
@@ -92,7 +92,8 @@ async def c_moved_rate_keeps_consent(mk: Mk) -> list[str]:
     out = _want((await svc.overview(UID)).consent.current, "a moved rate asked again")
     for model, where in (("gemini-3.1-flash-image", "eu"), ("gemini-nano-banana-2.1", "us")):
         other = ScriptedTryOn(max_garments=1, model=model, location=where).describe()
-        out += _want(not await svc.kit.consent.current(UID, other), f"{model} {where} kept it")
+        kept = await svc.kit.consent.current(UID, other, cache=sw.ctx.s.tryon_cache)
+        out += _want(not kept, f"{model} {where} kept it")
     _set_rate(billing, 95.24)
     return out
 
@@ -310,7 +311,7 @@ async def _racy_reserve(self: TryonCap, uid: str, request_id: str, hold_inr: flo
     return CapHold(uid, request_id, hold_inr, key)
 
 
-async def _always_current(self: Any, uid: str, desc: Any) -> bool:
+async def _always_current(self: Any, uid: str, desc: Any, **kw: Any) -> bool:
     return True  # C2: the consent check off
 
 
@@ -326,7 +327,7 @@ def _lax(real: Any) -> Any:
 
 
 def _priced_text(real: Any) -> Any:
-    return lambda desc: real(desc) + f"|inr={DAY['rate']}"  # C4: the day's ₹ in the hash
+    return lambda desc, **kw: real(desc, **kw) + f"|inr={DAY['rate']}"  # C4: the day's ₹ hashed
 
 
 def _into_the_wardrobe(real: Any) -> Any:

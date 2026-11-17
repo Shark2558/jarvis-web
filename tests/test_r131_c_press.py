@@ -18,7 +18,16 @@ from r131_fake_gemini import (
 )
 from r131_fake_tryon import Step
 from r131_fakes import NOW, UID, T, ist
-from r131_fakes_c import NEW_SHIRT, PERSON, FakeBilling, OffMode, add_front, ask, ready_world
+from r131_fakes_c import (
+    NEW_SHIRT,
+    PERSON,
+    FakeBilling,
+    OffMode,
+    add_front,
+    ask,
+    ready_world,
+    shown_version,
+)
 from r131_fakes_c import StrictTryOn as ScriptedTryOn  # the adapter's own pre-send check too
 
 from jarvis.llm.tryon import TryOnMaybeBilled, TryOnNotBilled
@@ -138,13 +147,11 @@ async def test_the_gates_refuse_in_their_order_and_nothing_is_called() -> None:
 
     sw.state["brain_mode"] = OnMode()
     seen.append((await _refused(svc.press(UID, body))).code)  # consent
-    from jarvis.wardrobe.seeme import consent as cmod
-
-    await svc.give_consent(UID, "YES", cmod.VERSION)
+    await svc.give_consent(UID, "YES", shown_version(svc))
     await svc.delete_garment(UID, g.id)
     photo_less = await svc.delete_photo(UID)  # his YES goes with his photo
     assert photo_less is True
-    await svc.give_consent(UID, "YES", cmod.VERSION)
+    await svc.give_consent(UID, "YES", shown_version(svc))
     seen.append((await _refused(svc.press(UID, body))).code)  # his photo
     await svc.save_photo(UID, PERSON)
     seen.append((await _refused(svc.press(UID, body))).code)  # the garment's photo
@@ -161,6 +168,20 @@ async def test_the_gates_refuse_in_their_order_and_nothing_is_called() -> None:
     assert seen == ["no_ai", "consent_needed", "no_photo", "no_garment", "private_piece",
                     "confirm_cost", "price_changed", "budget_reached"]  # fmt: skip
     assert fake.calls == [] and (await svc.kit.cap.month(UID)).holds == {}
+
+
+async def test_googles_cache_turned_on_after_his_yes_asks_for_it_again_before_any_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = ScriptedTryOn(max_garments=1)
+    sw, svc, g = await ready_world(provider=fake)  # his YES under "the cache is switched off"
+    monkeypatch.setattr(sw.ctx.s, "tryon_cache", True)  # a later deploy: "up to 24 hours"
+    view = await svc.overview(UID)
+    assert view.consent is not None and view.consent.given and not view.consent.current
+    err = await _refused(svc.press(UID, ask(g.id, (), inr=9.0)))
+    assert (err.status, err.code) == (409, "consent_needed") and fake.calls == []
+    await svc.give_consent(UID, "YES", view.consent.version)  # what he is shown now
+    assert (await svc.overview(UID)).consent.current  # type: ignore[union-attr]
 
 
 async def test_pictures_off_or_no_provider_is_not_configured() -> None:

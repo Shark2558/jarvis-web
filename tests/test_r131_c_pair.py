@@ -156,7 +156,11 @@ async def test_his_t_shirt_is_read_in_r13s_words_and_sent_in_fixed_ones() -> Non
     tee = (await sw.w.store.view(UID)).pieces[T.tee]
     assert pairmod.mine_words(tee) == "grey T-shirt"  # what he reads, R13's own words
     assert pairmod.prompt_words(tee) == "grey t shirt"  # what Google reads: fixed words only
-    assert pairmod.PROMPT_WORDS.pattern == tryon_gemini.WORDS.pattern  # one rule, both sides
+    # one rule, both sides: the port's own (I1, INTEGRATION-C 10.4 c), never a copy
+    from jarvis.llm.tryon import FIXED_WORDS
+
+    assert pairmod.PROMPT_WORDS is FIXED_WORDS and tryon_gemini.WORDS is FIXED_WORDS
+    assert FIXED_WORDS.pattern == r"^[a-z][a-z ]{0,59}$"
 
 
 async def test_the_scripted_fake_refuses_what_the_adapter_refuses() -> None:

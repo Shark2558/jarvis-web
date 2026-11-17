@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from jarvis.llm.tryon import (
+    FIXED_WORDS,
     LOCATION_WORDS,
     MAX_GARMENTS,
     MAX_OUTPUT_TOKENS,
@@ -72,7 +73,7 @@ PATH = (
     "/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent"
 )
 PROJECT = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")  # a Google Cloud project id
-WORDS = re.compile(r"^[a-z][a-z ]{0,59}$")  # "a new navy shirt": fixed words only
+WORDS = FIXED_WORDS  # "a new navy shirt": fixed words only (the port's one rule)
 ANSWER_MAX_BYTES = 16 * 1024 * 1024  # `wardrobe.tryon.model.ANSWER_MAX_BYTES`
 ANSWER_MAX = ANSWER_MAX_BYTES  # read at call time (a test lowers it)
 ANSWER_BODY_MAX = ANSWER_MAX_BYTES * 4 // 3 + 2 * 1024 * 1024  # 16 MB in base64 and its JSON

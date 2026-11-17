@@ -26,6 +26,7 @@ Nothing here makes a call, reads a clock, logs a body or keeps a picture.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass
 from importlib import import_module
@@ -54,6 +55,9 @@ MAX_GARMENTS = 3  # the top, the bottom and the outer layer, in one request (D13
 MAX_OUTPUT_TOKENS = 8192  # `generationConfig.maxOutputTokens` (D10): the hold's worst case
 THINKING_TYPICAL = 1000  # about 1,000 thinking tokens a picture (the plan's ≈ ₹8.9)
 PROMPT_TOKENS = 150  # the fixed English text part
+# The only words a garment is sent in: lower-case letters and spaces ("a new navy shirt"). One
+# rule for the wardrobe (before the reserve) and every adapter (before anything leaves) (I1).
+FIXED_WORDS = re.compile(r"^[a-z][a-z ]{0,59}$")
 
 
 @dataclass(frozen=True)
@@ -225,6 +229,7 @@ def build_tryon(s: Settings, *, tokens: BearerTokens, project: ProjectFn) -> Try
 
 __all__ = [
     "ADAPTERS",
+    "FIXED_WORDS",
     "LOCATION_WORDS",
     "MAX_GARMENTS",
     "MAX_OUTPUT_TOKENS",

@@ -18,12 +18,12 @@ thinking of buying (docs/plans/r13-1-try-on.md D13.1, D22.5).
 
 from __future__ import annotations
 
-import re
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from jarvis.llm.tryon import FIXED_WORDS
 from jarvis.logging import get_logger
 from jarvis.wardrobe.model import Piece, WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
@@ -46,9 +46,9 @@ from jarvis.wardrobe.tryon.ports import service_of
 log = get_logger(__name__)
 PHOTO_COLLECTION = "wardrobe_photo"  # R13's catalog: {owner, piece, view, ...} plain fields
 NOT_HIS_WORDS = "a piece not in your wardrobe"
-# The only words a garment is sent in: lower-case letters and spaces (the Gemini adapter's own
-# `WORDS`, pinned equal by a test). R13's display words ("T-shirt") are for him, never for Google.
-PROMPT_WORDS = re.compile(r"^[a-z][a-z ]{0,59}$")
+# The only words a garment is sent in: the port's one rule (`llm.tryon.FIXED_WORDS`, which every
+# adapter checks too). R13's display words ("T-shirt") are for him, never for Google.
+PROMPT_WORDS = FIXED_WORDS
 
 
 @dataclass(frozen=True)

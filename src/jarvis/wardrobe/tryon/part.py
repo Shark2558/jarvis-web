@@ -39,7 +39,7 @@ from jarvis.wardrobe.tryon.http import (
 )
 from jarvis.wardrobe.tryon.looks import Looks, Read, StylingOff
 from jarvis.wardrobe.tryon.model import RANGES, range_words
-from jarvis.wardrobe.tryon.store import Saved, TryonDoc, TryonStore
+from jarvis.wardrobe.tryon.store import Saved, TryonDoc, TryonStore, storage_trouble, where
 
 log = get_logger(__name__)
 READY = "ready"
@@ -67,13 +67,17 @@ class TryonService:
     async def _read(self, uid: str) -> Read | None:
         """R13's records for the view's extras; None when they can't be read now (the figure
         still answers: saved comparisons then read "Draft" and no figure choice is listed until
-        they can be checked, so a piece made private since is never named, AVT-14)."""
+        they can be checked, so a piece made private since is never named, AVT-14). Any other
+        error is a bug, never "no figure": the route logs and answers it (review A-1 F3)."""
         try:
             return await self.looks.read(uid)
         except StylingOff:
             return None
         except Exception as exc:  # noqa: BLE001 - R13's store down: the figure still answers
-            log.warning("try-on: R13's records unreadable", extra={"error": type(exc).__name__})
+            if not storage_trouble(exc):
+                raise
+            extra = {"error": type(exc).__name__, "at": where(exc)}
+            log.warning("try-on: R13's records unreadable", extra=extra)
             return None
 
     async def tryon_view(self, uid: str, *, release: str, files: tuple[str, ...]) -> TryonView:

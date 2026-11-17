@@ -18,6 +18,7 @@ from r131_fakes_a import SHOES, UID, T, a_world
 from jarvis.api import tryon as routes
 from jarvis.api.auth import require_auth
 from jarvis.tools.audit import args_hash
+from jarvis.wardrobe.catalog.store import WardrobeUnavailable
 from jarvis.wardrobe.tryon import model as m
 from jarvis.wardrobe.tryon.http import (
     ROUTES,
@@ -339,7 +340,7 @@ async def test_the_view_answers_even_when_r13s_store_breaks() -> None:
     a = await a_world()
 
     async def broken(uid: str) -> Any:
-        raise RuntimeError("R13's store is down")
+        raise WardrobeUnavailable("R13's store is down")  # what R13's store raises
 
     a.styling.view = broken  # type: ignore[method-assign]
     async with a.client() as c:
@@ -355,7 +356,7 @@ async def test_with_r13s_records_unreadable_the_view_lists_no_choice_it_cant_che
     await a.w.edit(T.striped, private=True)  # made private since: its id is never served (AVT-14)
 
     async def broken(uid: str) -> Any:
-        raise RuntimeError("R13's store is down")
+        raise WardrobeUnavailable("R13's store is down")  # what R13's store raises
 
     a.styling.view = broken  # type: ignore[method-assign]
     async with a.client() as c:

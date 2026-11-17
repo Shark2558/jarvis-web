@@ -13,21 +13,31 @@ document with no key (R13 I1's M1 rule). Sealed, it is at most `model.TRYON_DOC_
 No keyring or no storage: `Off` (nothing is ever kept in clear). A document that can't be opened
 (the key changed) is `Unreadable` and is never overwritten. Records ignore a field a later
 release adds, so a rollback still opens the document. Nothing here logs a value or a blob.
+
+Part A's two error helpers (review A-1 F3) live here too: `storage_trouble(exc)` (storage that is
+down or can't be opened: a warning and "try again"; anything else is a bug) and `where(exc)`
+(the module, line and function an error came from, inside the `jarvis` package: never a value,
+a message or a local path, since those can carry his numbers).
 """
 
 from __future__ import annotations
 
 import json
+import traceback
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+import jarvis
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Docs, DocTx
+from jarvis.storage.docs import Delete, DocExists, Docs, DocTx, IndexNotReady
 from jarvis.undo.store import owner_ok
+from jarvis.wardrobe.catalog.store import WardrobeUnavailable as CatalogDown
+from jarvis.wardrobe.kept import WardrobeUnavailable as KeptDown
 from jarvis.wardrobe.model import PieceId, View
 from jarvis.wardrobe.tryon.model import (
     EARLIER_MAX,
@@ -57,6 +67,31 @@ class Unreadable(RuntimeError):
 
 class TooBig(ValueError):
     """The sealed document would pass its 200 KB: nothing is written."""
+
+
+_PACKAGE = Path(jarvis.__file__).resolve().parent
+_DOWN = (Off, Unreadable, CatalogDown, KeptDown, IndexNotReady, DocExists, OSError)
+
+
+def storage_trouble(exc: BaseException) -> bool:
+    """Storage down or not opened: ours, R13's, the docs layer's, the network's, or Firestore's
+    own errors (told by their module: nothing outside `jarvis.storage` imports its SDK)."""
+    if isinstance(exc, _DOWN):  # TimeoutError and ConnectionError are OSErrors
+        return True
+    return any(k.__module__.startswith("google.") for k in type(exc).__mro__)
+
+
+def where(exc: BaseException) -> str:
+    """ "wardrobe/tryon/looks.py:199:slot_of": the innermost frame inside `jarvis` (else the
+    innermost frame's file name only)."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return "?"
+    ours = [f for f in frames if Path(f.filename).resolve().is_relative_to(_PACKAGE)]
+    f = (ours or frames)[-1]
+    found = Path(f.filename).resolve()
+    name = found.relative_to(_PACKAGE).as_posix() if ours else found.name
+    return f"{name}:{f.lineno}:{f.name}"
 
 
 class _Rec(BaseModel):
@@ -198,4 +233,6 @@ __all__ = [
     "TryonDoc",
     "TryonStore",
     "Unreadable",
+    "storage_trouble",
+    "where",
 ]

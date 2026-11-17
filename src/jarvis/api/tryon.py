@@ -57,6 +57,7 @@ Act = Callable[[TryonService], Awaitable[Any]]
 NOT_SET_UP = "Try-on isn't available on this server."
 BAD = "That request can't be read."
 DOWN = "That couldn't be done just now. Try again in a minute."
+INTERNAL = "Something went wrong inside JARVIS. Try again later."
 UNREADABLE = (
     "Your try-on data can't be opened (JARVIS's key changed): delete it in Privacy to start again."
 )
@@ -93,8 +94,10 @@ def _ok(model: BaseModel) -> JSONResponse:
     return JSONResponse(model.model_dump(mode="json"), headers=NO_STORE)
 
 
-def refused(exc: Exception, down: int) -> JSONResponse:
-    """A refusal in its own words; storage trouble is `down` (503, or the route's nearest)."""
+def refused(exc: Exception, down: int, route: str = "") -> JSONResponse:
+    """A refusal in its own words; storage trouble is `down` (503, or the route's nearest); any
+    other error is a bug: logged at ERROR with where it happened and answered 500 `internal`
+    (review A-1 F3). Never the error's message or a trace: those can carry his numbers."""
     if isinstance(exc, _Bad):
         return no(422, "bad_request", BAD)
     for kind, status, code in _CODES:
@@ -104,8 +107,12 @@ def refused(exc: Exception, down: int) -> JSONResponse:
         return no(down, "off", str(exc) or NOT_SET_UP)
     if isinstance(exc, store.Unreadable):
         return no(down, "unreadable", UNREADABLE)
-    log.warning("try-on route failed", extra={"error": type(exc).__name__})
-    return no(down, "unavailable", DOWN)
+    extra = {"route": route, "error": type(exc).__name__, "at": store.where(exc)}
+    if store.storage_trouble(exc):
+        log.warning("try-on route: storage trouble", extra=extra)
+        return no(down, "unavailable", DOWN)
+    log.error("try-on route failed", extra=extra)
+    return no(500, "internal", INTERNAL)
 
 
 def _service(request: Request) -> TryonService | str:
@@ -130,7 +137,7 @@ async def _run(
     try:
         got = await act(svc)
     except Exception as exc:  # noqa: BLE001 - every refusal in words, never a stack
-        return refused(exc, down)
+        return refused(exc, down, route)
     return got if isinstance(got, JSONResponse) else _ok(got)
 
 

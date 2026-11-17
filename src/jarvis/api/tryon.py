@@ -238,10 +238,16 @@ PANEL_CODES = {404: "unavailable", 422: "no_conversation"}
 
 
 def _panel(run: PanelRun) -> JSONResponse:
-    if run.result is None:  # refused before any call: in the contract's shape
+    """R13's `ToolReply` for the one call (executed, a card, or denied); every refusal in the
+    contract's shape, in R13's own words (the gateway's error too)."""
+    if run.result is None:  # refused before any call
         status, words = run.refusal or (422, DOWN)
         return no(status, PANEL_CODES.get(status, "unavailable"), words)
-    return panel_reply(run)
+    reply = panel_reply(run)
+    if reply.status_code < 400:
+        return reply
+    words = str(json.loads(bytes(reply.body)).get("message") or DOWN)
+    return no(reply.status_code, "tool_error", words)
 
 
 @router.post("/v1/tryon/confirm", include_in_schema=False)

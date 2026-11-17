@@ -252,6 +252,22 @@ async def test_a_confirm_with_no_gateway_is_refused_in_the_contracts_shape() -> 
     _refusal(got, 404, "unavailable")
 
 
+async def test_a_tool_error_on_the_one_call_is_a_refusal_in_r13s_words() -> None:
+    from jarvis.tools.gateway import GatewayOutcome, GatewayResult
+
+    a = await a_world()
+    pid = await a.plan()
+
+    async def failing(call: Any, **kw: Any) -> GatewayResult:
+        return GatewayResult(GatewayOutcome.ERROR, error="The plan is busy (lock held by job)")
+
+    a.w.gw.execute = failing  # type: ignore[method-assign]
+    async with a.client() as c:
+        got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
+            {"slot": "top", "piece": T.white}]})  # fmt: skip
+    assert _refusal(got, 422, "tool_error").detail == "The plan is busy"  # R13's words, cut
+
+
 async def test_a_body_nested_past_reason_is_a_refusal_not_a_crash() -> None:
     a = await a_world()
     deep = b"[" * 100_000 + b"]" * 100_000

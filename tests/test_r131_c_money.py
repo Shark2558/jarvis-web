@@ -96,7 +96,7 @@ async def test_a_release_that_still_fails_is_kept_and_the_daily_job_releases_it(
     await cap.settle_old(UID)
     month = await cap.month(UID)
     assert (month.spent_inr, month.held_inr) == (0.0, 0.0)  # released, never spend at the hold
-    assert month.done[rid(1)] == {"error": "provider_unavailable"} and not cap.pending
+    assert rid(1) not in month.done and not cap.pending  # a release: no replay (I1 sec. 2)
 
 
 async def test_the_next_press_closes_a_kept_close_first_so_it_isnt_busy() -> None:

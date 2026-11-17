@@ -12,7 +12,9 @@
                                           deployment's); kept with the spend, so a delete of his
                                           photo or OPS-05 never resets a cap he lowered
 
-`reserve` reads and writes in ONE transaction: a repeated request id answers its `done` outcome;
+`reserve` reads and writes in ONE transaction: a repeated request id answers its `done` outcome
+(a billed one only: a release is not kept there, so a retry after "nothing was charged" asks
+Google again; I1's security review, finding 2);
 refused with nothing written while a hold under 10 minutes old exists (`busy`, so two instances
 in a rollout can't both pass) or when spent + held + the hold would pass the cap (`cap_reached`,
 "This month's try-on limit of ₹300 is used: ..."). A counter that isn't a finite number >= 0 is
@@ -253,9 +255,14 @@ class TryonCap:
             took = float(mine["inr"]) if mine is not None else 0.0
             once = 1 if mine is not None else 0  # a retry after a lost reply counts nothing twice
             rid = hold.request_id
+            done = {r: o for r, o in m.done.items() if r != rid}
+            kept = (*(r for r in m.order if r != rid), rid)
+            if not (spend or picture or blocked):  # a release: nothing billed, nothing to replay,
+                kept = kept[:-1]  # so "press again" asks Google again (security review finding 2)
+            else:
+                done[rid] = dict(outcome)
             new = replace(
-                m, spent_inr=spent, held_inr=m.held_inr - took, holds=held,
-                done={**m.done, rid: dict(outcome)}, order=(*(r for r in m.order if r != rid), rid),
+                m, spent_inr=spent, held_inr=m.held_inr - took, holds=held, done=done, order=kept,
                 pictures=m.pictures + picture * once, blocked=m.blocked + blocked * once,
             )  # fmt: skip
             tx.set(path, encode(hold.uid, new, self.now()))

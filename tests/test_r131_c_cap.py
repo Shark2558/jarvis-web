@@ -96,7 +96,7 @@ async def test_a_release_gives_the_hold_back_and_a_repeat_is_a_no_op() -> None:
     await cap.release(hold, outcome={"error": "provider_unavailable"})  # never twice
     month = await cap.month(UID)
     assert (month.spent_inr, month.held_inr) == (8.52, 0.0)
-    assert month.done[rid(2)] == {"error": "provider_unavailable"}
+    assert rid(2) not in month.done  # nothing billed: no replay (I1 security review finding 2)
 
 
 async def test_a_failed_release_can_be_tried_again() -> None:
@@ -175,9 +175,9 @@ async def test_a_repeated_request_id_answers_its_outcome() -> None:
 async def test_done_keeps_the_last_fifty() -> None:
     clock = FixedClock(NOW)
     cap = _cap(clock=clock)
-    for n in range(55):
+    for n in range(55):  # billed answers (a release keeps none: I1 security review, finding 2)
         hold = await cap.reserve(UID, rid(n), 1.0, 2000)
-        await cap.release(hold, outcome={"error": "x"})
+        await cap.settle(hold, 1.0, outcome={"error": "x"})
     done = (await cap.month(UID)).done
     assert len(done) == 50 and rid(0) not in done and rid(54) in done
 
@@ -195,9 +195,9 @@ class KeySortedDocs(MemoryDocs):
 
 async def test_done_keeps_the_last_fifty_in_answer_order_whatever_a_maps_order() -> None:
     cap = _cap(KeySortedDocs())
-    for n in range(50):  # fifty answers whose ids sort after A's
+    for n in range(50):  # fifty (billed) answers whose ids sort after A's
         hold = await cap.reserve(UID, "tq_f" + f"{n:015x}", 1.0, 2000)
-        await cap.release(hold, outcome={"error": "x"})
+        await cap.settle(hold, 1.0, outcome={"error": "x"})
     a = await cap.reserve(UID, rid(1), 1.0, 2000)  # A: the lowest id of all
     await cap.settle(a, 1.0, outcome={"picture": "tp_00000000000a"}, picture=True)
     b = await cap.reserve(UID, rid(2), 1.0, 2000)  # B: after A
@@ -205,7 +205,7 @@ async def test_done_keeps_the_last_fifty_in_answer_order_whatever_a_maps_order()
     again = await cap.reserve(UID, rid(1), 1.0, 2000)  # A's lost reply, retried after B
     assert again == Done({"picture": "tp_00000000000a"})  # answered, never charged twice
     month = await cap.month(UID)
-    assert month.spent_inr == 2.0 and month.pictures == 2 and len(month.done) == 50
+    assert month.spent_inr == 52.0 and month.pictures == 2 and len(month.done) == 50
     assert "tq_f" + f"{0:015x}" not in month.done and "tq_f" + f"{1:015x}" not in month.done
 
 

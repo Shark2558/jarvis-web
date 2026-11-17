@@ -209,6 +209,24 @@ async def test_googles_429_says_busy_and_nothing_was_charged() -> None:
     assert err.code == "provider_unavailable" and "busy" in err.words and "Nothing" in err.words
 
 
+async def test_after_googles_429_press_again_asks_google_again_and_pays_once() -> None:
+    # integrated security review finding 2: the not-billed refusal was kept in `done`, so the
+    # console's retry (the same request id, "press See it on me again") replayed it forever
+    adapter, google = gemini([429, picture_answer()])
+    billing = FakeBilling()
+    sw, svc, g = await ready_world(provider=adapter, billing=billing)
+    body = ask(g.id, (), inr=await _shown(svc, g.id))
+    first = await _refused(svc.press(UID, body))
+    assert first.code == "provider_unavailable" and "Nothing was charged" in first.words
+    pic = await svc.press(UID, body)  # the same request id: Google is asked again
+    assert pic.id.startswith("tp_") and len(google.seen) == 2
+    again = await svc.press(UID, body)  # a lost reply's retry now: the same picture, not paid
+    assert again.id == pic.id and len(google.seen) == 2
+    month = await svc.kit.cap.month(UID)
+    assert (month.pictures, month.held_inr) == (1, 0.0) and month.spent_inr == pic.inr
+    assert len(billing.recorded) == 1
+
+
 async def test_no_usage_in_the_answer_is_settled_at_the_hold() -> None:
     adapter, _ = gemini([picture_answer(usage=None)])
     sw, svc, g = await ready_world(provider=adapter)
@@ -236,13 +254,15 @@ async def test_a_repeated_request_id_answers_the_same_picture_once_charged() -> 
 
 
 async def test_a_repeated_failed_request_id_answers_the_same_refusal() -> None:
+    down = Step(error=TryOnNotBilled("status_500"))
     fake = ScriptedTryOn(max_garments=3, model="gemini-3.1-flash-image",
-                         script=[Step(error=TryOnNotBilled("status_500"))])  # fmt: skip
+                         script=[down, down])  # fmt: skip
     sw, svc, g = await ready_world(provider=fake)
     body = ask(g.id, (), inr=await _shown(svc, g.id))
     assert (await _refused(svc.press(UID, body))).code == "provider_unavailable"
     assert (await _refused(svc.press(UID, body))).code == "provider_unavailable"
-    assert len(fake.calls) == 1
+    assert len(fake.calls) == 2  # not billed: asked again, never replayed (I1 security, 2)
+    assert (await svc.kit.cap.month(UID)).spent_inr == 0.0
 
 
 async def test_a_picture_over_700_kb_is_shown_once_and_not_kept() -> None:

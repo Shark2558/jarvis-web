@@ -180,12 +180,12 @@ class SeeMeService:
         k, s, d = self.kit, self.kit.ctx.s, provider.describe()
         rate = await rate_of(k.billing(), s.usd_inr_rate)
         fig = figures(provider, garments=TYPICAL_GARMENTS, rate=rate, tax_pct=s.tryon_tax_pct)
-        day = day_words(s.tryon_model_retires)
+        day = day_words(d.retires_on)  # the model's own date: one source (review C-1, 6)
         return {
             "provider": http.ProviderView(
                 provider=d.provider, model=d.model, model_words=d.model_words,
                 location=d.location, location_words=d.location_words,
-                max_garments=d.max_garments, retires_on=s.tryon_model_retires, ends_soon=soon,
+                max_garments=d.max_garments, retires_on=d.retires_on, ends_soon=soon,
             ),
             "consent": await k.consent.view(uid, d, cache=s.tryon_cache),
             "typical_inr": fig.typical_inr, "hold_inr": fig.hold_inr,

@@ -1,22 +1,23 @@
 # src/jarvis/wardrobe/seeme/make.py
 """R13.1 Part C: the press, from the ₹ shown to the picture (docs/plans/r13-1-try-on.md D13.4-D13.7;
-plan review L9, L10).
+plan review L9, L10; review C-1).
 
 The gates, in this order, each refusing BEFORE any spend (the route adds console-only and 6 presses
-a minute first): pictures on (`tryon_pictures`, a provider, his own switch) and before
-`tryon_model_retires`; not No-AI mode (`offline.mode.BrainMode`, fail closed); his consent current
-(D11); his photo kept; the new garment's photo kept (404 `no_garment`); every piece of his
-sendable, from the RECORD (`pair.split`, never the console's word), its crop opened; `confirm_cost`;
-the fresh typical ₹ at most `inr_shown` + ₹0.01 (409 `price_changed`); his overall monthly limit
+a minute first): pictures on (`tryon_pictures`, a provider, his own switch) and before the model's
+own end date (`describe().retires_on`, the one source); not No-AI mode (`offline.mode.BrainMode`,
+fail closed); his consent current (D11, with the cache); his photo kept; the new garment's photo
+kept (404 `no_garment`); every piece of his sendable, from the RECORD (`pair.split`, never the
+console's word), its crop opened, and every word sent a fixed word; `confirm_cost`; the fresh
+typical ₹ at most `inr_shown` + ₹0.01 (409 `price_changed`); his overall monthly limit
 (`billing.spend.ensure_spend_allowed` on the hold, fail closed); the cap's ATOMIC reserve of the
 hold (`busy` and `cap_reached` inside it). Then ONE `make` (a 120 s deadline): settled from its
-usage into the cap and his usage month (label `tryon`), at the hold without one; released in full on
-`TryOnNotBilled`; kept at the hold on `TryOnMaybeBilled` and a blocked 200. A repeated request id
-answers its first outcome (`done`), so a retry never charges twice. A picture is kept only while
-his photo, his YES and the garment's photo are still there after the call (review C-1, finding 3:
-OPS-05, his withdrawal or a Privacy delete during the call wins); it is still settled, as made.
-A settle or release that fails after the cap's tries is kept by the cap for later; his usage
-month hears every billed call whatever the settle did (finding 5).
+usage into the cap and his usage month (label `tryon`), at the hold without one; released in full
+on `TryOnNotBilled`; kept at the hold on `TryOnMaybeBilled` and a blocked 200. A repeated request
+id answers its first outcome (`done`), so a retry never charges twice. A picture is kept only
+while his photo, his YES and the garment's photo are still there after the call (OPS-05, his
+withdrawal or a Privacy delete during the call wins); it is still settled, as made. A settle or
+release that fails after the cap's tries is kept by the cap for later; his usage month hears
+every billed call whatever the settle did.
 """
 
 from __future__ import annotations
@@ -105,10 +106,19 @@ class Kit:
     async def today(self, uid: str) -> date:
         return self.ctx.now().astimezone(await self.ctx.zone(uid)).date()
 
+    def retires_on(self) -> str:
+        """The model's own end date (`describe().retires_on`, from `llm.tryon.RETIRES_ON`): the
+        one source for the gate, the notice and the panel; "" when it names none (review C-1, 6)."""
+        provider = self.provider()
+        return provider.describe().retires_on if provider is not None else ""
+
     async def ends(self, uid: str) -> tuple[bool, bool]:
         """(the end date is within 30 days, it has come): D18, on his local day."""
+        day = self.retires_on()
+        if not day:
+            return False, False  # no provider (off anyway), or a model with no end date known
         try:
-            end = date.fromisoformat(self.ctx.s.tryon_model_retires)
+            end = date.fromisoformat(day)
         except ValueError:
             return False, True  # an end date that can't be read: off (fail closed)
         today = await self.today(uid)

@@ -1,125 +1,111 @@
 # evals/r13_1/console.py
-"""R13.1 eval, Part D (`console`): the console and phone of Try-on in a real Chromium
-(docs/plans/r13-1-try-on.md "Tests and evals", BRIEF-D section 4), on D's fake server
-(tests/r131_fakes_d.py over I0's) and a fake engine that keeps B's contract
-(tests/fixtures/r13_1/d_engine.mjs), with the page clock pinned. Each case IS the named browser
-test of the same name in tests/browser/test_r131_d_*.py, run here as a function:
+"""R13.1 eval, Part D (`console`, BUILT): the console and phone of Try-on BY BEHAVIOUR
+(docs/plans/r13-1-try-on.md "Tests and evals", BRIEF-D section 4). Part D's REAL modules
+(console-tryon*.js) run in Node over a small DOM (tests/fixtures/r13_1/d_dom.mjs, as R13's phone
+part did) against D's fake server (tests/r131_fakes_d.py over I0's) over HTTP, with the
+contract-keeping fake engine (tests/fixtures/r13_1/d_engine.mjs) in place of B's file. No
+browser is needed, so CI's plain pytest (tests/test_r131_seams.py runs this runner) can run it:
 
-- row 388: the card opens under a typed and a spoken "what should I wear?" with no tap, dressed
-  in exactly the card's pieces (a private slot covered); with no WebGL2 the checklist shows the
-  same pieces; a reply without the card draws nothing; on a phone too;
+- row 388: the reply's `tryon` card opens by itself, dressed in exactly its pieces (by ids, a
+  private slot covered); a reply without the card draws and asks for nothing; with no WebGL2 the
+  card is the checklist of the same pieces;
 - AVT-15: with no WebGL2, a lost context, a file that fails its check, a 10 s first render and
-  I0's engine stub that throws, the checklist changes a piece and "Wearing it" confirms through
-  R13's tools;
-- every row's UI half (AVT-02 ... AVT-14, OPS-05, D22): the controls, the form, the cards, the
-  swap and its thumbnail, undo and the draft, the toggles, compare with both lists' readiness, the
-  share caption passed to snapshot(), his YES and the rupee confirm (Cancel sends nothing), the
-  new garment's type and colour from lists and the face refusal, the Privacy delete;
-- the look: 44 px targets, the stage at 1280 x 800 and 360 x 800 by night and day, and with
-  Try-on off the Wardrobe tab laid out as R13's.
+  I0's engine stub that throws, the checklist shows each piece's readiness and image card,
+  "Change" swaps a piece and "Wearing it" confirms first, then R13's `wear_log`;
+- AVT-06 the watch swap and its thumbnail; AVT-09 the laundry jacket a draft the server refuses,
+  and undo; AVT-11 one show() with two figures and both lists' readiness; AVT-14 the caption's
+  fixed words passed to snapshot(); See it on me: "yes" refused, the rupees shown, Cancel sends
+  NOTHING, then exactly PictureIn's five fields.
 
-Negative control (the part's own, BRIEF-D section 4): I0's engine stub that throws, with the
-checklist hook removed (`toList` no longer draws the list): AVT-15's case must fail. And the rows'
-own controls (the plan's M8 table) that are D's, each a case of the control run: AVT-06 the
-slot's thumbnail stays W1's after the swap; AVT-11 the second figure's readiness words dropped;
-row 388 the card left out of the reply. A control is applied by serving a changed copy of D's own
-file (or the reply without its card) to the page: the code on disk is never touched.
+Negative control (BRIEF-D section 4): I0's engine stub that throws, with the checklist hook
+removed (`toList` no longer draws the list): AVT-15 must fail. The rows' own controls (the plan's
+M8 table) that are D's: AVT-06 the slot's thumbnail stays W1's after the swap; AVT-11 the second
+figure's readiness words dropped; row 388 the card left out of the reply. A control runs on a
+changed COPY of D's file: the code on disk is never touched.
 
-The browser needs Playwright and Chromium: the cases run in a child process with this Python when
-it has Playwright, else with $JARVIS_BROWSER_PYTHON. Without either the part FAILS and says why
-(a browser suite that didn't run never reads as green). No real Google call; nothing is spent.
+The look itself (44 px targets, 1280 x 800 and 360 x 800 by night and day, Try-on off laid out
+as R13's) needs a real browser: those are the browser tests (tests/browser/test_r131_d_*.py, CI's
+browser job). With JARVIS_R131_CONSOLE_BROWSER=1 and a Python with Playwright (this one or
+$JARVIS_BROWSER_PYTHON), this part also runs them, by name, as cases. No Google call; nothing is
+spent.
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
-import traceback
-from collections.abc import Callable
+import urllib.request
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[2]
+for _p in (ROOT / "src", ROOT / "tests"):
+    if str(_p) not in sys.path:
+        sys.path.append(str(_p))
+from r131_fakes import T, jpeg  # noqa: E402
+from r131_fakes_d import CARD, PLAN, WATCH2_PHOTO, WATCH_PHOTO, serve_d  # noqa: E402
+
+from jarvis.wardrobe.tryon.model import COVERED, GENERATED  # noqa: E402
+
 PART = "console"
 BUILT = True
-ROOT = Path(__file__).resolve().parents[2]
 STATIC = ROOT / "src" / "jarvis" / "api" / "static"
+FIXTURES = ROOT / "tests" / "fixtures" / "r13_1"
+DOM = FIXTURES / "d_dom.mjs"
 TOKEN = "browser-test-token-not-a-secret"  # the browser tests' own made-up token
-MARK = "R131D-CONSOLE-EVAL "
-CHILD_TIMEOUT_S = 1800
-AVT15 = "test_avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_confirm"
-STAGE_SIZE = "test_the_stage_is_480px_on_a_laptop_and_56_percent_on_a_phone_by_night_and_day"
-OPS05 = "test_ops05_button_deletes_through_privacy_empties_the_viewer_and_keeps_the_catalog"
-AVT12 = "test_avt12_card_the_picture_is_a_labelled_2d_preview_of_a_new_garment_with_his_pieces"
-Case = tuple[str, str, dict[str, Any]]  # (test module, test function, its parameters)
-TMP: dict[str, Any] = {"tmp_path": None}  # a fresh folder for the drawn pictures it saves
-
-CASES: tuple[Case, ...] = (
-    ("card", "test_row388_asking_what_to_wear_opens_the_card_dressed_in_the_chosen_look", {}),
-    ("card", "test_row388_a_spoken_reply_opens_the_same_card", {}),
-    ("card", "test_row388_a_reply_without_the_card_draws_nothing", {}),
-    ("card", "test_row388_with_no_webgl_the_card_shows_the_same_pieces_as_a_checklist", {}),
-    ("look", "test_row388_on_a_phone_the_card_opens_by_itself_under_the_reply", {}),
-    *(("card", AVT15, {"how": how}) for how in ("no-webgl2", "lost", "asset", "timeout", "stub")),
-    ("section", "test_the_section_opens_dressed_in_the_first_plans_look_by_itself", {}),
-    ("section", "test_avt02_controls_front_side_back_turn_closer_and_zoom", {}),
-    ("section", "test_avt03_form_correcting_height_redraws_and_keeps_every_piece", {}),
-    ("section", "test_avt04_cards_a_kurta_shows_front_and_back_and_a_shirt_asks_for_its_back", {}),
-    ("section", "test_avt05_card_a_patterned_shirt_is_approximate_and_can_be_its_photo_only", {}),
-    ("section", "test_avt06_swap_the_watch_changes_its_wrist_piece_and_its_thumbnail", {}),
-    ("section", "test_avt08_front_to_back_keeps_the_pieces_the_styling_and_the_figure", {}),
-    ("section", "test_avt09_swap_undo_a_jacket_in_the_laundry_is_a_draft_the_server_refuses", {}),
-    ("section", "test_avt10_toggles_close_the_jacket_untuck_and_a_kurta_says_it_is_worn_out", {}),
+MARK = "R131D-DOM "
+D_FILES = (
+    "console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-photo.js",
+    "console-tryon-card.js",
+)  # fmt: skip
+# I0's engine stub as it was at I0: B's engine replaces the file at I1, and this case stays
+I0_STUB = "\n".join(
     (
-        "section",
-        "test_avt11_lists_a_formal_and_a_festive_look_with_both_lists_and_their_readiness",
-        {},
-    ),
-    ("section", "test_avt14_share_the_caption_has_fixed_words_and_never_a_private_label_or_id", {}),
-    ("section", OPS05, {}),
-    ("seeme", AVT12, TMP),
-    (
-        "seeme",
-        "test_avt12_card_lists_his_pieces_sent_and_not_in_the_picture_with_their_thumbnails",
-        {},
-    ),
-    ("seeme", "test_d22_garment_type_and_colour_come_from_lists_and_a_face_is_refused", TMP),
-    (
-        "seeme",
-        "test_d22_garment_a_shared_picture_waits_for_his_words_and_that_press_sends_nothing",
-        {},
-    ),
-    ("seeme", "test_seeme_his_photo_one_person_passes_and_two_are_refused", TMP),
-    ("stage", "test_his_checklist_names_a_private_basic_only_behind_show_private_basics", {}),
-    *(
-        ("look", "test_every_target_is_44px_in_try_it_on_and_in_the_card", {"size": s})
-        for s in ("laptop", "phone")
-    ),
-    *(
-        ("look", STAGE_SIZE, {"size": size, "surface": surface})
-        for size in ("laptop", "phone")
-        for surface in ("night", "day")
-    ),
-    ("look", "test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s", {}),
+        "const NOT_BUILT = 'The 3D view is not built yet.';",
+        "const mount = () => { throw new Error(NOT_BUILT); };",
+        "const engine = Object.freeze({ supported: () => true, mount });",
+        "window.JarvisTryOn3D = engine;",
+        "export { mount };",
+        "export const supported = engine.supported;",
+        "export default engine;",
+    )
 )
-
-
-def key_of(case: Case) -> str:
-    mod, name, kw = case
-    return f"{mod}:{name}" + "".join(f":{v}" for k, v in kw.items() if k != "tmp_path")
+CAPTION = [
+    "Tue 17 Nov 2026 · 10:00",
+    "Navy shirt · Charcoal trousers · Charcoal blazer",
+    "Brown dress shoe · Black belt · Grey watch",
+    "Base layer (covered)",
+]
+Case = tuple[str, str]  # (scenario, how)
+CASES: tuple[Case, ...] = (
+    ("row388", ""), ("row388_none", ""), ("row388_nogl", "no-webgl2"),
+    *(("avt15", how) for how in ("no-webgl2", "lost", "asset", "timeout", "stub")),
+    ("avt06", ""), ("avt09", ""), ("avt11", ""), ("avt14", ""), ("seeme", ""),
+)  # fmt: skip
+NAMES = {
+    "row388": "row388_asking_what_to_wear_opens_the_card_dressed_in_the_chosen_look",
+    "row388_none": "row388_a_reply_without_the_card_draws_nothing",
+    "row388_nogl": "row388_with_no_webgl_the_card_shows_the_same_pieces_as_a_checklist",
+    "avt15": "avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_confirm",
+    "avt06": "avt06_swap_the_watch_changes_its_wrist_piece_and_its_thumbnail",
+    "avt09": "avt09_swap_undo_a_jacket_in_the_laundry_is_a_draft_the_server_refuses",
+    "avt11": "avt11_lists_a_formal_and_a_festive_look_with_both_lists_and_their_readiness",
+    "avt14": "avt14_share_the_caption_has_fixed_words_and_never_a_private_label_or_id",
+    "seeme": "avt12_card_his_yes_the_rupees_and_cancel_sends_nothing",
+}
 
 
 def case_id(case: Case) -> str:
-    _, name, kw = case
-    params = ",".join(str(v) for k, v in kw.items() if k != "tmp_path")
-    return f"{PART}:{name.removeprefix('test_')}" + (f"[{params}]" if params else "")
+    scenario, how = case
+    return f"{PART}:{NAMES[scenario]}" + (f"[{how}]" if scenario == "avt15" else "")
 
 
-# ---- the controls: a changed copy of D's own file served to the page (never written to disk) --
+# ---- the controls: a changed COPY of D's own file ----------------------------------------------
 CHECKLIST_HOOK = (
     "function toList(v, why) { dispose(v); v.mode = 'list'; v.why = why || 'list'; draw(v); }"
 )
@@ -140,167 +126,147 @@ SWAPS: dict[str, tuple[str, str, str]] = {  # control -> (file, what it was, wha
         "Object.assign({}, s, { readiness: '' })) }); " + COMPARED,
     ),
 }
-CONTROLS: dict[str, tuple[str, ...]] = {  # control -> the cases it must turn red
-    "avt15": (f"card:{AVT15}:stub",),
-    "avt06": ("section:test_avt06_swap_the_watch_changes_its_wrist_piece_and_its_thumbnail",),
-    "avt11": (
-        "section:test_avt11_lists_a_formal_and_a_festive_look_with_both_lists_and_their_readiness",
-    ),
-    "row388": ("card:test_row388_asking_what_to_wear_opens_the_card_dressed_in_the_chosen_look",),
+CONTROLS: dict[str, Case] = {  # control -> the case it must turn red
+    "avt15": ("avt15", "stub"),
+    "avt06": ("avt06", ""),
+    "avt11": ("avt11", ""),
+    "row388": ("row388", ""),  # the card left out of the reply (d_dom.mjs passes the reply bare)
 }
 
 
-def changed(control: str) -> tuple[str, str]:
-    """The file and the text the page gets under that control (the swap must apply)."""
-    name, was, now = SWAPS[control]
-    text = (STATIC / name).read_text(encoding="utf-8")
-    if text.count(was) != 1:
-        raise AssertionError(f"control {control}: its line moved in {name}")
-    if control == "avt06":
-        text = "const STALE = {};\n" + text
-    return name, text.replace(was, now)
+def modules(into: Path, control: str | None, how: str) -> None:
+    """D's modules (one changed under a control) and the engine the case runs against."""
+    for name in D_FILES:
+        text = (STATIC / name).read_text(encoding="utf-8")
+        if control in SWAPS and SWAPS[control][0] == name:
+            _, was, now = SWAPS[control]
+            if text.count(was) != 1:
+                raise AssertionError(f"control {control}: its line moved in {name}")
+            text = ("const STALE = {};\n" if control == "avt06" else "") + text.replace(was, now)
+        (into / name).write_text(text, encoding="utf-8")
+    engine = I0_STUB if how == "stub" else (FIXTURES / "d_engine.mjs").read_text(encoding="utf-8")
+    (into / "console-tryon-3d.js").write_text(engine, encoding="utf-8")
 
 
-def _route_control(page: Any, control: str) -> None:
-    if control == "row388":
-
-        def no_card(route: Any) -> None:  # the reply as it would be without the card
-            r = route.fetch()
-            route.fulfill(response=r, json={**r.json(), "cards": []})
-
-        page.route("**/v1/chat", no_card)
-        return
-    name, text = changed(control)
-    page.route(f"**/static/{name}*", lambda r: r.fulfill(body=text, content_type="text/javascript"))
-
-
-# ---- the child: Playwright, D's fake server, each case as its test function --------------------
-def _modules() -> dict[str, Any]:
-    for p in (ROOT / "tests" / "browser", ROOT / "tests", ROOT / "src"):
-        if str(p) not in sys.path:
-            sys.path.insert(0, str(p))
-    import test_r131_d_card as card  # noqa: PLC0415  (the test modules ARE the cases)
-    import test_r131_d_look as look  # noqa: PLC0415
-    import test_r131_d_section as section  # noqa: PLC0415
-    import test_r131_d_seeme as seeme  # noqa: PLC0415
-    import test_r131_d_stage as stage  # noqa: PLC0415
-
-    return {"card": card, "look": look, "section": section, "seeme": seeme, "stage": stage}
+# ---- one case: a fresh fake server state, the modules, Node -----------------------------------
+def _http(
+    url: str, path: str, body: Any = None, *, raw: bytes | None = None, method: str = ""
+) -> Any:
+    data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+    req = urllib.request.Request(
+        url + path, data=data, method=method or ("POST" if data else "GET")
+    )
+    req.add_header("Authorization", f"Bearer {TOKEN}")
+    req.add_header("Content-Type", "image/jpeg" if raw is not None else "application/json")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read() or b"null")
 
 
-def _with_control(mods: dict[str, Any], control: str | None) -> None:
-    if control is None:
-        return
-    page_cls = mods["card"].Page
-    plain = page_cls.__init__
-
-    def init(self: Any, *a: Any, **kw: Any) -> None:
-        plain(self, *a, **kw)
-        _route_control(self.page, control)
-
-    page_cls.__init__ = init  # every module's Page is this one class
-
-
-def _one(fn: Callable[..., None], kw: dict[str, Any], browser: Any, url: str) -> list[str]:
-    args = dict(kw)
-    if "tmp_path" in args:
-        args["tmp_path"] = Path(tempfile.mkdtemp(prefix="r131d-"))
-    try:
-        fn(browser=browser, d_url=url, token=TOKEN, **args)
-    except BaseException as e:  # noqa: BLE001  (an assertion, a timeout or a crash: its words)
-        words = str(e).splitlines()[0][:300] if str(e) else ""
-        at = traceback.extract_tb(e.__traceback__)[-1]  # which check of the test went red
-        return [f"{type(e).__name__}: {words} ({Path(at.filename).name}:{at.lineno}: {at.line})"]
-    return []
+def fresh(url: str, scenario: str) -> None:
+    """The figure, no saved looks, no photo, YES, garments or pictures; See it on me's own needs."""
+    _http(url, "/v1/test/r131-d/reset", {"figure": True})
+    _http(url, "/v1/seeme/photo", method="DELETE")
+    for g in _http(url, "/v1/seeme/garments")["garments"]:
+        _http(url, f"/v1/seeme/garments/{g['id']}", method="DELETE")
+    for p in _http(url, "/v1/seeme")["pictures"]:
+        _http(url, f"/v1/seeme/pictures/{p['id']}", method="DELETE")
+    if scenario == "seeme":  # his photo kept (checked on an earlier day) and one new garment
+        _http(url, "/v1/seeme/photo", raw=jpeg(600, 1200))
+        _http(url, "/v1/seeme/garments?type=shirt&colour=navy", raw=jpeg(512, 512))
 
 
-def child(control: str | None, only: tuple[str, ...]) -> list[dict[str, Any]]:
-    from playwright.sync_api import sync_playwright  # noqa: PLC0415
-    from r131_fakes_d import serve_d  # noqa: PLC0415
+def _spec(url: str, case: Case, control: str | None, folder: Path) -> dict[str, Any]:
+    t = {"striped": T.striped, "kurta": T.kurta, "blazer": T.blazer, "watch2": T.watch2,
+         "rain_jacket": T.rain_jacket}  # fmt: skip
+    return {
+        "dir": str(folder), "base": url, "token": TOKEN, "scenario": case[0], "how": case[1],
+        "control": control, "card": CARD.model_dump(mode="json"), "plan": PLAN, "t": t,
+        "covered": COVERED, "caption": CAPTION, "generated": GENERATED,
+        "photos": {"w1": WATCH_PHOTO, "w2": WATCH2_PHOTO},
+    }  # fmt: skip
 
-    mods = _modules()
-    _with_control(mods, control)
+
+def run_case(url: str, case: Case, control: str | None = None) -> dict[str, Any]:
+    node = shutil.which("node")
+    if node is None:
+        return {"id": case_id(case), "passed": False, "failures": ["node is not installed"]}
+    fresh(url, case[0])
+    with tempfile.TemporaryDirectory(prefix="r131d-") as tmp:
+        modules(Path(tmp), control, case[1])
+        spec = json.dumps(_spec(url, case, control, Path(tmp)))
+        got = subprocess.run(
+            [node, str(DOM), spec], capture_output=True, text=True, timeout=120, check=False,
+            cwd=ROOT, env={**os.environ, "TZ": "Asia/Kolkata"},
+        )  # fmt: skip
+    lines = [x for x in got.stdout.splitlines() if x.startswith(MARK)]
+    if not lines:
+        return {"id": case_id(case), "passed": False, "failures": [got.stderr[-600:] or "no out"]}
+    out = json.loads(lines[-1][len(MARK) :])
+    failures = [k for k, ok in out["checks"].items() if ok is not True]
+    if "error" in out:
+        failures.append(out["error"])
+    return {"id": case_id(case), "passed": not failures, "failures": failures}
+
+
+def _all(runs: list[tuple[Case, str | None]]) -> list[dict[str, Any]]:
     url, stop = serve_d(TOKEN)
-    out: list[dict[str, Any]] = []
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            for case in (c for c in CASES if not only or key_of(c) in only):
-                failures = _one(getattr(mods[case[0]], case[1]), case[2], browser, url)
-                out.append(
-                    {
-                        "id": case_id(case),
-                        "key": key_of(case),
-                        "passed": not failures,
-                        "failures": failures,
-                    }
-                )
-            browser.close()
+        return [run_case(url, case, control) for case, control in runs]
     finally:
         stop()
+
+
+# ---- the look in a real browser (opt in) --------------------------------------------------------
+BROWSER_CASES = (
+    "test_r131_d_look.py", "test_r131_d_card.py::test_row388_a_spoken_reply_opens_the_same_card",
+)  # fmt: skip
+
+
+def browser_cases() -> list[dict[str, Any]]:
+    """With JARVIS_R131_CONSOLE_BROWSER=1: the look's browser tests, each a case by its name."""
+    if os.environ.get("JARVIS_R131_CONSOLE_BROWSER") != "1":
+        return []
+    py = os.environ.get("JARVIS_BROWSER_PYTHON") or sys.executable
+    with tempfile.TemporaryDirectory(prefix="r131d-") as tmp:
+        report = Path(tmp) / "browser.xml"
+        args = [py, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-m", "browser",
+                f"--junitxml={report}", *(f"tests/browser/{c}" for c in BROWSER_CASES)]  # fmt: skip
+        env = {**os.environ, "JARVIS_BROWSER_TESTS": "1", "PYTHONPATH": str(ROOT / "src")}
+        subprocess.run(args, capture_output=True, text=True, timeout=1800, check=False, cwd=ROOT,
+                       env=env)  # fmt: skip
+        return _junit(report)
+
+
+def _junit(report: Path) -> list[dict[str, Any]]:
+    import xml.etree.ElementTree as ET  # noqa: PLC0415  (only when the browser half runs)
+
+    if not report.is_file():
+        return [{"id": f"{PART}:browser", "passed": False, "failures": ["the browser run failed"]}]
+    out = []
+    for tc in ET.parse(report).getroot().iter("testcase"):
+        bad = [x.get("message", "")[:300] for x in tc if x.tag in ("failure", "error", "skipped")]
+        out.append({"id": f"{PART}:browser:{tc.get('name')}", "passed": not bad, "failures": bad})
     return out
 
 
-# ---- the parent: which Python drives the browser ------------------------------------------------
-def browser_python() -> str | None:
-    if importlib.util.find_spec("playwright") is not None:
-        return sys.executable
-    named = os.environ.get("JARVIS_BROWSER_PYTHON", "")
-    return named if named and Path(named).is_file() else None
-
-
-def _broken(words: str) -> list[dict[str, Any]]:
-    return [{"id": f"{PART}:browser", "key": "", "passed": False, "failures": [words]}]
-
-
-def _spawn(control: str | None, only: tuple[str, ...]) -> list[dict[str, Any]]:
-    py = browser_python()
-    if py is None:
-        return _broken("no Playwright for this Python: set JARVIS_BROWSER_PYTHON to one with it")
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(ROOT / "src"), str(ROOT / "tests")))}
-    args = [py, str(Path(__file__).resolve()), "--child", json.dumps([control, list(only)])]
-    try:
-        got = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=CHILD_TIMEOUT_S,
-            check=False,
-            cwd=ROOT,
-            env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return _broken(f"the browser run took over {CHILD_TIMEOUT_S} s")
-    lines = [x for x in got.stdout.splitlines() if x.startswith(MARK)]
-    if got.returncode != 0 or not lines:
-        return _broken((got.stderr or got.stdout)[-600:])
-    results: list[dict[str, Any]] = json.loads(lines[-1][len(MARK) :])
-    return results
-
-
 async def cases() -> list[dict[str, Any]]:
-    got = await asyncio.to_thread(_spawn, None, ())
-    return [{k: r[k] for k in ("id", "passed", "failures")} for r in got]
+    got = await asyncio.to_thread(_all, [(c, None) for c in CASES])
+    return got + await asyncio.to_thread(browser_cases)
 
 
 async def control() -> dict[str, Any]:
-    failed: list[str] = []
-    turned: dict[str, bool] = {}
-    for name, must in CONTROLS.items():
-        got = await asyncio.to_thread(_spawn, name, must)
-        red = [r["id"] for r in got if not r["passed"] and r["key"] in must]
-        turned[name] = len(red) == len(must)
-        failed.extend(f"{name}: {x}" for x in red)
+    runs = [(case, name) for name, case in CONTROLS.items()]
+    got = await asyncio.to_thread(_all, runs)
+    turned = {name: not r["passed"] for (_, name), r in zip(runs, got, strict=True)}
     return {
-        "name": "D: the engine stub with the checklist hook removed (AVT-15); the rows' own: "
+        "name": "D: I0's engine stub with the checklist hook removed (AVT-15); the rows' own: "
         "AVT-06 the thumbnail stays W1's, AVT-11 the second list's readiness dropped, row 388 "
         "the card left out of the reply",
         "suite_failed": all(turned.values()),
         "turned_red": turned,
-        "failed_cases": failed,
+        "failed_cases": [
+            f"{name}: {r['id']} {r['failures'][:3]}"
+            for (_, name), r in zip(runs, got, strict=True)
+            if not r["passed"]
+        ],
     }
-
-
-if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "--child":
-    ctl, keys = json.loads(sys.argv[2])
-    print(MARK + json.dumps(child(ctl, tuple(keys))), flush=True)

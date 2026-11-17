@@ -107,3 +107,19 @@ async def test_the_gate_the_notice_and_the_panel_read_the_models_own_date(
     sw.w.clock.set(ist(2027, 5, 28, 0, 30))
     err = await _refused(svc.press(UID, ask(g.id, (), inr=9.0)))
     assert (err.status, err.code) == (503, "retired")
+
+
+# ---- finding 11: the words of a refused piece ---------------------------------------------------
+async def test_a_piece_in_a_taken_slot_or_not_his_is_refused_in_its_own_words() -> None:
+    from jarvis.wardrobe.seeme import texts
+
+    fake = ScriptedTryOn(max_garments=1)
+    sw, svc, g = await ready_world(provider=fake)  # g: a new navy shirt, a top
+    cases = (((T.kurta,), texts.SAME_SLOT),  # one of his tops beside a new top: it IS a top
+             ((T.trousers, T.jeans), texts.SAME_SLOT),  # two bottoms of his
+             ((T.watch,), texts.NOT_SENDABLE),  # not a garment
+             (("wi_00000000ffff",), texts.NOT_HIS))  # fmt: skip
+    for n, (pieces, words) in enumerate(cases, start=1):
+        err = await _refused(svc.press(UID, ask(g.id, pieces, inr=9.0, n=n)))
+        assert (err.status, err.code, err.words) == (422, "not_a_garment", words), pieces
+    assert fake.calls == []

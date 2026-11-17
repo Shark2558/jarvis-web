@@ -36,7 +36,6 @@ CONSOLE_ONLY = "See it on me works only in the JARVIS console, signed in: not fr
 NOT_JPEG = "Send the photo as a JPEG."
 TOO_LARGE = "This photo is too detailed to send: try a plainer background."
 TOO_WIDE = "A photo is at most 1,568 pixels a side."
-PHOTO_KEPT = "Your photo is kept, locked by JARVIS."
 PHOTO_GONE = "Your photo and your YES are deleted."
 NO_PHOTO = "Add your photo for See it on me first."
 NOT_A_GARMENT = "Choose a top, a bottom or an outer layer, and one of the fixed colours."
@@ -49,7 +48,6 @@ GARMENT_DELETED = "The garment's photo is deleted."
 CONSENT_NEEDED = "Read what is sent, and type YES, first."
 NOT_YES = "Type YES in capitals to agree; nothing changed."
 OLD_WORDS = "The words have changed: read them again and type YES."
-CONSENT_GIVEN = "Thank you: See it on me may now send what it says, each picture after its price."
 
 # ---- his pieces (D13.1) ---------------------------------------------------------------------
 PRIVATE = "A private piece is never sent."
@@ -58,7 +56,6 @@ NOT_SENDABLE = "Only a top, a bottom or an outer layer of yours goes in the pict
 SAME_SLOT = "Only one of yours a slot, and never in the new garment's slot."
 NO_WORDS = "JARVIS can't describe this piece in its fixed words, so nothing was sent."
 NOT_HIS = "That piece isn't in your wardrobe."
-UNTICKED = "Not ticked."
 PAIR_WITH = "With your {words}."
 PAIR_NONE = (
     "Nothing of yours that is ready goes with it just now, so the picture would show the new "
@@ -95,7 +92,8 @@ MAYBE_BILLED = (
 )
 GOOGLE_BUSY = "Google is busy: try again in a minute. Nothing was charged."
 UNAVAILABLE = "Google's image model isn't available just now. Nothing was charged."
-NOT_KEPT = "This picture is too large to keep: it is shown once and not kept."
+NOT_KEPT = "This picture is too large to keep: it is shown once and not kept."  # D's words for
+# a `PictureView` with `kept=False` and `until=None` (shown once; INTEGRATION-C, Fix C-1)
 WITHDRAWN = (
     "Your photo or the garment's photo was deleted while the picture was being made, so it isn't "
     "kept. It may still be charged ({about})."

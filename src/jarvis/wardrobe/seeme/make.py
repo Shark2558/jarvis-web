@@ -46,7 +46,7 @@ from jarvis.wardrobe.seeme.cap import CapHold, Done, Prefs, TryonCap
 from jarvis.wardrobe.seeme.consent import Consent
 from jarvis.wardrobe.seeme.estimate import Figures, approx, figures, rate_of, settled_usd
 from jarvis.wardrobe.seeme.garments import GarmentStore, short_words
-from jarvis.wardrobe.seeme.pair import Mine, Pairer, sendable, split
+from jarvis.wardrobe.seeme.pair import Mine, Pairer, refusal, sendable, split
 from jarvis.wardrobe.seeme.pictures import Made, PictureStore
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
 from jarvis.wardrobe.seeme.vault import PersonPhoto
@@ -189,7 +189,7 @@ class Press:
         """His pieces from the RECORD, each with its front crop; the first refusal in words."""
         sent, refused = await split(self.kit.ctx, uid, view, pieces, garment_slot=slot)
         if refused:
-            raise _piece_refusal(refused[0])
+            raise refusal(refused[0])
         vault = photo_vault(self.kit.ctx)
         crops = [await vault.get(uid, m.photo) if vault is not None else None for m in sent]
         if any(c is None for c in crops):
@@ -340,7 +340,7 @@ class Press:
             log.warning("see it on me: no list beside it", extra={"error": type(exc).__name__})
             return ()
         sent = {m.piece for m in call.mine}
-        unticked = [_unticked(m) for m in paired if m.piece not in sent]
+        unticked = [m.unticked() for m in paired if m.piece not in sent]
         return tuple([*unticked, *(n for n in rest if n.piece not in sent)])
 
 
@@ -357,18 +357,6 @@ class Call:
 
     def garment_new(self) -> NewGarment:
         return NewGarment(id=self.garment.id, words=self.garment.words)
-
-
-def _unticked(m: Mine) -> NotSent:
-    return NotSent(piece=m.piece, slot=m.slot, words=m.words, why="unticked", photo=m.photo)
-
-
-def _piece_refusal(n: NotSent) -> SeeMeRefused:
-    if n.why == "private_piece":
-        return SeeMeRefused(422, "private_piece", texts.PRIVATE)
-    if n.why == "no_photo":
-        return SeeMeRefused(422, "no_photo", texts.NO_FRONT)
-    return SeeMeRefused(422, "not_a_garment", texts.NOT_SENDABLE)
 
 
 async def _closed(close: Awaitable[None]) -> None:

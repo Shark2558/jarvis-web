@@ -28,6 +28,7 @@ from jarvis.logging import get_logger
 from jarvis.wardrobe.model import Piece, WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
 from jarvis.wardrobe.seeme import texts
+from jarvis.wardrobe.seeme.texts import SeeMeRefused
 from jarvis.wardrobe.styling.engine import suggest
 from jarvis.wardrobe.styling.texts import piece_words
 from jarvis.wardrobe.tryon.http import GarmentView, NotSent, Pairing, SentPiece
@@ -63,6 +64,11 @@ class Mine:
 
     def sent(self) -> SentPiece:
         return SentPiece(piece=self.piece, words=self.words)
+
+    def unticked(self) -> NotSent:
+        """Offered by the pairing, not ticked by him: "not in the picture"."""
+        return NotSent(piece=self.piece, slot=self.slot, words=self.words, why="unticked",
+                       photo=self.photo)  # fmt: skip
 
 
 def slot_of_type(kind: str) -> str | None:
@@ -127,6 +133,20 @@ async def check(
     if front is None:
         return _no(p, pid, "no_photo", slot)
     return Mine(piece=p.id, slot=slot, words=mine_words(p), photo=front, prompt=prompt_words(p))
+
+
+def refusal(n: NotSent) -> SeeMeRefused:
+    """A piece he asked for that can't be sent, in its own words (`NotSent.why` stays the
+    contract's: a taken slot and a piece not his are `not_a_garment` too)."""
+    if n.why == "private_piece":
+        return SeeMeRefused(422, "private_piece", texts.PRIVATE)
+    if n.why == "no_photo":
+        return SeeMeRefused(422, "no_photo", texts.NO_FRONT)
+    if n.words == NOT_HIS_WORDS:
+        return SeeMeRefused(422, "not_a_garment", texts.NOT_HIS)
+    if n.slot:  # a garment slot already taken: the new garment's, or one of his
+        return SeeMeRefused(422, "not_a_garment", texts.SAME_SLOT)
+    return SeeMeRefused(422, "not_a_garment", texts.NOT_SENDABLE)
 
 
 async def split(
@@ -229,6 +249,7 @@ __all__ = [
     "front_of",
     "mine_words",
     "prompt_words",
+    "refusal",
     "sendable",
     "slot_of_type",
     "split",

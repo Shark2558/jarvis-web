@@ -125,11 +125,7 @@ class SeeMeService:
         if found is None:
             return []
         paired, rest = await self.kit.pairer.from_look(uid, found[0], found[1], g.slot)
-        unticked = [
-            http.NotSent(piece=m.piece, slot=m.slot, words=m.words, why="unticked", photo=m.photo)
-            for m in paired
-            if m.piece not in asked
-        ]
+        unticked = [m.unticked() for m in paired if m.piece not in asked]
         return [*unticked, *(n for n in rest if n.piece not in asked)]
 
     async def _room(self, uid: str) -> float | None:

@@ -11,10 +11,14 @@
   a router with a route outside the contract;
 - a broken R13.1 part is "setup failed" while R13's four still build and R13's Wardrobe rows still
   read; the Try-on section has its six rows (the stand-ins) and they say "Couldn't check right
-  now" for documents they can't open.
+  now" for documents they can't open;
+- row 388's server half (D21, I0's join): "what should I wear?" -> `outfit_suggest` through the
+  real gateway puts exactly ONE try-on card beside the reply, its slots the look's (a private slot
+  covered, no id), and none while Try-on is off.
 
 Negative control: the contract check taken away (`check_part` returns what it is given, and the
-route check accepts any route): every refusal case must then fail.
+route check accepts any route): every refusal case must then fail; and row 388's own control, the
+card left out of the reply (`tryon_card.show` does nothing): its case must then fail.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
-for _p in (ROOT / "src",):
+for _p in (ROOT / "src", ROOT / "tests"):
     if str(_p) not in sys.path:
         sys.path.append(str(_p))
 from fastapi import APIRouter  # noqa: E402
@@ -39,7 +43,9 @@ from jarvis.config import Settings  # noqa: E402
 from jarvis.privacy.ports import CategoryView  # noqa: E402
 from jarvis.storage.docs import MemoryDocs, Set  # noqa: E402
 from jarvis.tools.audit import AuditLog  # noqa: E402
+from jarvis.tools.reply_cards import collecting_cards  # noqa: E402
 from jarvis.wardrobe.ports import PARTS, ROUTE_PREFIX, WardrobeContext, WardrobePart  # noqa: E402
+from jarvis.wardrobe.styling import tryon_card  # noqa: E402
 from jarvis.wardrobe.tryon import kept  # noqa: E402
 from jarvis.wardrobe.tryon.http import ROUTES  # noqa: E402
 
@@ -209,12 +215,47 @@ async def _broken_case() -> list[dict[str, Any]]:
     ]  # fmt: skip
 
 
+async def _row388_case() -> list[dict[str, Any]]:
+    from r13_fakes_c import ist, settings, world
+
+    failures: list[str] = []
+    for on in (True, False):
+        w = await world(at=ist(2026, 11, 16, 20, 0), s=settings(tryon_enabled=on))
+        cards: list[Any] = []
+        with collecting_cards(cards):
+            got = await w.call("outfit_suggest", day="tomorrow")
+        wrong = tryon_card.missing(cards)
+        if on and wrong:
+            failures.append(wrong)
+        if not on and not wrong:
+            failures.append("a try-on card while Try-on is off")
+        look = got.result["looks"][0]["pieces"] if on and not wrong else []
+        mine = {p["slot"]: tuple(p["ids"]) for p in look if p["slot"] not in ("base", "underwear")}
+        shown = {s.slot: s.pieces for c in cards for s in c.slots if not s.private} if look else {}
+        if on and look and shown != mine:
+            failures.append("the card's slots are not the look's")
+    return [
+        {"id": "contract:row388_what_to_wear_opens_the_tryon_card", "passed": not failures,
+         "failures": failures},
+    ]  # fmt: skip
+
+
 async def cases() -> list[dict[str, Any]]:
     out = _built_cases(route_failures) + _refusal_cases(wiring.check_part, route_failures)
-    return out + await _broken_case()
+    return out + await _broken_case() + await _row388_case()
 
 
 async def control() -> dict[str, Any]:
     results = _refusal_cases(lambda name, part: part, lambda name, router: [])  # no check at all
+    real = tryon_card.show
+    tryon_card.show = lambda view, ans: False  # type: ignore[assignment]  # row 388: card left out
+    try:
+        results += await _row388_case()
+    finally:
+        tryon_card.show = real  # type: ignore[assignment]
     failed = [r["id"] for r in results if not r["passed"]]
-    return {"name": "no contract check", "suite_failed": bool(failed), "failed_cases": failed}
+    every = len(failed) == len(results)  # each case must fail under its control
+    return {
+        "name": "no contract check; the try-on card left out (row 388)",
+        "suite_failed": every, "failed_cases": failed,
+    }  # fmt: skip

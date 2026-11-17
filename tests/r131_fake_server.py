@@ -2,9 +2,10 @@
 # every route of `jarvis.wardrobe.tryon.http.ROUTES`, answered from the fakes (`r131_fakes`: R13's
 # seeded pilot with photos, a FIXED clock), each reply validated by its model, so Part D's console
 # and Part B's stage run end to end before A and C exist. At I1 D's browser tests move to the
-# wired app. Nothing here calls Google: "See it on me" answers I0's made-up picture.
+# wired app. Nothing here calls Google: "See it on me" (`r131_fake_seeme`, D22: a garment he is
+# thinking of buying) answers I0's made-up picture.
 #
-#   fake_routes(store, clock) -> APIRouter   the 22 routes (owner-only like the real ones; the
+#   fake_routes(store, clock) -> APIRouter   the 27 routes (owner-only like the real ones; the
 #                                            console-only rule is NOT simulated here: the wired app
 #                                            at I1 tests it) and Refusal {"error", "detail"}
 #   stage_routes() -> APIRouter              GET /r131/stage (a bare page for B's engine, the
@@ -25,11 +26,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from r13_fake_server import fake_routes as r13_routes
-from r131_fake_tryon import PNG
-from r131_fakes import IST, NOW, PRIVATE, UID, VIEW_OF, FixedClock, MemoryWardrobeStore, T, seeded
+from r131_fake_seeme import READY, seeme_routes
+from r131_fakes import IST, UID, VIEW_OF, FixedClock, MemoryWardrobeStore, T, seeded
 
 from jarvis.api.auth import require_auth
 from jarvis.api.console import CONSOLE_CSP
@@ -38,16 +39,7 @@ from jarvis.wardrobe.tryon import http
 from jarvis.wardrobe.tryon import model as m
 
 NO_STORE = {"Cache-Control": "no-store"}
-READY = "fake: tests/r131_fake_server.py"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "r13_1"
-CONSENT_VERSION = "c1"
-CONSENT_WORDS = (
-    "What is sent: your photo and the photos of the look's top, trousers and jacket. Never a "
-    "private piece, your measurements or anything else.",
-    "To whom: Google Cloud's Agent Platform, Gemini 3.1 Flash Image, processed in the United "
-    "States.",
-    "Every picture shows its price first, under your monthly limit. Delete your photo to withdraw.",
-)
 LOOK_SLOTS = (
     ("top", T.striped),
     ("bottom", T.trousers),
@@ -57,7 +49,6 @@ LOOK_SLOTS = (
     ("watch", T.watch),
     ("base", T.vest),
 )
-TYPICAL, HOLD = 8.9, 11.22
 
 
 def _ok(model: Any, status: int = 200) -> JSONResponse:
@@ -76,13 +67,6 @@ class FakeTryon:
     body: http.BodyVersions = field(default_factory=http.BodyVersions)
     assets: dict[str, http.AssetChoice] = field(default_factory=dict)
     saved: dict[str, http.SavedView] = field(default_factory=dict)
-    photo: bytes | None = None
-    photo_at: datetime | None = None
-    consent_at: datetime | None = None
-    pictures: dict[str, http.PictureView] = field(default_factory=dict)
-    spent: float = 0.0
-    on: bool = True
-    cap: int = 300
 
 
 def _readiness(p: Piece) -> str:
@@ -149,54 +133,6 @@ def look_slot(view: WardrobeView, slot: str, pid: str, *, private: bool = False)
         card_only=t is None,
         removable=slot in m.REMOVABLE_SLOTS,
         options=_options(view, slot),
-    )
-
-
-def _picture(st: FakeTryon, pieces: tuple[str, ...], view: WardrobeView, plan: str | None) -> Any:
-    pid = m.new_picture_id()
-    sent = tuple(http.SentPiece(piece=x, words=_words(view.pieces[x])) for x in pieces)
-    pic = http.PictureView(
-        id=pid,
-        made_at=NOW,
-        until=NOW + timedelta(days=m.PICTURE_KEEP_DAYS),
-        inr=8.52,
-        sent=sent,
-        plan=plan,
-        mime="image/png",
-        credentials=m.CREDENTIALS,
-    )
-    st.pictures[pid] = pic
-    st.spent += 8.52
-    return pic
-
-
-def _seeme_view(st: FakeTryon) -> http.SeeMeView:
-    return http.SeeMeView(
-        ready=READY,
-        on=st.on,
-        provider=http.ProviderView(
-            provider="Google Cloud's Agent Platform",
-            model="gemini-3.1-flash-image",
-            model_words="Gemini 3.1 Flash Image",
-            location="us",
-            location_words="processed in the United States",
-            max_garments=3,
-            retires_on="2027-05-28",
-        ),
-        photo=http.PhotoView(kept=st.photo is not None, at=st.photo_at, bytes=len(st.photo or b"")),
-        consent=http.ConsentView(
-            given=st.consent_at is not None,
-            at=st.consent_at,
-            current=st.consent_at is not None,
-            version=CONSENT_VERSION,
-            words=CONSENT_WORDS,
-        ),
-        month=http.MonthView(
-            month="2026-11", spent_inr=round(st.spent, 2), cap_inr=st.cap, pictures=len(st.pictures)
-        ),
-        typical_inr=TYPICAL,
-        hold_inr=HOLD,
-        pictures=tuple(st.pictures.values()),
     )
 
 
@@ -317,107 +253,7 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
         gone = st.saved.pop(sid, None) is not None
         return _ok(http.Deleted(deleted=gone, message="Deleted." if gone else "Already gone."))
 
-    @r.get("/v1/seeme")
-    async def seeme() -> JSONResponse:
-        return _ok(_seeme_view(st))
-
-    @r.post("/v1/seeme/photo")
-    async def photo_in(request: Request) -> JSONResponse:
-        raw = await request.body()
-        if not raw.startswith(b"\xff\xd8"):
-            return _no(422, "not_jpeg", "Send your photo as a JPEG.")
-        if len(raw) > 700 * 1024:
-            return _no(
-                413, "too_large", "This photo is too detailed to send: try a plainer background."
-            )
-        st.photo, st.photo_at = raw, clock()
-        return _ok(http.PhotoView(kept=True, at=st.photo_at, bytes=len(raw)))
-
-    @r.get("/v1/seeme/photo")
-    async def photo_out() -> Response:
-        if st.photo is None:
-            return _no(404, "no_photo", "No photo yet.")
-        return Response(st.photo, media_type="image/jpeg", headers=http.PICTURE_HEADERS)
-
-    @r.delete("/v1/seeme/photo")
-    async def photo_drop() -> JSONResponse:
-        gone, st.photo, st.consent_at = st.photo is not None, None, None  # the YES goes with it
-        return _ok(http.Deleted(deleted=gone, message="Your photo and your YES are deleted."))
-
-    @r.post("/v1/seeme/consent")
-    async def consent(b: http.ConsentIn) -> JSONResponse:
-        if b.typed.strip() != m.YES or b.template_version != CONSENT_VERSION:
-            return _no(422, "not_yes", "Type YES in capitals to agree; nothing changed.")
-        st.consent_at = clock()
-        return _ok(_seeme_view(st).consent)
-
-    @r.get("/v1/seeme/estimate")
-    async def estimate(plan: str = "", pieces: str = "") -> JSONResponse:
-        v = await view()
-        asked = [x for x in pieces.split(",") if x] or [T.striped, T.trousers, T.blazer]
-        sent = tuple(
-            http.SentPiece(piece=x, words=_words(v.pieces[x])) for x in asked if x in v.pieces
-        )
-        not_sent = (
-            http.NotSent(
-                slot="shoes", piece=T.shoes[0], words="brown dress shoe", why="not_a_garment"
-            ),
-        )
-        return _ok(
-            http.Estimate(
-                typical_inr=TYPICAL,
-                hold_inr=HOLD,
-                tax_pct=18,
-                sent=sent,
-                not_sent=not_sent,
-                cap_left_inr=round(st.cap - st.spent, 2),
-                words=f"About ₹9 with GST. ₹{st.spent:.2f} of ₹{st.cap} used.",
-            )
-        )
-
-    @r.post("/v1/seeme/pictures")
-    async def pictures(b: http.PictureIn) -> JSONResponse:
-        v = await view()
-        if not b.confirm_cost:
-            return _no(422, "confirm_cost", "Confirm the price first.")
-        if st.consent_at is None:
-            return _no(409, "consent_needed", "Type YES first, after reading what is sent.")
-        if st.photo is None:
-            return _no(422, "no_photo", "Add your photo first.")
-        if any(x in PRIVATE or (x in v.pieces and v.pieces[x].private) for x in b.pieces):
-            return _no(422, "private_piece", "A private piece is never sent.")
-        if b.inr_shown + 0.01 < TYPICAL:
-            return _no(409, "price_changed", "The price changed: look at it again.")
-        return _ok(_picture(st, b.pieces, v, b.plan))
-
-    @r.get("/v1/seeme/pictures/{pid}")
-    async def picture(pid: str) -> Response:
-        if pid not in st.pictures:
-            return _no(404, "gone", "That picture isn't there any more.")
-        return Response(PNG, media_type="image/png", headers=http.PICTURE_HEADERS)
-
-    @r.post("/v1/seeme/pictures/{pid}/keep")
-    async def keep(pid: str, b: http.KeepIn) -> JSONResponse:
-        pic = st.pictures.get(pid)
-        if pic is None:
-            return _no(404, "gone", "That picture isn't there any more.")
-        until = None if b.keep else NOW + timedelta(days=m.PICTURE_KEEP_DAYS)
-        st.pictures[pid] = pic.model_copy(update={"kept": b.keep, "until": until})
-        return _ok(st.pictures[pid])
-
-    @r.delete("/v1/seeme/pictures/{pid}")
-    async def picture_drop(pid: str) -> JSONResponse:
-        gone = st.pictures.pop(pid, None) is not None
-        return _ok(http.Deleted(deleted=gone, message="Deleted." if gone else "Already gone."))
-
-    @r.put("/v1/seeme/settings")
-    async def seeme_settings(b: http.SeeMeSettingsIn) -> JSONResponse:
-        if b.cap_inr is not None and b.cap_inr > st.cap and not b.confirm_cost:
-            return _no(422, "confirm_cost", f"Raising the limit to ₹{b.cap_inr} needs your OK.")
-        st.on = st.on if b.on is None else b.on
-        st.cap = st.cap if b.cap_inr is None else b.cap_inr
-        return _ok(_seeme_view(st))
-
+    r.include_router(seeme_routes(view, clock))  # the See it on me half (D13, D22)
     return r
 
 

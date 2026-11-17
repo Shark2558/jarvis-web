@@ -2,7 +2,7 @@
 // Wardrobe, the sixth sub-tab (console-only: helpers/kinds.py TABS stays the five). Sections:
 //   Needs a check        B's review queue: which piece went in, "there was no deposit"
 //   Today and tomorrow   C's plans with their reasons, gaps and the weather's assumption; "Wearing it", "Done for today"
-//   Try it on            R13.1 (console-tryon.js, mounted ONCE here; each plan's "Show in 3D" / "See it on me" opens it)
+//   Try it on            R13.1 (console-tryon.js, mounted ONCE here; each plan's "Show in 3D" opens it with that look)
 //   Laundry              B's basket, loads, drying, prep and outside batches; a step per piece
 //   Pieces               console-wardrobe-pieces.js: search, counts, pairs and sets, places, private basics behind a tap
 //   Labels               the sheet of 24 QR labels (a download), and which label is on which piece
@@ -126,8 +126,7 @@ function plan(day, p) {
   if (why.length) box.append(H.mk('p', 'sfine', why.map((x) => H.txt(x, 160)).join('. ') + '.'));
   [].concat((p.look && p.look.gaps) || [], p.needs || []).forEach((g) => box.append(H.mk('p', 'snote warn', H.txt(g, 160))));
   if (!p.cancelled) box.append(acts(btn('Wearing it', () => tool('wear_log', { action: 'start', plan: p.id }, 'Enjoy the day.')), btn('Done for today', () => tool('wear_log', { action: 'done', plan: p.id }))));
-  const see = !!(UI.tryon && UI.tryon.seeOn()); // R13.1 (D1): free 3D; "See it on me" only while it is on (its price on the confirm)
-  if (!p.cancelled) box.append(acts(btn('Show in 3D', () => tryOn(p.id, false)), see ? btn('See it on me', () => tryOn(p.id, true)) : null));
+  if (!p.cancelled) box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free (See it on me is for a garment to buy, D22)
   return [box];
 }
 function laundryRows() {
@@ -273,8 +272,8 @@ async function restore() {
   await load();
 }
 
-function tryOn(plan, see) { // R13.1: the section opens with that plan's look
-  document.dispatchEvent(new CustomEvent('jarvis:tryon-open', { detail: { plan, see } }));
+function tryOn(plan) { // R13.1: the section opens with that plan's look
+  document.dispatchEvent(new CustomEvent('jarvis:tryon-open', { detail: { plan } }));
   if (UI.secs.tryon && UI.secs.tryon.scrollIntoView) UI.secs.tryon.scrollIntoView({ block: 'start' });
 }
 

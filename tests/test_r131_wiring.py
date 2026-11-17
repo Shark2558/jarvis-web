@@ -132,6 +132,7 @@ async def _seed(docs: MemoryDocs, prefix: str) -> list[str]:
     paths = [
         f"{prefix}tryon/{UID}", f"{prefix}tryon_person/{UID}", f"{prefix}tryon_consent/{UID}",
         f"{prefix}tryon_picture/{UID}_tp_0123456789ab", f"{prefix}tryon_spend/{UID}_2026-11",
+        f"{prefix}tryon_garment/{UID}_tg_0123456789ab",  # D22: a new garment's photo
     ]  # fmt: skip
     await docs.write([Set(p, {"owner": UID, "blob": "sealed", "updated_at": "x"}) for p in paths])
     return paths
@@ -165,7 +166,7 @@ async def test_both_r131_parts_failed_r13s_rows_still_read_and_the_tryon_rows_ca
         assert seen.note.startswith("Couldn't check right now"), rid
     assert (await rows["tryon_spend"].describe(UID)).delete == "none"  # his cap's record
     assert (await rows["tryon_all"].describe(UID)).delete == "passkey"  # OPS-05
-    assert await rows["tryon_all"].delete(UID) == 4  # by path, with no key; the spend stays
+    assert await rows["tryon_all"].delete(UID) == 5  # by path, with no key; the spend stays
     left = [p for p in paths if await docs.get(p) is not None]
     assert left == [f"{settings.firestore_prefix}tryon_spend/{UID}_2026-11"]
     assert (await rows["tryon_figure"].describe(UID)).note == kept.NOTHING_YET
@@ -175,7 +176,10 @@ async def test_the_stand_ins_order_ops05_and_erase_cs_half_by_path(settings: Set
     docs = MemoryDocs()
     prefix = settings.firestore_prefix
     await _seed(docs, prefix)
-    assert await kept.erase_seeme(docs, prefix, UID) == 3  # the picture, his photo, his YES
+    assert await kept.erase_seeme(docs, prefix, UID) == 4  # picture, garment photo, photo, YES
+    assert kept.PICTURES_OWNED == (("tryon_picture", "owner"), ("tryon_garment", "owner"))
+    assert "garment" in kept.SPECS[kept.PICTURES_ID].label  # the row names what it holds
+    assert "not in your wardrobe" in kept.SPECS[kept.PICTURES_ID].what
     assert await docs.get(f"{prefix}tryon/{UID}") is not None  # A's own document is A's to go
     assert "within 7 days" in kept.BACKUP_WORDS  # read from backup/status.py (M2)
     device = kept.DeviceRow()

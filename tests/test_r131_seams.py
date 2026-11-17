@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -147,7 +148,7 @@ def test_the_two_new_parts_and_what_each_owns() -> None:
     assert set(ports.ROUTE_PREFIX) == set(ports.COLLECTIONS) == set(ports.PARTS)
     assert ports.COLLECTIONS["tryon"] == ("tryon",)
     assert ports.COLLECTIONS["seeme"] == (
-        "tryon_person", "tryon_consent", "tryon_picture", "tryon_spend",
+        "tryon_person", "tryon_consent", "tryon_picture", "tryon_spend", "tryon_garment",
     )  # fmt: skip
     assert ports.JOB_OWNER["seeme_daily"] == "seeme" and "seeme_daily" not in ports.CLOCK_JOB_NAMES
     assert ports.R13_JOB_NAMES[-1] == "seeme_daily"
@@ -247,6 +248,23 @@ def test_the_words_and_ids() -> None:
     assert m.aad_person("u") == "tryon/person/u/v1"
     assert m.aad_picture("u", "tp_0123456789ab") == "tryon/picture/u/tp_0123456789ab/v1"
     assert (m.PURPOSE, m.PHOTO_PURPOSE) == keyring.PURPOSES[-2:]
+    assert re.fullmatch(m.GARMENT_ID, m.new_garment_id()) and m.GARMENT == "tryon_garment"
+    assert m.aad_garment("u", "tg_0123456789ab") == "tryon/garment/u/tg_0123456789ab/v1"
+
+
+def test_a_new_garment_is_one_of_the_sendable_types_and_its_words_say_it_isnt_his() -> None:
+    # D22 (the owner, 17 Nov 2026): See it on me is for a garment he is thinking of BUYING
+    from jarvis.wardrobe.tryon import model as m
+
+    assert set(m.NEW_TYPES) == {t for t, tpl in m.TEMPLATE_OF.items() if tpl in m.GARMENTS}
+    assert "shirt" in m.NEW_TYPES and "kurta" in m.NEW_TYPES and "blazer" in m.NEW_TYPES
+    assert not {"sneaker", "belt", "watch", "sock"} & set(m.NEW_TYPES)  # never sent
+    assert m.new_garment_words("navy", "shirt") == "a new navy shirt, not in your wardrobe"
+    assert m.new_garment_words("", "t_shirt") == "a new t shirt, not in your wardrobe"
+    assert (
+        m.new_garment_words("light_blue", "jeans") == "new light blue jeans, not in your wardrobe"
+    )
+    assert (m.GARMENT_MAX, m.PAIR_MAX) == (20, 2) and m.PAIR_MAX + 1 <= 3  # MAX_GARMENTS
 
 
 # ---- 4 · the HTTP contract (wardrobe/tryon/http.py) ---------------------------------------------
@@ -260,12 +278,18 @@ PLANNED_ROUTES = {
     ("GET", "/v1/seeme/estimate"), ("POST", "/v1/seeme/pictures"),
     ("GET", "/v1/seeme/pictures/{id}"), ("POST", "/v1/seeme/pictures/{id}/keep"),
     ("DELETE", "/v1/seeme/pictures/{id}"), ("PUT", "/v1/seeme/settings"),
+    # D22: the photo of a garment he is thinking of buying, and his own pieces to pair with it
+    ("POST", "/v1/seeme/garments"), ("GET", "/v1/seeme/garments"),
+    ("GET", "/v1/seeme/garments/{id}"), ("DELETE", "/v1/seeme/garments/{id}"),
+    ("GET", "/v1/seeme/pair"),
 }  # fmt: skip
 CONSOLE_ONLY = {
     ("POST", "/v1/seeme/photo"), ("GET", "/v1/seeme/photo"), ("DELETE", "/v1/seeme/photo"),
     ("POST", "/v1/seeme/consent"), ("POST", "/v1/seeme/pictures"),
     ("GET", "/v1/seeme/pictures/{id}"), ("POST", "/v1/seeme/pictures/{id}/keep"),
     ("DELETE", "/v1/seeme/pictures/{id}"), ("PUT", "/v1/seeme/settings"),
+    ("POST", "/v1/seeme/garments"), ("GET", "/v1/seeme/garments/{id}"),
+    ("DELETE", "/v1/seeme/garments/{id}"),
 }  # fmt: skip
 
 
@@ -299,14 +323,21 @@ def test_a_refusal_has_a_code_and_words() -> None:
 def test_a_picture_request_bounds_what_the_console_sends() -> None:
     from jarvis.wardrobe.tryon.http import ConfirmIn, ConsentIn, PictureIn
 
-    one = {"pieces": ["wi_" + "1" * 12], "inr_shown": 8.9, "request_id": "tq_" + "a" * 16}
+    one = {
+        "garment": "tg_" + "1" * 12, "pieces": ["wi_" + "1" * 12], "inr_shown": 8.9,
+        "request_id": "tq_" + "a" * 16,
+    }  # fmt: skip
     assert PictureIn.model_validate(one).confirm_cost is False  # never on by default
+    assert PictureIn.model_validate({**one, "pieces": []}).pieces == ()  # the new garment alone
     for bad in (
-        {**one, "pieces": []},
-        {**one, "pieces": ["wi_" + "1" * 12] * 4},
+        {k: v for k, v in one.items() if k != "garment"},  # D22: always a new garment
+        {**one, "garment": "wi_" + "1" * 12},  # a wardrobe piece is never "the new garment"
+        {**one, "pieces": ["wi_" + "1" * 12] * 3},  # 1 new + at most 2 of his: MAX_GARMENTS 3
         {**one, "request_id": "tq_short"},
         {**one, "confirm_cost": "yes"},
         {**one, "photo": "...."},
+        {**one, "plan": "op_00000001"},  # not a plan's look any more (D22)
+        {**one, "url": "https://shop.example/shirt"},  # JARVIS never fetches an address
     ):
         with pytest.raises(ValidationError):
             PictureIn.model_validate(bad)
@@ -314,6 +345,39 @@ def test_a_picture_request_bounds_what_the_console_sends() -> None:
         ConsentIn.model_validate({"typed": "YES" * 10, "template_version": "c1"})
     with pytest.raises(ValidationError):
         ConfirmIn.model_validate({"plan": "op_00000001", "slots": []})
+
+
+def test_a_new_garment_is_described_in_fixed_words_and_never_as_his() -> None:
+    from jarvis.wardrobe.tryon import http
+
+    g = {"id": "tg_" + "2" * 12, "type": "shirt", "colour": "navy", "at": "2026-11-17T09:00+05:30",
+         "words": "a new navy shirt, not in your wardrobe"}  # fmt: skip
+    GarmentIn, GarmentList, GarmentView = http.GarmentIn, http.GarmentList, http.GarmentView
+    Estimate, NewGarment, Pairing, PictureView = (
+        http.Estimate, http.NewGarment, http.Pairing, http.PictureView,
+    )  # fmt: skip
+    view = GarmentView.model_validate({**g, "bytes": 120_000, "until": "2026-12-17T09:00:00+05:30"})
+    assert view.slot == "top" and not view.kept
+    assert GarmentIn(type="kurta", colour="maroon").type == "kurta"
+    for bad in ({"type": "sneaker", "colour": "white"}, {"type": "shirt", "colour": "teal-ish"},
+                {"type": "shirt", "colour": "navy", "label": "Zara linen"}):  # fmt: skip
+        with pytest.raises(ValidationError):
+            GarmentIn.model_validate(bad)
+    with pytest.raises(ValidationError):
+        GarmentView.model_validate({**g, "type": "watch"})
+    assert GarmentList(garments=(view,)).garments[0].id == g["id"]
+    new = NewGarment(id=g["id"], words=g["words"])
+    pic = PictureView.model_validate(
+        {"id": "tp_" + "3" * 12, "made_at": g["at"], "garment": new.model_dump()}
+    )
+    assert pic.garment.words.endswith("not in your wardrobe") and "plan" not in pic.model_dump()
+    assert Estimate(typical_inr=8.9, hold_inr=11.2, tax_pct=18, garment=new).garment == new
+    pair = Pairing(
+        garment=g["id"], pieces=({"piece": "wi_" + "4" * 12, "words": "charcoal trousers"},)
+    )
+    assert len(pair.pieces) == 1 and pair.words == ""
+    with pytest.raises(ValidationError):
+        Pairing(garment=g["id"], pieces=({"piece": "wi_" + "4" * 12, "words": "x"},) * 3)
 
 
 def test_a_private_slot_carries_no_colour_photo_or_template_by_default() -> None:
@@ -330,13 +394,14 @@ import re  # noqa: E402
 TRYON_JS = (
     "console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-photo.js",
     "console-tryon-3d.js", "console-tryon-glb.js", "console-tryon-cloth.js",
+    "console-tryon-card.js",
 )  # fmt: skip
-D_JS = ("console-tryon.js", "console-tryon-list.js", "console-tryon-me.js")
+D_JS = ("console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-card.js")
 B_JS = ("console-tryon-3d.js", "console-tryon-glb.js", "console-tryon-cloth.js")
 LIMITS_JS = {
     "console-tryon.js": 600, "console-tryon-list.js": 300, "console-tryon-me.js": 400,
     "console-tryon-photo.js": 300, "console-tryon-3d.js": 600, "console-tryon-glb.js": 200,
-    "console-tryon-cloth.js": 300,
+    "console-tryon-cloth.js": 300, "console-tryon-card.js": 150,
 }  # fmt: skip
 
 
@@ -369,17 +434,47 @@ def test_the_wardrobe_tab_mounts_try_it_on_once_after_the_plans() -> None:
     draw = js[js.index("function draw()") : js.index("function down(")]
     assert "tryon" not in draw  # never rebuilt by draw() (L7)
     assert "new CustomEvent('jarvis:wardrobe-fresh')" in js  # fresh readiness reaches it (D1)
-    assert "btn('Show in 3D'" in js and "btn('See it on me'" in js and "UI.tryon.seeOn()" in js
+    assert "btn('Show in 3D', () => tryOn(p.id))" in js  # free, on every plan
+    assert "btn('See it on me'" not in js and "seeOn" not in js  # D22: for a garment to buy only
     assert "'jarvis:tryon-open'" in js and _text(STATIC / "console-helpers-wardrobe.js").isascii()
+
+
+def test_a_tryon_reply_card_opens_the_look_by_itself_without_touching_the_page() -> None:
+    # row 388 (D21): ChatResponse.cards -> console-media.js cards() -> window.JarvisTryOnCard
+    # (console-tryon-card.js, loaded at start by console-r7.js) -> console-tryon.js inline(), lazily
+    media = _code(STATIC / "console-media.js")
+    hook = "const tryon = window.JarvisTryOnCard;"
+    assert media.count(hook) == 1 and "tryon.cards(row, list)" in media
+    assert media.index(hook) < media.index("const wrap = mk('div', 'mcards');")  # before the media
+    assert "'tryon'" not in media  # console-media.js never draws the kind itself
+    assert "import('./console-tryon-card.js')" in _code(STATIC / "console-r7.js")
+    card = _code(STATIC / "console-tryon-card.js")
+    assert "window.JarvisTryOnCard = Object.freeze({ cards })" in card
+    assert "import('./console-tryon.js')" in card and "'tryon'" in card
+    assert "fetch(" not in card and "XMLHttpRequest" not in card  # it reads only the card
+    assert "export function inline(el, card)" in _code(STATIC / "console-tryon.js")
 
 
 def test_the_door_sends_his_photo_and_reads_pictures_back() -> None:
     code = _code(STATIC / "console-r7-send.js")
-    assert "wardrobe, tag, thumb, drop, person, picture, myPhoto," in code
-    assert "postPicture('/v1/seeme/photo', blob, { maxKb: kb, jpeg: true })" in code
-    assert "dataUrl('/v1/seeme/pictures/' + id)" in code and "dataUrl('/v1/seeme/photo')" in code
+    assert "wardrobe, tag, thumb, drop, person, garment, picture, garmentPhoto, myPhoto," in code
+    assert "postPicture(path, blob, { maxKb: Number(kb), jpeg: true })" in code
+    assert "jpegTo('/v1/seeme/photo', blob, (meta || {}).maxKb)" in code
+    assert "readBack(/^tp_[0-9a-f]{12}$/, '/v1/seeme/pictures/')" in code  # a picture's id only
+    assert "dataUrl(path + id)" in code and "dataUrl('/v1/seeme/photo')" in code
     assert "doc.size > opts.maxKb * 1024" in code and "TOO_DETAILED" in code  # nothing sent (M7)
-    assert "/^tp_[0-9a-f]{12}$/" in code  # only a try-on picture's id
+
+
+def test_the_door_sends_a_new_garments_photo_with_fixed_words_only() -> None:
+    # D22: a garment he is thinking of buying; its type and colour are fixed-list words (checked
+    # again by the server), never his label; read back by its tg_ id only
+    code = _code(STATIC / "console-r7-send.js")
+    assert "const WORD = /^[a-z_]{2,20}$/" in code
+    assert "WORD.test(String(m.type)) && WORD.test(String(m.colour))" in code
+    sent = "jpegTo('/v1/seeme/garments?type=' + m.type + '&colour=' + m.colour, blob, m.maxKb)"
+    assert sent in code
+    assert "readBack(/^tg_[0-9a-f]{12}$/, '/v1/seeme/garments/')" in code
+    assert "fetch(" not in code and "http" not in code  # it never sends to an address
 
 
 @pytest.mark.parametrize("path", sorted(STATIC.glob("console*.js")), ids=lambda p: p.name)
@@ -387,7 +482,7 @@ def test_the_door_is_the_only_caller_of_his_photo_and_the_pictures(path: Path) -
     if path.name == "console-r7-send.js":
         return
     code = _code(path)
-    assert not re.search(r"""['"`]/v1/seeme/(?:photo|pictures)""", code), path.name
+    assert not re.search(r"""['"`]/v1/seeme/(?:photo|pictures|garments)""", code), path.name
 
 
 def test_shrink_takes_a_lower_limit_and_can_insist_on_a_jpeg() -> None:
@@ -555,8 +650,10 @@ def test_the_r131_runner_passes_staged_and_its_contract_control_fails_it() -> No
     assert {f"contract:{p}_builds" for p in parts} <= ids
     assert {"contract:refuses_data_on_tryon", "contract:refuses_a_stray_route"} <= ids
     assert "contract:broken_r131_parts_leave_r13_running" in ids
+    row388 = "contract:row388_what_to_wear_opens_the_tryon_card"  # D21's server half
+    assert next(r for r in report["results"] if r["id"] == row388)["passed"]
     control = report["negative_control"]
-    assert control["suite_failed"] is True and control["failed_cases"]["contract"]
+    assert control["suite_failed"] is True and row388 in control["failed_cases"]["contract"]
 
 
 def test_the_gate_is_staged_until_i1_and_a_stub_fails_once_it_flips() -> None:
@@ -590,6 +687,21 @@ def test_the_r131_suite_is_gated_in_run_all_mock_after_r13() -> None:
 
 
 # ---- 15 · the fake server Parts B and D build against --------------------------------------------
+NEEDS_A_GARMENT = {("POST", "/v1/seeme/pictures"), ("GET", "/v1/seeme/pair")}
+
+
+async def _with_a_garment(c: Any, method: str, url: str, kw: dict[str, Any]) -> tuple[str, Any]:
+    from r131_fakes import jpeg
+
+    shot = {"headers": {"content-type": "image/jpeg"}}
+    await c.post("/v1/seeme/photo", content=jpeg(600, 1200), **shot)
+    gid = await c.post("/v1/seeme/garments?type=shirt&colour=navy", content=jpeg(600, 800), **shot)
+    gid = gid.json()["id"]
+    if method == "GET":
+        return f"{url}?garment={gid}", kw
+    return url, {"json": {**kw["json"], "garment": gid}}
+
+
 async def test_the_fake_server_answers_every_route_with_its_model(settings: Settings) -> None:
     from httpx import ASGITransport, AsyncClient
     from r131_fake_server import fake_app, fake_state
@@ -606,10 +718,9 @@ async def test_the_fake_server_answers_every_route_with_its_model(settings: Sett
         ("PUT", "/v1/tryon/assets/{piece}"): {"piece": T.striped, "template": "shirt"},
         ("POST", "/v1/tryon/confirm"): {"plan": plan, "slots": [{"slot": "top", "piece": T.shirt}]},
         ("POST", "/v1/tryon/saved"): {"looks": [{"slots": [{"slot": "top", "piece": T.shirt}]}]},
-        ("POST", "/v1/seeme/consent"): {"typed": " YES ", "template_version": "c1"},
-        ("POST", "/v1/seeme/pictures"): {"pieces": [T.striped, T.trousers], "plan": plan,
-                                         "confirm_cost": True, "inr_shown": 8.9,
-                                         "request_id": "tq_" + "0" * 16},
+        ("POST", "/v1/seeme/consent"): {"typed": " YES ", "template_version": "c2"},
+        ("POST", "/v1/seeme/pictures"): {"pieces": [T.trousers], "confirm_cost": True,
+                                         "inr_shown": 8.9, "request_id": "tq_" + "0" * 16},
         ("POST", "/v1/seeme/pictures/{id}/keep"): {"keep": True},
         ("PUT", "/v1/seeme/settings"): {"cap_inr": 200},
     }  # fmt: skip
@@ -627,14 +738,15 @@ async def test_the_fake_server_answers_every_route_with_its_model(settings: Sett
                     kw = {"json": bodies[(method, path)]}
                 if path == "/v1/tryon/body/draft":  # a draft to drop
                     await c.put("/v1/tryon/body", json={"waist": 80})
-                if (method, path) == ("POST", "/v1/seeme/pictures"):  # his photo again
-                    await c.post("/v1/seeme/photo", content=jpeg(600, 1200),
-                                 headers={"content-type": "image/jpeg"})  # fmt: skip
+                if (method, path) in NEEDS_A_GARMENT:  # his photo again, and a new garment
+                    url, kw = await _with_a_garment(c, method, url, kw)
+                if (method, path) == ("POST", "/v1/seeme/garments"):
+                    url = f"{url}?type=kurta&colour=maroon"
                 got = await c.request(method, url, **kw)  # type: ignore[arg-type]
                 assert got.status_code == 200, (method, path, got.text)
                 if isinstance(reply, type):
                     found = reply.model_validate(got.json())
-                    if isinstance(found, http.PictureView):
+                    if isinstance(found, http.PictureView | http.GarmentView):
                         ids["{id}"] = found.id
                     if isinstance(found, http.SavedView) and method == "POST":
                         ids["{id}"] = found.id
@@ -645,7 +757,7 @@ async def test_the_fake_server_answers_every_route_with_its_model(settings: Sett
             base = next(s for s in look.slots if s.slot == "base")
             assert base.private and base.piece is None and base.rgb is None  # covered only
             refused = await c.post(
-                "/v1/seeme/consent", json={"typed": "yes", "template_version": "c1"}
+                "/v1/seeme/consent", json={"typed": "yes", "template_version": "c2"}
             )
             assert refused.status_code == 422 and refused.json()["error"] == "not_yes"
 
@@ -703,7 +815,7 @@ def test_the_guide_plans_c72_and_c73_with_every_collection_and_console_module() 
     from jarvis.wardrobe.ports import COLLECTIONS
 
     guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
-    assert guide.splitlines()[0].startswith("Version v13.1.1 · ") and "Release R13.1" in guide[:200]
+    assert guide.splitlines()[0].startswith("Version v13.1.2 · ") and "Release R13.1" in guide[:200]
     for card in ("#### C72 · Try-on figure (R13.1)", "#### C73 · See it on me (R13.1)"):
         assert card in guide, card
     for name in (*COLLECTIONS["tryon"], *COLLECTIONS["seeme"]):

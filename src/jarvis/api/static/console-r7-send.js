@@ -12,6 +12,7 @@
 //                               to send a picture: a saved piece's crop (POST /v1/wardrobe/photos) and its AI tag
 //   person(blob, {maxKb}) -> Promise<json>   R13.1 D12: his photo for See it on me (POST /v1/seeme/photo), redrawn down
 //                               to maxKb (GET /v1/seeme's photo_max_kb); picture(id), myPhoto() -> data: URLs, read back
+//   garment(blob, {type, colour, maxKb}), garmentPhoto(id)   R13.1 D22: a garment he may buy (POST /v1/seeme/garments)
 // Every picture is first redrawn on this device by R11.1's shrink (JarvisFixes.parts.files.shrink): JPEG of at
 // most 1,568 px, so a WebP or a full-size photo is never sent as it is; one the browser can't read is refused in
 // plain words. The counter lives only in this browser (localStorage, per day). Nothing here runs before a press.
@@ -141,15 +142,14 @@ async function thumb(id) { // a saved crop
   if (!PHOTO.test(String(id || ''))) throw new Error(NOT_READY);
   return dataUrl('/v1/wardrobe/photos/' + id);
 }
-// R13.1 I0 (docs/plans/r13-1-try-on.md D12, M7): his photo for See it on me, JPEG and at most maxKb, else nothing is sent.
+// R13.1 I0 (D12, D22, M7): his photo, and a new garment's photo (never a wardrobe piece): JPEG and at most maxKb, else nothing is sent.
 const TOO_DETAILED = 'This photo is too detailed to send: try a plainer background.';
-const TRYON_PICTURE = /^tp_[0-9a-f]{12}$/;
-function person(blob, meta) {
-  const kb = Number((meta || {}).maxKb);
-  if (!(kb >= 100 && kb <= 740)) return Promise.reject(new Error(NOT_READY));
-  return postPicture('/v1/seeme/photo', blob, { maxKb: kb, jpeg: true });
-}
-const picture = (id) => (TRYON_PICTURE.test(String(id || '')) ? dataUrl('/v1/seeme/pictures/' + id) : Promise.reject(new Error(NOT_READY)));
+const WORD = /^[a-z_]{2,20}$/, no = () => Promise.reject(new Error(NOT_READY));
+const jpegTo = (path, blob, kb) => (Number(kb) >= 100 && Number(kb) <= 740 ? postPicture(path, blob, { maxKb: Number(kb), jpeg: true }) : no());
+const person = (blob, meta) => jpegTo('/v1/seeme/photo', blob, (meta || {}).maxKb);
+const garment = (blob, m) => (m && WORD.test(String(m.type)) && WORD.test(String(m.colour)) ? jpegTo('/v1/seeme/garments?type=' + m.type + '&colour=' + m.colour, blob, m.maxKb) : no());
+const readBack = (re, path) => (id) => (re.test(String(id || '')) ? dataUrl(path + id) : no());
+const picture = readBack(/^tp_[0-9a-f]{12}$/, '/v1/seeme/pictures/'), garmentPhoto = readBack(/^tg_[0-9a-f]{12}$/, '/v1/seeme/garments/');
 const myPhoto = () => dataUrl('/v1/seeme/photo');
 async function drop(id) { // one photo, deleted
   const chat = window.JarvisChat;
@@ -159,4 +159,4 @@ async function drop(id) { // one photo, deleted
 }
 const line = () => 'Pictures sent from this device today: ' + readCount();
 
-if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, person, picture, myPhoto, sentToday: readCount, line }));
+if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, person, garment, picture, garmentPhoto, myPhoto, sentToday: readCount, line }));

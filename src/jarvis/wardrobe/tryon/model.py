@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from jarvis.wardrobe.model import TYPES, View
 from jarvis.wardrobe.states import State
+from jarvis.wardrobe.styling.texts import PLURAL_TYPES
 
 # ---- measurements (D4) -------------------------------------------------------------------------
 Measure = Literal["height", "shoulders", "chest", "waist", "hips", "inseam"]
@@ -241,7 +242,9 @@ PICTURE_ID = r"^tp_[0-9a-f]{12}$"
 REQUEST_ID = r"^tq_[0-9a-f]{16}$"
 SAVED_ID = r"^tc_[0-9a-f]{8}$"
 TRYON, PERSON, CONSENT = "tryon", "tryon_person", "tryon_consent"
-PICTURE, SPEND = "tryon_picture", "tryon_spend"
+PICTURE, SPEND, GARMENT = "tryon_picture", "tryon_spend", "tryon_garment"
+GARMENT_ID = r"^tg_[0-9a-f]{12}$"  # a new garment's photo (D22): never a wardrobe piece
+GARMENT_MAX, PAIR_MAX = 20, 2  # new-garment photos kept at a time; his own pieces beside one
 PURPOSE, PHOTO_PURPOSE = "tryon", "tryon_photos"  # keyring purposes
 SAVED_MAX, OPTIONS_MAX, KEPT_MAX, LISTED_MAX, DONE_MAX = 10, 12, 24, 50, 50
 PICTURE_KEEP_DAYS = 30  # owner question 3 (17 Nov 2026): 30 days unless Keep; `tryon_keep_days`
@@ -261,6 +264,20 @@ def new_saved_id() -> str:
     return "tc_" + secrets.token_hex(4)
 
 
+def new_garment_id() -> str:
+    return "tg_" + secrets.token_hex(6)
+
+
+# D22: the types a new garment's photo may be (a garment template See it on me may send)
+NEW_TYPES: tuple[str, ...] = tuple(t for t, tpl in TEMPLATE_OF.items() if tpl in GARMENTS)
+
+
+def new_garment_words(colour: str, type_: str) -> str:
+    """ "a new navy shirt, not in your wardrobe": fixed words only (his colour and type choice)."""
+    words = " ".join(w for w in ("new", colour.replace("_", " "), type_.replace("_", " ")) if w)
+    return f"{words if type_ in PLURAL_TYPES else 'a ' + words}, not in your wardrobe"
+
+
 def aad_tryon(uid: str) -> str:
     return f"tryon/{uid}/v1"
 
@@ -277,6 +294,10 @@ def aad_picture(uid: str, picture: str) -> str:
     return f"tryon/picture/{uid}/{picture}/v1"
 
 
+def aad_garment(uid: str, garment: str) -> str:
+    return f"tryon/garment/{uid}/{garment}/v1"
+
+
 __all__ = [
     "ANSWER_MAX_BYTES",
     "APPROXIMATE",
@@ -291,18 +312,23 @@ __all__ = [
     "EARLIER_MAX",
     "ESTIMATED",
     "ESTIMATE_NOTE",
+    "GARMENT",
     "GARMENTS",
+    "GARMENT_ID",
+    "GARMENT_MAX",
     "GENERATED",
     "KEPT_MAX",
     "LAYERS",
     "LISTED_MAX",
     "MEASURES",
     "MORPHS",
+    "NEW_TYPES",
     "NOT_IN_PICTURE",
     "NO_COLOUR_RGB",
     "NO_FIGURE",
     "ONE_SHOE",
     "OPTIONS_MAX",
+    "PAIR_MAX",
     "PALETTE",
     "PERSON",
     "PHOTO_PURPOSE",
@@ -339,6 +365,7 @@ __all__ = [
     "Measure",
     "Template",
     "aad_consent",
+    "aad_garment",
     "aad_person",
     "aad_picture",
     "aad_tryon",
@@ -346,6 +373,8 @@ __all__ = [
     "estimated",
     "in_range",
     "morph_weights",
+    "new_garment_id",
+    "new_garment_words",
     "new_picture_id",
     "new_saved_id",
     "range_words",

@@ -185,6 +185,7 @@ APP_ASSETS: dict[str, str] = {
     "console-tryon-3d.js": _JS,  # B: the figure engine (window.JarvisTryOn3D), a drawing module
     "console-tryon-glb.js": _JS,  # B: the GLB reader for the build script's subset
     "console-tryon-cloth.js": _JS,  # B: textures from his crops, on its own canvas
+    "console-tryon-card.js": _JS,  # D: the card under "what should I wear?" (row 388, D21)
     "console-tryon.css": "text/css",  # D: the section's places only (loaded by console-r7.js)
 }
 

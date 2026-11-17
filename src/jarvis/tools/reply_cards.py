@@ -40,7 +40,7 @@ from contextlib import contextmanager
 from typing import Annotated, Final, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from jarvis.people.offer_card import PeopleOfferCard
 from jarvis.whatsapp.draft import WhatsAppCard
@@ -185,8 +185,48 @@ class BatchCard(_Strict):
     retry: list[BatchItem] = Field(default_factory=list, max_length=100)
 
 
+class TryOnSlot(_Strict):
+    """One slot of the look on the try-on card: its piece ids, or covered (a private slot)."""
+
+    slot: str = Field(pattern=r"^[a-z_]{2,20}$")
+    pieces: tuple[str, ...] = Field(default=(), max_length=2)
+    private: bool = False
+
+    @model_validator(mode="after")
+    def _ids(self) -> TryOnSlot:
+        if self.private and self.pieces:
+            raise ValueError("a private slot carries no piece id (AVT-14)")
+        if not all(re.fullmatch(r"wi_[0-9a-f]{12}", p) for p in self.pieces):
+            raise ValueError("a piece id is wi_ and 12 hex")
+        return self
+
+
+class TryOnCard(_Strict):
+    """R13.1 row 388 (docs/plans/r13-1-try-on.md D21): "what should I wear?" opens the try-on
+    card by itself. `outfit_suggest` adds it while Try-on is on: the day, the plan when one
+    answered, the dress code, the primary look's slots (piece ids only; a private slot covered).
+    The console (`console-tryon-card.js`) draws the figure dressed in exactly those pieces, or the
+    checklist. Never in what the model sees; never on Telegram; never stored."""
+
+    kind: Literal["tryon"] = "tryon"
+    day: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    plan: str | None = Field(default=None, pattern=r"^op_[0-9a-f]{8}$")
+    code: str = Field(default="", pattern=r"^[a-z_]{0,30}$")
+    slots: list[TryOnSlot] = Field(default_factory=list, max_length=12)
+
+
 # R11.1 D21-D: + the "Look up" offer of a name the picture's own text holds (people/offer.py)
-AnyCard = PlacesCard | RouteCard | VideosCard | WhatsAppCard | UpiCard | BatchCard | PeopleOfferCard
+# R13.1 D21: + the try-on card ("what should I wear?" shows the look on his 3D figure)
+AnyCard = (
+    PlacesCard
+    | RouteCard
+    | VideosCard
+    | WhatsAppCard
+    | UpiCard
+    | BatchCard
+    | PeopleOfferCard
+    | TryOnCard
+)
 ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
 
 CARD_NOT_SHOWN: Final = (
@@ -205,7 +245,9 @@ def _count(cards: Iterable[AnyCard], *, drafts: bool) -> int:
 
 
 def _has_room(cards: list[AnyCard], card: AnyCard) -> bool:
-    """Whether `cards` can take `card` within the reply's cap for its kind."""
+    """Whether `cards` can take `card` within the reply's cap for its kind (one try-on card)."""
+    if isinstance(card, TryOnCard) and any(isinstance(c, TryOnCard) for c in cards):
+        return False  # R13.1 D21: one figure under one reply, the first look asked
     if isinstance(card, WhatsAppCard):
         return _count(cards, drafts=True) < MAX_DRAFTS
     return _count(cards, drafts=False) < MAX_CARDS
@@ -278,6 +320,8 @@ __all__ = [
     "PlacesCard",
     "ReplyCard",
     "RouteCard",
+    "TryOnCard",
+    "TryOnSlot",
     "UpiCard",
     "VideoItem",
     "VideosCard",

@@ -84,6 +84,7 @@ NOT_IN_PAGE = {
     "console-tryon-glb.js": ("console-tryon-3d.js", "'./console-tryon-glb.js'"),
     "console-tryon-cloth.js": ("console-tryon-3d.js", "'./console-tryon-cloth.js'"),
     "console-tryon.css": ("console-r7.js", "'/static/console-tryon.css'"),
+    "console-tryon-card.js": ("console-r7.js", "import('./console-tryon-card.js')"),  # row 388
 }
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {

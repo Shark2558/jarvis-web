@@ -257,6 +257,7 @@ def test_every_planned_collection_is_named_and_flat() -> None:
         *("wardrobe_outlook", "wardrobe_told"),
         # R13.1 (tests/test_r131_seams.py; the guide's cards C72-C73)
         *("tryon", "tryon_person", "tryon_consent", "tryon_picture", "tryon_spend"),
+        "tryon_garment",  # R13.1 D22: a new garment's photo (See it on me)
     }
     guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
     for name in every:

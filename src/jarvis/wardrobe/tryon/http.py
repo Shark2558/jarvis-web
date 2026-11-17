@@ -14,7 +14,8 @@ console can branch on `err.code`). Routes with `console=True` pass a signed-in b
 
 The models live in `http_figure.py` (the base and A) and `http_seeme.py` (C), re-exported here.
 `ROUTES` lists each route: (method, path, part, request model or body type, reply model or media
-type, the error statuses it may answer, console only).
+type, the error statuses it may answer, console only). `QUERIES` names the query model of a route
+whose body is a picture (a new garment's type and colour, D22).
 """
 
 from __future__ import annotations
@@ -49,9 +50,15 @@ from jarvis.wardrobe.tryon.http_seeme import (
     ConsentIn,
     ConsentView,
     Estimate,
+    GarmentIdT,
+    GarmentIn,
+    GarmentList,
+    GarmentView,
     KeepIn,
     MonthView,
+    NewGarment,
     NotSent,
+    Pairing,
     PhotoView,
     PictureIn,
     PictureView,
@@ -62,7 +69,7 @@ from jarvis.wardrobe.tryon.http_seeme import (
 )
 
 _E = (401, 403, 429)  # every route: not signed in, not his console (console routes), too many
-_P = "/v1/seeme/pictures"
+_P, _G = "/v1/seeme/pictures", "/v1/seeme/garments"
 ROUTES: tuple[tuple[str, str, str, object, object, tuple[int, ...], bool], ...] = (
     ("GET", "/v1/tryon", "tryon", None, TryonView, (*_E, 503), False),
     ("PUT", "/v1/tryon/body", "tryon", BodyIn, BodyVersions, (*_E, 422, 503), False),
@@ -86,7 +93,14 @@ ROUTES: tuple[tuple[str, str, str, object, object, tuple[int, ...], bool], ...] 
     ("POST", f"{_P}/{{id}}/keep", "seeme", KeepIn, PictureView, (*_E, 404, 409), True),
     ("DELETE", f"{_P}/{{id}}", "seeme", None, Deleted, (*_E, 404), True),
     ("PUT", "/v1/seeme/settings", "seeme", SeeMeSettingsIn, SeeMeView, (*_E, 409, 422), True),
+    # D22: the photo of a garment he is thinking of buying (never a wardrobe piece)
+    ("POST", _G, "seeme", "image/jpeg", GarmentView, (*_E, 409, 413, 422, 503), True),
+    ("GET", _G, "seeme", None, GarmentList, (*_E, 503), False),
+    ("GET", f"{_G}/{{id}}", "seeme", None, "image/jpeg", (*_E, 404), True),
+    ("DELETE", f"{_G}/{{id}}", "seeme", None, Deleted, (*_E, 404), True),
+    ("GET", "/v1/seeme/pair", "seeme", None, Pairing, (*_E, 404, 503), False),
 )
+QUERIES = {("POST", _G): GarmentIn}
 PICTURE_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": "default-src 'none'",
@@ -95,11 +109,13 @@ PICTURE_HEADERS = {
 }  # his photo and a picture, read back by his console only (D10, D12)
 
 __all__ = [
+    "GarmentIdT",
     "Inr",
     "PictureIdT",
     "RequestIdT",
     "SavedIdT",
     "PICTURE_HEADERS",
+    "QUERIES",
     "ROUTES",
     "SEEME_ERRORS",
     "AssetChoice",
@@ -112,11 +128,16 @@ __all__ = [
     "ConsentView",
     "Deleted",
     "Estimate",
+    "GarmentIn",
+    "GarmentList",
+    "GarmentView",
     "KeepIn",
     "LookOption",
     "LookSlot",
     "MonthView",
+    "NewGarment",
     "NotSent",
+    "Pairing",
     "PhotoView",
     "PictureIn",
     "PictureView",

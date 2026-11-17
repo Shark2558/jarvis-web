@@ -29,6 +29,7 @@ from jarvis.storage.docs import Docs
 from jarvis.wardrobe.kept import OWNER_FIELD, WardrobeUnavailable, erase, kept_paths
 from jarvis.wardrobe.tryon.model import (
     CONSENT,
+    GARMENT,
     KEPT_MAX,
     PERSON,
     PICTURE,
@@ -51,7 +52,7 @@ BACKUP_WORDS = (
 FIGURE_ID, PHOTO_ID, PICTURES_ID = "tryon_figure", "tryon_photo", "tryon_pictures"
 SPEND_ID, ALL_ID, DEVICE_ID = "tryon_spend", "tryon_all", "tryon_device"
 ROW_IDS = (FIGURE_ID, PHOTO_ID, PICTURES_ID, SPEND_ID, ALL_ID, DEVICE_ID)
-PICTURES_OWNED = ((PICTURE, OWNER_FIELD),)
+PICTURES_OWNED = ((PICTURE, OWNER_FIELD), (GARMENT, OWNER_FIELD))  # D22: new-garment photos
 SPEND_OWNED = ((SPEND, OWNER_FIELD),)
 PHOTO_SINGLES = (CONSENT, PERSON)  # his YES goes with his photo
 ALL_SINGLES = (PERSON, CONSENT, TRYON)  # after the pictures; `tryon/{uid}` LAST (D16's order)
@@ -72,11 +73,14 @@ SPECS: dict[str, Spec] = {
         encrypted_by_jarvis=True, delete="passkey",
     ),
     PICTURES_ID: Spec(
-        PICTURES_ID, SECTION, "See it on me pictures",
-        "Each picture Google's image model made of you in a look, as Google returned it, with "
-        "the pieces sent. The export lists them, never the pictures.",
+        PICTURES_ID, SECTION, "See it on me pictures and garment photos",
+        "Each picture Google's image model made of you wearing a garment you were thinking of "
+        "buying, as Google returned it, with your own pieces sent beside it; and the photo you "
+        "gave of each such garment (never added to your wardrobe: it stays not in your wardrobe). "
+        "The export lists them, never the pictures.",
         "pictures",
-        f"{PICTURE_KEEP_DAYS} days unless you press Keep (at most {KEPT_MAX} kept)", OURS_ENC,
+        f"{PICTURE_KEEP_DAYS} days unless you press Keep (at most {KEPT_MAX} kept); a garment's "
+        "photo as long as a picture of it is kept", OURS_ENC,
         encrypted_by_jarvis=True, delete="passkey",
     ),
     SPEND_ID: Spec(
@@ -87,8 +91,8 @@ SPECS: dict[str, Spec] = {
     ),
     ALL_ID: Spec(
         ALL_ID, SECTION, "All your try-on data",
-        "Your figure and measurements, your photo, your YES and every See it on me picture, in "
-        "one delete. Your wardrobe stays as it is.",
+        "Your figure and measurements, your photo, your YES, every See it on me picture and "
+        "every garment photo you gave, in one delete. Your wardrobe stays as it is.",
         "items", f"Until you delete them. {BACKUP_WORDS}", OURS_ENC, encrypted_by_jarvis=True,
         delete="passkey",
     ),
@@ -155,7 +159,8 @@ class DeviceRow:
 
 
 async def erase_seeme(docs: Docs, prefix: str, uid: str) -> int:
-    """C's half of OPS-05 by path: the pictures, his photo, his YES (never the spend)."""
+    """C's half of OPS-05 by path: the pictures, the garment photos, his photo, his YES (never
+    the spend)."""
     paths = await kept_paths(docs, prefix, uid, singles=(PERSON, CONSENT), owned=PICTURES_OWNED)
     return await erase(docs, paths)
 

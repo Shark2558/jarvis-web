@@ -134,7 +134,7 @@ COLLECTIONS: Mapping[PartName, tuple[str, ...]] = {
     "styling": ("wardrobe_plans", "wardrobe_cal", "wardrobe_outlook", "wardrobe_told"),
     "phone": (),
     "tryon": ("tryon",),  # R13.1 "Data model"; the guide's cards C72-C73 name every one
-    "seeme": ("tryon_person", "tryon_consent", "tryon_picture", "tryon_spend"),
+    "seeme": ("tryon_person", "tryon_consent", "tryon_picture", "tryon_spend", "tryon_garment"),
 }
 TOLD_KEY_PREFIX: Mapping[PartName, str] = {"laundry": "laundry_", "styling": "styling_"}
 R13_JOB_NAMES: tuple[str, ...] = ("wardrobe_sweep", "laundry_daily", "outfit_clock", "seeme_daily")

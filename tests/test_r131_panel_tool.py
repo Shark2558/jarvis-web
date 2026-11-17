@@ -18,9 +18,10 @@ from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.tools.gateway import GatewayOutcome
 from jarvis.wardrobe.http import ToolReply
 
-SEE_IT = (
-    "In Helpers, Wardrobe you can see this look on your 3D figure, free, or press See it on me; "
-    "its price is shown before each picture."
+SEE_IT = (  # D17, D21, D22: the card opens by itself; See it on me is for a garment to buy
+    "In the app this look opens on your 3D figure by itself, free. To see a garment you are "
+    "thinking of buying on you, use See it on me in Helpers, Wardrobe; its price is shown before "
+    "each picture."
 )
 
 

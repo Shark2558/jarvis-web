@@ -29,6 +29,7 @@ export const WHY = Object.freeze({
   nofigure: 'No figure yet: type your measurements in Helpers, Wardrobe, Try it on.',
   elsewhere: 'The 3D view is open in another place.',
   paused: 'The 3D view rests while it is out of sight.',
+  figure: 'Your figure can\u2019t be read just now: here is the checklist.',
 });
 export const SLOT_WORDS = Object.freeze({ base: 'Base', underwear: 'Base', top: 'Top', bottom: 'Bottom', outer: 'Outer layer',
   shoes: 'Shoes', belt: 'Belt', watch: 'Watch', socks: 'Socks', extras: 'Extras' });

@@ -495,8 +495,11 @@ export function inline(el, card) { // resolves once the card is drawn
 async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pieces=), on ITS day and code (review I1 H1);
   v.covered = (card.slots || []).filter((s) => s.private).map((s) => ({ slot: s.slot, private: true, words: COVERED, readiness: '' }));
   v.plan = card.plan || null; // its covered slots stay covered (sent as "slot:", read so by A)
+  try { if (!S.tryon) await readTryon(); } catch (e) { // his figure can't be read: the look needs none of it (M3)
+    if (S.off || (e && e.status === 401)) { failed(v, e); draw(v); return; } // Try-on off: A's own words, nothing else
+    v.mode = 'list'; v.why = 'figure';
+  }
   try {
-    if (!S.tryon) await readTryon();
     const look = await lookOf(v, cardQuery(card));
     const code = String(card.code || '').replace(/_/g, ' ');
     await show(v, look, { plan: card.plan, title: 'Your look' + (code ? ' \u00b7 ' + code : '') });

@@ -20,7 +20,7 @@ import urllib.request
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 import pytest
 from r131_fakes import T
@@ -258,6 +258,36 @@ def test_row388_with_no_webgl_the_card_shows_the_same_pieces_as_a_checklist(
                 )
         assert got == CARD_PIECES
         assert "Base layer (covered)" in c.card().inner_text()
+    finally:
+        c.close()
+
+
+@pytest.mark.parametrize("code", ["unreadable", "unavailable"])
+def test_avt15_the_card_shows_the_checklist_when_his_figure_cant_be_read(
+    browser: Any, d_url: str, token: str, code: str
+) -> None:
+    # integrated review M3: GET /v1/tryon fails (after a key change, 503 unreadable; a storage
+    # blip), but A's look needs none of it: the card is the checklist of exactly its pieces
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    try:
+        refusal = {"error": code, "detail": "Your try-on data can't be opened on this server."}
+        c.page.route(lambda u: urlsplit(u).path == "/v1/tryon", lambda r: r.fulfill(
+            status=503, content_type="application/json", body=json.dumps(refusal)))  # fmt: skip
+        c.open()
+        c.ask()
+        rows = c.card().locator(".tr-item")
+        until(c.page, lambda: rows.count() >= len(CARD_PIECES), "the card's checklist")
+        assert c.card().locator(".tr-view").get_attribute("data-mode") == "list"
+        got: dict[str, list[str]] = {}
+        for i in range(rows.count()):
+            if piece := rows.nth(i).get_attribute("data-piece"):
+                got.setdefault(str(rows.nth(i).get_attribute("data-slot")), []).append(piece)
+        assert got == CARD_PIECES
+        t = c.card().inner_text().replace("\u2019", "'")
+        assert "Your figure can't be read just now: here is the checklist." in t
+        assert "Base layer (covered)" in t and "can't be opened" not in t
+        assert c.engine() is None and c.errors == []  # no stage without his figure
     finally:
         c.close()
 

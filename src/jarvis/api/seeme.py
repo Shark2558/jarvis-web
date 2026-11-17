@@ -1,14 +1,10 @@
 # src/jarvis/api/seeme.py
-"""R13.1 Part C's routes, under `/v1/seeme` (docs/plans/r13-1-try-on.md "The HTTP contract",
-D10-D15, D22): exactly the `jarvis.wardrobe.tryon.http.ROUTES` rows of "seeme". Each is owner-only
-(`require_auth`, CSRF as every cookie write), `no-store`, limited per owner (`r13_status.limited`:
-R13's 30 changes and 60 reads a minute; `POST /v1/seeme/pictures` 6 a minute), and answers a
-refusal as `Refusal` `{"error", "detail"}`. The rows marked console only pass a signed-in browser
-only (`api.book_gate.console_only`'s rule: `auth.session_email`, never a bearer token, a tool, a
-chat or a script), checked FIRST. Pictures and photos are served with `http.PICTURE_HEADERS`.
-Routers stay thin: the work is the part's `seeme` service (`wardrobe/seeme/part.py`). Bodies,
-pictures and his photo never reach a log; owner-changes are audited by ids and words only
-(`api.settings_audit.record_change`).
+"""R13.1 Part C's routes, under `/v1/seeme` (docs/plans/r13-1-try-on.md "The HTTP contract"):
+exactly the "seeme" rows of `wardrobe.tryon.http.ROUTES`, owner-only (`require_auth`, CSRF),
+no-store, limited per owner (30 changes, 60 reads, 6 presses a minute), every refusal a `Refusal`. Console
+rows pass a signed-in browser only (`auth.session_email`, `book_gate.console_only`'s rule), checked
+FIRST, before any body is read. The work is the part's `seeme` service; bodies, pictures and his
+photo never reach a log; owner changes are audited by ids only (`settings_audit.record_change`).
 """
 
 from __future__ import annotations
@@ -45,10 +41,6 @@ def _ok(model: Any) -> JSONResponse:
 def _no(status: int, code: str, words: str) -> JSONResponse:
     body = http.Refusal(error=code, detail=words[:300])
     return JSONResponse(body.model_dump(), status_code=status, headers=NO_STORE)
-
-
-def _refused(exc: SeeMeRefused) -> JSONResponse:
-    return _no(exc.status, exc.code, exc.words)
 
 
 def _console(request: Request) -> JSONResponse | None:
@@ -94,18 +86,26 @@ async def _run(fn: Any, *args: Any, **kw: Any) -> Any:
     try:
         return await fn(*args, **kw)
     except SeeMeRefused as exc:
-        return _refused(exc)
+        return _no(exc.status, exc.code, exc.words)
     except Exception as exc:  # noqa: BLE001 - never a 500 with a body or a trace in it
         log.error("see it on me: a route failed", extra={"error": type(exc).__name__})
         return _no(503, "unavailable", texts.UNAVAILABLE_NOW)
 
 
-def _gate(
+def _start(
     request: Request, uid: str, name: str, *, change: bool, console: bool, per: int | None = None
-) -> JSONResponse | None:
+) -> tuple[Any, Response | None]:
+    """(the service, None) or (None, the refusal): console first, then the limit, then on."""
     if console and (refused := _console(request)) is not None:
-        return refused
-    return limited(request, f"seeme_{name}", uid, change=change, per=per)
+        return None, refused
+    if (no := limited(request, f"seeme_{name}", uid, change=change, per=per)) is not None:
+        return None, no
+    svc = _svc(request)
+    return (svc, None) if svc is not None else (None, _off(request))
+
+
+def _answer(got: Any) -> Response:
+    return got if isinstance(got, Response) else _ok(got)
 
 
 def _image(data: bytes, mime: str) -> Response:
@@ -115,20 +115,17 @@ def _image(data: bytes, mime: str) -> Response:
 # ---- the overview, his settings ------------------------------------------------------------------
 @router.get("/v1/seeme", include_in_schema=False)
 async def seeme(request: Request, uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "read", change=False, console=False)) is not None:
+    svc, no = _start(request, uid, "read", change=False, console=False)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
-    got = await _run(svc.overview, uid)
-    return got if isinstance(got, Response) else _ok(got)
+    return _answer(await _run(svc.overview, uid))
 
 
 @router.put("/v1/seeme/settings", include_in_schema=False)
 async def settings(request: Request, uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     body = await _json(request, http.SeeMeSettingsIn)
     if isinstance(body, Response):
         return body
@@ -156,10 +153,9 @@ async def settings(request: Request, uid: str = Depends(current_user)) -> Respon
 # ---- his photo, his YES --------------------------------------------------------------------------
 @router.post("/v1/seeme/photo", include_in_schema=False)
 async def photo_in(request: Request, uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     body = await _jpeg(request, request.app.state.settings.tryon_photo_max_kb)
     if isinstance(body, Response):
         return body
@@ -178,10 +174,9 @@ async def photo_in(request: Request, uid: str = Depends(current_user)) -> Respon
 
 @router.get("/v1/seeme/photo", include_in_schema=False)
 async def photo_out(request: Request, uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "image", change=False, console=True)) is not None:
+    svc, no = _start(request, uid, "image", change=False, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     got = await _run(svc.photo, uid)
     if isinstance(got, Response):
         return got
@@ -190,10 +185,9 @@ async def photo_out(request: Request, uid: str = Depends(current_user)) -> Respo
 
 @router.delete("/v1/seeme/photo", include_in_schema=False)
 async def photo_drop(request: Request, uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     got = await _run(svc.delete_photo, uid)
     if isinstance(got, Response):
         return got
@@ -209,10 +203,9 @@ async def photo_drop(request: Request, uid: str = Depends(current_user)) -> Resp
 
 @router.post("/v1/seeme/consent", include_in_schema=False)
 async def consent(request: Request, uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     body = await _json(request, http.ConsentIn)
     if isinstance(body, Response):
         return body
@@ -237,10 +230,9 @@ async def garment_in(
     colour: str = "",
     uid: str = Depends(current_user),  # noqa: A002
 ) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     body = await _jpeg(request, request.app.state.settings.tryon_photo_max_kb)
     if isinstance(body, Response):
         return body
@@ -259,12 +251,10 @@ async def garment_in(
 
 @router.get("/v1/seeme/garments", include_in_schema=False)
 async def garments(request: Request, uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "read", change=False, console=False)) is not None:
+    svc, no = _start(request, uid, "read", change=False, console=False)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
-    got = await _run(svc.garments, uid)
-    return got if isinstance(got, Response) else _ok(got)
+    return _answer(await _run(svc.garments, uid))
 
 
 @router.get("/v1/seeme/garments/{id}", include_in_schema=False)
@@ -273,10 +263,9 @@ async def garment_out(
     id: str,
     uid: str = Depends(current_user),  # noqa: A002 - the contract's
 ) -> Response:
-    if (no := _gate(request, uid, "image", change=False, console=True)) is not None:
+    svc, no = _start(request, uid, "image", change=False, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     got = await _run(svc.garment_photo, uid, id)
     if isinstance(got, Response):
         return got
@@ -289,10 +278,9 @@ async def garment_drop(
     id: str,
     uid: str = Depends(current_user),  # noqa: A002 - the contract's
 ) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     got = await _run(svc.delete_garment, uid, id)
     if isinstance(got, Response):
         return got
@@ -310,12 +298,10 @@ async def garment_drop(
 
 @router.get("/v1/seeme/pair", include_in_schema=False)
 async def pair(request: Request, garment: str = "", uid: str = Depends(current_user)) -> Response:
-    if (no := _gate(request, uid, "read", change=False, console=False)) is not None:
+    svc, no = _start(request, uid, "read", change=False, console=False)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
-    got = await _run(svc.pair, uid, garment)
-    return got if isinstance(got, Response) else _ok(got)
+    return _answer(await _run(svc.pair, uid, garment))
 
 
 # ---- the estimate, the press, the pictures -------------------------------------------------------
@@ -328,24 +314,20 @@ def _pieces(raw: str) -> list[str] | None:
 async def estimate(
     request: Request, garment: str = "", pieces: str = "", uid: str = Depends(current_user)
 ) -> Response:
-    if (no := _gate(request, uid, "read", change=False, console=False)) is not None:
+    svc, no = _start(request, uid, "read", change=False, console=False)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     asked = _pieces(pieces)
     if asked is None:
         return _no(422, "not_a_garment", texts.NOT_HIS)
-    got = await _run(svc.estimate, uid, garment, asked)
-    return got if isinstance(got, Response) else _ok(got)
+    return _answer(await _run(svc.estimate, uid, garment, asked))
 
 
 @router.post("/v1/seeme/pictures", include_in_schema=False)
 async def pictures(request: Request, uid: str = Depends(current_user)) -> Response:
-    gate = _gate(request, uid, "press", change=True, console=True, per=PRESSES_A_MINUTE)
-    if gate is not None:
-        return gate
-    if (svc := _svc(request)) is None:
-        return _off(request)
+    svc, no = _start(request, uid, "press", change=True, console=True, per=PRESSES_A_MINUTE)
+    if no is not None:
+        return no
     body = await _json(request, http.PictureIn)
     if isinstance(body, Response):
         return body
@@ -368,10 +350,9 @@ async def picture(
     id: str,
     uid: str = Depends(current_user),  # noqa: A002 - the contract's
 ) -> Response:
-    if (no := _gate(request, uid, "image", change=False, console=True)) is not None:
+    svc, no = _start(request, uid, "image", change=False, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     got = await _run(svc.picture, uid, id)
     if isinstance(got, Response):
         return got
@@ -384,15 +365,13 @@ async def keep(
     id: str,  # noqa: A002 - the contract's name
     uid: str = Depends(current_user),
 ) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     body = await _json(request, http.KeepIn)
     if isinstance(body, Response):
         return body
-    got = await _run(svc.keep, uid, id, body.keep)
-    return got if isinstance(got, Response) else _ok(got)
+    return _answer(await _run(svc.keep, uid, id, body.keep))
 
 
 @router.delete("/v1/seeme/pictures/{id}", include_in_schema=False)
@@ -401,10 +380,9 @@ async def picture_drop(
     id: str,
     uid: str = Depends(current_user),  # noqa: A002 - the contract's
 ) -> Response:
-    if (no := _gate(request, uid, "change", change=True, console=True)) is not None:
+    svc, no = _start(request, uid, "change", change=True, console=True)
+    if no is not None:
         return no
-    if (svc := _svc(request)) is None:
-        return _off(request)
     got = await _run(svc.delete_picture, uid, id)
     if isinstance(got, Response):
         return got

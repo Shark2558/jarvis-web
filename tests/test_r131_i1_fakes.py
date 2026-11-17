@@ -45,3 +45,15 @@ def test_the_fake_picture_is_a_png_a_browser_can_decode() -> None:
 def test_the_fake_servers_consent_version_has_the_real_shape() -> None:
     assert re.fullmatch(r"c2-[0-9a-f]{12}", CONSENT_VERSION)
     ConsentIn(typed="YES", template_version=CONSENT_VERSION)  # the contract takes it
+
+
+def test_importing_ds_fakes_leaves_i0s_photo_views_alone() -> None:
+    """I1: D's fakes added its photos to I0's shared `VIEW_OF` at import, so any test module that
+    imported them (the door's) broke A's fakes later in the same run (a KeyError on D's watch
+    photo, 150 of A's tests). D's server process adds them when it builds its app."""
+    import r131_fakes
+    import r131_fakes_d  # noqa: F401 - the import is the test
+
+    assert set(r131_fakes.VIEW_OF) == {
+        "wh_00000000a001", "wh_00000000a002", "wh_00000000b001", "wh_00000000b002",
+    }  # fmt: skip

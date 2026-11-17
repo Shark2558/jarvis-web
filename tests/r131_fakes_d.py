@@ -64,7 +64,8 @@ CROP_RGB = {
     "wh_00000000b001": (30, 42, 80), "wh_00000000b002": (40, 56, 100),
     WATCH_PHOTO: (140, 140, 144), WATCH2_PHOTO: (110, 75, 50), BLAZER_PHOTO: (64, 66, 70),
 }  # fmt: skip
-VIEW_OF.update({WATCH_PHOTO: "front", WATCH2_PHOTO: "front", BLAZER_PHOTO: "front"})
+MORE_VIEWS = {WATCH_PHOTO: "front", WATCH2_PHOTO: "front", BLAZER_PHOTO: "front"}  # I0's VIEW_OF
+# gets these in D's server process only (`d_app`): never at import, where it broke A's fakes (I1)
 CARD = TryOnCard(
     day=NOW.date().isoformat(),
     plan=PLAN,
@@ -372,6 +373,7 @@ def d_app() -> Any:
 
     from r131_fake_server import fake_app
 
+    VIEW_OF.update(MORE_VIEWS)  # this process serves D's photos (I1: not at import)
     store, clock = asyncio.run(d_store())
     app = fake_app(store, clock)
     state = d_state()

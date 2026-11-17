@@ -172,6 +172,13 @@ class TryonStore:
         """Whether the document is on disk (no key needed: Privacy sees what it can't open)."""
         return self._docs is not None and await self._docs.get(self.path(uid)) is not None
 
+    async def stamp(self, uid: str) -> tuple[int, str] | None:
+        """(rev, updated_at) from the plain fields (no key): what changes when the data does."""
+        raw = await self._docs.get(self.path(uid)) if self._docs is not None else None
+        if raw is None:
+            return None
+        return int(raw.get("rev", 0)), str(raw.get("updated_at", ""))
+
     async def delete(self, uid: str) -> int:
         """Gone by path, with no key; 0 when there was none."""
         if self._docs is None or await self._docs.get(self.path(uid)) is None:

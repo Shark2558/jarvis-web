@@ -116,3 +116,11 @@ def test_the_document_bounds_its_lists() -> None:
     with pytest.raises(ValueError):
         TryonDoc(earlier=(body,) * (m.EARLIER_MAX + 1))
     TryonDoc(earlier=(body,) * m.EARLIER_MAX)  # five are fine
+
+
+async def test_the_stamp_is_the_plain_rev_and_time_with_no_key() -> None:
+    docs = MemoryDocs()
+    assert await _store(docs, None).stamp(UID) is None
+    await _store(docs).change(UID, lambda d: d)
+    await _store(docs).change(UID, lambda d: d)
+    assert await _store(docs, None).stamp(UID) == (2, NOW.isoformat())

@@ -11,23 +11,42 @@ what is on disk (I0's `kept` stand-ins: found and deleted by path with no key).
 `TryonService` is what the routes and C use: the looks (`ports.TryonLooks.look`), his
 measurements and their versions, his figure choices, saved comparisons, the fresh check before
 "Use this look", and OPS-05's `erase_all`. Each reads fresh; nothing is cached between calls.
+The modules are called through their names (`versions.use`, `confirm.first_draft` ...), so the
+eval's controls can swap one.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar
 
+from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
-from jarvis.wardrobe.tryon import confirm, saved
-from jarvis.wardrobe.tryon.http import ConfirmIn, Deleted, SavedIn, SavedList, SavedView, TryonLook
-from jarvis.wardrobe.tryon.looks import Looks
+from jarvis.wardrobe.styling import texts
+from jarvis.wardrobe.tryon import assets, confirm, erase, kept, privacy, saved, versions
+from jarvis.wardrobe.tryon.http import (
+    AssetChoice,
+    BodyVersions,
+    ConfirmIn,
+    Deleted,
+    RangeView,
+    SavedIn,
+    SavedList,
+    SavedView,
+    TryonLook,
+    TryonView,
+)
+from jarvis.wardrobe.tryon.looks import Looks, Read, StylingOff
+from jarvis.wardrobe.tryon.model import RANGES, range_words
 from jarvis.wardrobe.tryon.store import Saved, TryonDoc, TryonStore
 
 READY = "ready"
 OFF_NO_STORE = "Off: no storage is set up, so Try-on keeps nothing."
 OFF_NO_KEY = "Off: JARVIS has no token key to seal your measurements."
 OFF_SWITCHED = "Off: Try-on is switched off on this server."
+RANGE_VIEWS = tuple(
+    RangeView(measure=k, low=lo, high=hi, words=range_words(k)) for k, (lo, hi) in RANGES.items()
+)
 R = TypeVar("R")
 
 
@@ -43,20 +62,67 @@ class TryonService:
         """`ports.TryonLooks`: a plan's look as the figure shows it, read fresh (for C)."""
         return await self.looks.for_plan(uid, plan)
 
+    async def _read(self, uid: str) -> Read | None:
+        try:
+            return await self.looks.read(uid)
+        except StylingOff:
+            return None
+
+    async def tryon_view(self, uid: str, *, release: str, files: tuple[str, ...]) -> TryonView:
+        doc, r = await self.store.read(uid), await self._read(uid)
+        chosen = assets.tidy(doc.assets, r.view) if r is not None else doc.assets
+        return TryonView(
+            ready=READY, release=release, files=files, body=versions.versions_view(doc),
+            ranges=RANGE_VIEWS, assets=tuple(assets.choice_of(p, a) for p, a in chosen.items()),
+            saved=tuple(saved.ref_of(r, x) for x in doc.saved), words=versions.figure_words(doc),
+        )  # fmt: skip
+
+    # ---- measurements (D4) ----------------------------------------------------------------------
+    async def put_body(self, uid: str, typed: Mapping[str, object]) -> BodyVersions:
+        at = self.ctx.now()
+        doc = await self.store.change(uid, lambda d: versions.draft(d, typed, at))
+        return versions.versions_view(doc)
+
+    async def use_body(self, uid: str) -> BodyVersions:
+        return versions.versions_view(await self.store.change(uid, lambda d: versions.use(d)))
+
+    async def drop_draft(self, uid: str) -> BodyVersions:
+        return versions.versions_view(await self.store.change(uid, lambda d: versions.drop(d)))
+
+    # ---- figure choices (AVT-05) ----------------------------------------------------------------
+    async def _view(self, uid: str) -> WardrobeView:
+        store = self.ctx.store()
+        if store is None:
+            raise StylingOff(texts.NOT_READY_YET)
+        return await store.view(uid)
+
+    async def choose(self, uid: str, pid: str, body: AssetChoice) -> AssetChoice:
+        view = await self._view(uid)
+        made: list[AssetChoice] = []
+
+        def fn(doc: TryonDoc) -> TryonDoc:
+            new, one = assets.choose(doc, view, pid, body)
+            made[:] = [one]  # a retried transaction keeps only its last run's
+            return new
+
+        await self.store.change(uid, fn)
+        return made[0]
+
+    # ---- "Use this look" (AVT-09) ---------------------------------------------------------------
     async def confirm(
         self, uid: str, body: ConfirmIn, call: Callable[[dict[str, Any]], Awaitable[R]]
     ) -> R:
-        """ "Use this look": the fresh check, then ONE `outfit_plan` lock through `call`."""
+        """The fresh check, then ONE `outfit_plan` lock through `call` (`run_panel_tool`)."""
         return await confirm.check_and_lock(self.looks, uid, body, call)
 
-    # ---- saved comparisons (AVT-11) ---------------------------------------------------------
+    # ---- saved comparisons (AVT-11) -------------------------------------------------------------
     async def save(self, uid: str, body: SavedIn) -> SavedView:
         r = await self.looks.read(uid)
         made: list[Saved] = []
 
         def fn(doc: TryonDoc) -> TryonDoc:
             new, one = saved.add(doc, r, body, self.ctx.now())
-            made[:] = [one]  # a retried transaction keeps only its last run's
+            made[:] = [one]
             return new
 
         await self.store.change(uid, fn)
@@ -81,6 +147,10 @@ class TryonService:
         await self.store.change(uid, fn)
         return saved.deleted(gone[0])
 
+    # ---- OPS-05 ---------------------------------------------------------------------------------
+    async def erase_all(self, uid: str) -> int:
+        return await erase.erase_all(self.ctx, self.store, uid)
+
 
 def off_words(ctx: WardrobeContext) -> str | None:
     if ctx.docs is None:
@@ -94,9 +164,22 @@ def off_words(ctx: WardrobeContext) -> str | None:
 
 def build(ctx: WardrobeContext) -> WardrobePart:
     off = off_words(ctx)
-    if off is not None:
-        return WardrobePart("tryon", ready=off)
-    return WardrobePart("tryon", services={"tryon_looks": TryonService(ctx)}, ready=READY)
+    if off is not None or ctx.docs is None:
+        docs, prefix = ctx.docs, ctx.s.firestore_prefix
+        rows = kept.stand_ins("tryon", docs, prefix) if docs is not None else ()
+        return WardrobePart("tryon", privacy=rows, ready=off or OFF_NO_STORE)
+    svc = TryonService(ctx)
+    rows = privacy.rows(ctx.docs, ctx.s.firestore_prefix, svc.store, svc.erase_all)
+    return WardrobePart("tryon", privacy=rows, services={"tryon_looks": svc}, ready=READY)
 
 
-__all__ = ["OFF_NO_KEY", "OFF_NO_STORE", "OFF_SWITCHED", "READY", "TryonService", "build"]
+__all__ = [
+    "OFF_NO_KEY",
+    "OFF_NO_STORE",
+    "OFF_SWITCHED",
+    "RANGE_VIEWS",
+    "READY",
+    "TryonService",
+    "build",
+    "off_words",
+]

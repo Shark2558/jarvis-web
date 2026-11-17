@@ -63,7 +63,7 @@ export const state = () => (S.off ? 'off' : S.tryon ? 'on' : 'unknown');
 async function readTryon() {
   const was = state();
   try { S.tryon = await api('/v1/tryon'); S.off = false; } catch (e) {
-    if (e && e.status === 404) S.off = true; // a 503 is unavailable for now, not off (L4)
+    if (e && (e.status === 404 || e.code === 'off')) S.off = true; // A's 503 'off' is off; other 503s are for now (L4)
     S.tryon = null;
     throw e;
   } finally { if (state() !== was) document.dispatchEvent(new CustomEvent('jarvis:tryon-state', { detail: { state: state() } })); }

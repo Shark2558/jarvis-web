@@ -168,11 +168,19 @@ R13_PLAN = ["Wearing it", "Done for today"]  # R13's own plan row
 OFF = {"error": "not_found", "detail": "Try-on is off on this server."}
 
 
+# I1: the wired app says Try-on is off with A's 503 {"error": "off"} (no key, no storage, switched
+# off; review A-1 F5); I0's fake said 404. Both are off, never "can't load right now".
+A_OFF = {"error": "off", "detail": "Off: JARVIS has no token key to seal your measurements."}
+
+
+@pytest.mark.parametrize("status", [404, 503], ids=["i0_fake_404", "a_off_503"])
 def test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s(
-    browser: Any, d_url: str, token: str
+    browser: Any, d_url: str, token: str, status: int
 ) -> None:
     c = Page(browser, d_url, token)
-    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=OFF))
+    c.page.route(
+        "**/v1/tryon", lambda r: r.fulfill(status=status, json=OFF if status == 404 else A_OFF)
+    )
     try:
         c.open()
         c.open_panel("helpers")
@@ -187,8 +195,8 @@ def test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s(
         assert c.page.evaluate(BOXES) == with_it  # the hidden section takes no room at all
         assert sec.count() == 0 and c.engine() is None  # nothing of the 3D view loaded
         assert not [r for r in c.sent if "/v1/tryon/look" in r["url"] or "/v1/seeme" in r["url"]]
-        by_design = "status of 404 (Not Found) @ " + d_url + "/v1/tryon"  # the browser's own line
-        assert [e for e in c.errors if not e.endswith(by_design)] == []
+        assert [e for e in c.errors if not e.endswith(d_url + "/v1/tryon")] == []  # the browser's
+        # own line for the off answer, by design
         assert c.csp_violations() == []
     finally:
         c.close()

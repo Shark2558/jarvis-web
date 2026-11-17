@@ -10,6 +10,8 @@ from .figure import SOLE, Ctx
 from .mesh import UP, Arr, frame, loft, merge, ring_pts, slice_r, smoothstep
 
 TS = np.arange(40) / 40 * 2 * np.pi
+SHOE_TOP = 0.088  # a shoe's opening (m above the floor)
+SOCK_TOP = 0.19  # a crew sock's top
 
 
 def _side_tris(x: Arr, t: Arr, sg: int) -> Arr:
@@ -38,11 +40,29 @@ def shoes(ctx: Ctx) -> None:
             ring_pts(ff, -SOLE, TS, ro * 0.9),
         ]
         soles.append(loft(rings, cap_end=True))
+        soles.append(collar(x, _side_tris(x, g["T"], sg), g["bnd"][m[g["bnd"]]]))
     x[:, 1] = np.maximum(x[:, 1], 0.001)
-    x[g["bnd"], 1] = 0.088
+    x[g["bnd"], 1] = SHOE_TOP
     ctx.put("shoes", x, g["T"], ride=g["vid"])
     sx, st = merge(soles)
     ctx.put("soles", sx, st)
+
+
+def collar(x: Arr, tris: Arr, rim: Arr) -> tuple[Arr, Arr]:
+    """A shoe's padded collar: a dark band round its opening (drawn with the sole). It marks
+    where the shoe ends and the sock begins, whatever their colours: white socks over white
+    trainers read as tall boots without it (review B-1, finding 15)."""
+    c = x[rim].mean(0)
+    ff = frame([c[0], 0, c[2]], UP)
+    r = slice_r(x, tris, ff, SHOE_TOP - 0.010, TS, rmax=0.08)
+    r = 0.7 * r + 0.3 * r.mean()
+    rings = [
+        ring_pts(ff, SHOE_TOP - 0.012, TS, r + 0.0005),
+        ring_pts(ff, SHOE_TOP - 0.007, TS, r + 0.0040),
+        ring_pts(ff, SHOE_TOP + 0.004, TS, r + 0.0040),
+        ring_pts(ff, SHOE_TOP + 0.006, TS, r - 0.0010),
+    ]
+    return loft(rings)
 
 
 def sandals(ctx: Ctx) -> None:
@@ -85,5 +105,5 @@ def socks(ctx: Ctx) -> None:
     g = ctx.fig.g["socks"]
     x = ctx.shell("socks", 0.0015, 1)
     top = g["bnd"]
-    x[top, 1] = np.where(ctx.fig.P0[g["vid"]][top, 1] > 0.2, 0.262 * ctx.J["scale"], x[top, 1])
+    x[top, 1] = np.where(ctx.fig.P0[g["vid"]][top, 1] > 0.1, SOCK_TOP * ctx.J["scale"], x[top, 1])
     ctx.put("socks", x, g["T"], ride=g["vid"])

@@ -123,7 +123,7 @@ class Figure:
             "vest": (~arm) & (y >= wa - 0.13),
             "shorts": (~arm) & (y <= wa - 0.03) & (y >= cr - 0.245),
             "shoes": (~arm) & (y <= 0.095),
-            "socks": (~arm) & (y <= 0.27),
+            "socks": (~arm) & (y <= 0.205),  # a crew sock
             "legs": ~arm & (y <= wa + 0.05),
         }
 

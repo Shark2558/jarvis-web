@@ -2,16 +2,16 @@
  "release": "m1",
  "files": {
   "body.glb": {
-   "sha256": "24aad51d9db61c95404b44eede810e1b09b282f7966430cd18f779a35cb556ff",
-   "bytes": 1108476,
+   "sha256": "6d89b11d44014ea2bc60592c47f6bed4940be900afc0cb59ebf1c737fe75159e",
+   "bytes": 1108524,
    "type": "application/octet-stream",
    "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
-   "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt",
+   "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); measure rig: the order of Anny's waist loop (Apache-2.0, NAVER Corp.); see NOTICE-mannequin.txt",
    "changes": "MakeHuman/MPFB2 base mesh, targets and standard rig weights read from the clone; a neutral shape solved for six measurements, posed, the private zone removed, garments cut from the helper-tights helper mesh and shaped, seven morph targets, quantised to int16 (JARVIS)"
   },
   "garments.glb": {
-   "sha256": "aa29c73688f94a586fe4c18e2226efb9d7f1890423d82525f061ba31d8f56600",
-   "bytes": 1493536,
+   "sha256": "ce678bf349b7d4705c52b175b206c969a3fa8d8c0f760bab05552ed23ee2899e",
+   "bytes": 1511948,
    "type": "application/octet-stream",
    "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
    "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt",
@@ -235,9 +235,9 @@
   "kurta": 4644,
   "jacket": 2580,
   "shoes": 748,
-  "soles": 560,
+  "soles": 1040,
   "sandals": 1040,
-  "socks": 1208,
+  "socks": 1080,
   "watchStrap": 192,
   "watchCase": 200
  },

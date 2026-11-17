@@ -80,6 +80,11 @@ NOTICE = (
     "(Apache-2.0, NAVER Corp.); shaped, posed, cut and quantised by JARVIS.\n"
 )
 SOURCE = f"naver/anny@{ANNY_COMMIT}"
+GLB_LICENCE = "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt"
+RIG_LICENCE = (  # body.glb also holds the measure rig, whose waist points keep Anny's loop order
+    "CC0-1.0 (MakeHuman/MPFB2 assets); measure rig: the order of Anny's waist loop "
+    "(Apache-2.0, NAVER Corp.); see NOTICE-mannequin.txt"
+)
 CHANGES = (
     "MakeHuman/MPFB2 base mesh, targets and standard rig weights read from the clone; a neutral "
     "shape solved for six measurements, posed, the private zone removed, garments cut from the "
@@ -243,7 +248,7 @@ def manifest(files: dict[str, bytes], facts: dict[str, Any]) -> dict[str, Any]:
             bytes=len(data),
             type="application/octet-stream" if glb else "text/plain",
             source=SOURCE,
-            licence="CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt"
+            licence=(RIG_LICENCE if name == "body.glb" else GLB_LICENCE)
             if glb
             else ("CC0-1.0" if "CC0" in name else "Apache-2.0"),
             changes=CHANGES

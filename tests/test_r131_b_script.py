@@ -283,6 +283,10 @@ def test_the_reader_refuses_what_is_outside_the_subset() -> None:
     bad = data.replace(b'"componentType":5122', b'"componentType":5126', 1)
     with pytest.raises(ValueError, match="not in the mannequin's subset"):
         glb.read_glb(bad)
+    assert b'"extensionsRequired":["KHR_mesh_quantization","JARVIS_accessor_scale"]' in data
+    plain = data.replace(b',"JARVIS_accessor_scale"]', b"]" + b" " * 24)  # the same length
+    with pytest.raises(ValueError, match="does not require the mannequin's scale extension"):
+        glb.read_glb(plain)
     with pytest.raises(ValueError, match="not a number"):
         glb.GlbWriter().mesh("nan", np.array([[0.0, np.nan, 0]]), np.zeros((1, 3), int), None, {})
     with pytest.raises(ValueError, match="too many points"):

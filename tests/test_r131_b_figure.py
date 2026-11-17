@@ -53,6 +53,23 @@ def test_the_manifest_lists_every_file_with_its_sum_licence_source_and_changes()
     assert man["morphs"] == [*man["sliders"], "waist_down"]
 
 
+def test_the_body_files_licence_names_the_waist_loops_origin() -> None:
+    """Review B-1, finding 12: body.glb carries the measure rig, whose waist points are in the
+    order of Anny's Apache-2.0 loop; its manifest entry named CC0 alone."""
+    files = manifest()["files"]
+    assert files["body.glb"]["licence"] == (
+        "CC0-1.0 (MakeHuman/MPFB2 assets); measure rig: the order of Anny's waist loop "
+        "(Apache-2.0, NAVER Corp.); see NOTICE-mannequin.txt"
+    )
+    assert files["garments.glb"]["licence"] == (
+        "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt"
+    )
+
+
+def test_white_socks_over_white_trainers_no_longer_read_as_boots() -> None:
+    _passed("socks_and_shoes_read_as_two_things")
+
+
 def test_the_release_is_within_three_and_a_half_megabytes() -> None:
     total = sum(p.stat().st_size for p in M1.rglob("*") if p.is_file())
     assert total <= BUDGET_BYTES, total

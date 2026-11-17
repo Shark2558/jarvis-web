@@ -10,7 +10,7 @@
 const MAGIC = 0x46546C67, JSON_CHUNK = 0x4E4F534A, BIN_CHUNK = 0x004E4942;
 const I16 = 5122, U16 = 5123, F32 = 5126, Q = 32767;
 const TRIANGLES = 4, LINES = 1;
-const ATTRS = ['POSITION', 'TEXCOORD_0'];
+const ATTRS = ['POSITION', 'TEXCOORD_0'], EXTENSIONS = ['KHR_mesh_quantization', 'JARVIS_accessor_scale'];
 
 class GlbRefused extends Error {}
 const refuse = (why) => { throw new GlbRefused('The 3D model file is not one JARVIS made: ' + why); };
@@ -104,7 +104,9 @@ function parse(buffer) {
   let doc;
   try { doc = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 20, jl))); } catch (_) { refuse('its JSON does not parse'); }
   if (!doc || !doc.asset || doc.asset.version !== '2.0' || !Array.isArray(doc.meshes)) refuse('not glTF 2.0');
-  for (const e of doc.extensionsRequired || []) if (e !== 'KHR_mesh_quantization') refuse('extension ' + e);
+  const wanted = Array.isArray(doc.extensionsRequired) ? doc.extensionsRequired : [];
+  for (const e of wanted) if (!EXTENSIONS.includes(e)) refuse('extension ' + e);
+  if (!wanted.includes(EXTENSIONS[1])) refuse('it does not require ' + EXTENSIONS[1]); // the per-accessor scale: glb.py
   if (doc.skins || doc.animations || doc.materials || doc.textures || doc.images || doc.cameras) refuse('more than meshes');
   const bin = new Uint8Array(buffer, 28 + jl, bl), meshes = Object.create(null); // a map without a prototype
   for (const m of doc.meshes) {

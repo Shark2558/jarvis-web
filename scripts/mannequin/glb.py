@@ -44,6 +44,12 @@ def dequantise(q: Arr, scale: list[float], offset: list[float] | None = None) ->
     return out + np.asarray(offset) if offset is not None else out
 
 
+# Each accessor carries its own scale (extras.scale, extras.offset), which no general glTF loader
+# knows: the files REQUIRE a vendor extension, so another loader refuses them instead of reading
+# wrong sizes (review B-1, finding 13).
+EXTENSIONS = ("KHR_mesh_quantization", "JARVIS_accessor_scale")
+
+
 class GlbWriter:
     """Collects meshes and writes one .glb."""
 
@@ -104,8 +110,8 @@ class GlbWriter:
         self.bin += b"\0" * (-len(self.bin) % 4)
         doc = dict(
             asset=dict(version="2.0", generator="JARVIS scripts/mannequin", extras=extras),
-            extensionsUsed=["KHR_mesh_quantization"],
-            extensionsRequired=["KHR_mesh_quantization"],
+            extensionsUsed=list(EXTENSIONS),
+            extensionsRequired=list(EXTENSIONS),
             scene=0,
             scenes=[dict(nodes=list(range(len(self.nodes))))],
             nodes=self.nodes,
@@ -154,6 +160,8 @@ def read_glb(data: bytes) -> dict[str, Any]:
     if jt != JSON_CHUNK or bt != BIN_CHUNK or 28 + jl + bl != len(data):
         raise ValueError("a GLB of one JSON and one BIN chunk is wanted")
     doc = json.loads(data[20 : 20 + jl])
+    if EXTENSIONS[1] not in doc.get("extensionsRequired", []):
+        raise ValueError("the file does not require the mannequin's scale extension")
     blob = data[28 + jl :]
     meshes: dict[str, Any] = {}
     for m in doc["meshes"]:

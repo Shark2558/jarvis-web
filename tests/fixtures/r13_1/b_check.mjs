@@ -38,6 +38,7 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 const at = (arr, i) => [arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]];
+const at3 = (mesh) => Array.from({ length: mesh.x.length / 3 }, (_, i) => at(mesh.x, i));
 const range = (mesh, name) => { const [a, n] = mesh.extras.ranges[name]; return Array.from({ length: n }, (_, k) => a + k); };
 /** A part at morph weights: { pos, nrm, index }. */
 function shaped(name, weights) {
@@ -179,6 +180,13 @@ check('glb_reader_refuses_what_is_outside_the_subset', (need) => {
   refused(edit((d) => { d.meshes[0].primitives[0].attributes.NORMAL = 0; }), 'a NORMAL attribute');
   refused(edit((d) => { d.meshes[0].primitives[0].mode = 5; }), 'a triangle strip');
   refused(edit((d) => { d.extensionsRequired = ['KHR_draco_mesh_compression']; }), 'a required extension');
+  // review B-1, finding 13: each accessor carries its own scale, which no general glTF loader knows. The files say
+  // so with a REQUIRED vendor extension (another loader refuses them instead of reading wrong sizes), and our reader
+  // wants it declared.
+  const head = (buf) => JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, new DataView(buf).getUint32(12, true))));
+  for (const name of ['body.glb', 'garments.glb']) for (const list of ['extensionsUsed', 'extensionsRequired']) need(JSON.stringify(head(bytes(name))[list]) === '["KHR_mesh_quantization","JARVIS_accessor_scale"]', name + ': ' + list + ' is ' + JSON.stringify(head(bytes(name))[list]));
+  refused(edit((d) => { d.extensionsRequired = ['KHR_mesh_quantization']; }), 'a file that does not require the scale extension');
+  refused(edit((d) => { delete d.extensionsRequired; }), 'a file without required extensions');
   refused(edit((d) => { d.accessors[0].sparse = {}; }), 'a sparse accessor');
   refused(edit((d) => { d.materials = [{}]; }), 'materials');
   refused(good.slice(0, good.byteLength - 8), 'a cut-off file');
@@ -495,6 +503,20 @@ check('avt06_swapping_the_watch_changes_the_left_wrist', (need) => {
   need(Math.max(...by) <= LV.trouser_top + 0.001 && Math.min(...by) >= LV.trouser_top - 0.05, 'the belt at the trouser top');
 });
 
+// review B-1, finding 15: white socks over white trainers read as tall boots. The sock is a crew sock now (its top
+// under 20 cm) and the shoe has a dark padded collar round its opening (part of the sole's dark mesh), so the eye
+// finds where the shoe ends and the sock begins whatever the two colours are.
+check('socks_and_shoes_read_as_two_things', (need) => {
+  const ys = (name) => Array.from(A[name].x).filter((_, i) => i % 3 === 1), top = Math.max(...ys('socks')), shoe = Math.max(...ys('shoes'));
+  need(top <= 0.2 && top >= 0.16, 'the sock is a crew sock (its top at ' + top.toFixed(3) + ' m)');
+  const collar = at3(A.soles).filter((p) => p[1] > shoe - 0.012);
+  need(collar.length >= 2 * 60, 'the shoe has a collar round its opening (' + collar.length + ' points of the dark mesh near ' + shoe.toFixed(3) + ' m)');
+  need(collar.some((p) => p[0] > 0.03) && collar.some((p) => p[0] < -0.03), 'on both shoes');
+  need(Math.max(...collar.map((p) => p[1])) <= shoe + 0.012 && top - shoe > 0.07, 'the collar is low on the sock: ' + (top - shoe).toFixed(3) + ' m of sock shows above it');
+  const p = plan(L.casual(), L.opts());
+  need(p.parts.find((x) => x.name === 'soles').kind === 'sole' && p.parts.find((x) => x.name === 'socks').rgb.join() === '240,240,236', 'the collar is drawn dark, the sock in its own colour');
+});
+
 check('avt05_template_colour_and_texture_are_named_approximate', (need) => {
   const p = plan(L.withCard(), L.opts());
   need(p.approx.top.join() === 'template,texture' && p.approx.bottom.join() === 'template', 'approximate: template, and texture from a crop');
@@ -542,7 +564,7 @@ check('triangles_within_the_budget', (need) => {
   }
   need(worst <= C.LIMITS.triangles_one, 'a dressed figure draws ' + worst + ' triangles');
   need(2 * worst <= C.LIMITS.triangles_two, 'two figures draw ' + 2 * worst);
-  cases.push({ id: 'figure:facts', passed: true, failures: [], worst_triangles: worst });
+  cases.push({ id: 'figure:facts', passed: worst > 20000 && worst <= C.LIMITS.triangles_one, failures: [], worst_triangles: worst }); // a real check (finding 17)
 });
 
 // review B-1, finding 2: the governor judges what a frame COST (the wait for its turn and the drawing), never the gap

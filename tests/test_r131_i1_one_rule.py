@@ -7,7 +7,8 @@
 #     refuse it with the same words for its state, and both take a ready one;
 #   - the private slots (`styling.look.PRIVATE_SLOTS`) and the covered rule
 #     (`styling.look.covered`): A's model and looks, and the try-on card, use R13's own objects;
-#   - no module keeps its own copy (a static pin).
+#   - no module keeps its own copy (a static pin);
+#   - and one logger (review L2): every wardrobe module logs through `jarvis.logging`.
 from __future__ import annotations
 
 import re
@@ -99,3 +100,12 @@ def test_no_module_keeps_its_own_copy_of_a_shared_rule(pattern: str, homes: list
         if re.search(pattern, f.read_text(encoding="utf-8"), flags=re.M)
     ]
     assert found == homes, found
+
+
+def test_every_wardrobe_module_logs_through_jarvis_logging() -> None:
+    plain = [
+        str(f.relative_to(SRC))
+        for f in sorted(SRC.rglob("*.py"))
+        if re.search(r"logging\.getLogger\(", f.read_text(encoding="utf-8"))
+    ]
+    assert plain == []  # `jarvis.logging.get_logger`: its redaction and its fields, everywhere

@@ -12,18 +12,18 @@ in exactly these pieces, or the AVT-15 checklist when 3D can't run.
 
 from __future__ import annotations
 
-import logging
 import re
 from collections.abc import Sequence
 
 from pydantic import ValidationError
 
+from jarvis.logging import get_logger
 from jarvis.tools.reply_cards import TryOnCard, TryOnSlot, add_card
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.styling.look import Pick, covered
 from jarvis.wardrobe.styling.service import Answer
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 CODE = re.compile(r"[a-z_]{0,30}")
 MAX_SLOTS = 12
 

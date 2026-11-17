@@ -56,6 +56,25 @@ NO_FIGURE = "No figure yet: type your measurements."
 EARLIER_MAX = 5  # versions kept besides the current one and a draft
 
 
+MORPHS: tuple[str, ...] = (*MEASURES, "waist_down")  # the figure's seven morph targets (D3, H3)
+
+
+def morph_weights(values: Mapping[Measure, int]) -> dict[str, float]:
+    """The figure's seven morph weights (the engine contract's `body.weights`). Each of the six
+    morphs is the solved shape at its range's TOP minus the sample's, so a value weighs
+    (v - sample) / (top - sample), negative below the sample (preview v2's line). The waist below
+    the sample uses `waist_down` instead (the shape at 62 minus the sample, plan review H3):
+    (sample - v) / (sample - bottom), the waist morph then 0."""
+    out: dict[str, float] = {}
+    for m in MEASURES:
+        out[m] = (values[m] - SAMPLE[m]) / (RANGES[m][1] - SAMPLE[m])
+    waist, sample, bottom = values["waist"], SAMPLE["waist"], RANGES["waist"][0]
+    out["waist_down"] = (sample - waist) / (sample - bottom) if waist < sample else 0.0
+    if waist < sample:
+        out["waist"] = 0.0
+    return {k: round(v, 6) + 0.0 for k, v in out.items()}
+
+
 def range_words(m: Measure) -> str:
     lo, hi = RANGES[m]
     return _RANGE_WORDS[m].format(lo=lo, hi=hi)
@@ -278,6 +297,7 @@ __all__ = [
     "LAYERS",
     "LISTED_MAX",
     "MEASURES",
+    "MORPHS",
     "NOT_IN_PICTURE",
     "NO_COLOUR_RGB",
     "NO_FIGURE",
@@ -325,6 +345,7 @@ __all__ = [
     "category_of",
     "estimated",
     "in_range",
+    "morph_weights",
     "new_picture_id",
     "new_saved_id",
     "range_words",

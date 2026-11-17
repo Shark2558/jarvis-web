@@ -50,6 +50,7 @@ class BodyView(_M):
     inseam: int
     typed: tuple[Measure, ...] = ()  # the rest are shown "estimated"
     at: datetime
+    weights: dict[str, float] = Field(default_factory=dict)  # `model.morph_weights`: the engine's
 
 
 class BodyVersions(_M):

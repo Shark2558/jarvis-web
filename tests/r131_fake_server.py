@@ -241,7 +241,8 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
             if base
             else m.estimated(typed.get("height", 172))
         )
-        draft = http.BodyView(**{**values, **typed}, typed=tuple(typed), at=clock())
+        both = {**values, **typed}
+        draft = http.BodyView(**both, typed=tuple(typed), at=clock(), weights=m.morph_weights(both))
         st.body = st.body.model_copy(update={"draft": draft})
         return _ok(st.body)
 

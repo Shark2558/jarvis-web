@@ -35,7 +35,8 @@ list, D14, D16, D20, "Data model", "The HTTP contract" (the `tryon` rows), the `
   preferences. An unreadable document is never overwritten (say so, as R13's styling does).
 - **Versions (D4):** six whole-cm measurements in `model.RANGES`, a value outside refused with
   `model.range_words` (422 `Refusal`); one he didn't type is `model.estimated(height)`'s and shown
-  "estimated"; `PUT /v1/tryon/body` writes the draft, `POST /v1/tryon/body/use` makes it current
+  "estimated"; every `BodyView` you serve carries `weights = model.morph_weights(values)` (the
+  engine contract's `body.weights`: the one rule, never a copy); `PUT /v1/tryon/body` writes the draft, `POST /v1/tryon/body/use` makes it current
   (the old current becomes the first earlier), `DELETE /v1/tryon/body/draft` drops it. Each is
   audited with `api.settings_audit.record_change` (an argument hash, never the numbers). Saved
   selections (plans' piece ids, saved comparisons) NEVER change with a version.

@@ -782,3 +782,21 @@ def test_a_picture_is_kept_30_days_unless_he_presses_keep() -> None:
     assert model.PICTURE_KEEP_DAYS == Settings(_env_file=None).tryon_keep_days == 30
     words = kept.SPECS[kept.PICTURES_ID].retention
     assert words.startswith("30 days unless you press Keep") and "7 days" not in words
+
+
+def test_the_figures_seven_morph_weights_come_from_the_six_measurements() -> None:
+    from jarvis.wardrobe.tryon import model as m
+    from jarvis.wardrobe.tryon.http import BodyView
+
+    assert m.MORPHS == (*m.MEASURES, "waist_down")
+    assert m.morph_weights(m.SAMPLE) == dict.fromkeys(m.MORPHS, 0.0)  # the sample: no morph
+    top = m.morph_weights({**m.SAMPLE, "height": 195, "waist": 120})
+    assert top["height"] == top["waist"] == 1.0 and top["waist_down"] == 0.0
+    low = m.morph_weights({**m.SAMPLE, "waist": 62, "chest": 76})
+    assert low["waist"] == 0.0 and low["waist_down"] == 1.0  # below the sample: its own morph (H3)
+    assert low["chest"] == round((76 - 96) / (124 - 96), 6)  # the other sliders extrapolate (v2)
+    view = BodyView(**m.SAMPLE, at=NOW_UTC, weights=m.morph_weights(m.SAMPLE))
+    assert set(view.weights) == set(m.MORPHS)
+
+
+NOW_UTC = __import__("datetime").datetime(2026, 11, 17, 3, 30, tzinfo=__import__("datetime").UTC)

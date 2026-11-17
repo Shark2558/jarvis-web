@@ -8,7 +8,9 @@
 //             snapshot({caption: string[]}) -> Promise<Blob>, stats() -> {...STATS}, dispose() }
 //   figures[i] = { body: {weights, typed}, look: {slots: [SLOT...]} }   one or two (compare, 0.9 m apart)
 //   opts = { tucked, open, layers, view }
-// `weights`: the seven morph weights by name (B's manifest `sliders`, with `waist_down`), from the measurements;
+// `weights`: the seven morph weights by name (MORPHS), computed on the server by wardrobe/tryon/model.py
+// `morph_weights` (each morph = the shape at its range's top minus the sample; `waist_down` = waist 62 minus the sample)
+// and sent in GET /v1/tryon's BodyView.weights;
 // `typed`: the measurement names he typed (the rest are "estimated"). A slot is the look route's LookSlot, cut to what
 // the engine draws: a private slot has {slot, private: true} and nothing else that names it (never drawn as itself).
 // `show` answers what it drew: `drawn` (slot names), `approx` (slot -> what is approximate: template, texture, colour)

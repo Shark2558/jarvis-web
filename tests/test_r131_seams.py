@@ -522,3 +522,150 @@ def test_the_contracts_templates_are_the_servers() -> None:
     assert tuple(got["t"]) == m.TEMPLATES and tuple(got["l"]) == m.LAYERS
     assert {k: tuple(v) for k, v in got["v"].items()} == dict(m.VARIANTS)
     assert tuple(got["m"]) == m.MEASURES
+
+
+# ---- 15 · the eval runner, staged ----------------------------------------------------------------
+def _runner() -> object:
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("r13_1_run", ROOT / "evals" / "r13_1" / "run.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_r131_runner_passes_staged_and_its_contract_control_fails_it() -> None:
+    import json
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    run = subprocess.run(
+        [sys.executable, str(ROOT / "evals" / "r13_1" / "run.py"), "--mock"],
+        capture_output=True, text=True, env=env, timeout=300, check=False,
+    )  # fmt: skip
+    assert run.returncode == 0, run.stdout + run.stderr
+    report = json.loads((ROOT / "evals" / "r13_1" / "report.json").read_text(encoding="utf-8"))
+    ids = {r["id"] for r in report["results"]}
+    parts = ("catalog", "laundry", "styling", "phone", "tryon", "seeme")
+    assert {f"contract:{p}_builds" for p in parts} <= ids
+    assert {"contract:refuses_data_on_tryon", "contract:refuses_a_stray_route"} <= ids
+    assert "contract:broken_r131_parts_leave_r13_running" in ids
+    control = report["negative_control"]
+    assert control["suite_failed"] is True and control["failed_cases"]["contract"]
+
+
+def test_the_gate_is_staged_until_i1_and_a_stub_fails_once_it_flips() -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    runner = _runner()
+    assert runner.STUBS_PASS is True  # type: ignore[attr-defined]  # I1 flips it and this pin
+    assert runner.PARTS == (  # type: ignore[attr-defined]
+        "figure", "looks", "seeme", "console", "e2e", "needles", "contract",
+    )  # fmt: skip
+
+    async def not_built() -> list[dict[str, object]]:
+        return [{"id": "x:not_built_yet", "passed": True, "failures": []}]
+
+    stub = SimpleNamespace(BUILT=False, cases=not_built)
+    runner.load = lambda part: stub  # type: ignore[attr-defined]
+    staged, _ = asyncio.run(runner.run_parts(("figure",)))  # type: ignore[attr-defined]
+    assert [(r["id"], r["passed"]) for r in staged] == [("x:not_built_yet", True)]
+    flipped, controls = asyncio.run(runner.run_parts(("figure",), stubs_pass=False))  # type: ignore[attr-defined]
+    assert [(r["id"], r["passed"]) for r in flipped] == [("x:not_built_yet", False)]
+    assert controls == {}
+
+
+def test_the_r131_suite_is_gated_in_run_all_mock_after_r13() -> None:
+    text = _text(ROOT / "evals" / "run_all_mock.py")
+    lines = text.splitlines()
+    at = next(i for i, x in enumerate(lines) if '"r13_1 (gated)"' in x)
+    assert 'HERE / "r13_1" / "run.py"' in lines[at] and lines[at].rstrip().endswith("True),")
+    assert at > next(i for i, x in enumerate(lines) if '"r13 (gated)"' in x)
+
+
+# ---- 15 · the fake server Parts B and D build against --------------------------------------------
+async def test_the_fake_server_answers_every_route_with_its_model(settings: Settings) -> None:
+    from httpx import ASGITransport, AsyncClient
+    from r131_fake_server import fake_app, fake_state
+    from r131_fakes import T, jpeg
+
+    from jarvis.memory.inmemory import InMemorySessionStore
+    from jarvis.wardrobe.tryon import http
+
+    store, clock = await fake_state()
+    app = fake_app(store, clock, settings=settings, store=InMemorySessionStore())
+    plan = "op_00000001"
+    bodies: dict[tuple[str, str], object] = {
+        ("PUT", "/v1/tryon/body"): {"height": 178},
+        ("PUT", "/v1/tryon/assets/{piece}"): {"piece": T.striped, "template": "shirt"},
+        ("POST", "/v1/tryon/confirm"): {"plan": plan, "slots": [{"slot": "top", "piece": T.shirt}]},
+        ("POST", "/v1/tryon/saved"): {"looks": [{"slots": [{"slot": "top", "piece": T.shirt}]}]},
+        ("POST", "/v1/seeme/consent"): {"typed": " YES ", "template_version": "c1"},
+        ("POST", "/v1/seeme/pictures"): {"pieces": [T.striped, T.trousers], "plan": plan,
+                                         "confirm_cost": True, "inr_shown": 8.9,
+                                         "request_id": "tq_" + "0" * 16},
+        ("POST", "/v1/seeme/pictures/{id}/keep"): {"keep": True},
+        ("PUT", "/v1/seeme/settings"): {"cap_inr": 200},
+    }  # fmt: skip
+    ids: dict[str, str] = {"{piece}": T.striped}
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            for method, path, _, req, reply, _, _ in http.ROUTES:
+                url = path
+                for k, v in ids.items():
+                    url = url.replace(k, v)
+                kw: dict[str, object] = {}
+                if req == "image/jpeg":
+                    kw = {"content": jpeg(600, 1200, 64), "headers": {"content-type": "image/jpeg"}}
+                elif (method, path) in bodies:
+                    kw = {"json": bodies[(method, path)]}
+                if path == "/v1/tryon/body/draft":  # a draft to drop
+                    await c.put("/v1/tryon/body", json={"waist": 80})
+                if (method, path) == ("POST", "/v1/seeme/pictures"):  # his photo again
+                    await c.post("/v1/seeme/photo", content=jpeg(600, 1200),
+                                 headers={"content-type": "image/jpeg"})  # fmt: skip
+                got = await c.request(method, url, **kw)  # type: ignore[arg-type]
+                assert got.status_code == 200, (method, path, got.text)
+                if isinstance(reply, type):
+                    found = reply.model_validate(got.json())
+                    if isinstance(found, http.PictureView):
+                        ids["{id}"] = found.id
+                    if isinstance(found, http.SavedView) and method == "POST":
+                        ids["{id}"] = found.id
+                else:
+                    assert got.headers["content-type"].startswith(str(reply)), path
+                    assert got.headers["content-security-policy"] == "default-src 'none'"
+            look = http.TryonLook.model_validate((await c.get("/v1/tryon/look")).json())
+            base = next(s for s in look.slots if s.slot == "base")
+            assert base.private and base.piece is None and base.rgb is None  # covered only
+            refused = await c.post(
+                "/v1/seeme/consent", json={"typed": "yes", "template_version": "c1"}
+            )
+            assert refused.status_code == 422 and refused.json()["error"] == "not_yes"
+
+
+async def test_the_stage_page_serves_the_engine_under_the_consoles_csp(settings: Settings) -> None:
+    from httpx import ASGITransport, AsyncClient
+    from r131_fake_server import fake_app, fake_state
+
+    from jarvis.api.console import CONSOLE_CSP
+
+    store, clock = await fake_state()
+    app = fake_app(store, clock, settings=settings)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            page = await c.get("/r131/stage")
+            assert (
+                page.status_code == 200 and page.headers["content-security-policy"] == CONSOLE_CSP
+            )
+            assert 'src="/r131/fixtures/stage.mjs"' in page.text
+            mod = await c.get("/r131/fixtures/stage.mjs")
+            assert mod.status_code == 200 and "JarvisTryOn3D" in mod.text
+            assert (await c.get("/r131/fixtures/..%2Fr13_fakes.py")).status_code == 404
+            assert (await c.get("/static/console-tryon-3d.js")).status_code == 200

@@ -719,6 +719,7 @@ async def _with_a_garment(c: Any, method: str, url: str, kw: dict[str, Any]) -> 
 
 async def test_the_fake_server_answers_every_route_with_its_model(settings: Settings) -> None:
     from httpx import ASGITransport, AsyncClient
+    from r131_fake_seeme import CONSENT_VERSION
     from r131_fake_server import fake_app, fake_state
     from r131_fakes import T, jpeg
 
@@ -733,7 +734,7 @@ async def test_the_fake_server_answers_every_route_with_its_model(settings: Sett
         ("PUT", "/v1/tryon/assets/{piece}"): {"piece": T.striped, "template": "shirt"},
         ("POST", "/v1/tryon/confirm"): {"plan": plan, "slots": [{"slot": "top", "piece": T.shirt}]},
         ("POST", "/v1/tryon/saved"): {"looks": [{"slots": [{"slot": "top", "piece": T.shirt}]}]},
-        ("POST", "/v1/seeme/consent"): {"typed": " YES ", "template_version": "c2"},
+        ("POST", "/v1/seeme/consent"): {"typed": " YES ", "template_version": CONSENT_VERSION},
         ("POST", "/v1/seeme/pictures"): {"pieces": [T.trousers], "confirm_cost": True,
                                          "inr_shown": 8.9, "request_id": "tq_" + "0" * 16},
         ("POST", "/v1/seeme/pictures/{id}/keep"): {"keep": True},

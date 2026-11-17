@@ -29,7 +29,7 @@ from jarvis.wardrobe.tryon import model as m
 
 NO_STORE = {"Cache-Control": "no-store"}
 READY = "fake: tests/r131_fake_server.py"
-CONSENT_VERSION = "c2"
+CONSENT_VERSION = "c2-0123456789ab"  # the real shape: "c2-" + 12 hex (seeme.consent; I1)
 CONSENT_WORDS = (
     "What is sent: your photo, the photo you give of a garment you are thinking of buying, and the "
     "photos of up to two of your own pieces worn with it. Never a private piece, your measurements "

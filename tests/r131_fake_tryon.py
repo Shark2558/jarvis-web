@@ -1,7 +1,8 @@
 # tests/r131_fake_tryon.py -- R13.1 I0's scripted try-on provider (docs/plans/r13-1-try-on.md D10,
 # seam 5; imported bare: `from r131_fake_tryon import ScriptedTryOn`). It never calls anything.
 #
-#   JPEG, PNG          tiny made-up pictures with the right magic bytes (no person in them)
+#   JPEG, PNG          tiny made-up pictures with the right magic bytes (no person in them);
+#                      PNG is a drawn picture a browser can decode (I1)
 #   Step(...)          one scripted answer: a picture (the default), `blocked` (a billed 200 with no
 #                      picture), or `error` (TryOnNotBilled / TryOnMaybeBilled raised)
 #   Call               what one request carried: the person picture and the garments' words
@@ -12,6 +13,8 @@
 #                      script answers pictures). Usage is Gemini-like (1,120 tokens an image).
 from __future__ import annotations
 
+import struct
+import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -26,7 +29,39 @@ from jarvis.llm.tryon import (
 )
 
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00\x10JFIF\x00" + b"r131-person" + b"\xff\xd9"
-PNG = b"\x89PNG\r\n\x1a\n" + b"r131-picture"
+
+
+def _png(w: int = 120, h: int = 160) -> bytes:
+    """A small drawn picture a browser can decode (I1: I0's was a signature and text, so the
+    console showed it broken): a plain figure in a navy top and charcoal trousers on light grey."""
+
+    def px(x: int, y: int) -> bytes:
+        cx = w // 2
+        if (x - cx) ** 2 + (y - 24) ** 2 <= 13**2:
+            return bytes((200, 190, 180))  # the head, a plain oval
+        if 40 <= y < 92 and abs(x - cx) <= 26:
+            return bytes((30, 40, 80))  # the new navy top
+        if 92 <= y < 150 and 4 <= abs(x - cx) <= 20:
+            return bytes((64, 66, 70))  # charcoal trousers
+        return bytes((232, 232, 228))
+
+    raw = b"".join(b"\x00" + b"".join(px(x, y) for x in range(w)) for y in range(h))
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+        )
+
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + (chunk(b"IEND", b""))
+    )
+
+
+PNG = _png()
 TOKENS_A_IMAGE = 1120
 STEP_USD = 0.0759  # one Gemini-like request (top + trousers), before the rate and GST
 WORST_USD = 0.0998

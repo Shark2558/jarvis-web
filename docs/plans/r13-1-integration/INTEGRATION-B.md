@@ -1,4 +1,4 @@
-Version v13.1.1 · 17 Nov 2026, 19:25 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 17 Nov 2026, 21:41 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part B: the 3D figure and its garments (integration notes)
 
@@ -154,8 +154,146 @@ short and slim (158, 40, 84, 68, 86, 72) reads 158.01, 40.00, 85.45, 67.84, 86.2
   of the layers beneath; in mixed small bodies the closed jacket's lapel edges go ragged; the kurta has a
   seam line at the waist; the tee's neck edge is slightly uneven; fingers stay straight.
 
+## 8. Fix (review B-1)
+
+Fixer B (Fable 5.2) worked through `REVIEW-B-1.md` (2 HIGH, 5 MEDIUM, 10 LOW) on `r13-1-b`, nine commits
+`fe4d6a1` … `f6f5af0` and this note. Each fix began with a failing test, seen red on the code or the files
+as they were. **Sections 2 to 5 above describe the first build; where this section differs, this section
+is right.** The honest exception to "test first": the four unit tests of `carry.py` were written after it
+(the Node check that drove it, `b_poke.mjs`, was red first).
+
+### The release now (17 Nov 2026)
+
+| File | Bytes | SHA-256 (first 16) |
+|---|---|---|
+| `body.glb` | 1,108,524 | `6d89b11d44014ea2` |
+| `garments.glb` | 1,511,948 | `ce678bf349b7d470` |
+| the folder in all | **2,650,340** | budget 3,670,016 (3.5 MB): 72 % |
+
+- Two builds in a row are byte-identical. The opt-in rebuild from the clone gives the committed files.
+- The heaviest dressed figure is 30,940 triangles (limit 32,000).
+- **The measure table, on the body that is drawn:**
+
+| Rule | Limit | Measured |
+|---|---|---|
+| height on its own slider, measured on the DRAWN mesh (150, 161, 172, 178, 195) | 0.5 | **under 0.001** (was 1.03 to 1.68 short) |
+| the rig against the drawn mesh (19 cases) | 0.1 | 0.000; every shared rig point within **0.016 mm** of its drawn twin |
+| a measurement changed alone, on its own slider (the rig) | 0.5 | **0.488** (chest 76 reads 76.49) |
+| every other measurement in any case | 3.5 | **3.215** (height 150: chest reads 99.22) |
+| the written file against the float build | 0.2 | **0.001** |
+
+### HIGH
+
+| # | Finding | What was done |
+|---|---|---|
+| 1 | The drawn figure was 1.0–1.7 cm shorter than typed; the rig and AVT-03 measured a body that is never drawn | The head's softening moved into `pose.Head`. The solve, the rig and the drawing now use ONE body, the drawn one (`Measurer.drawn`). A new Node case measures the drawn regions themselves, and AVT-03 reads the drawn height. The new control `unsoftened_rig` (the old behaviour, kept as data in the manifest's `controls`) turns it red: "the rig reads 173.37 cm but the drawn figure is 172.00 cm tall". |
+| 2 | The governor timed the gap between inputs and retired 3D on a fast laptop | `createGovernor()` is a pure, exported unit. It judges a frame's COST (the wait for its turn plus the drawing); a window is at least 2 s and 8 judged frames, slow when its median is over 45 ms. Replays in Node: 3 Hz key taps, a 60 ms drag and a 60 fps spin never step; 60 ms frames step down at 4.1 s and retire at 8.3 s. The control `input_cadence` retires the fast laptop (red). Two Chromium tests: 12 s of taps and 11 s of slow drag keep the shadows on (red on the old engine); a page whose draw calls burn 4 ms is stepped down, then retired with `slow`. No new `GL_FAIL` word was needed. |
+
+### MEDIUM
+
+| # | Finding | What was done |
+|---|---|---|
+| 3 | The GLB reader read malformed files | One `span()` check before a byte is read; finite scales, offsets and UVs; each view's own stride; whole triangles; plain, unique mesh and morph names; a map without a prototype; `join()` refuses a name two files share. 31 broken copies of `garments.glb` are each refused with `GlbRefused`. |
+| 4 | A shirt over a wrap ignored `tucked: false` in silence | `show()` answers `forced: {top: 'tucked'}` (top level and each figure) and names `tuck` in that slot's `approx`. See "Needs I1" below for Part D. An untucked shape over a wrap is NOT built (see "Left"). |
+| 5 | The figure swallowed the chat's scrolling | The wheel is the figure's only while a pointer is pressed on the canvas or the canvas has the focus, and only while the zoom can still move. `touch-action` is `pan-y` until the canvas is focused, `none` while it is. A Chromium test with the stage in a scrolling column proves both ways, with a real touch swipe. |
+| 6 | Poke-through was never checked | See "The layers" below: a check, a real fix, and two documented limits. |
+| 7 | CI never ran the script's shape code (44 %) | A small committed source (`tests/fixtures/r13_1/b_source.bin.xz`, 262,000 bytes, SHA-pinned, CC0) and `build.build_files()`. Without the clone the script's coverage is **98 %**; every function but the 13 that read the clone's own files runs in the fixture build. CI itself still needs scipy: "Needs I1" below. |
+
+### The layers (finding 6)
+
+- **The check** (`tests/fixtures/r13_1/b_poke.mjs`, `b_seen.mjs`): a small depth buffer in Node counts what an
+  eye would see of a layer that must stay covered (the base shorts, a tucked tail, the socks under a trouser
+  leg): 5 looks × 15 shapes (the sample, both ends of the six sliders, two mixed bodies), 135 checks.
+- **What it found on the first build:** far more than the specks at inseam 66. At the sample the tucked
+  shirt's tail stood out across the seat (a belt hid it) and the base shorts showed at the crotch. At the
+  slider ends a level view saw up to 304 cm² of the base shorts (hips 78, a wrap) and 84 cm² (inseam 66).
+- **Why:** each garment was made afresh at each solved shape, and a morph is one straight line used with a
+  negative weight at the low end of every slider. A state (tuck, open) was one more line added on top.
+- **The fix:** garments are made once, at the sample, and CARRIED by the body (`scripts/mannequin/carry.py`).
+  A state gets its own answer to each morph as a product target (`tuck*hips`), which costs 0.30 MB. The
+  tucked tail, the base shorts' edges and the wrap's ease were corrected at the sample.
+- **Now:** a level view sees at most **0.56 cm²** of any covered layer; from above (a real line of sight
+  into a waistband) at most 19.4 cm². The control `thin_trousers` shows 1,303 cm² (red).
+- **Two documented limits**, capped in the fixture so they cannot grow unseen:
+  - **Inseam 66 with the other five at the sample:** the BODY's own hip line folds over the shortened thigh
+    (the morph is a straight line far below its solved shape). A ledge shows on the trousers and a thin line
+    of the base layer along it: 5.6 cm² (was 84). Shots 22 and 23. A fix needs a second inseam morph, as
+    `waist_down` is for the waist: a contract change, so it is for the Workshop to decide.
+  - **Waist 120:** a waistband gapes a little under the belly: 1.2 cm².
+
+### LOW
+
+| # | Finding | Outcome |
+|---|---|---|
+| 8 | The label overflowed the host | **Fixed.** Its outer height is counted; the canvas's minimum is 120 px (was 240). |
+| 9 | Template names, crops, the crop cache | **Fixed.** `Object.hasOwn`; only `data:image/(jpeg|png|webp);base64`; one read a page. |
+| 10 | A missing mesh was drawn as nothing; the dispose test | **Fixed.** `onLost('asset')`; the test asserts `isContextLost()`. |
+| 11 | The 10 s clock included the download | **Fixed.** 30 s for the files, then 10 s for the frame. Compression is under "Needs I1". |
+| 12 | The rig's licence label | **Fixed** (the label). The rig still ships in `body.glb` (64 KB): **left**, see below. |
+| 13 | Other glTF tools misread the files | **Fixed.** `JARVIS_accessor_scale` is used and required; both readers want it. |
+| 14 | Deviations not written down | **Written here**, below. |
+| 15 | White socks over trainers read as boots | **Fixed.** A crew sock (19 cm) and a dark padded collar on the shoe. Shots 11 and 19. |
+| 16 | `createStage` is one long closure | **Partly.** The turntable and the governor are module-level now: 210 lines (was 241). |
+| 17 | `figure:facts` always passed | **Fixed.** It passes only within the triangle limit. |
+
+### Left, each with its reason
+
+- **An untucked shirt over a wrap (4).** It needs a second wrap shape. A shirt worn out over a mundu is a
+  common way to wear one, so it is worth a later slice; today the engine says plainly that it drew it tucked.
+- **The rig in `body.glb` (12).** A separate `measure.glb` changes the release's file list, which the server's
+  route and I0's tests read. 64 KB did not justify touching a seam.
+- **`createStage` (16).** Its inner functions are each under 40 lines. Splitting the rest means passing the
+  renderer's state through a dozen parameters, with no behaviour to gain before I1.
+- **Deviations the first notes missed (14):** the hemisphere light is 0.95 (the brief: 0.55) and the fill 0.9
+  (0.7), because without the room light of preview v2 the figure's shaded side went black on the night
+  surface. The vest's neckline is still ragged (shot 15): a brief item, not done.
+- **Shapes still not built:** 24-segment sleeves, a white sneaker sole, a longer coat, a polo collar, jacket
+  buttons and pockets. The watch strap's lower edge is slightly ragged against the hand (shot 06).
+- **At waist 120 the closed jacket** bunches over the belly (seen in a scratch render, no shot kept).
+
+### Needs I1 (added by this fix)
+
+1. **Part D: a top forced tucked.** When `show()` answers `forced[slot] === 'tucked'`, show "Drawn tucked into
+   the mundu" and switch the tuck control off. Row 388's exactness is `drawn` + `hidden` + `cards` + the
+   private slots (covered).
+2. **Part D: the host.** It needs at least 150 px of height. The figure takes the wheel and vertical swipes
+   only once it is pressed or focused; a tap or click gives it the focus.
+3. **Part D: `onLost('timeout')`** can now come up to 30 s after `show()` when the files do not arrive.
+4. **CI runs none of the script's tests** (they need scipy, which no leg installs). Proposed diff for the
+   Python 3.12 leg of `.github/workflows/ci.yml`, after its `pip install -e ".[dev,homebridge]"`:
+
+   ```diff
+   +      - run: pip install scipy==1.18.1   # scripts/mannequin's tests (R13.1 B): the build from a small source
+   ```
+5. **Serve the GLBs compressed** (the route is I0's). With `gzip -9` the two files are about 1.6 MB instead of 2.6.
+6. **The book's licences.** `tests/fixtures/r13_1/b_source.bin.xz` is CC0 data derived from the same pinned
+   files; list it if the book lists test data.
+7. **The sole and the coat** need a word in the contract (a slot carries `template`, not the type).
+
+### The checks after the fix (17 Nov 2026, this workspace)
+
+| Check | Result |
+|---|---|
+| `tests/test_r131_b_script.py` + `test_r131_b_figure.py`, Python 3.13 with the clone | 76 passed |
+| the same, Python 3.11 (no scipy: the script's tests skip) | 44 passed, 2 skipped |
+| `tests/test_r131_b_script.py` alone, without the clone, `--cov=mannequin` | 30 passed, 1 skipped; **98 %** |
+| `tests/browser/test_r131_b_stage.py` (Chromium, software WebGL2) | 23 passed |
+| `evals/r13_1/run.py --mock --part figure` | 28/28; the ten controls failed the suite, as they must |
+| `evals/r13_1/run.py --mock` (every part) | 50/50 |
+| `tests/test_r131_seams.py`, `test_r13_seams.py`, `test_r51_console_assets_linked.py` | 782 passed, 1 failed: the stub's pin of section 6, item 1 |
+| `evals/r7/run.py --mock`, from an export of HEAD at a path without "131" | 68/68 |
+| `ruff check` and `ruff format --check` on the part's Python | clean |
+| `scripts/arch_coverage.py`, `scripts/check_doc_versions.py` | OK |
+
+**Sizes:** `console-tryon-3d.js` 408 lines (limit 600), `-glb.js` 175 (200), `-cloth.js` 163 (300); every
+module of `scripts/mannequin` is under 400 lines (14 modules with `carry.py`).
+
+**Still not verified here:** his phone's GPU (every frame was drawn by Chromium's software renderer, and the
+slow device of the governor's test is a made one); how close the figure looks to him; a real crop.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 19:25 IST | R13.1 | First edition, at the end of Part B: the plan followed and the honest note on test order, what was built, the build's sums, sizes, triangles and measure table, the checks with their numbers, eleven deviations with reasons, the list for I1 (the stub's pin, what `show()` and `stats()` add), what could not be verified | 🛠 Mark XXIII (builder B) |
+| v13.1.2 | 17 Nov 2026, 21:41 IST | R13.1 | Section 8, the fix of review B-1: the release's new sums, size and measure table (now on the drawn body); each of the 2 HIGH, 5 MEDIUM and 10 LOW findings with what was done; the layer check, the carried garments and the two documented limits; what was left and why; seven more items for I1; the checks after the fix | 🛠 Mark XXIII (fixer B) |

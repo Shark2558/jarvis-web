@@ -17,12 +17,16 @@
   his that is now private or gone.
 - `sent` is what of his was SENT (the request's own pieces, never a plan's list); `not_sent` the
   rest of the look the console lists as "not in the picture".
+- A press in flight never outlives a delete (review C-1, finding 3): `save` keeps the picture
+  only while his photo, his YES and the garment's photo are still his, checked and written in
+  ONE transaction; `delete_all` (OPS-05, the Privacy row) lists, deletes, then sweeps once more,
+  so a picture saved between its list and its delete goes too; page memory is cleared after.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -30,7 +34,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from jarvis.llm.tryon import TryOnUsage
-from jarvis.storage.docs import Delete, Docs, Query, Set
+from jarvis.storage.docs import Delete, Docs, DocTx, Query, Set
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.seeme import texts
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
@@ -83,6 +87,9 @@ class OnceCache:
     def clear(self, uid: str) -> None:
         for key in [k for k in self._items if k[0] == uid]:
             del self._items[key]
+
+    def discard(self, uid: str, pid: str) -> None:
+        self._items.pop((uid, pid), None)
 
     def take(self, uid: str, pid: str) -> tuple[bytes, str] | None:
         found = self._items.pop((uid, pid), None)
@@ -140,13 +147,46 @@ class PictureStore:
         rows = await self.docs.query(Query(f"{self.prefix}{PICTURE}", where=("owner", uid)))
         return [(i.removeprefix(f"{uid}_"), d) for i, d in rows if i.startswith(f"{uid}_")]
 
-    async def save(self, uid: str, pid: str, made: Made, *, keep_days: int) -> PictureView:
+    async def save(
+        self, uid: str, pid: str, made: Made, *, keep_days: int, needs: Sequence[str] = ()
+    ) -> PictureView | None:
+        """Kept (or shown once when too big) only while every document in `needs` is still his;
+        None when one went while the picture was being made (nothing kept)."""
         doc = _doc(uid, pid, made, self.sealer, self.now().isoformat())
         if len(made.picture) > KEEP_MAX_BYTES:
             self.once.put(uid, pid, made.picture, made.mime)
+            if not await self._all_his(self.docs, uid, needs):  # after the put: a delete's
+                self.once.discard(uid, pid)  # clear of page memory may have come before it
+                return None
             return view_of(pid, doc, keep_days).model_copy(update={"until": None})
-        await self.docs.write([Set(self.path(uid, pid), doc)])
-        return view_of(pid, doc, keep_days)
+        path = self.path(uid, pid)
+
+        async def fn(tx: DocTx) -> bool:
+            if not await self._all_his(tx, uid, needs):
+                return False  # nothing written
+            tx.set(path, doc)
+            return True
+
+        return view_of(pid, doc, keep_days) if await self.docs.transaction(fn) else None
+
+    @staticmethod
+    async def _all_his(reader: Docs | DocTx, uid: str, needs: Sequence[str]) -> bool:
+        for need in needs:
+            found = await reader.get(need)
+            if found is None or found.get("owner") != uid:
+                return False
+        return True
+
+    async def delete_all(self, uid: str) -> int:
+        """Every picture of his, then once more for one saved meanwhile; page memory after."""
+        n = 0
+        for _ in range(2):
+            paths = [self.path(uid, pid) for pid, _ in await self.rows(uid)]
+            if paths:
+                await self.docs.write([Delete(p) for p in paths])
+            n += len(paths)
+        self.once.clear(uid)
+        return n
 
     async def _mine(self, uid: str, pid: str) -> dict[str, Any] | None:
         if not _ID.fullmatch(pid):  # fullmatch: `$` alone lets a trailing newline through

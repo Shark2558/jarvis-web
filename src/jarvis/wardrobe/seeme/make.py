@@ -61,10 +61,12 @@ ENDS_SOON_DAYS = 30
 SHOWN_SLACK = 0.01  # ₹: the fresh typical may be at most this above what he was shown
 DEADLINE_SLACK_S = 5.0  # past the provider's own 120 s: a timeout here is "maybe billed"
 _SAID = "about the price shown"  # a repeat's ₹ (it was said the first time)
+WITHDRAWN = "withdrawn"  # made, but a photo it needs went during the call: not kept (billed)
 REPEATED = {  # a repeated request id's refusal: the first answer's status, code and words
     "provider_unavailable": (503, "provider_unavailable", texts.UNAVAILABLE),
     "maybe_billed": (503, "provider_unavailable", texts.MAYBE_BILLED.format(about=_SAID)),
     "blocked": (502, "blocked", texts.BLOCKED.format(about=_SAID)),
+    WITHDRAWN: (422, "no_photo", texts.WITHDRAWN.format(about=_SAID)),
 }
 
 
@@ -272,6 +274,7 @@ class Press:
         tax = self.kit.ctx.s.tryon_tax_pct
         inr = call.hold.inr if usd is None else with_tax(usd * call.fig.rate, tax)
         pid = new_picture_id()
+        outcome = {"picture": pid}
         try:  # made and billed: from here on, whatever fails, the cap and his month hear it
             made = Made(
                 picture=result.picture or b"", mime=result.mime or "image/jpeg",
@@ -280,14 +283,29 @@ class Press:
                 sent=sent_of(call.mine), not_sent=await self.not_sent(uid, call), inr=inr,
                 usage=result.usage,
             )  # fmt: skip
-            return await self.kit.pictures.save(
-                uid, pid, made, keep_days=self.kit.keep_days(call.prefs)
-            )
+            view = await self._save(uid, pid, call, made)
+            if view is None:  # OPS-05, his withdrawal or a Privacy delete ran during the call
+                outcome = {"error": WITHDRAWN}
+                words = texts.WITHDRAWN.format(about=f"about {approx(inr)}")
+                raise SeeMeRefused(422, "no_photo", words)
+            return view
         finally:
-            await self.kit.cap.settle(call.hold, inr, outcome={"picture": pid}, picture=True)
+            await self.kit.cap.settle(call.hold, inr, outcome=outcome, picture=True)
             await _record(
                 self.kit, uid, usd if usd is not None else call.provider.estimate(MAX_GARMENTS)[1]
             )
+
+    async def _save(self, uid: str, pid: str, call: Call, made: Made) -> PictureView | None:
+        """Kept only while his photo, his YES (still current) and the garment's photo are his;
+        the last check and the write are one transaction (`PictureStore.save`'s `needs`)."""
+        k = self.kit
+        desc, cache = call.provider.describe(), k.ctx.s.tryon_cache
+        if not (await k.photo.view(uid)).kept or not await k.consent.current(
+            uid, desc, cache=cache
+        ):
+            return None
+        needs = (k.photo.path(uid), k.consent.path(uid), k.garments.path(uid, call.garment.id))
+        return await k.pictures.save(uid, pid, made, keep_days=k.keep_days(call.prefs), needs=needs)
 
     async def not_sent(self, uid: str, call: Call) -> tuple[NotSent, ...]:
         """The rest of the look around the garment: "not in the picture" (never a private id).

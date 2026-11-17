@@ -46,7 +46,7 @@ def _photo_row(svc: SeeMeService) -> CallbackSource:
 
     async def delete(uid: str) -> int:
         n = (await look(uid)).count or 0
-        await k.photo.delete(uid)
+        await svc.delete_photo(uid)  # his photo and his YES; page memory too
         return n
 
     return CallbackSource(kept.SPECS[kept.PHOTO_ID], look, export, delete)
@@ -84,8 +84,7 @@ def _pictures_row(svc: SeeMeService) -> CallbackSource:
         paths += [k.garments.path(uid, i) for i, _ in await k.garments.rows(uid)]
         if paths and k.ctx.docs is not None:
             await k.ctx.docs.write([Delete(p) for p in paths])
-        k.pictures.once.clear(uid)
-        return len(paths)
+        return len(paths) + await k.pictures.delete_all(uid)  # one saved meanwhile; page memory
 
     return CallbackSource(kept.SPECS[kept.PICTURES_ID], look, export, delete)
 

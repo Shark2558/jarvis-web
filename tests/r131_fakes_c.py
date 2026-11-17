@@ -22,6 +22,7 @@
 #                                 words, 1-3 garments, JPEG or PNG): the default everywhere here
 #   add_front(sw, piece, photo)   gives one of his pieces a front crop (R13's view record, a crop)
 #   SlowProvider(p)               p, a little slow (a real call takes seconds): presses overlap
+#   GatedProvider(p)              p held at a gate during the call: a press in flight
 #   grab_logs()                   every log record's text while it is open
 from __future__ import annotations
 
@@ -263,6 +264,20 @@ class SlowProvider:
         return await self.p.make(a)
 
 
+class GatedProvider(SlowProvider):
+    """p, held at a gate while it "answers": `entered` once a press is in the call, `gate.set()`
+    lets the answer come (a press in flight, for OPS-05 or a withdrawal to run meanwhile)."""
+
+    def __init__(self, p: Any) -> None:
+        super().__init__(p)
+        self.entered, self.gate = asyncio.Event(), asyncio.Event()
+
+    async def make(self, a: Any) -> Any:
+        self.entered.set()
+        await self.gate.wait()
+        return await self.p.make(a)
+
+
 @contextmanager
 def grab_logs() -> Iterator[list[str]]:
     found: list[str] = []
@@ -292,6 +307,7 @@ __all__ = [
     "RATE",
     "FakeBilling",
     "FakeFx",
+    "GatedProvider",
     "OffMode",
     "OnMode",
     "Prov",

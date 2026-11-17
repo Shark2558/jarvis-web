@@ -54,7 +54,10 @@ class SeeMeService:
         return await self.kit.photo.get(uid)
 
     async def delete_photo(self, uid: str) -> bool:
-        return await self.kit.photo.delete(uid)
+        """His withdrawal: his photo and his YES; a shown-once picture goes from page memory."""
+        gone = await self.kit.photo.delete(uid)
+        self.kit.pictures.once.clear(uid)
+        return gone
 
     def _provider(self) -> Any:
         provider = self.kit.provider()
@@ -234,8 +237,9 @@ class SeeMeService:
                 paths.append(path)
         if paths:
             await docs.write([Delete(p) for p in paths])  # in this order (one chunk)
-        k.pictures.once.clear(uid)
-        return len(paths)
+        # a picture saved between the list and the delete (a press in flight) goes too; then
+        # page memory (`delete_all` clears it)
+        return len(paths) + await k.pictures.delete_all(uid)
 
 
 async def _safe_off(kit: Kit, uid: str) -> SeeMeRefused | None:

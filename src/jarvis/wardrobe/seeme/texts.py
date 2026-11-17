@@ -96,6 +96,10 @@ MAYBE_BILLED = (
 GOOGLE_BUSY = "Google is busy: try again in a minute. Nothing was charged."
 UNAVAILABLE = "Google's image model isn't available just now. Nothing was charged."
 NOT_KEPT = "This picture is too large to keep: it is shown once and not kept."
+WITHDRAWN = (
+    "Your photo or the garment's photo was deleted while the picture was being made, so it isn't "
+    "kept. It may still be charged ({about})."
+)
 PICTURE_GONE = "That picture isn't there any more."
 PICTURE_DELETED = "The picture is deleted."
 TOO_MANY_KEPT = "You keep {n} pictures already: delete one, or stop keeping one, first."

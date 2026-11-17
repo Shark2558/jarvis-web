@@ -149,6 +149,26 @@ async def test_row388_a_slot_the_card_covers_for_its_private_piece_comes_without
     assert got["top"].readiness == m.READY and got["top"].eligible  # its plan's piece, fresh
 
 
+async def test_the_days_look_leaves_out_todays_plan_once_he_wears_it() -> None:
+    """Review I1 M2: "by day" follows R13's own rule for "what should I wear" (`planned`): a plan
+    of today that is worn (or over) is left out, so the day's look is a fresh suggestion, never
+    this morning's outfit drawn "Draft: in use", and "Another idea for this day" is there."""
+    a = await a_world()
+    pid = await a.plan(day="today")
+    worn = await a.w.call("wear_log", action="start", plan=pid)
+    assert worn.result.get("refused") is not True, worn.result
+    doc = await a.styling.plans.read(UID)
+    assert doc.plan(pid).worn
+    look = await a.service.looks.for_day(UID, "today")
+    assert look.plan is None and look.day.isoformat() == "2026-11-17"
+    mine = [x for x in look.slots if not x.private]
+    assert mine and not [x.readiness for x in mine if "in use" in x.readiness]
+    other = await a.service.looks.for_day(UID, "today", alt=1)  # was 404 "isn't there any more"
+    assert other.plan is None and [x for x in other.slots if not x.private]
+    held = await a.service.looks.for_plan(UID, pid)  # the plan itself still reads as worn
+    assert held.plan == pid
+
+
 async def test_row388_tomorrows_card_with_no_plan_reads_its_own_day_and_code() -> None:
     """Review I1 H1: today has a plan, tomorrow none. Tomorrow's business formal card, asked for
     EXACTLY as the console asks (its own `cardQuery`), reads tomorrow's readiness (not "reserved"

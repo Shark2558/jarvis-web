@@ -6,8 +6,8 @@ Every look is read FRESH from R13's own records: the plan and its look from R13'
 from A's store, his figure choices from `tryon/{uid}`. Three ways in:
 
 - `for_plan(uid, plan, alt)`: a plan's look now (`alt` 1-2: the engine's alternatives);
-- `for_day(uid, day, alt)`: the day's first look ("Today and tomorrow": its first plan's, else
-  R13's suggestion);
+- `for_day(uid, day, alt)`: the day's first look by R13's own rule for "what should I wear"
+  (`Styling.planned`: today's plans only while not worn and not over), else R13's suggestion;
 - `for_pieces(uid, "slot:wi_...,...")`: exactly the pieces on a reply's try-on card (row 388),
   each re-read now; a piece that isn't his any more is refused in words.
 
@@ -298,7 +298,7 @@ class Looks:
         when = r.s.day_of(day, r.here.today)
         if when is None:
             raise BadDay(BAD_DAY)
-        plans = r.doc.on(when)
+        plans = r.s.planned(r.doc, when, r.here, None)  # R13's "what should I wear" (M2)
         if plans:
             ans = await r.s.answer(uid, r.here, r.doc, r.view, plans[0])
         else:

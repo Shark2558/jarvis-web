@@ -108,7 +108,54 @@ def test_row388_on_a_phone_the_card_opens_by_itself_under_the_reply(
         c.ask()
         until(c.page, lambda: c.card().count() == 1 and drawn(c), "the card")
         assert shown_pieces(c.engine()["shown"][-1]["figures"][0]) == CARD_PIECES
-        assert abs(stage_px(c, ".row.jarvis .tr-card") - 0.56 * PHONE["height"]) <= 1
+        assert stage_px(c, ".row.jarvis .tr-card") >= ENGINE_MIN_PX  # compact, not the section's
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
+ENGINE_MIN_PX = 150  # Part B's engine needs a host at least this tall (INTEGRATION-B section 8)
+CARD_FIT = """() => { // the card as it lands: its size, and how much of each part shows
+  const s = document.getElementById('scroll'), sr = s.getBoundingClientRect();
+  const row = [...document.querySelectorAll('.row.jarvis')].pop();
+  const card = row.querySelector('.tr-card'), stage = card.querySelector('.tr-stage');
+  const box = (e) => e.getBoundingClientRect();
+  const seen = (e) => { const b = e ? box(e) : null; if (!b || !b.height) return 0;
+    return Math.max(0, Math.min(b.bottom, sr.bottom) - Math.max(b.top, sr.top)) / b.height; };
+  const shown = [...card.querySelectorAll('button')].filter((b) => box(b).height);
+  return { conversation: sr.height, card: box(card).height, stage_px: box(stage).height,
+    stage: seen(stage), reply: seen(row.querySelector('.bubble')),
+    wide: box(card).right <= sr.right + 1, buttons: shown.map((b) => b.textContent) };
+}"""
+
+
+@pytest.mark.parametrize("before", [0, 3], ids=["fresh", "under-way"])
+@pytest.mark.parametrize("size", ["laptop", "phone"])
+def test_row388_the_card_fits_the_conversation_with_the_reply_and_the_whole_figure_in_view(
+    browser: Any, d_url: str, token: str, size: str, before: int
+) -> None:
+    # review D-1 H1: the card was 2,704 px (laptop) and 2,942 px (phone) tall in a conversation
+    # 467 / 484 px high; as it landed, half the figure and none of its controls showed
+    reset(d_url, token)
+    c = Page(browser, d_url, token, SIZES[size])
+    try:
+        c.open()
+        for i in range(before):  # a conversation under way: the reply lands at its bottom
+            c.send(f"remember note {i}")
+        c.ask()
+        until(c.page, lambda: c.card().count() == 1 and drawn(c), "the card")
+        c.page.wait_for_timeout(300)
+        got = c.page.evaluate(CARD_FIT)
+        assert got["card"] <= got["conversation"], got  # the card fits the conversation
+        assert got["reply"] == 1 and got["stage"] == 1, got  # his reply and the WHOLE figure
+        assert got["stage_px"] >= ENGINE_MIN_PX and got["wide"], got
+        # a small set: turn it, the checklist, the full view in Helpers (layers, tuck, swap ...)
+        assert got["buttons"][:3] == ["Turn around", "Show as a list", "Open in Helpers"], got
+        assert len(got["buttons"]) <= 4, got  # and "Wearing it" for a plan
+        pieces = c.card().locator(".tr-sum")
+        assert pieces.count() == 1  # the pieces in one line
+        assert "Navy shirt · Charcoal trousers" in pieces.inner_text()
+        assert "Base layer (covered)" in pieces.inner_text()
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()

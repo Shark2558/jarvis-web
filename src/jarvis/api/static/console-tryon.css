@@ -2,8 +2,9 @@
    places things, in Helpers -> Wardrobe (.tr-sec) and in the card under a reply (.tr-card, inside the media cards' own
    .mcard). It only places: every colour, font, radius or shadow is a var(--...) token (tests/test_r13_seams.py's rule,
    tests/test_r131_d_static.py). The components are the existing ones (.hp-row, .btn.sact in .sacts, .minput, .snote,
-   .sfine, .bdialog). The stage is 480 px tall on a laptop and 56 % of the viewport's height on a phone; every target
-   is 44 px. Loaded by console-r7.js. */
+   .sfine, .bdialog). The section's stage is 480 px tall on a laptop and 56 % of the viewport's height on a phone; the
+   card's is compact (review D-1 H1: 150 to 260 px, beside its few controls, under its one line of pieces) so his reply
+   and the whole figure fit the conversation together. Every target is 44 px. Loaded by console-r7.js. */
 .tr-view{display:block;min-width:0}
 .tr-stage{position:relative;height:480px;min-height:240px;margin:6px 0 0;overflow:hidden;border-radius:var(--r-md)}
 .tr-stage > svg{display:block;width:100%;height:calc(100% - 24px)}
@@ -30,7 +31,13 @@
 .tr-form .minput{height:44px;width:100%;box-sizing:border-box}
 .tr-sec label.wd-tick,.tr-me label.wd-tick{display:flex;align-items:center;gap:8px;min-height:44px}
 .tr-sec input[type="checkbox"]{width:20px;height:20px;margin:0}
-.tr-card{padding:8px 10px 10px}
+.tr-card{width:340px;max-width:100%;box-sizing:border-box;padding:8px 10px 10px}
+.tr-card .tr-view[data-mode="3d"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(104px,128px);column-gap:10px;align-items:start}
+.tr-card .tr-view[data-mode="3d"] > .tr-head,.tr-card .tr-view[data-mode="3d"] > .tr-status,.tr-card .tr-view[data-mode="3d"] > .tr-list{grid-column:1 / -1}
+.tr-card .tr-view[data-mode="3d"] > .tr-list{grid-row:2;margin:0 0 6px}
+.tr-card .tr-view[data-mode="3d"] > .tr-stage{grid-column:1;grid-row:4;height:clamp(150px,30vh,260px);margin:0}
+.tr-card .tr-view[data-mode="3d"] > .tr-acts{grid-column:2;grid-row:4;flex-direction:column;align-items:stretch;margin:0}
+.tr-card .tr-sum{margin:0}
 .tr-card .hp-row{min-height:0;padding:6px 0}
 .tr-me .tr-pic{display:block;max-width:100%;height:auto;margin:8px 0 0;border-radius:var(--r-md)}
 .tr-me .tr-garment{display:block;max-width:160px;max-height:160px;height:auto;margin:6px 0 0;border-radius:var(--r-md)}

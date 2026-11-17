@@ -34,7 +34,7 @@ const MEASURE_WORDS = { height: 'Height', shoulders: 'Shoulder width', chest: 'C
 const SHAPE_WORDS = { shirt: 'Shirt', tee: 'T-shirt', kurta: 'Kurta', trousers: 'Trousers', shorts: 'Shorts', wrap: 'Mundu or dhoti',
   jacket: 'Jacket', shoe: 'Shoe', sandal: 'Sandal', belt: 'Belt', watch: 'Watch', socks: 'Socks' };
 const S = { H: null, ctx: null, host: null, off: false, tryon: null, outfits: null, photos: null, sec: null, card: null, holder: null,
-  retried: false, file: null, me: null, el: {}, views: new Set(), priv: false };
+  retried: false, file: null, me: null, el: {}, views: new Set(), priv: false, next: null };
 
 const H = () => S.H || (S.H = window.JarvisHelpers || null);
 const api = (path, opts) => window.JarvisConsole.api(path, opts);
@@ -183,21 +183,22 @@ function wake(v) {
 function rest(hidden) { if (hidden) pause(S.holder); else S.views.forEach(wake); }
 
 // ---- drawing a viewer ---------------------------------------------------------------------------------------------
-function draw(v) {
-  const h = H(), el = v.el, three = v.mode === '3d';
+function draw(v) { // a card (row 388) is compact: the figure, its pieces in one line, a small set of controls (H1)
+  const h = H(), el = v.el, three = v.mode === '3d', card = v.kind === 'card';
   v.view.dataset.mode = v.mode; v.view.dataset.why = v.why === 'list' ? '' : v.why;
   const b = body(), est = S.tryon && S.tryon.words ? txt(S.tryon.words, 120) : '';
-  el.head.replaceChildren(h.row(v.titles[0] || 'This look', [b ? est || 'Estimated from your measurements' : '', 'every shape is approximate'].filter(Boolean).join(' \u00b7 ')));
+  const sub = card ? '' : [b ? est || 'Estimated from your measurements' : '', 'every shape is approximate'].filter(Boolean).join(' \u00b7 ');
+  el.head.replaceChildren(h.row(v.titles[0] || 'This look', sub));
   const why = v.why === 'nofigure' && v.kind === 'section' ? txt((S.tryon && S.tryon.words) || WHY.nofigure, 160) : WHY[v.why];
   if (!three && why) say(v, ['elsewhere', 'nofigure', 'paused'].includes(v.why) ? '' : 'bad', why);
-  el.stage.hidden = !three; el.tools.hidden = !three; el.style.hidden = !three;
-  el.tools.replaceChildren(...(three ? tools(v) : []));
-  el.style.replaceChildren(...(three ? style(v) : []));
-  el.acts.replaceChildren(...acts(v));
-  el.extra.replaceChildren(...extra(v));
+  el.stage.hidden = !three; el.tools.hidden = !three || card; el.style.hidden = !three || card;
+  el.tools.replaceChildren(...(three && !card ? tools(v) : []));
+  el.style.replaceChildren(...(three && !card ? style(v) : []));
+  el.acts.replaceChildren(...(card ? cardActs(v) : acts(v)));
+  el.extra.replaceChildren(...(card ? [] : extra(v)));
   const looks = [v.look].concat(v.second ? [v.second] : []).filter(Boolean).map((l) => chosen(l, assets()));
   if (!v.look) { el.list.replaceChildren(h.empty('Loading the look\u2026')); return; }
-  items(el.list, looks, { H: h, btn, priv: v.kind === 'section' && S.priv, nameOf: S.ctx && S.ctx.nameOf, open: v.open, layers: 'all', titles: v.second ? v.titles : null,
+  items(el.list, looks, { H: h, btn, compact: card, summary: card && three, priv: !card && S.priv, nameOf: S.ctx && S.ctx.nameOf, open: v.open, layers: 'all', titles: v.second ? v.titles : null,
     photosOf: (id) => (S.photos && S.photos.get(id)) || [], thumb: (id) => { const d = door(); return d ? d.thumb(id) : Promise.reject(new Error('no door')); },
     toCamera: () => { if (window.JarvisDeck) window.JarvisDeck.open('camera', { focus: true }); },
     onChange: (key) => { v.open = key; draw(v); }, onPick: (slot, piece) => swap(v, 0, slot, piece),
@@ -219,6 +220,7 @@ function spin(v) { // Motion Off: Turn around stays still (L7), and says so
   v.still = !!(window.JarvisFX && window.JarvisFX.motion() === 'off');
   v.spin = !v.still && !was;
   if (v.stage && v.spin !== was) v.stage.spin(v.spin);
+  if (v.still && v.kind === 'card') say(v, '', 'Motion is off: the figure stays still. Drag it to turn it.');
   draw(v);
 }
 function turn(v, id) { v.opts = Object.assign({}, v.opts, { view: id }); if (v.stage) v.stage.view(id); draw(v); }
@@ -232,12 +234,20 @@ function style(v) {
   return out;
 }
 function restyle(v, patch) { remember(v); v.opts = Object.assign({}, v.opts, patch); draw(v); paint(v); }
+function modes(v) { // the checklist one press away; back to 3D, the stage taken back, or Retry 3D once a page
+  if (v.mode === '3d') return [btn('Show as a list', () => toList(v, 'list'))];
+  if (v.why === 'list') return [btn('Show in 3D', () => to3d(v))];
+  if (v.why === 'elsewhere' || v.why === 'paused') return [btn('Show it here', () => to3d(v))];
+  return RETRY.includes(v.why) && !S.retried ? [btn('Retry 3D', () => retry(v))] : [];
+}
+function cardActs(v) { // row 388's card: a small set; layers, tuck, swap and compare are in the full view in Helpers
+  const out = (v.mode === '3d' ? [pressed(btn('Turn around', () => spin(v)), v.spin)] : []).concat(modes(v));
+  out.push(btn('Open in Helpers', () => full(v)));
+  if (v.plan) out.push(btn('Wearing it', () => wearing(v)));
+  return out;
+}
 function acts(v) {
-  const out = [];
-  if (v.mode === '3d') out.push(btn('Show as a list', () => toList(v, 'list')));
-  else if (v.why === 'list') out.push(btn('Show in 3D', () => to3d(v)));
-  else if (v.why === 'elsewhere' || v.why === 'paused') out.push(btn('Show it here', () => to3d(v)));
-  else if (RETRY.includes(v.why) && !S.retried) out.push(btn('Retry 3D', () => retry(v)));
+  const out = modes(v);
   out.push(off(btn('Undo', () => undo(v)), !v.undo.length));
   out.push(btn(v.comparing ? 'Stop comparing' : 'Compare', () => (v.comparing ? stopCompare(v) : chooser(v))));
   if (v.mode === '3d') out.push(btn('Save a picture of this look', () => picture(v)));
@@ -513,7 +523,7 @@ async function start() {
   section(); form();
   await first();
   savedList();
-  if (S.plan) { const p = S.plan; S.plan = null; await open(p); }
+  if (S.next) { const go = S.next; S.next = null; await go(); } // a press made while the section loaded
   try {
     S.me = await seeMe();
     S.me.draw(S.el.me, { H: H(), api, door, btn, look: () => (S.sec && S.sec.look) || null, photosOf: (id) => (S.photos && S.photos.get(id)) || [] });
@@ -525,7 +535,7 @@ export async function open(plan) {
   const v = S.sec;
   if (typeof plan !== 'string' || !plan) return;
   if (S.off) { S.host.hidden = false; S.host.replaceChildren(H().mk('h3', 'hp-h', 'Try it on'), H().empty('Try it on is off on this server.')); return; }
-  if (!v || !v.look) { S.plan = plan; return; } // pressed while the section loads: opened right after
+  if (!v || !v.look) { S.next = () => open(plan); return; } // pressed while the section loads: opened right after
   const o = await outfits(), found = [['Today', o.today], ['Tomorrow', o.tomorrow]].map(([d, l]) => [d, (l || []).find((p) => p.id === plan)]).find(([, p]) => p);
   try {
     const src = 'plan=' + encodeURIComponent(plan), look = await api('/v1/tryon/look?' + src + (S.priv ? '&private=1' : ''));
@@ -533,12 +543,12 @@ export async function open(plan) {
   } catch (e) { failed(v, e); }
   shapes();
 }
-export function inline(el, card) {
+export function inline(el, card) { // resolves once the card is drawn
   S.H = S.H || window.JarvisHelpers;
-  if (!el || !card || !H()) return;
+  if (!el || !card || !H()) return Promise.resolve();
   if (S.card && S.card.stage) release(S.card); // an earlier reply's card gives the stage back (Show it here takes it again)
   S.card = viewer(el, 'card');
-  dressed(S.card, card).catch(() => {});
+  return dressed(S.card, card).catch(() => {});
 }
 async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pieces=); its covered slots stay covered
   v.covered = (card.slots || []).filter((s) => s.private).map((s) => ({ slot: s.slot, private: true, words: COVERED, readiness: '' }));
@@ -555,10 +565,18 @@ async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pie
 export function garment(file) { // D22: the picture waits for See it on me; nothing is sent by this call
   if (!(file instanceof Blob)) return;
   if (S.me && S.el.me && document.contains(S.el.me)) S.me.take(file); else S.file = file;
+  helpers(() => S.el.me);
+}
+function helpers(at) { // Helpers -> Wardrobe opened for him, scrolled to Try it on (or See it on me)
   if (window.JarvisDeck) window.JarvisDeck.open('helpers', { focus: true });
   const tab = document.getElementById('hpt-wardrobe');
   if (tab && tab.getAttribute('aria-selected') !== 'true') tab.click();
-  setTimeout(() => { if (S.el.me && S.el.me.scrollIntoView) S.el.me.scrollIntoView({ block: 'start' }); }, 0);
+  setTimeout(() => { const el = at(); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' }); }, 0);
+}
+function full(v) { // a card's look in full (layers, tuck, swap, compare): the section shows it and takes the one stage
+  const go = () => (v.plan ? open(v.plan) : show(S.sec, v.look, { title: v.titles[0] }));
+  if (S.sec && S.sec.look) go(); else S.next = go;
+  helpers(() => S.host);
 }
 document.addEventListener('jarvis:tryon-open', (e) => open((e.detail || {}).plan));
 document.addEventListener('jarvis:wardrobe-fresh', () => { S.photos = null; if (S.sec && S.sec.look) refresh(S.sec); });

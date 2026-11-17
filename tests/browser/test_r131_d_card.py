@@ -280,6 +280,33 @@ def test_row388_one_stage_on_the_page_the_card_and_the_section_take_turns(
         c.close()
 
 
+def test_row388_open_in_helpers_shows_the_cards_look_in_full_and_takes_the_stage(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 H1: the card is compact; layers, tuck, swap and compare are in the full view
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    try:
+        c.open()
+        c.ask()
+        until(c.page, lambda: c.card().count() == 1 and drawn(c), "the card")
+        c.card().get_by_role("button", name="Open in Helpers").click()
+        sec = c.section().locator(".tr-view")
+        until(c.page, lambda: sec.count() == 1 and mode(sec) == "3d" and drawn(c, 2), "the section")
+        assert c.page.locator("#hpp-wardrobe").is_visible()
+        assert "Today · 10:00 · business formal" in c.section().locator(".tr-head").inner_text()
+        assert shown_pieces(c.engine()["shown"][-1]["figures"][0])["top"] == [T.striped]
+        for name in ("Untuck", "Without the outer layer", "Compare"):  # the full view's controls
+            assert c.section().get_by_role("button", name=name, exact=True).count() == 1, name
+        rec = c.engine()
+        assert rec["maxLive"] == 1 and rec["live"] == 1  # it took the one stage
+        assert c.card().locator(".tr-view").get_attribute("data-why") == "elsewhere"
+        assert c.card().get_by_role("button", name="Show it here").count() == 1
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()
+
+
 # ---- AVT-15 --------------------------------------------------------------------------------------
 @pytest.mark.parametrize("how", ["no-webgl2", "lost", "asset", "timeout", "stub"])
 def test_avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_confirm(

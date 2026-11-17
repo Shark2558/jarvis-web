@@ -167,7 +167,7 @@ globalThis.__seen = seen;
 globalThis.window = {};
 const mk = (tag) => ({ tag, className: '', textContent: '', kids: [], attrs: {},
   append(...n) { this.kids.push(...n); }, setAttribute(k, v) { this.attrs[k] = v; } });
-globalThis.document = { createElement: mk };
+globalThis.document = { createElement: mk, getElementById: () => null }; // no conversation
 const stub = 'export function inline(el, card) { globalThis.__seen.inline.push(card); }'
   + ' export function garment(f) { globalThis.__seen.garment.push(f.size); }';
 const src = fs.readFileSync(PATH, 'utf8').replaceAll("import('./console-tryon.js')",

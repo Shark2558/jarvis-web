@@ -4,7 +4,10 @@
 // console-media.js hands every reply's cards to window.JarvisTryOnCard.cards(row, list); this module takes the FIRST
 // 'tryon' card and, with no extra tap, makes a box under the reply and has console-tryon.js draw the figure dressed in
 // exactly those pieces there (inline: the look by ?pieces=, turn, layers, tuck, swap, compare, the checklist), or the
-// AVT-15 checklist when 3D can't run. A reply without the card gets nothing. It reads only the card (checked here:
+// AVT-15 checklist when 3D can't run. The card is compact (review D-1 H1): the figure, its pieces in one line and a small
+// set of controls, the full view one press away in Helpers; as it lands, the reply's top stays in view (unless he has
+// scrolled since), so his reply's words and the whole figure show together. A reply without the card gets nothing. It
+// reads only the card (checked here:
 // slot words and wi_ ids, nothing else is passed on) and asks the server for nothing itself; nothing is kept.
 // garment(file): a picture shared into the app (the share tray's "See it on me (a garment to buy)") opens Helpers ->
 // Wardrobe -> Try it on's See it on me with it, for his type and colour and the device check; this press sends nothing.
@@ -31,7 +34,7 @@ function checked(c) {
 
 function box(row) { // under the reply, in the media cards' own frame (existing components only)
   const wrap = document.createElement('div');
-  wrap.className = 'mcards';
+  wrap.className = 'mcards tr-cards';
   const sec = document.createElement('section');
   sec.className = 'mcard tr-card';
   sec.setAttribute('aria-label', 'Try it on: this look on your figure');
@@ -40,12 +43,29 @@ function box(row) { // under the reply, in the media cards' own frame (existing 
   return sec;
 }
 
+const HIS = ['wheel', 'touchstart', 'pointerdown', 'keydown']; // his own ways to move the conversation
+function watch(scroller) { // has he moved the conversation himself since the reply landed?
+  const his = { moved: false, off: () => {} };
+  if (!scroller) return his;
+  const mark = () => { his.moved = true; };
+  HIS.forEach((t) => scroller.addEventListener(t, mark, { passive: true }));
+  his.off = () => HIS.forEach((t) => scroller.removeEventListener(t, mark));
+  return his;
+}
+function inView(row, scroller, his) { // the reply's top kept in view as the card lands (never past the bottom)
+  his.off();
+  if (!scroller || his.moved) return; // he has moved it since: leave it where he put it
+  const top = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  scroller.scrollTop = Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + top);
+}
+
 function cards(row, list) {
   if (!row || !Array.isArray(list)) return;
   const card = checked(list.find((c) => c && typeof c === 'object' && c.kind === 'tryon'));
   if (!card || row.querySelector('.tr-card')) return;
-  const el = box(row);
-  import('./console-tryon.js').then((m) => m.inline(el, card)).catch(() => {
+  const el = box(row), scroller = document.getElementById('scroll'), his = watch(scroller);
+  import('./console-tryon.js').then((m) => m.inline(el, card)).then(() => inView(row, scroller, his), () => {
+    his.off();
     el.textContent = '';
     const p = document.createElement('p');
     p.className = 'sfine';

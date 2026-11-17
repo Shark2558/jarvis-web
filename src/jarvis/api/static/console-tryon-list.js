@@ -3,7 +3,9 @@
 //   items(host, looks, o)   one look's rows (or two side by side, compare): each slot, its piece's words (a private slot
 //                           "Base layer (covered)", or his own words behind Show private basics), its readiness word,
 //                           what is approximate, its image cards (the views kept, door.thumb) and the useful view still
-//                           missing (a way to Camera); Change opens the slot's options, each with its readiness
+//                           missing (a way to Camera); Change opens the slot's options, each with its readiness.
+//                           o.compact (row 388's card): one line a piece, no image cards and no Change (the full list
+//                           is in Helpers); o.summary: the pieces in ONE line (.tr-sum), as the card shows them in 3D
 //   caption(look, o)        the lines for B's snapshot({caption}): the day or the event's time, then each drawn
 //                           non-private piece in FIXED words ("Navy shirt \u00b7 Charcoal trousers"), "Base layer
 //                           (covered)" for a private slot; his own labels only when he ticked "Use my own labels";
@@ -119,14 +121,14 @@ function options(H, s, o, n) { // Change: the slot's options, each with its FRES
 
 function row(H, s, o, n) {
   const key = n + ':' + s.slot + ':' + (s.piece || '');
-  const can = !s.private && typeof (n ? o.onPick2 : o.onPick) === 'function';
+  const can = !s.private && !o.compact && typeof (n ? o.onPick2 : o.onPick) === 'function';
   const r = H.row(slotWord(s.slot) + ': ' + words(s, o), subline(s), can ? [o.btn('Change', () => o.onChange(o.open === key ? null : key))] : []);
   r.classList.add('tr-item');
   r.dataset.slot = clean(s.slot, 20);
   if (!s.private && s.piece) r.dataset.piece = s.piece;
   if (s.eligible === false && !s.private) r.dataset.draft = '1';
   const out = [r];
-  if (!s.private) out.push(refs(H, s, o));
+  if (!s.private && !o.compact) out.push(refs(H, s, o));
   if (o.open === key && can) out.push(options(H, s, o, n));
   return out;
 }
@@ -134,6 +136,11 @@ function row(H, s, o, n) {
 /** The rows of one look (or two: compare), each with its title and its draft line. */
 export function items(host, looks, o) {
   const H = o.H, list = (Array.isArray(looks) ? looks : [looks]).filter(Boolean);
+  if (o.summary && list.length) { // row 388's card in 3D: the pieces in one line, and a draft said
+    const d = draft(list[0]), line = H.mk('p', 'sfine tr-sum', clean(names(list[0], {}).join(' \u00b7 '), 400));
+    host.replaceChildren(line, ...(d ? [H.mk('p', 'snote warn', d + ': this look can\u2019t be confirmed until it is ready.')] : []));
+    return;
+  }
   const cols = list.map((look, i) => {
     const col = H.mk('div', 'tr-col');
     col.dataset.look = String(i);
@@ -157,16 +164,19 @@ export function hhmm(iso) {
   const d = typeof iso === 'string' && iso ? new Date(iso) : null;
   return d && !isNaN(d) ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '';
 }
-/** The caption's lines (fixed words only; never an id, never a private piece's own words). */
-export function caption(look, o) {
-  const opt = o || {}, out = [];
-  out.push([dayWords(look && look.day), hhmm(opt.starts)].filter(Boolean).join(' \u00b7 ') || 'This look');
-  const seen = new Set(), names = [];
+function names(look, opt) { // each worn piece once in fixed words, "Base layer (covered)" for a private slot
+  const seen = new Set(), out = [];
   worn(look, opt.layers || 'all').forEach((s) => {
     const own = opt.own && s.piece && typeof opt.nameOf === 'function' ? clean(opt.nameOf(s.piece), 40) : '';
     const w = s.private ? COVERED : upper(own || clean(s.words, 40));
-    if (w && !seen.has(w)) { seen.add(w); names.push(w); }
+    if (w && !seen.has(w)) { seen.add(w); out.push(w); }
   });
-  for (let i = 0; i < names.length; i += PER_LINE) out.push(names.slice(i, i + PER_LINE).join(' \u00b7 '));
+  return out;
+}
+/** The caption's lines (fixed words only; never an id, never a private piece's own words). */
+export function caption(look, o) {
+  const opt = o || {}, out = [], list = names(look, opt);
+  out.push([dayWords(look && look.day), hhmm(opt.starts)].filter(Boolean).join(' \u00b7 ') || 'This look');
+  for (let i = 0; i < list.length; i += PER_LINE) out.push(list.slice(i, i + PER_LINE).join(' \u00b7 '));
   return out.map((x) => clean(x, 120)).filter(Boolean);
 }

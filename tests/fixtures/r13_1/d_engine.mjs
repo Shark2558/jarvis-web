@@ -57,6 +57,7 @@ function mount(host, o) {
   const draw = () => {
     svg.replaceChildren();
     const xs = figures.length > 1 ? [100, 220] : [160];
+    svg.setAttribute('viewBox', figures.length > 1 ? '0 0 320 290' : '100 16 120 262'); // one figure fills the height, as B frames it
     figures.forEach((f, i) => figure(svg, f, xs[i], last));
     svg.dataset.yaw = String(yaw);
   };

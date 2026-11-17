@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 import pytest
-from r131_fakes_a import NOW, T, a_world
+from r131_fakes_a import NOW, UID, T, a_world
 
 from jarvis.storage.docs import IndexNotReady
 from jarvis.wardrobe.catalog.store import WardrobeUnavailable
@@ -127,3 +127,20 @@ def test_where_names_the_innermost_frame_of_jarvis_and_never_a_local_path() -> N
 
     elsewhere = store.where(_raised(outside))  # no frame of jarvis: the file's name only
     assert elsewhere.startswith("test_r131_a_errors.py:") and elsewhere.endswith(":outside")
+
+
+async def test_a_document_this_server_cant_open_is_said_without_blaming_the_key() -> None:
+    from jarvis.keyring import Keyring
+    from jarvis.wardrobe.tryon.part import TryonService
+
+    a = await a_world()
+    await a.service.put_body(UID, {"height": 176})  # sealed under this server's key
+    other = TryonService(a.ctx)
+    other.store._ring = Keyring(bytes(range(1, 33)))  # noqa: SLF001 - opened elsewhere
+    a.parts["tryon"].services["tryon_looks"] = other
+    async with a.client() as c:
+        got = await c.get("/v1/tryon")
+    found = Refusal.model_validate(got.json())
+    assert got.status_code == 503 and found.error == "unreadable"
+    assert "can't be opened on this server" in found.detail and "key" not in found.detail
+    assert "Nothing was changed" in found.detail  # a newer release's data is never blamed

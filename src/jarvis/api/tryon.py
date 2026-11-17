@@ -60,8 +60,9 @@ NOT_SET_UP = "Try-on isn't available on this server."
 BAD = "That request can't be read."
 DOWN = "That couldn't be done just now. Try again in a minute."
 INTERNAL = "Something went wrong inside JARVIS. Try again later."
-UNREADABLE = (
-    "Your try-on data can't be opened (JARVIS's key changed): delete it in Privacy to start again."
+UNREADABLE = (  # no cause named: a newer release's data reads the same (review A-1 F10)
+    "Your try-on data can't be opened on this server. Nothing was changed; you can delete it in "
+    "Privacy to start again."
 )
 ALTS = ("0", "1", "2")
 QUERY_MAX = 1000  # a reply card's 12 slots of `slot:wi_...` fit with room to spare

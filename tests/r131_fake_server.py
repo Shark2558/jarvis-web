@@ -136,6 +136,14 @@ def look_slot(view: WardrobeView, slot: str, pid: str, *, private: bool = False)
     )
 
 
+def _chosen(pieces: str, v: WardrobeView) -> tuple[tuple[str, str], ...] | None:
+    """`?pieces=top:wi_...,bottom:wi_...` (D21, the card's slots) -> (slot, piece) pairs."""
+    pairs = [x.split(":", 1) for x in pieces.split(",") if x]
+    if any(len(x) != 2 or x[1] not in v.pieces for x in pairs):
+        return None
+    return tuple((s, pid) for s, pid in pairs)
+
+
 def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> APIRouter:
     r = APIRouter(dependencies=[Depends(require_auth)])
     st = FakeTryon()
@@ -199,10 +207,13 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
 
     @r.get("/v1/tryon/look")
     async def look(
-        plan: str = "", day: str = "today", alt: int = 0, private: int = 0
+        plan: str = "", day: str = "today", alt: int = 0, private: int = 0, pieces: str = ""
     ) -> JSONResponse:
         v = await view()
-        slots = tuple(look_slot(v, s, p, private=bool(private)) for s, p in LOOK_SLOTS)
+        chosen = _chosen(pieces, v) if pieces else LOOK_SLOTS  # row 388: the card's own pieces
+        if chosen is None:
+            return _no(422, "not_a_piece", "A piece of that look isn't in your wardrobe.")
+        slots = tuple(look_slot(v, s, p, private=bool(private)) for s, p in chosen)
         when = clock().astimezone(IST).date() + timedelta(days=1 if day == "tomorrow" else 0)
         return _ok(
             http.TryonLook(

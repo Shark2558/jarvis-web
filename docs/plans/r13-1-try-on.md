@@ -1,4 +1,4 @@
-Version v13.1.3 · 17 Nov 2026, 16:45 IST · Release R13.1 · Status: Ready · Owner: 🛠 Mark XXIII
+Version v13.1.3 · 17 Nov 2026, 17:20 IST · Release R13.1 · Status: Ready · Owner: 🛠 Mark XXIII
 
 # Release R13.1 — Try-on: the 3D figure and "See it on me" (`v13.1.0`)
 
@@ -6,7 +6,7 @@ Version v13.1.3 · 17 Nov 2026, 16:45 IST · Release R13.1 · Status: Ready · O
 Phase 7 evals. **Type:** free by default: ₹0 a month fixed, no new Scheduler job, no new secret; ONE paid
 path ("See it on me", a Google image model on Google Cloud's Agent Platform) that is off until the
 owner's typed YES, shows its ₹ before every picture and stops at a ₹300 monthly cap, GST included. **Scope (the owner's decisions of 17 Nov 2026, ≈ 12:50
-IST):** 14 rows of his workbook (353–363, 365, 366 and 350: AVT-02 … AVT-12, AVT-14, AVT-15, OPS-05); the
+IST, and ≈ 15:45 IST for row 388):** 15 rows of his workbook (353–363, 365, 366, 350 and 388: AVT-02 … AVT-12, AVT-14, AVT-15, OPS-05 and "when you ask what to wear"); the
 free figure starts from the Fable 5.2 preview v2 ("Build on v2"); the 3D work is ONE part built by ONE
 builder on Fable 5.2 (his rule of 15 Nov), every other agent on Opus. **Not in scope:** AVT-01 (declined),
 AVT-13 and the extras (later), row 386 (a 3D model made from his own photo, cloud, ≈ ₹21 a look: later),
@@ -21,6 +21,13 @@ was handled" near the end) and is Ready for I0. It also ships one R13 fix (D20).
 owner's two answers of 17 Nov 2026 (≈ 14:25 IST): the model is **Gemini 3.1 Flash Image, processed in the
 United States** (question 12, the default, confirmed), and a "See it on me" picture is kept **30 days**
 unless he presses Keep (question 3; the default was 7 days); every other question keeps its safe default.
+v13.1.3 also writes in **the owner's scope of 17 Nov 2026 (≈ 15:33–15:45 IST)**, in his words: "the see it
+on me is for purchasing new garments, But I need the 3D model to be created and within Jarvis so that
+whenever I ask what to wear, jarvis should open up the card, decide and show me on the 3D model". So: a
+new row **388** (Next up, R13.1, Free): when he asks what to wear, JARVIS decides by R13's rules and the
+try-on card opens by itself with the look on his 3D figure (D21); and **"See it on me"** (AVT-12, row 363)
+is for a garment he is thinking of **buying**: he gives its photo, JARVIS pictures him in it with pieces
+he owns, and the garment is never added to his wardrobe by itself (D22).
 
 ## Summary for the owner (plain words)
 
@@ -36,37 +43,51 @@ unless he presses Keep (question 3; the default was 7 days); every other questio
    close the jacket, show all layers or only the base layer, swap a piece and undo, and compare two looks
    side by side. A swap with a piece that isn't ready (in the laundry, say) is shown as a **draft** and
    can't be confirmed for the event.
-4. **Private stays covered.** Underwear and vests are never drawn as themselves: the figure always wears
+4. **When you ask what to wear, the card opens by itself.** Ask "what should I wear?" in the chat or
+   by voice, on your laptop or phone: JARVIS decides the outfit by your wardrobe rules (R13) and the try-on
+   card opens under its answer with your figure already dressed in it, free, no extra tap; turn it, change
+   layers, tuck, swap or compare as above. Helpers → Wardrobe opens dressed in today's look too. If 3D
+   can't run, the checklist shows instead. Private pieces stay covered.
+5. **Private stays covered.** Underwear and vests are never drawn as themselves: the figure always wears
    a plain base layer. "Save a picture of this look" makes a picture on your device with only the details
    you approve, never a private piece.
-5. **If 3D can't run** (an old browser, a weak phone, a file that didn't load), you get the plain outfit
+6. **If 3D can't run** (an old browser, a weak phone, a file that didn't load), you get the plain outfit
    checklist with each piece's photo, and you can still change a piece or confirm the outfit.
-6. **"See it on me" (optional, paid).** One full-length photo of you, kept locked by JARVIS. When you press
-   **See it on me**, JARVIS sends that photo and the photos of the outfit's top, trousers and jacket to
-   Google's image model (Gemini 3.1 Flash Image, in Google Cloud, made in the United States) and shows
-   ONE picture of you wearing them, marked **"Generated 2D style preview"**, with the exact pieces listed
-   beside it. The first time, you type **YES** after reading what is sent and to whom; you are asked again
+7. **"See it on me" (optional, paid): a garment you are thinking of buying, on you.** Give JARVIS a
+   photo of the garment (a shop photo, a picture from a website or a screenshot, uploaded or shared into
+   the app; JARVIS doesn't open web addresses itself) and say what it is (say, a navy shirt). JARVIS
+   suggests pieces you own that go with it by your wardrobe rules (never a private one), or you pick up
+   to two. With one full-length photo of you, kept locked by JARVIS, a press of **See it on me** sends
+   your photo, the garment's photo and your pieces' photos to Google's image model (Gemini 3.1 Flash
+   Image, in Google Cloud, made in the United States) and shows ONE picture of you wearing them, marked
+   **"Generated 2D style preview"**, with the new garment ("not in your wardrobe") and your pieces listed
+   beside it. The garment is **never added to your wardrobe** by itself (a later "I bought it" step can
+   do that). The first time, you type **YES** after reading what is sent and to whom; you are asked again
    only if the model or the country changes.
-7. **The money.** About **₹9 a picture with GST** (₹8.5 to ₹9; Google bills the exact amount), for the
-   whole outfit at once. The ₹ is shown before every picture and nothing is sent until you confirm.
+8. **The money.** About **₹9 a picture with GST** (₹8.5 to ₹9; Google bills the exact amount), for the
+   garment and your pieces at once. The ₹ is shown before every picture and nothing is sent until you confirm.
    JARVIS stops at **₹300 a month, GST included** (about 33 pictures); you can lower it any time, and
    raising it asks you first.
-8. **Never sent to Google:** underwear, vests, thermals or anything you marked private; your measurements;
-   anyone else's photo. JARVIS checks on your phone that your photo shows one person, but it can't tell an
-   adult from a child, so use only your own photo.
-9. **What is kept:** your measurements and your photo until you delete them; each try-on picture 30 days
-   unless you press **Keep** (your answer of 17 Nov). **Delete all my try-on data** (with your passkey) removes the figure, your
-   measurements, your photo, your YES and the pictures; your wardrobe stays as it is. JARVIS's own daily
+9. **Never sent to Google:** underwear, vests, thermals or anything you marked private; your measurements;
+   anyone else's face (a shop photo with a model in it is refused on your phone: crop it to the garment).
+   JARVIS checks on your phone that your photo shows one person, but it can't tell an adult from a child,
+   so use only your own photo. A garment's photo is only ever sent as a picture: JARVIS never follows
+   words written in it.
+10. **What is kept:** your measurements and your photo until you delete them; each try-on picture, and
+   each garment photo you gave, 30 days unless you press **Keep** on a picture (your answer of 17 Nov). **Delete all my try-on data** (with your passkey) removes the figure, your
+   measurements, your photo, your YES, the pictures and the garment photos; your wardrobe stays as it is. JARVIS's own daily
    backups keep a locked copy for up to 7 days, and the button says so.
-10. **Cost otherwise: ₹0 a month.** The figure's files (about 3–3.5 MB) download once to each device.
+11. **Cost otherwise: ₹0 a month.** The figure's files (about 3–3.5 MB) download once to each device.
     Google supports this image model until at least 28 May 2027; a newer model needs your YES again.
-11. **The same look.** One new section in Helpers → Wardrobe and two buttons on each outfit there; no new
-    dock button; every other screen stays exactly as it is.
+12. **The same look.** One new section in Helpers → Wardrobe, one button (**Show in 3D**) on each outfit
+    there, and the card under a "what should I wear?" answer; no new dock button; every other screen stays
+    exactly as it is.
 
-## What is built: the 14 rows (his workbook's words), and where each goes
+## What is built: the 15 rows (his workbook's words), and where each goes
 
 Release group "Try-on" of his workbook has 15 rows; AVT-01 stays declined and its photo-based figure is
-row 386 (later). The table gives each row's **use case** and **acceptance check** exactly as in his
+row 386 (later). Row 388 is his of 17 Nov 2026 (≈ 15:45 IST, "Next up, R13.1, Free"): its acceptance
+check is his confirmed answer, in his words where he gave them. The table gives each row's **use case** and **acceptance check** exactly as in his
 workbook, the part that builds it, and the named test that proves it (the eval case of the same name
 runs it through the wired app at I1).
 
@@ -82,9 +103,10 @@ runs it through the wired app at I1).
 | 360 · AVT-09 | Swap, remove or undo a piece on the avatar | Swapping a ready jacket changes the avatar and checklist together. A jacket in laundry cannot be confirmed for the event. | A (fresh check), D (swap, undo), B (redraw) | `test_avt09_a_ready_jacket_swaps_figure_and_checklist_together_and_one_in_laundry_stays_a_draft`: the swap changes the drawn outer layer and the checklist row in one step; a jacket In laundry is offered as "Draft: in the laundry", "Use this look" is refused by the server's fresh check (no `outfit_plan` call is made); a jacket that goes to the laundry between that check and the call is refused by `outfit_plan` itself (D20), the plan unchanged; one press makes at most one card; undo returns to the last still-eligible pick |
 | 361 · AVT-10 | Try different styling options | Toggling jacket open to closed updates shirt visibility and leaves the same jacket selected. | B (variants), D (toggles) | `test_avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket`: open → closed hides the shirt placket region, keeps the jacket's piece id; tucked ↔ untucked likewise for a shirt (belt shown only when tucked); a kurta offers no tuck (said in words) |
 | 362 · AVT-11 | Compare two looks side by side | A formal and festive look can be compared without losing either item list or its availability state. | B (two figures), D, A (saved, re-check) | `test_avt11_a_formal_and_a_festive_look_compare_with_both_lists_and_their_readiness`: two figures, one figure and light set, each with its own item list and each piece's readiness word; a saved comparison whose piece changed state opens marked "Draft" |
-| 363 · AVT-12 | Generate a quick photo-style preview | A still preview is labelled as 2D and the checklist still identifies the exact clothes used in the plan. | C (provider, consent, cap), D (card) | `test_avt12_the_picture_is_labelled_a_generated_2d_preview_and_lists_the_exact_pieces`: a made picture shows "Generated 2D style preview — not a photo" and the list of the exact piece ids sent (top, bottom, jacket: the ones in the request) with their words; pieces not sent are listed as not in the picture; the 3D view stays |
+| 363 · AVT-12 | Generate a quick photo-style preview | A still preview is labelled as 2D and the checklist still identifies the exact clothes used in the plan. | C (provider, consent, cap, the new garment), D (card) | `test_avt12_the_picture_is_labelled_a_generated_2d_preview_and_lists_the_exact_pieces`: with the photo he gave of a garment he is thinking of **buying** (D22) and one of his own pieces, a made picture shows "Generated 2D style preview — not a photo", the new garment by its words ("a new navy shirt, not in your wardrobe", a `tg_` id, never a `wi_` id) and the exact ids of his own pieces sent (the ones in the request) with their words; pieces not sent are listed as not in the picture; the catalog is unchanged (`GET /v1/wardrobe`: the same pieces and `rev`); the 3D view stays |
 | 365 · AVT-14 | Keep underwear and vests private in previews | Sharing a look displays the dressed avatar and only the approved item details. | B (covering), A (views), D (share) | `test_avt14_a_shared_look_shows_the_dressed_figure_and_only_approved_details`: "Save a picture of this look" makes a PNG of the dressed figure plus a caption with only fixed words of non-private pieces; a private piece's label, colour and id appear nowhere in it; in every layer state the private zone is covered |
 | 366 · AVT-15 | Keep outfit planning usable when rendering fails | If a render fails, the user can still confirm a ready outfit or change a piece from its checklist. | D (checklist), B (failure signals) | `test_avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_confirm`: with no WebGL (the `__glFail` hook), a lost context, an asset that fails its sum, or a 10 s render timeout, the checklist shows each piece with its image card and readiness; "Change" swaps a piece and "Wearing it" confirms the ready outfit through R13's tools |
+| 388 · (new) | When you ask what to wear, JARVIS decides and opens the card with the outfit on your 3D figure by itself | (his words) "whenever I ask what to wear, jarvis should open up the card, decide and show me on the 3D model"; his figure (preview v2's, from his measurements) dressed in his own pieces; in the chat, by voice or in Helpers → Wardrobe, laptop and phone; no extra tap; the checklist when 3D can't run; private pieces covered | I0 (the card), A (the look by ids), B (the figure), D (the card) | `test_row388_asking_what_to_wear_opens_the_card_dressed_in_the_chosen_look`: "what should I wear tomorrow?" through the brain (mock) answers with `outfit_suggest`'s look and ONE reply card of kind `tryon` whose slots are that look's piece ids (a private slot covered, no id); the console opens it under the reply with no tap, and the figure's `stats()` reports exactly those slot → piece ids; with `__glFail` the checklist shows the same pieces; Helpers → Wardrobe opens dressed in the same look; by voice the same card; Try-on off → no card; Telegram shows the words only. Its server half is I0's (`tests/test_r131_tryon_card.py`, the contract eval's `row388_…` case) |
 | 350 · OPS-05 | Manage and delete avatar photos and models | Deleting an avatar removes it from the viewer and disables dependent previews while retaining the item catalog. | A (erase), C (its data), D (button) | `test_ops05_deleting_the_figure_empties_the_viewer_disables_previews_and_keeps_the_catalog`: after the Privacy delete of `tryon_all` ("Delete all my try-on data", his passkey) the viewer says "No figure yet", saved comparisons and pictures are gone, "See it on me" asks for a photo again, and `GET /v1/wardrobe` returns the same pieces and `rev` as before |
 
 **Where his workbook goes further than what he approved, and what this plan does.**
@@ -98,7 +120,7 @@ runs it through the wired app at I1).
 | AVT-06/AVT-08: "mark estimates of dimensions or appearance" | — | The template's scale, the texture's scale and an untextured colour are each marked "approximate" |
 | AVT-09: "allow an unavailable piece in a clearly labelled visual draft … require a fresh availability check before confirming" | — | Built exactly so: options carry the server's fresh readiness; a draft can't be confirmed; "Use this look" re-checks on the server before R13's `outfit_plan` is called |
 | AVT-10: "jacket open or closed" | tucked or untucked | A blazer/jacket template with an open and a closed variant (Part B) |
-| AVT-12: "Mark it as a generated style preview" | "See it on me" with Google's model | Labelled "Generated 2D style preview — not a photo; the fit is not exact"; Google embeds Content Credentials (C2PA); the exact pieces are listed beside it |
+| AVT-12: "Mark it as a generated style preview" | "See it on me" with Google's model; for a garment he is thinking of buying (17 Nov, ≈ 15:40 IST) | His photo of the new garment, paired with up to two of his pieces; never added to his wardrobe; labelled "Generated 2D style preview — not a photo; the fit is not exact"; Google embeds Content Credentials (C2PA); the exact pieces are listed beside it |
 | AVT-14: "Sharing a look" | private layers always covered | "Save a picture of this look": a PNG made on his device, with only approved details; JARVIS itself sends it nowhere |
 | OPS-05: "default to local processing where supported and require specific consent for external processing … honour backup retention" | delete all try-on data | The figure is drawn on his device; storage is sealed on his own JARVIS server; the one outside step needs his typed YES, bound to that provider, model and location (never to the day's ₹); R14's daily backups keep sealed copies for up to 7 days, and the delete says so |
 
@@ -284,13 +306,14 @@ Cloud India carry 18 % GST whatever the GSTIN status.
 
 ## Decisions (binding)
 
-**D0 · Scope, parts, order, and what does not change.** R13.1 builds the 14 rows in four parts after
+**D0 · Scope, parts, order, and what does not change.** R13.1 builds the 15 rows in four parts after
 I0: **A · Try-on data** (measurements and their versions, looks for the figure, each piece's figure
 choice, saved comparisons, the fresh readiness check, the Try-on Privacy rows, OPS-05), **B · The 3D
 figure** (the asset build, the figure engine, garment templates and textures; **Fable 5.2, one builder,
-its own files only**), **C · See it on me** (the provider port's Gemini adapter, his photo, consent, the
-cap, pictures), **D · Console and phone** (the Try it on section, every control, the checklist, the photo
-panel, the See it on me card). No new model-callable tool, no new permission row, no new alert kind, no
+its own files only**), **C · See it on me** (the provider port's Gemini adapter, his photo, the new
+garment's photo and its pairing with his pieces, consent, the cap, pictures), **D · Console and phone**
+(the Try it on section, every control, the checklist, the photo panel, the See it on me card, and the
+try-on card under a "what should I wear?" reply). No new model-callable tool, no new permission row, no new alert kind, no
 persona change, no new Telegram pattern, no new Scheduler job, no new secret. The figure is free; the one
 paid path is owner-only and console-only (D13). `api/app.py`, `tools/gateway.py`, `core/brain.py` and
 `console.html` are not edited. One R13 fix ships with it (D20: `outfit_plan` refuses a piece that isn't
@@ -301,8 +324,9 @@ ready).
 a 23rd button. So:
 - `console-helpers-wardrobe.js` gains a seventh section, **Try it on**, between "Today and tomorrow" and
   "Laundry", which `console-tryon.js` (D) mounts; and each plan row in "Today and tomorrow" gains **Show in
-  3D** (free) and, while "See it on me" is on, **See it on me** (its ₹ shown on the confirm). Both open
-  the section with that plan's look. I0 writes this hook (≤ 16 lines) and pins it. The section is mounted
+  3D** (free), which opens the section with that plan's look. The section opens dressed by itself in the
+  first look "Today and tomorrow" shows (D21). "See it on me" is not on a plan row: it is for a garment he
+  is thinking of buying, inside the section (D22). I0 writes this hook (≤ 16 lines) and pins it. The section is mounted
   ONCE in `mount()`, never in `draw()` (which rebuilds every section on each load); fresh readiness
   reaches it by an event; the engine is disposed on tab hide and `pagehide`; one WebGL context; **Turn
   around** stays still under Motion Off (L7).
@@ -521,8 +545,9 @@ nowhere. A "See it on me" picture is never part of it.
   provider through the port (I0's one-garment fake and C's adapter on recorded answers).
 
 **D11 · Consent: his typed YES, specific and bound to provider, model and location (AVT-12, OPS-05; M3).**
-- The first time, the card shows (fixed words): what is sent (his photo and the look's garment photos;
-  never a private piece, his measurements or anything else), to whom (Google Cloud's Agent Platform,
+- The first time, the card shows (fixed words): what is sent (his photo, the photo he gives of a garment
+  he is thinking of buying, and the photos of up to two of his own pieces worn with it; never a private
+  piece, his measurements or anything else; D22), to whom (Google Cloud's Agent Platform,
   Gemini 3.1 Flash Image, processed in the United States), what Google says it keeps (no training without
   permission; may log for abuse checks; caching switched off, or "up to 24 hours" if Google refused that),
   that every picture shows its ₹ first under his monthly cap, Content Credentials, the model's end date,
@@ -561,22 +586,27 @@ nowhere. A "See it on me" picture is never part of it.
   export, never to the AI.
 
 **D13 · "See it on me", press to picture (AVT-12; H1, L9, L10).**
-1. **Which pieces.** Every garment of the look that can be sent, in ONE picture: the top (`shirt`, `tee`,
-   `kurta`), the bottom (`trousers`, `shorts`, `wrap`) and the outer layer (`jacket`); he may untick any
-   before he presses. A private piece, a piece without a `front` crop, and a slot that isn't a garment
-   (shoes, belt, watch, socks) are never sent; the card lists them as "not in the picture", with their
-   thumbnails (his AVT-12 fallback). One picture a press.
+1. **Which garments.** ALWAYS the new garment he is thinking of buying (D22: its photo, its type and
+   colour words), and with it up to **two** of his own pieces (`PAIR_MAX`): JARVIS suggests them by R13's
+   rules (`GET /v1/seeme/pair`: the engine's look built around the new garment's slot, his non-private
+   ready pieces only), and he may swap or untick them; at most three garments in ONE picture
+   (`MAX_GARMENTS`). Of his pieces, only a top (`shirt`, `tee`, `kurta`), a bottom (`trousers`, `shorts`,
+   `wrap`) or an outer layer (`jacket`) can be sent, never one in the new garment's slot. A private piece,
+   a piece without a `front` crop, and a slot that isn't a garment (shoes, belt, watch, socks) are never
+   sent; the card lists them as "not in the picture", with their thumbnails (his AVT-12 fallback). One
+   picture a press.
 2. **Estimate** (`GET /v1/seeme/estimate`): Google's token prices for the model and location × the day's
    rate (FxRates; ₹95.24 when unknown) × (1 + `tryon_tax_pct`), rounded up to 10 paise: the **typical**
    figure (the image, the inputs and about 1,000 thinking tokens: ≈ ₹8.9) and the **hold** (the worst case
    the request allows: `maxOutputTokens` 8,192 and three garments: ≈ ₹11.2); the cap left; his monthly
    limit's room.
-3. **Confirm** (D's `.bdialog`): "Make 1 picture of you in the navy shirt and charcoal trousers? About ₹9
-   with GST. ₹54.3 of ₹300 used this month." **Make the picture** sends `confirm_cost: true`, `inr_shown`
+3. **Confirm** (D's `.bdialog`): "Make 1 picture of you in a new navy shirt, with your charcoal trousers?
+   About ₹9 with GST. ₹54.3 of ₹300 used this month." **Make the picture** sends `confirm_cost: true`, `inr_shown`
    and a fresh `request_id`; **Cancel** sends nothing.
 4. **The server's gates**, in order, each refusing before any spend: console-only; 6 presses a minute;
    pictures on in this deployment (`tryon_pictures`) and before `tryon_model_retires`; not No-AI mode
-   (`BrainMode.load`); consent current (D11); his photo kept; every piece sendable (from the record);
+   (`BrainMode.load`); consent current (D11); his photo kept; the new garment's photo kept (`no_garment`);
+   every piece of his sendable (from the record);
    `confirm_cost`; the fresh typical figure ≤ `inr_shown` + ₹0.01, else 409 `price_changed`; his overall
    monthly limit (`billing/spend.py` `ensure_spend_allowed`, fail closed); **the cap's atomic reserve of
    the hold**, which also refuses while another fresh hold exists (`busy`, inside the same transaction,
@@ -590,9 +620,9 @@ nowhere. A "See it on me" picture is never part of it.
    else shown once and not kept (said); `done {request_id: outcome}` (≤ 50, pruned with the month) answers
    a repeated `request_id` with the same result.
 7. **Shown** with **"Generated 2D style preview — not a photo; the fit is not exact"**, the made-at time,
-   the ₹, the exact pieces sent (ids and words), the pieces not in it, and "Google adds Content Credentials
-   (C2PA)"; the 3D view stays where it was. "Wearing it" after a swap that isn't confirmed runs D7's
-   confirm first, so the wear is logged on the pieces he sees (L10).
+   the ₹, the new garment by its words ("a new navy shirt, not in your wardrobe"), the exact pieces of his
+   sent (ids and words), the pieces not in it, and "Google adds Content Credentials (C2PA)"; the 3D view
+   stays where it was. No "Wearing it" here: the garment isn't his (D22).
 
 **D14 · What is kept, and for how long.**
 
@@ -601,11 +631,12 @@ nowhere. A "See it on me" picture is never part of it.
 | His measurements, versions, figure choices, saved comparisons | sealed `tryon/{uid}` | he deletes them (Privacy, OPS-05) |
 | His photo | sealed `tryon_person/{uid}` | he deletes or replaces it, or OPS-05 |
 | His YES | sealed `tryon_consent/{uid}` | his photo is deleted, or OPS-05 |
+| A new garment's photo (D22) | sealed `tryon_garment/{uid}_{id}` | 30 days after he gave it, or while a kept picture shows it (at most 20 at a time); when he deletes it; OPS-05 |
 | A try-on picture | sealed `tryon_picture/{uid}_{id}` | 30 days after it was made (`tryon_keep_days`; owner question 3), unless **Keep** (then until he deletes it; at most 24 kept); also when a piece in it is later made private or purged; OPS-05 |
 | The month's try-on spend | `tryon_spend/{uid}_{YYYY-MM}`, numbers only | 13 months after its month (it is his cap's record) |
 
-C's daily job `seeme_daily` (the morning tick) deletes pictures past their time and pictures of pieces now
-private or gone, turns holds older than an hour into spend at their hold (a call that may have been
+C's daily job `seeme_daily` (the morning tick) deletes pictures and garment photos past their time and
+pictures of pieces now private or gone, turns holds older than an hour into spend at their hold (a call that may have been
 billed), and from 30 days before the model's end date writes the panel's notice. Nothing else in R13.1
 runs on a clock.
 
@@ -627,8 +658,8 @@ a hold of ≈ ₹11.2, ₹300 makes about 33–34 pictures a month.
 - **Section "Try-on"**, its own; R13's Wardrobe section is untouched (fact 5). Every row rides
   `WardrobePart.privacy`, never `data` (M4): `tryon_figure` "Your measurements and your 3D figure" (A;
   count, export, delete with a confirm); `tryon_photo` "Your photo for See it on me, and your YES" (C;
-  export says when and how big, never the bytes; passkey); `tryon_pictures` "See it on me pictures" (C;
-  export lists them, never the bytes; passkey); `tryon_spend` "Try-on spend" (C; numbers per month; not
+  export says when and how big, never the bytes; passkey); `tryon_pictures` "See it on me pictures and garment photos" (C;
+  the pictures and the new-garment photos, D22; export lists them, never the bytes; passkey); `tryon_spend` "Try-on spend" (C; numbers per month; not
   deletable: "kept 13 months for your monthly limit"); `tryon_all` "All your try-on data" (A: the three
   above in one delete; passkey; this is OPS-05); `tryon_device` "Only on this device: nothing is kept on
   this device". A part that is off or failed still answers for what it left on disk: I0's
@@ -638,7 +669,7 @@ a hold of ≈ ₹11.2, ₹300 makes about 33–34 pictures a month.
   `PrivacyService` (its passkey ceremony bound to the category id and `rev`, its IRREVERSIBLE audit line,
   its words; no new passkey code). The Try-on settings button opens that same delete (I0 adds
   `JarvisPrivacy.remove(id)` to `console-privacy.js`, which exposes only `refresh` today, `:259`). The
-  row's delete calls A's `erase_all(uid)`: C's pictures, his photo and his YES (through C's `seeme`
+  row's delete calls A's `erase_all(uid)`: C's pictures, the garment photos, his photo and his YES (through C's `seeme`
   service, or C's stand-in paths), then `tryon/{uid}`; the spend counters stay. Afterwards the viewer
   says "No figure yet: type your measurements", saved comparisons and pictures are gone, "See it on me"
   asks for a photo again; the wardrobe catalog is untouched. The dialog says: "Copies inside JARVIS's
@@ -648,8 +679,10 @@ a hold of ≈ ₹11.2, ₹300 makes about 33–34 pictures a month.
 
 **D17 · Version, persona, the AI's words, guide (L10).** `__version__ = "13.1.0"` at I0 (its seven pins
 move, L1). The persona stays **p13.0** (no new tool). R13's `outfit_suggest` result gains one fixed field
-while Try-on is on: `see_it: "In Helpers, Wardrobe you can see this look on your 3D figure, free, or press
-See it on me; its price is shown before each picture."` (I0; C's R13 result pins move). Guide cards
+while Try-on is on: `see_it: "In the app this look opens on your 3D figure by itself, free. To see a garment
+you are thinking of buying on you, use See it on me in Helpers, Wardrobe; its price is shown before each
+picture."` (I0, as the owner's scope of 17 Nov reworded it; C's R13 result pins move); and the reply's try-on
+card (D21), which the AI never reads. Guide cards
 **C72** Try-on figure (R13.1) and **C73** See it on me (R13.1), PLANNED at I0 with every collection and
 route, built at I1; C63's pixel sentence becomes "Three panels see pixels: Camera, Camera → Wardrobe and
 Try-on's own photo check …", pinned by a test in the same I1 commit.
@@ -672,6 +705,9 @@ your YES again") while everything else keeps working. A newer model of the same 
 | "See it on me" from the chat or voice | Kept out on purpose (a typed or injected request can't spend); the AI says where the button is |
 | Re-making pictures by themselves after a change | Each picture costs money: only by a press |
 | Inches | cm only in R13.1 (owner question 6) |
+| Fetching a shop's web address for a new garment | JARVIS never fetches an address in R13.1 (the owner, 17 Nov): he uploads or shares the picture. A fetch would be a new outside call on untrusted web content |
+| "I bought it": a new garment into his wardrobe | A later step (the owner, 17 Nov). R13.1 never adds the garment to the catalog by itself; a piece is added through R13's Camera → Wardrobe today |
+| See it on me for a look of only his own pieces | Replaced by the owner's scope (17 Nov): his own looks are on the free 3D figure (D21) |
 
 **D20 · An R13 fix shipped in R13.1: `outfit_plan` refuses a piece that isn't ready (H2).** Today `_lock`
 with a `piece` (`styling/actions.py:137–146`) checks only that the piece exists and has a slot (`_slot_of`,
@@ -689,6 +725,61 @@ with a `piece` (`styling/actions.py:137–146`) checks only that the piece exist
    card for one press.
 4. Release note line: "R13 fix: a piece that isn't ready can't be locked or reserved into a plan."
 
+**D21 · "What should I wear?" opens the try-on card by itself (row 388; the owner, 17 Nov 2026).**
+1. **JARVIS decides** by R13's rules: the brain answers the question with `outfit_suggest` (R13's routing,
+   unchanged), whose primary look is the decision. While Try-on is on, the tool puts ONE reply card of kind
+   `tryon` beside its result (I0: `TryOnCard` in `tools/reply_cards.py`, built by
+   `wardrobe/styling/tryon_card.py` from the first answer): `{day, plan?, code, slots: [{slot, pieces,
+   private}]}`, piece ids only, at most 12 slots, **one a reply** (the first look asked), counted with the
+   Maps / YouTube cards. A private slot (`base`, `underwear`) or a slot holding a private piece is
+   `private: true` with no id (AVT-14). The card is never in what the AI reads (the result keeps only the
+   `see_it` words), never stored, never on Telegram (its text shows the words only). Outside a collecting
+   reply (a script) nothing is added. No-AI mode answers with the same tool, so the card comes too.
+2. **It opens by itself**, with no extra tap: `console.js` already hands `r.cards` to `console-media.js`'s
+   `cards(row, list)` for every reply, typed or spoken; I0 adds a three-line hook there (the precedent is
+   R11.1's `plan.cards`) that calls `window.JarvisTryOnCard.cards(row, list)`, registered by D's
+   `console-tryon-card.js` (≤ 150 lines; loaded at start by `console-r7.js`). It takes the `tryon` card and
+   has `console-tryon.js`'s `inline(el, card)` draw the figure under the reply, dressed in exactly those
+   pieces, through A's `GET /v1/tryon/look?pieces=` (the card's slot → piece ids; private slots covered),
+   with turn, layers, tuck, swap, compare and the checklist as in the section. When 3D can't run (D8), the
+   checklist shows instead. One figure at a time on the page: opening the card disposes the section's stage
+   and back (one WebGL context, D1). `console.html`, `app.py`, `gateway.py` and `brain.py` are not edited.
+3. **Helpers → Wardrobe** opens Try it on dressed in the first look "Today and tomorrow" shows (a plan's
+   look when one exists, else R13's suggestion), by itself.
+4. **Tests:** row 388's named test (D, the browser, on the wired app at I1) and its server half (I0:
+   `tests/test_r131_tryon_card.py`; the contract eval's `row388_what_to_wear_opens_the_tryon_card` case).
+   **Control:** the card left out of the reply (`tryon_card.show` does nothing): both fail.
+
+**D22 · "See it on me" is for a garment he is thinking of buying (AVT-12; the owner, 17 Nov 2026).**
+1. **The garment's photo.** He gives it in the section: a shop photo, a website picture or a screenshot,
+   chosen with `<input type=file accept="image/jpeg,image/png">` or shared into the app (R7's share tray
+   hands a picture to the section, never to the chat); **JARVIS never fetches a web address** in R13.1. He
+   picks its **type** (`NEW_TYPES`: a type whose template is a garment, `shirt` … `blazer`) and **colour**
+   (R13's fixed colours) from lists; no free text. The device check (D's photo panel, the same tasks as his
+   photo) refuses a garment photo that shows a face: "This photo shows a person: crop it to the garment, or
+   use a photo of the garment alone" (I0's default, owner question 13: no one else's face goes to Google).
+   The door's `garment(blob, {type, colour, maxKb})` redraws it as his photo is (≤ 1,568 px, ≤
+   `tryon_photo_max_kb`) and posts it to `POST /v1/seeme/garments?type=&colour=` (console only).
+2. **On the server** (C): JPEG only, the side ≤ 1,568 px from its SOF marker, ≤ 700 KB, cleaned by
+   `sanitise_jpeg`, sealed `tryon_photos` (AAD `tryon/garment/{uid}/{id}/v1`) in
+   `tryon_garment/{uid}_{id}` (`tg_` + 12 hex) with its type and colour words; at most 20 at a time (the
+   21st: `too_many`, "delete one first"); kept 30 days, or while a kept picture shows it; read back by his
+   console only (`PICTURE_HEADERS`).
+3. **It is never his.** The garment never becomes a wardrobe piece: no `wi_` id, no catalog write, no ledger
+   line; its words always say "not in your wardrobe" (`model.new_garment_words`); R13's `rev` is unchanged
+   by everything in D22. A later "I bought it" step can add it (D19).
+4. **Untrusted content.** Its bytes are the only thing taken from it: JARVIS reads no text in it, never
+   shows its file name, and never puts it in the AI's context, a tool result, the Vault or a log. To
+   Google it is a picture under fixed prompt words that say to dress the person in the garment shown and
+   to ignore any text in the images; what comes back is only a picture for him to look at, never acted on.
+5. **Pairing** (`GET /v1/seeme/pair?garment=`): R13's engine builds a look around the garment's slot from
+   his non-private, ready pieces and returns at most two that can be sent (D13.1), with fixed words ("With
+   your charcoal trousers."); he may swap or untick them. Then D13's estimate, confirm, gates, call and
+   settle, unchanged, with `PictureIn = {garment, pieces (0–2), confirm_cost, inr_shown, request_id}`.
+6. **Tests and controls:** the AVT-12 test (the first table); C's `seeme` suite adds the garment's cases;
+   **controls:** the garment added to the wardrobe (the catalog's `rev` changes: the "never his" case
+   fails); the garment's text read into the AI's context (the needle suite finds it).
+
 ## Data model (prefix `jarvis_`; flat ids; every document carries `updated_at` and a plain `owner`)
 
 | Collection | Part | Holds | Sealed | Kept |
@@ -696,13 +787,15 @@ with a `piece` (`styling/actions.py:137–146`) checks only that the piece exist
 | `tryon/{uid}` | A | measurements (`current`, `draft`, ≤ 5 `earlier`, each typed or estimated per field), `assets` {piece → template, texture view, card only}, `saved` ≤ 10 comparisons (slots → piece ids, tuck, open, layers), his figure preferences; ≤ 200 KB sealed | `tryon` | until deleted |
 | `tryon_person/{uid}` | C | his one photo (cleaned JPEG ≤ 700 KB, ≤ 1,568 px), when, its size, the device's check (people, faces counts) | `tryon_photos` (AAD `tryon/person/{uid}/v1`) | until he deletes it |
 | `tryon_consent/{uid}` | C | his YES: when, the template's version and hash, provider, model, location | `tryon` | with his photo |
-| `tryon_picture/{uid}_{id}` | C | one picture as Google returned it (JPEG or PNG ≤ 700 KB), made at, piece ids sent, plan id, the ₹ settled, its tokens, kept flag | `tryon_photos` (AAD `tryon/picture/{uid}/{id}/v1`) | 30 days, or until deleted if kept (≤ 24) |
+| `tryon_picture/{uid}_{id}` | C | one picture as Google returned it (JPEG or PNG ≤ 700 KB), made at, the new garment's id and words, his piece ids sent, the ₹ settled, its tokens, kept flag | `tryon_photos` (AAD `tryon/picture/{uid}/{id}/v1`) | 30 days, or until deleted if kept (≤ 24) |
+| `tryon_garment/{uid}_{id}` | C | the photo he gave of a garment he is thinking of buying (D22: a cleaned JPEG ≤ 700 KB, ≤ 1,568 px), its type and colour words, when, its size; never a wardrobe piece | `tryon_photos` (AAD `tryon/garment/{uid}/{id}/v1`) | 30 days, or while a kept picture shows it (≤ 20) |
 | `tryon_spend/{uid}_{YYYY-MM}` | C | spent, held, holds, `done` (≤ 50), pictures, blocked | no (numbers only) | 13 months |
 
-Ids: a picture `tp_` + 12 hex; a request id `tq_` + 16 hex (the console's). Keyring purposes 24 → **26**
+Ids: a picture `tp_` + 12 hex; a new garment `tg_` + 12 hex (D22); a request id `tq_` + 16 hex (the console's). Keyring purposes 24 → **26**
 (`tryon`, `tryon_photos`). **Never stored:** a camera frame, his photo's check bitmap, a texture, a
 snapshot of the figure, a text part of Google's answer, a picture Google blocked, a request body or a token
-in a log, his measurements outside `tryon/{uid}`, anything about another person. Sizes: `tryon/{uid}` ≈
+in a log, his measurements outside `tryon/{uid}`, anything about another person, any text read from a
+garment's photo, a garment photo's file name, a web address. Sizes: `tryon/{uid}` ≈
 5–20 KB; his photo ≈ 0.4–0.95 MB sealed (base64 envelope, `integrations/vault.py:80–83`: 740 KiB raw
 still fits a 1 MiB document); pictures ≈ 0.3–0.95 MB each sealed. R14's drill counts the new root
 collections (flat ids, `updated_at`: no change there, R13's plan fact 22).
@@ -718,19 +811,23 @@ console can branch (`console.js:80–89`, L6). Routes marked **console** pass a 
 |---|---|---|
 | `GET /v1/tryon` | A | the figure's release and files, his measurements (current, draft, earlier), which are typed, the ranges, his figure choices, saved comparisons (ids), the section's ready word |
 | `PUT /v1/tryon/body` · `POST /v1/tryon/body/use` · `DELETE /v1/tryon/body/draft` | A | save a draft · make it current · drop it (each `record_change`) |
-| `GET /v1/tryon/look?plan=` / `?day=today\|tomorrow&alt=0\|1\|2` | A | `TryonLook`: slots → {slot, piece, words, template, variants, rgb, pattern, texture view and photo id, views kept and missing, readiness, approximate flags, private → covered only}, ≤ 12 options a slot with readiness, the tuck and open defaults, gaps |
+| `GET /v1/tryon/look?plan=` / `?day=today\|tomorrow&alt=0\|1\|2` / `?pieces=slot:wi_…,…` (row 388: exactly the card's pieces, D21) | A | `TryonLook`: slots → {slot, piece, words, template, variants, rgb, pattern, texture view and photo id, views kept and missing, readiness, approximate flags, private → covered only}, ≤ 12 options a slot with readiness, the tuck and open defaults, gaps |
 | `PUT /v1/tryon/assets/{piece}` | A | his template choice for a piece (or "image card only") |
 | `POST /v1/tryon/confirm` | A | `{plan, slots, session_id}`: the fresh check (409 with the draft's words), then ONE `outfit_plan` `lock` with `pieces` through `run_panel_tool` (D20); at most one card |
 | `GET/POST/DELETE /v1/tryon/saved[/{id}]` | A | saved comparisons (≤ 10), re-checked on GET |
 | `GET /v1/seeme` | C | on or off and why, provider words (model, location words, end date, `max_garments`), his photo (kept, when, size), consent (given, when, current), the month (spent, held, cap, pictures), the typical ₹ and the hold, `tax_pct`, `photo_max_kb`, pictures (≤ 50: id, when, pieces' words, ₹, kept, until) |
 | `POST /v1/seeme/photo` · `GET` · `DELETE` | C | **console** (all three); the door's JPEG · his photo for his console · delete (and the consent) |
 | `POST /v1/seeme/consent` | C | **console**; `{typed, template_version}`; 422 unless exactly YES and the template is current |
-| `GET /v1/seeme/estimate?plan=&pieces=` | C | the typical ₹ and the hold (with GST), the pieces sent and not sent (with reasons), the cap left, the limit's room |
-| `POST /v1/seeme/pictures` | C | **console**; `{pieces, plan?, confirm_cost, inr_shown, request_id}` → the picture's view; 402 `cap_reached` / `budget_reached`, 409 `consent_needed` / `price_changed` / `busy`, 422 `private_piece` / `no_photo` / `not_a_garment`, 502 `blocked` (with the ₹ note), 503 `not_configured` / `retired` / `no_ai` / `provider_unavailable` |
+| `POST /v1/seeme/garments?type=&colour=` · `GET /v1/seeme/garments` · `GET …/{id}` · `DELETE …/{id}` | C | D22: **console** (all but the list); the door's JPEG of a garment he is thinking of buying, with its type (`NEW_TYPES`) and colour (R13's fixed list) → `GarmentView` (409 `too_many`, 413, 422 `not_a_garment` / `not_jpeg`) · the list (words and sizes only) · its photo for his console · delete |
+| `GET /v1/seeme/pair?garment=` | C | D22: `Pairing`: up to two of his own non-private pieces that go with it, by R13's rules, with fixed words |
+| `GET /v1/seeme/estimate?garment=&pieces=` | C | the typical ₹ and the hold (with GST), the new garment, his pieces sent and not sent (with reasons), the cap left, the limit's room |
+| `POST /v1/seeme/pictures` | C | **console**; `{garment, pieces (0–2), confirm_cost, inr_shown, request_id}` → the picture's view (the new garment, his pieces); 402 `cap_reached` / `budget_reached`, 409 `consent_needed` / `price_changed` / `busy`, 404 `no_garment`, 422 `private_piece` / `no_photo` / `not_a_garment`, 502 `blocked` (with the ₹ note), 503 `not_configured` / `retired` / `no_ai` / `provider_unavailable` |
 | `GET /v1/seeme/pictures/{id}` · `POST …/{id}/keep` · `DELETE …/{id}` | C | **console**; the picture (its detected type, `default-src 'none'`, `nosniff`, `Cross-Origin-Resource-Policy: same-origin`) · keep or not · delete |
 | `PUT /v1/seeme/settings` | C | **console**; `{on, cap_inr, keep_days}`; a higher cap needs `confirm_cost: true` |
 
-OPS-05 has no route of its own: it is the Privacy delete of `tryon_all` (D16, M10).
+OPS-05 has no route of its own: it is the Privacy delete of `tryon_all` (D16, M10). 27 routes in all; the
+query of `POST /v1/seeme/garments` is `http.QUERIES`' `GarmentIn`. Row 388's card is not a route: it rides
+`ChatResponse.cards` (D21).
 
 ## Tools: none new (R13's `outfit_plan` is fixed, D20)
 
@@ -738,7 +835,8 @@ R13.1 adds no model-callable tool, so no permission row (52 stay), no Telegram p
 group, no persona line. The panel's plan changes still go through `gateway.execute` (D7, D20). The paid
 path is an owner-only console route with `confirm_cost`, the pattern R6.2 set for spending (fact 10), so
 no e-mail, web page or chat message can start a spend or send his photo (security-reviewer to confirm).
-The AI learns where Try-on is from `outfit_suggest`'s `see_it` words (D17).
+The AI learns where Try-on is from `outfit_suggest`'s `see_it` words (D17); the try-on card beside the
+answer (D21) is never in what it reads.
 
 ## Per part: failures, security, cost
 
@@ -746,14 +844,14 @@ The AI learns where Try-on is from `outfit_suggest`'s `see_it` words (D17).
 |---|---|---|---|
 | A · Try-on data | no key → Try-on is off (never in clear) and says so; an unreadable `tryon/{uid}` is never overwritten; a value out of range refused in words; a look for a plan that isn't there → "That plan isn't there any more"; the fresh check refuses a draft before any tool, and `outfit_plan` refuses it again (D20); R13's store down → the look says so and the checklist stays | measurements sealed, never to the AI, logs or Google; private slots covered in every view; one confirm, one tool call, at most one card; OPS-05 through Privacy's passkey | 0 |
 | B · The 3D figure | no WebGL2, an asset 404 or sum mismatch, a lost context, a 10 s first render, a slow device → the checklist (D8); a crop that can't be read → colour only | draws his crops on its own canvas only; no network but the vendored files and the door's `thumb`; nothing stored; private zone never drawn | 0 (≈ 3–3.5 MB to each device once) |
-| C · See it on me | not configured / no role / API off → 503 in words; any non-200 → released, in words ("busy, try in a minute" for 429); a timeout after sending or a cut answer → "may be charged" (kept at the hold); blocked → its words (billed); his photo missing or unreadable → asks again; the cap or limit unreadable → refused (fail closed); past the end date → off | his photo and pictures sealed; consent typed and bound to provider, model and location; console-only; private pieces refused from the record; only his photo and garment crops leave, to one named model and location; Google's text parts never read; the token, bodies and bytes never logged; a custom role that can only make prompt requests (M6) | ≈ ₹9 a picture with GST, capped at ₹300 |
+| C · See it on me | not configured / no role / API off → 503 in words; any non-200 → released, in words ("busy, try in a minute" for 429); a timeout after sending or a cut answer → "may be charged" (kept at the hold); blocked → its words (billed); his photo missing or unreadable → asks again; the cap or limit unreadable → refused (fail closed); past the end date → off | his photo and pictures sealed; consent typed and bound to provider, model and location; console-only; private pieces refused from the record; only his photo, the new garment's photo (untrusted: its bytes only, no text read from it, D22) and his chosen crops leave, to one named model and location; the garment never enters the catalog; Google's text parts never read; the token, bodies and bytes never logged; a custom role that can only make prompt requests (M6) | ≈ ₹9 a picture with GST, capped at ₹300 |
 | D · Console and phone | the engine missing or failing → the checklist; the photo check's models not installed → "The photo check isn't available on this device" (no photo is saved); offline → R13's words | textContent only; the third pixel panel's rules; the door is the only sender; nothing kept on the device | 0 |
 
 ## Cost (₹; no new Scheduler job, no new secret)
 
 | Item | ₹ |
 |---|---|
-| Firestore: measurements, his photo (≤ 0.95 MB), pictures for 30 days (≈ 10 a week, ≈ 43 at a time ≈ 13–40 MB) and ≤ 24 kept (≤ 23 MB), inside the free 1 GiB | 0 |
+| Firestore: measurements, his photo (≤ 0.95 MB), pictures for 30 days (≈ 10 a week, ≈ 43 at a time ≈ 13–40 MB) and ≤ 24 kept (≤ 23 MB), ≤ 20 garment photos (≤ 19 MB), inside the free 1 GiB | 0 |
 | R14's daily backups, when he has them on (≈ ₹3.8 per 100 MB a month) | ≤ 3 |
 | The figure's files to each phone and laptop, once a release (≈ 3–3.5 MB from asia-south1) | < 0.1 once |
 | Cloud Run time for a press (≈ 10–40 s, inside the free vCPU-seconds) | 0 |
@@ -841,6 +939,22 @@ The AI learns where Try-on is from `outfit_suggest`'s `see_it` words (D17).
     owner-facing words; no real Google call anywhere; every test takes a fixed clock; CI runs plain
     `pytest`, so never `from tests.x import`: fakes are imported bare and named uniquely (`r131_*`);
     browser tests carry `-m browser`) and `I0-NOTES.md`.
+17. **The owner's scope of 17 Nov (D21, D22), as seams:** `TryOnCard` and `TryOnSlot` in
+    `tools/reply_cards.py` (in `AnyCard`; one a reply; Telegram ignores it) and
+    `wardrobe/styling/tryon_card.py` (`card_of`, `show`, and `missing`, row 388's check), called by
+    `outfit_suggest` while Try-on is on; `console-media.js` +3 lines (the hook in `cards()`),
+    `console-r7.js` +2 (loads `console-tryon-card.js`), the D stub `console-tryon-card.js`
+    (`window.JarvisTryOnCard = {cards, garment}`) and `inline()` / `garment()` in `console-tryon.js`'s stub;
+    `console-r7-share.js` +3 (a shared picture's "See it on me (a garment to buy)", which sends nothing);
+    `console-helpers-wardrobe.js` keeps **Show in 3D** only on a plan row; `model.py` `GARMENT`,
+    `GARMENT_ID`, `GARMENT_MAX` 20, `PAIR_MAX` 2, `NEW_TYPES`, `new_garment_id`, `new_garment_words`,
+    `aad_garment`; `ports.COLLECTIONS["seeme"]` += `tryon_garment` (R13's collection pin moves);
+    `kept.py`: garment photos in the pictures row and in OPS-05; `http_seeme.py` `GarmentIn`,
+    `GarmentView`, `GarmentList`, `NewGarment`, `Pairing`, and `PictureIn` / `PictureView` / `Estimate`
+    on the garment (no `plan`); `http.py` five routes (27) and `QUERIES`; the door's `garment()` and
+    `garmentPhoto()` (161 lines, ≤ 165); D17's words; `tests/r131_fake_seeme.py` (the fake server's
+    See it on me half, with the garments); the contract eval's row 388 case and its control; the guide's
+    C72 and C73 (v13.1.2).
 
 ## Part split (four builders; worktrees; branches `r13-1-a` … `r13-1-d` from `r13-1-i0`; disjoint files)
 
@@ -850,7 +964,8 @@ A and C against R13's real catalog and styling on I0's fakes.
 
 - **A · Try-on data** (Opus; AVT-03, AVT-04, AVT-05's association, AVT-09's check, AVT-11's saved looks,
   AVT-14's views, OPS-05): `wardrobe/tryon/{part,store,versions,looks,options,assets,saved,confirm,
-  privacy,erase}.py`, `api/tryon.py`, `tests/test_r131_a_*.py`, `tests/r131_fakes_a.py`,
+  privacy,erase}.py`, `api/tryon.py` (with `GET /v1/tryon/look?pieces=` for row 388's card, D21),
+  `tests/test_r131_a_*.py`, `tests/r131_fakes_a.py`,
   `evals/r13_1/looks.py`, INTEGRATION-A.md. `security-reviewer` required (OPS-05, the confirm path).
 - **B · The 3D figure** (**Fable 5.2**, one builder; AVT-02, AVT-03's shape, AVT-05/06 drawing, AVT-07,
   AVT-08, AVT-10, AVT-11's two figures, AVT-14's covering): `scripts/mannequin/**`,
@@ -861,8 +976,9 @@ A and C against R13's real catalog and styling on I0's fakes.
   private-zone removal and its test; quantisation within the budget; then the templates (tee, kurta,
   shorts, wrap, jacket open/closed, sneaker, sandal) and v2's rough spots (vest neckline, high collar,
   shoulder pinch, 24-segment sleeves, a shaped shoe toe; straight fingers stay).
-- **C · See it on me** (Opus; AVT-12, OPS-05's half): `llm/tryon_gemini.py`, `wardrobe/seeme/{part,vault,
-  consent,cap,estimate,make,pictures,privacy,jobs,texts}.py`, `api/seeme.py`, `tests/test_r131_c_*.py`,
+- **C · See it on me** (Opus; AVT-12 for a garment he is thinking of buying, D22; OPS-05's half):
+  `llm/tryon_gemini.py`, `wardrobe/seeme/{part,vault,consent,cap,estimate,make,pictures,garments,pair,
+  privacy,jobs,texts}.py`, `api/seeme.py`, `tests/test_r131_c_*.py`,
   `tests/r131_fake_gemini.py` (Google's documented GenerateContent answers through `httpx.MockTransport`:
   an image with `usageMetadata`, an answer with a text part carrying an instruction, a blocked prompt, a
   finish without an image, 400, 403, 404, 429, 500, 503, a cut body, a timeout), `evals/r13_1/seeme.py`,
@@ -871,8 +987,10 @@ A and C against R13's real catalog and styling on I0's fakes.
 - **D · Console and phone** (Opus; AVT-15 and the UI of every row): `static/console-tryon.js` (the
   section, measurements form, controls, swaps, undo, compare, settings, OPS-05 button; ≤ 600),
   `console-tryon-list.js` (the checklist, image cards, the share caption; ≤ 300), `console-tryon-me.js`
-  (photo, YES, estimate, confirm, progress, pictures; ≤ 400), `console-tryon-photo.js` (the pixel panel;
-  ≤ 300), `console-tryon.css` (≤ 200), `tests/test_r131_d_*.py`, `tests/browser/test_r131_d_*.py`,
+  (photo, the new garment's photo, type and colour, the pairing, YES, estimate, confirm, progress,
+  pictures; ≤ 400), `console-tryon-photo.js` (the pixel panel, his photo's and a garment photo's checks;
+  ≤ 300), `console-tryon-card.js` (row 388: the card under a reply, opened by itself; ≤ 150),
+  `console-tryon.css` (≤ 200), `tests/test_r131_d_*.py`, `tests/browser/test_r131_d_*.py`,
   `evals/r13_1/console.py`, the mockup screenshots, INTEGRATION-D.md. `security-reviewer` required (the
   pixel panel, the door).
 - **All parts:** test first; functions ≤ 50 lines, Python modules ≤ 400, JS ≤ 800; only the planned
@@ -880,16 +998,16 @@ A and C against R13's real catalog and styling on I0's fakes.
 
 ## Tests and evals (mock only; each control must make its suite fail)
 
-**Every acceptance check of the 14 is the named test in the first table**, in its part's files, and an
+**Every acceptance check of the 15 is the named test in the first table**, in its part's files, and an
 eval case of the same name. Real Google calls are never made by a test or an eval.
 
 | Suite | Cases | Control that must fail it |
 |---|---|---|
-| `contract` (I0, built) | six parts build through the real wiring and own only their routes, services, collections and job; a broken R13.1 part is "setup failed" while R13's four still run and R13's Wardrobe rows still read; the Try-on Privacy section exists with stand-ins; a `tryon` part with `data` is refused | the contract check off: a stray route is accepted |
+| `contract` (I0, built) | six parts build through the real wiring and own only their routes, services, collections and job; a broken R13.1 part is "setup failed" while R13's four still run and R13's Wardrobe rows still read; the Try-on Privacy section exists with stand-ins; a `tryon` part with `data` is refused; row 388's server half (one `tryon` card beside `outfit_suggest`'s answer, its slots the look's, none while Try-on is off) | the contract check off: a stray route is accepted; the card left out of the reply: row 388's case fails |
 | `looks` (A) | AVT-03 versions and kept selections; AVT-04 views and the kurta; AVT-05 association; AVT-09 fresh check, drafts, no tool call for a draft, the race (a piece to the laundry between the check and the call → refused by `outfit_plan`, the plan unchanged), one card at most; AVT-11 saved comparisons re-checked; AVT-14 private slots covered (no id, colour, photo or label in any look, option or caption); OPS-05 erase order and the catalog's `rev` unchanged; D20's `lock`/`reserve` refusals | the private filter off: AVT-14 fails; the fresh check off: AVT-09's laundry jacket gets past the early refusal (and D20's control, `lock` without the eligibility check: the race case writes the jacket) |
 | `figure` (B; Node and Python) | the manifest's sums, licences and the 3.5 MB budget; the measure table (12 slider ends and 4 mid points: each measurement changed alone within **0.5 cm**, measured 0.48 cm with the `waist_down` morph; every case's other measurements within **3.5 cm**, measured 3.33 cm; quantised within 0.2 cm of float); the private zone covered in every layer state × slot set × variant × view; AVT-07 geometry; tucked/untucked and open/closed where the table says; triangles ≤ 32,000 a figure; the GLB reader refuses an unknown accessor type | two morphs swapped: the measure table fails; `waist_down` dropped: waist 62 reads 63.9 and fails; the base shorts dropped in "All": the privacy walk fails; the blazer sleeve lengthened 2 cm: AVT-07 fails |
-| `seeme` (C, through the port) | zero provider calls without a current YES; "yes", "Yes", "YES!" refused; a moved rate (95.24 → 96.10) keeps consent, a model or location change asks again; the cap: with each picture settled at ₹8.52 and a hold of ₹11.22, the 34th fits and the 35th is refused; 10 presses at once → exactly one reserves, nine `busy`; released on every non-200 and on "never sent", kept on a timeout after sending, a cut 200 and a blocked 200; settled from `usageMetadata`, at the hold without it; a text part in the answer is read nowhere (logs, store, reply); a private piece and a piece without a front crop refused before any call; No-AI, bearer token, past the end date, `price_changed`, idempotent `request_id`; the one-garment fake (`max_garments = 1`) passes the same cases through the port | the atomic reserve replaced by read-then-write: the 10-at-once case lets two through; the consent check off: "zero calls without YES" fails; the private check moved to the console only: a private piece reaches the fake provider; the ₹ hashed into the consent: the moved-rate case asks again |
-| `console` (D, browser) | each row's UI half, the checklist under `__glFail`, missing WebGL2, a lost context and an asset 404; the YES dialog; the ₹ confirm with Cancel sending nothing; the share caption passed to `snapshot`; 44 px targets; 360 × 800 and 1280 × 800, day and night; the existing tabs' screenshots with Try-on **off** unchanged against R13's | the engine stub that throws, with the checklist hook removed: AVT-15 fails |
+| `seeme` (C, through the port) | zero provider calls without a current YES; "yes", "Yes", "YES!" refused; a moved rate (95.24 → 96.10) keeps consent, a model or location change asks again; the cap: with each picture settled at ₹8.52 and a hold of ₹11.22, the 34th fits and the 35th is refused; 10 presses at once → exactly one reserves, nine `busy`; released on every non-200 and on "never sent", kept on a timeout after sending, a cut 200 and a blocked 200; settled from `usageMetadata`, at the hold without it; a text part in the answer is read nowhere (logs, store, reply); a private piece and a piece without a front crop refused before any call; No-AI, bearer token, past the end date, `price_changed`, idempotent `request_id`; the one-garment fake (`max_garments = 1`) passes the same cases through the port; D22: a picture always has the new garment and at most two of his pieces; the garment is never in the catalog (`rev` and the pieces unchanged after its upload, pairing, picture and delete); a 21st garment photo `too_many`; a garment's photo with text drawn in it reaches the fake provider only as image bytes, and no text of it is anywhere else; the pairing never offers a private piece or one in the garment's slot | the atomic reserve replaced by read-then-write: the 10-at-once case lets two through; the garment added to the wardrobe: the "never his" case fails; the consent check off: "zero calls without YES" fails; the private check moved to the console only: a private piece reaches the fake provider; the ₹ hashed into the consent: the moved-rate case asks again |
+| `console` (D, browser) | each row's UI half (row 388: the card opens under a typed and a spoken reply with no tap, dressed in the card's pieces; the checklist under `__glFail`), the checklist under `__glFail`, missing WebGL2, a lost context and an asset 404; the YES dialog; the ₹ confirm with Cancel sending nothing; the share caption passed to `snapshot`; 44 px targets; 360 × 800 and 1280 × 800, day and night; the existing tabs' screenshots with Try-on **off** unchanged against R13's | the engine stub that throws, with the checklist hook removed: AVT-15 fails |
 | `e2e` (I1) | his workbook's end-to-end tests: "Meeting outfit update" (the avatar half: one piece to the laundry, the viewer reopened, the checklist and the figure use the same ids), "Layer and rotate" (shirt, blazer, belt, watch, shoes; open the blazer, swap the shoes, turn to the back; every approximation named), "Private items and photos" (the avatar half: a look with private layers, a shared look, then OPS-05; the catalog usable); plus See it on me's life (photo, YES, estimate, picture, 30 days, gone by `seeme_daily`) | the look built from a stale view: "Meeting outfit update" fails |
 | `needles` (I1) | his photo's bytes (raw, base64, hex), a picture's bytes, his measurements (numbers and words), the consent text, a private piece's label and colour, the fake token, the fake answer's text part — searched in every log record, the audit, approvals, activity, session turns, alerts, Telegram, Web Push, every tool result for the AI, every non-sealed document (`tryon_spend` included), the R13 backup file, the Privacy export; the fake provider receives only his photo and the chosen crops; a positive control per sink | the adapter logging its request body: the photo needle is found |
 
@@ -907,10 +1025,11 @@ eval case of the same name. Real Google calls are never made by a test or an eva
 | AVT-09 | `lock` without D20's eligibility check |
 | AVT-10 | the closed variant is the open variant |
 | AVT-11 | the second figure's readiness words are dropped |
-| AVT-12 | the piece list is taken from the plan, not from what was sent |
+| AVT-12 | the piece list is taken from the plan, not from what was sent; the new garment added to the wardrobe |
 | AVT-14 | the private filter off |
 | AVT-15 | the checklist hook removed |
 | OPS-05 | erase also deletes the wardrobe's photos (the catalog's `rev` changes) |
+| Row 388 | the card left out of the reply (`tryon_card.show` does nothing) |
 
 **Browser (Playwright, `-m browser`).** Against `tests/r131_fake_server.py` while building, the wired app at
 I1. The 3D tests run only in a Chromium with WebGL2 (the Book's `_need_3d` rule: skip only for
@@ -933,7 +1052,9 @@ only `/static/vendor/mannequin/` (crops come from the door's `thumb` as `data:` 
 `console-r111-files.js` ≤ 335, `console-privacy.js` ≤ 268, every `console*.js` ≤ 800 (the new ones as in
 the part split), `console-tryon*.css` ≤ 200 in all, every module under `wardrobe/` ≤ 400,
 `api/r13_wiring.py` ≤ 400, `api/console.py` ≤ 475, `styling/actions.py` ≤ 400, new Python modules ≤ 400,
-`static/vendor/mannequin/m1/` ≤ 3.5 MB. `tests/test_r131_seams.py` pins each.
+`static/vendor/mannequin/m1/` ≤ 3.5 MB; and for D21 and D22: `console-media.js` 411 (≤ 415),
+`console-r7.js` ≤ 95, `console-r7-share.js` ≤ 295, `console-tryon-card.js` ≤ 150, `tools/reply_cards.py`
+≤ 400, `wardrobe/tryon/model.py` ≤ 400. `tests/test_r131_seams.py` pins each.
 
 ## Risks and known limits
 
@@ -973,13 +1094,27 @@ the part split), `console-tryon*.css` ≤ 200 in all, every module under `wardro
 - **Pins churn:** 7 version, 8 keyring, 3 contract, 8 tick-list, the door's and R13 C's result pins move at
   I0.
 - **2 CPUs here:** targeted tests while building; whole suites queued.
+- **A garment's photo is untrusted content** (D22): a shop picture may carry text ("ignore your
+  instructions …"). JARVIS reads none of it and puts it nowhere but in the one request, as image bytes,
+  under fixed prompt words that say to ignore text in the images; the answer is only a picture shown to
+  him, never acted on and never read for text (D10's rule). A model can still be swayed by text in a
+  picture: the worst case is an odd picture, at the ₹ he already confirmed.
+- **Someone else in a shop photo** (a model wearing the garment): the device check refuses a face and
+  asks him to crop to the garment (owner question 13). It can miss a face, as R13's checks can.
+- **The pairing is R13's engine around one transient piece**: it suggests from his ready pieces only;
+  how well a shop's garment matches by colour is the fixed palette's guess.
+- **The card under the reply** draws a second 3D view on the page; only one stage lives at a time (D21.2),
+  so opening the card closes the section's figure.
 - **Date bombs:** a fixed clock in every test; the 30-day keep and the end date tested at 23:30 and 00:30
   IST and across 28 May 2027.
 
 ## Needs the owner (safe defaults; none blocks the build)
 
-1. **What a picture shows:** every garment of the look that can be sent (top, trousers, jacket) in ONE
-   picture, about ₹9 with GST (default); untick any before you press (the price hardly changes).
+His scope of 17 Nov 2026 (≈ 15:33–15:45 IST) is written in as D21 (row 388) and D22 ("See it on me" for a
+garment he is thinking of buying); question 13 is the one new default it raised.
+
+1. **What a picture shows:** the garment you may buy and up to two of your own pieces with it, in ONE
+   picture, about ₹9 with GST (default); untick any of yours before you press (the price hardly changes).
 2. **Pictures a press:** 1 (default); another try is another press, each with its ₹ shown.
 3. **How long pictures stay:** **answered 17 Nov 2026 (≈ 14:25 IST): 30 days unless you press Keep**
    (the default was 7 days).
@@ -1005,17 +1140,21 @@ the part split), `console-tryon*.css` ≤ 200 in all, every module under `wardro
     ₹4.4, but Google may process your photo in any country; or Google's dedicated try-on model, one garment
     a picture (about ₹6.7 each), in Singapore, switched off by Google by 20 Jan 2027 (not built unless you
     ask).
+13. **A garment photo that shows a person** (a shop's model wearing it): refused on your phone with "crop
+    it to the garment, or use a photo of the garment alone" (default: no one else's face goes to Google);
+    or send it as it is.
 
 ## Exit check (before the PR)
 
 1. **His workbook's Try-on exit condition:** "Each visual piece resolves to its inventory ID, estimates are
    clear and swaps update the avatar and checklist together", on the pilot set (owner question 11), on his
    phone and laptop; results in `docs/plans/r13-1-integration/I1-NOTES.md`.
-2. The 14 named tests and the e2e suite pass; every built part's control and every row's own control
+2. The 15 named tests and the e2e suite pass; every built part's control and every row's own control
    (M8) fails its suite; `STUBS_PASS` flipped.
 3. The full browser suite once on the joined branch (queued, never beside another whole suite).
-4. **Screenshots** of the Try it on section (figure, compare, checklist, the See it on me card, the YES
-   dialog, the ₹ confirm) at 360 × 800 and 1280 × 800, day and night, and the existing tabs with Try-on off,
+4. **Screenshots** of the Try it on section (figure, compare, checklist, the See it on me card with a new
+   garment and its pairing, the YES dialog, the ₹ confirm), the try-on card under a "what should I wear?"
+   reply, at 360 × 800 and 1280 × 800, day and night, and the existing tabs with Try-on off,
    sent to the orchestrator.
 5. The clock sweep (as R13: two days after the PR's date 09:00 IST, 20 Dec 2026, 1 Jan 2027 00:30 IST,
    1 Mar 2027, 28 May 2027, 29 Feb 2028).
@@ -1031,7 +1170,8 @@ the part split), `console-tryon*.css` ≤ 200 in all, every module under `wardro
 The real Gemini call (the shell can't reach Google; no paid call without his YES): its answer in this
 project, latency from `us`, how many thinking tokens it bills, the exact names `responseModalities` and
 `maxOutputTokens` take in the Agent Platform's GenerateContent (C checks the reference), the default
-picture size, how well it keeps his likeness; whether the custom role with `aiplatform.endpoints.predict`
+picture size, how well it keeps his likeness and how well it dresses him in a garment from a shop photo
+or a screenshot; whether the custom role with `aiplatform.endpoints.predict`
 is enough for GenerateContent in his project, and whether the deploy may set `cacheConfig`; Google's INR
 price and the GST on his invoice; the figure's speed and look on his phone's GPU; WebGL2 in the CI
 Chromium; SSD and UltraFace on a real full-length photo; how close the figure looks to him.
@@ -1100,4 +1240,4 @@ declined in whole; the two partial declines are named in their rows.
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 13:20 IST | R13.1 | First edition, from the code at `3f265cb`: the owner's summary in ₹; the 14 rows with his workbook's own titles and acceptance checks as the named tests, and where his wording goes beyond the approval; code facts with file:line; preview v2 built and measured here (sums, sizes, licences CC0 and Apache-2.0 checked in the anny clone); Google's try-on verified on Google's pages (one garment a call, $0.06 a picture, no Indian region, deprecated 14 Sep 2026 and retiring 20 Jan or 15 Mar 2027); D0–D19; the data model, the HTTP contract, no new tool; the I0 seam list; parts A–D with B on Fable 5.2; suites with controls; size guards; risks; 11 owner questions with defaults; the exit check | 🛠 Mark XXIII |
 | v13.1.2 | 17 Nov 2026, 14:20 IST | R13.1 | Plan review 1 written in (H1–H3, M1–M10, L1–L12; one partial decline, L11's workbook paperwork), with the Workshop's decisions; Status Ready. The default provider is `gemini-3.1-flash-image` at `us` with several garments in one request (≈ ₹9 a picture with GST, ≈ 33 a month), `virtual-try-on-001` not built, consent bound to provider, model and location (H1, M3); R13's `outfit_plan` refuses a piece that isn't ready and locks every slot in one call, an R13 fix shipped here (H2); the measure table corrected and one `waist_down` morph (each measurement within 0.48 cm alone, measured here) inside the 3.5 MB budget (H3); GST in the cap and every ₹ (M1), backups 7 days (M2), Try-on's Privacy rows on `privacy` (M4), Google's defaults only (M5), a custom role and a budget alert (M6), the door's size (M7), a control for every row (M8), the caption in the engine (M9), OPS-05 as a Privacy delete (M10); the LOW items; owner question 12; a "Plan review 1" table | 🛠 Mark XXIII |
-| v13.1.3 | 17 Nov 2026, 16:45 IST | R13.1 | The owner's answers of 17 Nov 2026 (≈ 14:25 IST) written in: the model is Gemini 3.1 Flash Image in the United States (question 12, the default confirmed); a See it on me picture is kept 30 days unless he presses Keep (question 3; was 7 days): summary 9, D14, the data model, seam 7 (`tryon_keep_days` 30, and I0's `tryon_cache`), the cost table (≈ 13–40 MB of pictures, backups ≤ ₹3), the `e2e` suite, the date-bomb line; every other question keeps its safe default | 🛠 Mark XXIII |
+| v13.1.3 | 17 Nov 2026, 16:45 IST | R13.1 | The owner's answers of 17 Nov 2026 (≈ 14:25 IST) written in: the model is Gemini 3.1 Flash Image in the United States (question 12, the default confirmed); a See it on me picture is kept 30 days unless he presses Keep (question 3; was 7 days): summary 9, D14, the data model, seam 7 (`tryon_keep_days` 30, and I0's `tryon_cache`), the cost table (≈ 13–40 MB of pictures, backups ≤ ₹3), the `e2e` suite, the date-bomb line; every other question keeps its safe default. Then (17:20 IST) the owner's scope of 17 Nov 2026 (≈ 15:33–15:45 IST): row 388, "what should I wear?" opens the try-on card by itself, dressed in R13's look (D21: the `tryon` reply card, the console's hook without touching `console.html`, `app.py`, `gateway.py` or `brain.py`, its test and control), and "See it on me" for a garment he is thinking of buying (D22: its photo uploaded or shared in, never fetched; `tryon_garment`; paired with up to two of his pieces; never added to his wardrobe; untrusted content); the intro, summary 4–12, the first table (rows 363 and 388), D0, D1, D11, D13, D14, D16, D17, D19, the data model, the HTTP contract (27 routes), seam 17, the part split, the suites and the controls, size guards, risks, owner question 13 (a face in a garment photo), the exit check | 🛠 Mark XXIII |

@@ -27,7 +27,7 @@ const KEEP_MS = 24 * 60 * 60 * 1000;
 const SEEN = 'jarvis_share_seen_v1'; // when the tray was last shown (this browser only)
 const ASK_TEXT = 'What can you tell me about this picture?';
 const WORDS = {
-  title: 'Shared with JARVIS',
+  title: 'Shared with JARVIS', seeme: 'See it on me (a garment to buy)',
   lead: 'These wait on this phone until you choose. Nothing has been sent.',
   none: 'Nothing shared is waiting.',
   look: 'Look at it here', ask: 'Ask the AI about it (about \u20b90.30)', vault: 'Add to my vault',
@@ -171,6 +171,8 @@ function card(it) {
     acts.append(can.ok ? button(WORDS.ask, pressing(c, () => ask(it))) : button(can.why, null, can.why));
   }
   if (!it.text) acts.append(button(WORDS.vault, pressing(c, () => vault(it))), button(WORDS.attach, pressing(c, () => attach(it))));
+  const T = window.JarvisTryOnCard; // R13.1 D22: a garment he may buy, into See it on me (this press sends nothing)
+  if (picture && T && typeof T.garment === 'function') acts.append(button(WORDS.seeme, pressing(c, async () => { await T.garment(await fileOf(it)); await done(it); })));
   acts.append(button(WORDS.discard, pressing(c, async () => { await drop(it); await render(); })));
   c.append(head, acts);
   return c;

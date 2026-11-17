@@ -449,10 +449,21 @@ def test_a_tryon_reply_card_opens_the_look_by_itself_without_touching_the_page()
     assert "'tryon'" not in media  # console-media.js never draws the kind itself
     assert "import('./console-tryon-card.js')" in _code(STATIC / "console-r7.js")
     card = _code(STATIC / "console-tryon-card.js")
-    assert "window.JarvisTryOnCard = Object.freeze({ cards })" in card
+    assert "window.JarvisTryOnCard = Object.freeze({ cards, garment })" in card
     assert "import('./console-tryon.js')" in card and "'tryon'" in card
     assert "fetch(" not in card and "XMLHttpRequest" not in card  # it reads only the card
     assert "export function inline(el, card)" in _code(STATIC / "console-tryon.js")
+
+
+def test_a_shared_picture_can_go_to_see_it_on_me_and_that_press_sends_nothing() -> None:
+    # D22: "uploaded or shared into the app": the share tray hands the file to Try it on
+    share = _code(STATIC / "console-r7-share.js")
+    assert "const T = window.JarvisTryOnCard;" in share
+    assert "await T.garment(await fileOf(it)); await done(it);" in share
+    assert "seeme: 'See it on me (a garment to buy)'" in share
+    card = _code(STATIC / "console-tryon-card.js")
+    assert "async function garment(file)" in card and "m.garment(file)" in card
+    assert "export function garment(file)" in _code(STATIC / "console-tryon.js")
 
 
 def test_the_door_sends_his_photo_and_reads_pictures_back() -> None:
@@ -756,6 +767,10 @@ async def test_the_fake_server_answers_every_route_with_its_model(settings: Sett
             look = http.TryonLook.model_validate((await c.get("/v1/tryon/look")).json())
             base = next(s for s in look.slots if s.slot == "base")
             assert base.private and base.piece is None and base.rgb is None  # covered only
+            card = await c.get(f"/v1/tryon/look?pieces=top:{T.shirt},base:{T.vest}")  # row 388
+            got = http.TryonLook.model_validate(card.json())
+            assert [(s.slot, s.piece) for s in got.slots] == [("top", T.shirt), ("base", None)]
+            assert (await c.get("/v1/tryon/look?pieces=top:wi_000000000999")).status_code == 422
             refused = await c.post(
                 "/v1/seeme/consent", json={"typed": "yes", "template_version": "c2"}
             )
@@ -867,6 +882,11 @@ def test_the_size_guards_hold() -> None:
     for path in new:
         assert _lines(path) <= 400, path.name
     assert _lines(SRC / "billing" / "spend.py") <= 100
+    # D21, D22 (the owner's scope of 17 Nov): the card's hook, its loader, the share tray's button
+    assert _lines(STATIC / "console-media.js") <= 415
+    assert _lines(STATIC / "console-r7.js") <= 95
+    assert _lines(STATIC / "console-r7-share.js") <= 295
+    assert _lines(SRC / "tools" / "reply_cards.py") <= 400
     m1 = STATIC / "vendor" / "mannequin" / "m1"
     total = sum(p.stat().st_size for p in m1.rglob("*") if p.is_file()) if m1.is_dir() else 0
     assert total <= 3.5 * 1024 * 1024  # Part B's files (D3's budget)

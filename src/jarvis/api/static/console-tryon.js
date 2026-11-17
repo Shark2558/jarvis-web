@@ -17,4 +17,7 @@ export function open(plan) { void plan; }
 // row 388 (D21): console-tryon-card.js hands over a reply's 'tryon' card {day, plan, code, slots}; D draws the
 // figure dressed in exactly those pieces under the reply (a private slot covered), or the checklist without 3D
 export function inline(el, card) { void el; void card; }
+// D22: a picture shared into the app, for See it on me's new garment (his type and colour, the device check, then the
+// door's garment()); never sent by this call
+export function garment(file) { void file; }
 document.addEventListener('jarvis:tryon-open', (e) => open((e.detail || {}).plan));

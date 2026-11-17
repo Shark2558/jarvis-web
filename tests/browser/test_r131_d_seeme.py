@@ -22,6 +22,7 @@ import pytest
 from r13_fakes_d import Picture
 from r131_fakes import T, jpeg
 from r131_fakes_d import WATCH_PHOTO, patched_door
+from test_r7_a_share import HARNESS, SW_SRC, TRAY
 from test_r131_d_card import Page, browser, call, d_url, drawn, reset, until
 
 from jarvis.wardrobe.model import COLOURS
@@ -120,6 +121,46 @@ def test_d22_garment_a_shared_picture_waits_for_his_words_and_that_press_sends_n
         assert not c.posts("/v1/seeme")  # the hand-over itself sent nothing
         assert "shop.jpg" not in c.page.locator("#p-helpers").inner_text()  # never its file name
     finally:
+        c.close()
+
+
+CANT = {
+    "tryon_off": "To switch it on, set JARVIS_TRYON_ENABLED=true on the server and restart it.",
+    "seeme_off": "See it on me is off: switch it on under See it on me settings",
+    "webp": "See it on me takes a JPEG or PNG photo of the garment.",
+}  # fmt: skip
+TRAY_BUTTON = "See it on me (a garment to buy)"
+
+
+@pytest.mark.parametrize("why", sorted(CANT))
+def test_d22_garment_a_picture_shared_in_that_see_it_on_me_cant_take_stays_and_says_why(
+    browser: Any, d_url: str, token: str, why: str
+) -> None:
+    # review D-1 M6: with Try-on off (or See it on me off, or a WebP) the tray deleted the picture
+    # and nothing said why; the tray keeps an item and shows the words when the hand-over throws
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    if why == "tryon_off":
+        off = {"error": "not_found", "detail": "Try-on is off on this server."}
+        c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=off))
+    if why == "seeme_off":
+        call(d_url, token, "/v1/seeme/settings", {"on": False}, method="PUT")
+    kind = "image/webp" if why == "webp" else "image/jpeg"
+    try:
+        c.page.goto(d_url + "/health")
+        shared = {"name": "shop", "type": kind, "draw": [320, 240]}
+        c.page.evaluate(HARNESS, [SW_SRC, {"fields": {"title": "", "text": ""}, "files": [shared]}])
+        c.open()
+        c.page.locator("#shareTray[open]").wait_for(timeout=15_000)
+        c.page.locator("#shareTrayList .r7s-item").get_by_role("button", name=TRAY_BUTTON).click()
+        note = c.page.locator("#shareTrayNote")
+        until(c.page, lambda: CANT[why] in note.inner_text(), "the words")
+        assert "bad" in (note.get_attribute("class") or "").split()
+        assert len(c.page.evaluate(TRAY)["items"]) == 1  # the picture stays in the tray
+        assert not c.posts("/v1/seeme")  # nothing sent
+    finally:
+        if why == "seeme_off":
+            call(d_url, token, "/v1/seeme/settings", {"on": True}, method="PUT")
         c.close()
 
 

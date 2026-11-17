@@ -211,7 +211,7 @@ function render(v) { // a card (row 388) is compact: the figure, its pieces in o
     photosOf: (id) => (S.photos && S.photos.get(id)) || [], thumb,
     toCamera: () => { if (window.JarvisDeck) window.JarvisDeck.open('camera', { focus: true }); },
     onChange: (key) => { v.open = key; draw(v); }, onPick: (slot, piece) => swap(v, 0, slot, piece),
-    onPick2: (slot, piece) => swap(v, 1, slot, piece), onRemove: (slot) => remove(v, slot) });
+    onPick2: (slot, piece) => swap(v, 1, slot, piece), onRemove: (slot) => swap(v, 0, slot, null) });
   if (v.kind === 'section' && v.src && v.covered.length) el.list.prepend(h.row('Private basics', S.priv ? 'Named in this list only: the figure stays covered.' // R13 D10's own row
     : 'Covered here and on the figure.', [h.toggle('Show private basics', S.priv, (on) => privy(v, on))]));
 }
@@ -272,22 +272,17 @@ function remember(v) {
   v.undo.push({ first: pairs(v.look), second: v.second ? pairs(v.second) : null, opts: Object.assign({}, v.opts) });
   if (v.undo.length > UNDO_MAX) v.undo.shift();
 }
-async function swap(v, which, slot, piece) {
+async function swap(v, which, slot, piece) { // piece null: Remove (outer, belt, watch, socks)
   const look = which ? v.second : v.look;
   if (!look) return;
   remember(v);
-  const list = pairs(look).filter((p) => p.slot !== slot).concat([{ slot, piece }]);
+  const list = pairs(look).filter((p) => p.slot !== slot).concat(piece ? [{ slot, piece }] : []);
   const order = (look.slots || []).map((s) => s.slot);
   list.sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
   try {
     const fresh = await lookOf(which ? { covered: v.covered, plan: null } : v, query(list, which ? null : v.plan));
     if (which) v.second = fresh; else v.look = fresh;
   } catch (e) { v.undo.pop(); failed(v, e); return; }
-  v.open = null; draw(v); paint(v);
-}
-async function remove(v, slot) {
-  remember(v);
-  try { v.look = await lookOf(v, query(pairs(v.look).filter((p) => p.slot !== slot), v.plan)); } catch (e) { v.undo.pop(); failed(v, e); return; }
   v.open = null; draw(v); paint(v);
 }
 async function undo(v) { // a pick no longer eligible comes back as a draft: the server's fresh readiness says so
@@ -570,10 +565,16 @@ async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pie
     await show(v, look, { plan: card.plan, title: 'Your look' + (code ? ' \u00b7 ' + code : '') });
   } catch (e) { failed(v, e); draw(v); }
 }
-export function garment(file) { // D22: the picture waits for See it on me; nothing is sent by this call
-  if (!(file instanceof Blob)) return;
+export async function garment(file) { // D22: the picture waits for See it on me ({ok: true}); sends nothing. Else {ok: false,
+  if (!(file instanceof Blob)) return { ok: false, code: 'file' }; // code, why}: the card module says it (review D-1 M6)
+  if (state() === 'unknown') { try { await readTryon(); } catch (_) { /* state() says it */ } }
+  if (state() !== 'on') return { ok: false, code: S.off ? 'tryon_off' : 'tryon_down' };
+  let me = null;
+  try { me = await api('/v1/seeme'); } catch (e) { return { ok: false, code: e && e.name === 'TypeError' ? 'offline' : 'seeme_down' }; }
+  if (!me || !me.on) return { ok: false, code: 'seeme_off', why: me && me.why ? txt(me.why, 160) : '' };
   if (S.me && S.el.me && document.contains(S.el.me)) S.me.take(file); else S.file = file;
   helpers(() => S.el.me);
+  return { ok: true };
 }
 function helpers(at) { // Helpers -> Wardrobe opened for him, scrolled to Try it on (or See it on me)
   if (window.JarvisDeck) window.JarvisDeck.open('helpers', { focus: true });

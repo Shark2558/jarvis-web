@@ -322,6 +322,25 @@ def test_avt09_swap_undo_a_jacket_in_the_laundry_is_a_draft_the_server_refuses(
         c.close()
 
 
+def test_avt09_remove_takes_the_watch_off_the_figure_and_the_list_and_undo_puts_it_back(
+    browser: Any, d_url: str, token: str
+) -> None:
+    reset(d_url, token)
+    c = opened(Page(browser, d_url, token))
+    try:
+        row(c, "watch").get_by_role("button", name="Change").click()
+        press(c, "Remove")
+        until(c.page, lambda: row(c, "watch").count() == 0, "the watch removed")
+        assert "watch" not in shown_pieces(last(c)["figures"][0])
+        looks = [r["url"] for r in c.sent if "/v1/tryon/look?pieces=" in r["url"]]
+        assert "watch" not in looks[-1] and T.watch not in looks[-1]  # read fresh without it
+        press(c, "Undo")
+        until(c.page, lambda: row(c, "watch").get_attribute("data-piece") == T.watch, "undo")
+        assert shown_pieces(last(c)["figures"][0])["watch"] == [T.watch]
+    finally:
+        c.close()
+
+
 def test_avt10_toggles_close_the_jacket_untuck_and_a_kurta_says_it_is_worn_out(
     browser: Any, d_url: str, token: str
 ) -> None:

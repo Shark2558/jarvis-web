@@ -169,16 +169,22 @@ const mk = (tag) => ({ tag, className: '', textContent: '', kids: [], attrs: {},
   append(...n) { this.kids.push(...n); }, setAttribute(k, v) { this.attrs[k] = v; } });
 globalThis.document = { createElement: mk, getElementById: () => null }; // no conversation
 const stub = 'export function inline(el, card) { globalThis.__seen.inline.push(card); }'
-  + ' export function garment(f) { globalThis.__seen.garment.push(f.size); }';
+  + ' export function garment(f) { globalThis.__seen.garment.push(f.size);'
+  + ' return f.size === 5 ? { ok: false, code: "tryon_off" } : { ok: true }; }';
 const src = fs.readFileSync(PATH, 'utf8').replaceAll("import('./console-tryon.js')",
   "import('data:text/javascript;base64," + Buffer.from(stub).toString('base64') + "')");
 await import('data:text/javascript;base64,' + Buffer.from(src).toString('base64'));
 const T = window.JarvisTryOnCard;
 const row = () => ({ kids: [], append(n) { this.kids.push(n); }, querySelector: () => null });
 for (const list of LISTS) T.cards(row(), list);
-await T.garment(new Blob([new Uint8Array(4)], { type: 'image/jpeg' }));
+const said = [];
+const hand = async (size, type) => {
+  try { await T.garment(new Blob([new Uint8Array(size)], { type })); said.push('ok'); }
+  catch (e) { said.push(e.message); }
+};
+await hand(4, 'image/jpeg'); await hand(5, 'image/png'); await hand(4, 'image/webp');
 await new Promise((r) => setTimeout(r, 50));
-console.log(JSON.stringify({ seen, frozen: Object.isFrozen(T), keys: Object.keys(T) }));
+console.log(JSON.stringify({ seen, said, frozen: Object.isFrozen(T), keys: Object.keys(T) }));
 """
 GOOD = {
     "kind": "tryon", "day": "2026-11-17", "plan": "op_0000d001", "code": "business_formal",
@@ -222,4 +228,16 @@ def test_a_forged_card_or_a_reply_without_one_reaches_nothing() -> None:
     ]  # fmt: skip
     out = _cards(lists)
     assert out["seen"]["inline"] == []
-    assert out["seen"]["garment"] == [4]  # the shared picture handed on as it is, nothing sent
+    assert out["seen"]["garment"] == [4, 5]  # a JPEG or PNG handed on as it is, nothing sent
+
+
+def test_a_shared_picture_see_it_on_me_cant_take_throws_the_words_that_say_why() -> None:
+    # review D-1 M6: the share tray keeps the picture and shows these words (it never drops it)
+    said = _cards([])["said"]
+    assert said[0] == "ok"
+    assert said[1].startswith("Try it on is off on this JARVIS, so See it on me can\u2019t take")
+    assert "set JARVIS_TRYON_ENABLED=true on the server and restart it." in said[1]
+    assert said[2] == (
+        "See it on me takes a JPEG or PNG photo of the garment. The picture stays here."
+    )  # a WebP is never handed on
+    assert all(s.endswith("The picture stays here.") for s in said[1:])

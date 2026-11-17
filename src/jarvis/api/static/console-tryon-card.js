@@ -11,6 +11,7 @@
 // slot words and wi_ ids, nothing else is passed on) and asks the server for nothing itself; nothing is kept.
 // garment(file): a picture shared into the app (the share tray's "See it on me (a garment to buy)") opens Helpers ->
 // Wardrobe -> Try it on's See it on me with it, for his type and colour and the device check; this press sends nothing.
+// When See it on me can't take it (Try-on or See it on me off, not a JPEG or PNG, over 25 MB) it throws the words.
 // Loaded at start by console-r7.js. textContent only; ASCII source.
 const SLOT = /^[a-z_]{2,20}$/;
 const PIECE = /^wi_[0-9a-f]{12}$/;
@@ -74,10 +75,23 @@ function cards(row, list) {
   });
 }
 
+const FILE_MAX = 25 * 1024 * 1024; // over this a phone may run out of memory decoding it (review D-1 L7)
+const STAYS = ' The picture stays here.';
+const CANT = Object.freeze({ // why See it on me can't take a shared picture now, and what he can do
+  tryon_off: 'Try it on is off on this JARVIS, so See it on me can\u2019t take this picture. To switch it on, set JARVIS_TRYON_ENABLED=true on the server and restart it.',
+  tryon_down: 'Try it on can\u2019t load right now: try again in a moment.',
+  seeme_off: 'See it on me is off: switch it on under See it on me settings in Helpers, Wardrobe, Try it on.',
+  seeme_down: 'See it on me can\u2019t load right now: try again in a moment.',
+  offline: 'Can\u2019t reach JARVIS. Check your connection.',
+});
+/** Hands a shared picture to See it on me, or throws the words that say why it can't take it (review D-1 M6): the share
+ *  tray keeps the picture and shows them, never deleting it in silence. This sends nothing. */
 async function garment(file) {
-  if (!(file instanceof Blob)) return;
+  if (!(file instanceof Blob) || !/^image\/(jpeg|png)$/.test(file.type || '')) throw new Error('See it on me takes a JPEG or PNG photo of the garment.' + STAYS);
+  if (file.size > FILE_MAX) throw new Error('This picture is over 25 MB: share a smaller photo of the garment.' + STAYS);
   const m = await import('./console-tryon.js');
-  m.garment(file);
+  const r = await m.garment(file);
+  if (!r || !r.ok) throw new Error(String((r && r.why) || (r && CANT[r.code]) || 'See it on me couldn\u2019t take this picture.').slice(0, 240) + STAYS);
 }
 
 window.JarvisTryOnCard = Object.freeze({ cards, garment });

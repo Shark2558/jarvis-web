@@ -40,6 +40,8 @@ from jarvis.wardrobe.tryon import model as m
 
 NO_STORE = {"Cache-Control": "no-store"}
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "r13_1"
+RACE_PLAN = "op_0000d20a"  # a confirm of this plan meets D20's race (A's review A-1 F1)
+LOCKED_OUT = "{the} is in the laundry: it can't be locked into this plan."  # R13's words
 LOOK_SLOTS = (
     ("top", T.striped),
     ("bottom", T.trousers),
@@ -67,6 +69,13 @@ class FakeTryon:
     body: http.BodyVersions = field(default_factory=http.BodyVersions)
     assets: dict[str, http.AssetChoice] = field(default_factory=dict)
     saved: dict[str, http.SavedView] = field(default_factory=dict)
+    refuse: str | None = None  # `outfit_plan`'s own refusal of every confirm (D20's race)
+
+
+def _race(view: WardrobeView, b: http.ConfirmIn) -> str:
+    """R13's words for the look's outer layer (else its first piece) gone to the laundry."""
+    s = next((x for x in b.slots if x.slot == "outer"), b.slots[0])
+    return LOCKED_OUT.format(the="The " + _words(view.pieces[s.piece]))
 
 
 def _readiness(p: Piece) -> str:
@@ -121,11 +130,17 @@ def look_slot(view: WardrobeView, slot: str, pid: str, *, private: bool = False)
         words=_words(p),
         template=t,
         variants=m.VARIANTS.get(t, ()) if t else (),
-        rgb=m.rgb_of(p.colour),
+        rgb=m.rgb_of(p.colour) if p.colour else None,  # null: no colour set (A, 8.3)
         pattern=p.pattern,
         texture_view=("detail" if detail else "front") if p.photos else None,
         photo=detail or (p.photos[0] if p.photos else None),
         views=views,
+        refs=tuple(
+            http.RefCard(view=v, photo=x)  # type: ignore[arg-type]
+            for v in ("front", "back", "detail")  # A's order (review A-1, I1 item 8.2)
+            for x in p.photos
+            if VIEW_OF.get(x) == v
+        ),
         missing=missing,  # type: ignore[arg-type]
         readiness=_readiness(p),
         eligible=p.eligible,
@@ -191,9 +206,11 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
         return _ok(st.body)
 
     @r.post("/v1/tryon/body/use")
-    async def use() -> JSONResponse:
+    async def use(at: str = "") -> JSONResponse:
         if st.body.draft is None:
             return _no(404, "no_draft", "There are no new measurements to use.")
+        if at and datetime.fromisoformat(at) != st.body.draft.at:  # A's ?at= (review A-1 F7)
+            return _no(409, "changed", "Your new measurements changed on another screen.")
         earlier = ((st.body.current,) if st.body.current else ()) + st.body.earlier
         st.body = http.BodyVersions(current=st.body.draft, earlier=earlier[: m.EARLIER_MAX])
         return _ok(st.body)
@@ -237,6 +254,8 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
                 what = _words(p) if p else "piece"
                 words = f"The {what} isn't ready: it can't be confirmed for this event."
                 return _no(409, "draft", words)
+        if st.refuse or b.plan == RACE_PLAN:  # A answers outfit_plan's refusal so (F1)
+            return _no(409, "refused", st.refuse or _race(v, b))
         return _ok(http.ToolReply(status="executed", message="Done.", result={"plan": b.plan}))
 
     @r.get("/v1/tryon/saved")

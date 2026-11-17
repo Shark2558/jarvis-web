@@ -234,3 +234,11 @@ async def test_a_confirm_with_no_gateway_is_refused_in_the_contracts_shape() -> 
         got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
             {"slot": "top", "piece": T.white}]})  # fmt: skip
     _refusal(got, 404, "unavailable")
+
+
+async def test_a_body_nested_past_reason_is_a_refusal_not_a_crash() -> None:
+    a = await a_world()
+    deep = b"[" * 100_000 + b"]" * 100_000
+    async with a.client() as c:
+        _refusal(await c.put("/v1/tryon/body", content=deep), 422, "bad_request")
+        _refusal(await c.post("/v1/tryon/saved", content=deep), 422, "bad_request")

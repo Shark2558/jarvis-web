@@ -272,3 +272,15 @@ async def test_no_store_yet_the_look_says_so() -> None:
     a.styling.view = none  # type: ignore[method-assign]
     with pytest.raises(looks.StylingOff):
         await a.service.looks.for_day(UID, "today")
+
+
+async def test_a_photos_view_is_read_only_for_a_sound_owner_id() -> None:
+    from jarvis.storage.docs import Set
+
+    a = await a_world()
+    odd = "../wardrobe"
+    await a.docs.write([Set(f"jarvis_wardrobe_photo/{odd}_wh_00000000a001",
+                            {"owner": odd, "view": "front"})])  # fmt: skip
+    assert await looks.photo_views(a.docs, "jarvis_", odd, ["wh_00000000a001"]) == {}
+    mine = await looks.photo_views(a.docs, "jarvis_", UID, ["wh_00000000a001", "wh_00000000a002"])
+    assert mine == {"wh_00000000a001": "front", "wh_00000000a002": "back"}

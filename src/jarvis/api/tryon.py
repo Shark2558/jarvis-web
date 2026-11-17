@@ -27,7 +27,6 @@ action and the field names only, never a number. OPS-05 has no route: it is Priv
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -136,14 +135,14 @@ async def body_of(request: Request, model: type[M]) -> M:
     """The request's JSON checked against its contract model (else `_Bad`)."""
     try:
         return model.model_validate(json.loads(await request.body()))
-    except (ValueError, ValidationError) as exc:  # JSONDecodeError is a ValueError
-        raise _Bad from exc
+    except (ValueError, ValidationError, RecursionError):  # JSONDecodeError is a ValueError
+        raise _Bad from None  # never chained: his values stay out of any trace
 
 
-async def _files() -> tuple[str, ...]:
+def _files() -> tuple[str, ...]:
     """The figure's files that pass the mannequin manifest's check (body first)."""
-    try:
-        good = await asyncio.to_thread(tryon_assets.mannequin_files, tryon_assets.RELEASE)
+    try:  # on the loop, as the mannequin route reads it (one cache, never two threads)
+        good = tryon_assets.mannequin_files(tryon_assets.RELEASE)
     except Exception as exc:  # noqa: BLE001 - no files: the engine falls back to the list
         log.warning("mannequin manifest unreadable", extra={"error": type(exc).__name__})
         return ()
@@ -155,7 +154,7 @@ async def _files() -> tuple[str, ...]:
 @router.get("/v1/tryon", include_in_schema=False)
 async def tryon(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     async def act(svc: TryonService) -> Any:
-        return await svc.tryon_view(uid, release=tryon_assets.RELEASE, files=await _files())
+        return await svc.tryon_view(uid, release=tryon_assets.RELEASE, files=_files())
 
     return await _run(request, uid, "view", act, change=False)
 

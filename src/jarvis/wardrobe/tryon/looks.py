@@ -32,6 +32,7 @@ from datetime import date
 from typing import get_args
 
 from jarvis.storage.docs import Docs
+from jarvis.undo.store import owner_ok
 from jarvis.wardrobe.model import View, WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
 from jarvis.wardrobe.styling import reserve, texts
@@ -100,7 +101,7 @@ async def photo_views(
 ) -> dict[str, View]:
     """{photo: its view} from the catalog's plain field (only his, only a known view)."""
     out: dict[str, View] = {}
-    if docs is None:
+    if docs is None or not owner_ok(uid):
         return out
     for ph in dict.fromkeys(photos):
         raw = await docs.get(f"{prefix}wardrobe_photo/{uid}_{ph}") or {}

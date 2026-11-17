@@ -26,6 +26,10 @@ jobs:
       # tests run instead of being skipped; NumPy 2.5 needs Python 3.12, the bridge image's own
       - if: matrix.python == '3.12'
         run: pip install -e ".[dev,homebridge]"
+      # R13.1 B: SciPy, so the 3D figure's build script is tested (the release rebuilt from a small
+      # committed source, byte for byte); the script's own pin, beside that NumPy; about 10 s
+      - if: matrix.python == '3.12'
+        run: pip install scipy==1.18.1
       - run: ruff check src tests evals
       - if: matrix.python == '3.11'
         run: pytest -q

@@ -837,6 +837,17 @@ def test_the_deploy_turns_googles_cache_off_with_the_token_never_on_a_command_li
     assert "--display-name=jarvis-tryon" in sh and "--budget-amount=300" in sh
 
 
+def test_ci_runs_the_figure_build_scripts_tests_on_the_312_leg_only() -> None:
+    # I1 (INTEGRATION-B 8, "Needs I1" 4): scipy for scripts/mannequin's tests, pinned as the
+    # script's own requirements, on the 3.12 leg beside the homebridge NumPy; 3.11 is untouched
+    ci = _text(ROOT / ".github" / "workflows" / "ci.yml")
+    pins = _text(ROOT / "scripts" / "mannequin" / "requirements-dev.txt")
+    assert "scipy==1.18.1" in pins
+    step = "      - if: matrix.python == '3.12'\n        run: pip install scipy==1.18.1\n"
+    assert ci.count("pip install scipy") == 1 and step in ci
+    assert ci.index('pip install -e ".[dev,homebridge]"') < ci.index(step) < ci.index("ruff check")
+
+
 # ---- 14 · the guide and the book -----------------------------------------------------------------
 def test_the_guide_plans_c72_and_c73_with_every_collection_and_console_module() -> None:
     from jarvis.wardrobe.ports import COLLECTIONS

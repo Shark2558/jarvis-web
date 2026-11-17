@@ -23,6 +23,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from jarvis.logging import get_logger
 from jarvis.storage.docs import Delete, Docs, Query, Set
 from jarvis.wardrobe.seeme import texts
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
@@ -38,6 +39,7 @@ from jarvis.wardrobe.tryon.model import (
     new_garment_words,
 )
 
+log = get_logger(__name__)
 _ID_RE = re.compile(GARMENT_ID)
 SUFFIX = ", not in your wardrobe"
 
@@ -108,8 +110,12 @@ class GarmentStore:
             return None
         try:
             return self._view(gid, doc, keep_days, False)
-        except (KeyError, ValueError, ValidationError):
-            return None  # an unreadable one is never used
+        except (KeyError, ValueError, ValidationError) as exc:  # never used; the job deletes it
+            log.warning(
+                "see it on me: a garment's record can't be read",
+                extra={"error": type(exc).__name__},
+            )
+            return None
 
     async def new(self, uid: str, gid: str) -> NewGarment | None:
         g = await self.meta(uid, gid)

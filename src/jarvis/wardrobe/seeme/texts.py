@@ -8,11 +8,12 @@ from __future__ import annotations
 
 class SeeMeRefused(Exception):  # noqa: N818 - a refusal in plain words, not a bug
     """Every refusal of See it on me: an HTTP status, a code (`http.SEEME_ERRORS`, the console
-    branches on it) and fixed words. `str()` is the code only (never the words in a log)."""
+    branches on it) and fixed words. `str()` is the code only (never the words in a log). `inr`
+    is what this refusal added to his spend (the audit's number): 0 unless kept at the hold."""
 
-    def __init__(self, status: int, code: str, words: str) -> None:
+    def __init__(self, status: int, code: str, words: str, *, inr: float = 0.0) -> None:
         super().__init__(code)
-        self.status, self.code, self.words = status, code, words
+        self.status, self.code, self.words, self.inr = status, code, words, inr
 
 
 # ---- off, and why (503) ---------------------------------------------------------------------

@@ -34,6 +34,7 @@ from jarvis.llm.tryon import (
     MAX_GARMENTS,
     Garment,
     TryOnAsk,
+    TryOnMaybeBilled,
     TryOnNotBilled,
     TryOnProvider,
     TryOnResult,
@@ -266,18 +267,24 @@ class Press:
             )
             said = texts.GOOGLE_BUSY if str(exc) == "status_429" else texts.UNAVAILABLE
             raise SeeMeRefused(503, "provider_unavailable", said) from None
-        except Exception as exc:  # noqa: BLE001 - maybe billed (or unknown): kept at the hold
-            log.warning(
-                "see it on me: no picture, maybe billed", extra={"error": type(exc).__name__}
-            )
-            await self._at_hold(uid, call, "maybe_billed", blocked=False)
-            words = texts.MAYBE_BILLED.format(about=f"about {approx(call.fig.typical_inr)}")
-            raise SeeMeRefused(503, "provider_unavailable", words) from None
+        except (TryOnMaybeBilled, TimeoutError) as exc:  # it may have left: kept at the hold
+            why = {"error": type(exc).__name__, "request_id": call.hold.request_id}
+            log.warning("see it on me: no picture, maybe billed", extra=why)
+            raise await self._maybe(uid, call) from None
+        except Exception as exc:  # noqa: BLE001 - a provider bug; the request may have left too
+            why = {"error": type(exc).__name__, "request_id": call.hold.request_id}
+            log.error("see it on me: a provider bug, kept at the hold", extra=why)
+            raise await self._maybe(uid, call) from None
         if not result.made:
             await self._at_hold(uid, call, "blocked", blocked=True)
             words = texts.BLOCKED.format(about=f"about {approx(call.fig.typical_inr)}")
-            raise SeeMeRefused(502, "blocked", words)
+            raise SeeMeRefused(502, "blocked", words, inr=call.hold.inr)
         return await self._keep(uid, call, result)
+
+    async def _maybe(self, uid: str, call: Call) -> SeeMeRefused:
+        await self._at_hold(uid, call, "maybe_billed", blocked=False)
+        words = texts.MAYBE_BILLED.format(about=f"about {approx(call.fig.typical_inr)}")
+        return SeeMeRefused(503, "provider_unavailable", words, inr=call.hold.inr)
 
     async def _at_hold(self, uid: str, call: Call, code: str, *, blocked: bool) -> None:
         hold = call.hold
@@ -306,7 +313,7 @@ class Press:
             if view is None:  # OPS-05, his withdrawal or a Privacy delete ran during the call
                 outcome = {"error": WITHDRAWN}
                 words = texts.WITHDRAWN.format(about=f"about {approx(inr)}")
-                raise SeeMeRefused(422, "no_photo", words)
+                raise SeeMeRefused(422, "no_photo", words, inr=inr)
             return view
         finally:
             try:

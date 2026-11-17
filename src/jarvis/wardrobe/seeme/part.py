@@ -137,7 +137,10 @@ class SeeMeService:
                 return None
             month = billing.meter.month_of(billing.clock())
             used = (await billing.meter.get(uid, month)).inr_total
-        except Exception:  # noqa: BLE001 - can't tell: no room (fail closed)
+        except Exception as exc:  # noqa: BLE001 - can't tell: no room (fail closed), said
+            log.warning(
+                "see it on me: his limit's room can't be read", extra={"error": type(exc).__name__}
+            )
             return 0.0
         return max(0.0, float(limit) - float(used))
 

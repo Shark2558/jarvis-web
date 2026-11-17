@@ -33,6 +33,7 @@ from datetime import date, datetime
 from typing import Any
 
 from jarvis.llm.tryon import TryOnDescription
+from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, Set
 from jarvis.wardrobe.seeme import texts
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
@@ -41,6 +42,7 @@ from jarvis.wardrobe.seeme.vault import Sealer
 from jarvis.wardrobe.tryon.http import ConsentView
 from jarvis.wardrobe.tryon.model import CONSENT, PURPOSE, YES, aad_consent
 
+log = get_logger(__name__)
 VERSION = "c2"  # the template's version: a change of its words asks for his YES again
 SHOWN_HEX = 12  # the hash's hex digits in the version he is shown ("c2-" + 12 = 15 of 20)
 _MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August",
@@ -112,7 +114,10 @@ class Consent:
             return None
         try:
             rec = json.loads(plain)
-        except ValueError:
+        except ValueError as exc:  # sealed with his AAD, yet not a record: no consent, said
+            log.warning(
+                "see it on me: a consent record won't parse", extra={"error": type(exc).__name__}
+            )
             return None
         return rec if isinstance(rec, dict) else None
 

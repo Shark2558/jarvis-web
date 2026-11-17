@@ -81,15 +81,27 @@ async def _json(request: Request, model: type[BaseModel]) -> Any:
         return _no(422, "invalid", texts.INVALID)
 
 
+def _failed(route: str, exc: Exception, request_id: str | None = None) -> JSONResponse:
+    """Never a 500 with a body or a trace in it: logged by the route's name, the request id and
+    the error's class name only."""
+    why = {"route": route, "request_id": request_id, "error": type(exc).__name__}
+    log.error("see it on me: a route failed", extra=why)
+    return _no(503, "unavailable", texts.UNAVAILABLE_NOW)
+
+
 async def _run(fn: Any, *args: Any, **kw: Any) -> Any:
-    """The service's answer, or its refusal; anything else is "can't just now" (logged by name)."""
+    """The service's answer, or its refusal; anything else is "can't just now" (logged)."""
     try:
         return await fn(*args, **kw)
     except SeeMeRefused as exc:
         return _no(exc.status, exc.code, exc.words)
-    except Exception as exc:  # noqa: BLE001 - never a 500 with a body or a trace in it
-        log.error("see it on me: a route failed", extra={"error": type(exc).__name__})
-        return _no(503, "unavailable", texts.UNAVAILABLE_NOW)
+    except Exception as exc:  # noqa: BLE001 - see `_failed`
+        return _failed(getattr(fn, "__name__", "seeme"), exc)
+
+
+async def _audit(request: Request, tool: str, args: dict[str, Any], detail: str) -> None:
+    """One audit line, ids and numbers only (`record_change` never raises)."""
+    await record_change(request, agent=AGENT, tool=tool, args=args, detail=detail)
 
 
 def _start(
@@ -140,13 +152,7 @@ async def settings(request: Request, uid: str = Depends(current_user)) -> Respon
     if isinstance(got, Response):
         return got
     shown = body.model_dump(exclude_none=True)
-    await record_change(
-        request,
-        agent=AGENT,
-        tool="seeme_settings",
-        args=shown,
-        detail="See it on me settings changed",
-    )
+    await _audit(request, "seeme_settings", shown, "See it on me settings changed")
     return _ok(got)
 
 
@@ -162,13 +168,7 @@ async def photo_in(request: Request, uid: str = Depends(current_user)) -> Respon
     got = await _run(svc.save_photo, uid, body)
     if isinstance(got, Response):
         return got
-    await record_change(
-        request,
-        agent=AGENT,
-        tool="seeme_photo",
-        args={"bytes": got.bytes},
-        detail="his photo for See it on me kept",
-    )
+    await _audit(request, "seeme_photo", {"bytes": got.bytes}, "his photo for See it on me kept")
     return _ok(got)
 
 
@@ -191,13 +191,7 @@ async def photo_drop(request: Request, uid: str = Depends(current_user)) -> Resp
     got = await _run(svc.delete_photo, uid)
     if isinstance(got, Response):
         return got
-    await record_change(
-        request,
-        agent=AGENT,
-        tool="seeme_photo_delete",
-        args={"deleted": got},
-        detail="his photo and his YES deleted",
-    )
+    await _audit(request, "seeme_photo_delete", {"deleted": got}, "his photo and his YES deleted")
     return _ok(http.Deleted(deleted=bool(got), message=texts.PHOTO_GONE))
 
 
@@ -212,13 +206,7 @@ async def consent(request: Request, uid: str = Depends(current_user)) -> Respons
     got = await _run(svc.give_consent, uid, body.typed, body.template_version)
     if isinstance(got, Response):
         return got
-    await record_change(
-        request,
-        agent=AGENT,
-        tool="seeme_consent",
-        args={"version": got.version},
-        detail="his YES for See it on me",
-    )
+    await _audit(request, "seeme_consent", {"version": got.version}, "his YES for See it on me")
     return _ok(got)
 
 
@@ -239,12 +227,11 @@ async def garment_in(
     got = await _run(svc.add_garment, uid, type, colour, body)
     if isinstance(got, Response):
         return got
-    await record_change(
+    await _audit(
         request,
-        agent=AGENT,
-        tool="seeme_garment",
-        args={"garment": got.id},
-        detail="a garment's photo kept (not in his wardrobe)",
+        "seeme_garment",
+        {"garment": got.id},
+        "a garment's photo kept (not in his wardrobe)",
     )
     return _ok(got)
 
@@ -286,13 +273,7 @@ async def garment_drop(
         return got
     if not got:
         return _no(404, "no_garment", texts.GARMENT_GONE)
-    await record_change(
-        request,
-        agent=AGENT,
-        tool="seeme_garment_delete",
-        args={"garment": id},
-        detail="a garment's photo deleted",
-    )
+    await _audit(request, "seeme_garment_delete", {"garment": id}, "a garment's photo deleted")
     return _ok(http.Deleted(deleted=True, message=texts.GARMENT_DELETED))
 
 
@@ -331,16 +312,17 @@ async def pictures(request: Request, uid: str = Depends(current_user)) -> Respon
     body = await _json(request, http.PictureIn)
     if isinstance(body, Response):
         return body
-    got = await _run(svc.press, uid, body)
-    made = not isinstance(got, Response)
-    args = {"request_id": body.request_id, "garment": body.garment, "pieces": list(body.pieces)}
-    await record_change(
-        request,
-        agent=AGENT,
-        tool="seeme_picture",
-        args=args,
-        detail="a picture made" if made else "no picture",
-    )
+    try:  # the audit names what happened: made, or the refusal's code, and its ₹ (GST in)
+        got: Any = await svc.press(uid, body)
+        code, inr = "made", got.inr
+    except SeeMeRefused as exc:
+        got, code, inr = _no(exc.status, exc.code, exc.words), exc.code, exc.inr
+    except Exception as exc:  # noqa: BLE001 - see `_failed`
+        got, code, inr = _failed("press", exc, body.request_id), "unavailable", 0.0
+    args = {"request_id": body.request_id, "garment": body.garment, "pieces": list(body.pieces),
+            "code": code, "inr": round(inr, 2)}  # fmt: skip
+    made = code == "made"
+    await _audit(request, "seeme_picture", args, "a picture made" if made else "no picture")
     return _ok(got) if made else got
 
 
@@ -371,7 +353,10 @@ async def keep(
     body = await _json(request, http.KeepIn)
     if isinstance(body, Response):
         return body
-    return _answer(await _run(svc.keep, uid, id, body.keep))
+    got = await _run(svc.keep, uid, id, body.keep)
+    if not isinstance(got, Response):
+        await _audit(request, "seeme_picture_keep", {"picture": id, "keep": body.keep}, "kept")
+    return _answer(got)
 
 
 @router.delete("/v1/seeme/pictures/{id}", include_in_schema=False)
@@ -388,6 +373,7 @@ async def picture_drop(
         return got
     if not got:
         return _no(404, "gone", texts.PICTURE_GONE)
+    await _audit(request, "seeme_picture_delete", {"picture": id}, "a picture deleted")
     return _ok(http.Deleted(deleted=True, message=texts.PICTURE_DELETED))
 
 

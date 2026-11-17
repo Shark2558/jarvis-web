@@ -5,11 +5,16 @@
 # clocks only; nothing reaches Google. Each written first and run red.
 from __future__ import annotations
 
+import logging
+from typing import Any
+
 import pytest
 from r131_fake_gemini import FakeGoogle, FakeTokens, picture_answer, project_of
+from r131_fake_tryon import Step
 from r131_fakes import UID, T, ist
-from r131_fakes_c import NEW_SHIRT, StrictTryOn, add_front, ask, ready_world
+from r131_fakes_c import NEW_SHIRT, FakeBilling, StrictTryOn, add_front, ask, ready_world
 
+from jarvis.llm.tryon import TryOnMaybeBilled
 from jarvis.llm.tryon_gemini import GeminiTryOn
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
 
@@ -123,3 +128,59 @@ async def test_a_piece_in_a_taken_slot_or_not_his_is_refused_in_its_own_words() 
         err = await _refused(svc.press(UID, ask(g.id, pieces, inr=9.0, n=n)))
         assert (err.status, err.code, err.words) == (422, "not_a_garment", words), pieces
     assert fake.calls == []
+
+
+# ---- finding 9: no silent fallback; a provider bug is logged as one ----------------------------
+def _logged(caplog: pytest.LogCaptureFixture, level: int, needle: str) -> list[Any]:
+    return [r for r in caplog.records if r.levelno == level and needle in r.getMessage()]
+
+
+async def test_a_provider_bug_is_an_error_and_still_kept_at_the_hold(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class Buggy(ScriptedTryOn):
+        async def make(self, ask: Any) -> Any:
+            raise TypeError("an adapter's own bug")
+
+    sw, svc, g = await ready_world(provider=Buggy(max_garments=3, model="gemini-3.1-flash-image"))
+    with caplog.at_level(logging.WARNING):
+        err = await _refused(svc.press(UID, ask(g.id, (), inr=await _shown(svc, g.id))))
+    assert err.code == "provider_unavailable" and "may still be charged" in err.words
+    month = await svc.kit.cap.month(UID)
+    assert month.held_inr == 0.0 and month.spent_inr > 0  # the request may have left: kept
+    bug = _logged(caplog, logging.ERROR, "provider bug")
+    assert bug and bug[0].error == "TypeError" and bug[0].request_id == "tq_" + "0" * 15 + "1"
+    assert "an adapter's own bug" not in caplog.text  # class names only
+
+
+async def test_a_maybe_billed_call_is_a_warning_not_a_bug(caplog: pytest.LogCaptureFixture) -> None:
+    step = Step(error=TryOnMaybeBilled("timeout"))
+    sw, svc, g = await ready_world(
+        provider=ScriptedTryOn(max_garments=3, model="gemini-3.1-flash-image", script=[step])
+    )
+    with caplog.at_level(logging.WARNING):
+        await _refused(svc.press(UID, ask(g.id, (), inr=await _shown(svc, g.id))))
+    assert _logged(caplog, logging.WARNING, "maybe billed")
+    assert not _logged(caplog, logging.ERROR, "provider bug")
+
+
+async def test_a_fallback_that_hides_a_failure_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    from jarvis.storage.docs import Set
+    from jarvis.wardrobe.seeme.vault import Sealer
+    from jarvis.wardrobe.tryon.model import PURPOSE, aad_consent
+
+    billing = FakeBilling(limit=500, broken=True)  # his overall limit can't be read
+    sw, svc, g = await ready_world(billing=billing)
+    prefix = sw.ctx.s.firestore_prefix
+    with caplog.at_level(logging.WARNING):
+        est = await svc.estimate(UID, g.id, [])
+        bad = {"owner": UID, "type": "shirt", "colour": "navy", "at": "not a time", "blob": "x"}
+        await sw.docs.write([Set(f"{prefix}tryon_garment/{UID}_tg_00000000abcd", bad)])
+        meta = await svc.kit.garments.meta(UID, "tg_00000000abcd")
+        blob = Sealer(sw.ctx.keyring).seal(PURPOSE, aad_consent(UID), b"not json")
+        await sw.docs.write([Set(f"{prefix}tryon_consent/{UID}", {"owner": UID, "blob": blob})])
+        desc = svc.kit.provider().describe()
+        current = await svc.kit.consent.current(UID, desc, cache=False)
+    assert est.limit_room_inr == 0.0 and meta is None and not current  # still fail closed
+    for needle in ("limit's room", "garment's record", "consent record"):
+        assert _logged(caplog, logging.WARNING, needle), needle

@@ -258,3 +258,61 @@ async def test_off_says_so_in_words(monkeypatch: pytest.MonkeyPatch) -> None:
         r.state["r13_parts"]["seeme"] = WardrobePart("seeme", ready="setup failed")
         got = await r.c.get("/v1/seeme")
         assert got.status_code == 503 and got.json()["error"] == "not_configured"
+
+
+# ---- review C-1: the audit of a press (finding 8) and a route that fails (finding 9) -------------
+class _Audit:
+    def __init__(self) -> None:
+        self.seen: list[dict[str, Any]] = []
+
+    async def append(self, **kw: Any) -> None:
+        self.seen.append(kw)
+
+
+async def test_a_press_keep_and_delete_are_audited_by_ids_code_and_rupees(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from r131_fake_tryon import Step
+
+    from jarvis.llm.tryon import TryOnNotBilled
+
+    async with real(monkeypatch) as r:
+        audit = _Audit()
+        r.app.state.gateway = SimpleNamespace(audit=audit)
+        gid = await _ready(r)
+        pic = http.PictureView.model_validate((await _press(r, gid, [])).json())
+        failing = [Step(error=TryOnNotBilled("status_500"))]
+        r.state["provider"] = ScriptedTryOn(max_garments=3, model=r.provider.model, script=failing)
+        assert (await _press(r, gid, [], n=2)).status_code == 503
+        await r.c.post(f"/v1/seeme/pictures/{pic.id}/keep", json={"keep": True})
+        await r.c.delete(f"/v1/seeme/pictures/{pic.id}")
+        presses = [a["args"] for a in audit.seen if a["tool"] == "seeme_picture"]
+        want = [("made", pic.inr), ("provider_unavailable", 0.0)]  # released: nothing added
+        assert [(a["code"], a["inr"]) for a in presses] == want
+        assert presses[0]["request_id"] == f"tq_{1:016x}" and presses[0]["garment"] == gid
+        rest = {a["tool"]: a["args"] for a in audit.seen}
+        assert rest["seeme_picture_keep"] == {"picture": pic.id, "keep": True}
+        assert rest["seeme_picture_delete"] == {"picture": pic.id}
+
+
+async def test_a_route_that_fails_says_cant_just_now_and_logs_its_name_and_request_id(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    async with real(monkeypatch) as r:
+        gid = await _ready(r)
+        svc = r.state["r13_parts"]["seeme"].services["seeme"]
+
+        async def broken(*a: Any, **kw: Any) -> Any:
+            raise RuntimeError("the store is down: never in a log")
+
+        monkeypatch.setattr(svc, "press", broken)
+        with caplog.at_level(logging.ERROR):
+            got = await _press(r, gid, [], n=3)
+        assert (got.status_code, got.json()["error"]) == (503, "unavailable")
+        [rec] = [x for x in caplog.records if "a route failed" in x.getMessage()]
+        assert (rec.route, rec.request_id, rec.error) == ("press", f"tq_{3:016x}", "RuntimeError")
+        assert "never in a log" not in caplog.text

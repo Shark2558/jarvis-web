@@ -126,7 +126,7 @@ function plan(day, p) {
   if (why.length) box.append(H.mk('p', 'sfine', why.map((x) => H.txt(x, 160)).join('. ') + '.'));
   [].concat((p.look && p.look.gaps) || [], p.needs || []).forEach((g) => box.append(H.mk('p', 'snote warn', H.txt(g, 160))));
   if (!p.cancelled) box.append(acts(btn('Wearing it', () => tool('wear_log', { action: 'start', plan: p.id }, 'Enjoy the day.')), btn('Done for today', () => tool('wear_log', { action: 'done', plan: p.id }))));
-  if (!p.cancelled) box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free (See it on me is for a garment to buy, D22)
+  if (!p.cancelled && UI.tryon && UI.tryon.state && UI.tryon.state() === 'on') box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free, while Try-on is on
   return [box];
 }
 function laundryRows() {
@@ -297,5 +297,6 @@ function mount(host) {
 if (H) {
   H.register('wardrobe', { mount, refresh() { if (UI.host && signedIn() && !UI.busy) load(); } });
   document.addEventListener('jarvis:ready', () => { if (UI.host) load(); });
+  document.addEventListener('jarvis:tryon-state', () => { if (UI.host && UI.outfits) draw(); }); // R13.1: Show in 3D follows it
 }
 import('./console-wardrobe-pieces.js').then((m) => { UI.pieces = m; if (UI.host) draw(); }).catch(() => { if (UI.secs.pieces) UI.secs.pieces.append(H.empty('This part couldn\u2019t load.')); });

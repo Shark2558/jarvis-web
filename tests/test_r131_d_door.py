@@ -21,7 +21,7 @@ import shutil
 import subprocess
 from typing import Any
 
-from r131_fakes_d import DOOR, HOOK, patched_door, patched_hook
+from r131_fakes_d import HOOK, patched_door, patched_hook
 
 DOOR_LIMIT = 165  # tests/test_r131_seams.py and tests/test_r13_seams.py
 HOOK_LIMIT = 306  # tests/test_r131_seams.py
@@ -49,8 +49,11 @@ def test_the_proposed_lines_keep_every_pin_of_the_door() -> None:
         "doc.size > opts.maxKb * 1024",
     ):  # fmt: skip
         assert pin in code, pin
-    added = set(door.splitlines()) - set(DOOR.read_text(encoding="utf-8").splitlines())
-    assert len(added) == 4  # three new lines and the export line that names them
+    # I1 applied the lines: they are the door's last four (three new lines and the export line
+    # that names them), after I0's `line`
+    added = door.rstrip("\n").splitlines()[-4:]
+    assert added[0].startswith("// R13.1 D (I1): See it on me's press") and "make, keep" in added[3]
+    assert door.splitlines()[-6].startswith("const line = () =>")
     for path in re.findall(r"""['"`](/v1/[^'"`]*)""", _code("\n".join(added))):
         assert path == "/v1/seeme/", path  # only See it on me's own routes, through the console
 
@@ -148,5 +151,7 @@ def test_the_hooks_two_proposed_lines_keep_every_pin_of_the_hook() -> None:
     assert "btn('Show in 3D', () => tryOn(p.id))" in hook  # free, on every plan, while Try-on is on
     assert "UI.tryon.state() === 'on'" in hook and "'jarvis:tryon-state'" in hook
     assert "btn('See it on me'" not in hook and "seeOn" not in hook
-    was, now = set(HOOK.read_text(encoding="utf-8").splitlines()), set(hook.splitlines())
-    assert len(now - was) == 2 and len(was - now) == 1  # one line changed, one added
+    # I1 applied the two lines: the hook is unchanged by `patched_hook()`, and I0's unconditional
+    # Show in 3D line is gone
+    assert hook == HOOK.read_text(encoding="utf-8")
+    assert "if (!p.cancelled) box.append(acts(btn('Show in 3D'" not in hook

@@ -159,4 +159,7 @@ async function drop(id) { // one photo, deleted
 }
 const line = () => 'Pictures sent from this device today: ' + readCount();
 
-if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, person, garment, picture, garmentPhoto, myPhoto, sentToday: readCount, line }));
+// R13.1 D (I1): See it on me's press (PictureIn's five fields, each checked), Keep, the deletes and the garment list: ids checked, JSON only
+const SEE = /^t[pg]_[0-9a-f]{12}$/, seeme = (p, o) => window.JarvisConsole.api('/v1/seeme/' + p, o), garments = () => seeme('garments'), five = (b) => (b && /^tg_[0-9a-f]{12}$/.test(String(b.garment)) && Array.isArray(b.pieces) && b.pieces.length <= 2 && b.pieces.every((p) => PIECE.test(String(p))) && b.confirm_cost === true && Number.isFinite(b.inr_shown) && b.inr_shown >= 0 && /^tq_[0-9a-f]{16}$/.test(String(b.request_id)) ? { garment: b.garment, pieces: b.pieces.slice(), confirm_cost: true, inr_shown: b.inr_shown, request_id: b.request_id } : null);
+const make = (b) => (five(b) ? seeme('pictures', { body: five(b) }) : no()), keep = (id, on) => (SEE.test(String(id)) && id[1] === 'p' ? seeme('pictures/' + id + '/keep', { body: { keep: on === true } }) : no()), forget = (id) => (id === 'photo' ? seeme('photo', { method: 'DELETE' }) : SEE.test(String(id)) ? seeme((id[1] === 'p' ? 'pictures/' : 'garments/') + id, { method: 'DELETE' }) : no());
+if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, person, garment, picture, garmentPhoto, myPhoto, make, keep, forget, garments, sentToday: readCount, line }));

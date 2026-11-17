@@ -4,6 +4,12 @@
 # through every Part A route and the paths that log (R13's records unreadable, the key changed);
 # then no record, tool call or audit entry names any of them. I1's `needles` suite searches every
 # other sink with the wired app.
+#
+# The one place his numbers belong (INTEGRATION-A 8.4, review A-1): his own Privacy export of
+# `tryon_figure` ("Your measurements and your 3D figure"), both the single export's `data` and
+# `export_all`'s `categories.tryon_figure`. Nowhere else: no other category, not `unavailable`,
+# not the export's audit line, no log. `outside_the_figure` is that rule; its positive control
+# plants a number in another category's export and must find it.
 from __future__ import annotations
 
 import json
@@ -15,7 +21,12 @@ import pytest
 from r131_fakes_a import SHOES, UID, AWorld, T, a_world
 
 from jarvis.keyring import Keyring
+from jarvis.privacy.ports import PrivacyRegistry
+from jarvis.privacy.service import PrivacyService
+from jarvis.privacy.sources import CallbackSource, Look
+from jarvis.tools.audit import AuditLog
 from jarvis.wardrobe.catalog.store import WardrobeUnavailable
+from jarvis.wardrobe.tryon import kept
 from jarvis.wardrobe.tryon.part import TryonService
 
 TYPED = {"height": 187, "shoulders": 51, "chest": 117, "waist": 93, "hips": 109, "inseam": 83}
@@ -130,3 +141,57 @@ async def test_his_measurements_never_reach_a_log_a_tool_call_or_the_audit(
     plain = {k: v for k, v in stored.items() if k != "blob"}  # the blob is sealed (AES-GCM)
     assert set(plain) == {"owner", "rev", "updated_at"} and _found([json.dumps(plain)]) == []
     assert not any(m in stored["blob"] for m in TYPED)  # no measurement's name in clear
+
+
+def outside_the_figure(export: dict[str, Any]) -> list[str]:
+    """The parts of an `export_all` that carry one of his numbers, `tryon_figure`'s own payload
+    aside (the one place they belong: his own copy of his own data)."""
+    rest = {k: v for k, v in export.items() if k != "categories"}
+    others = {k: v for k, v in export["categories"].items() if k != kept.FIGURE_ID}
+    return _found([json.dumps(rest, default=str), json.dumps(others, default=str)])
+
+
+def _planted() -> CallbackSource:
+    """Another category whose export carries his height: the rule's positive control."""
+
+    async def look(uid: str) -> Look:
+        return Look(1, [1])
+
+    async def export(uid: str) -> dict[str, Any]:
+        return {"note": f"height {TYPED['height']}"}
+
+    return CallbackSource(kept.SPECS[kept.PHOTO_ID], look, export)
+
+
+async def _exports(a: AWorld, *extra: Any) -> tuple[dict[str, Any], dict[str, Any], AuditLog]:
+    reg = PrivacyRegistry()
+    for row in (*a.part.privacy, *extra):
+        reg.register(row)
+    audit = AuditLog()
+    svc = PrivacyService(reg, audit=audit)
+    one = await svc.export(UID, kept.FIGURE_ID, proof=None, fresh_left_s=60)
+    every = await svc.export_all(UID, proof=None, fresh_left_s=60)
+    return one, every, audit
+
+
+async def test_his_measurements_are_in_his_own_figure_export_and_nowhere_else(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    a = await a_world()
+    await a.service.put_body(UID, TYPED)
+    await a.service.use_body(UID)
+    others = kept.stand_ins("seeme", a.docs, a.ctx.s.firestore_prefix)  # C's rows, as at I1
+    with caplog.at_level(logging.DEBUG):
+        one, every, audit = await _exports(a, *others)
+    figure = json.dumps(every["categories"][kept.FIGURE_ID])
+    for n in NEEDLES:  # all six: his export is his own copy of his own data
+        assert n.search(json.dumps(one["data"])) and n.search(figure), n.pattern
+    assert _found([json.dumps({k: v for k, v in one.items() if k != "data"})]) == []
+    assert outside_the_figure(every) == []  # no other category, not `unavailable`
+    entries = (await audit.tail(10)).entries
+    assert [e.tool for e in entries] == ["privacy_export", "privacy_export"]
+    assert _found([json.dumps([e.tool, e.detail, e.args_hash]) for e in entries]) == []
+    assert _found([_said(r) for r in caplog.records]) == []
+
+    _, planted, _ = await _exports(a, _planted())  # the rule's positive control
+    assert outside_the_figure(planted) != []

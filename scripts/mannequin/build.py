@@ -29,7 +29,7 @@ if __package__ in (None, ""):  # run as a script: make the package importable
 import numpy as np  # noqa: E402
 
 from . import accessories, bottoms, feet, outer, tops  # noqa: E402
-from .core import ANNY_COMMIT, DATA, Human, SourceRefused  # noqa: E402
+from .core import ANNY_COMMIT, DATA, NBODY, Human, SourceRefused  # noqa: E402
 from .figure import BODY_PARTS, SOLE, Figure, begin  # noqa: E402
 from .glb import LINES, GlbWriter, read_glb  # noqa: E402
 from .measure import (  # noqa: E402
@@ -148,16 +148,34 @@ def part_mesh(
 def rig_mesh(
     ms: Measurer, base: dict[str, Arr], morphs: dict[str, dict[str, Arr]]
 ) -> dict[str, Any]:
-    """The measure rig as a mesh of lines (never drawn: a test measures the file with it)."""
-    shapes = [base["_P"], *[m["_P"] for m in morphs.values()]]
+    """The measure rig as a mesh of lines (never drawn itself: a test measures the file with it).
+    Its points are points of the body AS DRAWN (`_body`: the head softened), so the rig and the
+    figure on screen cannot differ; it stands in where the body is not drawn (the private zone)."""
+    shapes = [base["_body"], *[m["_body"] for m in morphs.values()]]
     ids, pairs, sections = rig_ids(ms, shapes)
-    targets = {k: m["_P"][ids] - base["_P"][ids] for k, m in morphs.items()}
+    targets = {k: m["_body"][ids] - base["_body"][ids] for k, m in morphs.items()}
     return dict(
-        x=base["_P"][ids],
+        x=base["_body"][ids],
         index=pairs,
         uv=None,
         targets=targets,
         extras=dict(sections=sections, targetNames=list(targets)),
+    )
+
+
+def unsoftened_ends(base: dict[str, Arr], morphs: dict[str, dict[str, Arr]]) -> dict[str, Any]:
+    """A negative control's data (the `figure` eval's `unsoftened_rig`): the highest and lowest
+    points of the POSED body, before the head is softened, and their morph deltas. A rig taken
+    from these reads about 1.4 cm taller than the figure that is drawn."""
+    shapes = [base["_P"], *[m["_P"] for m in morphs.values()]]
+    ids = np.unique([f(p[:NBODY, 1]) for p in shapes for f in (np.argmax, np.argmin)])
+
+    def rounded(x: Arr) -> list[list[float]]:
+        return [[round(float(c), 5) for c in row] for row in x]
+
+    return dict(
+        x=rounded(base["_P"][ids]),
+        targets={k: rounded(m["_P"][ids] - base["_P"][ids]) for k, m in morphs.items()},
     )
 
 
@@ -244,6 +262,7 @@ def build(clone: Path) -> dict[str, bytes]:
         joints={k: [round(float(c), 5) for c in v] for k, v in fig.J0.items() if np.ndim(v) == 1},
         levels={k: round(float(fig.J0[k]), 5) for k in ("crotch", "waist", "trouser_top", "zc")},
         measure=measure_table(rig, read_glb(files["body.glb"])["meshes"]["measure"]),
+        controls=dict(unsoftened_ends=unsoftened_ends(base, morphs)),
     )
     files["MANIFEST.json"] = (json.dumps(manifest(files, facts), indent=1) + "\n").encode()
     return files

@@ -9,12 +9,16 @@
 //   side_is_front     Side returns Front's yaw                         -> AVT-02 fails
 //   back_resets_tuck  Back resets the tuck                             -> AVT-08 fails
 //   closed_is_open    the closed jacket is the open one                -> AVT-10 fails
+//   unsoftened_rig    the rig's top and floor taken before the head is softened (review B-1, finding 1: the
+//                     old build)                                     -> the drawn figure's height fails
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import * as C from './engine_contract.mjs';
 import * as L from './b_looks.mjs';
 
 const STATIC = new URL('../../../src/jarvis/api/static/', import.meta.url);
-const M1 = new URL('vendor/mannequin/m1/', STATIC);
+// JARVIS_B_M1: another build's folder (a rebuild in a temporary folder is checked by the same cases)
+const M1 = process.env.JARVIS_B_M1 ? pathToFileURL(process.env.JARVIS_B_M1 + '/') : new URL('vendor/mannequin/m1/', STATIC);
 globalThis.window = globalThis.window || {};
 const G = await import(new URL('console-tryon-glb.js', STATIC));
 const K = await import(new URL('console-tryon-cloth.js', STATIC));
@@ -81,10 +85,16 @@ function weightsOf(values) {
   if (values.waist < S.waist && control !== 'no_waist_down') { w.waist_down = (S.waist - values.waist) / (S.waist - R.waist[0]); w.waist = 0; }
   return w;
 }
+/** The rig's `ends` (the body's highest and lowest points); the control takes them before the head is softened. */
+function endsOf(pos, sec, weights) {
+  if (control !== 'unsoftened_rig') return Array.from({ length: sec.ends[1] }, (_, k) => at(pos, sec.ends[0] + k));
+  const raw = manifest.controls.unsoftened_ends;
+  return raw.x.map((p, k) => p.map((v, c) => v + Object.entries(raw.targets).reduce((s, [name, d]) => s + (Number(weights[name]) || 0) * d[k][c], 0)));
+}
 function measure(weights) {
   const rig = A.measure, pos = G.blend(rig, weights), sec = rig.extras.sections;
   const pts = (name) => Array.from({ length: sec[name][1] }, (_, k) => at(pos, sec[name][0] + k));
-  const ys = pts('ends').map((p) => p[1]), top = Math.max(...ys), floor = Math.min(...ys);
+  const ys = endsOf(pos, sec, weights).map((p) => p[1]), top = Math.max(...ys), floor = Math.min(...ys);
   const waist = pts('waist'), sh = pts('shoulders'), wy = waist.reduce((s, p) => s + p[1], 0) / waist.length;
   const crotch = Math.min(...pts('mid').filter((p) => p[1] < wy).map((p) => p[1])), shy = (sh[0][1] + sh[1][1]) / 2;
   const cut = (y) => {
@@ -99,6 +109,29 @@ function measure(weights) {
   return [top - floor, Math.hypot(...sub(sh[0], sh[1])), hullGirth(cut(wy + 0.53 * (shy - wy))), loop, hullGirth(cut(crotch + 0.36 * (wy - crotch))), crotch - floor].map((v) => v * 100);
 }
 
+// review B-1, finding 1: the measurements are judged on the figure that is DRAWN (the body's regions), not on a rig
+// beside it. The rig only stands in where the body is not drawn at all (the removed private zone).
+const drawnBody = (weights) => manifest.body.map((n) => G.blend(A[n], weights));
+function drawnHeight(parts) {
+  let lo = Infinity, hi = -Infinity;
+  for (const pos of parts) for (let i = 1; i < pos.length; i += 3) { if (pos[i] < lo) lo = pos[i]; if (pos[i] > hi) hi = pos[i]; }
+  return (hi - lo) * 100;
+}
+/** Each rig point's twin among the drawn body's vertices at the sample: [part, vertex, distance (m)]. */
+function twins(rig, parts) {
+  const out = [];
+  for (let k = 0; k < rig.length / 3; k++) {
+    let best = [0, 0, Infinity];
+    parts.forEach((pos, n) => {
+      for (let i = 0; i < pos.length; i += 3) {
+        const d = (pos[i] - rig[k * 3]) ** 2 + (pos[i + 1] - rig[k * 3 + 1]) ** 2 + (pos[i + 2] - rig[k * 3 + 2]) ** 2;
+        if (d < best[2]) best = [n, i / 3, d];
+      }
+    });
+    out.push([best[0], best[1], Math.sqrt(best[2])]);
+  }
+  return out;
+}
 // ---- the cases -----------------------------------------------------------------------------------------------------
 const cases = [];
 function check(id, fn) {
@@ -179,9 +212,34 @@ check('measure_table', (need) => {
 });
 
 check('avt03_shape_height_178', (need) => {
-  const got = measure(weightsOf({ ...manifest.sample, height: 178 }));
-  need(Math.abs(got[0] - 178) <= 0.5, 'height 178 measured ' + got[0].toFixed(2));
-  need(Math.abs(measure(weightsOf(manifest.sample))[0] - 172) <= 0.1, 'the sample is 172');
+  const tall = (cm) => drawnHeight(drawnBody(weightsOf({ ...manifest.sample, height: cm }))); // the figure that is DRAWN
+  need(Math.abs(tall(178) - 178) <= 0.5, 'height 178: the drawn figure is ' + tall(178).toFixed(2) + ' cm');
+  need(Math.abs(tall(172) - 172) <= 0.1, 'the sample is 172: the drawn figure is ' + tall(172).toFixed(2) + ' cm');
+  need(tall(178) - tall(172) > 5.5, 'typing 178 makes the figure taller');
+});
+
+check('drawn_figure_measures_what_was_typed', (need) => {
+  const rig = A.measure, sec = rig.extras.sections, base = drawnBody({}), pair = twins(G.blend(rig, {}), base);
+  const on = pair.map(([, , d]) => d < 0.0005), share = on.filter(Boolean).length / on.length;
+  need(share > 0.1, 'the rig shares points with the drawn body (' + share.toFixed(2) + ' of them; the rest stand in for the removed zone)');
+  for (const name of ['ends', 'shoulders']) for (let k = sec[name][0]; k < sec[name][0] + sec[name][1]; k++) need(on[k], 'the rig\'s ' + name + ' point ' + k + ' is not a point of the drawn body (' + (pair[k][2] * 1000).toFixed(1) + ' mm away)');
+  let worstOwn = 0, worstRig = 0;
+  for (const row of manifest.measure) {
+    const vals = Object.fromEntries(MEASURES.map((k, i) => [k, row.want[i]])), w = weightsOf(vals), parts = drawnBody(w);
+    const tall = drawnHeight(parts), got = measure(w), changed = MEASURES.filter((k) => vals[k] !== manifest.sample[k]);
+    const own = changed.length === 0 || (changed.length === 1 && changed[0] === 'height'), limit = own ? 0.5 : 3.5;
+    need(Math.abs(tall - row.want[0]) <= limit, row.case + ': height wanted ' + row.want[0] + ', the drawn figure is ' + tall.toFixed(2) + ' cm (limit ' + limit + ')');
+    need(Math.abs(tall - got[0]) <= 0.1, row.case + ': the rig reads ' + got[0].toFixed(2) + ' cm but the drawn figure is ' + tall.toFixed(2) + ' cm tall');
+    if (own) worstOwn = Math.max(worstOwn, Math.abs(tall - row.want[0]));
+    const pos = G.blend(rig, w);
+    pair.forEach(([n, i], k) => {
+      if (!on[k]) return;
+      const d = Math.hypot(pos[k * 3] - parts[n][i * 3], pos[k * 3 + 1] - parts[n][i * 3 + 1], pos[k * 3 + 2] - parts[n][i * 3 + 2]);
+      worstRig = Math.max(worstRig, d);
+      need(d <= 0.001, row.case + ': rig point ' + k + ' left the drawn body by ' + (d * 1000).toFixed(1) + ' mm');
+    });
+  }
+  cases.push({ id: 'figure:drawn_facts', passed: worstOwn <= 0.5 && worstRig <= 0.001, failures: [], drawn_height_own_cm: +worstOwn.toFixed(4), rig_off_drawn_mm: +(worstRig * 1000).toFixed(3) });
 });
 
 function walk(need) {

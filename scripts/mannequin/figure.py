@@ -26,7 +26,6 @@ from .mesh import (
     cyl_uv,
     frame,
     orient_out,
-    smoothstep,
     taubin,
     tri_of,
     vnormals,
@@ -91,7 +90,6 @@ class Figure:
             self.g[name] = self._garment(self.Qt[keep[self.Qt].all(1)])
         self.g["vest"] = self._garment(self._scooped(self.g["vest"]["q"]))
         self.g["tee"] = self._garment(self._crew(self.g["tee"]["q"]))
-        self.Abody = avg_matrix(len(self.P0), tri_of(self.Qb))
         self.body_q = self._regions()
         self.topo: dict[str, tuple[Arr, Arr | None]] = {}  # part -> triangles, corner or vertex UVs
         self.meta: dict[str, dict[str, Any]] = {}  # part -> extras for the file (ranges, rims)
@@ -105,7 +103,6 @@ class Figure:
         self.wArm = {s: ws("upperarm01." + s) for s in "LR"}
         self.wArmAny = self.wArm["L"] + self.wArm["R"]
         self.wLeg = {s: ws("upperleg01." + s) for s in "LR"}
-        self.wHead = h.wsum(h.subtree("neck02"))
         self.arm = self.wArmAny >= 0.5
         tf, tu = np.zeros(len(p)), np.full(len(p), 9.0)
         for s in "LR":  # tf: 0 at the elbow, 1 at the wrist; tu: 0 at the shoulder, 1 at the elbow
@@ -195,21 +192,9 @@ class Figure:
         return {k: qb[m] for k, m in masks.items()}
 
     def body(self, p: Arr) -> Arr:
-        """The body's points: the eye sockets filled, the face softened into a mannequin head."""
-        h, x = self.h, p.copy()
-        for g in ("helper-l-eye", "helper-r-eye"):
-            e = p[h.gidx(g)]
-            c = e.mean(0)
-            r = np.linalg.norm(e - c, axis=1).mean() * 1.06
-            b = x[:NBODY]
-            d2 = (b[:, 0] - c[0]) ** 2 + (b[:, 1] - c[1]) ** 2
-            m = (d2 < (0.97 * r) ** 2) & (b[:, 2] > c[2] - 1.6 * r) & (self.wHead[:NBODY] > 0.5)
-            dome = c[2] + np.sqrt(np.maximum(r * r - d2, 0))
-            b[m, 2] = np.maximum(b[m, 2], dome[m])
-        w = (smoothstep(0.5, 1.0, self.wHead) * 0.7)[:, None]
-        for _ in range(8):
-            x[:NBODY] = (x + w * (self.Abody @ x - x))[:NBODY]
-        return x
+        """The body's points as drawn (the head softened): the measurer's own, so the figure on
+        screen is the figure that was measured."""
+        return self.ms.head.body(p)
 
 
 @dataclass

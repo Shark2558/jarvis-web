@@ -150,7 +150,14 @@ def test_the_written_files_measure_what_the_manifest_says() -> None:
 
 
 def test_avt03_shape_typing_178_makes_the_figure_178_centimetres() -> None:
-    _passed("avt03_shape_height_178")
+    _passed("avt03_shape_height_178")  # the height of the body that is DRAWN, not of the rig
+
+
+def test_the_drawn_figure_measures_what_was_typed_and_the_rig_is_made_of_its_points() -> None:
+    """Review B-1, finding 1: the figure on screen was 1.0-1.7 cm shorter than the rig beside it."""
+    _passed("drawn_figure_measures_what_was_typed")
+    facts = node_cases()["drawn_facts"]
+    assert facts["drawn_height_own_cm"] <= 0.5 and facts["rig_off_drawn_mm"] <= 1.0
 
 
 def test_the_private_zone_is_covered_in_every_layer_state_slot_set_variant_and_view() -> None:
@@ -219,6 +226,8 @@ def test_a_dressed_figure_draws_at_most_32000_triangles_and_two_at_most_64000() 
         ("closed_is_open",
          "avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket",
          "closed: the shirt placket still shows"),
+        ("unsoftened_rig", "drawn_figure_measures_what_was_typed",
+         "sample: the rig reads 173.3"),
     ],
 )  # fmt: skip
 def test_each_control_turns_its_case_red(control: str, case: str, words: str) -> None:
@@ -250,6 +259,8 @@ def test_a_rebuild_measures_within_a_millimetre_and_counts_the_same_triangles(
     for name, data in files.items():
         (tmp_path / name).write_bytes(data)
     assert manifest_problems(tmp_path) == []
+    drawn = node_cases("none", tmp_path)  # the rebuilt figure, judged as it is drawn
+    assert drawn["drawn_figure_measures_what_was_typed"]["passed"], drawn
     new, old = json.loads(files["MANIFEST.json"]), manifest()
     assert new["triangles"] == old["triangles"] and new["templates"] == old["templates"]
     for a, b in zip(new["measure"], old["measure"], strict=True):

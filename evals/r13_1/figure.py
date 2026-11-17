@@ -7,7 +7,8 @@ only, without a browser:
   slider ends and 4 mid points: each measurement changed alone within 0.5 cm, every case's others
   within 3.5 cm, the written file within 0.2 cm of the float build);
 - in Node, through the console's own GLB reader and the engine's own plan() and model
-  (tests/fixtures/r13_1/b_check.mjs): the file re-measured with its measure rig; the reader's
+  (tests/fixtures/r13_1/b_check.mjs): the file re-measured with its measure rig, and the body
+  that is DRAWN measured itself (its height; the rig is made of its points); the reader's
   refusals (an unknown accessor type); the private zone covered in every layer state x slot set x
   variant x view; AVT-07's geometry; tucked/untucked and open/closed; AVT-02, 03, 05, 06, 08, 09,
   10, 11, 14, 15's halves; triangles <= 32,000 a figure.
@@ -16,7 +17,8 @@ Negative controls (each must turn its own case red; `control()` re-runs the Node
 applied and names what failed): two morphs swapped (the measure table); `waist_down` dropped
 (waist 62 reads 63.9); the base shorts dropped in "All" (the privacy walk); the blazer sleeve 2 cm
 longer (AVT-07); and the rows' own: Side returns Front's yaw (AVT-02), Back resets the tuck
-(AVT-08), the closed jacket is the open one (AVT-10)."""
+(AVT-08), the closed jacket is the open one (AVT-10); the rig's top and floor taken before the
+head is softened, as the first build did (the drawn figure's height, review B-1 finding 1)."""
 
 from __future__ import annotations
 
@@ -46,6 +48,7 @@ WANTED: dict[str, str] = {  # control -> the case it must turn red
     "side_is_front": "avt02_the_basic_figure_turns_to_distinct_front_side_and_back_views",
     "back_resets_tuck": "avt08_front_to_back_keeps_the_same_pieces_layers_and_figure",
     "closed_is_open": "avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket",
+    "unsoftened_rig": "drawn_figure_measures_what_was_typed",
 }
 
 

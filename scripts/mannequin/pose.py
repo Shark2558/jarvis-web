@@ -1,6 +1,8 @@
 # scripts/mannequin/pose.py
 """R13.1 Part B (docs/plans/r13-1-try-on.md D3): the mannequin's pose: relaxed standing, arms down
-a little away from the hips, feet on the floor (linear blend skinning with the standard rig)."""
+a little away from the hips, feet on the floor (linear blend skinning with the standard rig); and
+its head (`Head`): the eye sockets filled and the face softened, which is the body that is DRAWN
+and therefore the body that is measured and solved (review B-1, finding 1)."""
 
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .core import NBODY, Human
-from .mesh import Arr
+from .mesh import Arr, avg_matrix, smoothstep, tri_of
 
 
 def rot_axis(k: Arr, ang: float) -> Arr:
@@ -99,3 +101,30 @@ def posed_joint(h: Human, v: Arr, posed: Posed, bone: str) -> Arr:
     p = r @ h.head(v, bone) + t
     p[1] -= posed.floor
     return p
+
+
+class Head:
+    """The mannequin's head. `body(p)` turns posed points into the points that are drawn: the eye
+    sockets filled, the face softened. Softening lowers the crown by about 1.4 cm, so the height
+    is measured (and the shape solved) on THESE points, never on the posed ones."""
+
+    def __init__(self, h: Human) -> None:
+        self.h = h
+        self.w = h.wsum(h.subtree("neck02"))
+        self.avg = avg_matrix(len(h.V0), tri_of(h.Q[h.G == "body"]))
+
+    def body(self, p: Arr) -> Arr:
+        h, x = self.h, p.copy()
+        for g in ("helper-l-eye", "helper-r-eye"):
+            e = p[h.gidx(g)]
+            c = e.mean(0)
+            r = np.linalg.norm(e - c, axis=1).mean() * 1.06
+            b = x[:NBODY]
+            d2 = (b[:, 0] - c[0]) ** 2 + (b[:, 1] - c[1]) ** 2
+            m = (d2 < (0.97 * r) ** 2) & (b[:, 2] > c[2] - 1.6 * r) & (self.w[:NBODY] > 0.5)
+            dome = c[2] + np.sqrt(np.maximum(r * r - d2, 0))
+            b[m, 2] = np.maximum(b[m, 2], dome[m])
+        w = (smoothstep(0.5, 1.0, self.w) * 0.7)[:, None]
+        for _ in range(8):
+            x[:NBODY] = (x + w * (self.avg @ x - x))[:NBODY]
+        return x

@@ -27,7 +27,7 @@ from scipy.spatial import ConvexHull
 
 from .core import NBODY, Human
 from .mesh import Arr
-from .pose import pose
+from .pose import Head, pose
 
 MEASURES = ("height", "shoulders", "chest", "waist", "hips", "inseam")
 MORPHS = (*MEASURES, "waist_down")
@@ -123,11 +123,13 @@ def six(top: float, floor: float, sh: Arr, waist: Arr, mid: Arr, p: Arr, edges: 
 
 
 class Measurer:
-    """Measures a posed shape. `torso` are the body's edges away from the arms; the shoulder
-    landmarks are the top surface points just outside each shoulder joint."""
+    """Measures a shape as it is DRAWN (posed, the head softened: `drawn`). `torso` are the body's
+    edges away from the arms; the shoulder landmarks are the top surface points just outside each
+    shoulder joint."""
 
     def __init__(self, h: Human) -> None:
         self.h = h
+        self.head = Head(h)
         arm = h.wsum(h.subtree("upperarm01.L") + h.subtree("upperarm01.R"))
         q = h.Q[h.G == "body"]
         quad_e = np.concatenate([q[:, [0, 1]], q[:, [1, 2]], q[:, [2, 3]], q[:, [3, 0]]])
@@ -158,8 +160,12 @@ class Measurer:
             float(b.max()), float(b.min()), p[self.sh], p[WAIST_LOOP], p[self.mid], p, self.torso
         )
 
+    def drawn(self, a: Arr) -> Arr:
+        """The points of shape `a` that are drawn: posed, then the head softened."""
+        return self.head.body(pose(self.h, self.h.rest(a)).P)
+
     def of_shape(self, a: Arr) -> Arr:
-        return self.measure(pose(self.h, self.h.rest(a)).P)
+        return self.measure(self.drawn(a))
 
 
 def solve(f: Any, target: Arr, a0: Arr, iters: int = 5, step: float = 0.02) -> Arr:

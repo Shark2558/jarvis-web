@@ -94,30 +94,34 @@ def fake_clone(root: Path, sources: dict[str, str], data_dir: str) -> dict[str, 
 
 CONTROLS = (
     "swap_morphs", "no_waist_down", "no_shorts", "long_sleeve", "side_is_front",
-    "back_resets_tuck", "closed_is_open",
+    "back_resets_tuck", "closed_is_open", "unsoftened_rig",
 )  # fmt: skip
 _RUNS: dict[str, dict[str, dict[str, Any]]] = {}
 
 
-def node_cases(control: str = "none") -> dict[str, dict[str, Any]]:
+def node_cases(control: str = "none", folder: Path | None = None) -> dict[str, dict[str, Any]]:
     """The figure's Node checks (tests/fixtures/r13_1/b_check.mjs), by case name; run once a
-    control. Node missing is an error, never a skip."""
+    control (and a folder: another build than the committed one). Node missing is an error, never
+    a skip."""
+    import os
     import shutil
     import subprocess
 
-    if control not in _RUNS:
+    key = f"{control}@{folder or ''}"
+    if key not in _RUNS:
         node = shutil.which("node")
         if node is None:
             raise RuntimeError("node is not installed")
+        env = {**os.environ, **({"JARVIS_B_M1": str(folder)} if folder else {})}
         got = subprocess.run(
             [node, str(FIXTURES / "b_check.mjs"), control],
-            capture_output=True, text=True, timeout=300, check=False, cwd=ROOT,
+            capture_output=True, text=True, timeout=300, check=False, cwd=ROOT, env=env,
         )  # fmt: skip
         if got.returncode != 0:
             raise RuntimeError(f"b_check.mjs {control} failed: {got.stderr[-800:]}")
         out = json.loads(got.stdout)
-        _RUNS[control] = {c["id"].split(":", 1)[1]: c for c in out["cases"]}
-    return _RUNS[control]
+        _RUNS[key] = {c["id"].split(":", 1)[1]: c for c in out["cases"]}
+    return _RUNS[key]
 
 
 def manifest() -> dict[str, Any]:

@@ -125,7 +125,7 @@ function refs(H, s, o) { // AVT-04: the views kept, each its own card; the usefu
   });
   return box;
 }
-function options(H, s, o, n) { // Change: the slot's options, each with its FRESH readiness word; Remove where allowed
+function options(H, s, o, n, key) { // Change: the slot's options, each with its FRESH readiness word; Remove where allowed
   const box = H.mk('div', 'sacts tr-opts');
   const pick = n ? o.onPick2 : o.onPick;
   (s.options || []).filter((x) => x && x.piece !== s.piece).slice(0, 12).forEach((x) => {
@@ -133,6 +133,7 @@ function options(H, s, o, n) { // Change: the slot's options, each with its FRES
   });
   if (s.removable && !n) box.append(o.btn('Remove', () => o.onRemove(s.slot)));
   box.append(o.btn('Cancel', () => o.onChange(null)));
+  box.querySelectorAll('button').forEach((b) => { b.dataset.kf = key; }); // once chosen, the focus goes back to its Change
   if (box.childElementCount === 1) box.prepend(H.mk('p', 'sfine', 'Nothing else of yours fits here.'));
   return box;
 }
@@ -140,14 +141,14 @@ function options(H, s, o, n) { // Change: the slot's options, each with its FRES
 function row(H, s, o, n) {
   const key = n + ':' + s.slot + ':' + (s.piece || '');
   const can = !s.private && !o.compact && typeof (n ? o.onPick2 : o.onPick) === 'function';
-  const r = H.row(slotWord(s.slot) + ': ' + words(s, o), subline(s), can ? [o.btn('Change', () => o.onChange(o.open === key ? null : key))] : []);
+  const r = H.row(slotWord(s.slot) + ': ' + words(s, o), subline(s), can ? [o.btn('Change', () => o.onChange(o.open === key ? null : key), '', 'change:' + n + ':' + s.slot)] : []);
   r.classList.add('tr-item');
   r.dataset.slot = clean(s.slot, 20);
   if (!s.private && s.piece) r.dataset.piece = s.piece;
   if (s.eligible === false && !s.private) r.dataset.draft = '1';
   const out = [r];
   if (!s.private && !o.compact) out.push(refs(H, s, o));
-  if (o.open === key && can) out.push(options(H, s, o, n));
+  if (o.open === key && can) out.push(options(H, s, o, n, 'change:' + n + ':' + s.slot));
   return out;
 }
 

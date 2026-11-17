@@ -42,9 +42,9 @@ const thumb = reading('thumb'); // a crop read once a page (M2): no fetch, no al
 const txt = (v, n = 200) => (H() ? H().txt(String(v == null ? '' : v), n) : String(v == null ? '' : v).slice(0, n));
 const body = () => (S.tryon && S.tryon.body ? S.tryon.body.draft || S.tryon.body.current : null);
 const assets = () => (S.tryon && S.tryon.assets) || [];
-function btn(label, onClick, cls) {
+function btn(label, onClick, cls, key) { // key: the control's own name, kept when its words turn (M5)
   const b = H().mk('button', 'btn sact' + (cls ? ' ' + cls : ''), label);
-  b.type = 'button';
+  b.type = 'button'; b.dataset.k = key || label;
   b.addEventListener('click', () => { if (b.getAttribute('aria-disabled') !== 'true') onClick(b); });
   return b;
 }
@@ -178,7 +178,17 @@ function wake(v) {
 function rest(hidden) { if (hidden) pause(S.holder); else S.views.forEach(wake); }
 
 // ---- drawing a viewer ---------------------------------------------------------------------------------------------
-function draw(v) { // a card (row 388) is compact: the figure, its pieces in one line, a small set of controls (H1)
+function keeping(v, redraw) { // the pressed control keeps the keyboard focus, or the one now in its place (M5)
+  const a = document.activeElement, at = a && a.dataset && v.view.contains(a) ? a : null;
+  const part = at && PARTS.map(([k]) => v.el[k]).find((x) => x.contains(at));
+  redraw();
+  if (!at || (at.isConnected && document.activeElement === at)) return;
+  const all = [...v.view.querySelectorAll('button')], by = (k) => k && all.find((b) => b.dataset.k === k);
+  const next = by(at.dataset.k) || by(at.dataset.kf) || (part && part.querySelector('button'));
+  if (next) next.focus();
+}
+function draw(v) { keeping(v, () => render(v)); }
+function render(v) { // a card (row 388) is compact: the figure, its pieces in one line, a small set of controls (H1)
   const h = H(), el = v.el, three = v.mode === '3d', card = v.kind === 'card';
   v.view.dataset.mode = v.mode; v.view.dataset.why = v.why === 'list' ? '' : v.why;
   const b = body(), est = S.tryon && S.tryon.words ? txt(S.tryon.words, 120) : '';
@@ -220,23 +230,23 @@ function spin(v) { // Motion Off: Turn around stays still (L7), and says so
 }
 function turn(v, id) { v.opts = Object.assign({}, v.opts, { view: id }); if (v.stage) v.stage.view(id); controls(v); }
 function controls(v) { // a view or Turn around redraws its own buttons only: the list and its image cards stay (M2)
-  if (v.kind === 'card') v.el.acts.replaceChildren(...cardActs(v)); else v.el.tools.replaceChildren(...tools(v));
+  keeping(v, () => (v.kind === 'card' ? v.el.acts.replaceChildren(...cardActs(v)) : v.el.tools.replaceChildren(...tools(v))));
 }
 function style(v) {
   const out = [], top = (v.look && v.look.slots || []).find((s) => s.slot === 'top' && !s.private);
   const outer = (v.look && v.look.slots || []).find((s) => s.slot === 'outer' && !s.private);
-  if (top && (top.variants || []).includes('tucked')) out.push(btn(v.opts.tucked ? 'Untuck' : 'Tuck in', () => restyle(v, { tucked: !v.opts.tucked })));
+  if (top && (top.variants || []).includes('tucked')) out.push(btn(v.opts.tucked ? 'Untuck' : 'Tuck in', () => restyle(v, { tucked: !v.opts.tucked }), '', 'tuck'));
   else if (top && top.template === 'kurta') out.push(H().mk('p', 'sfine', 'A kurta is worn out.'));
-  if (outer && (outer.variants || []).includes('open')) out.push(btn(v.opts.open ? 'Close the jacket' : 'Open the jacket', () => restyle(v, { open: !v.opts.open })));
+  if (outer && (outer.variants || []).includes('open')) out.push(btn(v.opts.open ? 'Close the jacket' : 'Open the jacket', () => restyle(v, { open: !v.opts.open }), '', 'open'));
   LAYERS.forEach(([id, label]) => out.push(pressed(btn(label, () => restyle(v, { layers: id })), v.opts.layers === id)));
   return out;
 }
 function restyle(v, patch) { remember(v); v.opts = Object.assign({}, v.opts, patch); draw(v); paint(v); }
 function modes(v) { // the checklist one press away; back to 3D, the stage taken back, or Retry 3D once a page
-  if (v.mode === '3d') return [btn('Show as a list', () => toList(v, 'list'))];
-  if (v.why === 'list') return [btn('Show in 3D', () => to3d(v))];
-  if (v.why === 'elsewhere' || v.why === 'paused') return [btn('Show it here', () => to3d(v))];
-  return RETRY.includes(v.why) && !S.retried ? [btn('Retry 3D', () => retry(v))] : [];
+  if (v.mode === '3d') return [btn('Show as a list', () => toList(v, 'list'), '', 'mode')];
+  if (v.why === 'list') return [btn('Show in 3D', () => to3d(v), '', 'mode')];
+  if (v.why === 'elsewhere' || v.why === 'paused') return [btn('Show it here', () => to3d(v), '', 'mode')];
+  return RETRY.includes(v.why) && !S.retried ? [btn('Retry 3D', () => retry(v), '', 'mode')] : [];
 }
 function cardActs(v) { // row 388's card: a small set; layers, tuck, swap and compare are in the full view in Helpers
   const out = (v.mode === '3d' ? [pressed(btn('Turn around', () => spin(v)), v.spin)] : []).concat(modes(v));
@@ -247,7 +257,7 @@ function cardActs(v) { // row 388's card: a small set; layers, tuck, swap and co
 function acts(v) {
   const out = modes(v);
   out.push(off(btn('Undo', () => undo(v)), !v.undo.length));
-  out.push(btn(v.comparing ? 'Stop comparing' : 'Compare', () => (v.comparing ? stopCompare(v) : chooser(v))));
+  out.push(btn(v.comparing ? 'Stop comparing' : 'Compare', () => (v.comparing ? stopCompare(v) : chooser(v)), '', 'compare'));
   if (v.mode === '3d') out.push(btn('Save a picture of this look', () => picture(v)));
   if (v.plan) out.push(btn('Use this look', () => confirm(v)), btn('Wearing it', () => wearing(v)));
   return out;

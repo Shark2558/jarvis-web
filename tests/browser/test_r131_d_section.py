@@ -231,6 +231,44 @@ def test_a_control_press_fetches_no_image_card_again_and_shows_no_empty_one(
         c.close()
 
 
+FOCUSED = """() => { const a = document.activeElement;
+  return [a.textContent, a.getAttribute('aria-pressed')]; }"""
+
+
+def enter(c: Page, button: Any) -> None:
+    button.focus()
+    c.page.keyboard.press("Enter")
+
+
+def test_keyboard_focus_stays_on_the_pressed_control_or_the_one_in_its_place(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 M5: draw() replaced every button, so after Enter on Side the focus was on BODY
+    reset(d_url, token)
+    c = opened(Page(browser, d_url, token))
+    try:
+        sec = c.section()
+        enter(c, sec.get_by_role("button", name="Side", exact=True))
+        until(c.page, lambda: c.engine()["views"][-1:] == ["side"], "Side")
+        assert c.page.evaluate(FOCUSED) == ["Side", "true"]
+        enter(c, sec.get_by_role("button", name="Untuck", exact=True))
+        assert c.page.evaluate(FOCUSED)[0] == "Tuck in"  # the same control, its words turned
+        enter(c, sec.get_by_role("button", name="Without the outer layer", exact=True))
+        assert c.page.evaluate(FOCUSED) == ["Without the outer layer", "true"]
+        enter(c, sec.get_by_role("button", name="Undo", exact=True))
+        assert c.page.evaluate(FOCUSED)[0] == "Undo"
+        enter(c, row(c, "watch").get_by_role("button", name="Change"))
+        assert c.page.evaluate(FOCUSED)[0] == "Change"
+        enter(c, sec.get_by_role("button", name="brown watch · Ready"))
+        until(c.page, lambda: row(c, "watch").get_attribute("data-piece") == T.watch2, "the swap")
+        on = c.page.evaluate("() => document.activeElement.closest('.tr-item').dataset.slot")
+        assert on == "watch"  # back on that slot's Change
+        enter(c, sec.get_by_role("button", name="Show as a list", exact=True))
+        assert c.page.evaluate(FOCUSED)[0] == "Show in 3D"  # the switch in its place
+    finally:
+        c.close()
+
+
 def test_avt08_front_to_back_keeps_the_pieces_the_styling_and_the_figure(
     browser: Any, d_url: str, token: str
 ) -> None:

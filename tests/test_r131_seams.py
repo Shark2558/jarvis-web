@@ -828,7 +828,7 @@ def test_the_deploy_switches_on_see_it_on_me_only_when_the_api_and_a_role_worked
     assert sh.index("gcloud iam roles describe jarvisTryOn") < sh.index(update)
     assert "can't start\n# other paid models" not in sh and "can't start other paid" not in sh
     assert "ONLY make prompt requests (to any Agent Platform model)" in sh
-    assert sh.index("roles/jarvisTryOn") < sh.index("roles/aiplatform.user")  # the fallback last
+    assert "roles/aiplatform.user" not in sh  # fail closed: never a broader role (I1 sec. L5)
     assert "TRYON_STATE=true" in sh and "JARVIS_TRYON_PICTURES=true" not in sh  # never forced on
     infra = [ln for ln in sh.splitlines() if ln.startswith('INFRA_ENV="${INFRA_ENV},JARVIS_TRYON')]
     assert infra == [
@@ -840,11 +840,11 @@ def test_the_deploy_switches_on_see_it_on_me_only_when_the_api_and_a_role_worked
 
 def test_the_deploy_turns_googles_cache_off_with_the_token_never_on_a_command_line() -> None:
     sh = _text(ROOT / "deploy" / "cloudrun.sh")
-    block = sh[sh.index("TRYON_CACHE=false") : sh.index("unset tok cfg body")]
+    block = sh[sh.index("# Google's own 24-hour cache") : sh.index("unset tok cfg body url")]
     assert "curl -fsS --max-time 20 --config - -X PATCH" in block  # the token on stdin only
     assert '\\"disableCache\\":true' in block and "/cacheConfig" in block
     assert 'echo "$tok"' not in block and 'Bearer ${tok}\\""' in block
-    assert "--display-name=jarvis-tryon" in sh and "--budget-amount=300" in sh
+    assert "--display-name=jarvis-tryon" in sh and "--budget-amount=300INR" in sh  # sec. L6
 
 
 def test_ci_runs_the_figure_build_scripts_tests_on_the_312_leg_only() -> None:

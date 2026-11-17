@@ -480,56 +480,64 @@ try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
   || echo "  Note: could not let JARVIS use the speech APIs; the browser voice will be used."
 # R13.1 (plan review M6): a custom role that can ONLY make prompt requests (to any Agent Platform model):
 # it can't deploy, tune or manage anything; JARVIS's own cap and the jarvis-tryon budget alert watch
-# the bill. An existing role is set back to that one permission. Agent Platform User only when the
-# custom role can't be made (with a note).
+# the bill. An existing role is set back to that one permission. Fail closed (security review L5):
+# a role that can't be set back (unknown or broader permissions, or deleted) is never bound, and no
+# broader role is ever used instead; See it on me then stays off, with a note.
 TRYON_STATE=false
 TRYON_ROLE="projects/${PROJECT}/roles/jarvisTryOn"
 if [ "$TRYON_API" = on ]; then
   TRYON_MADE=false
   if gcloud iam roles describe jarvisTryOn --project "$PROJECT" >/dev/null 2>&1; then
-    TRYON_MADE=true
-    gcloud iam roles update jarvisTryOn --project "$PROJECT" --permissions=aiplatform.endpoints.predict --quiet >/dev/null 2>&1 \
-      || echo "  Note: the try-on role could not be set back to prompt requests only; check jarvisTryOn in IAM, Roles."
+    if gcloud iam roles update jarvisTryOn --project "$PROJECT" --permissions=aiplatform.endpoints.predict --quiet >/dev/null 2>&1; then
+      TRYON_MADE=true
+    else
+      echo "  Note: the try-on role jarvisTryOn could not be set back to prompt requests only (or it was deleted), so See it on me stays off. Check it in IAM, Roles, then re-run this script."
+    fi
   elif gcloud iam roles create jarvisTryOn --project "$PROJECT" --title="JARVIS try-on (prompt requests only)" \
        --permissions=aiplatform.endpoints.predict --stage=GA --quiet >/dev/null 2>&1; then
     TRYON_MADE=true
+  else
+    echo "  Note: the prompt-only try-on role could not be made, so See it on me stays off. Create the role jarvisTryOn with only aiplatform.endpoints.predict in IAM, Roles, then re-run this script."
   fi
   if [ "$TRYON_MADE" = true ]; then
-    try_bind "serviceAccount:${RUN_SA}" "$TRYON_ROLE" && TRYON_STATE=true
-  fi
-  if [ "$TRYON_STATE" = false ]; then
-    if try_bind "serviceAccount:${RUN_SA}" roles/aiplatform.user; then
+    if try_bind "serviceAccount:${RUN_SA}" "$TRYON_ROLE"; then
       TRYON_STATE=true
-      echo "  Note: the prompt-only try-on role could not be made, so JARVIS got Agent Platform User (it could call other models; the jarvis-tryon budget alert watches the bill)."
     else
       echo "  Note: JARVIS could not be let use Google's image model, so See it on me stays off. Re-run this script to try again."
     fi
   fi
 fi
 # Google's own 24-hour cache of requests (G6), switched off for the project; the access token reaches
-# curl only on stdin (--config -), never on a command line, and is never printed. Refused: the
-# consent says Google may keep requests up to 24 hours (JARVIS_TRYON_CACHE=true).
-TRYON_CACHE=false
+# curl only on stdin (--config -), never on a command line, and is never printed. Fail toward
+# disclosure (security review finding 1): the consent says Google may keep each request up to 24
+# hours (JARVIS_TRYON_CACHE=true) unless THIS run's PATCH worked AND Google reads back
+# disableCache: true; a run whose role step failed never claims the cache is off.
+TRYON_CACHE=true
 if [ "$TRYON_STATE" = true ]; then
   tok="$(gcloud auth print-access-token 2>/dev/null)" || tok=""
   cfg="header = \"Authorization: Bearer ${tok}\""
   body="{\"name\":\"projects/${PROJECT}/cacheConfig\",\"disableCache\":true}"
-  if [ -z "$tok" ] || ! printf '%s\n' "$cfg" | curl -fsS --max-time 20 --config - -X PATCH \
-       -H "Content-Type: application/json" -d "$body" \
-       "https://aiplatform.googleapis.com/v1/projects/${PROJECT}/cacheConfig" >/dev/null 2>&1; then
-    TRYON_CACHE=true
-    echo "  Note: Google's 24-hour request cache could not be switched off; See it on me's consent says so."
+  url="https://aiplatform.googleapis.com/v1/projects/${PROJECT}/cacheConfig"
+  if [ -n "$tok" ] \
+     && printf '%s\n' "$cfg" | curl -fsS --max-time 20 --config - -X PATCH \
+          -H "Content-Type: application/json" -d "$body" "$url" >/dev/null 2>&1 \
+     && printf '%s\n' "$cfg" | curl -fsS --max-time 20 --config - "$url" 2>/dev/null \
+          | grep -Eq '"disableCache": *true'; then
+    TRYON_CACHE=false
+  else
+    echo "  Note: Google's 24-hour request cache could not be switched off (or confirmed off); See it on me's consent says so."
   fi
-  unset tok cfg body
+  unset tok cfg body url
 fi
-# A budget alert at the try-on cap (300 in the billing account's own currency: rupees for an Indian
-# account) beside jarvis-any-charge: a second brake on the bill itself. Made once; never stops.
+# A budget alert at the try-on cap, ₹300 (300INR: gcloud refuses a currency other than the billing
+# account's, so a USD account never gets $300; security review L6) beside jarvis-any-charge: a
+# second brake on the bill itself. Made once; never stops.
 if [ "$TRYON_STATE" = true ] && [ -n "$BILLING_ACCOUNT" ]; then
   if found="$(gcloud billing budgets list --billing-account="$BILLING_ACCOUNT" --filter='displayName=jarvis-tryon' --format='value(name)' 2>/dev/null)"; then
     [ -n "$found" ] || gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" --display-name=jarvis-tryon \
-      --budget-amount=300 --filter-projects="projects/${PROJECT}" \
+      --budget-amount=300INR --filter-projects="projects/${PROJECT}" \
       --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0 --quiet >/dev/null 2>&1 \
-      || echo "  Note: could not add the jarvis-tryon budget alert (it needs a billing account admin); add one in Billing, Budgets and alerts."
+      || echo "  Note: could not add the jarvis-tryon budget alert (it needs a billing account admin, and an account billed in rupees); add one at your try-on cap, in its own currency, in Billing, Budgets and alerts."
   else
     echo "  Note: could not check for the jarvis-tryon budget alert, so none was added this time; re-run this script to try again."
   fi

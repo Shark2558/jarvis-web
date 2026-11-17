@@ -671,12 +671,14 @@ def test_the_r131_runner_passes_staged_and_its_contract_control_fails_it() -> No
     assert control["suite_failed"] is True and row388 in control["failed_cases"]["contract"]
 
 
-def test_the_gate_is_staged_until_i1_and_a_stub_fails_once_it_flips() -> None:
+def test_the_gate_is_flipped_at_i1_so_a_stub_never_reads_as_green() -> None:
     import asyncio
     from types import SimpleNamespace
 
     runner = _runner()
-    assert runner.STUBS_PASS is True  # type: ignore[attr-defined]  # I1 flips it and this pin
+    assert runner.STUBS_PASS is False  # type: ignore[attr-defined]  # I1: every part is built
+    for part in runner.PARTS:  # type: ignore[attr-defined]
+        assert runner.load(part).BUILT is True, part  # type: ignore[attr-defined]
     assert runner.PARTS == (  # type: ignore[attr-defined]
         "figure", "looks", "seeme", "console", "e2e", "needles", "contract",
     )  # fmt: skip
@@ -686,11 +688,11 @@ def test_the_gate_is_staged_until_i1_and_a_stub_fails_once_it_flips() -> None:
 
     stub = SimpleNamespace(BUILT=False, cases=not_built)
     runner.load = lambda part: stub  # type: ignore[attr-defined]
-    staged, _ = asyncio.run(runner.run_parts(("figure",)))  # type: ignore[attr-defined]
-    assert [(r["id"], r["passed"]) for r in staged] == [("x:not_built_yet", True)]
-    flipped, controls = asyncio.run(runner.run_parts(("figure",), stubs_pass=False))  # type: ignore[attr-defined]
+    flipped, controls = asyncio.run(runner.run_parts(("figure",)))  # type: ignore[attr-defined]
     assert [(r["id"], r["passed"]) for r in flipped] == [("x:not_built_yet", False)]
     assert controls == {}
+    staged, _ = asyncio.run(runner.run_parts(("figure",), stubs_pass=True))  # type: ignore[attr-defined]
+    assert [(r["id"], r["passed"]) for r in staged] == [("x:not_built_yet", True)]  # before I1
 
 
 def test_the_r131_suite_is_gated_in_run_all_mock_after_r13() -> None:

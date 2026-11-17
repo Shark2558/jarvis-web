@@ -132,6 +132,18 @@ CONTROLS: dict[str, Case] = {  # control -> the case it must turn red
     "avt11": ("avt11", ""),
     "row388": ("row388", ""),  # the card left out of the reply (d_dom.mjs passes the reply bare)
 }
+MUST_FAIL: dict[str, set[str]] = {  # control -> its case's OWN checks it must turn red (L10)
+    "avt15": {"checklist", "why"},
+    "avt06": {"thumbnail_w2"},
+    "avt11": {"each_readiness"},
+    "row388": {"opened", "pieces", "covered"},
+}
+
+
+def turned_red(control: str, result: dict[str, Any]) -> bool:
+    """Its own checks failed, and the run itself did not crash (a crash, or Node missing, proves
+    nothing about the row: review D-1 L10)."""
+    return not result.get("error") and MUST_FAIL[control] <= set(result.get("failures", ()))
 
 
 def modules(into: Path, control: str | None, how: str) -> None:
@@ -189,7 +201,8 @@ def _spec(url: str, case: Case, control: str | None, folder: Path) -> dict[str, 
 def run_case(url: str, case: Case, control: str | None = None) -> dict[str, Any]:
     node = shutil.which("node")
     if node is None:
-        return {"id": case_id(case), "passed": False, "failures": ["node is not installed"]}
+        lost = "node is not installed"
+        return {"id": case_id(case), "passed": False, "failures": [lost], "error": lost}
     fresh(url, case[0])
     with tempfile.TemporaryDirectory(prefix="r131d-") as tmp:
         modules(Path(tmp), control, case[1])
@@ -200,12 +213,14 @@ def run_case(url: str, case: Case, control: str | None = None) -> dict[str, Any]
         )  # fmt: skip
     lines = [x for x in got.stdout.splitlines() if x.startswith(MARK)]
     if not lines:
-        return {"id": case_id(case), "passed": False, "failures": [got.stderr[-600:] or "no out"]}
+        why = got.stderr[-600:] or "no out"
+        return {"id": case_id(case), "passed": False, "failures": [why], "error": why}
     out = json.loads(lines[-1][len(MARK) :])
     failures = [k for k, ok in out["checks"].items() if ok is not True]
     if "error" in out:
         failures.append(out["error"])
-    return {"id": case_id(case), "passed": not failures, "failures": failures}
+    error = str(out.get("error") or "")
+    return {"id": case_id(case), "passed": not failures, "failures": failures, "error": error}
 
 
 def _all(runs: list[tuple[Case, str | None]]) -> list[dict[str, Any]]:
@@ -257,7 +272,7 @@ async def cases() -> list[dict[str, Any]]:
 async def control() -> dict[str, Any]:
     runs = [(case, name) for name, case in CONTROLS.items()]
     got = await asyncio.to_thread(_all, runs)
-    turned = {name: not r["passed"] for (_, name), r in zip(runs, got, strict=True)}
+    turned = {name: turned_red(name, r) for (_, name), r in zip(runs, got, strict=True)}
     return {
         "name": "D: I0's engine stub with the checklist hook removed (AVT-15); the rows' own: "
         "AVT-06 the thumbnail stays W1's, AVT-11 the second list's readiness dropped, row 388 "

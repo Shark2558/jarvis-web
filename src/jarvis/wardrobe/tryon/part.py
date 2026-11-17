@@ -111,6 +111,19 @@ class TryonService:
             raise StylingOff(texts.NOT_READY_YET)
         return await store.view(uid)
 
+    async def view_or_none(self, uid: str) -> WardrobeView | None:
+        """R13's view for Privacy's tidy; None while it can't be read (storage trouble only)."""
+        try:
+            return await self._view(uid)
+        except StylingOff:
+            return None
+        except Exception as exc:  # noqa: BLE001 - R13's store down: the entries as stored
+            if not storage_trouble(exc):
+                raise
+            extra = {"error": type(exc).__name__, "at": where(exc)}
+            log.warning("try-on: R13's view unreadable for Privacy", extra=extra)
+            return None
+
     async def choose(self, uid: str, pid: str, body: AssetChoice) -> AssetChoice:
         view = await self._view(uid)
         made: list[AssetChoice] = []
@@ -184,7 +197,9 @@ def build(ctx: WardrobeContext) -> WardrobePart:
         rows = kept.stand_ins("tryon", docs, prefix) if docs is not None else ()
         return WardrobePart("tryon", privacy=rows, ready=off or OFF_NO_STORE)
     svc = TryonService(ctx)
-    rows = privacy.rows(ctx.docs, ctx.s.firestore_prefix, svc.store, svc.erase_all)
+    rows = privacy.rows(
+        ctx.docs, ctx.s.firestore_prefix, svc.store, svc.erase_all, svc.view_or_none
+    )
     return WardrobePart("tryon", privacy=rows, services={"tryon_looks": svc}, ready=READY)
 
 

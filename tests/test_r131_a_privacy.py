@@ -18,6 +18,7 @@ from jarvis.keyring import Keyring
 from jarvis.privacy.ports import PrivacyRegistry
 from jarvis.privacy.service import CONFIRM_WORD, PrivacyService
 from jarvis.tools.audit import AuditLog
+from jarvis.wardrobe.catalog.store import WardrobeUnavailable as WardrobeDown
 from jarvis.wardrobe.kept import WardrobeUnavailable
 from jarvis.wardrobe.tryon import erase, kept
 from jarvis.wardrobe.tryon.http import AssetChoice, ConfirmSlot, SavedIn, SavedLook
@@ -83,6 +84,35 @@ async def test_the_figure_row_counts_exports_and_deletes_with_a_confirm() -> Non
     assert got["figure_choices"] == {T.striped: {"template": "shirt", "texture_view": None,
                                                  "card_only": False}}  # fmt: skip
     assert [s["looks"][0]["slots"] for s in got["saved"]] == [[{"slot": "top", "piece": T.white}]]
+    deleted = await _delete(_service(a), kept.FIGURE_ID, confirm=None)
+    assert deleted.deleted == 1 and await a.docs.get(FIGURE) is None
+
+
+async def test_the_figure_rows_count_and_export_skip_choices_of_pieces_gone_or_private() -> None:
+    a = await a_world()
+    await _figure(a)
+    row = _rows(a)[kept.FIGURE_ID]
+    await a.w.edit(T.striped, private=True)  # made private since his figure choice (review F9)
+    seen = await row.describe(UID)
+    assert seen.count == 3  # the current one, the draft and a saved comparison: no choice
+    assert (await row.export(UID))["figure_choices"] == {}
+    assert T.striped in (await a.service.store.read(UID)).assets  # kept, only not counted
+
+    async def down(uid: str) -> Any:
+        raise WardrobeDown("R13's store is down")
+
+    a.store.view = down  # R13 can't be read: the entries as stored
+    assert (await row.describe(UID)).count == 4
+    assert T.striped in (await row.export(UID))["figure_choices"]
+
+
+async def test_a_present_but_empty_figure_document_can_still_be_deleted() -> None:
+    a = await a_world()
+    await a.service.put_body(UID, {"height": 172})
+    await a.service.drop_draft(UID)  # a draft dropped with no current one: an empty document
+    assert await a.docs.get(FIGURE) is not None
+    seen = await _rows(a)[kept.FIGURE_ID].describe(UID)
+    assert seen.count == 0 and seen.delete == "confirm"  # not "none": it is on disk
     deleted = await _delete(_service(a), kept.FIGURE_ID, confirm=None)
     assert deleted.deleted == 1 and await a.docs.get(FIGURE) is None
 

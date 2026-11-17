@@ -149,7 +149,7 @@ class PictureStore:
         return view_of(pid, doc, keep_days)
 
     async def _mine(self, uid: str, pid: str) -> dict[str, Any] | None:
-        if not _ID.match(pid):
+        if not _ID.fullmatch(pid):  # fullmatch: `$` alone lets a trailing newline through
             return None
         doc = await self.docs.get(self.path(uid, pid))
         return doc if doc is not None and doc.get("owner") == uid else None

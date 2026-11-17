@@ -101,7 +101,7 @@ class GarmentStore:
         )  # fmt: skip
 
     async def meta(self, uid: str, gid: str, *, keep_days: int = 30) -> GarmentView | None:
-        if not _ID_RE.match(gid):
+        if not _ID_RE.fullmatch(gid):  # fullmatch: `$` alone lets a trailing newline through
             return None
         doc = await self.docs.get(self.path(uid, gid))
         if doc is None or doc.get("owner") != uid:
@@ -125,7 +125,7 @@ class GarmentStore:
         return GarmentList(garments=tuple(out[-GARMENT_MAX:]))
 
     async def get(self, uid: str, gid: str) -> bytes | None:
-        if not _ID_RE.match(gid):
+        if not _ID_RE.fullmatch(gid):
             return None
         doc = await self.docs.get(self.path(uid, gid))
         if doc is None or doc.get("owner") != uid:
@@ -133,7 +133,7 @@ class GarmentStore:
         return self.sealer.open(PHOTO_PURPOSE, aad_garment(uid, gid), doc.get("blob"))
 
     async def delete(self, uid: str, gid: str) -> bool:
-        if not _ID_RE.match(gid) or await self.meta(uid, gid) is None:
+        if not _ID_RE.fullmatch(gid) or await self.meta(uid, gid) is None:
             return False
         await self.docs.write([Delete(self.path(uid, gid))])
         return True

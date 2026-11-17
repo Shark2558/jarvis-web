@@ -297,6 +297,61 @@ async def test_the_garment_is_never_his_after_upload_pairing_picture_and_delete(
     assert all("tg_" not in k for k in before[1])
 
 
+async def test_a_made_picture_is_kept_and_settled_when_the_rest_of_the_look_cant_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = ScriptedTryOn(max_garments=3, model="gemini-3.1-flash-image")
+    sw, svc, g = await ready_world(provider=fake)
+    shown = await _shown(svc, g.id, (T.trousers,))
+
+    async def blip(*args: object, **kw: object) -> None:
+        raise RuntimeError("storage blip")  # after Google made (and billed) the picture
+
+    monkeypatch.setattr(svc.kit.pairer, "from_look", blip)
+    pic = await svc.press(UID, ask(g.id, (T.trousers,), inr=shown))
+    assert [p.piece for p in pic.sent] == [T.trousers] and pic.not_sent == ()
+    assert await svc.picture(UID, pic.id) is not None  # kept, not lost
+    month = await svc.kit.cap.month(UID)
+    assert (month.spent_inr, month.held_inr, month.pictures) == (8.52, 0.0, 1)
+
+
+async def test_a_repeated_maybe_billed_request_id_answers_the_same_code() -> None:
+    from jarvis.wardrobe.tryon.http import SEEME_ERRORS
+
+    fake = ScriptedTryOn(max_garments=3, model="gemini-3.1-flash-image",
+                         script=[Step(error=TryOnMaybeBilled("timeout"))])  # fmt: skip
+    sw, svc, g = await ready_world(provider=fake)
+    body = ask(g.id, (), inr=await _shown(svc, g.id))
+    first = await _refused(svc.press(UID, body))
+    again = await _refused(svc.press(UID, body))
+    assert (first.status, first.code) == (again.status, again.code) == (503, "provider_unavailable")
+    assert "may still be charged" in again.words and len(fake.calls) == 1
+    cut = ask(g.id, (), inr=9.0, n=2)  # a press cut off between its reserve and its answer
+    await svc.kit.cap.reserve(UID, cut.request_id, 11.22, 300)
+    sw.w.clock.set(sw.w.clock() + timedelta(hours=2))
+    assert await svc.kit.cap.settle_old(UID) == 1  # the daily job: settled at its hold
+    late = await _refused(svc.press(UID, cut))
+    assert (late.status, late.code) == (503, "provider_unavailable") and late.code in SEEME_ERRORS
+    assert len(fake.calls) == 1
+
+
+async def test_an_id_with_a_trailing_newline_never_reaches_a_path() -> None:
+    sw, svc, g = await ready_world()
+    pic = await svc.press(UID, ask(g.id, (), inr=await _shown(svc, g.id)))
+    real, read = sw.docs.get, []
+
+    async def spy(path: str) -> object:
+        read.append(path)
+        return await real(path)
+
+    sw.docs.get = spy  # type: ignore[method-assign]
+    assert await svc.garment_photo(UID, g.id + "\n") is None
+    assert await svc.delete_garment(UID, g.id + "\n") is False
+    assert await svc.picture(UID, pic.id + "\n") is None
+    assert await svc.delete_picture(UID, pic.id + "\n") is False
+    assert not any("\n" in p for p in read), read
+
+
 async def test_a_provider_that_never_answers_is_cut_at_the_deadline_and_kept_at_the_hold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

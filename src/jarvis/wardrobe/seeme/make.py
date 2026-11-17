@@ -60,10 +60,11 @@ log = get_logger(__name__)
 ENDS_SOON_DAYS = 30
 SHOWN_SLACK = 0.01  # ₹: the fresh typical may be at most this above what he was shown
 DEADLINE_SLACK_S = 5.0  # past the provider's own 120 s: a timeout here is "maybe billed"
-REPEATED = {  # a repeated request id's refusal (its ₹ was said the first time)
-    "provider_unavailable": (503, texts.UNAVAILABLE),
-    "maybe_billed": (503, texts.MAYBE_BILLED.format(about="about the price shown")),
-    "blocked": (502, texts.BLOCKED.format(about="about the price shown")),
+_SAID = "about the price shown"  # a repeat's ₹ (it was said the first time)
+REPEATED = {  # a repeated request id's refusal: the first answer's status, code and words
+    "provider_unavailable": (503, "provider_unavailable", texts.UNAVAILABLE),
+    "maybe_billed": (503, "provider_unavailable", texts.MAYBE_BILLED.format(about=_SAID)),
+    "blocked": (502, "blocked", texts.BLOCKED.format(about=_SAID)),
 }
 
 
@@ -198,9 +199,9 @@ class Press:
             if found is not None:
                 return found
             raise SeeMeRefused(404, "gone", texts.PICTURE_GONE)
-        code = str(outcome.get("error", "provider_unavailable"))
-        status, words = REPEATED.get(code, REPEATED["provider_unavailable"])
-        raise SeeMeRefused(status, code if code in REPEATED else "provider_unavailable", words)
+        first = str(outcome.get("error"))
+        status, code, words = REPEATED.get(first, REPEATED["provider_unavailable"])
+        raise SeeMeRefused(status, code, words)
 
     async def press(self, uid: str, body: PictureIn) -> PictureView:
         done = (await self.kit.cap.month(uid)).done.get(body.request_id)
@@ -268,30 +269,36 @@ class Press:
         tax = self.kit.ctx.s.tryon_tax_pct
         inr = call.hold.inr if usd is None else with_tax(usd * call.fig.rate, tax)
         pid = new_picture_id()
-        made = Made(
-            picture=result.picture or b"", mime=result.mime or "image/jpeg",
-            made_at=self.kit.ctx.now(), garment=call.garment_new(), garment_type=call.garment.type,
-            garment_colour=call.garment.colour, sent=sent_of(call.mine),
-            not_sent=await self.not_sent(uid, call), inr=inr, usage=result.usage,
-        )  # fmt: skip
-        try:
+        try:  # made and billed: from here on, whatever fails, the cap and his month hear it
+            made = Made(
+                picture=result.picture or b"", mime=result.mime or "image/jpeg",
+                made_at=self.kit.ctx.now(), garment=call.garment_new(),
+                garment_type=call.garment.type, garment_colour=call.garment.colour,
+                sent=sent_of(call.mine), not_sent=await self.not_sent(uid, call), inr=inr,
+                usage=result.usage,
+            )  # fmt: skip
             return await self.kit.pictures.save(
                 uid, pid, made, keep_days=self.kit.keep_days(call.prefs)
             )
-        finally:  # made and billed: the cap and his month hear it whatever happens to the save
+        finally:
             await self.kit.cap.settle(call.hold, inr, outcome={"picture": pid}, picture=True)
             await _record(
                 self.kit, uid, usd if usd is not None else call.provider.estimate(MAX_GARMENTS)[1]
             )
 
     async def not_sent(self, uid: str, call: Call) -> tuple[NotSent, ...]:
-        """The rest of the look around the garment: "not in the picture" (never a private id)."""
-        found = await self.kit.pairer.look(uid, call.garment)
-        if found is None:
+        """The rest of the look around the garment: "not in the picture" (never a private id).
+        Nothing when it can't be read: the picture is made and billed, so it is still shown."""
+        try:
+            found = await self.kit.pairer.look(uid, call.garment)
+            if found is None:
+                return ()
+            view, picks = found
+            paired, rest = await self.kit.pairer.from_look(uid, view, picks, call.garment.slot)
+        except Exception as exc:  # noqa: BLE001 - a list beside the picture, never its loss
+            log.warning("see it on me: no list beside it", extra={"error": type(exc).__name__})
             return ()
-        view, picks = found
         sent = {m.piece for m in call.mine}
-        paired, rest = await self.kit.pairer.from_look(uid, view, picks, call.garment.slot)
         unticked = [_unticked(m) for m in paired if m.piece not in sent]
         return tuple([*unticked, *(n for n in rest if n.piece not in sent)])
 

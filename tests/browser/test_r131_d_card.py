@@ -312,6 +312,14 @@ def test_row388_open_in_helpers_shows_the_cards_look_in_full_and_takes_the_stage
 
 
 # ---- AVT-15 --------------------------------------------------------------------------------------
+# An engine whose mount() throws, as I0's stub did (I1: B's real engine is in the tree now)
+THROWING_ENGINE = (
+    "const engine = Object.freeze({ supported: () => true,"
+    " mount() { throw new Error('The 3D view is not built yet.'); } });"
+    " window.JarvisTryOn3D = engine; export default engine;"
+)
+
+
 @pytest.mark.parametrize("how", ["no-webgl2", "lost", "asset", "timeout", "stub"])
 def test_avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_confirm(
     browser: Any, d_url: str, token: str, how: str
@@ -326,6 +334,9 @@ def test_avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_co
         fake_engine=not stub,
         clock=how == "timeout",
     )
+    if stub:  # I1: B's real engine replaced I0's stub, so the throwing engine is served here
+        c.page.route("**/static/console-tryon-3d.js*", lambda r: r.fulfill(
+            body=THROWING_ENGINE, content_type="application/javascript"))  # fmt: skip
     try:
         c.open()
         c.wardrobe()

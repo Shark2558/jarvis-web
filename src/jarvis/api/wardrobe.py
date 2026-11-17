@@ -17,11 +17,16 @@ here: the wiring installs this one router).
     POST /v1/wardrobe/tools/{tool}       the panel's changes through `gateway.execute` (D1): the
                                          same rows, cards and audit as the AI's call; a card
                                          waits in a conversation of his own
+
+`run_panel_tool(request, uid, tool, arguments, session_id)` is that one call, shared with R13.1
+A's `POST /v1/tryon/confirm` (docs/plans/r13-1-try-on.md D20.3): one press makes at most one card.
+`panel_reply(run)` answers it as `http.ToolReply` (or the refusal in plain words).
 """
 
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Any
 
@@ -250,7 +255,21 @@ async def pilot(request: Request, uid: str = Depends(current_user)) -> JSONRespo
         return refused(exc)
 
 
-# ---- the panel's changes through the gateway (D1) ------------------------------------------------
+# ---- the panel's changes through the gateway (D1; R13.1 D20.3: shared) ---------------------------
+UNAVAILABLE = "That wardrobe action isn't available on this server."
+NO_CONVERSATION = "That needs your OK, and there is no conversation to ask it in."
+
+
+@dataclass(frozen=True)
+class PanelRun:
+    """One press: the gateway's result (None when refused before any call: `refusal` is the
+    status and the words), and the conversation a card waits in."""
+
+    result: GatewayResult | None
+    session_id: str | None = None
+    refusal: tuple[int, str] | None = None
+
+
 async def _conversation(request: Request, uid: str, session_id: str | None = None) -> str | None:
     """The conversation a card waits in: his open one when it is his, else a new one of his own.
     One that is gone, or not his, is never used and never loses the press."""
@@ -281,18 +300,20 @@ def _tool_reply(res: GatewayResult, sid: str | None = None) -> JSONResponse:
                         status_code=422, headers=NO_STORE_HEADERS)  # fmt: skip
 
 
-@router.post("/v1/wardrobe/tools/{tool}", include_in_schema=False)
-async def tools(
-    request: Request, tool: str, body: http.ToolCall, uid: str = Depends(current_user)
-) -> JSONResponse:
-    if (busy := too_many(request, "tools", uid, change=True)) is not None:
-        return busy
+async def run_panel_tool(
+    request: Request,
+    uid: str,
+    tool: str,
+    arguments: dict[str, object],
+    session_id: str | None = None,
+) -> PanelRun:
+    """The panel's one change through `gateway.execute`, as the owner (never spoken, never
+    untrusted): when it needs his OK, the plain-scope card is cancelled and the call made ONCE
+    more in his open conversation (else a new one of his), where its card waits."""
     gateway: Gateway | None = getattr(request.app.state, "gateway", None)
     if tool not in TOOL_OWNER or gateway is None or gateway.registry.get(tool) is None:
-        return err(404, "That wardrobe action isn't available on this server.")
-    call = ToolCall(
-        id=f"wardrobe-{uuid.uuid4().hex[:8]}", name=tool, arguments=dict(body.arguments)
-    )
+        return PanelRun(None, refusal=(404, UNAVAILABLE))
+    call = ToolCall(id=f"wardrobe-{uuid.uuid4().hex[:8]}", name=tool, arguments=dict(arguments))
 
     async def run(scope: str) -> GatewayResult:
         assert gateway is not None
@@ -300,14 +321,38 @@ async def tools(
             return await gateway.execute(call, scope=f"{uid}:{scope}")
 
     res = await run(PLAIN_SCOPE)
-    if res.pending is not None:  # a card waits in a real conversation of his
-        await gateway.gate.cancel(res.pending.id)
-        sid = await _conversation(request, uid, body.session_id)
-        if sid is None:
-            return err(422, "That needs your OK, and there is no conversation to ask it in.")
-        res = await run(sid)
-        return _tool_reply(res, sid)
-    return _tool_reply(res)
+    if res.pending is None:
+        return PanelRun(res)
+    await gateway.gate.cancel(res.pending.id)
+    sid = await _conversation(request, uid, session_id)
+    if sid is None:
+        return PanelRun(None, refusal=(422, NO_CONVERSATION))
+    return PanelRun(await run(sid), sid)
 
 
-__all__ = ["SCAN_KINDS", "router"]
+def panel_reply(run: PanelRun) -> JSONResponse:
+    if run.result is None:
+        status, words = run.refusal or (422, "That couldn't be done.")
+        return err(status, words)
+    return _tool_reply(run.result, run.session_id)
+
+
+@router.post("/v1/wardrobe/tools/{tool}", include_in_schema=False)
+async def tools(
+    request: Request, tool: str, body: http.ToolCall, uid: str = Depends(current_user)
+) -> JSONResponse:
+    if (busy := too_many(request, "tools", uid, change=True)) is not None:
+        return busy
+    run = await run_panel_tool(request, uid, tool, dict(body.arguments), body.session_id)
+    return panel_reply(run)
+
+
+__all__ = [
+    "NO_CONVERSATION",
+    "SCAN_KINDS",
+    "UNAVAILABLE",
+    "PanelRun",
+    "panel_reply",
+    "router",
+    "run_panel_tool",
+]

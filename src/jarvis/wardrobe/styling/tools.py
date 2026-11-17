@@ -57,6 +57,12 @@ _SETTING: dict[str, Any] = {
     "description": "indoor or outdoor (rain-ok shoes and an outer layer outdoors when rain)",
 }  # fmt: skip
 SETTINGS = {"indoor": False, "outdoor": True}
+# R13.1 D17: where the AI can say Try-on is (fixed words, never a ₹ figure: the price is shown on
+# each picture's own confirm); in `outfit_suggest`'s result only while Try-on is on
+SEE_IT = (
+    "In Helpers, Wardrobe you can see this look on your 3D figure, free, or press See it on me; "
+    "its price is shown before each picture."
+)
 
 
 def _schema(props: dict[str, Any], required: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -156,6 +162,8 @@ class StylingTools:
             "looks": looks,
             "alternatives": views.alternatives(view, first, budget),
         }
+        if s.ctx.s.tryon_enabled:
+            out["see_it"] = SEE_IT
         return vouch(out, True)
 
     async def plans(self, args: dict[str, Any]) -> Any:
@@ -270,4 +278,4 @@ def styling_tools(s: Styling) -> tuple[Tool, ...]:
     )  # fmt: skip
 
 
-__all__ = ["AGENT", "StylingTools", "styling_tools"]
+__all__ = ["AGENT", "SEE_IT", "StylingTools", "styling_tools"]

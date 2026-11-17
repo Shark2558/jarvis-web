@@ -197,3 +197,10 @@ async def test_the_effective_template_is_his_choice_else_the_tables() -> None:
         "tee", False
     )  # fmt: skip
     assert assets.effective(_piece(view, T.kurta), {}) == ("kurta", False)
+
+
+async def test_a_choice_for_a_piece_made_private_since_is_dropped_on_read() -> None:
+    a = await a_world()
+    await a.w.edit(T.tee, private=True)
+    kept = {T.tee: Asset(template="shirt"), T.blazer: Asset(card_only=True)}
+    assert assets.tidy(kept, await a.view()) == {T.blazer: Asset(card_only=True)}

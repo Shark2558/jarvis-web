@@ -7,8 +7,9 @@
 - `choose(doc, view, piece, choice)`: another template of the same slot (`model.templates_for`),
   "image card only", a texture view, or the default again (the entry goes). A private piece is
   never drawn; a merged-away or purged piece isn't his to choose for.
-- `tidy(chosen, view)`: a merged-away or purged piece's entry is dropped (on every read; the next
-  write keeps the tidied list).
+- `tidy(chosen, view)`: a merged-away or purged piece's entry is dropped, and so is one made
+  private since (it is never drawn, and its id is never served); on every read, and the next
+  write keeps the tidied list.
 """
 
 from __future__ import annotations
@@ -51,7 +52,7 @@ def effective(p: Piece, chosen: Mapping[str, Asset]) -> tuple[Template | None, b
 def tidy(chosen: Mapping[str, Asset], view: WardrobeView) -> dict[str, Asset]:
     def live(pid: str) -> bool:
         p = view.pieces.get(pid)
-        return p is not None and p.merged_into is None
+        return p is not None and p.merged_into is None and not p.private  # never drawn
 
     return {pid: a for pid, a in chosen.items() if live(pid)}
 

@@ -17,6 +17,7 @@ from r131_fakes_a import SHOES, T, a_world
 
 from jarvis.api import tryon as routes
 from jarvis.api.auth import require_auth
+from jarvis.tools.audit import args_hash
 from jarvis.wardrobe.tryon import model as m
 from jarvis.wardrobe.tryon.http import (
     ROUTES,
@@ -93,9 +94,12 @@ async def test_his_measurements_are_refused_in_words_and_never_reach_the_audit()
         assert (await c.delete("/v1/tryon/body/draft")).status_code == 200
     entries = [e for e in (await a.w.audit.tail(100)).entries if e.tool == "tryon_body"]
     assert len(entries) == 4 and {e.outcome for e in entries} == {"changed"}
-    text = json.dumps([e.model_dump(mode="json") for e in entries])
-    for needle in ("183", "101", "179"):
-        assert needle not in text  # an argument hash and fixed words only
+    assert {e.detail for e in entries} == {"Try-on measurements changed"}  # fixed words only
+    names = [  # the hash is of the action and the field NAMES: never a number he typed
+        {"action": "draft", "fields": ["chest", "height"]}, {"action": "use", "fields": []},
+        {"action": "draft", "fields": ["height"]}, {"action": "keep_current", "fields": []},
+    ]  # fmt: skip
+    assert [e.args_hash for e in entries] == [args_hash(x) for x in names]
 
 
 async def test_the_look_route_refuses_in_words() -> None:
@@ -242,3 +246,23 @@ async def test_a_body_nested_past_reason_is_a_refusal_not_a_crash() -> None:
     async with a.client() as c:
         _refusal(await c.put("/v1/tryon/body", content=deep), 422, "bad_request")
         _refusal(await c.post("/v1/tryon/saved", content=deep), 422, "bad_request")
+
+
+async def test_reads_and_changes_of_one_route_keep_their_own_allowances() -> None:
+    a = await a_world()
+    async with a.client() as c:
+        assert (await c.get("/v1/tryon/saved")).status_code == 200  # a read comes first
+        drops = [(await c.delete("/v1/tryon/saved/tc_0000abcd")).status_code for _ in range(31)]
+    assert drops[:30] == [200] * 30 and drops[30] == 429  # changes: 30 a minute, not 60
+
+
+async def test_the_view_answers_even_when_r13s_store_breaks() -> None:
+    a = await a_world()
+
+    async def broken(uid: str) -> Any:
+        raise RuntimeError("R13's store is down")
+
+    a.styling.view = broken  # type: ignore[method-assign]
+    async with a.client() as c:
+        r = await c.get("/v1/tryon")
+    assert r.status_code == 200 and TryonView.model_validate(r.json()).words == m.NO_FIGURE

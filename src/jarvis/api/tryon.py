@@ -119,7 +119,8 @@ def _service(request: Request) -> TryonService | str:
 async def _run(
     request: Request, uid: str, route: str, act: Act, *, change: bool, down: int = 503
 ) -> JSONResponse:
-    if (busy := limited(request, f"tryon_{route}", uid, change=change)) is not None:
+    key = f"tryon_{route}_{'change' if change else 'read'}"  # each allowance its own bucket
+    if (busy := limited(request, key, uid, change=change)) is not None:
         return busy
     svc = _service(request)
     if isinstance(svc, str):

@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar
 
+from jarvis.logging import get_logger
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
 from jarvis.wardrobe.styling import texts
@@ -40,6 +41,7 @@ from jarvis.wardrobe.tryon.looks import Looks, Read, StylingOff
 from jarvis.wardrobe.tryon.model import RANGES, range_words
 from jarvis.wardrobe.tryon.store import Saved, TryonDoc, TryonStore
 
+log = get_logger(__name__)
 READY = "ready"
 OFF_NO_STORE = "Off: no storage is set up, so Try-on keeps nothing."
 OFF_NO_KEY = "Off: JARVIS has no token key to seal your measurements."
@@ -63,9 +65,14 @@ class TryonService:
         return await self.looks.for_plan(uid, plan)
 
     async def _read(self, uid: str) -> Read | None:
+        """R13's records for the view's extras; None when they can't be read now (the figure
+        still answers: saved comparisons then read "Draft" until they can be checked)."""
         try:
             return await self.looks.read(uid)
         except StylingOff:
+            return None
+        except Exception as exc:  # noqa: BLE001 - R13's store down: the figure still answers
+            log.warning("try-on: R13's records unreadable", extra={"error": type(exc).__name__})
             return None
 
     async def tryon_view(self, uid: str, *, release: str, files: tuple[str, ...]) -> TryonView:

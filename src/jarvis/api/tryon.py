@@ -38,6 +38,7 @@ from pydantic import BaseModel, ValidationError
 
 from jarvis.api import tryon_assets
 from jarvis.api.auth import require_auth
+from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
 from jarvis.api.r13_status import NO_STORE, limited, part_of
 from jarvis.api.settings_audit import record_change
@@ -63,9 +64,12 @@ UNREADABLE = (
 )
 ALTS = ("0", "1", "2")
 QUERY_MAX = 1000  # a reply card's 12 slots of `slot:wi_...` fit with room to spare
+BODY_MAX = 16_384  # A's largest body (two saved looks of 12 slots) is under 3 KB (review A-1 F8)
+TOO_LARGE = "That request is too big."
 _CODES: tuple[tuple[type[Exception], int, str], ...] = (
     (versions.OutOfRange, 422, "out_of_range"),
     (versions.NothingTyped, 422, "nothing_typed"),
+    (versions.NotWhole, 422, "not_whole"),
     (versions.NoDraft, 404, "no_draft"),
     (assets.NotIn, 404, "not_in"),
     (assets.Refused, 422, "wrong_shape"),
@@ -85,6 +89,10 @@ class _Bad(ValueError):
     """A request that can't be read: a 422 `bad_request`."""
 
 
+class _TooLarge(ValueError):
+    """A body past `BODY_MAX`: a 413 `too_large`, refused before it is read as JSON."""
+
+
 def no(status: int, code: str, words: str) -> JSONResponse:
     body = Refusal(error=code, detail=words[:300])
     return JSONResponse(body.model_dump(), status_code=status, headers=NO_STORE)
@@ -100,6 +108,8 @@ def refused(exc: Exception, down: int, route: str = "") -> JSONResponse:
     (review A-1 F3). Never the error's message or a trace: those can carry his numbers."""
     if isinstance(exc, _Bad):
         return no(422, "bad_request", BAD)
+    if isinstance(exc, _TooLarge):
+        return no(413, "too_large", TOO_LARGE)
     for kind, status, code in _CODES:
         if isinstance(exc, kind):
             return no(status, code, str(exc))
@@ -141,12 +151,22 @@ async def _run(
     return got if isinstance(got, JSONResponse) else _ok(got)
 
 
-async def body_of(request: Request, model: type[M]) -> M:
-    """The request's JSON checked against its contract model (else `_Bad`)."""
+async def body_of(
+    request: Request, model: type[M], check: Callable[[object], None] | None = None
+) -> M:
+    """The request's JSON (at most `BODY_MAX` bytes, else `_TooLarge` before it is parsed),
+    `check`ed as sent, then against its contract model (else `_Bad`)."""
+    raw = await read_capped(request, BODY_MAX, too_large=_TooLarge)
     try:
-        return model.model_validate(json.loads(await request.body()))
-    except (ValueError, ValidationError, RecursionError):  # JSONDecodeError is a ValueError
+        data = json.loads(raw)
+    except (ValueError, RecursionError):  # JSONDecodeError is a ValueError
         raise _Bad from None  # never chained: his values stay out of any trace
+    if check is not None:
+        check(data)  # its own refusal in words (a measurement that isn't whole centimetres)
+    try:
+        return model.model_validate(data)
+    except (ValueError, ValidationError, RecursionError):
+        raise _Bad from None
 
 
 def _files() -> tuple[str, ...]:
@@ -178,7 +198,7 @@ async def _audit(request: Request, action: str, fields: list[str]) -> None:
 @router.put("/v1/tryon/body", include_in_schema=False)
 async def put_body(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     async def act(svc: TryonService) -> Any:
-        typed = (await body_of(request, BodyIn)).model_dump()
+        typed = (await body_of(request, BodyIn, versions.whole_cm)).model_dump()
         got = await svc.put_body(uid, typed)
         await _audit(request, "draft", sorted(k for k, v in typed.items() if v is not None))
         return got

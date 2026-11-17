@@ -71,16 +71,17 @@ from jarvis.wardrobe.tryon.http_seeme import (
 
 _E = (401, 403, 429)  # every route: not signed in, not his console (console routes), too many
 _P, _G = "/v1/seeme/pictures", "/v1/seeme/garments"
+_B = (413, 422)  # a body: too large (A's cap, before it is read), or not one to read
 ROUTES: tuple[tuple[str, str, str, object, object, tuple[int, ...], bool], ...] = (
     ("GET", "/v1/tryon", "tryon", None, TryonView, (*_E, 503), False),
-    ("PUT", "/v1/tryon/body", "tryon", BodyIn, BodyVersions, (*_E, 422, 503), False),
+    ("PUT", "/v1/tryon/body", "tryon", BodyIn, BodyVersions, (*_E, *_B, 503), False),
     ("POST", "/v1/tryon/body/use", "tryon", None, BodyVersions, (*_E, 404, 503), False),
     ("DELETE", "/v1/tryon/body/draft", "tryon", None, BodyVersions, (*_E, 404, 503), False),
     ("GET", "/v1/tryon/look", "tryon", None, TryonLook, (*_E, 404, 422, 503), False),
-    ("PUT", "/v1/tryon/assets/{piece}", "tryon", AssetChoice, AssetChoice, (*_E, 404, 422), False),
-    ("POST", "/v1/tryon/confirm", "tryon", ConfirmIn, ToolReply, (*_E, 404, 409, 422), False),
+    ("PUT", "/v1/tryon/assets/{piece}", "tryon", AssetChoice, AssetChoice, (*_E, 404, *_B), False),
+    ("POST", "/v1/tryon/confirm", "tryon", ConfirmIn, ToolReply, (*_E, 404, 409, *_B), False),
     ("GET", "/v1/tryon/saved", "tryon", None, SavedList, (*_E, 503), False),
-    ("POST", "/v1/tryon/saved", "tryon", SavedIn, SavedView, (*_E, 409, 422), False),
+    ("POST", "/v1/tryon/saved", "tryon", SavedIn, SavedView, (*_E, 409, *_B), False),
     ("GET", "/v1/tryon/saved/{id}", "tryon", None, SavedView, (*_E, 404), False),
     ("DELETE", "/v1/tryon/saved/{id}", "tryon", None, Deleted, (*_E, 404), False),
     ("GET", "/v1/seeme", "seeme", None, SeeMeView, (*_E, 503), False),

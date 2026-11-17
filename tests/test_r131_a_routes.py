@@ -82,7 +82,7 @@ async def test_his_measurements_are_refused_in_words_and_never_reach_the_audit()
     async with a.client() as c:
         got = _refusal(await c.put("/v1/tryon/body", json={"height": 149}), 422, "out_of_range")
         assert got.detail == m.range_words("height")
-        _refusal(await c.put("/v1/tryon/body", json={"height": "tall"}), 422, "bad_request")
+        _refusal(await c.put("/v1/tryon/body", json={"height": "tall"}), 422, "not_whole")
         _refusal(await c.put("/v1/tryon/body", json={"neck": 40}), 422, "bad_request")
         _refusal(await c.put("/v1/tryon/body", json={}), 422, "nothing_typed")
         _refusal(await c.put("/v1/tryon/body", content=b"{"), 422, "bad_request")
@@ -321,10 +321,35 @@ async def test_switched_off_in_his_permissions_stays_r13s_denied_reply() -> None
 
 async def test_a_body_nested_past_reason_is_a_refusal_not_a_crash() -> None:
     a = await a_world()
-    deep = b"[" * 100_000 + b"]" * 100_000
+    deep = b"[" * 8_000 + b"]" * 8_000  # under the 16 KB cap, past json's recursion limit
     async with a.client() as c:
         _refusal(await c.put("/v1/tryon/body", content=deep), 422, "bad_request")
         _refusal(await c.post("/v1/tryon/saved", content=deep), 422, "bad_request")
+
+
+async def test_every_body_is_capped_at_16_kb_before_it_is_read_as_json() -> None:
+    a = await a_world()
+    big = b'{"height": 172, "x": "' + b"a" * routes.BODY_MAX + b'"}'
+    bodied = [(meth, path.replace("{piece}", T.shirt)) for meth, path, part, req, *_ in ROUTES
+              if part == "tryon" and req is not None]  # fmt: skip
+    assert len(bodied) == 4
+    async with a.client() as c:
+        for meth, url in bodied:
+            got = _refusal(await c.request(meth, url, content=big), 413, "too_large")
+            assert got.detail == routes.TOO_LARGE
+        ok = await c.put("/v1/tryon/body", content=b'{"height": 172}')
+        assert ok.status_code == 200
+    for meth, path, part, req, _, errors, _ in ROUTES:
+        if part == "tryon" and req is not None:
+            assert 413 in errors, (meth, path)  # the contract's rows say so
+
+
+@pytest.mark.parametrize("value", ["172", 172.0, 172.5, True])
+async def test_a_measurement_not_typed_as_whole_centimetres_is_refused_in_words(value: Any) -> None:
+    a = await a_world()
+    async with a.client() as c:
+        got = _refusal(await c.put("/v1/tryon/body", json={"height": value}), 422, "not_whole")
+    assert got.detail == "Type each measurement in whole centimetres, for example 172."
 
 
 @pytest.mark.usefixtures("frozen_limits")

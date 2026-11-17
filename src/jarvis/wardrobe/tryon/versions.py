@@ -37,6 +37,7 @@ from jarvis.wardrobe.tryon.model import (
 from jarvis.wardrobe.tryon.store import TryonDoc
 
 NOTHING = "Type at least one measurement, in whole centimetres."
+WHOLE = "Type each measurement in whole centimetres, for example 172."
 NO_DRAFT_USE = "There are no new measurements to use."
 NO_DRAFT_DROP = "There are no new measurements to drop."
 
@@ -56,6 +57,24 @@ class NothingTyped(ValueError):
 
 class NoDraft(LookupError):
     """Use or drop with no draft to use or drop."""
+
+
+class NotWhole(ValueError):
+    """A measurement sent as anything but a whole number ("172", 172.0, 172.5, true)."""
+
+    def __init__(self) -> None:
+        super().__init__(WHOLE)
+
+
+def whole_cm(raw: object) -> None:
+    """What he sent, before the contract model reads it: each measurement a JSON whole number
+    or null (the model alone would take "172" and 172.0 as 172; review A-1 F8)."""
+    if not isinstance(raw, dict):
+        return  # not a body of measurements at all: the model refuses it
+    for m in MEASURES:
+        value = raw.get(m)
+        if value is not None and type(value) is not int:  # a bool is not a measurement
+            raise NotWhole
 
 
 def typed_values(raw: Mapping[str, object]) -> dict[Measure, int]:
@@ -122,9 +141,11 @@ def figure_words(doc: TryonDoc) -> str:
 
 __all__ = [
     "NOTHING",
+    "WHOLE",
     "NO_DRAFT_DROP",
     "NO_DRAFT_USE",
     "NoDraft",
+    "NotWhole",
     "NothingTyped",
     "OutOfRange",
     "body_view",
@@ -133,5 +154,6 @@ __all__ = [
     "figure_words",
     "typed_values",
     "use",
+    "whole_cm",
     "versions_view",
 ]

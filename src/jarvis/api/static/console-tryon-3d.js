@@ -135,13 +135,60 @@ function palette(host) {
 }
 const motionOff = () => document.documentElement.dataset.motion === 'off';
 
+/** The turntable: a drag turns (and tilts), a pinch or the wheel zooms, the arrow keys, + and -, Home, a double click
+ *  or double tap. It never swallows the page's scrolling (review B-1, finding 5; the card under a chat reply): the
+ *  wheel is the figure's only while a pointer is pressed on the canvas or the canvas has the focus, and only while
+ *  the zoom can still move; a finger swiped up or down over an unfocused figure scrolls the page (touch-action pan-y),
+ *  and a tap gives the figure the focus and every gesture (touch-action none) until he taps elsewhere. */
+function controls(canvas, model, redraw, ac) {
+  const pts = new Map(), on = { signal: ac.signal }, focused = () => document.activeElement === canvas;
+  let pinch = 0, tapped = 0;
+  const span = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const touch = () => { canvas.style.touchAction = focused() ? 'none' : 'pan-y'; };
+  touch();
+  canvas.addEventListener('focus', touch, on);
+  canvas.addEventListener('blur', touch, on);
+  canvas.addEventListener('pointerdown', (e) => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* a synthetic pointer */ }
+    if (pts.size === 2) pinch = span();
+    if (pts.size === 1 && e.pointerType === 'touch') { if (e.timeStamp - tapped < 320) { model.reset(); redraw(); } tapped = e.timeStamp; }
+  }, on);
+  canvas.addEventListener('pointermove', (e) => {
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y, tilts = e.pointerType !== 'touch' || focused();
+    p.x = e.clientX; p.y = e.clientY;
+    if (pts.size === 1) model.turn(-dx * 0.5, tilts ? -dy * 0.004 : 0);
+    else if (pts.size === 2) { const s = span(); if (pinch > 0 && s > 0) model.zoom(Math.log(s / pinch) / Math.log(1.19)); pinch = s; }
+    redraw();
+  }, on);
+  for (const type of ['pointerup', 'pointercancel']) canvas.addEventListener(type, (e) => { pts.delete(e.pointerId); pinch = 0; }, on);
+  canvas.addEventListener('wheel', (e) => {
+    if (!pts.size && !focused()) return; // only passing over: the page scrolls
+    const before = model.state.zoom;
+    if (model.zoom(-e.deltaY * 0.004) === before) return; // at a limit: the page's again
+    e.preventDefault(); redraw();
+  }, { signal: ac.signal, passive: false });
+  canvas.addEventListener('dblclick', () => { model.reset(); redraw(); }, on);
+  canvas.addEventListener('keydown', (e) => {
+    const keys = { ArrowLeft: [-15, 0], ArrowRight: [15, 0], ArrowUp: [0, -0.08], ArrowDown: [0, 0.08] };
+    if (keys[e.key]) model.turn(keys[e.key][0], keys[e.key][1]);
+    else if (e.key === '+' || e.key === '=') model.zoom(1);
+    else if (e.key === '-') model.zoom(-1);
+    else if (e.key === 'Home') model.reset();
+    else return;
+    e.preventDefault(); redraw();
+  }, on);
+}
+
 function createStage(host, release, onLost) {
   const model = createModel(), m = model.state, ac = new AbortController(), on = { signal: ac.signal };
   const canvas = document.createElement('canvas'), label = document.createElement('p');
   canvas.tabIndex = 0;
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', '3D figure wearing this look. Drag or use the arrow keys to turn it; pinch, scroll or use plus and minus to zoom.');
-  Object.assign(canvas.style, { display: 'block', width: '100%', touchAction: 'none', outline: 'none' });
+  canvas.setAttribute('aria-label', '3D figure wearing this look. Drag or use the arrow keys to turn it; select it, then pinch, scroll or use plus and minus to zoom.');
+  Object.assign(canvas.style, { display: 'block', width: '100%', outline: 'none' });
   label.className = 'sfine';
   label.textContent = LABEL;
   host.append(canvas, label);
@@ -296,46 +343,13 @@ function createStage(host, release, onLost) {
   }
   function invalidate() { if (!raf && !dead && !lost) { askedAt = performance.now(); raf = requestAnimationFrame(frame); } }
 
-  function controls() {
-    const pts = new Map();
-    let pinch = 0, tapped = 0;
-    const span = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
-    canvas.addEventListener('pointerdown', (e) => {
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* a synthetic pointer */ }
-      if (pts.size === 2) pinch = span();
-      if (pts.size === 1 && e.pointerType === 'touch') { if (e.timeStamp - tapped < 320) { model.reset(); invalidate(); } tapped = e.timeStamp; }
-    }, on);
-    canvas.addEventListener('pointermove', (e) => {
-      const p = pts.get(e.pointerId);
-      if (!p) return;
-      const dx = e.clientX - p.x, dy = e.clientY - p.y;
-      p.x = e.clientX; p.y = e.clientY;
-      if (pts.size === 1) model.turn(-dx * 0.5, -dy * 0.004);
-      else if (pts.size === 2) { const s = span(); if (pinch > 0 && s > 0) model.zoom(Math.log(s / pinch) / Math.log(1.19)); pinch = s; }
-      invalidate();
-    }, on);
-    for (const type of ['pointerup', 'pointercancel']) canvas.addEventListener(type, (e) => { pts.delete(e.pointerId); pinch = 0; }, on);
-    canvas.addEventListener('wheel', (e) => { e.preventDefault(); model.zoom(-e.deltaY * 0.004); invalidate(); }, { signal: ac.signal, passive: false });
-    canvas.addEventListener('dblclick', () => { model.reset(); invalidate(); }, on);
-    canvas.addEventListener('keydown', (e) => {
-      const keys = { ArrowLeft: [-15, 0], ArrowRight: [15, 0], ArrowUp: [0, -0.08], ArrowDown: [0, 0.08] };
-      if (keys[e.key]) model.turn(keys[e.key][0], keys[e.key][1]);
-      else if (e.key === '+' || e.key === '=') model.zoom(1);
-      else if (e.key === '-') model.zoom(-1);
-      else if (e.key === 'Home') model.reset();
-      else return;
-      e.preventDefault(); invalidate();
-    }, on);
-  }
-
   function repaint() {
     pal = palette(host);
     for (const g of groups) g.children.forEach((o) => { if (o.name === 'ring') o.material.color.set(pal.accent); });
     invalidate();
   }
 
-  controls();
+  controls(canvas, model, invalidate, ac);
   document.addEventListener('jarvis:theme', repaint, on);
   document.addEventListener('jarvis:motion', invalidate, on);
   document.addEventListener('visibilitychange', () => gov.reset(), on);

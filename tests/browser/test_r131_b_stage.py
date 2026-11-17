@@ -389,6 +389,80 @@ def test_the_figure_draws_on_demand_and_stays_still_with_motion_off(
         s.close()
 
 
+def _swipe_up(s: Stage, x: float, y: float, by: int) -> None:
+    """A real finger swiped up (touch events through Chromium's own input pipeline)."""
+    cdp = s.page.context.new_cdp_session(s.page)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+    for k in range(1, 16):
+        point = {"x": x, "y": y - by * k / 15}
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [point]})
+        s.page.wait_for_timeout(16)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    cdp.detach()
+    s.page.wait_for_timeout(900)  # the fling after the finger lifts has run out
+
+
+# the stage inside a scrolling column, as the card sits in the chat (the page's body never scrolls)
+CHAT = (
+    "(() => { const chat = document.createElement('div'), tail = document.createElement('div');"
+    " chat.id = 'chat'; Object.assign(chat.style, {height: '600px', overflowY: 'auto'});"
+    " tail.style.height = '2400px'; document.getElementById('stage').before(chat);"
+    " chat.append(document.getElementById('stage'), tail); return 0; })()"
+)
+SCROLLED = "() => document.getElementById('chat').scrollTop > 100"
+TOUCH = "getComputedStyle(document.querySelector('#stage canvas')).touchAction"
+
+
+def test_the_figure_does_not_swallow_the_chats_scrolling(browser: Any, stage_url: str) -> None:
+    """Review B-1, finding 5 (row 388: the card under a chat reply): a wheel or a swipe that only
+    passes over the figure scrolls the chat; the figure takes them once it is pressed or focused."""
+    s = _open(browser, stage_url, "h=420")
+    try:
+        s.js(CHAT)
+        s.show("'formal'")
+        s.js("(b.stage.zoom(2), 0)")
+        top = "(document.getElementById('chat').scrollTop = 0, 0)"
+        box = s.page.locator("#stage canvas").bounding_box()
+        assert box is not None
+        x, y = box["x"] + 240, box["y"] + 200
+        s.page.mouse.move(x, y)
+        s.page.mouse.wheel(0, 300)  # not focused, not pressed: the chat's wheel
+        s.page.wait_for_function(SCROLLED, timeout=5000)
+        assert s.stats()["zoom"] == 2
+        s.js(top)
+        assert s.js(TOUCH) == "pan-y"
+        _swipe_up(s, x, y, 300)  # a finger swiped up over the figure scrolls the chat
+        s.page.wait_for_function(SCROLLED, timeout=5000)
+        st = s.stats()
+        assert st["zoom"] == 2 and st["yaw"] == 0 and abs(st["pitch"] - 0.468 * 3.14159265) < 1e-3
+        s.js(top)
+        s.page.mouse.move(x, y)
+        s.page.mouse.down()  # pressed on the canvas (a press also gives it the focus)
+        s.page.mouse.wheel(0, 200)
+        s.page.wait_for_function("() => window.__b.stage.stats().zoom < 2", timeout=5000)
+        s.page.mouse.up()
+        assert s.js("document.getElementById('chat').scrollTop") == 0
+        assert s.js("document.activeElement === document.querySelector('#stage canvas')")
+        assert s.js(TOUCH) == "none"  # every gesture is the figure's while it has the focus
+        pitch = s.stats()["pitch"]
+        _swipe_up(s, x, y, 120)  # so a swipe now tilts the figure and the chat stays
+        assert s.stats()["pitch"] != pitch
+        assert s.js("document.getElementById('chat').scrollTop") == 0
+        s.page.mouse.wheel(0, 4000)  # focused: the figure's, until it can zoom out no further
+        s.page.wait_for_function("() => window.__b.stage.stats().zoom === 0", timeout=5000)
+        assert s.js("document.getElementById('chat').scrollTop") == 0
+        s.page.mouse.wheel(0, 300)  # at the limit the wheel is the chat's again
+        s.page.wait_for_function(SCROLLED, timeout=5000)
+        s.js("(document.activeElement.blur(), b.stage.zoom(2), 0)")
+        s.js(top)
+        assert s.js(TOUCH) == "pan-y"
+        s.page.mouse.wheel(0, 300)
+        s.page.wait_for_function(SCROLLED, timeout=5000)
+        assert s.stats()["zoom"] == 2 and s.errors == []
+    finally:
+        s.close()
+
+
 # A slow device, made in the page and not in the engine: every draw call burns 4 ms, so a frame
 # of a dressed figure really takes well over the governor's 45 ms (review B-1, finding 2).
 SLOW_DEVICE = (

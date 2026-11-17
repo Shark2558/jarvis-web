@@ -3,7 +3,7 @@ Version v13.1.1 · 17 Nov 2026, 15:45 IST · Release R13.1 · Status: Current ·
 # R13.1 — the common builder brief (Parts A–D)
 
 Read this, then your part's own brief (`BRIEF-A.md` … `BRIEF-D.md`, in this folder), then the plan
-`docs/plans/r13-1-try-on.md` (v13.1.2, Status Ready: the summary, the 14 rows and their named tests,
+`docs/plans/r13-1-try-on.md` (v13.1.3, Status Ready: the summary, the 14 rows and their named tests,
 D0–D20, the data model, the HTTP contract, your part's row in "Part split", the suites and their
 controls, the size guards), `docs/plans/r13-1-integration/I0-NOTES.md` (what I0 built, the stale lines
 it found, what it left for I1), `PLAN-REVIEW-1.md` (why the plan says what it says), then
@@ -11,6 +11,11 @@ it found, what it left for I1), `PLAN-REVIEW-1.md` (why the plan says what it sa
 `.claude/agents/tdd-guide.md`. You build ONE part, in parallel with the others, on your own branch
 from `r13-1-i0`. Everything you may touch is in your part's brief; everything else is someone
 else's. When in doubt, don't edit: write it in your `INTEGRATION-<PART>.md` for I1.
+
+**The owner's answers** (17 Nov 2026, ≈ 14:25 IST; in the plan v13.1.3): the model is **Gemini 3.1
+Flash Image, processed in the United States** (question 12, the default, confirmed), and a "See it on
+me" picture is kept **30 days** unless he presses Keep (question 3: `tryon_keep_days` 30,
+`model.PICTURE_KEEP_DAYS`). Every other owner question keeps its safe default.
 
 **Agents:** Part B (the 3D figure) is built by ONE builder on **Fable 5.2** (the owner's rule of 15 Nov
 2026): its brief is self-contained. Every other part, review and fix is on Opus.

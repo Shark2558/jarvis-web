@@ -1,4 +1,4 @@
-Version v13.1.2 · 17 Nov 2026, 14:20 IST · Release R13.1 · Status: Ready · Owner: 🛠 Mark XXIII
+Version v13.1.3 · 17 Nov 2026, 16:45 IST · Release R13.1 · Status: Ready · Owner: 🛠 Mark XXIII
 
 # Release R13.1 — Try-on: the 3D figure and "See it on me" (`v13.1.0`)
 
@@ -17,7 +17,10 @@ file:line below is from that commit. The owner's wardrobe workbook (sheets "Use 
 "Build and Test") was read on 17 Nov 2026, 13:05 IST: each row's title and acceptance check below are HIS
 words. v13.1.2 writes in plan review 1 (`docs/plans/r13-1-integration/PLAN-REVIEW-1.md`: H1–H3, M1–M10,
 L1–L12, with the Workshop's decisions on H1–H3, M1 and M2; the table "Plan review 1 — how each finding
-was handled" near the end) and is Ready for I0. It also ships one R13 fix (D20).
+was handled" near the end) and is Ready for I0. It also ships one R13 fix (D20). v13.1.3 records the
+owner's two answers of 17 Nov 2026 (≈ 14:25 IST): the model is **Gemini 3.1 Flash Image, processed in the
+United States** (question 12, the default, confirmed), and a "See it on me" picture is kept **30 days**
+unless he presses Keep (question 3; the default was 7 days); every other question keeps its safe default.
 
 ## Summary for the owner (plain words)
 
@@ -51,8 +54,8 @@ was handled" near the end) and is Ready for I0. It also ships one R13 fix (D20).
 8. **Never sent to Google:** underwear, vests, thermals or anything you marked private; your measurements;
    anyone else's photo. JARVIS checks on your phone that your photo shows one person, but it can't tell an
    adult from a child, so use only your own photo.
-9. **What is kept:** your measurements and your photo until you delete them; each try-on picture 7 days
-   unless you press **Keep**. **Delete all my try-on data** (with your passkey) removes the figure, your
+9. **What is kept:** your measurements and your photo until you delete them; each try-on picture 30 days
+   unless you press **Keep** (your answer of 17 Nov). **Delete all my try-on data** (with your passkey) removes the figure, your
    measurements, your photo, your YES and the pictures; your wardrobe stays as it is. JARVIS's own daily
    backups keep a locked copy for up to 7 days, and the button says so.
 10. **Cost otherwise: ₹0 a month.** The figure's files (about 3–3.5 MB) download once to each device.
@@ -598,7 +601,7 @@ nowhere. A "See it on me" picture is never part of it.
 | His measurements, versions, figure choices, saved comparisons | sealed `tryon/{uid}` | he deletes them (Privacy, OPS-05) |
 | His photo | sealed `tryon_person/{uid}` | he deletes or replaces it, or OPS-05 |
 | His YES | sealed `tryon_consent/{uid}` | his photo is deleted, or OPS-05 |
-| A try-on picture | sealed `tryon_picture/{uid}_{id}` | 7 days after it was made (`tryon_keep_days`), unless **Keep** (then until he deletes it; at most 24 kept); also when a piece in it is later made private or purged; OPS-05 |
+| A try-on picture | sealed `tryon_picture/{uid}_{id}` | 30 days after it was made (`tryon_keep_days`; owner question 3), unless **Keep** (then until he deletes it; at most 24 kept); also when a piece in it is later made private or purged; OPS-05 |
 | The month's try-on spend | `tryon_spend/{uid}_{YYYY-MM}`, numbers only | 13 months after its month (it is his cap's record) |
 
 C's daily job `seeme_daily` (the morning tick) deletes pictures past their time and pictures of pieces now
@@ -693,7 +696,7 @@ with a `piece` (`styling/actions.py:137–146`) checks only that the piece exist
 | `tryon/{uid}` | A | measurements (`current`, `draft`, ≤ 5 `earlier`, each typed or estimated per field), `assets` {piece → template, texture view, card only}, `saved` ≤ 10 comparisons (slots → piece ids, tuck, open, layers), his figure preferences; ≤ 200 KB sealed | `tryon` | until deleted |
 | `tryon_person/{uid}` | C | his one photo (cleaned JPEG ≤ 700 KB, ≤ 1,568 px), when, its size, the device's check (people, faces counts) | `tryon_photos` (AAD `tryon/person/{uid}/v1`) | until he deletes it |
 | `tryon_consent/{uid}` | C | his YES: when, the template's version and hash, provider, model, location | `tryon` | with his photo |
-| `tryon_picture/{uid}_{id}` | C | one picture as Google returned it (JPEG or PNG ≤ 700 KB), made at, piece ids sent, plan id, the ₹ settled, its tokens, kept flag | `tryon_photos` (AAD `tryon/picture/{uid}/{id}/v1`) | 7 days, or until deleted if kept (≤ 24) |
+| `tryon_picture/{uid}_{id}` | C | one picture as Google returned it (JPEG or PNG ≤ 700 KB), made at, piece ids sent, plan id, the ₹ settled, its tokens, kept flag | `tryon_photos` (AAD `tryon/picture/{uid}/{id}/v1`) | 30 days, or until deleted if kept (≤ 24) |
 | `tryon_spend/{uid}_{YYYY-MM}` | C | spent, held, holds, `done` (≤ 50), pictures, blocked | no (numbers only) | 13 months |
 
 Ids: a picture `tp_` + 12 hex; a request id `tq_` + 16 hex (the console's). Keyring purposes 24 → **26**
@@ -750,8 +753,8 @@ The AI learns where Try-on is from `outfit_suggest`'s `see_it` words (D17).
 
 | Item | ₹ |
 |---|---|
-| Firestore: measurements, his photo (≤ 0.95 MB), pictures for 7 days (≈ 10 a week ≈ 5 MB) and ≤ 24 kept (≤ 23 MB), inside the free 1 GiB | 0 |
-| R14's daily backups, when he has them on (≈ ₹3.8 per 100 MB a month) | ≤ 1 |
+| Firestore: measurements, his photo (≤ 0.95 MB), pictures for 30 days (≈ 10 a week, ≈ 43 at a time ≈ 13–40 MB) and ≤ 24 kept (≤ 23 MB), inside the free 1 GiB | 0 |
+| R14's daily backups, when he has them on (≈ ₹3.8 per 100 MB a month) | ≤ 3 |
 | The figure's files to each phone and laptop, once a release (≈ 3–3.5 MB from asia-south1) | < 0.1 once |
 | Cloud Run time for a press (≈ 10–40 s, inside the free vCPU-seconds) | 0 |
 | **See it on me**, `gemini-3.1-flash-image` in `us` (G4): one picture of the whole outfit ≈ ₹7.2 before GST, **≈ ₹8.5–9 with 18 % GST** (≈ ₹8.5 with no thinking tokens, ≈ ₹8.9 with about 1,000); the hold ≈ ₹11.2 | 0 unless used |
@@ -789,7 +792,9 @@ The AI learns where Try-on is from `outfit_suggest`'s `see_it` words (D17).
 7. **Settings** (`config.py`, one line each, ≤ 790): `tryon_enabled` (on), `tryon_pictures` (off; deploy
    sets it), `tryon_month_cap_inr` 300 (0–2,000), `tryon_tax_pct` 18 (0–28), `tryon_model`
    "gemini-3.1-flash-image" (a key of `TRYON_PRICES`), `tryon_location` "us" (`us`, `eu`, `global`),
-   `tryon_model_retires` "2027-05-28", `tryon_keep_days` 7 (1–30), `tryon_photo_max_kb` 700 (100–740).
+   `tryon_model_retires` "2027-05-28", `tryon_keep_days` 30 (1–30; owner question 3), `tryon_photo_max_kb` 700
+   (100–740); and (I0) `tryon_cache` off, which the deploy sets when Google refuses to switch its 24-hour cache
+   off (seam 13), so the consent says so; `config.py` 790.
 8. **Money** `billing/spend.py` (new, ≤ 100): `ensure_spend_allowed(billing, uid, inr)` (his limit, fail
    closed, BudgetReached's words) and `with_tax(inr, pct)`; `billing/service.py` `LABELS["tryon"] =
    "Try-on"` (+1).
@@ -885,7 +890,7 @@ eval case of the same name. Real Google calls are never made by a test or an eva
 | `figure` (B; Node and Python) | the manifest's sums, licences and the 3.5 MB budget; the measure table (12 slider ends and 4 mid points: each measurement changed alone within **0.5 cm**, measured 0.48 cm with the `waist_down` morph; every case's other measurements within **3.5 cm**, measured 3.33 cm; quantised within 0.2 cm of float); the private zone covered in every layer state × slot set × variant × view; AVT-07 geometry; tucked/untucked and open/closed where the table says; triangles ≤ 32,000 a figure; the GLB reader refuses an unknown accessor type | two morphs swapped: the measure table fails; `waist_down` dropped: waist 62 reads 63.9 and fails; the base shorts dropped in "All": the privacy walk fails; the blazer sleeve lengthened 2 cm: AVT-07 fails |
 | `seeme` (C, through the port) | zero provider calls without a current YES; "yes", "Yes", "YES!" refused; a moved rate (95.24 → 96.10) keeps consent, a model or location change asks again; the cap: with each picture settled at ₹8.52 and a hold of ₹11.22, the 34th fits and the 35th is refused; 10 presses at once → exactly one reserves, nine `busy`; released on every non-200 and on "never sent", kept on a timeout after sending, a cut 200 and a blocked 200; settled from `usageMetadata`, at the hold without it; a text part in the answer is read nowhere (logs, store, reply); a private piece and a piece without a front crop refused before any call; No-AI, bearer token, past the end date, `price_changed`, idempotent `request_id`; the one-garment fake (`max_garments = 1`) passes the same cases through the port | the atomic reserve replaced by read-then-write: the 10-at-once case lets two through; the consent check off: "zero calls without YES" fails; the private check moved to the console only: a private piece reaches the fake provider; the ₹ hashed into the consent: the moved-rate case asks again |
 | `console` (D, browser) | each row's UI half, the checklist under `__glFail`, missing WebGL2, a lost context and an asset 404; the YES dialog; the ₹ confirm with Cancel sending nothing; the share caption passed to `snapshot`; 44 px targets; 360 × 800 and 1280 × 800, day and night; the existing tabs' screenshots with Try-on **off** unchanged against R13's | the engine stub that throws, with the checklist hook removed: AVT-15 fails |
-| `e2e` (I1) | his workbook's end-to-end tests: "Meeting outfit update" (the avatar half: one piece to the laundry, the viewer reopened, the checklist and the figure use the same ids), "Layer and rotate" (shirt, blazer, belt, watch, shoes; open the blazer, swap the shoes, turn to the back; every approximation named), "Private items and photos" (the avatar half: a look with private layers, a shared look, then OPS-05; the catalog usable); plus See it on me's life (photo, YES, estimate, picture, 7 days, gone by `seeme_daily`) | the look built from a stale view: "Meeting outfit update" fails |
+| `e2e` (I1) | his workbook's end-to-end tests: "Meeting outfit update" (the avatar half: one piece to the laundry, the viewer reopened, the checklist and the figure use the same ids), "Layer and rotate" (shirt, blazer, belt, watch, shoes; open the blazer, swap the shoes, turn to the back; every approximation named), "Private items and photos" (the avatar half: a look with private layers, a shared look, then OPS-05; the catalog usable); plus See it on me's life (photo, YES, estimate, picture, 30 days, gone by `seeme_daily`) | the look built from a stale view: "Meeting outfit update" fails |
 | `needles` (I1) | his photo's bytes (raw, base64, hex), a picture's bytes, his measurements (numbers and words), the consent text, a private piece's label and colour, the fake token, the fake answer's text part — searched in every log record, the audit, approvals, activity, session turns, alerts, Telegram, Web Push, every tool result for the AI, every non-sealed document (`tryon_spend` included), the R13 backup file, the Privacy export; the fake provider receives only his photo and the chosen crops; a positive control per sink | the adapter logging its request body: the photo needle is found |
 
 **A control for every row's own case (M8)**, run by the I1 sweep:
@@ -968,7 +973,7 @@ the part split), `console-tryon*.css` ≤ 200 in all, every module under `wardro
 - **Pins churn:** 7 version, 8 keyring, 3 contract, 8 tick-list, the door's and R13 C's result pins move at
   I0.
 - **2 CPUs here:** targeted tests while building; whole suites queued.
-- **Date bombs:** a fixed clock in every test; the 7-day keep and the end date tested at 23:30 and 00:30
+- **Date bombs:** a fixed clock in every test; the 30-day keep and the end date tested at 23:30 and 00:30
   IST and across 28 May 2027.
 
 ## Needs the owner (safe defaults; none blocks the build)
@@ -976,7 +981,8 @@ the part split), `console-tryon*.css` ≤ 200 in all, every module under `wardro
 1. **What a picture shows:** every garment of the look that can be sent (top, trousers, jacket) in ONE
    picture, about ₹9 with GST (default); untick any before you press (the price hardly changes).
 2. **Pictures a press:** 1 (default); another try is another press, each with its ₹ shown.
-3. **How long pictures stay:** 7 days unless you press Keep (default); or 30 days.
+3. **How long pictures stay:** **answered 17 Nov 2026 (≈ 14:25 IST): 30 days unless you press Keep**
+   (the default was 7 days).
 4. **Where Google makes the picture:** the United States (default, with question 12); or Europe (same
    price).
 5. **The cap:** ₹300 a month (your decision), GST included (about 33 pictures); lowering is instant,
@@ -993,8 +999,9 @@ the part split), `console-tryon*.css` ≤ 200 in all, every module under `wardro
 11. **Your trial (after release):** one shirt, trousers, a blazer, a pair of shoes, a belt and a watch,
     compared in two looks, as your workbook's "Build and Test" says; and ONE "See it on me" picture (about
     ₹9) after your YES, checked against your Google bill (default); or no paid trial.
-12. **Which Google model makes your picture:** Gemini 3.1 Flash Image in the United States, about ₹9 with
-    GST for the whole outfit, supported until at least 28 May 2027 (default); or Nano Banana 2.1, about
+12. **Which Google model makes your picture:** **answered 17 Nov 2026 (≈ 14:25 IST): Gemini 3.1 Flash
+    Image, made in the United States** (the default: about ₹9 with GST for the whole outfit, supported
+    until at least 28 May 2027). Not taken: Nano Banana 2.1, about
     ₹4.4, but Google may process your photo in any country; or Google's dedicated try-on model, one garment
     a picture (about ₹6.7 each), in Singapore, switched off by Google by 20 Jan 2027 (not built unless you
     ask).
@@ -1093,3 +1100,4 @@ declined in whole; the two partial declines are named in their rows.
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 13:20 IST | R13.1 | First edition, from the code at `3f265cb`: the owner's summary in ₹; the 14 rows with his workbook's own titles and acceptance checks as the named tests, and where his wording goes beyond the approval; code facts with file:line; preview v2 built and measured here (sums, sizes, licences CC0 and Apache-2.0 checked in the anny clone); Google's try-on verified on Google's pages (one garment a call, $0.06 a picture, no Indian region, deprecated 14 Sep 2026 and retiring 20 Jan or 15 Mar 2027); D0–D19; the data model, the HTTP contract, no new tool; the I0 seam list; parts A–D with B on Fable 5.2; suites with controls; size guards; risks; 11 owner questions with defaults; the exit check | 🛠 Mark XXIII |
 | v13.1.2 | 17 Nov 2026, 14:20 IST | R13.1 | Plan review 1 written in (H1–H3, M1–M10, L1–L12; one partial decline, L11's workbook paperwork), with the Workshop's decisions; Status Ready. The default provider is `gemini-3.1-flash-image` at `us` with several garments in one request (≈ ₹9 a picture with GST, ≈ 33 a month), `virtual-try-on-001` not built, consent bound to provider, model and location (H1, M3); R13's `outfit_plan` refuses a piece that isn't ready and locks every slot in one call, an R13 fix shipped here (H2); the measure table corrected and one `waist_down` morph (each measurement within 0.48 cm alone, measured here) inside the 3.5 MB budget (H3); GST in the cap and every ₹ (M1), backups 7 days (M2), Try-on's Privacy rows on `privacy` (M4), Google's defaults only (M5), a custom role and a budget alert (M6), the door's size (M7), a control for every row (M8), the caption in the engine (M9), OPS-05 as a Privacy delete (M10); the LOW items; owner question 12; a "Plan review 1" table | 🛠 Mark XXIII |
+| v13.1.3 | 17 Nov 2026, 16:45 IST | R13.1 | The owner's answers of 17 Nov 2026 (≈ 14:25 IST) written in: the model is Gemini 3.1 Flash Image in the United States (question 12, the default confirmed); a See it on me picture is kept 30 days unless he presses Keep (question 3; was 7 days): summary 9, D14, the data model, seam 7 (`tryon_keep_days` 30, and I0's `tryon_cache`), the cost table (≈ 13–40 MB of pictures, backups ≤ ₹3), the `e2e` suite, the date-bomb line; every other question keeps its safe default | 🛠 Mark XXIII |

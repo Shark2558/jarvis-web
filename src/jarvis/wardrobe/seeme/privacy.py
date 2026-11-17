@@ -71,7 +71,7 @@ def _pictures_row(svc: SeeMeService) -> CallbackSource:
         pictures = [
             {"id": p.id, "made_at": p.made_at.isoformat(), "kept": p.kept,
              "garment": p.garment.words, "with": [s.words for s in p.sent], "inr": p.inr}
-            for p in await k.pictures.list(uid, keep_days=days)
+            for p in await k.pictures.listed(uid, keep_days=days)
         ]  # fmt: skip
         garments = [
             {"id": g.id, "words": g.words, "at": g.at.isoformat(), "bytes": g.bytes}

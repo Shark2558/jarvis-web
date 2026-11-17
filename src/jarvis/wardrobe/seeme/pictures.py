@@ -161,7 +161,7 @@ class PictureStore:
         except (KeyError, ValueError, TypeError, ValidationError):
             return None
 
-    async def list(self, uid: str, *, keep_days: int) -> tuple[PictureView, ...]:
+    async def listed(self, uid: str, *, keep_days: int) -> tuple[PictureView, ...]:
         out: list[PictureView] = []
         for pid, doc in sorted(await self.rows(uid), key=lambda r: (str(r[1].get("at")), r[0]))[
             ::-1

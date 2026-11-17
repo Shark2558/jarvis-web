@@ -115,7 +115,7 @@ class GarmentStore:
         g = await self.meta(uid, gid)
         return None if g is None else NewGarment(id=g.id, words=g.words)
 
-    async def list(self, uid: str, *, keep_days: int, kept: Collection[str]) -> GarmentList:
+    async def listed(self, uid: str, *, keep_days: int, kept: Collection[str]) -> GarmentList:
         out: list[GarmentView] = []
         for gid, doc in sorted(await self.rows(uid), key=lambda r: (str(r[1].get("at")), r[0])):
             try:

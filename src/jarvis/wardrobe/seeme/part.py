@@ -78,7 +78,7 @@ class SeeMeService:
 
     async def garments(self, uid: str) -> http.GarmentList:
         kept = await self.kit.pictures.kept_garments(uid)
-        return await self.kit.garments.list(uid, keep_days=await self._keep_days(uid), kept=kept)
+        return await self.kit.garments.listed(uid, keep_days=await self._keep_days(uid), kept=kept)
 
     async def garment_photo(self, uid: str, gid: str) -> bytes | None:
         return await self.kit.garments.get(uid, gid)
@@ -167,7 +167,7 @@ class SeeMeService:
             "ready": READY if provider is not None else READY_OFF, "on": refused is None,
             "why": "" if refused is None else refused.words, "photo": await k.photo.view(uid),
             "month": month, "tax_pct": s.tryon_tax_pct, "photo_max_kb": s.tryon_photo_max_kb,
-            "pictures": await k.pictures.list(uid, keep_days=await self._keep_days_safe(uid)),
+            "pictures": await k.pictures.listed(uid, keep_days=await self._keep_days_safe(uid)),
         }  # fmt: skip
         if provider is not None:
             out |= await self._provider_half(uid, provider, soon)

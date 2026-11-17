@@ -341,7 +341,7 @@ async def pictures(request: Request, uid: str = Depends(current_user)) -> Respon
         args=args,
         detail="a picture made" if made else "no picture",
     )
-    return _ok(got) if made else got  # type: ignore[no-any-return]
+    return _ok(got) if made else got
 
 
 @router.get("/v1/seeme/pictures/{id}", include_in_schema=False)

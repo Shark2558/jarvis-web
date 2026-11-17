@@ -134,7 +134,7 @@ async def test_the_list_holds_words_and_sizes_never_the_bytes() -> None:
     await store.save(UID, "jeans", "light_blue", jpeg(600, 800), keep_days=30)
     clock.set(NOW + timedelta(minutes=1))
     await store.save(UID, "blazer", "charcoal", jpeg(600, 800), keep_days=30)
-    listed = await store.list(UID, keep_days=30, kept=set())
+    listed = await store.listed(UID, keep_days=30, kept=set())
     assert [g.words for g in listed.garments] == [
         "new light blue jeans, not in your wardrobe",
         "a new charcoal blazer, not in your wardrobe",
@@ -169,7 +169,7 @@ async def test_a_garment_shown_by_a_kept_picture_stays_and_its_delete_takes_only
     store = _garments(docs)
     a = await store.save(UID, "shirt", "navy", jpeg(300, 300), keep_days=30)
     b = await store.save(UID, "kurta", "maroon", jpeg(300, 300), keep_days=30)
-    listed = await store.list(UID, keep_days=30, kept={a.id})
+    listed = await store.listed(UID, keep_days=30, kept={a.id})
     shown = {g.id: g for g in listed.garments}
     assert shown[a.id].until is None and shown[a.id].kept and shown[b.id].until is not None
     assert await store.delete(UID, a.id) is True and await store.delete(UID, a.id) is False

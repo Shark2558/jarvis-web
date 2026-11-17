@@ -174,10 +174,12 @@ const SCENARIOS = {
     await press(rowOf(host, 'watch'), 'Change'); await press(host, 'brown watch · Ready');
     await until(() => rowOf(host, 'watch') && rowOf(host, 'watch').dataset.piece === T.watch2);
     out.changed = !!rowOf(host, 'watch') && rowOf(host, 'watch').dataset.piece === T.watch2;
-    await press(host, 'Wearing it'); await until(() => seen.tools.length > 0);
+    const worn = () => seen.api.filter((c) => c.path === '/v1/wardrobe/tools/wear_log'); // R13's tool, its answer said here (H2)
+    await press(host, 'Wearing it'); await until(() => worn().length > 0 && host.textContent.includes('Done, Sir.'));
     const confirm = seen.api.filter((c) => c.path === '/v1/tryon/confirm');
     out.confirmed_first = confirm.length === 1 && confirm[0].body.slots.some((s) => s.slot === 'watch' && s.piece === T.watch2);
-    out.worn = JSON.stringify(seen.tools) === JSON.stringify([{ name: 'wear_log', args: { action: 'start', plan: IN.plan } }]);
+    out.worn = seen.tools.length === 0 && JSON.stringify(worn().map((c) => c.body)) === JSON.stringify([{ arguments: { action: 'start', plan: IN.plan } }])
+      && host.textContent.includes('Done, Sir.');
     return out;
   },
   async avt06() { // the watch swap changes the wrist piece and the slot's thumbnail to W2's

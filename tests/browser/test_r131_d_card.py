@@ -367,6 +367,32 @@ def test_avt15_a_failed_render_leaves_a_checklist_that_can_change_a_piece_and_co
         c.close()
 
 
+def test_avt15_wearing_it_shows_r13s_refusal_and_never_claims_success(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 H2: with the Wardrobe tab mounted, a refusal read "Enjoy the day." (in green)
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    no = {"status": "error", "message": "The navy shirt is in the laundry, Sir."}
+    c.page.route("**/v1/wardrobe/tools/wear_log", lambda r: r.fulfill(json=no))
+    try:
+        c.open()
+        c.wardrobe()
+        until(c.page, lambda: drawn(c), "the section's figure")
+        c.ask()
+        until(c.page, lambda: c.card().count() == 1 and drawn(c, 2), "the card")
+        for where in (c.card(), c.section()):  # the card first: the section then takes the stage
+            where.get_by_role("button", name="Wearing it", exact=True).click()
+            status = where.locator(".tr-view p[role='status']")
+            until(c.page, lambda s=status: "in the laundry" in s.inner_text(), "the refusal")
+            assert status.inner_text() == "The navy shirt is in the laundry, Sir."
+            assert "bad" in (status.get_attribute("class") or "").split()
+            assert "Enjoy the day." not in where.inner_text()
+        assert len(c.posts("/v1/wardrobe/tools/wear_log")) == 2
+    finally:
+        c.close()
+
+
 def test_avt15_retry_3d_is_offered_once_a_page(browser: Any, d_url: str, token: str) -> None:
     reset(d_url, token)
     c = Page(browser, d_url, token, gl_fail="lost")

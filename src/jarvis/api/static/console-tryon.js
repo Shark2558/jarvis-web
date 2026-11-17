@@ -289,27 +289,28 @@ async function undo(v) { // a pick no longer eligible comes back as a draft: the
 }
 
 // ---- a plan: Use this look (A's confirm), Wearing it (R13's tool; the confirm first after a swap, L10) -----------------
+function told(v, r, done) { // R13's answer in this viewer: done, waiting for his OK, or refused in R13's own words (H2)
+  const ok = !!(r && r.status === 'executed');
+  if (r && r.status === 'needs_approval') say(v, '', 'That needs your OK: the card is waiting in the chat.');
+  else say(v, ok ? 'ok' : 'bad', txt((r && r.message) || (ok ? done : 'That didn\u2019t work.'), 200));
+  return ok;
+}
 async function confirm(v) {
   if (!v.plan) { say(v, 'bad', NO_PLAN); return false; }
   const chat = window.JarvisChat, session = chat && typeof chat.session === 'function' ? chat.session() : null;
   try {
     const r = await api('/v1/tryon/confirm', { body: { plan: v.plan, slots: pairs(v.look), session_id: session || null } });
-    if (r && r.status === 'needs_approval') say(v, '', 'That needs your OK: the card is waiting in the chat.');
-    else say(v, r && r.status === 'executed' ? 'ok' : 'bad', txt((r && r.message) || 'Done.', 200));
-    if (!r || r.status !== 'executed') return false;
+    if (!told(v, r, 'Done.')) return false;
     v.planPairs = pairs(v.look);
     return true;
   } catch (e) { failed(v, e); return false; }
 }
-async function wearing(v) {
+async function wearing(v) { // R13's wear_log, its answer said here; then R13's tab re-reads its plans and laundry
   if (!v.plan) { say(v, 'bad', NO_PLAN); return; }
   if (!same(pairs(v.look), v.planPairs) && !(await confirm(v))) return;
-  const args = { action: 'start', plan: v.plan };
-  if (S.ctx && typeof S.ctx.tool === 'function') { await S.ctx.tool('wear_log', args, 'Enjoy the day.'); say(v, 'ok', 'Enjoy the day.'); return; }
-  try {
-    const r = await api('/v1/wardrobe/tools/wear_log', { body: { arguments: args } });
-    say(v, r && r.status === 'executed' ? 'ok' : 'bad', txt((r && r.message) || 'Enjoy the day.', 200));
-  } catch (e) { failed(v, e); }
+  try { told(v, await api('/v1/wardrobe/tools/wear_log', { body: { arguments: { action: 'start', plan: v.plan } } }), 'Enjoy the day.'); }
+  catch (e) { failed(v, e); }
+  if (S.ctx && H() && typeof H().reload === 'function') H().reload();
 }
 
 // ---- compare two looks (one show() with two figures), saved comparisons ---------------------------------------------

@@ -22,7 +22,7 @@ from jarvis.wardrobe.tryon.model import NEW_TYPES
 STATIC = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
 D_JS = (
     "console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-photo.js",
-    "console-tryon-card.js",
+    "console-tryon-card.js", "console-tryon-form.js",
 )  # fmt: skip
 
 

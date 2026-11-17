@@ -9,9 +9,10 @@
 // A viewer (the section's, a card's) holds one look on B's stage, through the engine contract only, with its controls
 // and its list ('./console-tryon-list.js'), the checklist by itself when 3D can't run (Retry 3D once a page). ONE stage
 // on the page: the viewer taking it gives the other's back; a hidden viewer (its tab, the page) gives it back too.
-// Every change goes to the server; nothing is kept on this device; no pixel API (B's snapshot draws the caption).
-import { COVERED, MEASURE_WORDS, SHAPE_WORDS, WHY, caption, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, slotWord,
-  tomorrowIso, when } from './console-tryon-list.js';
+// The section's forms (measurements, shapes, OPS-05) are './console-tryon-form.js'. Every change goes to the server;
+// nothing is kept on this device; no pixel API (B's snapshot draws the caption).
+import { COVERED, WHY, caption, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, tomorrowIso, when } from './console-tryon-list.js';
+import * as F from './console-tryon-form.js';
 
 const engine3d = () => import('./console-tryon-3d.js'), seeMe = () => import('./console-tryon-me.js');
 const GL = ['no-webgl2', 'lost', 'asset', 'timeout'], RETRY = ['lost', 'asset', 'timeout', 'engine'];
@@ -403,79 +404,13 @@ function download(blob, file) { // our own bytes as a blob: URL for the download
   setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1500);
 }
 
-// ---- the section: measurements (D4), shapes (AVT-05), OPS-05 ------------------------------------------------------------
-function form() {
-  const h = H(), box = S.el.form, t = S.tryon;
-  if (!box || !t) return;
-  const ver = (t.body && (t.body.draft || t.body.current)) || null, typed = new Set((ver && ver.typed) || []);
-  const grid = h.mk('div', 'hp-grid tr-form'), err = h.mk('p', 'snote warn');
-  err.setAttribute('role', 'alert');
-  (t.ranges || []).forEach((r) => {
-    const input = h.mk('input', 'minput');
-    input.type = 'number'; input.inputMode = 'numeric'; input.min = String(r.low); input.max = String(r.high); input.step = '1';
-    input.name = r.measure; input.value = ver ? String(ver[r.measure]) : '';
-    input.setAttribute('aria-label', (MEASURE_WORDS[r.measure] || r.measure) + ' in cm');
-    const f = h.mk('label', 'hp-field');
-    f.append(h.mk('span', 'snote', (MEASURE_WORDS[r.measure] || r.measure) + ' (cm)'), input, h.mk('span', 'sfine', ver && !typed.has(r.measure) ? 'estimated' : ver ? 'typed' : ''));
-    input.addEventListener('change', () => typeIn(r, input, err));
-    grid.append(f);
-  });
-  const out = [h.mk('p', 'sfine', txt(t.words || '', 160)), grid, err];
-  if (t.body && t.body.draft) {
-    out.push(h.mk('p', 'snote', 'The figure shows your new measurements; your looks and saved comparisons keep their pieces.'));
-    const a = h.mk('div', 'sacts');
-    a.append(btn('Use these measurements', () => bodyStep('/v1/tryon/body/use?at=' + encodeURIComponent(t.body.draft.at), 'POST')), btn('Keep the current', () => bodyStep('/v1/tryon/body/draft', 'DELETE'))); // the draft he saw (409 if it changed)
-    out.push(a);
-  }
-  box.replaceChildren(...out);
-}
-async function typeIn(r, input, err) {
-  const v = Number(input.value);
-  if (!Number.isInteger(v) || v < r.low || v > r.high) { err.textContent = txt(r.words, 120) + '.'; return; }
-  err.textContent = '';
-  const t = S.tryon, ver = t.body && (t.body.draft || t.body.current), sent = {};
-  ((ver && ver.typed) || []).forEach((k) => { sent[k] = ver[k]; });
-  sent[r.measure] = v;
-  try { t.body = await api('/v1/tryon/body', { method: 'PUT', body: sent }); } catch (e) { err.textContent = txt(e && e.message, 160); return; }
-  redrawFigures();
-}
-async function bodyStep(path, method) {
-  try { S.tryon.body = await api(path, { method }); } catch (e) { failed(S.sec, e); }
-  redrawFigures();
-}
+// ---- the section: measurements (D4), shapes (AVT-05), OPS-05 (./console-tryon-form.js) ---------------------------------
+const kit = () => ({ H: H(), api, btn, txt, failed: (e) => failed(S.sec, e), tryon: () => S.tryon, look: () => (S.sec && S.sec.look) || null,
+  el: S.el, readTryon, redraw: redrawFigures, reload });
+const form = () => F.form(kit()), shapes = () => F.shapes(kit()), deleteAll = () => F.deleteAll(kit());
 function redrawFigures() { // a new version: every open look redraws, its pieces unchanged (AVT-03)
   form();
   S.views.forEach((v) => { if (!v.look) return; if (v.stage) { draw(v); paint(v); } else if (v.why === 'nofigure') to3d(v); else draw(v); });
-}
-function shapes() {
-  const h = H(), box = S.el.shapes, v = S.sec;
-  if (!box) return;
-  const assets = new Map(((S.tryon && S.tryon.assets) || []).map((a) => [a.piece, a]));
-  const rows = ((v && v.look && v.look.slots) || []).filter((s) => !s.private && s.piece).map((s) => {
-    const shapesOf = [...new Set([s.template].concat((s.options || []).map((o) => o.template)).filter(Boolean))];
-    const a = assets.get(s.piece), now = a && a.card_only ? '' : (a && a.template) || s.template || '';
-    const pick = h.mk('select', 'minput');
-    pick.setAttribute('aria-label', 'Shape on the figure for ' + txt(s.words, 60));
-    shapesOf.concat(['']).forEach((t) => { const o = h.mk('option', '', t ? (SHAPE_WORDS[t] || t) + ' (approximate)' : 'Image card only'); o.value = t; pick.append(o); });
-    pick.value = now;
-    pick.addEventListener('change', () => shapeOf(s.piece, pick.value));
-    return h.row(slotWord(s.slot) + ': ' + txt(s.words, 60), now ? 'Drawn on an approximate shape; its photo stays beside it.' : 'Shown as its photo only.', [pick]);
-  });
-  box.replaceChildren(...(rows.length ? rows : [h.mk('p', 'sfine', 'The pieces of the look above will show here.')]));
-}
-async function shapeOf(piece, template) {
-  try {
-    await api('/v1/tryon/assets/' + encodeURIComponent(piece), { method: 'PUT', body: { piece, template: template || null, card_only: !template } });
-    await readTryon();
-  } catch (e) { failed(S.sec, e); return; }
-  shapes(); redrawFigures();
-}
-async function deleteAll() { // OPS-05: Privacy's own delete of tryon_all (its passkey and its words); then everything re-read
-  const P = window.JarvisPrivacy;
-  if (!P || typeof P.remove !== 'function' || !(await P.remove('tryon_all'))) { failed(S.sec, new Error('Open Privacy to delete your try-on data.')); return; }
-  const gone = () => !document.querySelector('.pv-dlg');
-  const obs = new MutationObserver(() => { if (gone()) { obs.disconnect(); reload(); } });
-  obs.observe(document.body, { childList: true });
 }
 async function reload() { // after Privacy's delete: the figure, the looks and See it on me as the server has them now
   S.photos = null; dropCrops();

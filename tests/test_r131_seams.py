@@ -395,14 +395,18 @@ import re  # noqa: E402
 TRYON_JS = (
     "console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-photo.js",
     "console-tryon-3d.js", "console-tryon-glb.js", "console-tryon-cloth.js",
-    "console-tryon-card.js",
+    "console-tryon-card.js", "console-tryon-form.js",
 )  # fmt: skip
-D_JS = ("console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-card.js")
+D_JS = (
+    "console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-card.js",
+    "console-tryon-form.js",
+)  # fmt: skip
 B_JS = ("console-tryon-3d.js", "console-tryon-glb.js", "console-tryon-cloth.js")
 LIMITS_JS = {
     "console-tryon.js": 600, "console-tryon-list.js": 300, "console-tryon-me.js": 400,
     "console-tryon-photo.js": 300, "console-tryon-3d.js": 600, "console-tryon-glb.js": 200,
     "console-tryon-cloth.js": 300, "console-tryon-card.js": 150,
+    "console-tryon-form.js": 150,  # I1's split of console-tryon.js (review D-1 L12)
 }  # fmt: skip
 
 
@@ -855,7 +859,7 @@ def test_the_guide_has_c72_and_c73_with_every_collection_and_console_module() ->
     from jarvis.wardrobe.ports import COLLECTIONS
 
     guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
-    assert guide.splitlines()[0].startswith("Version v13.1.3 · ") and "Release R13.1" in guide[:200]
+    assert guide.splitlines()[0].startswith("Version v13.1.4 · ") and "Release R13.1" in guide[:200]
     for card in ("#### C72 · Try-on figure (R13.1)", "#### C73 · See it on me (R13.1)"):
         assert card in guide, card
     for name in (*COLLECTIONS["tryon"], *COLLECTIONS["seeme"]):

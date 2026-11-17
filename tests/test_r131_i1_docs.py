@@ -14,10 +14,10 @@ def _card(text: str, title: str) -> str:
     return text[start : text.index("\n#### ", start + 1)]
 
 
-def test_the_guide_is_v13_1_3_with_its_change_log_row() -> None:
+def test_the_guide_is_v13_1_4_with_its_change_log_row() -> None:
     text = GUIDE.read_text(encoding="utf-8")
-    assert text.splitlines()[0].startswith("Version v13.1.3 · ")
-    assert "| v13.1.3 | " in text.splitlines()[-1]
+    assert text.splitlines()[0].startswith("Version v13.1.4 · ")
+    assert "| v13.1.4 | " in text.splitlines()[-1]
 
 
 def test_c72_and_c73_are_built_and_joined_not_planned() -> None:

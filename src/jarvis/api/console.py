@@ -180,6 +180,7 @@ APP_ASSETS: dict[str, str] = {
     # R13.1 I0 (docs/plans/r13-1-try-on.md seam 9; stubs at I0): Try it on, in Helpers -> Wardrobe
     "console-tryon.js": _JS,  # D: the section (mounted by console-helpers-wardrobe.js)
     "console-tryon-list.js": _JS,  # D: the checklist, image cards, the share caption's words
+    "console-tryon-form.js": _JS,  # D: the section's forms (measurements, shapes, OPS-05)
     "console-tryon-me.js": _JS,  # D: See it on me (photo, YES, estimate, confirm, pictures)
     "console-tryon-photo.js": _JS,  # D: his photo's check on the device, a pixel panel
     "console-tryon-3d.js": _JS,  # B: the figure engine (window.JarvisTryOn3D), a drawing module

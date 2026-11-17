@@ -78,6 +78,7 @@ NOT_IN_PAGE = {
     # these loads when they replace I0's stubs (a static import or a dynamic one: the path quoted)
     "console-tryon.js": ("console-helpers-wardrobe.js", "import('./console-tryon.js')"),
     "console-tryon-list.js": ("console-tryon.js", "'./console-tryon-list.js'"),
+    "console-tryon-form.js": ("console-tryon.js", "'./console-tryon-form.js'"),  # I1's split
     "console-tryon-me.js": ("console-tryon.js", "'./console-tryon-me.js'"),
     "console-tryon-3d.js": ("console-tryon.js", "'./console-tryon-3d.js'"),
     "console-tryon-photo.js": ("console-tryon-me.js", "'./console-tryon-photo.js'"),

@@ -61,7 +61,7 @@ TOKEN = "browser-test-token-not-a-secret"  # the browser tests' own made-up toke
 MARK = "R131D-DOM "
 D_FILES = (
     "console-tryon.js", "console-tryon-list.js", "console-tryon-me.js", "console-tryon-photo.js",
-    "console-tryon-card.js",
+    "console-tryon-card.js", "console-tryon-form.js",
 )  # fmt: skip
 # I0's engine stub as it was at I0: B's engine replaces the file at I1, and this case stays
 I0_STUB = "\n".join(

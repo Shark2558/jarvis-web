@@ -1,0 +1,3 @@
+# scripts/mannequin: the asset build's pins (a dev tool run by hand, never in the server's image)
+numpy==2.5.3
+scipy==1.18.1

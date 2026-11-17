@@ -1,0 +1,3 @@
+Body and garment base: MakeHuman/MPFB2 assets (CC0 1.0) as shipped in NAVER's Anny at
+8f35dc2df1c4062fd2fae86734f9705de50c0c2b; the waist measurement loop from Anny's anthropometry.py
+(Apache-2.0, NAVER Corp.); shaped, posed, cut and quantised by JARVIS.

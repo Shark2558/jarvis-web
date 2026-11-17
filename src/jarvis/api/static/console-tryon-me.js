@@ -252,7 +252,7 @@ async function sendMine(file) {
   say(r.advice ? '' : 'ok', 'Your photo is kept, sealed. ' + (r.advice || r.words));
 }
 async function showMine() { try { M.me = await door().myPhoto(); } catch (e) { failed(e); } render(); }
-async function dropMine() { await forget('photo'); M.me = ''; }
+async function dropMine() { if (await forget('photo')) M.me = ''; }
 
 // ---- the new garment ------------------------------------------------------------------------------------------------------
 export async function take(file) { // shared in or chosen: shown with the lists; nothing is sent until he presses
@@ -353,12 +353,18 @@ async function keep(p, on) {
   if (!has('keep')) { say('bad', LATER); return; }
   try { M.pic = await door().keep(p.id, on); await read(); render(); } catch (e) { failed(e); }
 }
+const SURE = Object.freeze({ // each delete is confirmed first (the project's rule; review D-1 L8)
+  photo: ['Delete your photo and your YES?', 'See it on me then asks for a new photo and your YES before the next picture.'],
+  p: ['Delete this picture?', 'It is deleted from JARVIS at once.'], g: ['Delete this garment photo?', 'It is deleted from JARVIS. Your wardrobe stays as it is.'] });
 async function forget(id) {
-  if (!has('forget')) { say('bad', LATER); return; }
+  if (!has('forget')) { say('bad', LATER); return false; }
+  const [title, line] = SURE[id === 'photo' ? 'photo' : String(id).charAt(1)] || SURE.p;
+  if ((await ask(title, [line], [['Cancel', false], ['Delete', true, 'primary']])) !== true) { say('', 'Nothing was deleted.'); return false; }
   try {
     const r = await door().forget(id);
     if (M.pic && M.pic.id === id) { M.pic = null; M.picUrl = ''; }
     if (M.garment && M.garment.id === id) { M.garment = null; M.pair = null; M.mine = []; }
     await read(); render(); say('ok', txt((r && r.message) || 'Deleted.', 120));
-  } catch (e) { failed(e); }
+    return true;
+  } catch (e) { failed(e); return false; }
 }

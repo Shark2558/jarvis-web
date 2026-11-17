@@ -452,6 +452,51 @@ def test_d22_pairing_lists_every_piece_it_would_send_and_never_one_in_the_garmen
         c.close()
 
 
+def test_each_delete_in_see_it_on_me_is_confirmed_first_and_cancel_deletes_nothing(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 L8 (the project's rule: a delete has a confirm step): his photo (which also
+    # withdraws his YES), a picture and a garment photo, each behind a .bdialog; Cancel and
+    # Escape delete nothing
+    reset(d_url, token)
+    with_photo_yes_and(d_url, token, "trousers", "black")
+    c = ready(browser, d_url, token)
+    dlg = c.page.locator("dialog.bdialog.tr-dlg")
+    deletes = lambda: [r for r in c.sent if r["method"] == "DELETE"]  # noqa: E731
+    try:
+        use(c, "new black trousers")
+        until(c.page, lambda: "With your navy shirt." in text(c), "the pairing")
+        make_one(c)
+        until(c.page, lambda: "Generated 2D style preview" in text(c), "a picture")
+        keep = c.page.get_by_role("button", name="Keep", exact=True)
+        for where, title, close in (
+            (seeme(c), "Delete your photo and your YES?", "Cancel"),
+            (seeme(c).locator(".sacts", has=keep), "Delete this picture?", "Escape"),
+        ):
+            name = "Delete my photo and my YES" if close == "Cancel" else "Delete"
+            where.get_by_role("button", name=name, exact=True).click()
+            until(c.page, lambda t=title: t in (dlg.text_content() or ""), title)
+            if close == "Escape":
+                c.page.keyboard.press("Escape")
+            else:
+                dlg.get_by_role("button", name="Cancel").click()
+            c.page.wait_for_timeout(200)
+            assert deletes() == [], name
+        seeme(c).get_by_role("button", name="Delete my photo and my YES").click()
+        until(c.page, lambda: "Delete your photo and your YES?" in (dlg.text_content() or ""), "")
+        dlg.get_by_role("button", name="Delete", exact=True).click()
+        until(c.page, lambda: len(deletes()) == 1, "his photo deleted")
+        assert deletes()[0]["url"].endswith("/v1/seeme/photo")
+        row = seeme(c).locator(".hp-row", has_text="new black trousers").first
+        row.get_by_role("button", name="Delete", exact=True).click()
+        until(c.page, lambda: "Delete this garment photo?" in (dlg.text_content() or ""), "")
+        dlg.get_by_role("button", name="Delete", exact=True).click()
+        until(c.page, lambda: len(deletes()) == 2, "the garment photo deleted")
+        assert "/v1/seeme/garments/tg_" in deletes()[1]["url"]
+    finally:
+        c.close()
+
+
 def test_seeme_settings_lower_the_limit_at_once_and_raise_it_only_after_the_rupees_are_shown(
     browser: Any, d_url: str, token: str
 ) -> None:

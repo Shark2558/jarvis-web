@@ -1,18 +1,59 @@
 # src/jarvis/wardrobe/tryon/part.py
-"""R13.1 Part A's one join (docs/plans/r13-1-try-on.md "Part split" A): I0's STUB, "not built
-yet". Part A replaces it: `build(ctx) -> WardrobePart("tryon", privacy=..., services=
-{"tryon_looks": ...}, ready=...)`. Its Privacy rows (`tryon_figure`, `tryon_all`, `tryon_device`)
-ride `privacy`, never `data` (the wiring refuses a `tryon` part with data, M4). Until then the
-wiring gives this part `kept.stand_ins("tryon", ...)`."""
+"""R13.1 Part A's one join (docs/plans/r13-1-try-on.md "Part split" A, D4-D7, D16).
+
+`build(ctx) -> WardrobePart("tryon", privacy=..., services={"tryon_looks": TryonService},
+ready=...)`: no tool, no job, no `data` (the wiring refuses `data` on this part, M4). Its Privacy
+rows are `tryon_figure`, `tryon_all` and `tryon_device` (`ports.PRIVACY_OWNER`). With no storage,
+no token key, or Try-on switched off, `ready` says so in words ("Off: ..."), no service is offered
+(the routes say the same words), nothing is ever kept in clear, and the rows still answer for
+what is on disk (I0's `kept` stand-ins: found and deleted by path with no key).
+
+`TryonService` is what the routes and C use: the looks (`ports.TryonLooks.look`), his
+measurements and their versions, his figure choices, saved comparisons, the fresh check before
+"Use this look", and OPS-05's `erase_all`. Each reads fresh; nothing is cached between calls.
+"""
 
 from __future__ import annotations
 
 from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
+from jarvis.wardrobe.tryon.http import TryonLook
+from jarvis.wardrobe.tryon.looks import Looks
+from jarvis.wardrobe.tryon.store import TryonStore
+
+READY = "ready"
+OFF_NO_STORE = "Off: no storage is set up, so Try-on keeps nothing."
+OFF_NO_KEY = "Off: JARVIS has no token key to seal your measurements."
+OFF_SWITCHED = "Off: Try-on is switched off on this server."
+
+
+class TryonService:
+    """The `tryon_looks` service (A's; `ports.SERVICE_OWNER`)."""
+
+    def __init__(self, ctx: WardrobeContext) -> None:
+        self.ctx = ctx
+        self.store = TryonStore(ctx.docs, ctx.keyring, prefix=ctx.s.firestore_prefix, now=ctx.now)
+        self.looks = Looks(ctx, self.store)
+
+    async def look(self, uid: str, plan: str) -> TryonLook:
+        """`ports.TryonLooks`: a plan's look as the figure shows it, read fresh (for C)."""
+        return await self.looks.for_plan(uid, plan)
+
+
+def off_words(ctx: WardrobeContext) -> str | None:
+    if ctx.docs is None:
+        return OFF_NO_STORE
+    if ctx.keyring is None:
+        return OFF_NO_KEY
+    if not ctx.s.tryon_enabled:
+        return OFF_SWITCHED
+    return None
 
 
 def build(ctx: WardrobeContext) -> WardrobePart:
-    del ctx
-    return WardrobePart("tryon")
+    off = off_words(ctx)
+    if off is not None:
+        return WardrobePart("tryon", ready=off)
+    return WardrobePart("tryon", services={"tryon_looks": TryonService(ctx)}, ready=READY)
 
 
-__all__ = ["build"]
+__all__ = ["OFF_NO_KEY", "OFF_NO_STORE", "OFF_SWITCHED", "READY", "TryonService", "build"]

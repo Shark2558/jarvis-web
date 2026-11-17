@@ -8,7 +8,7 @@
 //   opts = { tucked, open, layers, view }
 // A drawing module (tests/test_r13_seams.py DRAWING): it draws only on its own canvases, imports three only from
 // /static/vendor/three-0.187.0/three.module.min.js, fetches only /static/vendor/mannequin/, and reads his crops through
-// the door's thumb() as data: URLs; it never calls JarvisVision, JarvisCamera, getUserMedia or the door's senders.
+// the door's thumb() as data: URLs; it never calls the vision engine or the camera, never asks for a camera, and never uses the door's senders.
 // Its two helpers: './console-tryon-glb.js' (the GLB reader) and './console-tryon-cloth.js' (textures).
 const NOT_BUILT = 'The 3D view is not built yet.';
 const parts = () => Promise.all([import('./console-tryon-glb.js'), import('./console-tryon-cloth.js')]);

@@ -669,3 +669,108 @@ async def test_the_stage_page_serves_the_engine_under_the_consoles_csp(settings:
             assert mod.status_code == 200 and "JarvisTryOn3D" in mod.text
             assert (await c.get("/r131/fixtures/..%2Fr13_fakes.py")).status_code == 404
             assert (await c.get("/static/console-tryon-3d.js")).status_code == 200
+
+
+# ---- 13 · the deploy (M6, G6) -------------------------------------------------------------------
+def test_the_deploy_switches_on_see_it_on_me_only_when_the_api_and_a_role_worked() -> None:
+    import subprocess
+
+    sh = _text(ROOT / "deploy" / "cloudrun.sh")
+    assert subprocess.run(["bash", "-n", str(ROOT / "deploy" / "cloudrun.sh")]).returncode == 0
+    assert "gcloud services enable aiplatform.googleapis.com --quiet" in sh
+    assert "--permissions=aiplatform.endpoints.predict --stage=GA" in sh  # prompt requests only
+    assert sh.index("roles/jarvisTryOn") < sh.index("roles/aiplatform.user")  # the fallback last
+    assert "TRYON_STATE=true" in sh and "JARVIS_TRYON_PICTURES=true" not in sh  # never forced on
+    infra = [ln for ln in sh.splitlines() if ln.startswith('INFRA_ENV="${INFRA_ENV},JARVIS_TRYON')]
+    assert infra == [
+        'INFRA_ENV="${INFRA_ENV},JARVIS_TRYON_PICTURES=${TRYON_STATE},'
+        'JARVIS_TRYON_CACHE=${TRYON_CACHE}"   # R13.1 seam 13'
+    ]
+    assert sh.index('INFRA_ENV="${INFRA_ENV},JARVIS_TRYON') < sh.index("CONFIG_FLAGS=(")
+
+
+def test_the_deploy_turns_googles_cache_off_with_the_token_never_on_a_command_line() -> None:
+    sh = _text(ROOT / "deploy" / "cloudrun.sh")
+    block = sh[sh.index("TRYON_CACHE=false") : sh.index("unset tok cfg body")]
+    assert "curl -fsS --max-time 20 --config - -X PATCH" in block  # the token on stdin only
+    assert '\\"disableCache\\":true' in block and "/cacheConfig" in block
+    assert 'echo "$tok"' not in block and 'Bearer ${tok}\\""' in block
+    assert "--display-name=jarvis-tryon" in sh and "--budget-amount=300" in sh
+
+
+# ---- 14 · the guide and the book -----------------------------------------------------------------
+def test_the_guide_plans_c72_and_c73_with_every_collection_and_console_module() -> None:
+    from jarvis.wardrobe.ports import COLLECTIONS
+
+    guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
+    assert guide.splitlines()[0].startswith("Version v13.1.1 · ") and "Release R13.1" in guide[:200]
+    for card in ("#### C72 · Try-on figure (R13.1)", "#### C73 · See it on me (R13.1)"):
+        assert card in guide, card
+    for name in (*COLLECTIONS["tryon"], *COLLECTIONS["seeme"]):
+        assert f"`{name}/" in guide, name
+    for name in TRYON_JS:
+        assert f"`{name}`" in guide, name
+    assert "C72 Try-on figure, C73 See it on me (R13.1, PLANNED)" in guide
+    assert "from R13.1 `tryon` and `tryon_photos`" in guide
+
+
+def test_the_book_knows_the_mannequins_licences() -> None:
+    from jarvis.buildbook.gen.libs import VENDORED, flag_of, licence_from_text
+
+    assert VENDORED["vendor/mannequin/m1/LICENSE-mpfb2-CC0.txt"][3] == "3d"
+    assert VENDORED["vendor/mannequin/m1/LICENSE-anny-Apache-2.0.txt"][3] == "3d"
+    cc0 = "# Creative Commons CC0 1.0 Universal\n\nCREATIVE COMMONS CORPORATION IS NOT A LAW FIRM"
+    assert licence_from_text(cc0) == "CC0-1.0" and flag_of("CC0-1.0") is None
+    apache = 'licensed under the Apache License, \nVersion 2.0 (the "License")'
+    assert licence_from_text(apache) == "Apache-2.0"
+
+
+# ---- size guards, "no real clock", ₹ only ------------------------------------------------------
+def test_the_size_guards_hold() -> None:
+    assert _lines(SRC / "api" / "app.py") <= 735  # not edited by R13.1 (732)
+    assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
+    assert _lines(SRC / "core" / "brain.py") <= 741  # not edited (713)
+    assert _lines(SRC / "config.py") <= 790
+    assert _lines(STATIC / "console-helpers.js") <= 238  # not edited
+    assert _lines(STATIC / "console-helpers-wardrobe.js") <= 306
+    assert _lines(STATIC / "console-r7-send.js") <= 165
+    assert _lines(STATIC / "console-r111-files.js") <= 335
+    assert _lines(STATIC / "console-privacy.js") <= 268
+    for path in STATIC.glob("console*.js"):
+        assert _lines(path) <= 800, path.name
+    assert sum(_lines(p) for p in STATIC.glob("console-tryon*.css")) <= 200
+    for path in (SRC / "wardrobe").rglob("*.py"):
+        assert _lines(path) <= 400, path.name
+    assert _lines(SRC / "api" / "r13_wiring.py") <= 400
+    assert _lines(SRC / "api" / "console.py") <= 475
+    assert _lines(SRC / "wardrobe" / "styling" / "actions.py") <= 400
+    new = [
+        SRC / "llm" / "tryon.py",
+        SRC / "billing" / "spend.py",
+        SRC / "api" / "tryon.py",
+        SRC / "api" / "seeme.py",
+        SRC / "api" / "tryon_assets.py",
+        SRC / "api" / "tryon_wiring.py",
+    ]
+    for path in new:
+        assert _lines(path) <= 400, path.name
+    assert _lines(SRC / "billing" / "spend.py") <= 100
+    m1 = STATIC / "vendor" / "mannequin" / "m1"
+    total = sum(p.stat().st_size for p in m1.rglob("*") if p.is_file()) if m1.is_dir() else 0
+    assert total <= 3.5 * 1024 * 1024  # Part B's files (D3's budget)
+
+
+_CLOCK = re.compile(r"datetime\.now\(|date\.today\(|time\.time\(|utcnow|datetime\.today\(")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [*sorted((SRC / "llm").glob("tryon*.py")), *sorted((SRC / "wardrobe" / "tryon").glob("*.py")),
+     *sorted((SRC / "wardrobe" / "seeme").glob("*.py")), SRC / "billing" / "spend.py"],
+    ids=lambda p: str(p.relative_to(SRC)),
+)  # fmt: skip
+def test_no_r131_module_reads_the_real_clock_or_shows_a_dollar(path: Path) -> None:
+    text = _text(path)
+    assert not _CLOCK.search(text), path  # ctx.now() only
+    strings = re.findall(r'"([^"\n]*)"', text)
+    assert not [s for s in strings if re.search(r"\$\s?\d", s)], path  # ₹ only to the owner

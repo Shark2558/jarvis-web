@@ -69,13 +69,14 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name ------------------------------------------------
 def test_the_version_is_thirteen() -> None:
-    assert jarvis.__version__ == "13.0.0"  # R13 I0 (lower than 14.0.2: nothing compares it, D21)
+    assert jarvis.__version__ == "13.1.0"  # R13.1 I0 (13.0.0 at R13; nothing compares it, D21)
 
 
 def test_the_real_repository_is_r13_and_its_plan_comes_first() -> None:
-    repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R13"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r13-wardrobe.md"
+    repo = Repo.from_git(ROOT)  # R13.1 I0: the release is now R13.1 (tests/test_r131_seams.py)
+    assert plans.release_label(repo) == "R13.1"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r13-1-try-on.md"
+    assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 
 # ---- 2 · four alert kinds and every table that names one (D19) -----------------------------------
@@ -102,8 +103,8 @@ def test_the_held_words_the_alerts_card_the_book_and_push_know_every_new_kind() 
 
 # ---- 3 · two key purposes ------------------------------------------------------------------------
 def test_two_key_purposes_make_twenty_four() -> None:
-    assert keyring.PURPOSES[-2:] == ("wardrobe", "wardrobe_photos")
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 24
+    assert keyring.PURPOSES[-4:-2] == ("wardrobe", "wardrobe_photos")  # R13.1 + 2 after them
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 26
     ring = keyring.Keyring(bytes(range(7, 39)))
     blob = ring.cipher("wardrobe").encrypt(b"x", aad="wardrobe/u/v1")
     with pytest.raises(Exception):  # noqa: B017 - each purpose is its own key

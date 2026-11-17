@@ -34,7 +34,7 @@ class AuthMode(StrEnum):
 
 MIN_SESSION_SECRET_LEN = 32
 ENVS = frozenset({"dev", "staging", "prod"})  # JARVIS_ENV (R6.2 L3: nothing else starts)
-_HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"  # R13: a local time of day, "20:00"
+_HHMM, _DAY = r"^([01]\d|2[0-3]):[0-5]\d$", r"^20\d\d-(0[1-9]|1[0-2])-[0-3]\d$"  # R13, R13.1
 
 
 def _is_private_host(host: str) -> bool:
@@ -636,6 +636,16 @@ class Settings(BaseSettings):
     wardrobe_review_keep_days: int = Field(default=30, ge=7, le=90, description="Resolved checks")
     wardrobe_backup_max_mb: int = Field(default=25, ge=5, le=30, description="A backup file's MB")
     wardrobe_wear_close: str = Field(default="04:00", pattern=_HHMM, description="Close a wear")
+    tryon_enabled: bool = Field(default=True, description="Try-on, the 3D figure (R13.1)")
+    tryon_pictures: bool = Field(default=False, description="See it on me; the deploy sets it")
+    tryon_month_cap_inr: int = Field(default=300, ge=0, le=2000, description="₹ a month, GST in")
+    tryon_tax_pct: int = Field(default=18, ge=0, le=28, description="GST % in every try-on ₹")
+    tryon_model: str = Field(default="gemini-3.1-flash-image", pattern=r"^gemini-[a-z0-9.-]+$")
+    tryon_location: Literal["us", "eu", "global"] = Field(default="us", description="Google's")
+    tryon_model_retires: str = Field(default="2027-05-28", pattern=_DAY, description="D18")
+    tryon_keep_days: int = Field(default=7, ge=1, le=30, description="A picture, unless kept")
+    tryon_photo_max_kb: int = Field(default=700, ge=100, le=740, description="His photo's KB")
+    tryon_cache: bool = Field(default=False, description="Google kept its 24-hour cache")
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")

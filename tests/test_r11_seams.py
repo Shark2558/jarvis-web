@@ -56,7 +56,7 @@ KEY = bytes(range(1, 33))
 
 def test_the_version_is_eleven() -> None:
     # 11.x at R11; R7 I0 made it 7.0.0 (nothing compares it, D26), R14 I0 14.0.0, R6.2 6.2.0,
-    # R13 I0 13.0.0; the exact number: test_about.py
+    # R13 I0 13.0.0, R13.1 I0 13.1.0; the exact number: test_about.py
     assert jarvis.__version__.startswith("13.")
 
 
@@ -163,8 +163,8 @@ def test_a_disaster_warning_is_never_capped_only_de_duplicated() -> None:
 def test_five_keyring_purposes_each_with_its_own_key() -> None:
     new = ("bills", "spend", "wellbeing", "alerts_place", "kitchen")
     assert (
-        set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 24
-    )  # R7 + 3, R14 + 1, R13 + 2
+        set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 26
+    )  # R7 + 3, R14 + 1, R13 + 2, R13.1 + 2
     ring = Keyring(KEY)
     for purpose in new:
         blob = ring.cipher(purpose).encrypt(b"x", aad=f"{purpose}/u/v1")

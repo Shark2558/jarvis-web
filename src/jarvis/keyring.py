@@ -79,6 +79,10 @@ PURPOSES: tuple[str, ...] = (
     # laundry, review, plans and the backup file; and its photos and fingerprints, apart
     "wardrobe",
     "wardrobe_photos",
+    # R13.1 (docs/plans/r13-1-try-on.md D4, D11, D12, "Data model"): his measurements, figure
+    # choices, saved comparisons and his YES; and his photo and the try-on pictures, apart
+    "tryon",
+    "tryon_photos",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

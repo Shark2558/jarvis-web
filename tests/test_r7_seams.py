@@ -107,8 +107,8 @@ def _text(path: Path) -> str:
 
 # ---- 1, 2 · the version and the build book's release name --------------------------------------
 def test_the_version_is_seven() -> None:
-    # R13 I0 (6.2.0 at R6.2, 14.0.2 at hotfix 2, 7.0.0 at R7 I0); nothing compares (D26)
-    assert jarvis.__version__ == "13.0.0"
+    # R13.1 I0 (13.0.0 at R13, 6.2.0 at R6.2, 14.0.2 at hotfix 2, 7.0.0 at R7 I0); nothing compares
+    assert jarvis.__version__ == "13.1.0"
 
 
 def _repo(tmp_path: Path, version: str | None) -> Repo:
@@ -156,9 +156,9 @@ def test_the_fallback_label_reads_the_checkouts_version_file(tmp_path: Path) -> 
 
 
 def test_the_real_repository_is_r7_and_its_plan_comes_first() -> None:
-    repo = Repo.from_git(ROOT)  # R13 I0: the release is now R13 (tests/test_r13_seams.py)
-    assert plans.release_label(repo) == "R13"  # R6.2 at R6.2, R14 until hotfix 2
-    assert plans.plan_paths(repo)[0] == "docs/plans/r13-wardrobe.md"  # R6.2 has no r6-2-*.md
+    repo = Repo.from_git(ROOT)  # R13.1 I0: the release is now R13.1 (tests/test_r131_seams.py)
+    assert plans.release_label(repo) == "R13.1"  # R13 at R13, R6.2 at R6.2, R14 until hotfix 2
+    assert plans.plan_paths(repo)[0] == "docs/plans/r13-1-try-on.md"  # R6.2 has no r6-2-*.md
     assert "docs/plans/r7-mobile.md" in plans.plan_paths(repo)
 
 
@@ -291,8 +291,8 @@ def test_no_row_lets_a_tool_send_an_sos() -> None:
 
 # ---- 7 · key purposes ---------------------------------------------------------------------------
 def test_three_key_purposes_make_twenty_one() -> None:
-    assert keyring.PURPOSES[-6:-3] == ("watch", "sos", "vision")  # R14 + 1, R13 + 2 after them
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 24
+    assert keyring.PURPOSES[-8:-5] == ("watch", "sos", "vision")  # R14 + 1, R13 + 2, R13.1 + 2
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 26
 
 
 # ---- 8, 20 · the parts' contract and wiring -----------------------------------------------------

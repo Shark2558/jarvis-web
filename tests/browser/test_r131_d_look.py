@@ -220,10 +220,12 @@ def test_show_in_3d_follows_try_ons_state_even_when_the_tab_draws_first(
         c.close()
 
 
-def test_before_i1_with_i0s_hook_show_in_3d_with_try_on_off_says_so_and_loads_nothing(
+def test_with_try_on_off_the_joined_hook_offers_no_show_in_3d_and_an_open_says_why(
     browser: Any, d_url: str, token: str
 ) -> None:
-    c = Page(browser, d_url, token, hook=False)  # I0's hook as it is, without M7's two lines
+    # I1 applied M7's two lines to I0's hook (this was "before I1, with I0's hook"): with Try-on
+    # off no plan row offers Show in 3D, and an open that still arrives says why, loading nothing
+    c = Page(browser, d_url, token, hook=False)  # the hook as it is in the tree now
     c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=OFF))
     try:
         c.open()
@@ -231,9 +233,13 @@ def test_before_i1_with_i0s_hook_show_in_3d_with_try_on_off_says_so_and_loads_no
         c.page.locator("#hpt-wardrobe").click()
         sec = c.page.locator("#hpp-wardrobe .tr-sec")
         until(c.page, lambda: sec.count() == 1 and sec.get_attribute("hidden") is not None, "off")
-        c.page.locator("#hpp-wardrobe .wd-plan").first.get_by_role(
-            "button", name="Show in 3D"
-        ).click()
+        plans = c.page.locator("#hpp-wardrobe .wd-plan")
+        until(c.page, lambda: plans.count() >= 1, "R13's plan rows")
+        assert plans.get_by_role("button", name="Show in 3D").count() == 0
+        c.page.evaluate(
+            "() => document.dispatchEvent(new CustomEvent('jarvis:tryon-open',"
+            " { detail: { plan: 'op_0000d001' } }))"
+        )
         until(c.page, lambda: sec.is_visible(), "the section says why")
         assert "Try it on is off on this server." in sec.inner_text()
         assert c.engine() is None and not [r for r in c.sent if "/v1/tryon/look" in r["url"]]

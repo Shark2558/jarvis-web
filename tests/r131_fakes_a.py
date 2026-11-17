@@ -144,6 +144,14 @@ class AWorld:
         got = await self.w.call("outfit_plan", action="save", day=day, occasion=occasion)
         return str(got.result["plan"]["id"])
 
+    async def whole(self, plan: str, *, outer: str | None = None, drop: str = "") -> dict[str, Any]:
+        """A confirm's body for the plan's look as the figure shows it: every slot with an id
+        (a covered one has none), `outer` swapped in, the `drop` slot removed (D7's Remove)."""
+        look = await self.service.looks.for_plan(UID, plan)
+        pairs = [(s.slot, outer if outer and s.slot == "outer" else s.piece)
+                 for s in look.slots if s.piece and s.slot != drop]  # fmt: skip
+        return {"plan": plan, "slots": [{"slot": s, "piece": p} for s, p in pairs]}
+
     def app(self) -> FastAPI:
         from jarvis.api.auth import require_auth
         from jarvis.api.identity import current_user

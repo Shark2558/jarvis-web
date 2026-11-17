@@ -46,17 +46,25 @@ async def _plan(a: AWorld) -> Any:
     return (await a.styling.plans.read(UID)).plan(pid)
 
 
+async def _whole(a: AWorld, plan: str, *, outer: str | None = None, drop: str = "") -> ConfirmIn:
+    """The plan's whole look as the figure shows it (`AWorld.whole`)."""
+    return ConfirmIn.model_validate(await a.whole(plan, outer=outer, drop=drop))
+
+
 async def test_a_ready_look_is_one_lock_of_every_slot_at_once() -> None:
     a = await a_world()
     plan = await _plan(a)
     calls = Calls(a)
-    got = await a.service.confirm(UID, _ask(plan.id, *LOOK), calls)
-    assert calls.args == [{"action": "lock", "plan": plan.id,
-                           "pieces": [T.white, T.trousers, T.rain_jacket, SHOES[0]]}]  # fmt: skip
+    body = await _whole(a, plan.id, outer=T.rain_jacket)
+    got = await a.service.confirm(UID, body, calls)
+    sent = [s.piece for s in body.slots]
+    assert T.rain_jacket in sent and SHOES[0] in sent and len(sent) == 7  # base, underwear covered
+    assert calls.args == [{"action": "lock", "plan": plan.id, "pieces": sent}]
     assert got.outcome is GatewayOutcome.EXECUTED and not got.result.get("refused")
     after = (await a.styling.plans.read(UID)).plan(plan.id)
     assert after.slot("outer").pieces == (T.rain_jacket,) and after.slot("outer").locked
     assert set(after.slot("shoes").pieces) == set(SHOES)
+    assert all(after.slot(s.slot).locked for s in body.slots)  # every slot at once
 
 
 async def test_a_jacket_in_the_laundry_is_refused_in_words_before_any_tool_call() -> None:
@@ -79,7 +87,7 @@ async def test_the_race_a_jacket_to_the_laundry_after_the_check_is_refused_by_th
         await a.move(T.rain_jacket)
 
     calls = Calls(a, before=to_the_laundry)
-    got = await a.service.confirm(UID, _ask(plan.id, *LOOK), calls)
+    got = await a.service.confirm(UID, await _whole(a, plan.id, outer=T.rain_jacket), calls)
     assert len(calls.args) == 1  # the early check passed: the tool's own check refuses it
     assert got.result["refused"] is True and got.result["message"] == LOCK_REFUSED
     assert (await a.styling.plans.read(UID)).plan(plan.id) == plan  # unchanged
@@ -118,6 +126,52 @@ async def test_a_set_part_without_its_set_is_refused() -> None:
     with pytest.raises(confirm.Draft) as refused:
         await a.service.confirm(UID, _ask(got.result["plan"]["id"], ("bottom", T.pyjama)), Calls(a))
     assert "worn only with its set" in str(refused.value)
+
+
+async def test_a_removed_watch_is_refused_in_words_before_any_call() -> None:
+    a = await a_world()
+    plan = await _plan(a)
+    assert plan.slot("watch") is not None and plan.code == "business_formal"
+    calls = Calls(a)
+    with pytest.raises(confirm.LeftOut) as got:
+        await a.service.confirm(UID, await _whole(a, plan.id, drop="watch"), calls)
+    assert str(got.value) == (
+        "This plan can't leave out its watch yet: put the watch back on the figure to use this "
+        "look for it."
+    )
+    assert calls.args == []  # the screen never says "used" while the plan keeps a watch
+    assert (await a.styling.plans.read(UID)).plan(plan.id) == plan
+
+
+async def test_a_removed_outer_layer_is_named_in_r13s_slot_words() -> None:
+    a = await a_world()
+    plan = await _plan(a)
+    with pytest.raises(confirm.LeftOut, match="its outer layer yet: put the outer layer back"):
+        await a.service.confirm(UID, await _whole(a, plan.id, drop="outer"), Calls(a))
+
+
+async def test_a_slot_the_plans_look_doesnt_hold_now_is_not_asked_for() -> None:
+    a = await a_world()
+    plan = await _plan(a)
+    for watch in (T.watch, T.watch2):  # no watch is ready: the plan's look has none now
+        await a.move(watch)
+    look = await a.service.looks.for_plan(UID, plan.id)
+    assert "watch" not in [s.slot for s in look.slots if s.piece]
+    calls = Calls(a)
+    got = await a.service.confirm(UID, await _whole(a, plan.id), calls)
+    assert len(calls.args) == 1 and not got.result.get("refused")
+
+
+async def test_a_covered_slot_is_never_asked_for() -> None:
+    a = await a_world()
+    plan = await _plan(a)
+    await a.w.edit(T.watch, private=True)  # a watch he made private: covered, no id to send
+    look = await a.service.looks.for_plan(UID, plan.id)
+    watch = next(s for s in look.slots if s.slot == "watch")
+    assert watch.private and watch.piece is None
+    calls = Calls(a)
+    await a.service.confirm(UID, await _whole(a, plan.id), calls)
+    assert len(calls.args) == 1
 
 
 @pytest.mark.parametrize("pairs", [

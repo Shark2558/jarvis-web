@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from r131_fakes_a import SHOES, UID, AWorld, T, a_world, build_tryon, seeme_docs
+from r131_fakes_a import UID, AWorld, T, a_world, build_tryon, seeme_docs
 
 from jarvis.privacy.ports import PrivacyRegistry
 from jarvis.privacy.service import CONFIRM_WORD, PrivacyService
@@ -132,11 +132,6 @@ async def test_avt05_a_patterned_shirt_draws_on_an_approximate_shape_beside_its_
 
 
 # ---- 360 · AVT-09 ----------------------------------------------------------------------------
-def _confirm(pid: str, outer: str) -> dict[str, Any]:
-    pairs = (("top", T.white), ("bottom", T.trousers), ("outer", outer), ("shoes", SHOES[0]))
-    return {"plan": pid, "slots": [{"slot": s, "piece": p} for s, p in pairs]}
-
-
 class _Watch:
     """Counts `outfit_plan` calls through the world's gateway; `before` runs just ahead of one."""
 
@@ -177,7 +172,8 @@ async def test_avt09_a_ready_jacket_swaps_figure_and_checklist_together_and_one_
         assert drafted.readiness == "Draft: in the laundry" and not drafted.eligible
         watch = _Watch(a)
         before = (await a.styling.plans.read(UID)).plan(pid)
-        refused = await c.post("/v1/tryon/confirm", json=_confirm(pid, T.rain_jacket))
+        whole = await a.whole(pid, outer=T.rain_jacket)  # every slot the figure shows
+        refused = await c.post("/v1/tryon/confirm", json=whole)
         assert refused.status_code == 409
         assert refused.json() == {"error": "draft", "detail": IN_LAUNDRY}
         assert watch.calls == []  # the server's fresh check: no outfit_plan call is made
@@ -197,7 +193,7 @@ async def _the_race_is_refused_by_outfit_plan() -> None:
     race = _Watch(b, before=to_the_laundry)
     before = (await b.styling.plans.read(UID)).plan(pid)
     async with b.client() as c:
-        got = await c.post("/v1/tryon/confirm", json=_confirm(pid, T.rain_jacket))
+        got = await c.post("/v1/tryon/confirm", json=await b.whole(pid, outer=T.rain_jacket))
     assert race.calls == ["lock"]  # ONE call, and outfit_plan's own check refused it
     assert got.status_code == 409 and got.headers["cache-control"] == "no-store"  # never "done"
     assert got.json() == {"error": "refused", "detail": LOCK_REFUSED}  # R13's own words
@@ -210,7 +206,8 @@ async def _a_ready_jacket_is_one_lock_of_every_slot() -> None:
     pid = await ok.plan()
     done = _Watch(ok)
     async with ok.client() as c:
-        locked = await c.post("/v1/tryon/confirm", json=_confirm(pid, T.rain_jacket))
+        whole = await ok.whole(pid, outer=T.rain_jacket)
+        locked = await c.post("/v1/tryon/confirm", json=whole)
     assert locked.status_code == 200 and locked.json()["status"] == "executed"
     assert done.calls == ["lock"]
     plan = (await ok.styling.plans.read(UID)).plan(pid)

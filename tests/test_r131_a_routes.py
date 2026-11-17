@@ -247,9 +247,25 @@ async def test_a_confirm_with_no_gateway_is_refused_in_the_contracts_shape() -> 
     app = a.app()
     app.state.gateway = None
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
-            {"slot": "top", "piece": T.white}]})  # fmt: skip
+        got = await c.post("/v1/tryon/confirm", json=await a.whole(pid))  # the whole look
     _refusal(got, 404, "unavailable")
+
+
+async def test_a_removed_watch_is_a_409_left_out_with_no_call() -> None:
+    a = await a_world()
+    pid = await a.plan()
+    seen: list[str] = []
+    real = a.w.gw.execute
+
+    async def execute(call: Any, **kw: Any) -> Any:
+        seen.append(call.name)
+        return await real(call, **kw)
+
+    a.w.gw.execute = execute  # type: ignore[method-assign]
+    async with a.client() as c:
+        got = await c.post("/v1/tryon/confirm", json=await a.whole(pid, drop="watch"))
+    assert _refusal(got, 409, "left_out").detail.startswith("This plan can't leave out its watch")
+    assert seen == []  # refused before any tool call (D7's Remove, review A-1 F2)
 
 
 async def test_a_tool_error_on_the_one_call_is_a_refusal_in_r13s_words() -> None:
@@ -263,8 +279,7 @@ async def test_a_tool_error_on_the_one_call_is_a_refusal_in_r13s_words() -> None
 
     a.w.gw.execute = failing  # type: ignore[method-assign]
     async with a.client() as c:
-        got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
-            {"slot": "top", "piece": T.white}]})  # fmt: skip
+        got = await c.post("/v1/tryon/confirm", json=await a.whole(pid))  # the whole look
     assert _refusal(got, 422, "tool_error").detail == "The plan is busy"  # R13's words, cut
 
 
@@ -284,8 +299,7 @@ async def test_any_refusal_by_outfit_plan_is_a_409_refused_never_executed(words:
 
     a.w.gw.execute = refusing  # type: ignore[method-assign]
     async with a.client() as c:
-        got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
-            {"slot": "top", "piece": T.white}]})  # fmt: skip
+        got = await c.post("/v1/tryon/confirm", json=await a.whole(pid))  # the whole look
     assert _refusal(got, 409, "refused").detail == words
 
 
@@ -300,8 +314,7 @@ async def test_switched_off_in_his_permissions_stays_r13s_denied_reply() -> None
 
     a.w.gw.execute = denied  # type: ignore[method-assign]
     async with a.client() as c:
-        got = await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": [
-            {"slot": "top", "piece": T.white}]})  # fmt: skip
+        got = await c.post("/v1/tryon/confirm", json=await a.whole(pid))  # the whole look
     assert got.status_code == 200 and got.json()["status"] == "denied"
 
 

@@ -60,7 +60,7 @@ async def _every_route(a: AWorld, pid: str) -> None:
             await c.put(f"/v1/tryon/assets/{T.striped}", json=shape),
             await c.post("/v1/tryon/saved", json={"looks": [{"plan": pid, "slots": slots}]}),
             await c.get("/v1/tryon/saved"),
-            await c.post("/v1/tryon/confirm", json={"plan": pid, "slots": slots}),
+            await c.post("/v1/tryon/confirm", json=await a.whole(pid)),
         ):
             assert r.status_code == 200, (r.request.url, r.text)
 

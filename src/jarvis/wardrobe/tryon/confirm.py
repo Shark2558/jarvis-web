@@ -10,6 +10,13 @@ for this event."). When all are eligible it makes ONE call, `call({"action": "lo
 cards, rows and audit are R13's and one press makes at most one card. The early check is for the
 words; `outfit_plan`'s own check is the guarantee (D20: a piece that goes to the laundry between
 the two is refused there, the plan unchanged).
+
+D7's **Remove** (outer, belt, watch, socks) can't be kept by a plan: R13's engine fills every slot
+of the dress code again on each read (a pick dropped from the plan, or R13's own `release` of
+it, comes back as the same piece). So a look that leaves out a removable slot the plan's fresh
+look holds is refused in words before any call ("This plan can't leave out its watch yet: ..."),
+and the screen never says "used" while the plan keeps a watch (review A-1 F2). A covered slot
+(a private piece: no id to send) is never asked for.
 """
 
 from __future__ import annotations
@@ -20,12 +27,25 @@ from typing import Any, TypeVar
 from jarvis.wardrobe.model import Piece, WardrobeView
 from jarvis.wardrobe.styling import reserve, texts
 from jarvis.wardrobe.styling.actions import NOT_READY
+from jarvis.wardrobe.styling.look import Pick
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.tryon import options as o
 from jarvis.wardrobe.tryon.http import ConfirmIn, ConfirmSlot
-from jarvis.wardrobe.tryon.looks import GONE_PLAN, NOT_HIS, TWO, WRONG_SLOT, Looks, NoLook
+from jarvis.wardrobe.tryon.looks import (
+    GONE_PLAN,
+    NOT_HIS,
+    TWO,
+    WRONG_SLOT,
+    Looks,
+    NoLook,
+    covered,
+)
+from jarvis.wardrobe.tryon.model import REMOVABLE_SLOTS
 
 CANT = "it can't be confirmed for this event."
+LEFT_OUT = (
+    "This plan can't leave out its {w} yet: put the {w} back on the figure to use this look for it."
+)
 R = TypeVar("R")
 Units = list[tuple[str, tuple[str, ...]]]
 
@@ -36,6 +56,10 @@ class Draft(ValueError):
 
 class BadSlots(ValueError):
     """The slots are not a look of his (a stranger, a piece in another's slot, two in one)."""
+
+
+class LeftOut(ValueError):
+    """The look leaves out a removable slot the plan's look holds: a 409 in words, no call."""
 
 
 def units_of(view: WardrobeView, rules: Rules, slots: Sequence[ConfirmSlot]) -> Units:
@@ -84,6 +108,17 @@ def first_draft(f: o.Fresh, units: Units) -> str | None:
     return None
 
 
+def left_out(view: WardrobeView, rules: Rules, held: Sequence[Pick], units: Units) -> str | None:
+    """The words for the first removable slot the plan's look `held` holds and the look leaves
+    out (never a covered one: he has no id to send), else None."""
+    sent = {slot for slot, _ in units}
+    for pick in held:
+        slot = pick.slot
+        if slot in REMOVABLE_SLOTS and slot not in sent and not covered(view, slot, pick.pieces):
+            return LEFT_OUT.format(w=rules.slot_words_of(slot))
+    return None
+
+
 async def check_and_lock(
     looks: Looks, uid: str, body: ConfirmIn, call: Callable[[dict[str, Any]], Awaitable[R]]
 ) -> R:
@@ -95,7 +130,22 @@ async def check_and_lock(
     words = first_draft(r.fresh(day=plan.day, code=plan.code, plan=plan), units)
     if words is not None:
         raise Draft(words)  # before any tool call (D7)
+    now = await r.s.answer(uid, r.here, r.doc, r.view, plan)  # the plan's look, as it reads now
+    gap = left_out(r.view, r.s.rules, now.suggestion.primary.picks, units)
+    if gap is not None:
+        raise LeftOut(gap)  # D7's Remove: before any tool call (review A-1 F2)
     return await call({"action": "lock", "plan": plan.id, "pieces": [u[0] for _, u in units]})
 
 
-__all__ = ["CANT", "BadSlots", "Draft", "check_and_lock", "first_draft", "units_of", "words_of"]
+__all__ = [
+    "CANT",
+    "LEFT_OUT",
+    "BadSlots",
+    "Draft",
+    "LeftOut",
+    "check_and_lock",
+    "first_draft",
+    "left_out",
+    "units_of",
+    "words_of",
+]

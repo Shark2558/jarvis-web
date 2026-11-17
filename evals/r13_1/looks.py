@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[2]
 for _p in (ROOT / "src", ROOT / "tests"):
     if str(_p) not in sys.path:
         sys.path.append(str(_p))
-from r131_fakes_a import SHOES, UID, AWorld, T, a_world, build_tryon, seeme_docs  # noqa: E402
+from r131_fakes_a import UID, AWorld, T, a_world, build_tryon, seeme_docs  # noqa: E402
 
 from jarvis.privacy.ports import PrivacyRegistry  # noqa: E402
 from jarvis.privacy.service import CONFIRM_WORD, PrivacyService  # noqa: E402
@@ -62,12 +62,6 @@ FIGURE = f"jarvis_tryon/{UID}"
 
 def _slot(look: TryonLook, slot: str) -> Any:
     return next((s for s in look.slots if s.slot == slot), None)
-
-
-def _confirm_body(pid: str) -> dict[str, Any]:
-    pairs = (("top", T.white), ("bottom", T.trousers), ("outer", T.rain_jacket),
-             ("shoes", SHOES[0]))  # fmt: skip
-    return {"plan": pid, "slots": [{"slot": s, "piece": p} for s, p in pairs]}
 
 
 class _Calls:
@@ -151,7 +145,7 @@ async def avt09_fresh_check_refuses_without_a_call() -> list[str]:
         out.append("the laundry jacket isn't offered as a draft")
     calls = _Calls(a)
     async with a.client() as c:
-        got = await c.post("/v1/tryon/confirm", json=_confirm_body(pid))
+        got = await c.post("/v1/tryon/confirm", json=await a.whole(pid, outer=T.rain_jacket))
     if got.status_code != 409 or got.json().get("detail") != IN_LAUNDRY:
         out.append(f"not refused in words: {got.status_code}")
     if calls.n:
@@ -166,10 +160,11 @@ async def avt09_race_refused_by_outfit_plan() -> list[str]:
     async def to_the_laundry() -> None:
         await a.move(T.rain_jacket)
 
+    whole = await a.whole(pid, outer=T.rain_jacket)  # every slot the figure shows
     _Calls(a, before=to_the_laundry)
     before = (await a.styling.plans.read(UID)).plan(pid)
     async with a.client() as c:
-        got = await c.post("/v1/tryon/confirm", json=_confirm_body(pid))
+        got = await c.post("/v1/tryon/confirm", json=whole)
     if got.status_code != 409 or got.json() != {"error": "refused", "detail": LOCK_REFUSED}:
         out.append(f"not refused in R13's words: {got.status_code}")  # never 200 "executed"
     if (await a.styling.plans.read(UID)).plan(pid) != before:

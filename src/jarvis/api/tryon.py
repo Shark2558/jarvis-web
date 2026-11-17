@@ -72,6 +72,7 @@ _CODES: tuple[tuple[type[Exception], int, str], ...] = (
     (looks.BadDay, 422, "bad_day"),
     (looks.NotPieces, 422, "not_a_piece"),
     (confirm.Draft, 409, "draft"),
+    (confirm.LeftOut, 409, "left_out"),
     (confirm.BadSlots, 422, "not_a_look"),
     (saved.SavedFull, 409, "too_many"),
     (saved.SavedGone, 404, "gone"),

@@ -123,8 +123,37 @@ async def test_row388_a_private_piece_on_the_card_is_covered_unless_he_asks() ->
     assert shown["base"].template is None and shown["base"].rgb is None  # still never drawn
 
 
+def card_query(card: Any) -> str:
+    """A reply card's slots as the console sends them: `slot:wi_...` a piece, `slot:` covered."""
+    return ",".join(
+        f"{s.slot}:" if s.private else ",".join(f"{s.slot}:{pid}" for pid in s.pieces)
+        for s in card.slots
+    )
+
+
+async def test_row388_a_slot_the_card_covers_for_its_private_piece_comes_without_an_id() -> None:
+    from jarvis.wardrobe.styling import tryon_card
+
+    a = await a_world()
+    pid = await a.plan()
+    await a.w.edit(T.white, private=True)  # the plan's top is now a private piece
+    s, view = a.styling, await a.view()
+    doc = await s.plans.read(UID)
+    ans = await s.answer(UID, await s.where(UID), doc, view, doc.plan(pid))
+    card = tryon_card.card_of(view, ans)
+    assert card.slots[0].slot == "top" and card.slots[0].private and card.slots[0].pieces == ()
+    look = await a.service.looks.for_pieces(UID, card_query(card), plan=card.plan)
+    got = _slots(look)
+    assert [x.slot for x in look.slots] == [x.slot for x in card.slots]  # every slot of the card
+    assert got["top"].private and got["top"].piece is None and got["top"].words == m.COVERED
+    assert got["top"].template is None and got["top"].rgb is None and got["top"].options == ()
+    assert T.white not in json.dumps(look.model_dump(mode="json"))
+    assert got["bottom"].piece == T.trousers and got["shoes"].piece == SHOES[0]
+
+
 @pytest.mark.parametrize("q", [
-    "top:wi_000000000999", f"top:{T.shirt},top:{T.white}", f"top:{T.trousers}", "top:",
+    "top:wi_000000000999", f"top:{T.shirt},top:{T.white}", f"top:{T.trousers}", "zz_none:",
+    f"top:,top:{T.shirt}", f"top:{T.shirt},top:", "base:,base:",
     "nonsense", "", f"top={T.shirt}", ",".join([f"top:{T.shirt}"] * 25),
 ])  # fmt: skip
 async def test_row388_pieces_that_cant_be_his_look_are_refused_in_words(q: str) -> None:

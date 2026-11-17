@@ -111,27 +111,39 @@ async def photo_views(
     return out
 
 
+def _entry(view: WardrobeView, rules: Rules, entry: str) -> tuple[str, str | None]:
+    """One `slot:wi_...` (a piece of his, in its own slot) or `slot:` (a slot the card covers:
+    a private slot, or one holding a private piece; I0's `styling/tryon_card.py`)."""
+    found = _ENTRY.fullmatch(entry)
+    if found is None:
+        raise NotPieces(BAD_PIECES)
+    slot, pid = found.group(1), found.group(2)
+    if pid is None:
+        if slot not in PRIVATE_SLOTS and slot not in rules.slots:
+            raise NotPieces(BAD_PIECES)
+        return slot, None
+    p = view.pieces.get(pid)
+    if p is None or p.merged_into is not None:
+        raise NotPieces(NOT_HIS)
+    if rules.slot_of(p.type) != slot:
+        raise NotPieces(WRONG_SLOT)
+    return slot, pid
+
+
 def picks_of(view: WardrobeView, rules: Rules, raw: str) -> tuple[Pick, ...]:
-    """`slot:wi_...,...` (a reply card's slots; a private slot may come without an id)."""
+    """`slot:wi_...,...` (a reply card's slots; a slot it covers comes as `slot:`, no id)."""
     entries = raw.split(",") if raw else []
     if not entries or len(entries) > MAX_ENTRIES:
         raise NotPieces(BAD_PIECES)
     by_slot: dict[str, list[str]] = {}
     for entry in entries:
-        found = _ENTRY.fullmatch(entry)
-        if found is None:
-            raise NotPieces(BAD_PIECES)
-        slot, pid = found.group(1), found.group(2)
+        slot, pid = _entry(view, rules, entry)
+        ids = by_slot.get(slot)
+        if ids is not None and (pid is None or not ids):
+            raise NotPieces(TWO)  # a covered slot is its slot's only entry
         ids = by_slot.setdefault(slot, [])
         if pid is None:
-            if slot not in PRIVATE_SLOTS:
-                raise NotPieces(BAD_PIECES)
             continue
-        p = view.pieces.get(pid)
-        if p is None or p.merged_into is not None:
-            raise NotPieces(NOT_HIS)
-        if rules.slot_of(p.type) != slot:
-            raise NotPieces(WRONG_SLOT)
         if ids and pid not in reserve.unit_of(view, ids[0]):
             raise NotPieces(TWO)
         ids.append(pid)

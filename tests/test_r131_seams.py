@@ -858,6 +858,18 @@ def test_ci_runs_the_figure_build_scripts_tests_on_the_312_leg_only() -> None:
     assert ci.index('pip install -e ".[dev,homebridge]"') < ci.index(step) < ci.index("ruff check")
 
 
+def test_the_figure_scripts_numpy_is_the_one_ci_installs_beside_it() -> None:
+    # integrated code review L7: CI's 3.12 leg runs B's build tests with the homebridge extra's
+    # NumPy; the script pinned another, so a NumPy bump for the bridge could turn B's tests red
+    # for a reason unrelated to the figure. One pin: a bump moves both, deliberately.
+    pins = _text(ROOT / "scripts" / "mannequin" / "requirements-dev.txt").split()
+    found = re.search(
+        r"'numpy==([0-9.]+); python_version >= \"3\.12\"'", _text(ROOT / "pyproject.toml")
+    )
+    assert found is not None
+    assert pins[-2:] == [f"numpy=={found.group(1)}", "scipy==1.18.1"]
+
+
 # ---- 14 · the guide and the book -----------------------------------------------------------------
 def test_the_guide_has_c72_and_c73_with_every_collection_and_console_module() -> None:
     from jarvis.wardrobe.ports import COLLECTIONS

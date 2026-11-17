@@ -359,10 +359,8 @@ def test_every_module_and_function_of_the_script_keeps_its_size() -> None:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 assert (node.end_lineno or 0) - node.lineno + 1 <= 50, (path.name, node.name)
                 assert node.returns is not None, (path.name, node.name)
-    assert (SCRIPTS / "mannequin" / "requirements-dev.txt").read_text().split()[-2:] == [
-        "numpy==2.5.3",
-        "scipy==1.18.1",
-    ]
+    pins = (SCRIPTS / "mannequin" / "requirements-dev.txt").read_text().split()[-2:]
+    assert pins[0].startswith("numpy==2.5.") and pins[1] == "scipy==1.18.1"  # CI's: a seam pin
     head = (SCRIPTS / "mannequin" / "measure.py").read_text()[:1200]
     assert "Apache License, Version 2.0" in head and "NAVER Corp." in head and "NOTICE" in head
 

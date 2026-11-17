@@ -4,7 +4,7 @@
 
     python scripts/mannequin/build.py <a local clone of naver/anny at ANNY_COMMIT> <output folder>
 
-A dev tool run by hand with the pins of requirements-dev.txt (numpy 2.5.3, scipy 1.18.1); never in
+A dev tool run by hand with the pins of requirements-dev.txt (numpy 2.5.4, scipy 1.18.1); never in
 the server's image. It reads only the CC0 MakeHuman/MPFB2 files of `core.SOURCES` from the clone
 (each checked against its SHA-256; never the `smplx` folder), solves the sample shape and the seven
 morph shapes (each measurement at its range's top, and `waist_down`: waist 62), cuts and shapes the

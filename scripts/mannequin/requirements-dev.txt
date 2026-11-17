@@ -1,3 +1,4 @@
-# scripts/mannequin: the asset build's pins (a dev tool run by hand, never in the server's image)
-numpy==2.5.3
+# scripts/mannequin: the asset build's pins (a dev tool run by hand, never in the server's image); NumPy is
+# the homebridge extra's for 3.12 (pyproject.toml), the one CI runs these tests with (I1, review L7)
+numpy==2.5.4
 scipy==1.18.1

@@ -1,4 +1,4 @@
-Version v13.1.1 · 17 Nov 2026, 21:40 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.1 · 17 Nov 2026, 19:25 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part B: the 3D figure and its garments (integration notes)
 
@@ -158,4 +158,4 @@ short and slim (158, 40, 84, 68, 86, 72) reads 158.01, 40.00, 85.45, 67.84, 86.2
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v13.1.1 | 17 Nov 2026, 21:40 IST | R13.1 | First edition, at the end of Part B: the plan followed and the honest note on test order, what was built, the build's sums, sizes, triangles and measure table, the checks with their numbers, eleven deviations with reasons, the list for I1 (the stub's pin, what `show()` and `stats()` add), what could not be verified | 🛠 Mark XXIII (builder B) |
+| v13.1.1 | 17 Nov 2026, 19:25 IST | R13.1 | First edition, at the end of Part B: the plan followed and the honest note on test order, what was built, the build's sums, sizes, triangles and measure table, the checks with their numbers, eleven deviations with reasons, the list for I1 (the stub's pin, what `show()` and `stats()` add), what could not be verified | 🛠 Mark XXIII (builder B) |

@@ -16,9 +16,10 @@ from r131_fake_gemini import (
     picture_answer,
     project_of,
 )
-from r131_fake_tryon import ScriptedTryOn, Step
+from r131_fake_tryon import Step
 from r131_fakes import NOW, UID, T, ist
-from r131_fakes_c import NEW_SHIRT, PERSON, FakeBilling, OffMode, ask, ready_world
+from r131_fakes_c import NEW_SHIRT, PERSON, FakeBilling, OffMode, add_front, ask, ready_world
+from r131_fakes_c import StrictTryOn as ScriptedTryOn  # the adapter's own pre-send check too
 
 from jarvis.llm.tryon import TryOnMaybeBilled, TryOnNotBilled
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
@@ -82,6 +83,40 @@ async def test_the_one_garment_fake_chains_inside_itself_and_answers_one_picture
     month = await svc.kit.cap.month(UID)
     assert month.spent_inr == month.held_inr + month.spent_inr  # settled (no hold left)
     assert month.held_inr == 0.0 and month.spent_inr > 0  # unpriced model: at the hold
+
+
+TEE_FRONT = "wh_00000000c003"
+
+
+@pytest.mark.parametrize("on", ["gemini", "fake1"])
+async def test_his_t_shirt_goes_in_a_picture_in_fixed_words(on: str) -> None:
+    adapter, google = gemini()
+    fake = ScriptedTryOn(max_garments=1)
+    sw, svc, g = await ready_world(provider=adapter if on == "gemini" else fake)
+    await add_front(sw, T.tee, TEE_FRONT)
+    trousers = await svc.add_garment(UID, "trousers", "khaki", NEW_SHIRT)
+    shown = await _shown(svc, trousers.id, (T.tee,))
+    pic = await svc.press(UID, ask(trousers.id, (T.tee,), inr=shown))
+    assert [(p.piece, p.words) for p in pic.sent] == [(T.tee, "grey T-shirt")]  # what he reads
+    if on == "gemini":
+        text = google.body()["contents"][0]["parts"][-1]["text"]
+        assert "(new khaki trousers)" in text and "grey t shirt (image 3)" in text
+        assert len(google.seen) == 1
+    else:
+        assert [c.garments for c in fake.calls] == [("new khaki trousers",), ("grey t shirt",)]
+
+
+async def test_words_jarvis_cant_send_are_refused_before_the_reserve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.wardrobe.seeme import pair as pairmod
+
+    fake = ScriptedTryOn(max_garments=1)
+    sw, svc, g = await ready_world(provider=fake)
+    monkeypatch.setattr(pairmod, "prompt_words", lambda p: "Charcoal-Trousers")
+    err = await _refused(svc.press(UID, ask(g.id, (T.trousers,), inr=9.0)))
+    assert (err.status, err.code) == (422, "not_a_garment") and "Google" not in err.words
+    assert fake.calls == [] and (await svc.kit.cap.month(UID)).holds == {}
 
 
 async def test_a_new_garment_alone_is_one_picture_too() -> None:

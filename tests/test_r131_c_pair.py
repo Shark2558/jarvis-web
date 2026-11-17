@@ -5,14 +5,19 @@
 # written or returned. Fixed clocks only (17 Nov 2026 09:00 IST). Written first and run red.
 from __future__ import annotations
 
-from r131_fakes import UID, T
-from r131_fakes_c import FRONT, seeme_world
+import pytest
+from r131_fakes import UID, T, jpeg
+from r131_fakes_c import FRONT, StrictTryOn, seeme_world
 
+from jarvis.llm import tryon_gemini
+from jarvis.llm.tryon import Garment, TryOnAsk, TryOnNotBilled
+from jarvis.wardrobe.model import COLOURS, Piece
 from jarvis.wardrobe.seeme import pair as pairmod
 from jarvis.wardrobe.seeme import texts
+from jarvis.wardrobe.seeme.garments import short_words
 from jarvis.wardrobe.seeme.pair import Pairer
 from jarvis.wardrobe.tryon.http import GarmentView
-from jarvis.wardrobe.tryon.model import COVERED
+from jarvis.wardrobe.tryon.model import COVERED, GARMENTS, NEW_TYPES, TEMPLATE_OF, category_of
 
 NAVY_SHIRT = GarmentView.model_validate(
     {"id": "tg_000000000001", "type": "shirt", "colour": "navy", "words": "x",
@@ -116,3 +121,45 @@ async def test_without_rs13s_styling_the_pairing_says_so() -> None:
     del sw.state["r13_parts"]["styling"]
     got = await Pairer(sw.ctx).pair(UID, _garment("shirt", "navy"))
     assert got.pieces == () and got.words == texts.PAIR_OFF
+
+
+# ---- the words sent to Google (review C-1, finding 1) --------------------------------------------
+def _ask(words: str) -> TryOnAsk:
+    return TryOnAsk(person=jpeg(), garments=(Garment(image=jpeg(), words=words),), timeout_s=1.0)
+
+
+def _refused(words: list[str]) -> list[str]:
+    """The words the adapter refuses before sending, by its own check (`tryon_gemini._check`)."""
+    bad: list[str] = []
+    for w in words:
+        try:
+            tryon_gemini._check(_ask(w))  # noqa: SLF001 - the adapter's own pre-send check
+        except TryOnNotBilled:
+            bad.append(w)
+    return bad
+
+
+def test_every_sendable_type_in_every_colour_has_words_the_adapter_takes() -> None:
+    sendable = [t for t, tpl in TEMPLATE_OF.items() if tpl in GARMENTS]
+    pieces = [
+        Piece.model_validate({"i": "wi_000000000001", "c": category_of(kind), "t": kind, "co": co})
+        for kind in sendable
+        for co in (*COLOURS, None)
+    ]
+    assert _refused([pairmod.prompt_words(p) for p in pieces]) == []
+    assert _refused([short_words(kind, co) for kind in NEW_TYPES for co in COLOURS]) == []
+    assert len(pieces) == len(sendable) * (len(COLOURS) + 1) and "t_shirt" in sendable
+
+
+async def test_his_t_shirt_is_read_in_r13s_words_and_sent_in_fixed_ones() -> None:
+    sw = await seeme_world()
+    tee = (await sw.w.store.view(UID)).pieces[T.tee]
+    assert pairmod.mine_words(tee) == "grey T-shirt"  # what he reads, R13's own words
+    assert pairmod.prompt_words(tee) == "grey t shirt"  # what Google reads: fixed words only
+    assert pairmod.PROMPT_WORDS.pattern == tryon_gemini.WORDS.pattern  # one rule, both sides
+
+
+async def test_the_scripted_fake_refuses_what_the_adapter_refuses() -> None:
+    with pytest.raises(TryOnNotBilled):
+        await StrictTryOn(max_garments=1).make(_ask("grey T-shirt"))
+    assert (await StrictTryOn(max_garments=1).make(_ask("grey t shirt"))).made

@@ -16,6 +16,10 @@
 #   ask(garment, pieces, ...)     a `PictureIn` for the press (confirm_cost, the ₹ shown, an id)
 #   gemini(script) / fake1(steps) a provider and how many requests reached it: C's adapter on
 #                                 recorded answers, I0's one-garment fake (it chains inside itself)
+#   StrictTryOn                   I0's ScriptedTryOn refusing, before it answers, what the real
+#                                 adapter refuses before sending (`tryon_gemini._check`: fixed
+#                                 words, 1-3 garments, JPEG or PNG): the default everywhere here
+#   add_front(sw, piece, photo)   gives one of his pieces a front crop (R13's view record, a crop)
 #   SlowProvider(p)               p, a little slow (a real call takes seconds): presses overlap
 #   grab_logs()                   every log record's text while it is open
 from __future__ import annotations
@@ -30,15 +34,29 @@ from typing import Any
 
 from r13_fakes_c import World, world
 from r131_fake_gemini import FakeGoogle, FakeTokens, picture_answer, project_of
+from r131_fake_tryon import ScriptedTryOn
 from r131_fakes import CROPS, IST, NOW, PHOTOS, UID, VIEW_OF, FakePhotoVault, T, jpeg
 
 from jarvis.billing.fx import Rate
 from jarvis.billing.meter import MonthUsage, UsageMeter
 from jarvis.config import Settings
+from jarvis.llm.tryon import TryOnAsk, TryOnResult
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
 
 RATE = 95.24
+
+
+class StrictTryOn(ScriptedTryOn):
+    """I0's scripted provider, checked as the real adapter checks a request before it leaves
+    (`tryon_gemini._check`), so a word Part C can't send fails here too (review C-1, finding 1:
+    the plain fake let "grey T-shirt" through, the adapter refused it)."""
+
+    async def make(self, ask: TryOnAsk) -> TryOnResult:
+        from jarvis.llm.tryon_gemini import _check
+
+        _check(ask)  # TryOnNotBilled, exactly as the adapter raises it
+        return await super().make(ask)
 
 
 class YieldingDocs(MemoryDocs):
@@ -178,13 +196,11 @@ async def ready_world(
 ) -> tuple[SeeMeWorld, Any, Any]:  # fmt: skip
     """Part C built on `seeme_world`, his photo kept, his YES (unless `consent=False`) and a new
     navy shirt's photo: (world, the `seeme` service, the new garment's view)."""
-    from r131_fake_tryon import ScriptedTryOn
-
     from jarvis.wardrobe.seeme import consent as cmod
     from jarvis.wardrobe.seeme.part import build
 
     sw = await seeme_world(
-        at=at, s=s, docs=docs, provider=provider or ScriptedTryOn(max_garments=1),
+        at=at, s=s, docs=docs, provider=provider or StrictTryOn(max_garments=1),
         billing=billing if billing is not None else FakeBilling(),
         mode=mode if mode is not None else OnMode(),
     )  # fmt: skip
@@ -217,10 +233,18 @@ def gemini(script: list[Any] | None = None) -> Prov:
 
 
 def fake1(steps: list[Any] | None = None) -> Prov:
-    from r131_fake_tryon import ScriptedTryOn
-
-    p = ScriptedTryOn(max_garments=1, script=steps or ())
+    p = StrictTryOn(max_garments=1, script=steps or ())
     return p, lambda: len(p.calls)
+
+
+async def add_front(sw: SeeMeWorld, pid: str, photo: str) -> None:
+    """One of his pieces gets a front crop: its photo id, R13's view record and the crop."""
+    view = await sw.w.store.view(UID)
+    await sw.w.edit(pid, photos=(*view.pieces[pid].photos, photo))
+    path = f"{sw.ctx.s.firestore_prefix}wardrobe_photo/{UID}_{photo}"
+    record = {"owner": UID, "piece": pid, "view": "front", "bytes": 64, "blob": "x"}
+    await sw.docs.write([Set(path, record)])
+    sw.vault.crops[photo] = jpeg(512, 512, 6)
 
 
 class SlowProvider:
@@ -266,6 +290,8 @@ __all__ = [
     "Prov",
     "SeeMeWorld",
     "SlowProvider",
+    "StrictTryOn",
     "YieldingDocs",
+    "add_front",
     "seeme_world",
 ]

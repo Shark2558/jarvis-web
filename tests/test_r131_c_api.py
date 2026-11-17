@@ -16,9 +16,9 @@ from httpx import ASGITransport, AsyncClient
 from r13_fakes import IST, PILOT, ev
 from r13_fakes_c import FakeFetcher, forecast
 from r131_fake_tryon import PNG as PNG_OUT
-from r131_fake_tryon import ScriptedTryOn
 from r131_fakes import NOW, RING, UID, FixedClock, T, jpeg
 from r131_fakes_c import FakeBilling, OnMode
+from r131_fakes_c import StrictTryOn as ScriptedTryOn  # the adapter's pre-send check
 
 from jarvis.api import seeme as routes
 from jarvis.config import Settings

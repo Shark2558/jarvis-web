@@ -18,6 +18,7 @@ thinking of buying (docs/plans/r13-1-try-on.md D13.1, D22.5).
 
 from __future__ import annotations
 
+import re
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -44,16 +45,21 @@ from jarvis.wardrobe.tryon.ports import service_of
 log = get_logger(__name__)
 PHOTO_COLLECTION = "wardrobe_photo"  # R13's catalog: {owner, piece, view, ...} plain fields
 NOT_HIS_WORDS = "a piece not in your wardrobe"
+# The only words a garment is sent in: lower-case letters and spaces (the Gemini adapter's own
+# `WORDS`, pinned equal by a test). R13's display words ("T-shirt") are for him, never for Google.
+PROMPT_WORDS = re.compile(r"^[a-z][a-z ]{0,59}$")
 
 
 @dataclass(frozen=True)
 class Mine:
-    """One of his pieces that may be sent: its id, slot, fixed words and front crop's id."""
+    """One of his pieces that may be sent: its id, slot, the words he reads, its front crop's id
+    and the fixed words it is sent in (`prompt_words`)."""
 
     piece: str
     slot: str
     words: str
     photo: str
+    prompt: str
 
     def sent(self) -> SentPiece:
         return SentPiece(piece=self.piece, words=self.words)
@@ -65,12 +71,23 @@ def slot_of_type(kind: str) -> str | None:
 
 
 def mine_words(p: Piece) -> str:
-    """ "charcoal trousers", "navy shirt": R13's fixed words without the article."""
+    """ "charcoal trousers", "grey T-shirt": R13's fixed words without the article (he reads)."""
     words = piece_words(p)
     for lead in ("a ", "an "):
         if words.startswith(lead):
             return words[len(lead) :]
     return words
+
+
+def prompt_words(p: Piece) -> str:
+    """ "grey t shirt", "charcoal trousers": the colour and the type from the fixed lists, `_` as
+    a space, and nothing else (the words Google reads)."""
+    colour = (p.colour or "").replace("_", " ")
+    return " ".join(w for w in (colour, p.type.replace("_", " ")) if w)
+
+
+def sendable(words: str) -> bool:
+    return PROMPT_WORDS.fullmatch(words) is not None
 
 
 async def front_of(ctx: WardrobeContext, uid: str, p: Piece) -> str | None:
@@ -109,7 +126,7 @@ async def check(
     front = await front_of(ctx, uid, p)
     if front is None:
         return _no(p, pid, "no_photo", slot)
-    return Mine(piece=p.id, slot=slot, words=mine_words(p), photo=front)
+    return Mine(piece=p.id, slot=slot, words=mine_words(p), photo=front, prompt=prompt_words(p))
 
 
 async def split(
@@ -204,4 +221,15 @@ class Pairer:
         return sent, not_sent
 
 
-__all__ = ["Mine", "Pairer", "check", "front_of", "mine_words", "slot_of_type", "split"]
+__all__ = [
+    "PROMPT_WORDS",
+    "Mine",
+    "Pairer",
+    "check",
+    "front_of",
+    "mine_words",
+    "prompt_words",
+    "sendable",
+    "slot_of_type",
+    "split",
+]

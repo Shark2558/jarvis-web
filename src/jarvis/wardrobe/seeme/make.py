@@ -41,7 +41,7 @@ from jarvis.wardrobe.seeme.cap import CapHold, Done, Prefs, TryonCap
 from jarvis.wardrobe.seeme.consent import Consent
 from jarvis.wardrobe.seeme.estimate import Figures, approx, figures, rate_of, settled_usd
 from jarvis.wardrobe.seeme.garments import GarmentStore, short_words
-from jarvis.wardrobe.seeme.pair import Mine, Pairer, split
+from jarvis.wardrobe.seeme.pair import Mine, Pairer, sendable, split
 from jarvis.wardrobe.seeme.pictures import Made, PictureStore
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
 from jarvis.wardrobe.seeme.vault import PersonPhoto
@@ -214,6 +214,9 @@ class Press:
         g, new = await self._garment(uid, body.garment)
         view = await self._view(uid)
         mine, crops = await self.mine(uid, view, body.pieces, g.slot)
+        words = (short_words(g.type, g.colour), *(m.prompt for m in mine))  # fixed words only
+        if not all(sendable(w) for w in words):  # JARVIS's own words: refused before any spend
+            raise SeeMeRefused(422, "not_a_garment", texts.NO_WORDS)
         if not body.confirm_cost:
             raise SeeMeRefused(422, "confirm_cost", texts.CONFIRM_COST)
         rate = await rate_of(self.kit.billing(), self.kit.ctx.s.usd_inr_rate)
@@ -229,7 +232,6 @@ class Press:
         )
         if isinstance(hold, Done):
             return await self.answer(uid, hold.outcome)
-        words = (short_words(g.type, g.colour), *(m.words for m in mine))
         garments = tuple(
             Garment(image=x, words=w) for x, w in zip((new, *crops), words, strict=True)
         )

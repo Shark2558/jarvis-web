@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-from r131_fakes_a import SHOES, T, a_world
+from r131_fakes_a import SHOES, UID, T, a_world
 
 from jarvis.api import tryon as routes
 from jarvis.api.auth import require_auth
@@ -266,3 +266,21 @@ async def test_the_view_answers_even_when_r13s_store_breaks() -> None:
     async with a.client() as c:
         r = await c.get("/v1/tryon")
     assert r.status_code == 200 and TryonView.model_validate(r.json()).words == m.NO_FIGURE
+
+
+async def test_with_r13s_records_unreadable_the_view_lists_no_choice_it_cant_check() -> None:
+    a = await a_world()
+    async with a.client() as c:
+        chose = {"piece": T.striped, "card_only": True}
+        assert (await c.put(f"/v1/tryon/assets/{T.striped}", json=chose)).status_code == 200
+    await a.w.edit(T.striped, private=True)  # made private since: its id is never served (AVT-14)
+
+    async def broken(uid: str) -> Any:
+        raise RuntimeError("R13's store is down")
+
+    a.styling.view = broken  # type: ignore[method-assign]
+    async with a.client() as c:
+        r = await c.get("/v1/tryon")
+    assert r.status_code == 200 and TryonView.model_validate(r.json()).assets == ()
+    assert T.striped not in r.text
+    assert T.striped in (await a.service.store.read(UID)).assets  # kept, only not shown

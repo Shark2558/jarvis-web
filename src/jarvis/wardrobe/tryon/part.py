@@ -66,7 +66,8 @@ class TryonService:
 
     async def _read(self, uid: str) -> Read | None:
         """R13's records for the view's extras; None when they can't be read now (the figure
-        still answers: saved comparisons then read "Draft" until they can be checked)."""
+        still answers: saved comparisons then read "Draft" and no figure choice is listed until
+        they can be checked, so a piece made private since is never named, AVT-14)."""
         try:
             return await self.looks.read(uid)
         except StylingOff:
@@ -77,7 +78,7 @@ class TryonService:
 
     async def tryon_view(self, uid: str, *, release: str, files: tuple[str, ...]) -> TryonView:
         doc, r = await self.store.read(uid), await self._read(uid)
-        chosen = assets.tidy(doc.assets, r.view) if r is not None else doc.assets
+        chosen = assets.tidy(doc.assets, r.view) if r is not None else {}
         return TryonView(
             ready=READY, release=release, files=files, body=versions.versions_view(doc),
             ranges=RANGE_VIEWS, assets=tuple(assets.choice_of(p, a) for p, a in chosen.items()),

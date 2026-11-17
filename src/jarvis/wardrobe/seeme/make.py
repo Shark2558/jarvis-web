@@ -23,13 +23,13 @@ every billed call whatever the settle did.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
 from jarvis.billing.service import BudgetReached, BudgetUnavailable
-from jarvis.billing.spend import MSG_SPEND_UNAVAILABLE, ensure_spend_allowed, with_tax
+from jarvis.billing.spend import MSG_SPEND_UNAVAILABLE, ensure_spend_allowed
 from jarvis.llm.tryon import (
     MAX_GARMENTS,
     Garment,
@@ -43,9 +43,17 @@ from jarvis.logging import get_logger
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import WardrobeContext
 from jarvis.wardrobe.seeme import texts
+from jarvis.wardrobe.seeme.books import closed, record
 from jarvis.wardrobe.seeme.cap import CapHold, Done, Prefs, TryonCap
 from jarvis.wardrobe.seeme.consent import Consent
-from jarvis.wardrobe.seeme.estimate import Figures, approx, figures, rate_of, settled_usd
+from jarvis.wardrobe.seeme.estimate import (
+    Figures,
+    approx,
+    figures,
+    rate_of,
+    settled_inr,
+    settled_usd,
+)
 from jarvis.wardrobe.seeme.garments import GarmentStore, short_words
 from jarvis.wardrobe.seeme.pair import Mine, Pairer, refusal, sendable, split
 from jarvis.wardrobe.seeme.pictures import Made, PictureStore
@@ -68,11 +76,13 @@ SHOWN_SLACK = 0.01  # ₹: the fresh typical may be at most this above what he w
 DEADLINE_SLACK_S = 5.0  # past the provider's own 120 s: a timeout here is "maybe billed"
 _SAID = "about the price shown"  # a repeat's ₹ (it was said the first time)
 WITHDRAWN = "withdrawn"  # made, but a photo it needs went during the call: not kept (billed)
+NOT_SAVED = "not_saved"  # made and billed, but its save failed: not kept (review I1 M4)
 REPEATED = {  # a repeated request id's refusal: the first answer's status, code and words
     "provider_unavailable": (503, "provider_unavailable", texts.UNAVAILABLE),
     "maybe_billed": (503, "provider_unavailable", texts.MAYBE_BILLED.format(about=_SAID)),
     "blocked": (502, "blocked", texts.BLOCKED.format(about=_SAID)),
     WITHDRAWN: (422, "no_photo", texts.WITHDRAWN.format(about=_SAID)),
+    NOT_SAVED: (503, "provider_unavailable", texts.NOT_SAVED.format(about=_SAID)),
 }
 
 
@@ -262,9 +272,7 @@ class Press:
             async with asyncio.timeout(CALL_DEADLINE_S + DEADLINE_SLACK_S):  # whatever the provider
                 result = await call.provider.make(call.ask)
         except TryOnNotBilled as exc:
-            await _closed(
-                self.kit.cap.release(call.hold, outcome={"error": "provider_unavailable"})
-            )
+            await closed(self.kit.cap.release(call.hold, outcome={"error": "provider_unavailable"}))
             said = texts.GOOGLE_BUSY if str(exc) == "status_429" else texts.UNAVAILABLE
             raise SeeMeRefused(503, "provider_unavailable", said) from None
         except (TryOnMaybeBilled, TimeoutError) as exc:  # it may have left: kept at the hold
@@ -289,27 +297,28 @@ class Press:
     async def _at_hold(self, uid: str, call: Call, code: str, *, blocked: bool) -> None:
         hold = call.hold
         try:
-            await _closed(
+            await closed(
                 self.kit.cap.settle(hold, hold.inr, outcome={"error": code}, blocked=blocked)
             )
         finally:  # his usage month hears it, whatever the settle did
-            await _record(self.kit, uid, call.provider.estimate(MAX_GARMENTS)[1])
+            await record(self.kit.billing(), uid, call.provider.estimate(MAX_GARMENTS)[1])
 
     async def _keep(self, uid: str, call: Call, result: TryOnResult) -> PictureView:
         usd = settled_usd(call.provider, result.usage)
-        tax = self.kit.ctx.s.tryon_tax_pct
-        inr = call.hold.inr if usd is None else with_tax(usd * call.fig.rate, tax)
+        inr = settled_inr(call.provider, result.usage, rate=call.fig.rate,
+                          tax_pct=self.kit.ctx.s.tryon_tax_pct)  # fmt: skip
+        inr = call.hold.inr if inr is None else inr  # no usage: what was held
         pid = new_picture_id()
         outcome = {"picture": pid}
         try:  # made and billed: from here on, whatever fails, the cap and his month hear it
-            made = Made(
-                picture=result.picture or b"", mime=result.mime or "image/jpeg",
-                made_at=self.kit.ctx.now(), garment=call.garment_new(),
-                garment_type=call.garment.type, garment_colour=call.garment.colour,
-                sent=sent_of(call.mine), not_sent=await self.not_sent(uid, call), inr=inr,
-                usage=result.usage,
-            )  # fmt: skip
-            view = await self._save(uid, pid, call, made)
+            try:
+                view = await self._save(uid, pid, call, await self._made(uid, call, result, inr))
+            except Exception as exc:  # noqa: BLE001 - never "can't be reached" for a billed one
+                outcome = {"error": NOT_SAVED}  # its retry says the same (REPEATED), never "gone"
+                why = {"error": type(exc).__name__, "request_id": call.hold.request_id}
+                log.error("see it on me: a made picture couldn't be saved", extra=why)
+                words = texts.NOT_SAVED.format(about=f"about {approx(inr)}")
+                raise SeeMeRefused(503, "provider_unavailable", words, inr=inr) from None
             if view is None:  # OPS-05, his withdrawal or a Privacy delete ran during the call
                 outcome = {"error": WITHDRAWN}
                 words = texts.WITHDRAWN.format(about=f"about {approx(inr)}")
@@ -317,10 +326,19 @@ class Press:
             return view
         finally:
             try:
-                await _closed(self.kit.cap.settle(call.hold, inr, outcome=outcome, picture=True))
+                await closed(self.kit.cap.settle(call.hold, inr, outcome=outcome, picture=True))
             finally:  # his usage month hears it, whatever the settle did
                 worst = call.provider.estimate(MAX_GARMENTS)[1]
-                await _record(self.kit, uid, usd if usd is not None else worst)
+                await record(self.kit.billing(), uid, usd if usd is not None else worst)
+
+    async def _made(self, uid: str, call: Call, result: TryOnResult, inr: float) -> Made:
+        return Made(
+            picture=result.picture or b"", mime=result.mime or "image/jpeg",
+            made_at=self.kit.ctx.now(), garment=call.garment_new(),
+            garment_type=call.garment.type, garment_colour=call.garment.colour,
+            sent=sent_of(call.mine), not_sent=await self.not_sent(uid, call), inr=inr,
+            usage=result.usage,
+        )  # fmt: skip
 
     async def _save(self, uid: str, pid: str, call: Call, made: Made) -> PictureView | None:
         """Kept only while his photo, his YES (still current) and the garment's photo are his;
@@ -364,30 +382,6 @@ class Call:
 
     def garment_new(self) -> NewGarment:
         return NewGarment(id=self.garment.id, words=self.garment.words)
-
-
-async def _closed(close: Awaitable[None]) -> None:
-    """A settle or release. The cap tries it three times, then logs it at ERROR with its request
-    id and keeps it for his next press and the daily job: never the reason a made picture, or the
-    refusal he is owed, becomes "can't be reached"."""
-    try:
-        await close
-    except Exception:  # noqa: BLE001 - logged and kept by the cap (`TryonCap.pending`)
-        return
-
-
-async def _record(kit: Kit, uid: str, usd: float) -> None:
-    """His usage month, label `tryon` (Vitals: "Try-on"). `Billing.record` never raises; if it
-    ever did, it is logged and the press goes on (the cap has counted the call)."""
-    billing = kit.billing()
-    if billing is None or usd <= 0:
-        return
-    try:
-        await billing.record(uid, "tryon", usd)
-    except Exception as exc:  # noqa: BLE001 - belt and braces
-        log.error(
-            "see it on me: his usage month missed a call", extra={"error": type(exc).__name__}
-        )
 
 
 __all__ = ["ENDS_SOON_DAYS", "Call", "Kit", "Press", "no_ai", "off_reason", "sent_of"]

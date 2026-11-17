@@ -165,6 +165,32 @@ async def test_a_made_picture_whose_settle_fails_is_shown_his_month_hears_it_and
     assert (month.spent_inr, month.held_inr, month.pictures) == (8.52, 0.0, 1)
 
 
+async def test_a_made_picture_that_cant_be_saved_says_it_may_be_charged_and_so_does_a_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # integrated review M4: Google made (and billed) it, then the save failed: it said "can't be
+    # reached", its retry "isn't there any more", and the audit 0
+    billing, p = FakeBilling(), _priced()
+    sw, svc, g = await ready_world(provider=p, billing=billing)
+
+    async def blip(*a: Any, **kw: Any) -> Any:
+        raise RuntimeError("store blip")
+
+    monkeypatch.setattr(svc.kit.pictures, "save", blip)
+    body = ask(g.id, (T.trousers,), inr=(await svc.estimate(UID, g.id, [T.trousers])).typical_inr)
+    err = await _refused(svc.press(UID, body))
+    assert (err.status, err.code) == (503, "provider_unavailable")
+    assert "couldn't save it" in err.words and "may still be charged (about ₹9)" in err.words
+    assert err.inr == 8.52  # what Google charged: the audit's figure
+    month = await svc.kit.cap.month(UID)
+    assert (month.spent_inr, month.held_inr, month.pictures) == (8.52, 0.0, 1)  # at Google's ₹
+    again = await _refused(svc.press(UID, body))  # the console's retry: the same request id
+    assert (again.status, again.code) == (503, "provider_unavailable")
+    assert "couldn't save it" in again.words and "may still be charged" in again.words
+    assert len(p.calls) == 1 and [x[:2] for x in billing.recorded] == [(UID, "tryon")]
+    assert await svc.kit.pictures.rows(UID) == []  # nothing half-kept
+
+
 @pytest.mark.parametrize(
     ("step", "status", "code"),
     [(Step(blocked="safety"), 502, "blocked"),

@@ -297,6 +297,30 @@ async def test_a_press_keep_and_delete_are_audited_by_ids_code_and_rupees(
         assert rest["seeme_picture_delete"] == {"picture": pic.id}
 
 
+async def test_a_made_picture_that_cant_be_saved_is_audited_at_what_google_charged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # integrated review M4: the route's audit line said 0 for a billed call (its generic branch)
+    from types import SimpleNamespace
+
+    async with real(monkeypatch) as r:
+        audit = _Audit()
+        r.app.state.gateway = SimpleNamespace(audit=audit)
+        gid = await _ready(r)
+        svc = r.state["r13_parts"]["seeme"].services["seeme"]
+
+        async def blip(*a: Any, **kw: Any) -> Any:
+            raise RuntimeError("store blip")
+
+        monkeypatch.setattr(svc.kit.pictures, "save", blip)
+        got = await _press(r, gid, [])
+        assert (got.status_code, got.json()["error"]) == (503, "provider_unavailable")
+        assert "may still be charged" in got.json()["detail"]
+        [press] = [a["args"] for a in audit.seen if a["tool"] == "seeme_picture"]
+        month = await svc.kit.cap.month(UID)
+        assert press["code"] == "provider_unavailable" and press["inr"] == month.spent_inr > 0
+
+
 async def test_a_route_that_fails_says_cant_just_now_and_logs_its_name_and_request_id(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

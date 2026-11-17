@@ -253,6 +253,20 @@ async def test_a_repeated_request_id_answers_the_same_picture_once_charged() -> 
     assert (await svc.kit.cap.month(UID)).spent_inr == 8.52
 
 
+async def test_a_picture_made_at_month_end_is_shown_again_after_midnight_not_paid_twice() -> None:
+    # integrated security review finding 3, through the press: its early `done` check reads the
+    # month before too, so no December gate (a moved price, the cap) stands before the answer
+    fake = ScriptedTryOn(max_garments=3, model="gemini-3.1-flash-image")
+    eve = ist(2026, 11, 30, 23, 59) + timedelta(seconds=30)
+    sw, svc, g = await ready_world(provider=fake, at=eve)
+    body = ask(g.id, (), inr=await _shown(svc, g.id))
+    pic = await svc.press(UID, body)
+    sw.w.clock.set(ist(2026, 12, 1, 0, 0) + timedelta(seconds=20))
+    again = await svc.press(UID, body.model_copy(update={"inr_shown": 0.01}))
+    assert again.id == pic.id and len(fake.calls) == 1
+    assert (await svc.kit.cap.month(UID)).spent_inr == 0.0  # December: nothing spent
+
+
 async def test_a_repeated_failed_request_id_answers_the_same_refusal() -> None:
     down = Step(error=TryOnNotBilled("status_500"))
     fake = ScriptedTryOn(max_garments=3, model="gemini-3.1-flash-image",

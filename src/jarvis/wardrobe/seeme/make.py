@@ -232,7 +232,7 @@ class Press:
         raise SeeMeRefused(status, code, words)
 
     async def press(self, uid: str, body: PictureIn) -> PictureView:
-        done = (await self.kit.cap.month(uid)).done.get(body.request_id)
+        done = await self.kit.cap.answered(uid, body.request_id)  # this month or just before
         if done is not None:
             return await self.answer(uid, done)
         provider = await self._on(uid)

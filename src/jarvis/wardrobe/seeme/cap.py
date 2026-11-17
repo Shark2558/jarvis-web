@@ -12,7 +12,9 @@
                                           deployment's); kept with the spend, so a delete of his
                                           photo or OPS-05 never resets a cap he lowered
 
-`reserve` reads and writes in ONE transaction: a repeated request id answers its `done` outcome
+`reserve` reads and writes in ONE transaction (this month's document, and the month before's
+for an hour after his month's end: a retry or a hold across midnight; I1's security review,
+finding 3): a repeated request id answers its `done` outcome
 (a billed one only: a release is not kept there, so a retry after "nothing was charged" asks
 Google again; I1's security review, finding 2);
 refused with nothing written while a hold under 10 minutes old exists (`busy`, so two instances
@@ -199,17 +201,39 @@ class TryonCap:
         key = month or self.month_of(self.now())
         return decode(await self.docs.get(self.path(uid, key)), key)
 
+    def keys_now(self) -> tuple[str, ...]:
+        """This month, then the one before while within `SETTLE_HOURS` of this one's start: a
+        retry or a hold across his month's end (IST midnight; security review finding 3)."""
+        now = self.now()
+        this, before = self.month_of(now), self.month_of(now - timedelta(hours=SETTLE_HOURS))
+        return (this,) if before == this else (this, before)
+
+    async def answered(self, uid: str, request_id: str) -> Mapping[str, Any] | None:
+        """A request id's first outcome, if it was answered (this month or just before)."""
+        for key in self.keys_now():
+            found = (await self.month(uid, month=key)).done.get(request_id)
+            if found is not None:
+                return found
+        return None
+
     async def months(self, uid: str) -> list[Month]:
         rows = await self.docs.query(Query(f"{self.prefix}{SPEND}", where=("owner", uid)))
         found = [(m.group(1), d) for i, d in rows if (m := _MONTH.search(i)) is not None]
         return sorted((decode(d, key) for key, d in found), key=lambda m: m.month)
 
-    def _check(self, m: Month, request_id: str, hold_inr: float, cap_inr: int) -> Done | None:
+    def _seen(self, m: Month, request_id: str) -> Done | None:
+        """Its first outcome when answered; `busy` while a fresh hold is still out."""
         if request_id in m.done:
             return Done(m.done[request_id])
         fresh = self.now() - timedelta(minutes=BUSY_MINUTES)
         if request_id in m.holds or any(_when(h["at"]) > fresh for h in m.holds.values()):
             raise CapRefused(409, "busy", texts.BUSY)
+        return None
+
+    def _check(self, m: Month, request_id: str, hold_inr: float, cap_inr: int) -> Done | None:
+        done = self._seen(m, request_id)
+        if done is not None:
+            return done
         if cap_inr <= 0:
             raise CapRefused(402, "cap_reached", texts.CAP_OFF)
         if m.spent_inr + m.held_inr + hold_inr > cap_inr + 1e-9:
@@ -223,11 +247,15 @@ class TryonCap:
         hold = _money(hold_inr)
         if self.pending:
             await self.close_later(uid)  # a close kept from before goes first (never "busy")
-        key = self.month_of(self.now())
+        key, *before = self.keys_now()
         path = self.path(uid, key)
 
         async def fn(tx: DocTx) -> Done | None:
             m = decode(await tx.get(path), key)
+            for old in before:  # last month's answer or open hold still counts (finding 3)
+                done = self._seen(decode(await tx.get(self.path(uid, old)), old), request_id)
+                if done is not None:
+                    return done
             done = self._check(m, request_id, hold, cap_inr)
             if done is not None:
                 return done

@@ -172,6 +172,36 @@ async def test_a_repeated_request_id_answers_its_outcome() -> None:
     assert (await cap.month(UID)).spent_inr == 8.52  # charged once
 
 
+# ---- integrated security review, finding 3: a retry across the month's end (IST midnight) ----
+EVE = ist(2026, 11, 30, 23, 59) + timedelta(seconds=50)  # 23:59:50 IST, the month's last
+AFTER = ist(2026, 12, 1, 0, 0) + timedelta(seconds=20)  # 00:00:20 IST, the next month's first
+
+
+async def test_a_retry_across_month_end_is_answered_never_paid_twice() -> None:
+    clock = FixedClock(EVE)
+    cap = _cap(clock=clock)
+    hold = await cap.reserve(UID, rid(1), 11.22, CAP)
+    await cap.settle(hold, 8.52, outcome={"picture": "tp_000000000001"}, picture=True)
+    clock.set(AFTER)  # the console's retry of a lost reply, after midnight
+    assert await cap.reserve(UID, rid(1), 11.22, CAP) == Done({"picture": "tp_000000000001"})
+    assert await cap.answered(UID, rid(1)) == {"picture": "tp_000000000001"}
+    december = await cap.month(UID)
+    assert december.month == "2026-12" and (december.held_inr, december.holds) == (0.0, {})
+
+
+async def test_a_hold_still_out_from_last_month_makes_a_new_press_busy() -> None:
+    clock = FixedClock(EVE)
+    cap = _cap(clock=clock)
+    await cap.reserve(UID, rid(1), 11.22, CAP)  # its call is still at Google
+    clock.set(AFTER)
+    with pytest.raises(CapRefused) as err:
+        await cap.reserve(UID, rid(2), 11.22, CAP)  # two calls never run at once
+    assert err.value.code == "busy"
+    clock.set(ist(2026, 12, 1, 1, 30))  # an hour and a half on: last month is behind him
+    assert await cap.answered(UID, rid(1)) is None
+    assert isinstance(await cap.reserve(UID, rid(3), 11.22, CAP), capmod.CapHold)
+
+
 async def test_done_keeps_the_last_fifty() -> None:
     clock = FixedClock(NOW)
     cap = _cap(clock=clock)

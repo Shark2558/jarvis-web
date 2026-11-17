@@ -14,7 +14,7 @@
 // The garment is never added to his wardrobe here. Refusals branch on err.code (Refusal's `error`). The door is the only
 // caller of the photo, picture and garment routes: its make, keep, forget and garments are proposed for I1
 // (INTEGRATION-D "Needs I1"); until they exist this says so and sends nothing. textContent only; no pixel API; ASCII.
-import { shownAs } from './console-tryon-list.js';
+import { shownAs, when } from './console-tryon-list.js';
 
 const photo = () => import('./console-tryon-photo.js');
 // the fixed lists: wardrobe/tryon/model.py NEW_TYPES and wardrobe/model.py COLOURS (tests/test_r131_d_static.py pins both)
@@ -35,7 +35,6 @@ const H = () => M.o.H;
 const txt = (v, n = 200) => H().txt(String(v == null ? '' : v), n);
 const word = (w) => (w === 't_shirt' ? 'T-shirt' : String(w).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()));
 const rupees = (n) => '\u20b9' + (Math.round(Number(n) * 100) / 100).toFixed(2);
-const when = (iso) => (window.JarvisMobile && window.JarvisMobile.when ? window.JarvisMobile.when(iso, true) : String(iso || '').slice(0, 16).replace('T', ' '));
 const door = () => M.o.door();
 const has = (fn) => { const d = door(); return !!(d && typeof d[fn] === 'function'); };
 const say = (kind, text) => H().note(M.note, kind, text);

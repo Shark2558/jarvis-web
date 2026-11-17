@@ -21,6 +21,9 @@ export const COVERED = 'Base layer (covered)';
 export const SLOT_WORDS = Object.freeze({ base: 'Base', underwear: 'Base', top: 'Top', bottom: 'Bottom', outer: 'Outer layer',
   shoes: 'Shoes', belt: 'Belt', watch: 'Watch', socks: 'Socks', extras: 'Extras' });
 const VIEW_WORDS = { front: 'Front', back: 'Back', detail: 'Detail' };
+export const MEASURE_WORDS = Object.freeze({ height: 'Height', shoulders: 'Shoulder width', chest: 'Chest', waist: 'Waist', hips: 'Hips', inseam: 'Inseam' });
+export const SHAPE_WORDS = Object.freeze({ shirt: 'Shirt', tee: 'T-shirt', kurta: 'Kurta', trousers: 'Trousers', shorts: 'Shorts', wrap: 'Mundu or dhoti',
+  jacket: 'Jacket', shoe: 'Shoe', sandal: 'Sandal', belt: 'Belt', watch: 'Watch', socks: 'Socks' });
 const APPROX = { template: 'Approximate shape', texture: 'texture from its photo, scale approximate', colour: 'colour approximate' };
 const ID = /\bw[ih]_[0-9a-f]{12}\b|\bt[gpqc]_[0-9a-f]{6,16}\b/g;
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -174,6 +177,15 @@ function dayWords(iso) {
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   return DAYS[d.getUTCDay()] + ' ' + (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
 }
+/** The look by its pieces for A's GET /v1/tryon/look ("pieces=slot:wi_...,..."), in a plan's context when one is given. */
+export const query = (list, plan) => 'pieces=' + encodeURIComponent(list.map((p) => p.slot + ':' + p.piece).join(','))
+  + (plan ? '&plan=' + encodeURIComponent(plan) : '');
+/** "Today \u00b7 10:00 \u00b7 business formal": a plan's title. */
+export const planTitle = (day, p) => [day, hhmm(p.starts), String(p.dress_code || '').replace(/_/g, ' ')].filter(Boolean).join(' \u00b7 ');
+/** Tomorrow's date (yyyy-mm-dd) in this device's own time. */
+export const tomorrowIso = () => { const d = new Date(Date.now() + 864e5); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+/** A time in his words (the console's own when()), else the ISO date and time. */
+export const when = (iso) => (window.JarvisMobile && window.JarvisMobile.when ? window.JarvisMobile.when(iso, true) : String(iso || '').slice(0, 16).replace('T', ' '));
 /** "10:00": an event's start in this device's own time (his zone), or "" */
 export function hhmm(iso) {
   const d = typeof iso === 'string' && iso ? new Date(iso) : null;

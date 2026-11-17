@@ -8,7 +8,8 @@
 // and its list ('./console-tryon-list.js'), the checklist by itself when 3D can't run (Retry 3D once a page). ONE stage
 // on the page: the viewer taking it gives the other's back; a hidden viewer (its tab, the page) gives it back too.
 // Every change goes to the server; nothing is kept on this device; no pixel API (B's snapshot draws the caption).
-import { COVERED, caption, chosen, covered, crop, dropCrops, figure, hhmm, items, pairs, same, slotWord } from './console-tryon-list.js';
+import { COVERED, MEASURE_WORDS, SHAPE_WORDS, caption, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, slotWord,
+  tomorrowIso, when } from './console-tryon-list.js';
 
 const engine3d = () => import('./console-tryon-3d.js');
 const seeMe = () => import('./console-tryon-me.js');
@@ -30,9 +31,6 @@ const NO_PLAN = 'This look has no plan yet: ask JARVIS what to wear, or plan it 
 const FIRST_RENDER_MS = 10000, WATCH_MS = 250, UNDO_MAX = 20, EVENING = 18;
 const LAYERS = [['all', 'All layers'], ['no_outer', 'Without the outer layer'], ['base', 'Base layer only']];
 const VIEWS = [['front', 'Front'], ['side', 'Side'], ['back', 'Back']];
-const MEASURE_WORDS = { height: 'Height', shoulders: 'Shoulder width', chest: 'Chest', waist: 'Waist', hips: 'Hips', inseam: 'Inseam' };
-const SHAPE_WORDS = { shirt: 'Shirt', tee: 'T-shirt', kurta: 'Kurta', trousers: 'Trousers', shorts: 'Shorts', wrap: 'Mundu or dhoti',
-  jacket: 'Jacket', shoe: 'Shoe', sandal: 'Sandal', belt: 'Belt', watch: 'Watch', socks: 'Socks' };
 const S = { H: null, ctx: null, host: null, off: false, tryon: null, outfits: null, photos: null, sec: null, card: null, holder: null,
   retried: false, file: null, me: null, el: {}, views: new Set(), priv: false, next: null };
 
@@ -59,10 +57,6 @@ function failed(v, e) {
 }
 
 // ---- the server's look ------------------------------------------------------------------------------------------
-function query(v, list) {
-  const q = list.map((p) => p.slot + ':' + p.piece).join(',');
-  return 'pieces=' + encodeURIComponent(q) + (v.plan ? '&plan=' + encodeURIComponent(v.plan) : '');
-}
 async function lookOf(v, q) { // a fresh read: readiness comes from the server, never the render; covered slots kept
   const look = await api('/v1/tryon/look?' + q);
   const slots = Array.isArray(look.slots) ? look.slots : [];
@@ -85,14 +79,13 @@ async function readTryon() {
 }
 
 // ---- one viewer ------------------------------------------------------------------------------------------------------
+const PARTS = [['head', 'div', 'tr-head'], ['status', 'p', 'sfine tr-status'], ['stage', 'div', 'tr-stage'], ['tools', 'div', 'sacts tr-tools'],
+  ['style', 'div', 'sacts tr-style'], ['acts', 'div', 'sacts tr-acts'], ['extra', 'div', 'tr-extra'], ['list', 'div', 'tr-list']];
 function viewer(root, kind) {
-  const h = H(), el = {};
-  ['status', 'head', 'stage', 'tools', 'style', 'acts', 'extra', 'list'].forEach((k) => { el[k] = h.mk(k === 'status' ? 'p' : 'div', ''); });
-  el.status.className = 'sfine tr-status'; el.status.setAttribute('role', 'status'); el.head.className = 'tr-head';
-  el.stage.className = 'tr-stage'; el.tools.className = 'sacts tr-tools'; el.style.className = 'sacts tr-style';
-  el.acts.className = 'sacts tr-acts'; el.list.className = 'tr-list'; el.extra.className = 'tr-extra';
-  const view = h.mk('div', 'tr-view');
-  view.append(el.head, el.status, el.stage, el.tools, el.style, el.acts, el.extra, el.list);
+  const h = H(), el = {}, view = h.mk('div', 'tr-view');
+  PARTS.forEach(([k, tag, cls]) => { el[k] = h.mk(tag, cls); });
+  el.status.setAttribute('role', 'status');
+  view.append(...PARTS.map(([k]) => el[k]));
   root.append(view);
   const v = { kind, view, el, look: null, second: null, titles: [], covered: [], plan: null, src: '', starts: '', planPairs: [],
     opts: { tucked: false, open: true, layers: 'all', view: 'front' }, undo: [], stage: null, mode: '3d', why: '', open: null,
@@ -124,8 +117,8 @@ async function privy(v, on) { // R13 D10: his own checklist names a private basi
 async function refresh(v) { // after a swap, an undo, a fresh load: the same picks re-read
   await photosOf();
   try {
-    v.look = await lookOf(v, query(v, pairs(v.look)));
-    if (v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query({ plan: null }, pairs(v.second)));
+    v.look = await lookOf(v, query(pairs(v.look), v.plan));
+    if (v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query(pairs(v.second)));
   } catch (e) { failed(v, e); }
   draw(v); paint(v);
 }
@@ -273,22 +266,22 @@ async function swap(v, which, slot, piece) {
   const order = (look.slots || []).map((s) => s.slot);
   list.sort((a, b) => order.indexOf(a.slot) - order.indexOf(b.slot));
   try {
-    const fresh = await lookOf(which ? { covered: v.covered, plan: null } : v, query(which ? { plan: null } : v, list));
+    const fresh = await lookOf(which ? { covered: v.covered, plan: null } : v, query(list, which ? null : v.plan));
     if (which) v.second = fresh; else v.look = fresh;
   } catch (e) { v.undo.pop(); failed(v, e); return; }
   v.open = null; draw(v); paint(v);
 }
 async function remove(v, slot) {
   remember(v);
-  try { v.look = await lookOf(v, query(v, pairs(v.look).filter((p) => p.slot !== slot))); } catch (e) { v.undo.pop(); failed(v, e); return; }
+  try { v.look = await lookOf(v, query(pairs(v.look).filter((p) => p.slot !== slot), v.plan)); } catch (e) { v.undo.pop(); failed(v, e); return; }
   v.open = null; draw(v); paint(v);
 }
 async function undo(v) { // a pick no longer eligible comes back as a draft: the server's fresh readiness says so
   const last = v.undo.pop();
   if (!last) return;
   try {
-    v.look = await lookOf(v, query(v, last.first));
-    if (last.second && v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query({ plan: null }, last.second));
+    v.look = await lookOf(v, query(last.first, v.plan));
+    if (last.second && v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query(last.second));
   } catch (e) { failed(v, e); }
   v.opts = last.opts; draw(v); paint(v);
 }
@@ -322,9 +315,6 @@ async function wearing(v) { // R13's wear_log, its answer said here; then R13's 
 async function outfits() {
   if (!S.outfits) { try { S.outfits = await api('/v1/outfits'); } catch (_) { S.outfits = { today: [], tomorrow: [] }; } }
   return S.outfits;
-}
-function planTitle(day, p) {
-  return [day, hhmm(p.starts), String(p.dress_code || '').replace(/_/g, ' ')].filter(Boolean).join(' \u00b7 ');
 }
 async function chooser(v) {
   const o = await outfits(), out = [H().mk('p', 'snote', 'Compare this look with:')];
@@ -370,9 +360,9 @@ async function openSaved(s) {
   const v = S.sec, looks = (s.looks || []).map((x) => x.look);
   if (!v || !looks.length) return;
   try {
-    const first = await lookOf(v, query({ plan: looks[0].plan }, looks[0].slots));
+    const first = await lookOf(v, query(looks[0].slots, looks[0].plan));
     await show(v, first, { plan: looks[0].plan, title: 'A saved comparison' + (s.draft ? ' (Draft)' : '') });
-    if (looks[1]) { v.second = await lookOf({ covered: v.covered }, query({ plan: null }, looks[1].slots)); v.comparing = true; v.titles = [v.titles[0], 'The other look']; }
+    if (looks[1]) { v.second = await lookOf({ covered: v.covered }, query(looks[1].slots)); v.comparing = true; v.titles = [v.titles[0], 'The other look']; }
     v.opts = Object.assign({}, v.opts, { tucked: !!looks[0].tucked, open: looks[0].open !== false, layers: looks[0].layers || 'all' });
     draw(v); paint(v);
   } catch (e) { failed(v, e); }
@@ -403,8 +393,6 @@ function download(blob, file) { // our own bytes as a blob: URL for the download
 }
 
 // ---- the section: measurements (D4), shapes (AVT-05), OPS-05 ------------------------------------------------------------
-const when = (iso) => (window.JarvisMobile && window.JarvisMobile.when ? window.JarvisMobile.when(iso, true) : String(iso || '').slice(0, 16).replace('T', ' '));
-const tomorrowIso = () => { const d = new Date(Date.now() + 864e5); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 function form() {
   const h = H(), box = S.el.form, t = S.tryon;
   if (!box || !t) return;
@@ -563,7 +551,7 @@ async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pie
   (card.slots || []).forEach((s) => { if (!s.private) s.pieces.forEach((p) => list.push({ slot: s.slot, piece: p })); });
   try {
     if (!S.tryon) await readTryon();
-    const look = await lookOf(v, query(v, list));
+    const look = await lookOf(v, query(list, v.plan));
     const code = String(card.code || '').replace(/_/g, ' ');
     await show(v, look, { plan: card.plan, title: 'Your look' + (code ? ' \u00b7 ' + code : '') });
   } catch (e) { failed(v, e); draw(v); }

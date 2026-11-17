@@ -295,3 +295,23 @@ async def test_the_garment_is_never_his_after_upload_pairing_picture_and_delete(
     await svc.delete_garment(UID, g.id)
     assert await sw.rev() == before  # R13's rev and every piece unchanged
     assert all("tg_" not in k for k in before[1])
+
+
+async def test_a_provider_that_never_answers_is_cut_at_the_deadline_and_kept_at_the_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from jarvis.wardrobe.seeme import make as makemod
+
+    class Hangs(ScriptedTryOn):
+        async def make(self, ask):  # type: ignore[no-untyped-def,override]
+            await asyncio.sleep(60)
+
+    monkeypatch.setattr(makemod, "CALL_DEADLINE_S", 0.01)
+    monkeypatch.setattr(makemod, "DEADLINE_SLACK_S", 0.0)
+    sw, svc, g = await ready_world(provider=Hangs(max_garments=3, model="gemini-3.1-flash-image"))
+    err = await _refused(svc.press(UID, ask(g.id, (), inr=await _shown(svc, g.id))))
+    assert err.code == "provider_unavailable" and "may still be charged" in err.words
+    month = await svc.kit.cap.month(UID)
+    assert month.held_inr == 0.0 and month.spent_inr > 0  # maybe billed: kept at the hold

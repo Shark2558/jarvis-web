@@ -17,6 +17,7 @@ answers its first outcome (`done`), so a retry never charges twice.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -58,6 +59,7 @@ from jarvis.wardrobe.tryon.ports import photo_vault
 log = get_logger(__name__)
 ENDS_SOON_DAYS = 30
 SHOWN_SLACK = 0.01  # ₹: the fresh typical may be at most this above what he was shown
+DEADLINE_SLACK_S = 5.0  # past the provider's own 120 s: a timeout here is "maybe billed"
 REPEATED = {  # a repeated request id's refusal (its ₹ was said the first time)
     "provider_unavailable": (503, texts.UNAVAILABLE),
     "maybe_billed": (503, texts.MAYBE_BILLED.format(about="about the price shown")),
@@ -236,7 +238,8 @@ class Press:
 
     async def _make(self, uid: str, call: Call) -> PictureView:
         try:
-            result = await call.provider.make(call.ask)
+            async with asyncio.timeout(CALL_DEADLINE_S + DEADLINE_SLACK_S):  # whatever the provider
+                result = await call.provider.make(call.ask)
         except TryOnNotBilled as exc:
             await self.kit.cap.release(call.hold, outcome={"error": "provider_unavailable"})
             said = texts.GOOGLE_BUSY if str(exc) == "status_429" else texts.UNAVAILABLE

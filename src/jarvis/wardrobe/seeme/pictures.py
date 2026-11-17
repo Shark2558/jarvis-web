@@ -49,7 +49,7 @@ from jarvis.wardrobe.tryon.model import (
 )
 
 KEEP_MAX_BYTES = 700 * 1024
-ONCE_MAX, ONCE_S = 4, 600.0
+ONCE_MAX, ONCE_S = 2, 600.0  # at most two big pictures in page memory, 10 minutes
 _ID = re.compile(PICTURE_ID)
 
 

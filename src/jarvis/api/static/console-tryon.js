@@ -13,10 +13,8 @@
 import { COVERED, MEASURE_WORDS, SHAPE_WORDS, WHY, caption, chosen, covered, crop, dropCrops, figure, items, pairs, planTitle, query, same, slotWord,
   tomorrowIso, when } from './console-tryon-list.js';
 
-const engine3d = () => import('./console-tryon-3d.js');
-const seeMe = () => import('./console-tryon-me.js');
-const GL = ['no-webgl2', 'lost', 'asset', 'timeout'];
-const RETRY = ['lost', 'asset', 'timeout', 'engine'];
+const engine3d = () => import('./console-tryon-3d.js'), seeMe = () => import('./console-tryon-me.js');
+const GL = ['no-webgl2', 'lost', 'asset', 'timeout'], RETRY = ['lost', 'asset', 'timeout', 'engine'];
 const PREPARING = 'Preparing the 3D view\u2026';
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const NO_PLAN = 'This look has no plan yet: ask JARVIS what to wear, or plan it in Today and tomorrow.';
@@ -84,10 +82,9 @@ function viewer(root, kind) {
   const v = { kind, view, el, look: null, second: null, titles: [], covered: [], plan: null, src: '', starts: '', planPairs: [],
     opts: { tucked: false, open: true, layers: 'all', view: 'front' }, undo: [], stage: null, mode: '3d', why: '', open: null,
     spin: false, still: false, watch: 0, comparing: false, resume: false, forced: '' };
-  S.views.add(v);
-  if (typeof ResizeObserver === 'function') { // its tab hidden (0 x 0: another Helpers tab, the panel shut): the context goes back
-    new ResizeObserver(() => (view.offsetParent === null ? pause(v) : wake(v))).observe(view);
-  }
+  S.views.add(v); // its tab hidden (0 x 0: another Helpers tab, the panel shut): the context goes back
+  v.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => (view.offsetParent === null ? pause(v) : wake(v))) : null;
+  if (v.ro) v.ro.observe(view);
   return v;
 }
 async function show(v, look, o) { // a new look in this viewer, then the figure (or the checklist)
@@ -108,10 +105,12 @@ async function privy(v, on) { // R13 D10: his own checklist names a private basi
   v.look = Object.assign({}, v.look, { slots: (v.look.slots || []).filter((s) => !s.private).concat(v.covered) });
   draw(v);
 }
-async function refresh(v) { // after a swap, an undo, a fresh load: the same picks re-read
+async function refresh(v) { // a fresh load: the same picks re-read, or the plan's own when he hasn't changed it (L5)
   await photosOf();
   try {
-    v.look = await lookOf(v, query(pairs(v.look), v.plan));
+    const own = !!v.src && same(pairs(v.look), v.planPairs);
+    v.look = await lookOf(v, own ? v.src : query(pairs(v.look), v.plan));
+    if (own) v.planPairs = pairs(v.look); // what the plan holds now
     if (v.second) v.second = await lookOf({ covered: v.covered, plan: null }, query(pairs(v.second)));
   } catch (e) { failed(v, e); }
   draw(v); paint(v);
@@ -134,6 +133,7 @@ async function to3d(v) {
     v.stage = null; toList(v, e && GL.includes(e.code) ? e.code : /check|sum|file/i.test(String(e && e.message)) ? 'asset' : 'engine'); return;
   }
   paint(v, true);
+  if (document.hidden || v.view.offsetParent === null) pause(v); // hidden while the engine loaded: given back at once (L6)
 }
 function paint(v, first) {
   if (!v.stage || v.mode !== '3d') return;

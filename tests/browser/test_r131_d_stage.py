@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from r131_fakes import T
+from r131_fakes_d import ENGINE
 from test_r131_d_card import Page, browser, d_url, drawn, mode, reset, until
 
 __all__ = ["browser", "d_url"]
@@ -186,5 +187,56 @@ def test_a_second_look_in_the_section_reuses_its_one_stage(
         rec = c.engine()
         assert rec["mounts"] == 1 and rec["maxLive"] == 1  # one WebGL context, never two
         assert c.section().locator(".tr-stage svg").count() == 1
+    finally:
+        c.close()
+
+
+def test_a_stage_that_arrives_while_its_tab_is_hidden_gives_the_context_back(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 L6: the tab was hidden while the engine's file loaded (the ResizeObserver had
+    # already fired), so the stage kept its WebGL context out of sight
+    reset(d_url, token)
+    c = Page(browser, d_url, token, fake_engine=False)
+    held: list[Any] = []
+    c.page.route("**/static/console-tryon-3d.js*", lambda r: held.append(r))  # on its way
+    try:
+        c.open()
+        c.wardrobe()
+        until(c.page, lambda: held, "the engine asked for")
+        c.page.locator("#hpt-today").click()  # another Helpers tab: Try it on is out of sight
+        c.page.wait_for_timeout(300)
+        held[0].fulfill(path=str(ENGINE), content_type="application/javascript")
+        until(c.page, lambda: c.engine() and c.engine()["mounts"] == 1, "the stage mounted")
+        until(c.page, lambda: live(c) == 0, "the context given back")
+        c.page.locator("#hpt-wardrobe").click()
+        until(c.page, lambda: live(c) == 1, "taken again once shown")
+    finally:
+        c.close()
+
+
+def test_a_plan_changed_elsewhere_is_shown_with_its_new_pieces_after_a_fresh_load(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 L5: a fresh load re-read the look by the pieces shown, so a plan changed from the
+    # chat kept its old pieces under the same plan (and "Use this look" confirmed them)
+    reset(d_url, token)
+    c = opened(Page(browser, d_url, token))
+    replanned: list[bool] = []
+
+    def white_shirt(route: Any) -> None:  # the plan now has the white shirt (R13 changed it)
+        r = route.fetch()
+        look = r.json()
+        for s in look["slots"]:
+            if replanned and s["slot"] == "top":
+                s.update(piece=T.white, words="white shirt")
+        route.fulfill(response=r, json=look)
+
+    c.page.route("**/v1/tryon/look?plan=*", white_shirt)
+    try:
+        replanned.append(True)
+        c.page.evaluate("() => document.dispatchEvent(new CustomEvent('jarvis:wardrobe-fresh'))")
+        top = c.section().locator(".tr-item[data-slot='top']").first
+        until(c.page, lambda: top.get_attribute("data-piece") == T.white, "the new top")
     finally:
         c.close()

@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from r131_fakes_a import UID, AWorld, T, a_world, build_tryon, seeme_docs
+from r131_fakes_a import UID, PlanCalls, T, a_world, build_tryon, seeme_docs
 
 from jarvis.privacy.ports import PrivacyRegistry
 from jarvis.privacy.service import CONFIRM_WORD, PrivacyService
@@ -136,23 +136,6 @@ async def test_avt05_a_patterned_shirt_draws_on_an_approximate_shape_beside_its_
 
 
 # ---- 360 · AVT-09 ----------------------------------------------------------------------------
-class _Watch:
-    """Counts `outfit_plan` calls through the world's gateway; `before` runs just ahead of one."""
-
-    def __init__(self, a: AWorld, before: Any = None) -> None:
-        self.calls: list[str] = []
-        real = a.w.gw.execute
-
-        async def execute(call: Any, **kw: Any) -> Any:
-            if call.name == "outfit_plan":
-                self.calls.append(call.arguments["action"])
-                if before is not None:
-                    await before()
-            return await real(call, **kw)
-
-        a.w.gw.execute = execute  # type: ignore[method-assign]
-
-
 async def test_avt09_a_ready_jacket_swaps_figure_and_checklist_together_and_one_in_laundry_stays_a_draft() -> (  # noqa: E501 - his row's test name
     None
 ):
@@ -174,7 +157,7 @@ async def test_avt09_a_ready_jacket_swaps_figure_and_checklist_together_and_one_
         await a.move(T.rain_jacket)  # the jacket goes to the laundry
         drafted = _slot(TryonLook.model_validate((await c.get(url)).json()), "outer")
         assert drafted.readiness == "Draft: in the laundry" and not drafted.eligible
-        watch = _Watch(a)
+        watch = PlanCalls(a)
         before = (await a.styling.plans.read(UID)).plan(pid)
         whole = await a.whole(pid, outer=T.rain_jacket)  # every slot the figure shows
         refused = await c.post("/v1/tryon/confirm", json=whole)
@@ -194,7 +177,7 @@ async def _the_race_is_refused_by_outfit_plan() -> None:
     async def to_the_laundry() -> None:
         await b.move(T.rain_jacket)
 
-    race = _Watch(b, before=to_the_laundry)
+    race = PlanCalls(b, before=to_the_laundry)
     before = (await b.styling.plans.read(UID)).plan(pid)
     async with b.client() as c:
         got = await c.post("/v1/tryon/confirm", json=await b.whole(pid, outer=T.rain_jacket))
@@ -208,7 +191,7 @@ async def _the_race_is_refused_by_outfit_plan() -> None:
 async def _a_ready_jacket_is_one_lock_of_every_slot() -> None:
     ok = await a_world()  # a ready jacket is confirmed in one lock of every slot
     pid = await ok.plan()
-    done = _Watch(ok)
+    done = PlanCalls(ok)
     async with ok.client() as c:
         whole = await ok.whole(pid, outer=T.rain_jacket)
         locked = await c.post("/v1/tryon/confirm", json=whole)

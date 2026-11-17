@@ -13,12 +13,14 @@
 #                            `GET /v1/wardrobe` (`api/wardrobe.py`) over a `CatalogDesk`: the
 #                            world's store with R13's real `Views` (OPS-05's "the same pieces
 #                            and rev")
+#   AWorld.whole(plan, ...)  a confirm's body: the plan's whole look as the figure shows it
+#   PlanCalls(a, before)     records each `outfit_plan` call; `before` runs ahead of each
 #   FakeSeeMe                C's `seeme` service as A sees it (`ports.SeeMeErase`): records calls
 #   seeme_docs(docs)         one of each of C's documents for him (photo, YES, a picture, a
 #                            garment photo, the month's spend) and their paths
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -176,6 +178,28 @@ class AWorld:
             yield c
 
 
+class PlanCalls:
+    """Records each `outfit_plan` call through the world's gateway (its action); `before` runs
+    just ahead of each (D20's race: a piece to the laundry between A's check and the call)."""
+
+    def __init__(self, a: AWorld, before: Callable[[], Awaitable[None]] | None = None) -> None:
+        self.calls: list[str] = []
+        real = a.w.gw.execute
+
+        async def execute(call: Any, **kw: Any) -> Any:
+            if call.name == "outfit_plan":
+                self.calls.append(str(call.arguments.get("action")))
+                if before is not None:
+                    await before()
+            return await real(call, **kw)
+
+        a.w.gw.execute = execute  # type: ignore[method-assign]
+
+    @property
+    def n(self) -> int:
+        return len(self.calls)
+
+
 async def _zone(uid: str) -> ZoneInfo:
     return IST
 
@@ -245,6 +269,7 @@ __all__ = [
     "AWorld",
     "FakeSeeMe",
     "N",
+    "PlanCalls",
     "T",
     "a_world",
     "build_tryon",

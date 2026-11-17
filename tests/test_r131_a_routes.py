@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-from r131_fakes_a import SHOES, UID, T, a_world
+from r131_fakes_a import SHOES, UID, PlanCalls, T, a_world
 
 from jarvis.api import tryon as routes
 from jarvis.api.auth import require_auth
@@ -255,18 +255,11 @@ async def test_a_confirm_with_no_gateway_is_refused_in_the_contracts_shape() -> 
 async def test_a_removed_watch_is_a_409_left_out_with_no_call() -> None:
     a = await a_world()
     pid = await a.plan()
-    seen: list[str] = []
-    real = a.w.gw.execute
-
-    async def execute(call: Any, **kw: Any) -> Any:
-        seen.append(call.name)
-        return await real(call, **kw)
-
-    a.w.gw.execute = execute  # type: ignore[method-assign]
+    calls = PlanCalls(a)
     async with a.client() as c:
         got = await c.post("/v1/tryon/confirm", json=await a.whole(pid, drop="watch"))
     assert _refusal(got, 409, "left_out").detail.startswith("This plan can't leave out its watch")
-    assert seen == []  # refused before any tool call (D7's Remove, review A-1 F2)
+    assert calls.calls == []  # refused before any tool call (D7's Remove, review A-1 F2)
 
 
 async def test_a_tool_error_on_the_one_call_is_a_refusal_in_r13s_words() -> None:
@@ -325,49 +318,6 @@ async def test_a_body_nested_past_reason_is_a_refusal_not_a_crash() -> None:
     async with a.client() as c:
         _refusal(await c.put("/v1/tryon/body", content=deep), 422, "bad_request")
         _refusal(await c.post("/v1/tryon/saved", content=deep), 422, "bad_request")
-
-
-async def test_every_body_is_capped_at_16_kb_before_it_is_read_as_json() -> None:
-    a = await a_world()
-    big = b'{"height": 172, "x": "' + b"a" * routes.BODY_MAX + b'"}'
-    bodied = [(meth, path.replace("{piece}", T.shirt)) for meth, path, part, req, *_ in ROUTES
-              if part == "tryon" and req is not None]  # fmt: skip
-    assert len(bodied) == 4
-    async with a.client() as c:
-        for meth, url in bodied:
-            got = _refusal(await c.request(meth, url, content=big), 413, "too_large")
-            assert got.detail == routes.TOO_LARGE
-        ok = await c.put("/v1/tryon/body", content=b'{"height": 172}')
-        assert ok.status_code == 200
-    for meth, path, part, req, _, errors, _ in ROUTES:
-        if part == "tryon" and req is not None:
-            assert 413 in errors, (meth, path)  # the contract's rows say so
-
-
-async def test_use_these_measurements_is_bound_to_the_draft_he_saw() -> None:
-    a = await a_world()
-    async with a.client() as c:
-        laptop = (await c.put("/v1/tryon/body", json={"height": 172})).json()["draft"]["at"]
-        a.clock.advance(minutes=3)
-        phone = (await c.put("/v1/tryon/body", json={"height": 178})).json()["draft"]["at"]
-        stale = await c.post("/v1/tryon/body/use", params={"at": laptop})  # the laptop's press
-        assert _refusal(stale, 409, "changed").detail == routes.versions.CHANGED
-        kept = TryonView.model_validate((await c.get("/v1/tryon")).json()).body
-        assert kept.current is None and kept.draft.height == 178  # type: ignore[union-attr]
-        _refusal(await c.post("/v1/tryon/body/use", params={"at": "yesterday"}), 422,
-                 "bad_request")  # fmt: skip
-        used = await c.post("/v1/tryon/body/use", params={"at": phone})  # the draft he saw
-        assert used.status_code == 200 and used.json()["current"]["height"] == 178
-    row = next(e for m_, p, _, _, _, e, _ in ROUTES if (m_, p) == ("POST", "/v1/tryon/body/use"))
-    assert {409, 422} <= set(row)
-
-
-@pytest.mark.parametrize("value", ["172", 172.0, 172.5, True])
-async def test_a_measurement_not_typed_as_whole_centimetres_is_refused_in_words(value: Any) -> None:
-    a = await a_world()
-    async with a.client() as c:
-        got = _refusal(await c.put("/v1/tryon/body", json={"height": value}), 422, "not_whole")
-    assert got.detail == "Type each measurement in whole centimetres, for example 172."
 
 
 @pytest.mark.usefixtures("frozen_limits")

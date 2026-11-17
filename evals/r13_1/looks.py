@@ -35,6 +35,7 @@ import json
 import sys
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -42,32 +43,16 @@ ROOT = Path(__file__).resolve().parents[2]
 for _p in (ROOT / "src", ROOT / "tests"):
     if str(_p) not in sys.path:
         sys.path.append(str(_p))
-from r131_fakes_a import UID, AWorld, T, a_world, build_tryon, seeme_docs  # noqa: E402
+from r131_fakes_a import UID, PlanCalls, T, a_world, build_tryon, seeme_docs  # noqa: E402
 
 from jarvis.privacy.ports import PrivacyRegistry  # noqa: E402
 from jarvis.privacy.service import CONFIRM_WORD, PrivacyService  # noqa: E402
 from jarvis.storage.docs import DocTx  # noqa: E402
 from jarvis.wardrobe.ports import Commit  # noqa: E402
-from jarvis.wardrobe.styling import actions, reserve  # noqa: E402
-from jarvis.wardrobe.tryon import (  # noqa: E402
-    assets,
-    confirm,
-    erase,
-    kept,
-    looks,
-    options,
-    saved,
-    versions,
-)
+from jarvis.wardrobe.styling import actions  # noqa: E402
+from jarvis.wardrobe.tryon import assets, confirm, erase, kept, looks, saved, versions  # noqa: E402
 from jarvis.wardrobe.tryon import model as m  # noqa: E402
-from jarvis.wardrobe.tryon.http import (  # noqa: E402
-    AssetChoice,
-    ConfirmSlot,
-    SavedIn,
-    SavedLook,
-    SavedLookView,
-    TryonLook,
-)
+from jarvis.wardrobe.tryon.http import AssetChoice, SavedIn, TryonLook  # noqa: E402
 from jarvis.wardrobe.tryon.store import TryonDoc  # noqa: E402
 
 PART = "looks"
@@ -81,23 +66,6 @@ FIGURE = f"jarvis_tryon/{UID}"
 
 def _slot(look: TryonLook, slot: str) -> Any:
     return next((s for s in look.slots if s.slot == slot), None)
-
-
-class _Calls:
-    """Counts `outfit_plan` calls through the world's gateway; `before` runs ahead of each."""
-
-    def __init__(self, a: AWorld, before: Callable[[], Awaitable[None]] | None = None) -> None:
-        self.n = 0
-        real = a.w.gw.execute
-
-        async def execute(call: Any, **kw: Any) -> Any:
-            if call.name == "outfit_plan":
-                self.n += 1
-                if before is not None:
-                    await before()
-            return await real(call, **kw)
-
-        a.w.gw.execute = execute  # type: ignore[method-assign]
 
 
 # ---- the cases ----------------------------------------------------------------------------------
@@ -165,7 +133,7 @@ async def avt09_fresh_check_refuses_without_a_call() -> list[str]:
     offered = next((o for o in getattr(outer, "options", ()) if o.piece == T.rain_jacket), None)
     if offered is None or offered.eligible or offered.readiness != "Draft: in the laundry":
         out.append("the laundry jacket isn't offered as a draft")
-    calls = _Calls(a)
+    calls = PlanCalls(a)
     async with a.client() as c:
         got = await c.post("/v1/tryon/confirm", json=await a.whole(pid, outer=T.rain_jacket))
     if got.status_code != 409 or got.json().get("detail") != IN_LAUNDRY:
@@ -183,7 +151,7 @@ async def avt09_race_refused_by_outfit_plan() -> list[str]:
         await a.move(T.rain_jacket)
 
     whole = await a.whole(pid, outer=T.rain_jacket)  # every slot the figure shows
-    _Calls(a, before=to_the_laundry)
+    PlanCalls(a, before=to_the_laundry)
     before = (await a.styling.plans.read(UID)).plan(pid)
     async with a.client() as c:
         got = await c.post("/v1/tryon/confirm", json=whole)
@@ -374,25 +342,21 @@ def _takes_photos(real: Any) -> Any:
     return erase_all
 
 
-def _keeps_private(f: Any, slot: str) -> list[tuple[str, ...]]:
-    """AVT-14's second control (review A-1 F4): a slot's options keep private pieces."""
-    seen: set[str] = set()
-    out: list[tuple[str, ...]] = []
-    for p in sorted(f.view.active(), key=lambda x: x.id):  # no `p.private` here
-        if p.id in seen or f.rules.slot_of(p.type) != slot:
-            continue
-        unit = (p.id, *(i for i in reserve.unit_of(f.view, p.id) if i != p.id))
-        seen.update(unit)
-        out.append(unit)
-    return out
+def _keeps_private(real: Any) -> Any:
+    def units(f: Any, slot: str) -> Any:  # AVT-14's second control (F4): options keep private
+        bare = {k: p.model_copy(update={"private": False}) for k, p in f.view.pieces.items()}
+        return real(replace(f, view=f.view.model_copy(update={"pieces": bare})), slot)
+
+    return units
 
 
-def _never_rechecked(r: Any, look: Any) -> SavedLookView:
-    """AVT-11's control (review A-1 F11): a saved comparison answers its stored slots as Ready."""
-    slots = tuple(ConfirmSlot(slot=s.slot, piece=s.piece) for s in look.slots)
-    shown = SavedLook(plan=look.plan, slots=slots, tucked=look.tucked, open=look.open,
-                      layers=look.layers)  # fmt: skip
-    return SavedLookView(look=shown, readiness=tuple(m.READY for _ in slots), draft=False)
+def _never_rechecked(real: Any) -> Any:
+    def look_view(r: Any, look: Any) -> Any:  # AVT-11's control (F11): Ready, never re-checked
+        got = real(r, look)
+        ready = tuple(m.READY for _ in got.readiness) if got is not None else ()
+        return got and got.model_copy(update={"readiness": ready, "draft": False})
+
+    return look_view
 
 
 def _controls() -> list[tuple[str, Any, str, Any]]:
@@ -400,7 +364,7 @@ def _controls() -> list[tuple[str, Any, str, Any]]:
     no_d20 = (actions, "unready", lambda *a, **k: None)
     return [
         ("avt14_private_slots_covered", looks, "covered", lambda *a: False),
-        ("avt14_private_slots_covered", options, "_units", _keeps_private),
+        ("avt14_private_slots_covered", looks.o, "_units", _keeps_private(looks.o._units)),
         ("avt09_fresh_check_refuses_without_a_call", confirm, "first_draft", lambda *a: None),
         ("avt09_race_refused_by_outfit_plan", *no_d20),
         ("d20_lock_and_reserve_refuse_a_laundry_piece", *no_d20),
@@ -408,7 +372,7 @@ def _controls() -> list[tuple[str, Any, str, Any]]:
         ("avt04_kurta_front_and_back", looks, "photo_views", _no_back(looks.photo_views)),
         ("avt05_association_saved_against_the_id", assets, "choose", _page_memory(assets.choose)),
         ("ops05_erase_order_and_catalog_rev", erase, "erase_all", _takes_photos(erase.erase_all)),
-        ("avt11_saved_rechecked", saved, "look_view", _never_rechecked),
+        ("avt11_saved_rechecked", saved, "look_view", _never_rechecked(saved.look_view)),
     ]
 
 

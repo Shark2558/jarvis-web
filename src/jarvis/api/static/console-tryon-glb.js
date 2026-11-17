@@ -3,7 +3,8 @@
 // chunk; every mesh ONE primitive of triangles (or of lines: the measure rig, never drawn); POSITION and each morph
 // target's POSITION as normalised int16 VEC3 in an 8-byte stride (KHR_mesh_quantization) with the accessor's own
 // extras.scale (and extras.offset for the base): value = int / 32767 * scale + offset; TEXCOORD_0 float32 VEC2;
-// uint16 indices. The files carry no normals: `geometry()` applies the morph weights on the device and computes the
+// uint16 indices. A malformed file is refused too (review B-1, finding 3): every offset and count a whole number
+// inside its view and the BIN chunk, each view's own stride, finite scales and UVs, whole triangles, plain unique names. The files carry no normals: `geometry()` applies the morph weights on the device and computes the
 // normals of the shape it made (smoother than a blended normal, and about a megabyte smaller).
 // No pixel API, no network, no storage here; three.js is handed in by the engine (console-tryon-3d.js), the only importer.
 const MAGIC = 0x46546C67, JSON_CHUNK = 0x4E4F534A, BIN_CHUNK = 0x004E4942;
@@ -14,24 +15,39 @@ const ATTRS = ['POSITION', 'TEXCOORD_0'];
 class GlbRefused extends Error {}
 const refuse = (why) => { throw new GlbRefused('The 3D model file is not one JARVIS made: ' + why); };
 
+const whole = (v) => Number.isInteger(v) && v >= 0;
+const triple = (v) => Array.isArray(v) && v.length === 3 && v.every((c) => typeof c === 'number' && Number.isFinite(c));
+const named = (v) => typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(v) && !(v in Object.prototype);
+
+/** One accessor's numbers. EVERY span is checked before a byte is read: offsets and counts are whole numbers, the
+ *  accessor lies inside its view and the view inside the BIN chunk, and the view's stride is the kind's own. */
 function accessor(doc, bin, i) {
-  const a = doc.accessors && doc.accessors[i];
-  if (!a || a.sparse) refuse('accessor ' + i);
-  const v = doc.bufferViews && doc.bufferViews[a.bufferView];
-  if (!v || v.buffer !== 0) refuse('buffer view of accessor ' + i);
-  const at = bin.byteOffset + (v.byteOffset || 0) + (a.byteOffset || 0), n = a.count;
+  const a = Array.isArray(doc.accessors) && whole(i) ? doc.accessors[i] : null;
+  if (!a || typeof a !== 'object' || a.sparse) refuse('accessor ' + i);
+  const v = Array.isArray(doc.bufferViews) && whole(a.bufferView) ? doc.bufferViews[a.bufferView] : null;
+  if (!v || typeof v !== 'object' || v.buffer !== 0) refuse('buffer view of accessor ' + i);
+  const ao = a.byteOffset === undefined ? 0 : a.byteOffset, vo = v.byteOffset === undefined ? 0 : v.byteOffset, n = a.count;
+  if (!whole(ao) || !whole(vo) || !whole(n) || !whole(v.byteLength)) refuse('accessor ' + i + ' has an offset or a count that is not a whole number');
   const kind = a.componentType + ' ' + a.type;
-  const room = (bytes) => { if ((v.byteOffset || 0) + bytes > bin.byteLength || bytes > v.byteLength) refuse('accessor ' + i + ' runs past its buffer'); };
+  /** The accessor's bytes, copied out: `each` bytes an element, in a view of stride `stride` (undefined: none). */
+  const span = (each, stride) => {
+    if (v.byteStride !== stride) refuse('accessor ' + i + ' is in a view of the wrong stride');
+    if (ao + n * each > v.byteLength || vo + v.byteLength > bin.byteLength) refuse('accessor ' + i + ' runs past its buffer');
+    return bin.buffer.slice(bin.byteOffset + vo + ao, bin.byteOffset + vo + ao + n * each);
+  };
   if (kind === I16 + ' VEC3') {
-    const ex = a.extras || {};
-    if (!a.normalized || v.byteStride !== 8 || !Array.isArray(ex.scale) || ex.scale.length !== 3) refuse('accessor ' + i + ' is not a quantised VEC3');
-    room(n * 8);
-    const raw = new Int16Array(bin.buffer.slice(at, at + n * 8)), out = new Float32Array(n * 3), off = ex.offset || [0, 0, 0];
+    const ex = a.extras || {}, off = ex.offset === undefined ? [0, 0, 0] : ex.offset;
+    if (a.normalized !== true || !triple(ex.scale) || !triple(off)) refuse('accessor ' + i + ' is not a quantised VEC3 with its scale');
+    const raw = new Int16Array(span(8, 8)), out = new Float32Array(n * 3);
     for (let k = 0; k < n; k++) for (let c = 0; c < 3; c++) out[k * 3 + c] = raw[k * 4 + c] / Q * ex.scale[c] + off[c];
     return { data: out, raw };
   }
-  if (kind === F32 + ' VEC2') { room(n * 8); return { data: new Float32Array(bin.buffer.slice(at, at + n * 8)) }; }
-  if (kind === U16 + ' SCALAR') { room(n * 2); return { data: new Uint16Array(bin.buffer.slice(at, at + n * 2)) }; }
+  if (kind === F32 + ' VEC2') {
+    const data = new Float32Array(span(8, undefined));
+    for (let k = 0; k < data.length; k++) if (!Number.isFinite(data[k])) refuse('accessor ' + i + ' holds what is not a number');
+    return { data };
+  }
+  if (kind === U16 + ' SCALAR') return { data: new Uint16Array(span(2, undefined)) };
   return refuse('accessor ' + i + ' has a type outside the subset (' + kind + ')');
 }
 
@@ -48,18 +64,20 @@ function groups(raw, n) {
 }
 
 function meshOf(doc, bin, m) {
-  if (!m || !Array.isArray(m.primitives) || m.primitives.length !== 1) refuse('a mesh with other than one primitive');
+  if (!m || typeof m !== 'object' || !named(m.name)) refuse('a mesh without a plain name');
+  if (!Array.isArray(m.primitives) || m.primitives.length !== 1 || !m.primitives[0] || typeof m.primitives[0].attributes !== 'object') refuse(m.name + ': a mesh with other than one primitive');
   const p = m.primitives[0], mode = p.mode === undefined ? TRIANGLES : p.mode, ex = m.extras || {};
   if (mode !== TRIANGLES && mode !== LINES) refuse(m.name + ': a primitive that is neither triangles nor lines');
   for (const k of Object.keys(p.attributes || {})) if (!ATTRS.includes(k)) refuse(m.name + ': attribute ' + k);
   if (p.attributes.POSITION === undefined || p.indices === undefined) refuse(m.name + ': no positions or no index');
-  const names = Array.isArray(ex.targetNames) ? ex.targetNames : [], tg = p.targets || [];
-  if (names.length !== tg.length) refuse(m.name + ': morph targets without their names');
+  const names = Array.isArray(ex.targetNames) ? ex.targetNames : [], tg = Array.isArray(p.targets) ? p.targets : [];
+  if (names.length !== tg.length || !names.every(named) || new Set(names).size !== names.length) refuse(m.name + ': morph targets without their own plain names');
   const pos = accessor(doc, bin, p.attributes.POSITION), index = accessor(doc, bin, p.indices).data;
   if (!pos.raw || !(index instanceof Uint16Array)) refuse(m.name + ': positions or index of the wrong type');
-  const n = pos.data.length / 3, targets = {};
+  const n = pos.data.length / 3, targets = Object.create(null);
+  if (index.length % (mode === TRIANGLES ? 3 : 2)) refuse(m.name + ': an index that is not whole ' + (mode === TRIANGLES ? 'triangles' : 'lines'));
   tg.forEach((t, i) => {
-    if (Object.keys(t).join() !== 'POSITION') refuse(m.name + ': a morph target of more than positions');
+    if (!t || Object.keys(t).join() !== 'POSITION') refuse(m.name + ': a morph target of more than positions');
     const d = accessor(doc, bin, t.POSITION);
     if (!d.raw || d.data.length !== n * 3) refuse(m.name + ': a morph target of the wrong size');
     targets[names[i]] = d.data;
@@ -87,9 +105,23 @@ function parse(buffer) {
   if (!doc || !doc.asset || doc.asset.version !== '2.0' || !Array.isArray(doc.meshes)) refuse('not glTF 2.0');
   for (const e of doc.extensionsRequired || []) if (e !== 'KHR_mesh_quantization') refuse('extension ' + e);
   if (doc.skins || doc.animations || doc.materials || doc.textures || doc.images || doc.cameras) refuse('more than meshes');
-  const bin = new Uint8Array(buffer, 28 + jl, bl), meshes = {};
-  for (const m of doc.meshes) meshes[m.name] = meshOf(doc, bin, m);
+  const bin = new Uint8Array(buffer, 28 + jl, bl), meshes = Object.create(null); // a map without a prototype
+  for (const m of doc.meshes) {
+    const mesh = meshOf(doc, bin, m);
+    if (mesh.name in meshes) refuse('two meshes named ' + mesh.name);
+    meshes[mesh.name] = mesh;
+  }
   return { extras: doc.asset.extras || {}, meshes };
+}
+
+/** The meshes of several parsed files as ONE map; a name that two files share is refused. */
+function join(files) {
+  const all = Object.create(null);
+  for (const f of files) for (const name of Object.keys(f.meshes)) {
+    if (name in all) refuse('two files hold a mesh named ' + name);
+    all[name] = f.meshes[name];
+  }
+  return all;
 }
 
 /** A mesh's points under morph weights ({name: weight}; a name the mesh lacks is ignored). */
@@ -136,4 +168,4 @@ function geometry(THREE, mesh, weights) {
 }
 
 const read = parse;
-export { parse, read, blend, normals, geometry, GlbRefused, TRIANGLES, LINES };
+export { parse, read, join, blend, normals, geometry, GlbRefused, TRIANGLES, LINES };

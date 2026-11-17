@@ -141,6 +141,15 @@ def test_the_glb_reader_refuses_an_unknown_accessor_type_and_other_files() -> No
     _passed("glb_reader_refuses_what_is_outside_the_subset")
 
 
+def test_the_glb_reader_refuses_malformed_files_instead_of_reading_them() -> None:
+    """Review B-1, finding 3: offsets outside the BIN chunk (NaN points, or the JSON chunk's
+    bytes), a scale that is not numbers, a stride, a cut triangle, a NaN UV, `__proto__` as a
+    name, one name twice (in a file or across the two)."""
+    _passed("glb_reader_refuses_malformed_files")
+    js = (STATIC / "console-tryon-3d.js").read_text(encoding="utf-8")
+    assert "join((await Promise.all(FILES.map(" in js and "Object.assign(meshes" not in js
+
+
 def test_every_part_has_the_seven_morphs_and_the_templates_are_the_manifests() -> None:
     _passed("every_part_has_the_seven_morphs_and_the_templates_are_the_manifests")
 

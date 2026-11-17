@@ -28,7 +28,7 @@ const E = await import(new URL('console-tryon-3d.js', STATIC));
 const control = process.argv[2] || 'none';
 const manifest = JSON.parse(readFileSync(new URL('MANIFEST.json', M1), 'utf8'));
 const bytes = (name) => { const b = readFileSync(new URL(name, M1)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
-const A = { ...G.parse(bytes('body.glb')).meshes, ...G.parse(bytes('garments.glb')).meshes };
+const A = G.join([G.parse(bytes('body.glb')), G.parse(bytes('garments.glb'))]); // as the engine joins them
 const MEASURES = manifest.sliders, J = manifest.joints, LV = manifest.levels, SH = manifest.shape;
 if (control === 'swap_morphs') for (const m of Object.values(A)) { const t = m.targets; [t.chest, t.hips] = [t.hips, t.chest]; }
 
@@ -183,6 +183,60 @@ check('glb_reader_refuses_what_is_outside_the_subset', (need) => {
   refused(edit((d) => { d.materials = [{}]; }), 'materials');
   refused(good.slice(0, good.byteLength - 8), 'a cut-off file');
   refused(new TextEncoder().encode('not a glb at all, just words that are long enough').buffer, 'other bytes');
+});
+
+// review B-1, finding 3: a malformed file is REFUSED (GlbRefused), never read as NaN, as bytes of the JSON chunk, or
+// with a mesh silently lost. `P`, `U`, `I` are the first mesh's position, UV and index accessors.
+check('glb_reader_refuses_malformed_files', (need) => {
+  const good = bytes('garments.glb'), edit = (fn) => {
+    const dv = new DataView(good), jl = dv.getUint32(12, true), doc = JSON.parse(new TextDecoder().decode(new Uint8Array(good, 20, jl)));
+    const pr = doc.meshes[0].primitives[0], acc = (i) => doc.accessors[i], view = (i) => doc.bufferViews[doc.accessors[i].bufferView];
+    fn({ doc, P: acc(pr.attributes.POSITION), U: acc(pr.attributes.TEXCOORD_0), I: acc(pr.indices), T: acc(pr.targets[0].POSITION), vP: view(pr.attributes.POSITION), vU: view(pr.attributes.TEXCOORD_0), vI: view(pr.indices) });
+    let js = new TextEncoder().encode(JSON.stringify(doc));
+    js = new Uint8Array([...js, ...new Array((4 - (js.length % 4)) % 4).fill(32)]);
+    const bin = new Uint8Array(good, 20 + jl), out = new Uint8Array(20 + js.length + bin.length), o = new DataView(out.buffer);
+    out.set(new Uint8Array(good, 0, 20)); out.set(js, 20); out.set(bin, 20 + js.length);
+    o.setUint32(8, out.length, true); o.setUint32(12, js.length, true);
+    return out.buffer;
+  };
+  const refused = (what, fn) => { try { G.parse(edit(fn)); need(false, what + ' was read'); } catch (e) { need(e instanceof G.GlbRefused, what + ': ' + ((e && e.constructor.name) + ' ' + e.message)); } };
+  const clean = G.parse(edit(() => {}));
+  need(Object.keys(clean.meshes).length > 10 && Object.getPrototypeOf(clean.meshes) === null, 'an untouched copy reads, into a map without a prototype');
+  need(Object.values(clean.meshes).every((m) => m.x.every(Number.isFinite) && (!m.uv || m.uv.every(Number.isFinite))), 'every number read is finite');
+  refused('an accessor offset past the BIN chunk', ({ P }) => { P.byteOffset = 1e9; });
+  refused('an accessor offset past its view', ({ P, vP }) => { P.byteOffset = vP.byteLength - 8; });
+  refused('a negative accessor offset', ({ P }) => { P.byteOffset = -64; });
+  refused('a negative view offset (the JSON chunk\'s bytes)', ({ vP }) => { vP.byteOffset = -4096; });
+  refused('a view past the BIN chunk', ({ vI }) => { vI.byteOffset = 1e9; });
+  refused('a view longer than the BIN chunk', ({ vU }) => { vU.byteLength = 1e9; });
+  refused('a fractional offset', ({ U }) => { U.byteOffset = 0.5; });
+  refused('a negative count', ({ P }) => { P.count = -3; });
+  refused('a fractional count', ({ I }) => { I.count = 7.5; });
+  refused('a count as words', ({ U }) => { U.count = '12'; });
+  refused('a scale that is not numbers', ({ P }) => { P.extras.scale = ['x', 1, 1]; });
+  refused('a scale with a hole', ({ P }) => { P.extras.scale = [1, null, 1]; });
+  refused('an offset that is not three numbers', ({ P }) => { P.extras.offset = 'abc'; });
+  refused('a morph target\'s scale that is not numbers', ({ T }) => { T.extras.scale = [1, 1, '1e999']; });
+  refused('an index count that is not whole triangles', ({ I }) => { I.count -= 1; });
+  refused('a UV view with a stride', ({ vU }) => { vU.byteStride = 16; });
+  refused('an index view with a stride', ({ vI }) => { vI.byteStride = 4; });
+  refused('a position view with another stride', ({ vP }) => { vP.byteStride = 12; });
+  for (const name of ['__proto__', 'constructor', 'toString', '', 7]) refused('a mesh named ' + JSON.stringify(name), ({ doc }) => { doc.meshes[0].name = name; });
+  refused('two meshes with one name', ({ doc }) => { doc.meshes[1].name = doc.meshes[0].name; });
+  refused('a morph target named __proto__', ({ doc }) => { doc.meshes[0].extras.targetNames[0] = '__proto__'; });
+  refused('two morph targets with one name', ({ doc }) => { doc.meshes[0].extras.targetNames[1] = doc.meshes[0].extras.targetNames[0]; });
+  refused('an accessor index out of range', ({ doc }) => { doc.meshes[0].primitives[0].attributes.POSITION = 99999; });
+  refused('a buffer view index out of range', ({ P }) => { P.bufferView = 99999; });
+  const nan = (() => { // a UV that is not a number, written into the BIN chunk itself
+    const buf = edit(() => {}), dv = new DataView(buf), jl = dv.getUint32(12, true), doc = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jl)));
+    const a = doc.accessors[doc.meshes[0].primitives[0].attributes.TEXCOORD_0], v = doc.bufferViews[a.bufferView];
+    dv.setFloat32(28 + jl + v.byteOffset + (a.byteOffset || 0) + 8, NaN, true);
+    return buf;
+  })();
+  try { G.parse(nan); need(false, 'a NaN UV was read'); } catch (e) { need(e instanceof G.GlbRefused, 'a NaN UV: ' + e.message); }
+  const two = G.join([G.parse(bytes('body.glb')), G.parse(good)]);
+  need(Object.keys(two).length === Object.keys(A).length && Object.getPrototypeOf(two) === null, 'the two files join into one map');
+  try { G.join([G.parse(good), G.parse(good)]); need(false, 'one name in two files was read'); } catch (e) { need(e instanceof G.GlbRefused, 'one name in two files: ' + e.message); }
 });
 
 check('every_part_has_the_seven_morphs_and_the_templates_are_the_manifests', (need) => {

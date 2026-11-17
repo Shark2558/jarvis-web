@@ -14,7 +14,7 @@
 // (never how often he touched a key) and steps down (shadows off and DPR 1), then retires 3D. Any failure calls onLost(reason) once: no WebGL2, a file missing or failing its sum,
 // the context lost, a first frame over 10 s, the governor. Test hooks: window.__glFail = 'no-webgl2' | 'lost' |
 // 'asset' | 'timeout'. A drawing module: it draws only on its own canvases and never calls the door's senders.
-import { parse, geometry } from './console-tryon-glb.js';
+import { parse, join, geometry } from './console-tryon-glb.js';
 import { plan, photoCloth, weave, contact, picture, LAYERS } from './console-tryon-cloth.js';
 
 const THREE_URL = '/static/vendor/three-0.187.0/three.module.min.js';
@@ -117,11 +117,7 @@ async function file(release, name) {
 }
 function assets(release) {
   if (!cache.has(release)) {
-    const job = (async () => {
-      const meshes = {};
-      for (const buf of await Promise.all(FILES.map((n) => file(release, n)))) Object.assign(meshes, parse(buf).meshes);
-      return { meshes };
-    })();
+    const job = (async () => ({ meshes: join((await Promise.all(FILES.map((n) => file(release, n)))).map(parse)) }))();
     job.catch(() => cache.delete(release)); // a failed load is tried afresh next time (Retry 3D)
     cache.set(release, job);
   }

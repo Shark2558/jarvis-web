@@ -19,12 +19,14 @@ Every case runs Part A's real part and routes on R13's real styling part, store 
 - OPS-05: C's half first, `tryon/{uid}` last, the spend kept, the catalog's `rev` unchanged;
 - D20: `outfit_plan`'s `lock` and `reserve` refuse a piece in the laundry.
 
-Controls (each must turn its case red): the private filter off (AVT-14); the fresh check off
-(AVT-09's laundry jacket gets past the early refusal); `lock` without D20's check
-(`styling.actions.unready` answers None: the race writes the jacket, D20's case fails). Each
-row's own control (M8): AVT-03 a new version rewrites a saved comparison's piece ids; AVT-04 the
-look drops the kurta's back view; AVT-05 the choice kept in page memory, not `tryon/{uid}`;
-AVT-09 `lock` without D20's check; OPS-05 the erase also deletes the wardrobe's photos.
+Controls (each must turn its case red): the private filter off (AVT-14); a slot's options keep
+private pieces (AVT-14, review A-1 F4); the fresh check off (AVT-09's laundry jacket gets past
+the early refusal); `lock` without D20's check (`styling.actions.unready` answers None: the race
+writes the jacket, D20's case fails). Each row's own control (M8): AVT-03 a new version rewrites
+a saved comparison's piece ids; AVT-04 the look drops the kurta's back view; AVT-05 the choice
+kept in page memory, not `tryon/{uid}`; AVT-09 `lock` without D20's check; AVT-11 a saved
+comparison answers its slots as Ready, never re-checked (review A-1 F11); OPS-05 the erase also
+deletes the wardrobe's photos.
 """
 
 from __future__ import annotations
@@ -47,9 +49,25 @@ from jarvis.privacy.service import CONFIRM_WORD, PrivacyService  # noqa: E402
 from jarvis.storage.docs import DocTx  # noqa: E402
 from jarvis.wardrobe.ports import Commit  # noqa: E402
 from jarvis.wardrobe.styling import actions, reserve  # noqa: E402
-from jarvis.wardrobe.tryon import assets, confirm, erase, kept, looks, options, versions  # noqa: E402
+from jarvis.wardrobe.tryon import (  # noqa: E402
+    assets,
+    confirm,
+    erase,
+    kept,
+    looks,
+    options,
+    saved,
+    versions,
+)
 from jarvis.wardrobe.tryon import model as m  # noqa: E402
-from jarvis.wardrobe.tryon.http import AssetChoice, SavedIn, TryonLook  # noqa: E402
+from jarvis.wardrobe.tryon.http import (  # noqa: E402
+    AssetChoice,
+    ConfirmSlot,
+    SavedIn,
+    SavedLook,
+    SavedLookView,
+    TryonLook,
+)
 from jarvis.wardrobe.tryon.store import TryonDoc  # noqa: E402
 
 PART = "looks"
@@ -369,6 +387,14 @@ def _keeps_private(f: Any, slot: str) -> list[tuple[str, ...]]:
     return out
 
 
+def _never_rechecked(r: Any, look: Any) -> SavedLookView:
+    """AVT-11's control (review A-1 F11): a saved comparison answers its stored slots as Ready."""
+    slots = tuple(ConfirmSlot(slot=s.slot, piece=s.piece) for s in look.slots)
+    shown = SavedLook(plan=look.plan, slots=slots, tucked=look.tucked, open=look.open,
+                      layers=look.layers)  # fmt: skip
+    return SavedLookView(look=shown, readiness=tuple(m.READY for _ in slots), draft=False)
+
+
 def _controls() -> list[tuple[str, Any, str, Any]]:
     """(the case it must turn red, module, name, the stand-in)."""
     no_d20 = (actions, "unready", lambda *a, **k: None)
@@ -382,6 +408,7 @@ def _controls() -> list[tuple[str, Any, str, Any]]:
         ("avt04_kurta_front_and_back", looks, "photo_views", _no_back(looks.photo_views)),
         ("avt05_association_saved_against_the_id", assets, "choose", _page_memory(assets.choose)),
         ("ops05_erase_order_and_catalog_rev", erase, "erase_all", _takes_photos(erase.erase_all)),
+        ("avt11_saved_rechecked", saved, "look_view", _never_rechecked),
     ]
 
 
@@ -394,7 +421,7 @@ async def control() -> dict[str, Any]:
     failed = [r["id"] for r in results if not r["passed"]]
     return {
         "name": "the private filter off; the fresh check off; lock without D20's check; "
-        "each row's own control (AVT-03, 04, 05, 09, OPS-05)",
+        "options keep private pieces; each row's own control (AVT-03, 04, 05, 09, 11, OPS-05)",
         "suite_failed": len(failed) == len(results),  # every control turned its case red
         "failed_cases": failed,
     }

@@ -42,7 +42,7 @@ function btn(label, onClick, cls, key) { // key: the control's own name, kept wh
 }
 const pressed = (b, on) => { b.setAttribute('aria-pressed', on ? 'true' : 'false'); if (on) b.classList.add('primary'); return b; };
 const off = (b, on) => { if (on) b.setAttribute('aria-disabled', 'true'); return b; };
-function say(v, kind, text) { if (v && v.el) H().note(v.el.status, kind, text); }
+function say(v, kind, text) { if (v && v.el) { H().note(v.el.status, kind, text); v.el.status.classList.add('tr-status'); } } // its place class kept (L3)
 function failed(v, e) {
   if (e && e.status === 401) return;
   say(v, 'bad', e && e.name === 'TypeError' ? OFFLINE : txt((e && e.message) || 'That didn\u2019t work.', 240));
@@ -65,7 +65,7 @@ export const state = () => (S.off ? 'off' : S.tryon ? 'on' : 'unknown');
 async function readTryon() {
   const was = state();
   try { S.tryon = await api('/v1/tryon'); S.off = false; } catch (e) {
-    if (e && (e.status === 404 || e.status === 503)) S.off = true;
+    if (e && e.status === 404) S.off = true; // a 503 is unavailable for now, not off (L4)
     S.tryon = null;
     throw e;
   } finally { if (state() !== was) document.dispatchEvent(new CustomEvent('jarvis:tryon-state', { detail: { state: state() } })); }
@@ -202,7 +202,7 @@ function render(v) { // a card (row 388) is compact: the figure, its pieces in o
   el.acts.replaceChildren(...(card ? cardActs(v) : acts(v)));
   el.extra.replaceChildren(...(card ? [] : extra(v)));
   const looks = [v.look].concat(v.second ? [v.second] : []).filter(Boolean).map((l) => chosen(l, assets()));
-  if (!v.look) { el.list.replaceChildren(h.empty('Loading the look\u2026')); return; }
+  if (!v.look) { el.list.replaceChildren(...(el.status.textContent ? [] : [h.empty('Loading the look\u2026')])); return; } // never beside its error (L12)
   items(el.list, looks, { H: h, btn, compact: card, summary: card && three, priv: !card && S.priv, nameOf: S.ctx && S.ctx.nameOf, open: v.open, layers: 'all', titles: v.second ? v.titles : null,
     photosOf: (id) => (S.photos && S.photos.get(id)) || [], thumb,
     toCamera: () => { if (window.JarvisDeck) window.JarvisDeck.open('camera', { focus: true }); },
@@ -522,7 +522,8 @@ export function mount(el, ctx) {
 async function start() {
   try { await readTryon(); } catch (e) {
     if (S.off) { S.host.hidden = true; S.host.replaceChildren(); return; } // Try-on is off: the tab stays R13's
-    S.host.replaceChildren(H().mk('h3', 'hp-h', 'Try it on'), H().empty(e && e.name === 'TypeError' ? OFFLINE : 'Try it on couldn\u2019t load.'));
+    const again = btn('Try again', () => mount(S.host, S.ctx));
+    S.host.replaceChildren(H().mk('h3', 'hp-h', 'Try it on'), H().row(e && e.name === 'TypeError' ? OFFLINE : 'Try it on can\u2019t load right now.', '', [again]));
     return;
   }
   section(); form();

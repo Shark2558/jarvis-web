@@ -398,6 +398,46 @@ def test_a_shirt_over_a_mundu_drawn_tucked_says_so_and_offers_no_tuck_in_section
         c.close()
 
 
+def test_an_emptied_status_line_takes_no_room(browser: Any, d_url: str, token: str) -> None:
+    # review D-1 L3: H.note() set the status's class and dropped tr-status (":empty" hides it)
+    reset(d_url, token)
+    c = opened(Page(browser, d_url, token))
+    try:
+        status = c.section().locator(".tr-view p[role='status']")
+        until(c.page, lambda: status.inner_text() == "", "Preparing said, then emptied")
+        assert "tr-status" in (status.get_attribute("class") or "").split()
+        assert status.evaluate("e => getComputedStyle(e).display") == "none"
+    finally:
+        c.close()
+
+
+def test_try_on_unavailable_for_now_says_so_and_tries_again_and_off_hides_it(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 L4: a 503 is "unavailable", not "off": the section stays, says so, tries again;
+    # L12: a look that fails to load leaves no "Loading the look..." beside its error
+    reset(d_url, token)
+    c = Page(browser, d_url, token)
+    down = {"error": "unavailable", "detail": "Try-on is starting."}
+    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=503, json=down))
+    try:
+        c.open()
+        c.open_panel("helpers")
+        c.page.locator("#hpt-wardrobe").click()
+        sec = c.section()
+        until(c.page, lambda: "Try it on can’t load right now." in sec.inner_text(), "said")
+        assert sec.is_visible()
+        c.page.unroute("**/v1/tryon")
+        broken = {"error": "unavailable", "detail": "The look didn't load."}
+        c.page.route("**/v1/tryon/look?*", lambda r: r.fulfill(status=500, json=broken))
+        sec.get_by_role("button", name="Try again").click()
+        until(c.page, lambda: "The look didn't load." in sec.inner_text(), "the look's error")
+        assert "Loading the look" not in sec.inner_text()
+        c.page.unroute("**/v1/tryon/look?*")
+    finally:
+        c.close()
+
+
 def test_avt11_lists_a_formal_and_a_festive_look_with_both_lists_and_their_readiness(
     browser: Any, d_url: str, token: str
 ) -> None:

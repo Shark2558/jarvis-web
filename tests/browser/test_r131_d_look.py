@@ -138,3 +138,25 @@ def test_with_try_on_off_the_wardrobe_tab_is_laid_out_as_r13s(
         assert c.csp_violations() == []
     finally:
         c.close()
+
+
+def test_with_try_on_off_show_in_3d_says_so_and_loads_nothing(
+    browser: Any, d_url: str, token: str
+) -> None:
+    c = Page(browser, d_url, token)
+    off = {"error": "not_found", "detail": "Try-on is off on this server."}
+    c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=off))
+    try:
+        c.open()
+        c.open_panel("helpers")
+        c.page.locator("#hpt-wardrobe").click()
+        sec = c.page.locator("#hpp-wardrobe .tr-sec")
+        until(c.page, lambda: sec.count() == 1 and sec.get_attribute("hidden") is not None, "off")
+        c.page.locator("#hpp-wardrobe .wd-plan").first.get_by_role(
+            "button", name="Show in 3D"
+        ).click()
+        until(c.page, lambda: sec.is_visible(), "the section says why")
+        assert "Try it on is off on this server." in sec.inner_text()
+        assert c.engine() is None and not [r for r in c.sent if "/v1/tryon/look" in r["url"]]
+    finally:
+        c.close()

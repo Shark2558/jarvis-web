@@ -547,8 +547,8 @@ async function start() {
 export async function open(plan) {
   const v = S.sec;
   if (typeof plan !== 'string' || !plan) return;
-  if (!v || !v.look) { S.plan = plan; return; } // pressed while the section loads: opened right after
   if (S.off) { S.host.hidden = false; S.host.replaceChildren(H().mk('h3', 'hp-h', 'Try it on'), H().empty('Try it on is off on this server.')); return; }
+  if (!v || !v.look) { S.plan = plan; return; } // pressed while the section loads: opened right after
   const o = await outfits(), found = [['Today', o.today], ['Tomorrow', o.tomorrow]].map(([d, l]) => [d, (l || []).find((p) => p.id === plan)]).find(([, p]) => p);
   try {
     const src = 'plan=' + encodeURIComponent(plan), look = await api('/v1/tryon/look?' + src + (S.priv ? '&private=1' : ''));

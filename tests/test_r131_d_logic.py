@@ -99,9 +99,7 @@ def test_a_check_that_did_not_run_refuses_and_says_so(kind: str) -> None:
     for runs in ([], [missing], [_run(1, 1), missing]):
         got = _decide(kind, runs)["got"]
         assert got["ok"] is False
-        assert (
-            got["words"] == "The photo check isn’t available on this device, so nothing was sent."
-        )
+        assert got["words"] == MISSING
 
 
 # ---- the share caption's words (D9, AVT-14) ------------------------------------------------------

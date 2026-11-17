@@ -24,8 +24,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from playwright.sync_api import Page, sync_playwright
 from r131_fake_server import serve
+
+# CI's test job collects this module with no Playwright installed (I1): skip, never an error
+sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
 pytestmark = pytest.mark.browser
 
@@ -71,7 +73,7 @@ class Stage:
         frozen: bool = False,
         init: str = "",
     ) -> None:
-        self.page: Page = browser.new_page(
+        self.page: Any = browser.new_page(
             viewport={"width": 620, "height": 760}, device_scale_factor=scale
         )
         self.errors: list[str] = []

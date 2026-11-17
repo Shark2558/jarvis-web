@@ -1,4 +1,4 @@
-Version v13.1.2 · 17 Nov 2026, 19:35 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.3 · 17 Nov 2026, 20:45 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part C: See it on me (integration notes)
 
@@ -454,6 +454,164 @@ the proto field in lowerCamelCase.
   `create_app`: that is I1's (§6.6).
 - **The review agents** (§7).
 
+## 10. Fix (review C-1)
+
+The fixer for review C-1 (`REVIEW-C-1.md` v13.1.1: 1 HIGH, 2 MEDIUM, 9 LOW) worked on `r13-1-c`
+from `8bd4a2a`. Every fix was written test first: the failing test was run and seen red for the
+reason the review gives, then the code was fixed, then the test passed. Each fix was then
+committed and pushed. No call reached Google, and nothing outside `jarvis.llm` imports a vendor
+SDK. This section supersedes §6.10, §7's accepted LOW on Google's answer being read whole, and the
+parts of §2 and §4 that it names.
+
+### 10.1 What was fixed
+
+| Finding | Outcome | Commit |
+|---|---|---|
+| **1 HIGH**: his T-shirts can never be sent | **Fixed.** C sends its own fixed words (`pair.prompt_words`: the colour and the type, `_` as a space, so "grey t shirt"). `mine_words` stays for what he reads ("grey T-shirt"). Words JARVIS can't send are refused before the reserve (422 `not_a_garment`, `NO_WORDS`), never blamed on Google. The scripted fake now checks a request as the adapter does (`StrictTryOn` in `r131_fakes_c.py` runs `tryon_gemini._check`). It is the default for C's tests, the routes test and the eval's one-garment runs | `1b5760c` |
+| **2 MEDIUM**: the consent is not bound to the cache or to the words he read | **Fixed**, as the review's diff, with one addition: `give` refuses a YES under any other version. The hash covers the version, provider, model, location and location words, the cache setting and every line he is shown. `ConsentView.version` is `"c2-"` plus 12 hex of the hash (15 characters; `ConsentIn` takes 20; no contract change). `current` and the press pass `cache=tryon_cache`. The record also keeps `cache` | `4164611` |
+| **3 MEDIUM**: a press in flight outlives OPS-05 and his withdrawal | **Fixed**, and closed further than the review asked (§10.2) | `87a41a5` |
+| 4 LOW: `done` pruned by a map's order | **Fixed.** An explicit `done_order` list; on a key-sorted store, a retry is never charged twice | `36dda56` |
+| 5 LOW: a failed release or settle is never retried and skips his month | **Fixed** (§10.2), plus a double count this fix itself could have caused, found in the self-review and fixed (`fc00fda`) | `74304fe`, `fc00fda` |
+| 6 LOW: two sources for the end date | **Fixed.** The gate, the notice and `ProviderView.retires_on` read the model's own date (`describe().retires_on`). Part C no longer reads `tryon_model_retires` (§10.4 b) | `a0521b8` |
+| 7 LOW: the device check of a photo rests on the console | **Not done:** it is a contract change (§10.4 f) | — |
+| 8 LOW: the audit can't tell made, released and maybe-billed apart | **Fixed.** The press's args gain `code` (`made` or the refusal's code) and `inr` (what it added to his spend). Keep and a picture's delete are audited by ids. The risk level stays I1's call (§10.4 g) | `634ca27` |
+| 9 LOW: silent fallbacks; a provider bug charged as maybe billed | **Fixed.** `TryOnMaybeBilled` and a timeout are maybe billed (WARNING). Any other error is a provider bug, logged at ERROR with the request id and still kept at the hold. Three fallbacks are now logged (his limit's room, a garment record, a consent record that won't parse). A failing route logs its name and the press's request id | `634ca27` |
+| 10 LOW: Google's answer read whole before its size check | **Fixed.** The answer is streamed and read only up to `ANSWER_BODY_MAX` (16 MB in base64 plus its JSON, about 23 MB). Past that it is `TryOnMaybeBilled("too_large")`. A refusal's body is never read | `ab86c1b` |
+| 11 LOW: wrong or missing words | **Fixed.** `pair.refusal` says `SAME_SLOT` for a garment slot already taken and `NOT_HIS` for a piece not his; `NotSent.why` is unchanged. `PHOTO_KEPT`, `CONSENT_GIVEN` and `UNTICKED` are removed. `NOT_KEPT` is D's wording for a shown-once picture (§10.4 e) | `d8ef5f4` |
+| 12 LOW: gaps in the money tests | **Fixed.** Every test the review lists now exists (§10.3) | (with each fix) |
+
+### 10.2 How findings 3 and 5 were closed, and where this differs from the review
+
+- **Finding 3: a press in flight.**
+  - After the call, his photo and his YES are checked again (still current, with the cache).
+  - `PictureStore.save(needs=…)` then checks his photo, his YES **and the garment's photo**, and
+    writes the picture in ONE transaction.
+  - `erase` and the pictures row's delete then **sweep once more** (`PictureStore.delete_all`).
+  - Together these leave no ordering in which a picture survives:
+    - a press that commits before the delete's batch is found by the sweep;
+    - a press that commits after the delete's batch finds his photo gone and writes nothing.
+
+    The re-check alone would have left a window between the check and the write.
+  - The garment's photo is in `needs` so that a press during the **pictures row's** delete (which
+    takes the garment photos, not his photo) keeps nothing either.
+  - A picture too big to keep is put in page memory, then checked, and dropped when a photo went.
+  - His withdrawal (`delete_photo`, and the photo row's delete) clears page memory.
+  - When a photo went during the call:
+    - nothing is kept;
+    - he reads 422 `no_photo`: "Your photo or the garment's photo was deleted while the picture
+      was being made, so it isn't kept. It may still be charged (about ₹9).";
+    - `done` says `withdrawn`, so a repeat answers the same.
+  - "Release the hold" is done as **closing** it at what Google made: settled from its usage,
+    not given back. Google made the picture, and a 200 is billed. It also counts in `pictures`
+    and in his usage month.
+- **Finding 5: a failed release or settle.**
+  - `TryonCap` tries a settle or a release three times, waiting 0.05 s and then 0.25 s
+    (`CLOSE_WAITS_S`).
+  - One that still fails is logged at ERROR with its request id and kept in `TryonCap.pending`.
+    `pending` is this process's memory; nothing else is written while the store is failing.
+  - His next reserve and `seeme_daily` close a kept one first, **as it was meant**: a release
+    stays a release, and `settle_old` skips a hold whose close is pending. So a retry of the same
+    request id is answered from `done`, and the next press is not `busy`.
+  - A restart loses `pending`. The daily job then settles the hold at its hold, as it does after
+    a crash (accepted in §7).
+  - The press closes through `_closed`, which never raises after the cap's tries, and records his
+    usage month in its own `finally`. So:
+    - a made picture is shown, never "can't be reached";
+    - a blocked or maybe-billed press keeps its words;
+    - a not-billed one keeps "Nothing was charged".
+
+    The review suggested MAYBE_BILLED's words for the last case. They say "Google didn't answer in
+    time", which is wrong after a 429, and Google billed nothing.
+  - **The choice for `settle_old`, pinned by a test:** it records nothing in his usage month. The
+    press records every billed call whatever its settle did, so only a crash during the call is
+    left out. Recording again would count a press whose settle failed twice.
+  - **Found in the self-review:** with retries, a commit whose reply was lost would be retried,
+    adding `pictures` or `blocked` a second time. These counters now move only while the hold is
+    still held, as the spend already did (`fc00fda`).
+
+### 10.3 The tests, and what was not red first
+
+- **New files:**
+  - `test_r131_c_inflight.py` (10): erase, his withdrawal, the photo row and the pictures row,
+    each during a press held at a gate; a big picture in flight; withdrawal clearing page memory;
+    a picture saved between erase's list and its delete.
+  - `test_r131_c_money.py` (13): blips on close, kept closes, a 429 and a made picture whose
+    close fails, a lost reply, and the pins below.
+  - `test_r131_c_review.py` (10): the T-shirt on the adapter and on the strict fake, words
+    refused before the reserve, the cache turned on after his YES, the two end-date cases, the
+    refused-piece words, the provider bug and the fallback logs.
+- **Added to existing files:**
+  - `test_r131_c_pair.py`: every sendable type × every colour (and none) through
+    `tryon_gemini._check`; every `NEW_TYPES` × colour through `short_words`; the strict fake.
+  - `test_r131_c_consent.py`: rewritten for the binding. Ten changes each ask again; the same
+    inputs and a moved rate don't.
+  - `test_r131_c_cap.py`: the key-sorted store.
+  - `test_r131_c_gemini.py`: the byte cap; a refusal's body is never read.
+  - `test_r131_c_api.py`: the press, Keep and delete audits; a failing route's log.
+- **Pins, green from the start** (the behaviour already held; written because the review asked
+  for them):
+  - the worst case recorded on a blocked and a maybe-billed press;
+  - nothing recorded on a release;
+  - nothing recorded by `settle_old`;
+  - a maybe-billed call logged as a WARNING, never as a provider bug.
+- **Not a behaviour change:** four of the review's own tests moved from `test_r131_c_press.py`
+  (it had passed 400 lines) into `test_r131_c_review.py`, unchanged.
+
+### 10.4 Needs I1 (new, or changed by this fix)
+
+- **a. I0's fake server answers the old consent version.** `tests/r131_fake_seeme.py` pins
+  `CONSENT_VERSION = "c2"`. The real version is now `"c2-"` plus 12 hex. D's console must send
+  back `ConsentView.version` as it was shown, never a literal. Proposal, so that D's browser tests
+  see the real shape:
+
+  ```diff
+  -CONSENT_VERSION = "c2"
+  +CONSENT_VERSION = "c2-0123456789ab"  # the real one: "c2-" + 12 hex (seeme.consent.shown_version)
+  ```
+
+- **b. `tryon_model_retires` is no longer read by Part C** (finding 6). Either drop it from
+  `config.py` with its two pins in `test_r131_seams.py`, or make it a per-model override. A single
+  date is what caused the finding.
+- **c. One rule for fixed words.** `pair.PROMPT_WORDS` is a copy of the adapter's `WORDS`,
+  pinned equal by a test, because the port (`llm/tryon.py`, I0's) has no shared constant.
+  - Proposal: `FIXED_WORDS = re.compile(r"^[a-z][a-z ]{0,59}$")` in `llm.tryon`, imported by both.
+  - Then I0's `ScriptedTryOn.make` can run the same check, and C's `StrictTryOn` can go.
+- **d. §6.10 is done** (finding 2). §6.2 still stands: `tryon_cache` should default to true. A
+  later flip now asks for his YES again in any case.
+- **e. For D:** a `PictureView` with `kept=False` and `until=None` means "shown once". Its words
+  are `texts.NOT_KEPT` ("This picture is too large to keep: it is shown once and not kept.").
+- **f. Finding 7 (not done, a contract change).** The door sends the device check's counts with
+  both uploads (`?people=&faces=`). The server refuses a garment photo with `faces > 0` and his
+  photo with `people != 1` (422, in fixed words), and keeps the counts as plain fields (the data
+  model's "the device's check"). This touches `http.py`'s `QUERIES`, the door
+  (`console-r7-send.js`) and D's photo panel, so it is I1's to schedule.
+- **g. The audit's risk level.** A paid press is audited as REVERSIBLE (`record_change` is
+  shared). Two edges of the new `inr`:
+  - a repeat answered from `done` is audited with its first outcome's ₹;
+  - a press that fails after its settle (a store error on the save) is audited `unavailable` with
+    ₹0. Its spend is still in `tryon_spend`.
+- **h. Data model.** `tryon_spend/{uid}_{YYYY-MM}` gains `done_order`, a list of request ids
+  (finding 4). The consent record gains `cache`.
+- **i. The review agents.** This fixer had no agent tool either. `code-reviewer`,
+  `python-reviewer` and `security-reviewer` should look at commits `1b5760c` to `fc00fda` in a
+  fresh context.
+
+### 10.5 The checks, with their numbers (at `fc00fda`, the heavy ones behind the lock)
+
+| Check | Result |
+|---|---|
+| `tests/test_r131_c_*.py` | **218 passed** on Python 3.11 and on 3.12 (was 163): gemini 46, consent 28, cap 27, press 27, photos 20, money 13, pair 12, inflight 10, part 10, review 10, api 8, jobs 7 |
+| The same, plus I0's `test_r131_port.py`, `test_r131_fakes.py`, `test_r131_spend.py` | **241 passed** on 3.11 and on 3.12 |
+| Coverage (3.12): `wardrobe/seeme`, `api/seeme.py`, `llm/tryon_gemini.py` | **94 %** (1,946 statements, 110 missed); every module ≥ 91 % |
+| `test_r131_seams.py`, `test_r131_wiring.py`, `test_r13_seams.py`, `test_r13_wiring.py` | **578 passed, 2 failed**: I0's two "not built yet" pins (§6.1), as before |
+| The four tick-pin files (§5) | **64 passed** |
+| `evals/r13_1/run.py --mock --part seeme` | **26/26 passed**; the control failed the part: True (every control red on both providers) |
+| `evals/r13_1/run.py --mock` (every part) | **48/48 passed**; the negative control failed the suite: True |
+| `ruff check`, `ruff format --check` (C's 30 files) | clean |
+| `mypy` on C's 15 modules | the baseline error only (`memory/redis_store.py:67`) |
+| `scripts/arch_coverage.py`, `scripts/check_doc_versions.py` | OK (119 collections); 30 documents OK |
+| Sizes (by the AST) | largest module `make.py` 393 (`api/seeme.py` 380, the eval 389); longest function `Press.press` 35 lines |
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -461,3 +619,4 @@ the proto field in lowerCamelCase.
 | v13.1.0 | 17 Nov 2026, 18:20 IST | R13.1 | First edition: Part C's plan, before code | 🛠 Mark XXIII |
 | v13.1.1 | 17 Nov 2026, 19:09 IST | R13.1 | What C built, the checks with their numbers, the ₹ figures, the deviations, the eight tick pins, "Needs I1" with diffs, the review (C's own pass; the agents for I1), the deploy's block, the M5 names, what could not be verified | 🛠 Mark XXIII |
 | v13.1.2 | 17 Nov 2026, 19:35 IST | R13.1 | The second builder, after the server restart: BRIEF-C ticked item by item; fixed a made picture lost when its list couldn't be read, a repeat's code outside the contract, ids by `fullmatch`, and the eval over 400 lines (with three cases closer to the brief); two LOW edges at the month's end; "Needs I1" §6.10 (the consent's hash and the cache); every check run again (163 tests; 186 with I0's on 3.11 and 3.12; 94 %; the eval 26/26 with its controls; the runner 48/48). The two earlier rows' times corrected to their commits (they had said 20:10 and 21:40) | 🛠 Mark XXIII |
+| v13.1.3 | 17 Nov 2026, 20:45 IST | R13.1 | §10, Fix (review C-1): each finding test first. Fixed: the HIGH (his T-shirts sent in C's own fixed words; a strict scripted fake), both MEDIUMs (his YES bound to the cache and to every line he read, version `c2-` + 12 hex; a press in flight checked and written in one transaction, with a sweep after erase and the pictures row, and page memory cleared on withdrawal), and LOWs 4, 5, 6, 8, 9, 10, 11 and 12 (`done_order`; three tries and kept closes; the model's own end date; the press's audit; logged fallbacks and provider bugs; a streamed, capped answer; the refused-piece words). LOW 7 is left for I1 as a contract change. New Needs I1 a-i. Every check run again (218 tests, 241 with I0's, on 3.11 and 3.12; 94 %; the eval 26/26 with its controls; the runner 48/48) | 🛠 Mark XXIII (fix C-1) |

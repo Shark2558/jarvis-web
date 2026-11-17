@@ -419,6 +419,30 @@ check('avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket'
   need(plan(L.casual(), L.opts({ tucked: true })).state.tucked === true, 'a tee can be tucked');
 });
 
+// review B-1, finding 4: a shirt or tee over a wrap can only be drawn tucked. The engine SAYS so in show()'s answer
+// (`forced` and `approx`), so Part D can write "Drawn tucked into the mundu" and switch its tuck control off.
+check('a_top_over_a_wrap_says_it_is_drawn_tucked', (need) => {
+  const tee = { slots: L.mundu().slots.map((s) => (s.slot === 'top' ? { ...s, template: 'tee' } : s)) };
+  for (const [word, look] of [['shirt', L.mundu()], ['tee', tee]]) {
+    const out = plan(look, L.opts({ tucked: false }));
+    need(out.state.tucked === true && out.parts.find((x) => x.slot === 'top').weights.tuck === 1, word + ' over a wrap is drawn tucked');
+    need(JSON.stringify(out.forced) === '{"top":"tucked"}', word + ': the plan says the top was forced tucked (' + JSON.stringify(out.forced) + ')');
+    need(out.approx.top.includes('tuck'), word + ': the tuck is named approximate (' + out.approx.top + ')');
+    const asked = plan(look, L.opts({ tucked: true }));
+    need(JSON.stringify(asked.forced) === '{}' && !asked.approx.top.includes('tuck'), word + ': asked tucked, nothing is forced');
+    const byVariant = plan(look, L.opts({ tucked: undefined })); // the piece's own variant says untucked
+    need(JSON.stringify(byVariant.forced) === '{"top":"tucked"}', word + ': an untucked variant is forced too');
+  }
+  const m = model(), res = m.show([L.figure(L.mundu()), L.figure(L.formal())], L.opts({ tucked: false }));
+  need(JSON.stringify(res.forced) === '{"top":"tucked"}' && JSON.stringify(res.figures[0].forced) === '{"top":"tucked"}', 'show() answers it: ' + JSON.stringify(res.forced));
+  need(JSON.stringify(res.figures[1].forced) === '{}' && m.identity()[1].state.tucked === false, 'over trousers the choice is honoured');
+  need(C.showProblems(res).length === 0, 'the answer still fits the contract');
+  const honoured = plan(L.formal(), L.opts({ tucked: false, layers: 'no_outer' }));
+  need(JSON.stringify(honoured.forced) === '{}' && !honoured.approx.top.includes('tuck'), 'trousers: untucked is drawn untucked');
+  const base = plan(L.mundu(), L.opts({ tucked: false, layers: 'base' }));
+  need(JSON.stringify(base.forced) === '{}', 'base layer only: nothing is drawn, nothing is forced');
+});
+
 check('avt02_the_basic_figure_turns_to_distinct_front_side_and_back_views', (need) => {
   const m = model(), seen = {};
   m.show([{ body: L.body({}, []), look: { slots: [] } }], L.opts());

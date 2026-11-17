@@ -6,7 +6,8 @@
 //   Stage = { show(figures, opts) -> {drawn, approx, cards}, view(name), spin(on), zoom(step), closer(),
 //             snapshot({caption}) -> Promise<Blob>, stats() -> {triangles, figures, fps, dpr, shadows, yaw}, dispose() }
 // show() also answers `hidden` (worn but covered: a belt under an untucked top, the outer layer in "without the outer
-// layer"), `figures` (each figure's own answer when two are compared) and the Stage has `ready` (a promise: the
+// layer"), `forced` (slot -> the state drawn instead of the one asked: {top: 'tucked'} for a shirt over a wrap, which
+// can only be drawn tucked; that slot's `approx` then names 'tuck'), `figures` (each figure's own answer when two are compared) and the Stage has `ready` (a promise: the
 // first frame is drawn). One Stage at a time: dispose() frees the WebGL context, every listener, texture and buffer.
 // CSP-clean: three.js only from the vendored file (no addon), our own GLB reader, turntable and lights; files only
 // from /static/vendor/mannequin/<release>/, which the server checks against MANIFEST.json's SHA-256. Rendering is on demand (a
@@ -47,7 +48,7 @@ function supported() {
 /** The scene's state without a pixel: what is shown, from where. The Stage draws exactly this (AVT-02, AVT-08). */
 function createModel() {
   const m = { figures: [], plans: [], opts: { tucked: undefined, open: undefined, layers: 'all' }, yaw: 0, pitch: PITCH0, zoom: 0, closer: false, spin: false };
-  const answer = (p) => ({ drawn: p.drawn.slice(), approx: Object.assign({}, p.approx), cards: p.cards.slice(), hidden: p.hidden.slice() });
+  const answer = (p) => ({ drawn: p.drawn.slice(), approx: Object.assign({}, p.approx), cards: p.cards.slice(), hidden: p.hidden.slice(), forced: Object.assign({}, p.forced) });
   function show(figures, opts) {
     const list = Array.isArray(figures) ? figures.slice(0, 2).filter((f) => f && f.look) : [];
     if (!list.length) throw new Error('There is no look to show.');

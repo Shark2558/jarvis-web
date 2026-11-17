@@ -45,14 +45,17 @@ function picked(look) {
   return { by, cards, covered };
 }
 
-/** What is drawn for a look. Returns { parts, drawn, approx, cards, hidden, covered, state }. */
+/** What is drawn for a look. Returns { parts, drawn, approx, cards, hidden, covered, forced, state }. */
 function plan(look, opts) {
   const o = opts || {}, layers = LAYERS.includes(o.layers) ? o.layers : 'all';
   const { by, cards, covered } = picked(look);
   const on = (place) => (layers === 'base' || (layers === 'no_outer' && place === 'outer') ? null : by[place] || null);
   const top = on('top'), bottom = on('bottom'), outer = on('outer');
-  // a wrap is tied over the shirt's tail: the one shape of a wrap has no room for a top worn out over it
-  const tucked = !!(top && bottom && TUCKS.includes(top.template) && (bottom.template === 'wrap' || flag(o.tucked, top.variant === 'tucked')));
+  // a wrap is tied over the shirt's tail: the one shape of a wrap has no room for a top worn out over it. The choice
+  // is not dropped in silence: `forced` (slot -> the state drawn instead) goes back in show()'s answer for Part D.
+  const tucks = !!(top && bottom && TUCKS.includes(top.template)), wants = tucks && flag(o.tucked, top.variant === 'tucked');
+  const tucked = tucks && (bottom.template === 'wrap' || wants), forced = {};
+  if (tucked && !wants) forced[top.slot] = 'tucked';
   const open = !!(outer && flag(o.open, outer.variant !== 'closed'));
   const belted = !!(bottom && BELTED.includes(bottom.template) && (!top || tucked));
   const parts = [], drawn = [], approx = {}, hidden = [];
@@ -76,9 +79,9 @@ function plan(look, opts) {
         photo: kind === 'cloth' ? photo : null, tile: t.tile || 0 });
     }
     drawn.push(s.slot);
-    approx[s.slot] = ['template', ...(rgb ? [] : ['colour']), ...(photo && t.tile ? ['texture'] : [])];
+    approx[s.slot] = ['template', ...(rgb ? [] : ['colour']), ...(photo && t.tile ? ['texture'] : []), ...(forced[s.slot] ? ['tuck'] : [])];
   }
-  return { parts, drawn, approx, cards, hidden, covered, state: { tucked, open, layers } };
+  return { parts, drawn, approx, cards, hidden, covered, forced, state: { tucked, open, layers } };
 }
 
 function board(size) {

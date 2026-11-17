@@ -201,6 +201,12 @@ def test_avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacke
     _passed("avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket")
 
 
+def test_a_shirt_over_a_wrap_says_it_is_drawn_tucked_instead_of_ignoring_the_choice() -> None:
+    """Review B-1, finding 4: `tucked: false` over a mundu was dropped in silence; show() now
+    answers `forced: {top: 'tucked'}` and names `tuck` in that slot's `approx`."""
+    _passed("a_top_over_a_wrap_says_it_is_drawn_tucked")
+
+
 def test_avt11_a_formal_and_a_festive_look_compare_with_both_lists_and_their_readiness() -> None:
     _passed("avt11_two_figures_each_with_its_own_slots")  # B's half: two figures, each its slots
 

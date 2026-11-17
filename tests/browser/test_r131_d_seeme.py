@@ -194,6 +194,8 @@ def test_avt12_card_the_picture_is_a_labelled_2d_preview_of_a_new_garment_with_h
         assert "Generated 2D style preview — not a photo; the fit is not exact" in t
         assert "a new navy shirt, not in your wardrobe" in t and "₹8.52 with GST" in t
         assert "Your pieces in it: charcoal trousers." in t
+        sent_card = seeme(c).locator(".tr-sent")  # the trousers have no photo: words, no image
+        assert "No photo yet" in sent_card.inner_text() and sent_card.locator("img").count() == 0
         assert "Google adds Content Credentials (C2PA)" in t
         pic = seeme(c).locator("img.tr-pic").last
         until(c.page, lambda: (pic.get_attribute("src") or "").startswith("data:image/"), "shown")

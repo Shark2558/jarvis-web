@@ -140,6 +140,8 @@ def test_his_checklist_names_a_private_basic_only_behind_show_private_basics(
         base = c.section().locator(".tr-col[data-look='0'] .tr-item[data-slot='base']")
         assert "Base layer (covered)" in base.inner_text()
         show = c.section().locator(".tr-view button.bsw[aria-label='Show private basics']")
+        toggle = c.page.locator("button.bsw[aria-label='Show private basics']")
+        assert "Private basics" in c.section().locator(".tr-view .hp-row", has=toggle).inner_text()
         show.click()
         until(c.page, lambda: "black vest" in base.inner_text(), "named behind the tap")
         figure = c.engine()["shown"][-1]["figures"][0]["look"]["slots"]

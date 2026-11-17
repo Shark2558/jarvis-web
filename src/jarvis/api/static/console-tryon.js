@@ -226,6 +226,8 @@ function draw(v) {
     toCamera: () => { if (window.JarvisDeck) window.JarvisDeck.open('camera', { focus: true }); },
     onChange: (key) => { v.open = key; draw(v); }, onPick: (slot, piece) => swap(v, 0, slot, piece),
     onPick2: (slot, piece) => swap(v, 1, slot, piece), onRemove: (slot) => remove(v, slot) });
+  if (v.kind === 'section' && v.src && v.covered.length) el.list.prepend(h.row('Private basics', S.priv ? 'Named in this list only: the figure stays covered.' // R13 D10's own row
+    : 'Covered here and on the figure.', [h.toggle('Show private basics', S.priv, (on) => privy(v, on))]));
 }
 function tools(v) {
   const out = VIEWS.map(([id, label]) => pressed(btn(label, () => turn(v, id)), v.opts.view === id));
@@ -260,7 +262,6 @@ function acts(v) {
   else if (v.why === 'list') out.push(btn('Show in 3D', () => to3d(v)));
   else if (v.why === 'elsewhere' || v.why === 'paused') out.push(btn('Show it here', () => to3d(v)));
   else if (RETRY.includes(v.why) && !S.retried) out.push(btn('Retry 3D', () => retry(v)));
-  if (v.kind === 'section' && v.src && v.covered.length) out.push(H().toggle('Show private basics', S.priv, (on) => privy(v, on)));
   out.push(off(btn('Undo', () => undo(v)), !v.undo.length));
   out.push(btn(v.comparing ? 'Stop comparing' : 'Compare', () => (v.comparing ? stopCompare(v) : chooser(v))));
   if (v.mode === '3d') out.push(btn('Save a picture of this look', () => picture(v)));

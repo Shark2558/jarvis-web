@@ -190,9 +190,9 @@ function swapMine(slot, piece, list) {
 }
 function thumbOf(cls, photo, words) { // his piece's image card: its crop through the door (read only), a data: URL
   const f = H().mk('figure', 'tr-ref ' + cls), img = H().mk('img', 'tr-thumb');
+  if (!photo || !has('thumb')) { f.append(H().mk('figcaption', 'sfine', txt(words, 60)), H().mk('span', 'sfine', 'No photo yet')); return f; }
   img.alt = txt(words, 60) + ' photo'; img.width = 56; img.height = 56;
   f.append(img, H().mk('figcaption', 'sfine', txt(words, 60)));
-  if (!photo || !has('thumb')) { f.append(H().mk('span', 'sfine', 'No photo yet')); return f; }
   img.dataset.photo = photo;
   door().thumb(photo).then((u) => { if (/^data:image\/(png|jpeg);base64,/.test(String(u))) img.src = u; }).catch(() => {});
   return f;

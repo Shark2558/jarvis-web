@@ -370,8 +370,8 @@ class _VisionFiles:
     monkeypatch `console._VISION` stay as they are, and the mannequin's files use the same check
     (`api/tryon_assets.py`)."""
 
-    def __init__(self, folder: Callable[[], Path]) -> None:
-        self._folder = folder
+    def __init__(self, folder: Callable[[], Path] | None = None) -> None:
+        self._folder = folder or (lambda: _VISION)  # R7's tests build it bare: the vision folder
         self._seen: dict[str, tuple[_Stamp, Mapping[str, str]]] = {}
 
     def __call__(self, release: str) -> Mapping[str, str]:

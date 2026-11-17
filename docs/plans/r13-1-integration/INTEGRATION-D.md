@@ -1,4 +1,4 @@
-Version v13.1.1 · 17 Nov 2026, 21:00 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 18 Nov 2026, 00:45 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part D: Console and phone (INTEGRATION-D)
 
@@ -150,9 +150,104 @@ Fixed in the WIP while finishing (each test first, red then green):
 
 `*-detail.png` files are element shots, and some of them are cropped by the panel's scroll; the full-viewport shots are the ones to judge. They were looked at: the look is the console's own in both surfaces. That review found two defects, both fixed above: the private-basics switch had no words, and a no-photo piece showed a broken image.
 
+## 9. Fix (review D-1)
+
+Two fixers worked through `REVIEW-D-1.md` (2 HIGH, 7 MEDIUM, 12 LOW) on `r13-1-d`, each fix test
+first (the failing test run and seen red for the reason expected, then the fix, then green). The
+first was stopped by a server restart at about 22:55 IST after `db1cd28..d4fc120` (two refactors
+and six fixes) and a saved work in progress (`f8d91e2`); the second checked that work and finished
+(`ef4044b..f3d3f5c`). **Sections 2 to 8 describe the first build; where this section differs, this
+section is right** (the line counts, "Needs I1", the screenshots).
+
+### Every finding
+
+| # | Finding | Outcome | Commit |
+|---|---|---|---|
+| H1 | Row 388's card 2,704 / 2,942 px tall | **Fixed.** A compact card (about 347 px): its title, the pieces in one line, the figure (150–260 px, B's minimum kept) beside Turn around, Show as a list, Open in Helpers (the full view) and Wearing it; one line a piece as a checklist; the reply's top kept in view as it lands unless he has moved the conversation. Tests: the card fits the conversation on a laptop and a phone, fresh and under way, with the reply and the whole stage in view | `01621e1` |
+| H2 | "Wearing it" said "Enjoy the day." when `wear_log` refused | **Fixed.** Use this look and Wearing it report R13's answer in the viewer (executed, waiting for his OK, or refused in R13's words); the tab then reloads | `25c9a05` |
+| M1 | A retry after a lost answer paid twice (a new `request_id` each confirm) | **Fixed.** One id per confirmed picture (its garment, his pieces, the rupees shown), kept while the answer may have been lost (no answer, a 5xx, 408, `busy`) and sent again by the next confirmed press ("Checking whether the last picture was made…"); a picture shown or a final refusal starts a new one; the whole press is one at a time. Test: the first answer reaches the fake and is dropped; the second press sends the same id; one picture, one spend; the next press a new id | `789f803` |
+| M2 | Every press re-read every crop and flashed its alt text | **Fixed.** A crop is read once a page (page memory), shown at once when known, hidden until loaded; view presses redraw their own buttons only | `aecc9f8` |
+| M3 | The garment he added was never shown back | **Fixed.** A 56 px image card from `door.garmentPhoto(id)` (read once a page) in each garment row, beside the pairing and in the ₹ confirm. Test: each decodes as a JPEG; one read | `291c2cb` |
+| M4 | Raw "Choose File · No file chosen" | **Fixed** (the work in progress, checked: red on the code before it). A `.btn` over a hidden input, as Camera → Wardrobe and the paperclip do; "A photo is chosen (PNG, 4 KB)." never its name; the file input's CSS rule gone | `f8d91e2`, `ef4044b` |
+| M5 | Keyboard focus lost after every press | **Fixed.** Each button has a stable key; the focus is found again after a redraw | `d289c3a` |
+| M6 | A shared picture was dropped in silence when Try-on or See it on me was off | **Fixed in D's files alone.** `JarvisTryOnCard.garment()` checks first (JPEG or PNG, ≤ 25 MB, Try-on on, See it on me on) and throws the words; the tray as I0 wrote it keeps the item and shows them. No change in I0's tray is needed | `d4fc120` |
+| M7 | With Try-on off, R13's plan rows still showed "Show in 3D" | **Fixed in D; two lines for I1** (below): `state()` and `jarvis:tryon-state` | `fba5a10` |
+| L1 | The detail shots misled | **Done.** The new shots are viewport shots after the place is scrolled into view, and the card as it lands with no scrolling (below) | — |
+| L2 | The See it on me picture in the shots couldn't decode | **Fixed in D's fakes.** D serves I0's See it on me routes from its own instance with a drawn PNG for a picture and a drawn JPEG for an I0 SOF-only garment photo | `789f803` |
+| L3 | The status line lost `tr-status` | **Fixed** (`say()` puts it back) | `46af646` |
+| L4 | A 503 hid the whole section | **Fixed.** Only a 404 is "off"; a 503 or no answer says "Try it on can't load right now." with Try again | `46af646` |
+| L5 | A re-planned look kept its old pieces | **Fixed.** While he has not changed the look, a fresh load re-reads it by its plan or day and keeps the plan's picks current | `0e693ac` |
+| L6 | Two stage-lifetime edges | **First fixed** (a stage that lands while its tab is hidden rests at once). **Second left:** old card viewers stay in page memory with their observer (now kept as `v.ro`) until the page goes; nothing a test can see, no WebGL context held (a new card already disposes the old card's stage), and `console-tryon.js` is at 599 of 600 lines. I1 can drop `!view.isConnected` viewers in `inline()` with its own size guard | `0e693ac` |
+| L7 | No size check before decoding | **Fixed.** Over 25 MB is refused in words before decoding, in the picker, `take()` and the share hand-over | `f8d91e2`, `d4fc120` |
+| L8 | Deletes on one press | **Fixed.** His photo (and YES), a picture and a garment photo each behind a `.bdialog` with Delete / Cancel; Cancel and Escape delete nothing | `f6a845a` |
+| L9 | The ₹ confirm's question didn't say what it makes | **Not a defect at I1.** The confirm shows the estimate's own words, and C's are the plan's sentence (`wardrobe/seeme/texts.py` `CONFIRM`: "Make 1 picture of you in {garment}{mine}? {about}. {spent} of {cap} used this month."); only I0's fake says less. Composing it again in D would say it twice. Now the garment's photo is in the confirm too (M3) | — |
+| L10 | The eval's controls accepted any failure | **Fixed.** Each control names the checks it must turn red (AVT-15 `checklist`, `why`; AVT-06 `thumbnail_w2`; AVT-11 `each_readiness`; row 388 `opened`, `pieces`, `covered`) and counts only with no error; `tests/test_r131_d_eval.py` | `2550204` |
+| L11 | The door's proposed `make` posted any body | **Fixed in the proposal.** It sends only PictureIn's five fields, each checked (`tg_`, at most two `wi_`, `confirm_cost === true`, a finite `inr_shown` ≥ 0, `tq_` + 16 hex); anything else is refused before a byte is sent. Still three lines within the 165-line guard; if I1 raises that guard (I0's seam test) to 170 the same code splits into readable lines | `9ed55a9` |
+| L12 | Smaller things | **Fixed:** "No photo yet" said once (`d3053a9`); `M.why` declared (`789f803`); no "Loading the look…" beside its error (`46af646`); `when()` shared (`4469d33`). **Left:** the small builders (`btn`, `field`, `select`) written in two of D's modules and R13's hook: See it on me also runs without the hook's `ctx`, so sharing them is a refactor for I1, not a fix. `console-tryon.js` was given room by moving pure helpers and word tables to the list module (`7f269b5`, `4469d33`, `2c3bf19`); it is at 599 of 600 lines, so the measurements form, shapes and OPS-05 (about 80 lines) should move to a module of their own at I1, which owns `arch_coverage.json` and the size guards | — |
+
+### Also fixed while verifying
+
+- **B's `forced`** (INTEGRATION-B section 8, "Needs I1" 1): when `show()` answers `forced: {top: 'tucked'}` the section says "Drawn tucked into the white mundu: the figure can only show it this way." in place of Tuck in / Untuck, and the card says it under its pieces; what he asked stays his. D's fake engine answers `forced` by B's rule (`2c3bf19`).
+- **B's 30 s for files** ("Needs I1" 3): while `stats()` says `state: 'loading'`, D's watch waits up to 30 s more behind B's own clock ("Still preparing the 3D view: its files are on their way…"); an engine that says nothing keeps the 10 s rule (`bf6a969`). B's ≥ 150 px host ("Needs I1" 2) was already pinned (`test_r131_d_look.py`, `ENGINE_MIN_PX`).
+- **A queued `close` event answered the next confirm** (the eval's See it on me case failed 2 of 25 runs): Cancel then See it on me before the dialog's close task ran made nothing. `ask()` now ignores a close event while its dialog is open again. A deterministic Node test (`d_dom.mjs` `stale_close`) was red, then green; the case then passed 30 of 30 (`bb6956e`).
+- **I0's seam pin on `export function garment(file)`** failed since `d4fc120` (it became `async`): a plain function returning the hand-over's promise again (`f3d3f5c`).
+
+### Needs I1 (now; replaces section 6, items 1 and 3)
+
+1. **The door's three lines** (`console-r7-send.js`, 162 → 165 lines; `tests/test_r131_d_door.py` holds every pin, and the browser tests serve exactly this through `r131_fakes_d.patched_door()`):
+
+   ```diff
+   --- a/src/jarvis/api/static/console-r7-send.js
+   +++ b/src/jarvis/api/static/console-r7-send.js
+   @@ -159,4 +159,7 @@
+    }
+    const line = () => 'Pictures sent from this device today: ' + readCount();
+    
+   -if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, person, garment, picture, garmentPhoto, myPhoto, sentToday: readCount, line }));
+   +// R13.1 D (I1): See it on me's press (PictureIn's five fields, each checked), Keep, the deletes and the garment list: ids checked, JSON only
+   +const SEE = /^t[pg]_[0-9a-f]{12}$/, seeme = (p, o) => window.JarvisConsole.api('/v1/seeme/' + p, o), garments = () => seeme('garments'), five = (b) => (b && /^tg_[0-9a-f]{12}$/.test(String(b.garment)) && Array.isArray(b.pieces) && b.pieces.length <= 2 && b.pieces.every((p) => PIECE.test(String(p))) && b.confirm_cost === true && Number.isFinite(b.inr_shown) && b.inr_shown >= 0 && /^tq_[0-9a-f]{16}$/.test(String(b.request_id)) ? { garment: b.garment, pieces: b.pieces.slice(), confirm_cost: true, inr_shown: b.inr_shown, request_id: b.request_id } : null);
+   +const make = (b) => (five(b) ? seeme('pictures', { body: five(b) }) : no()), keep = (id, on) => (SEE.test(String(id)) && id[1] === 'p' ? seeme('pictures/' + id + '/keep', { body: { keep: on === true } }) : no()), forget = (id) => (id === 'photo' ? seeme('photo', { method: 'DELETE' }) : SEE.test(String(id)) ? seeme((id[1] === 'p' ? 'pictures/' : 'garments/') + id, { method: 'DELETE' }) : no());
+   +if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, person, garment, picture, garmentPhoto, myPhoto, make, keep, forget, garments, sentToday: readCount, line }));
+   ```
+2. **I0's hook, two lines** (M7; `console-helpers-wardrobe.js` 301 → 302 of 306; `r131_fakes_d.patched_hook()`; the browser tests serve it):
+
+   ```diff
+   --- a/src/jarvis/api/static/console-helpers-wardrobe.js
+   +++ b/src/jarvis/api/static/console-helpers-wardrobe.js
+   @@ -126,7 +126,7 @@
+   -  if (!p.cancelled) box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free (See it on me is for a garment to buy, D22)
+   +  if (!p.cancelled && UI.tryon && UI.tryon.state && UI.tryon.state() === 'on') box.append(acts(btn('Show in 3D', () => tryOn(p.id)))); // R13.1 D1: free, while Try-on is on
+   @@ -297,5 +297,6 @@
+      document.addEventListener('jarvis:ready', () => { if (UI.host) load(); });
+   +  document.addEventListener('jarvis:tryon-state', () => { if (UI.host && UI.outfits) draw(); }); // R13.1: Show in 3D follows it
+   ```
+3. **Unchanged from section 6:** items 2 (the browser tests on the wired app and B's real engine; D's fake now also answers `forced` and a slow `state: 'loading'` like B's), 4 (`keep_days`), 5 (the fresh-context reviews: this fixer could not start another agent either; review D-2 should read `console-tryon-me.js` `press`/`make`/`forget`/`ask` and the door diff above first) and 6 (the eval's needs).
+4. **New:** L6's second edge and L12's module split, as in the table.
+
+### The checks at `f3d3f5c` (18 Nov 2026, behind `/tmp/jarvis-heavy.lock`)
+
+| Check | Result |
+|---|---|
+| Browser, Python 3.13 + Playwright (`JARVIS_BROWSER_TESTS=1`), one file at a time | card **14**, section **18**, seeme **14**, stage **11**, look **15**: **72 passed** at the head. Earlier in the session one run of stage + look had one failure, `test_show_in_3d_follows_try_ons_state_even_when_the_tab_draws_first[on]` (the first fixer's M7 test; its route handler sleeps 1.5 s), which passed alone and in three later runs |
+| Unit (`test_r131_d_static`, `_logic`, `_door`, `_eval`), Python 3.12 and 3.11 | **42 passed** on each |
+| `evals/r13_1/run.py --mock --part console` (`/tmp/venv-b`) | **13/13**; the negative control failed the part; each of the four controls turned exactly its own checks red with no error (AVT-15 `checklist`, `why`; AVT-06 `thumbnail_w2`; AVT-11 `each_readiness`; row 388 `opened`, `pieces`, `covered`). The See it on me case alone: 30 of 30 after `bb6956e` |
+| `tests/test_r131_seams.py` + `test_r13_seams.py` | **495 passed** (the runner aside); the runner and gate cases **3 passed** |
+| `ruff check`, `ruff format --check` | clean on the 11 Python files changed since `db1cd28` |
+
+**Sizes now:** `console-tryon.js` 599 (600), `-list` 222 (300), `-me` 371 (400), `-photo` 91 (300), `-card` 97 (150), CSS 56 (200 in all).
+
+### Screenshots (not committed: drawn data, the fake engine's labelled stand-in)
+
+`/tmp/r131-d-shots/` (36 PNGs; the first build's 76 are in `before-fix/`), each at 1280 × 800 and 360 × 800, by night and by day, the viewport after the place is scrolled into view:
+`01-card-as-it-lands-*` (no scrolling at all: his reply and the whole figure), `02-section-3d-*`, `03-section-checklist-*` (no WebGL2), `04-card-checklist-*`, `05-seeme-garment-picker-*` (the styled button, "A photo is chosen (PNG, 4 KB).", the lists, the garment row's photo), `06-seeme-pairing-*`, `07-seeme-yes-*`, `08-seeme-rupee-confirm-*` (with the garment's photo), `09-seeme-picture-*` (a drawn picture that decodes).
+Looked at by the fixer: the card fits beside the reply on both sizes; the look is the console's own; nothing scrolls sideways. On a laptop the garment row's words wrap in a narrow column beside its image and two buttons (the existing `.hp-row`); legible, left as it is.
+
+**Not verified here:** B's real figure (every shot and test uses D's fake engine), his phone, a real photo; the fresh-context reviews.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.0 | 17 Nov 2026, 18:20 IST | R13.1 | The plan, before the code | 🛠 Mark XXIII |
 | v13.1.1 | 17 Nov 2026, 21:00 IST | R13.1 | Status Current: what was built (files and line counts), the checks with their numbers, the WIP's fixes, deviations (the eval by behaviour in Node), what D needs from A, B and C, Needs I1 (the door's three lines as a diff, the wired-app browser run, the Try-on-off plan button, `keep_days`, the reviews, the eval's needs), limits, the screenshots | 🛠 Mark XXIII |
+| v13.1.2 | 18 Nov 2026, 00:45 IST | R13.1 | Section 9, Fix (review D-1): every finding's outcome with its commit (2 HIGH and 7 MEDIUM fixed; 10 LOW fixed, L9 not a defect at I1, L6 and L12 in part left with reasons), B's `forced` and 30 s for files honoured, a dialog race and an I0 seam pin found while verifying and fixed, Needs I1 now (the door's three checked lines, the hook's two), the checks at the head, the new screenshots | 🛠 Mark XXIII (fix D-1) |

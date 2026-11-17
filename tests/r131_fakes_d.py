@@ -22,7 +22,7 @@ from __future__ import annotations
 import struct
 import sys
 import zlib
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +93,41 @@ def png(rgb: tuple[int, int, int], w: int = 48, h: int = 48) -> bytes:
     )
 
 
+# ---- the door's three proposed lines (INTEGRATION-D "Needs I1", item 1) -------------------------
+# tests/test_r131_seams.py lets only the door (console-r7-send.js, I0's) name /v1/seeme/photo,
+# /pictures and /garments, but the door has no call for the paid press, Keep, the deletes or the
+# garment list. I1 applies exactly this; until then the browser tests serve the door with it
+# applied (`patched_door`), and `tests/test_r131_d_door.py` holds it to every pin of the door.
+DOOR = ROOT / "src" / "jarvis" / "api" / "static" / "console-r7-send.js"
+DOOR_LAST = (
+    "if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, "
+    "person, garment, picture, garmentPhoto, myPhoto, sentToday: readCount, line }));"
+)
+DOOR_ADD = (
+    "// R13.1 D (I1): See it on me's press (ids and the rupees he confirmed), Keep, the deletes "
+    "and the garment list: ids checked, JSON only\n"
+    "const SEE = /^t[pg]_[0-9a-f]{12}$/, seeme = (p, o) => window.JarvisConsole.api('/v1/seeme/' "
+    "+ p, o), make = (b) => seeme('pictures', { body: b }), garments = () => seeme('garments');\n"
+    "const keep = (id, on) => (SEE.test(String(id)) && id[1] === 'p' ? seeme('pictures/' + id + "
+    "'/keep', { body: { keep: on === true } }) : no()), forget = (id) => (id === 'photo' ? "
+    "seeme('photo', { method: 'DELETE' }) : SEE.test(String(id)) ? seeme((id[1] === 'p' ? "
+    "'pictures/' : 'garments/') + id, { method: 'DELETE' }) : no());\n"
+)
+DOOR_NEW_LAST = DOOR_LAST.replace(
+    "myPhoto, sentToday", "myPhoto, make, keep, forget, garments, sentToday"
+)
+
+
+def patched_door() -> str:
+    """The door with the three proposed lines (unchanged once I1 has applied them)."""
+    s = DOOR.read_text(encoding="utf-8")
+    if "make, keep, forget, garments" in s:
+        return s
+    if DOOR_LAST not in s:
+        raise AssertionError("the door's last line moved: update DOOR_LAST")
+    return s.replace(DOOR_LAST, DOOR_ADD + DOOR_NEW_LAST)
+
+
 def _ok(model: Any) -> JSONResponse:
     return JSONResponse(model.model_dump(mode="json"), headers=NO_STORE)
 
@@ -102,7 +137,7 @@ def _plan(pid: str, day: Any, hour: int, code: str, look: tuple[tuple[str, str],
         wh.SlotPick(slot=s, piece=p, words="a private basic" if s == "base" else "")
         for s, p in look
     )
-    starts = NOW.replace(hour=hour) + timedelta(days=(day - NOW.date()).days)
+    starts = datetime.combine(day, time(hour), tzinfo=IST)
     why = (f"{code.replace('_', ' ').capitalize()} for the event",)
     return wh.PlanView(
         id=pid, day=day, starts=starts, dress_code=code, tentative=False,

@@ -15,7 +15,7 @@
 // saved comparisons, See it on me ('./console-tryon-me.js') and Try-on settings (each piece's shape, and "Delete all my
 // try-on data": Privacy's own delete). Every change goes to the server (R13's tools for a plan); nothing is kept on this
 // device; no pixel API here (the caption is drawn by B's snapshot). textContent only; ASCII source.
-import { COVERED, caption, draft, items, slotWord } from './console-tryon-list.js';
+import { COVERED, caption, hhmm, items, slotWord } from './console-tryon-list.js';
 
 const engine3d = () => import('./console-tryon-3d.js');
 const seeMe = () => import('./console-tryon-me.js');
@@ -94,7 +94,7 @@ async function readTryon() {
 function viewer(root, kind) {
   const h = H(), el = {};
   ['status', 'head', 'stage', 'tools', 'style', 'acts', 'extra', 'list'].forEach((k) => { el[k] = h.mk(k === 'status' ? 'p' : 'div', ''); });
-  el.status.className = 'sfine tr-status'; el.status.setAttribute('role', 'status');
+  el.status.className = 'sfine tr-status'; el.status.setAttribute('role', 'status'); el.head.className = 'tr-head';
   el.stage.className = 'tr-stage'; el.tools.className = 'sacts tr-tools'; el.style.className = 'sacts tr-style';
   el.acts.className = 'sacts tr-acts'; el.list.className = 'tr-list'; el.extra.className = 'tr-extra';
   const view = h.mk('div', 'tr-view');
@@ -121,12 +121,20 @@ async function refresh(v) { // after a swap, an undo, a fresh load: the same pic
   } catch (e) { failed(v, e); }
   draw(v); paint(v);
 }
-function figure(look, opts) { // the engine's figure: the contract's fields only; a private slot is {slot, private: true}
-  const b = body(), assets = new Map(((S.tryon && S.tryon.assets) || []).map((a) => [a.piece, a]));
+function chosen(look) { // his shape choice per piece (AVT-05), as GET /v1/tryon reads it back from the server
+  const assets = new Map(((S.tryon && S.tryon.assets) || []).map((a) => [a.piece, a]));
+  return Object.assign({}, look, { slots: (look.slots || []).map((s) => {
+    const a = !s.private && assets.get(s.piece);
+    if (!a) return s;
+    const only = !!(s.card_only || a.card_only);
+    return Object.assign({}, s, { card_only: only, template: only ? null : a.template || s.template || null });
+  }) });
+}
+function figure(raw, opts) { // the engine's figure: the contract's fields only; a private slot is {slot, private: true}
+  const b = body(), look = chosen(raw);
   const slots = (look.slots || []).map((s) => {
     if (s.private) return { slot: s.slot, private: true };
-    const a = assets.get(s.piece), only = !!(s.card_only || (a && a.card_only));
-    const template = only ? null : (a && a.template) || s.template || null;
+    const template = s.card_only ? null : s.template || null;
     const vs = Array.isArray(s.variants) ? s.variants : [];
     const variant = vs.includes('tucked') ? (opts.tucked ? 'tucked' : 'untucked') : vs.includes('open') ? (opts.open ? 'open' : 'closed') : vs[0] || null;
     return { slot: s.slot, piece: s.piece, template, variant, rgb: s.rgb || null, pattern: s.pattern || null, photo: s.photo || null, private: false };
@@ -193,13 +201,14 @@ function draw(v) {
   v.view.dataset.mode = v.mode; v.view.dataset.why = v.why === 'list' ? '' : v.why;
   const b = body(), est = S.tryon && S.tryon.words ? txt(S.tryon.words, 120) : '';
   el.head.replaceChildren(h.row(v.titles[0] || 'This look', [b ? est || 'Estimated from your measurements' : '', 'every shape is approximate'].filter(Boolean).join(' \u00b7 ')));
-  if (!three && WHY[v.why]) say(v, v.why === 'elsewhere' ? '' : 'bad', WHY[v.why]);
+  const why = v.why === 'nofigure' && v.kind === 'section' ? txt((S.tryon && S.tryon.words) || WHY.nofigure, 160) : WHY[v.why];
+  if (!three && why) say(v, v.why === 'elsewhere' || v.why === 'nofigure' ? '' : 'bad', why);
   el.stage.hidden = !three; el.tools.hidden = !three; el.style.hidden = !three;
   el.tools.replaceChildren(...(three ? tools(v) : []));
   el.style.replaceChildren(...(three ? style(v) : []));
   el.acts.replaceChildren(...acts(v));
   el.extra.replaceChildren(...extra(v));
-  const looks = [v.look].concat(v.second ? [v.second] : []);
+  const looks = [v.look].concat(v.second ? [v.second] : []).filter(Boolean).map(chosen);
   if (!v.look) { el.list.replaceChildren(h.empty('Loading the look\u2026')); return; }
   items(el.list, looks, { H: h, btn, priv: false, nameOf: S.ctx && S.ctx.nameOf, open: v.open, layers: 'all', titles: v.second ? v.titles : null,
     photosOf: (id) => (S.photos && S.photos.get(id)) || [], thumb: (id) => { const d = door(); return d ? d.thumb(id) : Promise.reject(new Error('no door')); },
@@ -303,8 +312,7 @@ async function outfits() {
   return S.outfits;
 }
 function planTitle(day, p) {
-  const at = /T(\d{2}:\d{2})/.exec(String(p.starts || ''));
-  return [day, at ? at[1] : '', String(p.dress_code || '').replace(/_/g, ' ')].filter(Boolean).join(' \u00b7 ');
+  return [day, hhmm(p.starts), String(p.dress_code || '').replace(/_/g, ' ')].filter(Boolean).join(' \u00b7 ');
 }
 async function chooser(v) {
   const o = await outfits(), out = [H().mk('p', 'snote', 'Compare this look with:')];
@@ -458,7 +466,12 @@ async function deleteAll() { // OPS-05: Privacy's own delete of tryon_all (its p
   const obs = new MutationObserver(() => { if (gone()) { obs.disconnect(); reload(); } });
   obs.observe(document.body, { childList: true });
 }
-async function reload() { S.photos = null; try { await readTryon(); } catch (_) { /* said below */ } await first(); if (S.me && S.el.me) S.me.refresh(); }
+async function reload() { // after Privacy's delete: the figure, the looks and See it on me as the server has them now
+  S.photos = null;
+  try { await readTryon(); } catch (_) { S.tryon = null; }
+  form(); await first(); savedList();
+  if (S.me && S.el.me) S.me.refresh();
+}
 
 // ---- the section, mounted ONCE -------------------------------------------------------------------------------------------
 async function first() { // the first look "Today and tomorrow" shows: a plan's, else R13's suggestion for the day

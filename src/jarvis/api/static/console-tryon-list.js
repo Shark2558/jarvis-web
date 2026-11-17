@@ -119,11 +119,15 @@ function dayWords(iso) {
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   return DAYS[d.getUTCDay()] + ' ' + (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
 }
+/** "10:00": an event's start in this device's own time (his zone), or "" */
+export function hhmm(iso) {
+  const d = typeof iso === 'string' && iso ? new Date(iso) : null;
+  return d && !isNaN(d) ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '';
+}
 /** The caption's lines (fixed words only; never an id, never a private piece's own words). */
 export function caption(look, o) {
   const opt = o || {}, out = [];
-  const time = /T(\d{2}:\d{2})/.exec(String(opt.starts || ''));
-  out.push([dayWords(look && look.day), time ? time[1] : ''].filter(Boolean).join(' \u00b7 ') || 'This look');
+  out.push([dayWords(look && look.day), hhmm(opt.starts)].filter(Boolean).join(' \u00b7 ') || 'This look');
   const seen = new Set(), names = [];
   worn(look, opt.layers || 'all').forEach((s) => {
     const own = opt.own && s.piece && typeof opt.nameOf === 'function' ? clean(opt.nameOf(s.piece), 40) : '';

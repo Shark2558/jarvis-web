@@ -25,7 +25,7 @@ from urllib.parse import unquote
 import pytest
 from r131_fakes import T
 from r131_fakes_d import CARD, ENGINE, PLAN, SHOE, SHOE2, serve_d
-from test_console import DESKTOP, Console
+from test_console import CSP_SPY, DESKTOP, Console
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 pytestmark = pytest.mark.browser
@@ -99,7 +99,15 @@ class Page(Console):
         fake_engine: bool = True,
         clock: bool = False,
     ) -> None:
-        super().__init__(browser, url, token, viewport)
+        self.url, self.token, self.errors = url, token, []
+        # his phone and laptop keep India's time: the plan times and the caption read in IST
+        self.ctx = browser.new_context(
+            viewport=viewport, timezone_id="Asia/Kolkata", locale="en-IN"
+        )
+        self.page = self.ctx.new_page()
+        self.page.add_init_script(CSP_SPY)
+        self.page.on("pageerror", lambda e: self.errors.append(f"pageerror: {e}"))
+        self.page.on("console", self._on_console)
         self.sent: list[dict[str, Any]] = []
         if clock:
             self.page.clock.install(time=PAGE_NOW)
@@ -113,8 +121,13 @@ class Page(Console):
         self.page.on("request", self._log)
 
     def _log(self, req: Any) -> None:
-        if "/v1/" in req.url:
-            self.sent.append({"method": req.method, "url": req.url, "body": req.post_data})
+        if "/v1/" not in req.url:
+            return
+        try:
+            body = req.post_data
+        except UnicodeDecodeError:  # a picture's bytes: only their size is kept here
+            body = f"<{len(req.post_data_buffer or b'')} bytes>"
+        self.sent.append({"method": req.method, "url": req.url, "body": body})
 
     def posts(self, part: str) -> list[dict[str, Any]]:
         return [r for r in self.sent if r["method"] != "GET" and part in r["url"]]

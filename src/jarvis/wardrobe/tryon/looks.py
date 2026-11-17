@@ -13,8 +13,9 @@ from A's store, his figure choices from `tryon/{uid}`. Three ways in:
 
 Each slot is a `LookSlot`: its template (his choice, else the table's), variants, colour, pattern,
 texture view (his, else `detail`, else `front`) and that crop's id, the views kept and the useful
-missing ones (`model.useful_views`), readiness and options (`options.py`), what is approximate,
-image card only, removable. A private slot (`base`, `underwear`) or one holding a private piece is
+missing ones (`model.useful_views`) and each kept crop by its view (`refs`), readiness and
+options (`options.py`), what is approximate, image card only, removable; `rgb` is None when he
+set no colour. A private slot (`base`, `underwear`) or one holding a private piece is
 COVERED: "Base layer (covered)" only; its piece and words only with `private=True` (his own panel's
 "Show private basics"), and even then no template, colour, pattern, photo or option (AVT-14). A
 gap of R13's that names a private piece is said without it.
@@ -166,6 +167,12 @@ def _texture(asset: Asset | None, kept: Mapping[View, str]) -> View | None:
     return next((v for v in (wanted, "detail", "front") if v is not None and v in kept), None)
 
 
+def _rgb(colour: str | None) -> tuple[int, int, int] | None:
+    """The palette's value; None when he set no colour (D5's "no colour set": B draws it
+    mid-grey, D says so; INTEGRATION-A 8.3, review A-1)."""
+    return rgb_of(colour) if colour else None
+
+
 def _approx(template: Template | None, photo: str | None) -> tuple[Approx, ...]:
     if template is None:
         return ()  # an image card only: nothing is drawn, nothing is estimated
@@ -196,7 +203,7 @@ def slot_of(
     photo = kept.get(texture) if texture is not None else None
     return LookSlot(
         slot=pick.slot, piece=p.id, words=o.unit_words(f, unit), template=template,
-        variants=VARIANTS.get(template, ()) if template else (), rgb=rgb_of(p.colour),
+        variants=VARIANTS.get(template, ()) if template else (), rgb=_rgb(p.colour),
         pattern=p.pattern, texture_view=texture, photo=photo,
         views=tuple(v for v in VIEWS if v in kept),
         refs=tuple(RefCard(view=v, photo=kept[v]) for v in VIEWS if v in kept),

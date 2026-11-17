@@ -204,6 +204,16 @@ async def test_avt04_views_refs_name_each_kept_crop_front_back_detail_and_none_w
     assert vest.private and vest.refs == ()  # a covered slot: no reference card
 
 
+async def test_a_drawn_piece_with_no_colour_serves_rgb_null_for_no_colour_set() -> None:
+    a = await a_world()
+    await a.w.edit(T.tee, colour=None)
+    tee = _slots(await a.service.looks.for_pieces(UID, f"top:{T.tee}"))["top"]
+    assert tee.rgb is None and tee.template == "tee" and not tee.private  # D: "no colour set"
+    assert "colour" in tee.approximate  # B draws null as mid-grey
+    shirt = _slots(await a.service.looks.for_pieces(UID, f"top:{T.shirt}"))["top"]
+    assert shirt.rgb == m.rgb_of("light_blue")  # a colour he set is still its palette value
+
+
 async def test_avt04_views_a_kurta_with_only_a_front_asks_for_the_back_and_stays_selectable() -> (
     None
 ):

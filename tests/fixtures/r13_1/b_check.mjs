@@ -253,6 +253,23 @@ check('every_part_has_the_seven_morphs_and_the_templates_are_the_manifests', (ne
   need(A.measure.mode === G.LINES, 'the measure rig must be lines (never drawn)');
 });
 
+// A state's own answer to a morph: a target named "tuck*hips" takes the PRODUCT of the two weights (the reader's
+// blend). Without it a tail tucked up to the waist would still widen with the hips it hung over when worn out.
+check('a_states_own_answer_to_a_morph_is_a_product_target', (need) => {
+  const one = (v) => new Float32Array([v, 0, 0]), toy = { x: one(1), targets: { hips: one(10), tuck: one(100), 'tuck*hips': one(1000) } };
+  const x = (w) => G.blend(toy, w)[0];
+  need(x({}) === 1 && x({ hips: 1 }) === 11 && x({ tuck: 1 }) === 101, 'the plain targets as before');
+  need(x({ hips: 1, tuck: 1 }) === 1111 && x({ hips: -0.5, tuck: 1 }) === -404 && x({ hips: 0.5, tuck: 0 }) === 6, 'the product of the two weights');
+  for (const name of ['shirt', 'tee', 'jacket']) {
+    const t = Object.keys(A[name].targets), state = name === 'jacket' ? 'open' : 'tuck';
+    need(t.indexOf(state) === 7 && t.slice(8).length > 0 && t.slice(8).every((k) => k.startsWith(state + '*') && C.MORPHS.includes(k.split('*')[1])), name + ': the seven, its state, then the state\'s answers (' + t.slice(7) + ')');
+  }
+  need(Object.keys(A.shirt.targets).includes('tuck*hips'), 'a tucked shirt answers the hips in its own way');
+  const top = (name, w) => { const p = G.blend(A[name], w); let r = 0; for (let i = 0; i < p.length; i += 3) if (p[i + 1] > LV.trouser_top - 0.075 && p[i + 1] < LV.trouser_top - 0.02 && Math.abs(p[i]) < 0.1) r = Math.max(r, p[i + 2]); return r; };
+  const wide = { hips: 1 };
+  need(top('shirt', { ...wide, tuck: 1 }) < top('trousers', wide) - 0.004, 'hips 126: the tucked tail stays inside the trousers\' front (' + top('shirt', { ...wide, tuck: 1 }).toFixed(3) + ' against ' + top('trousers', wide).toFixed(3) + ')');
+});
+
 check('measure_table', (need) => {
   need(manifest.measure.length === 19, 'the table has 19 cases');
   for (const row of manifest.measure) {

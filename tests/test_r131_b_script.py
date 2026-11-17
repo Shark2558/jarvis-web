@@ -18,7 +18,7 @@ pytest.importorskip("scipy")
 from r131_fakes_b import SCRIPTS, fake_clone, mannequin, tube  # noqa: E402
 
 mq = mannequin()
-from mannequin import build, core, glb, measure, mesh  # noqa: E402
+from mannequin import build, carry, core, glb, measure, mesh  # noqa: E402
 
 
 # ---- the mesh helpers ----------------------------------------------------------------------------
@@ -147,6 +147,71 @@ def test_a_rig_mesh_is_measured_through_its_morphs() -> None:
     base, tall = measure.rig_measure(rig, {}), measure.rig_measure(rig, {"height": 1.0})
     assert base[0] == pytest.approx(200) and tall[0] == pytest.approx(220)
     assert tall[5] == pytest.approx(base[5] * 1.1) and tall[2] == pytest.approx(base[2])
+
+
+# ---- the carrier: a garment is carried by the body, so nested layers stay nested -----------------
+def _carrier(around: int = 32, up: int = 21) -> tuple[Any, Any, Any]:
+    from types import SimpleNamespace
+
+    x, q = tube(radius=0.15, height=1.0, around=around, up=up)
+    return carry.Carrier(SimpleNamespace(Qt=q), x), x, q
+
+
+def _radius(p: Any) -> Any:
+    return np.hypot(p[:, 0], p[:, 2])
+
+
+def test_two_shells_that_ride_the_body_keep_their_order_when_it_grows_and_shrinks() -> None:
+    carrier, x, _ = _carrier()
+    out = x * [1, 0, 1] / 0.15
+    inner, outer, ride = x + 0.0035 * out, x + 0.007 * out, np.arange(len(x))
+    wide = x * [1.4, 1, 1.4]  # the solved shape: 40 % wider
+    for weight in (1.0, 0.5, -0.9):  # the top, a mid point, and far below the sample
+        a = inner + weight * carrier.carried("inner", inner, wide, ride)
+        b = outer + weight * carrier.carried("outer", outer, wide, ride)
+        body = x + weight * (wide - x)
+        assert (_radius(a) > _radius(body) + 0.002).all(), weight
+        assert (_radius(b) > _radius(a) + 0.002).all(), weight  # never inside out
+    grown = _radius(outer + carrier.carried("outer", outer, wide, ride)) - _radius(wide)
+    assert grown[32:-32] == pytest.approx(0.007 * 1.183, abs=0.0006)  # the gap grows with it
+
+
+def test_cloth_that_is_not_a_shell_follows_the_triangle_it_lies_on() -> None:
+    carrier, x, _ = _carrier()
+    th = np.linspace(0.1, 6.1, 40)
+    ring = np.stack([0.16 * np.sin(th), np.full(40, 0.52), 0.16 * np.cos(th)], 1)  # a belt
+    taller = x * [1, 1.3, 1]
+    moved = ring + carrier.carried("belt", ring, taller)
+    assert moved[:, 1] == pytest.approx(0.52 * 1.3, abs=0.002)  # by where it lies, not a vertex
+    assert _radius(moved) == pytest.approx(0.16, abs=0.004)
+    idx, share = carrier.weights("belt", ring, None)
+    assert idx.shape == (40, 3) and share.sum(1) == pytest.approx(1.0) and (share >= 0).all()
+
+
+def test_a_shell_point_the_making_moved_away_is_carried_by_where_it_lies_now() -> None:
+    carrier, x, _ = _carrier()
+    tail = x.copy()
+    low = x[:, 1] < 0.3
+    tail[low, 1] = 0.6  # a tail folded up, as a tucked shirt's
+    hips = x * np.where(x[:, 1:2] < 0.4, 1.5, 1.0) * [1, 0, 1] + x * [0, 1, 0]  # wide below 0.4
+    moved = tail + carrier.carried("tail", tail, hips, np.arange(len(x)))
+    assert _radius(moved[low]).max() < 0.16  # not widened by the hips it no longer hangs over
+    there = x[low] + carrier.carried("body", x, hips, np.arange(len(x)))[low]
+    assert _radius(there).min() > 0.22  # while a point that stayed is
+
+
+def test_an_offset_turns_with_the_surface_it_stands_on() -> None:
+    carrier, x, _ = _carrier()
+    out = x * [1, 0, 1] / 0.15
+    shell, lean = x + 0.01 * out, x.copy()
+    ang = 0.5 * x[:, 1]  # the tube leans over, more with height
+    lean[:, 1] = x[:, 1] * np.cos(ang) - x[:, 2] * np.sin(ang)
+    lean[:, 2] = x[:, 1] * np.sin(ang) + x[:, 2] * np.cos(ang)
+    moved = shell + carrier.carried("shell", shell, lean, np.arange(len(x)))
+    gap = np.linalg.norm(moved - lean, axis=1)[32:-32]
+    n = mesh.vnormals(lean, carrier.tris)[32:-32]
+    assert gap == pytest.approx(0.01, abs=0.0015)
+    assert (((moved - lean)[32:-32] * n).sum(1) > 0.008).all()  # still square to the surface
 
 
 # ---- the GLB subset ------------------------------------------------------------------------------

@@ -12,7 +12,12 @@ from .figure import TH, Ctx, legs_uv
 from .mesh import Arr, loft, loft_uv, ring_pts, smoothstep
 from .tops import hang_radius
 
-BOTTOM_EASE = 0.007  # every bottom's shell (m); the base shorts' is 0.0035
+BOTTOM_EASE = 0.007  # every bottom's shell (m)
+BASE_EASE = 0.0035  # the base shorts' shell: inside every bottom's
+INNER_LEG = 0.004  # a trouser leg's inner face stays this far from the middle
+WRAP_EASE = 0.020  # a wrap is loose cloth: the body may widen under it without coming through
+BASE_TOP = 0.06  # the base shorts' top edge, below the waist: well under every waistband
+TOP_TUCK = 0.006  # and drawn in by this much: no rim to see inside a waistband
 
 
 def leg_axis(ctx: Ctx, s: str, y: Arr) -> tuple[Arr, Arr]:
@@ -45,7 +50,7 @@ def leg_tubes(
         want = np.maximum(r, rmin) * (1 - tube) + rmin * tube
         f = np.where(m, want / np.maximum(r, 1e-6), 1.0)
         x[:, 0], x[:, 2] = ax + dx * f, az + dz * f
-        x[:, 0] = np.where(m, sg * np.maximum(sg * x[:, 0], 0.004), x[:, 0])
+        x[:, 0] = np.where(m, sg * np.maximum(sg * x[:, 0], INNER_LEG), x[:, 0])
 
 
 def edges(ctx: Ctx, cut: str) -> tuple[Arr, Arr]:
@@ -77,7 +82,7 @@ def trousers(ctx: Ctx) -> None:
     x[low, 1] = hem[low]
     x[top, 1] = j["trouser_top"]
     uv = legs_uv(ctx, x, g["T"], leg_sides(ctx, "trousers")) if ctx.first else None
-    ctx.put("trousers", x, g["T"], uv)
+    ctx.put("trousers", x, g["T"], uv, ride=g["vid"])
 
 
 def shorts_garment(ctx: Ctx) -> None:
@@ -90,7 +95,7 @@ def shorts_garment(ctx: Ctx) -> None:
     x[bot, 1] = j["kneeL"][1] + 0.022
     x[top, 1] = j["trouser_top"]
     uv = legs_uv(ctx, x, g["T"], leg_sides(ctx, "shortsG")) if ctx.first else None
-    ctx.put("shortsG", x, g["T"], uv)
+    ctx.put("shortsG", x, g["T"], uv, ride=g["vid"])
 
 
 def wrap(ctx: Ctx) -> None:
@@ -103,7 +108,7 @@ def wrap(ctx: Ctx) -> None:
             np.linspace(tw - 0.07, j["ankleL"][1] + 0.035, 14),
         ]
     )
-    rr = hang_radius(ctx, hs, BOTTOM_EASE + 0.004, 0.012)
+    rr = hang_radius(ctx, hs, WRAP_EASE, 0.012)
     rr[0], rr[1], rr[2] = rr[0] - 0.006, rr[1] + 0.004, rr[2] + 0.004  # the fold stands proud
     front = 0.004 * np.exp(
         -((((TH - 0.35 + np.pi) % (2 * np.pi) - np.pi) / 0.05) ** 2)
@@ -120,7 +125,17 @@ def base_shorts(ctx: Ctx) -> None:
     """The base layer's boxer-length shorts (always drawn: the private zone's cover)."""
     j = ctx.J
     g = ctx.fig.g["shorts"]
-    x = ctx.shell("shorts", 0.0035, 3)  # the bottoms' own smoothing: it stays inside them
+    fig = ctx.fig
+    x = ctx.shell("shorts", BASE_EASE, 3)  # the bottoms' own smoothing: it stays inside them
     top, _ = edges(ctx, "shorts")
-    x[top, 1] = j["waist"] - 0.05  # inside every waistband; the leg hems follow the body
-    ctx.put("baseShorts", x, g["T"])
+    x[top, 1] = j["waist"] - BASE_TOP  # inside every waistband; the leg hems follow the body
+    x[top, 0] *= 1 - TOP_TUCK / np.maximum(np.hypot(x[top, 0], x[top, 2] - j["zc"]), 1e-6)
+    x[top, 2] -= (
+        (x[top, 2] - j["zc"])
+        * TOP_TUCK
+        / np.maximum(np.hypot(x[top, 0], x[top, 2] - j["zc"]), 1e-6)
+    )
+    for s, sg in (("L", 1), ("R", -1)):  # each leg keeps to its own side, inside the trouser leg
+        m = (fig.wLeg[s][g["vid"]] > 0.5) & (x[:, 1] < j["crotch"] + 0.02)
+        x[:, 0] = np.where(m, sg * np.maximum(sg * x[:, 0], INNER_LEG + BASE_EASE), x[:, 0])
+    ctx.put("baseShorts", x, g["T"], ride=g["vid"])

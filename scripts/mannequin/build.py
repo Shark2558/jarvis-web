@@ -8,10 +8,11 @@ A dev tool run by hand with the pins of requirements-dev.txt (numpy 2.5.3, scipy
 the server's image. It reads only the CC0 MakeHuman/MPFB2 files of `core.SOURCES` from the clone
 (each checked against its SHA-256; never the `smplx` folder), solves the sample shape and the seven
 morph shapes (each measurement at its range's top, and `waist_down`: waist 62), cuts and shapes the
-garments at every shape, and writes into the output folder: body.glb (the body's regions without
-the private zone, the base vest and shorts, the measure rig), garments.glb (every template),
-MANIFEST.json (each file's sha256, bytes, type, source, licence and changes; the build's facts and
-its measure table) and the two licence texts and the NOTICE. The committed output lives in
+garments at the sample and lets the body carry them to every other shape (`Carrier`), and writes
+into the output folder: body.glb (the body's regions without the private zone, the base vest and
+shorts, the measure rig), garments.glb (every template), MANIFEST.json (each file's sha256, bytes,
+type, source, licence and changes; the build's facts and its measure table) and the two licence
+texts and the NOTICE. The committed output lives in
 src/jarvis/api/static/vendor/mannequin/m1/."""
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ if __package__ in (None, ""):  # run as a script: make the package importable
 import numpy as np  # noqa: E402
 
 from . import accessories, bottoms, feet, outer, tops  # noqa: E402
+from .carry import Carrier  # noqa: E402
 from .core import ANNY_COMMIT, DATA, NBODY, Human, SourceRefused  # noqa: E402
 from .figure import BODY_PARTS, SOLE, Figure, begin  # noqa: E402
 from .glb import LINES, GlbWriter, read_glb  # noqa: E402
@@ -85,26 +87,33 @@ CHANGES = (
 )
 
 
+GARMENTS = (
+    tops.vest,
+    bottoms.base_shorts,
+    bottoms.trousers,
+    accessories.belt,
+    bottoms.shorts_garment,
+    bottoms.wrap,
+    tops.shirt,
+    tops.tee,
+    tops.kurta,
+    outer.jacket,
+    feet.shoes,
+    feet.sandals,
+    feet.socks,
+    accessories.watch,
+)
+STATE_STEP = 0.0003  # a state's own answer to a morph is written when it moves a point this far
+
+
 def evaluate(fig: Figure, a: Arr, first: bool = False) -> dict[str, Arr]:
-    """Every part's points at shape `a` (and, the first time, the topology in `fig`)."""
+    """The body's points at shape `a`; the first time (the sample shape) also every garment, cut
+    and shaped, with the topology kept in `fig`. At the other shapes the garments are not made
+    again: each is CARRIED by the body (`carried`), so the layers keep their order."""
     ctx = begin(fig, a, first)
-    for make in (
-        tops.vest,
-        bottoms.base_shorts,
-        bottoms.trousers,
-        accessories.belt,
-        bottoms.shorts_garment,
-        bottoms.wrap,
-        tops.shirt,
-        tops.tee,
-        tops.kurta,
-        outer.jacket,
-        feet.shoes,
-        feet.sandals,
-        feet.socks,
-        accessories.watch,
-    ):
-        make(ctx)
+    if first:
+        for make in GARMENTS:
+            make(ctx)
     ctx.out["_P"] = ctx.P
     return ctx.out
 
@@ -125,18 +134,38 @@ def morph_shapes(ms: Measurer, a0: Arr) -> dict[str, Arr]:
 
 
 def part_mesh(
-    name: str, fig: Figure, base: dict[str, Arr], morphs: dict[str, dict[str, Arr]]
+    name: str,
+    fig: Figure,
+    base: dict[str, Arr],
+    morphs: dict[str, dict[str, Arr]],
+    carrier: Carrier,
 ) -> dict[str, Any]:
-    """One part ready to write: points, triangles, UVs, morph deltas (the seven, then its state)."""
+    """One part ready to write: points, triangles, UVs, morph deltas (the seven, then its state,
+    then the state's own answer to each morph, named "state*morph": its weight is the product).
+    A body region's deltas are its own points'; a garment's are carried by the body. A point
+    that a state moves far (a tail tucked up from the hips to the waist) is carried, in that
+    state, by where it then lies: without the product target a tucked tail would widen with the
+    hips it no longer hangs over."""
     t, uv = fig.topo[name]
     x = base[name]
     vmap = np.arange(len(x))
     if uv is not None and uv.ndim == 3:
         vmap, t, uv = weld(t, uv)
-    targets = {k: (m[name] - x)[vmap] for k, m in morphs.items()}
-    for key in base:
-        if key.startswith(name + "@"):
-            targets[key.split("@")[1]] = (base[key] - x)[vmap]
+    ride = fig.meta[name].get("ride")
+    if name in BODY_PARTS:
+        targets = {k: (m[name] - x)[vmap] for k, m in morphs.items()}
+    else:
+        targets = {k: carrier.carried(name, x, m["_P"], ride)[vmap] for k, m in morphs.items()}
+    states = [key.split("@")[1] for key in base if key.startswith(name + "@")]
+    for st in states:
+        targets[st] = (base[f"{name}@{st}"] - x)[vmap]
+    for st in states:  # "tuck*hips": what the body's change adds to a point in THAT state
+        xs = base[f"{name}@{st}"]
+        for k, m in morphs.items():
+            there = carrier.carried(f"{name}@{st}", xs, m["_P"], ride)
+            extra = there - carrier.carried(name, x, m["_P"], ride)
+            if np.abs(extra).max() > STATE_STEP:
+                targets[f"{st}*{k}"] = extra[vmap]
     extras = {k: v for k, v in fig.meta[name].items() if k in ("ranges", "rim") and v is not True}
     if "ranges" in extras:  # sub-part ranges follow the welded order (welding keeps it)
         first = {k: int(np.searchsorted(vmap, a)) for k, (a, _) in extras["ranges"].items()}
@@ -234,7 +263,8 @@ def build(clone: Path) -> dict[str, bytes]:
     fig = Figure(h, ms, a0)
     base = evaluate(fig, a0, first=True)
     morphs = {k: evaluate(fig, a) for k, a in morph_shapes(ms, a0).items()}
-    meshes = {n: part_mesh(n, fig, base, morphs) for n in fig.topo}
+    carrier = Carrier(fig, base["_P"])
+    meshes = {n: part_mesh(n, fig, base, morphs, carrier) for n in fig.topo}
     rig = rig_mesh(ms, base, morphs)
     facts: dict[str, Any] = dict(
         sliders=list(MEASURES), morphs=list(MORPHS), ranges=RANGES, sample=SAMPLE, sole=SOLE

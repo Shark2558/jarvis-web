@@ -197,5 +197,6 @@ def jacket(ctx: Ctx) -> None:
     parts = _state(ctx, g, opened=False)
     x, t = merge(parts)
     uv = torso_uv(ctx, x, t, arm_tris(ctx, g, parts, t, None)) if ctx.first else None
-    ctx.put("jacket", x, t, uv, ranges=part_ranges(parts, ("trunk", "lapelL", "lapelR")))
+    names = ("trunk", "lapelL", "lapelR")
+    ctx.put("jacket", x, t, uv, ranges=part_ranges(parts, names), ride=g["vid"])
     ctx.state("jacket", "open", merge(_state(ctx, g, opened=True))[0])

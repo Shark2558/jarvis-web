@@ -18,6 +18,7 @@ const refuse = (why) => { throw new GlbRefused('The 3D model file is not one JAR
 const whole = (v) => Number.isInteger(v) && v >= 0;
 const triple = (v) => Array.isArray(v) && v.length === 3 && v.every((c) => typeof c === 'number' && Number.isFinite(c));
 const named = (v) => typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(v) && !(v in Object.prototype);
+const morphName = (v) => typeof v === 'string' && v.split('*').length <= 2 && v.split('*').every(named);
 
 /** One accessor's numbers. EVERY span is checked before a byte is read: offsets and counts are whole numbers, the
  *  accessor lies inside its view and the view inside the BIN chunk, and the view's stride is the kind's own. */
@@ -71,7 +72,7 @@ function meshOf(doc, bin, m) {
   for (const k of Object.keys(p.attributes || {})) if (!ATTRS.includes(k)) refuse(m.name + ': attribute ' + k);
   if (p.attributes.POSITION === undefined || p.indices === undefined) refuse(m.name + ': no positions or no index');
   const names = Array.isArray(ex.targetNames) ? ex.targetNames : [], tg = Array.isArray(p.targets) ? p.targets : [];
-  if (names.length !== tg.length || !names.every(named) || new Set(names).size !== names.length) refuse(m.name + ': morph targets without their own plain names');
+  if (names.length !== tg.length || !names.every(morphName) || new Set(names).size !== names.length) refuse(m.name + ': morph targets without their own plain names');
   const pos = accessor(doc, bin, p.attributes.POSITION), index = accessor(doc, bin, p.indices).data;
   if (!pos.raw || !(index instanceof Uint16Array)) refuse(m.name + ': positions or index of the wrong type');
   const n = pos.data.length / 3, targets = Object.create(null);
@@ -124,11 +125,12 @@ function join(files) {
   return all;
 }
 
-/** A mesh's points under morph weights ({name: weight}; a name the mesh lacks is ignored). */
+/** A mesh's points under morph weights ({name: weight}; a name the mesh lacks is ignored). A target named
+ *  "a*b" (a state's own answer to a morph: "tuck*hips") takes the product of the two weights. */
 function blend(mesh, weights) {
-  const out = new Float32Array(mesh.x);
+  const out = new Float32Array(mesh.x), of = (name) => Number((weights || {})[name]) || 0;
   for (const name of Object.keys(mesh.targets)) {
-    const w = Number((weights || {})[name]) || 0;
+    const w = name.includes('*') ? name.split('*').reduce((p, k) => p * of(k), 1) : of(name);
     if (!w) continue;
     const d = mesh.targets[name];
     for (let k = 0; k < out.length; k++) out[k] += w * d[k];

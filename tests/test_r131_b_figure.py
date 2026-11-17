@@ -19,6 +19,7 @@ from r131_fakes_b import (
     CONTROLS,
     FIXTURES,
     M1,
+    POKE,
     STATIC,
     manifest,
     manifest_problems,
@@ -223,6 +224,30 @@ def test_the_governor_judges_what_a_frame_cost_not_how_often_he_touched_a_key() 
     """Review B-1, finding 2: replays of a fast laptop (key taps at 3 Hz, a slow drag, a 60 fps
     spin: never a step) and of a slow device (60 ms a frame: shadows off, then retired)."""
     _passed("governor_judges_render_cost_not_input_cadence")
+
+
+def test_no_layer_beneath_shows_through_at_the_sample_or_at_either_end_of_a_slider() -> None:
+    """Review B-1, finding 6: the base shorts, a tucked tail and the socks stay under what covers
+    them at 15 shapes (inseam 66 too), judged by what an eye would see (a depth buffer in Node).
+    Before the fix a level view saw up to 304 cm2 of the base shorts through a wrap (hips 78) and
+    84 cm2 through the trousers (inseam 66); the documented limits are capped in the fixture."""
+    case = node_cases("none", None, POKE)["no_layer_beneath_shows_through"]
+    assert case["passed"], case["failures"]
+    assert case["shapes"] == 15 and case["checked"] >= 120
+    assert case["worst_level_cm2"] <= 0.6 and case["worst_above_cm2"] <= 22
+    assert set(case["known"]) == {"inseam min", "waist max"}  # INTEGRATION-B lists both
+
+
+def test_trousers_with_half_their_ease_let_the_base_shorts_through() -> None:
+    """The control of the case above: the trousers drawn 4 mm inside their own shape."""
+    assert "thin_trousers" in CONTROLS
+    case = node_cases("thin_trousers", None, POKE)["no_layer_beneath_shows_through"]
+    assert not case["passed"]
+    assert any("sample: " in f and "the base shows through" in f for f in case["failures"])
+
+
+def test_a_states_own_answer_to_a_morph_is_a_product_target() -> None:
+    _passed("a_states_own_answer_to_a_morph_is_a_product_target")
 
 
 def test_a_dressed_figure_draws_at_most_32000_triangles_and_two_at_most_64000() -> None:

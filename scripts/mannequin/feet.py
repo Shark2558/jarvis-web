@@ -40,7 +40,7 @@ def shoes(ctx: Ctx) -> None:
         soles.append(loft(rings, cap_end=True))
     x[:, 1] = np.maximum(x[:, 1], 0.001)
     x[g["bnd"], 1] = 0.088
-    ctx.put("shoes", x, g["T"])
+    ctx.put("shoes", x, g["T"], ride=g["vid"])
     sx, st = merge(soles)
     ctx.put("soles", sx, st)
 
@@ -86,4 +86,4 @@ def socks(ctx: Ctx) -> None:
     x = ctx.shell("socks", 0.0015, 1)
     top = g["bnd"]
     x[top, 1] = np.where(ctx.fig.P0[g["vid"]][top, 1] > 0.2, 0.262 * ctx.J["scale"], x[top, 1])
-    ctx.put("socks", x, g["T"])
+    ctx.put("socks", x, g["T"], ride=g["vid"])

@@ -221,7 +221,9 @@ class Ctx:
         return x + vnormals(x, g["T"]) * np.broadcast_to(ease, (len(x),))[:, None]
 
     def put(self, name: str, x: Arr, t: Arr, uv: Arr | None = None, **meta: Any) -> None:
-        """Keep a part's points; on the first evaluation also its triangles, UVs and extras."""
+        """Keep a part's points; on the first evaluation also its triangles, UVs and extras.
+        `ride`: the helper mesh's vertex each of the part's FIRST points was cut from (a shell's
+        points ride their own vertex when the body changes shape; see build.Carrier)."""
         self.out[name] = x
         if self.first:
             strips = [r for k, r in meta.get("ranges", {}).items() if k in STRIPS]

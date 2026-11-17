@@ -12,7 +12,8 @@ only, without a browser:
   refusals (an unknown accessor type); the private zone covered in every layer state x slot set x
   variant x view; AVT-07's geometry; tucked/untucked and open/closed; AVT-02, 03, 05, 06, 08, 09,
   10, 11, 14, 15's halves; triangles <= 32,000 a figure; the governor replayed on a fast laptop
-  (key taps, a slow drag) and on a slow device.
+  (key taps, a slow drag) and on a slow device; and (b_poke.mjs, a depth buffer in Node) that
+  no covered layer shows through its cover at 15 shapes, the slider ends included.
 
 Negative controls (each must turn its own case red; `control()` re-runs the Node cases with each
 applied and names what failed): two morphs swapped (the measure table); `waist_down` dropped
@@ -21,7 +22,8 @@ longer (AVT-07); and the rows' own: Side returns Front's yaw (AVT-02), Back rese
 (AVT-08), the closed jacket is the open one (AVT-10); the rig's top and floor taken before the
 head is softened, as the first build did (the drawn figure's height, review B-1 finding 1); the
 governor fed the gap between two frames instead of a frame's cost (a fast laptop is retired by
-key taps, finding 2)."""
+key taps, finding 2); the trousers drawn with half their ease (the base shorts show through,
+finding 6: tests/fixtures/r13_1/b_poke.mjs)."""
 
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ for _p in (ROOT / "src", ROOT / "tests"):
     if str(_p) not in sys.path:
         sys.path.append(str(_p))
 from r131_fakes_b import (  # noqa: E402
+    POKE,
     manifest,
     manifest_problems,
     measure_problems,
@@ -53,7 +56,9 @@ WANTED: dict[str, str] = {  # control -> the case it must turn red
     "closed_is_open": "avt10_closing_the_jacket_hides_the_shirt_front_and_keeps_the_same_jacket",
     "unsoftened_rig": "drawn_figure_measures_what_was_typed",
     "input_cadence": "governor_judges_render_cost_not_input_cadence",
+    "thin_trousers": "no_layer_beneath_shows_through",
 }
+OTHER_SCRIPT = {"thin_trousers": POKE}  # a control that belongs to another Node script
 
 
 def _case(name: str, failures: list[str]) -> dict[str, Any]:
@@ -71,16 +76,17 @@ def _python_cases() -> list[dict[str, Any]]:
     ]
 
 
-def _node(control: str) -> list[dict[str, Any]]:
+def _node(control: str, script: str = "b_check.mjs") -> list[dict[str, Any]]:
     return [
         {"id": c["id"], "passed": bool(c["passed"]), "failures": list(c["failures"])}
-        for c in node_cases(control).values()
+        for c in node_cases(control, None, script).values()
     ]
 
 
 async def cases() -> list[dict[str, Any]]:
     node = await asyncio.to_thread(_node, "none")
-    return [*_python_cases(), *node]
+    poke = await asyncio.to_thread(_node, "none", POKE)
+    return [*_python_cases(), *node, *poke]
 
 
 async def control() -> dict[str, Any]:
@@ -88,7 +94,7 @@ async def control() -> dict[str, Any]:
     failed: dict[str, list[str]] = {}
     missed: list[str] = []
     for name, case in WANTED.items():
-        got = await asyncio.to_thread(_node, name)
+        got = await asyncio.to_thread(_node, name, OTHER_SCRIPT.get(name, "b_check.mjs"))
         red = [c["id"] for c in got if not c["passed"]]
         failed[name] = red
         if f"{PART}:{case}" not in red:

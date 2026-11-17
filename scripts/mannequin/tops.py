@@ -28,6 +28,7 @@ from .mesh import (
 
 CUFF_END = 0.012  # the shirt cuff ends this far above the wrist joint (m): the watch sits below it
 CUFF_LEN = 0.064
+TAIL_IN = 0.012  # a tucked tail is drawn in this far below the waistband: deep inside every bottom
 X_AXIS = np.array([1.0, 0.0, 0.0])
 
 
@@ -45,7 +46,7 @@ def trunk_shell(
     rad = np.stack([np.sin(th), np.zeros(len(th)), np.cos(th)], 1)
     if tucked:
         push = 0.010 * np.exp(-(((yy - (tw + 0.055)) / 0.05) ** 2))
-        push = push - 0.007 * smoothstep(tw + 0.02, tw - 0.01, yy)
+        push = push - TAIL_IN * smoothstep(tw + 0.02, tw - 0.01, yy)
     else:
         push = 0.013 * np.exp(-(((yy - wa) / 0.09) ** 2)) + 0.012 * smoothstep(
             wa - 0.02, cr + 0.03, yy
@@ -62,8 +63,18 @@ def trunk_shell(
     x[hem, 1] = cr + 0.022 + 0.035 * np.sin(th[hem]) ** 2
     if tucked:  # the tail folds up inside the waistband (it never reaches the legs)
         low = (~fig.arm[vid]) & (x[:, 1] < tw - 0.07)
-        x[low, 1] = tw - 0.07
+        x[low] = tail_fold(ctx, th[low], tw - 0.07)
     return x, th
+
+
+def tail_fold(ctx: Ctx, th: Arr, y: float) -> Arr:
+    """Where a tucked tail's lower points go: gathered at height y, just inside the body's own
+    outline THERE. (Lifted straight up they kept the seat's width and stood out through the
+    trousers as a ledge across the seat: review B-1, finding 6.)"""
+    legs = ctx.fig.g["legs"]
+    r = slice_r(ctx.P[legs["vid"]], legs["T"], ctx.vert, y, TH, rmax=0.4)
+    at = np.interp(th % (2 * np.pi), np.append(TH, 2 * np.pi), np.append(r, r[0]))
+    return ring_pts(ctx.vert, y, th, at - TAIL_IN + 0.0055)
 
 
 def sleeve_ends(ctx: Ctx, cut: Cut, x: Arr, end_m: float, gather: float) -> None:
@@ -203,7 +214,7 @@ def _shirt_state(ctx: Ctx, tucked: bool) -> tuple[list[tuple[Arr, Arr]], list[tu
     x, _ = trunk_shell(ctx, "shirt", 0.0055, tucked)
     sleeve_ends(ctx, "shirt", x, CUFF_END + 0.045, 0.14)
     nf, front, trunk_t = neck_frame(ctx, "shirt", x, 0.012)
-    ybot = ctx.J["trouser_top"] - 0.05 if tucked else float(x[:, 1].min()) + 0.03
+    ybot = ctx.J["trouser_top"] - 0.02 if tucked else float(x[:, 1].min()) + 0.03
     cols = placket(ctx, x, trunk_t, front[1] - 0.036, ybot)
     r_hi = neck_radius(x, trunk_t, nf)
     stand, leaf = collar(r_hi, nf)
@@ -255,7 +266,8 @@ def shirt(ctx: Ctx) -> None:
     parts, btn = _shirt_state(ctx, tucked=False)
     x, t = merge(parts)
     uv = torso_uv(ctx, x, t, arm_tris(ctx, "shirt", parts, t, 4)) if ctx.first else None
-    ctx.put("shirt", x, t, uv, ranges=part_ranges(parts, SHIRT_PARTS))
+    ride = ctx.fig.g["shirt"]["vid"]
+    ctx.put("shirt", x, t, uv, ranges=part_ranges(parts, SHIRT_PARTS), ride=ride)
     bx, bt = merge(btn)
     ctx.put("shirtButtons", bx, bt)
     parts2, btn2 = _shirt_state(ctx, tucked=True)
@@ -278,7 +290,8 @@ def tee(ctx: Ctx) -> None:
     g = ctx.fig.g["tee"]
     x = _tee_state(ctx, tucked=False)
     arms = {s: (ctx.fig.wArm[s][g["vid"]] >= 0.5)[g["T"]].all(1) for s in "LR"}
-    ctx.put("tee", x, g["T"], torso_uv(ctx, x, g["T"], arms) if ctx.first else None)
+    uv = torso_uv(ctx, x, g["T"], arms) if ctx.first else None
+    ctx.put("tee", x, g["T"], uv, ride=g["vid"])
     ctx.state("tee", "tuck", _tee_state(ctx, tucked=True))
 
 
@@ -323,7 +336,8 @@ def kurta(ctx: Ctx) -> None:
     ]
     xm, t = merge(parts)
     uv = torso_uv(ctx, xm, t, arm_tris(ctx, "shirt", parts, t, None)) if ctx.first else None
-    ctx.put("kurta", xm, t, uv, ranges=part_ranges(parts, ("trunk", "placket", "band", "skirt")))
+    names = ("trunk", "placket", "band", "skirt")
+    ctx.put("kurta", xm, t, uv, ranges=part_ranges(parts, names), ride=ctx.fig.g["shirt"]["vid"])
 
 
 def vest(ctx: Ctx) -> None:
@@ -333,4 +347,4 @@ def vest(ctx: Ctx) -> None:
     if "S" not in g:
         g["S"] = boundary_smoother(len(x), g["T"])
     x = slide_boundary(x, g["T"], g["S"], 60)
-    ctx.put("vest", x, g["T"])
+    ctx.put("vest", x, g["T"], ride=g["vid"])

@@ -84,9 +84,8 @@ def shorts_garment(ctx: Ctx) -> None:
     """Shorts: the trousers' top with a looser leg ending just above the knee."""
     fig, j = ctx.fig, ctx.J
     g = fig.g["shortsG"]
-    x = ctx.shell("shortsG", BOTTOM_EASE, 3)
-    knee0 = fig.J0["kneeL"][1]
-    leg_tubes(ctx, "shortsG", x, (0.100, 0.100), (knee0 + 0.02, knee0 + 0.14))
+    x = ctx.shell("shortsG", BOTTOM_EASE + 0.005, 3)  # loose: the base shorts stay well inside
+    leg_tubes(ctx, "shortsG", x, (0.100, 0.100), (-2.0, -1.0))  # a minimum width, never a squeeze
     top, bot = edges(ctx, "shortsG")
     x[bot, 1] = j["kneeL"][1] + 0.022
     x[top, 1] = j["trouser_top"]

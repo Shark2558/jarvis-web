@@ -51,7 +51,8 @@ function plan(look, opts) {
   const { by, cards, covered } = picked(look);
   const on = (place) => (layers === 'base' || (layers === 'no_outer' && place === 'outer') ? null : by[place] || null);
   const top = on('top'), bottom = on('bottom'), outer = on('outer');
-  const tucked = !!(top && bottom && TUCKS.includes(top.template) && flag(o.tucked, top.variant === 'tucked'));
+  // a wrap is tied over the shirt's tail: the one shape of a wrap has no room for a top worn out over it
+  const tucked = !!(top && bottom && TUCKS.includes(top.template) && (bottom.template === 'wrap' || flag(o.tucked, top.variant === 'tucked')));
   const open = !!(outer && flag(o.open, outer.variant !== 'closed'));
   const belted = !!(bottom && BELTED.includes(bottom.template) && (!top || tucked));
   const parts = [], drawn = [], approx = {}, hidden = [];

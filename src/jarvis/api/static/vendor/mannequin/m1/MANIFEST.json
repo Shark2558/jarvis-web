@@ -10,8 +10,8 @@
    "changes": "MakeHuman/MPFB2 base mesh, targets and standard rig weights read from the clone; a neutral shape solved for six measurements, posed, the private zone removed, garments cut from the helper-tights helper mesh and shaped, seven morph targets, quantised to int16 (JARVIS)"
   },
   "garments.glb": {
-   "sha256": "f674fa46a4729a37e6c93d3790270cb5b8eaf4dc433bf4176cee7d45906e3781",
-   "bytes": 1192688,
+   "sha256": "1b09f54b2d4cbb480781cd38ddb806c1e33070226d5c79684afe9a8ab90789b1",
+   "bytes": 1193112,
    "type": "application/octet-stream",
    "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
    "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt",

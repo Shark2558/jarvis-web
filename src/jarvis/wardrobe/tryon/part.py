@@ -18,6 +18,7 @@ eval's controls can swap one.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
 from typing import Any, TypeVar
 
 from jarvis.logging import get_logger
@@ -95,8 +96,10 @@ class TryonService:
         doc = await self.store.change(uid, lambda d: versions.draft(d, typed, at))
         return versions.versions_view(doc)
 
-    async def use_body(self, uid: str) -> BodyVersions:
-        return versions.versions_view(await self.store.change(uid, lambda d: versions.use(d)))
+    async def use_body(self, uid: str, seen: datetime | None = None) -> BodyVersions:
+        """ "Use these measurements": the draft he saw (`seen`, its `at`), in one transaction."""
+        doc = await self.store.change(uid, lambda d: versions.use(d, seen))
+        return versions.versions_view(doc)
 
     async def drop_draft(self, uid: str) -> BodyVersions:
         return versions.versions_view(await self.store.change(uid, lambda d: versions.drop(d)))

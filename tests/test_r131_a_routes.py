@@ -344,6 +344,24 @@ async def test_every_body_is_capped_at_16_kb_before_it_is_read_as_json() -> None
             assert 413 in errors, (meth, path)  # the contract's rows say so
 
 
+async def test_use_these_measurements_is_bound_to_the_draft_he_saw() -> None:
+    a = await a_world()
+    async with a.client() as c:
+        laptop = (await c.put("/v1/tryon/body", json={"height": 172})).json()["draft"]["at"]
+        a.clock.advance(minutes=3)
+        phone = (await c.put("/v1/tryon/body", json={"height": 178})).json()["draft"]["at"]
+        stale = await c.post("/v1/tryon/body/use", params={"at": laptop})  # the laptop's press
+        assert _refusal(stale, 409, "changed").detail == routes.versions.CHANGED
+        kept = TryonView.model_validate((await c.get("/v1/tryon")).json()).body
+        assert kept.current is None and kept.draft.height == 178  # type: ignore[union-attr]
+        _refusal(await c.post("/v1/tryon/body/use", params={"at": "yesterday"}), 422,
+                 "bad_request")  # fmt: skip
+        used = await c.post("/v1/tryon/body/use", params={"at": phone})  # the draft he saw
+        assert used.status_code == 200 and used.json()["current"]["height"] == 178
+    row = next(e for m_, p, _, _, _, e, _ in ROUTES if (m_, p) == ("POST", "/v1/tryon/body/use"))
+    assert {409, 422} <= set(row)
+
+
 @pytest.mark.parametrize("value", ["172", 172.0, 172.5, True])
 async def test_a_measurement_not_typed_as_whole_centimetres_is_refused_in_words(value: Any) -> None:
     a = await a_world()

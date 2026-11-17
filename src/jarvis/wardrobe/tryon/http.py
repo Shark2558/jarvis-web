@@ -75,7 +75,7 @@ _B = (413, 422)  # a body: too large (A's cap, before it is read), or not one to
 ROUTES: tuple[tuple[str, str, str, object, object, tuple[int, ...], bool], ...] = (
     ("GET", "/v1/tryon", "tryon", None, TryonView, (*_E, 503), False),
     ("PUT", "/v1/tryon/body", "tryon", BodyIn, BodyVersions, (*_E, *_B, 503), False),
-    ("POST", "/v1/tryon/body/use", "tryon", None, BodyVersions, (*_E, 404, 503), False),
+    ("POST", "/v1/tryon/body/use", "tryon", None, BodyVersions, (*_E, 404, 409, 422, 503), False),
     ("DELETE", "/v1/tryon/body/draft", "tryon", None, BodyVersions, (*_E, 404, 503), False),
     ("GET", "/v1/tryon/look", "tryon", None, TryonLook, (*_E, 404, 422, 503), False),
     ("PUT", "/v1/tryon/assets/{piece}", "tryon", AssetChoice, AssetChoice, (*_E, 404, *_B), False),

@@ -7,8 +7,9 @@ in, documents out; the time is passed in (no clock here).
   typed height, else the sample's) with preview v2's proportions (`model.estimated`), so the
   figure is "Estimated from your measurements". A value outside its range is `OutOfRange`, in
   `model.range_words`' words.
-- `use(doc)`: "Use these measurements": the draft becomes current and the old current the first
-  earlier one (at most five kept). `drop(doc)`: "Keep the current": the draft goes.
+- `use(doc, seen)`: "Use these measurements" (of the draft he saw, `Changed` if another screen
+  typed a newer one): the draft becomes current and the old current the first earlier one (at
+  most five kept). `drop(doc)`: "Keep the current": the draft goes.
 - Saved selections (his plans' piece ids, his saved comparisons) and his figure choices are never
   touched by a version (AVT-03).
 - `body_view(b)` / `versions_view(doc)`: what the routes serve; every `BodyView` carries
@@ -38,6 +39,7 @@ from jarvis.wardrobe.tryon.store import TryonDoc
 
 NOTHING = "Type at least one measurement, in whole centimetres."
 WHOLE = "Type each measurement in whole centimetres, for example 172."
+CHANGED = "Your new measurements changed on another screen: check them, then press Use again."
 NO_DRAFT_USE = "There are no new measurements to use."
 NO_DRAFT_DROP = "There are no new measurements to drop."
 
@@ -57,6 +59,10 @@ class NothingTyped(ValueError):
 
 class NoDraft(LookupError):
     """Use or drop with no draft to use or drop."""
+
+
+class Changed(ValueError):
+    """ "Use these measurements" for a draft that isn't the one he saw any more: a 409."""
 
 
 class NotWhole(ValueError):
@@ -106,9 +112,13 @@ def draft(doc: TryonDoc, raw: Mapping[str, object], at: datetime) -> TryonDoc:
     return doc.model_copy(update={"draft": body})
 
 
-def use(doc: TryonDoc) -> TryonDoc:
+def use(doc: TryonDoc, seen: datetime | None = None) -> TryonDoc:
+    """The draft made current; with `seen` (the draft's `at` he was shown), only that draft: one
+    typed on another screen since is never made current unseen (review A-1 F7)."""
     if doc.draft is None:
         raise NoDraft(NO_DRAFT_USE)
+    if seen is not None and doc.draft.at != seen:
+        raise Changed(CHANGED)
     earlier = ((doc.current,) if doc.current is not None else ()) + doc.earlier
     return doc.model_copy(
         update={"current": doc.draft, "draft": None, "earlier": earlier[:EARLIER_MAX]}
@@ -140,10 +150,12 @@ def figure_words(doc: TryonDoc) -> str:
 
 
 __all__ = [
+    "CHANGED",
     "NOTHING",
     "WHOLE",
     "NO_DRAFT_DROP",
     "NO_DRAFT_USE",
+    "Changed",
     "NoDraft",
     "NotWhole",
     "NothingTyped",

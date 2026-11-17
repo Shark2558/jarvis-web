@@ -333,8 +333,8 @@ def _swapped(module: Any, name: str, value: Any) -> Iterator[None]:
 
 
 def _rewrites_saved(real: Callable[[TryonDoc], TryonDoc]) -> Callable[[TryonDoc], TryonDoc]:
-    def use(doc: TryonDoc) -> TryonDoc:  # AVT-03's control: a version that rewrites saved ids
-        new = real(doc)
+    def use(doc: TryonDoc, *seen: Any) -> TryonDoc:  # AVT-03's control: it rewrites saved ids
+        new = real(doc, *seen)
         saved = tuple(
             s.model_copy(update={"looks": tuple(
                 lk.model_copy(update={"slots": tuple(

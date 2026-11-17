@@ -206,9 +206,11 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
         return _ok(st.body)
 
     @r.post("/v1/tryon/body/use")
-    async def use() -> JSONResponse:
+    async def use(at: str = "") -> JSONResponse:
         if st.body.draft is None:
             return _no(404, "no_draft", "There are no new measurements to use.")
+        if at and datetime.fromisoformat(at) != st.body.draft.at:  # A's ?at= (review A-1 F7)
+            return _no(409, "changed", "Your new measurements changed on another screen.")
         earlier = ((st.body.current,) if st.body.current else ()) + st.body.earlier
         st.body = http.BodyVersions(current=st.body.draft, earlier=earlier[: m.EARLIER_MAX])
         return _ok(st.body)

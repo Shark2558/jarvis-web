@@ -105,3 +105,16 @@ async def test_the_fake_serves_the_same_reference_cards_as_a() -> None:
             got = await c.get(f"/v1/tryon/look?pieces=top:{pid}")
             fake = http.TryonLook.model_validate(got.json()).slots[0]
             assert fake.refs == ours.refs and len(ours.refs) == 2  # D draws what A serves
+
+
+async def test_the_fake_binds_use_to_the_draft_he_saw_as_a_does() -> None:
+    a = await a_world()
+    client, _ = await _fake_client()
+    async with client as c, a.client() as real:
+        for one in (c, real):
+            seen = (await one.put("/v1/tryon/body", json={"height": 172})).json()["draft"]["at"]
+            stale = "2026-11-17T03:29:00Z"  # a minute before NOW: not the draft he was shown
+            got = await one.post("/v1/tryon/body/use", params={"at": stale})
+            assert got.status_code == 409 and got.json()["error"] == "changed", got.text
+            ok = await one.post("/v1/tryon/body/use", params={"at": seen})
+            assert ok.status_code == 200 and ok.json()["current"]["height"] == 172

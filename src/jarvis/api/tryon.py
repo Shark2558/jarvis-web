@@ -7,7 +7,7 @@ Exactly the `jarvis.wardrobe.tryon.http.ROUTES` rows of part "tryon":
                                      draft, earlier; typed or estimated), the ranges, his figure
                                      choices, saved comparisons (re-checked), the words
     PUT    /v1/tryon/body            a draft from what he typed (range words for a value outside)
-    POST   /v1/tryon/body/use        "Use these measurements"
+    POST   /v1/tryon/body/use        "Use these measurements" (?at= the draft he saw: 409 if not)
     DELETE /v1/tryon/body/draft      "Keep the current"
     GET    /v1/tryon/look            ?plan= | ?day=today|tomorrow&alt=0|1|2 | ?pieces=slot:wi_...
                                      (row 388's card; &plan=, &day=, &code= may come with it),
@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any, TypeVar
 
 from fastapi import APIRouter, Depends, Request
@@ -71,6 +72,7 @@ _CODES: tuple[tuple[type[Exception], int, str], ...] = (
     (versions.NothingTyped, 422, "nothing_typed"),
     (versions.NotWhole, 422, "not_whole"),
     (versions.NoDraft, 404, "no_draft"),
+    (versions.Changed, 409, "changed"),
     (assets.NotIn, 404, "not_in"),
     (assets.Refused, 422, "wrong_shape"),
     (looks.NoLook, 404, "gone"),
@@ -206,10 +208,23 @@ async def put_body(request: Request, uid: str = Depends(current_user)) -> JSONRe
     return await _run(request, uid, "body", act, change=True)
 
 
+def _seen(raw: str | None) -> datetime | None:
+    """`?at=`: the draft's `at` as he was shown it (D's console sends it back), else None."""
+    if raw is None:
+        return None
+    try:
+        at = datetime.fromisoformat(raw) if len(raw) <= 40 else None
+    except ValueError:
+        at = None
+    if at is None or at.tzinfo is None:
+        raise _Bad
+    return at
+
+
 @router.post("/v1/tryon/body/use", include_in_schema=False)
 async def use_body(request: Request, uid: str = Depends(current_user)) -> JSONResponse:
     async def act(svc: TryonService) -> Any:
-        got = await svc.use_body(uid)
+        got = await svc.use_body(uid, _seen(request.query_params.get("at")))
         await _audit(request, "use", [])
         return got
 

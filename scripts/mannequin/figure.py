@@ -36,7 +36,7 @@ from .pose import Posed, pose, posed_joint
 SOLE = 0.016  # the shoe's sole (m)
 TH = np.arange(64) / 64 * 2 * np.pi
 Cut = str | dict[str, Any]  # a cut's name, or a cut made elsewhere (the jacket's)
-STRIPS = ("placket", "lapelL", "lapelR")  # flat bands lying on the trunk
+STRIPS = ("placket", "lapelL", "lapelR", "collar")  # bands judged from the trunk's axis
 BODY_PARTS = ("bodyCore", "bodyArms", "bodyShoulders", "bodyShins", "bodyThighs", "bodyFeet")
 
 
@@ -122,9 +122,9 @@ class Figure:
             "tee": np.where(arm, self.tu <= 0.62, y >= cr + 0.012),
             "jacket": np.where(arm, tf <= 0.76, y >= cr + 0.012),
             "trousers": (~arm) & (y <= tw + 0.012) & (y >= 0.035),
-            "shortsG": (~arm) & (y <= tw + 0.012) & (y >= knee + 0.02),
+            "shortsG": (~arm) & (y <= tw + 0.012) & (y >= knee - 0.012),
             "vest": (~arm) & (y >= wa - 0.13),
-            "shorts": (~arm) & (y <= wa - 0.03) & (y >= cr - 0.2),
+            "shorts": (~arm) & (y <= wa - 0.03) & (y >= cr - 0.245),
             "shoes": (~arm) & (y <= 0.095),
             "socks": (~arm) & (y <= 0.27),
             "legs": ~arm & (y <= wa + 0.05),
@@ -264,7 +264,10 @@ def begin(fig: Figure, a: Arr, first: bool = False) -> Ctx:
         vid = np.unique(q)
         re = np.full(len(pb), -1)
         re[vid] = np.arange(len(vid))
-        ctx.put(name, pb[vid], tri_of(re[q]) if len(q) else np.zeros((0, 3), int), src=vid)
+        rim = np.isin(vid, fig.removed)  # points on the edge of the removed zone
+        low = pb[vid, 1] < ctx.J["waist"] - 0.085
+        zone = dict(low=np.where(rim & low)[0].tolist(), top=np.where(rim & ~low)[0].tolist())
+        ctx.put(name, pb[vid], tri_of(re[q]) if len(q) else np.zeros((0, 3), int), rim=zone)
     ctx.out["_body"] = pb
     return ctx
 

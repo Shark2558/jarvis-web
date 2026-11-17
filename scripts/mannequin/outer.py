@@ -10,12 +10,11 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator, RegularGridInterpolator
 
 from .figure import TH, Ctx, Figure, torso_uv
 from .mesh import (
     Arr,
-    Frame,
     avg_matrix,
     boundary_smoother,
     boundary_verts,
@@ -27,10 +26,11 @@ from .mesh import (
     smoothstep,
     tri_of,
 )
-from .tops import CUFF_END, arm_tris, neck_frame, neck_radius, part_ranges, sleeve_ends, trunk_shell
+from .tops import CUFF_END, arm_tris, part_ranges, sleeve_ends, trunk_shell
 
 SLEEVE_ABOVE_CUFF = 0.015  # the jacket's sleeve ends this far above the shirt cuff's end (AVT-07)
 V_DROP = 0.20  # the V's point below the neck joint (m)
+NECK_HOLE = 0.110  # the neck opening (m from the neck's axis): wider than the shirt's collar
 FALL = 0.95  # the fronts are shaped within this angle (rad) of the centre: short of the shoulders
 
 
@@ -50,7 +50,7 @@ def cut(fig: Figure) -> dict[str, Any]:
     r = np.hypot(p[:, 0], p[:, 2] - zc)
     shaped = np.stack([r * np.sin(th), p[:, 1], zc + r * np.cos(th)], 1)
     c = np.where(fig.arm[:, None], p, shaped)[q].mean(1)
-    scoop = (np.hypot(c[:, 0], c[:, 2] - neck[2] - 0.012) < 0.072) & (c[:, 1] > neck[1] - 0.09)
+    scoop = (np.hypot(c[:, 0], c[:, 2] - neck[2]) < NECK_HOLE) & (c[:, 1] > neck[1] - 0.09)
     q = q[~scoop]
     vid = np.unique(q)
     re = np.full(len(p), -1)
@@ -98,18 +98,15 @@ def hang(ctx: Ctx, y: Arr) -> Arr:
     return 0.26 + 0.20 * smoothstep(yv, ctx.J["crotch"], y)
 
 
-def radius_field(th: Arr, y: Arr, r: Arr) -> Any:
-    """The shell's radius about the trunk's axis as a function of (angle, height), from its own
-    points: a point moved round the axis is put back ON the shell, never inside it."""
-    pts = np.concatenate([np.stack([th + k, y], 1) for k in (-2 * np.pi, 0.0, 2 * np.pi)])
-    val = np.tile(r, 3)
-    lin, near = LinearNDInterpolator(pts, val), NearestNDInterpolator(pts, val)
+GRID_TH = np.linspace(-1.3, 1.3, 27)  # the front angles the fronts can reach
 
-    def at(th2: Arr, y2: Arr) -> Arr:
-        out = lin(th2, y2)
-        return np.where(np.isnan(out), near(th2, y2), out)
 
-    return at
+def radius_field(ctx: Ctx, x: Arr, trunk_t: Arr, lo: float, hi: float) -> Any:
+    """The shell's radius about the trunk's axis over the front, as a smooth function of (angle,
+    height) sampled on a regular grid: a point moved round the axis is put back ON the shell."""
+    ys = np.linspace(lo, hi, 26)
+    grid = np.array([slice_r(x, trunk_t, ctx.vert, float(y), GRID_TH, rmax=0.3) for y in ys])
+    return RegularGridInterpolator((ys, GRID_TH), grid, bounds_error=False, fill_value=None)
 
 
 def _fronts(ctx: Ctx, g: dict[str, Any], x: Arr, opened: bool) -> Arr:
@@ -121,8 +118,8 @@ def _fronts(ctx: Ctx, g: dict[str, Any], x: Arr, opened: bool) -> Arr:
     th = np.arctan2(x[:, 0], x[:, 2] - zc)
     r = np.hypot(x[:, 0], x[:, 2] - zc)
     side, y = g["side"], x[:, 1]
-    trunk = armw < 0.8
-    on_shell = radius_field(th[trunk], y[trunk], r[trunk])
+    trunk_t = g["T"][(~fig.arm[g["vid"]][g["T"]]).all(1)]
+    on_shell = radius_field(ctx, x, trunk_t, float(y.min()) + 0.01, j["neck"][1] - 0.02)
     fall = smoothstep(FALL, 0.0, np.abs(th)) * (x[:, 2] > zc)
     th2 = th + side * vee(ctx, y) * fall
     lift = 0.004 * fall if opened else 0.0
@@ -133,8 +130,9 @@ def _fronts(ctx: Ctx, g: dict[str, Any], x: Arr, opened: bool) -> Arr:
             smoothstep(0.5, 0.0, np.abs(th)) * (x[:, 2] > zc) * smoothstep(yv + 0.02, yv - 0.03, y)
         )
         th2 = th2 - np.where(side > 0, 0.11, 0.0) * lap
-        lift = np.where(side > 0, 0.003, -0.001) * lap
-    r2 = np.where(fall > 0, on_shell(th2, y), r) + lift
+        lift = np.where(side > 0, 0.009, 0.005) * lap  # the closed front clears the shirt's buttons
+    grown = on_shell(np.stack([y, np.clip(th2, -1.3, 1.3)], 1)) - on_shell(np.stack([y, th], 1))
+    r2 = r + np.where(fall > 0, grown, 0.0) + lift
     k = (1 - armw)[:, None]
     new = np.stack([r2 * np.sin(th2), y, zc + r2 * np.cos(th2)], 1)
     return x * (1 - k) + new * k
@@ -143,10 +141,11 @@ def _fronts(ctx: Ctx, g: dict[str, Any], x: Arr, opened: bool) -> Arr:
 def _shell(ctx: Ctx, g: dict[str, Any], opened: bool) -> Arr:
     fig, j = ctx.fig, ctx.J
     g0 = dict(vid=g["vid0"], T=g["T0"], A=g["A0"], bnd=boundary_verts(g["T0"]))
-    x0, _ = trunk_shell(ctx, g0, 0.011, tucked=False, loose=1.3, arm_ease=0.004)
+    x0, _ = trunk_shell(ctx, g0, 0.015, tucked=False, loose=1.4, arm_ease=0.002)
     x = _fronts(ctx, g, x0[g["src"]], opened)
-    b = g["bnd"]
-    hem = b[(~fig.arm[g["vid"]][b]) & (fig.P0[g["vid"]][b, 1] < fig.J0["crotch"] + 0.02)]
+    b0 = g0["bnd"]
+    hem0 = b0[(~fig.arm[g0["vid"]][b0]) & (fig.P0[g0["vid"]][b0, 1] < fig.J0["trouser_top"])]
+    hem = np.where(np.isin(g["src"], hem0))[0]  # the hem's points, both sides of the slit
     kept = x[hem].copy()
     x = slide_boundary(x, g["T"], g["S"], 24)  # clean neck and front edges
     x[hem] = kept  # the hem stays where the fronts put it
@@ -175,15 +174,22 @@ def lapel(ctx: Ctx, x: Arr, trunk_t: Arr, side: int, opened: bool) -> tuple[Arr,
     return loft([np.array(c) for c in cols], closed=False)
 
 
-def back_collar(nf: Frame, r_hi: Arr) -> tuple[Arr, Arr]:
-    """The collar round the back of the neck, lying on the shoulders under the shirt's collar."""
-    tl = np.linspace(0.85, 2 * np.pi - 0.85, 33)
-    r = np.interp(tl, np.append(TH, 2 * np.pi), np.append(r_hi, r_hi[0]))
-    rings = [
-        ring_pts(nf, -0.046, tl, r + 0.010),
-        ring_pts(nf, -0.052, tl, r + 0.018),
-        ring_pts(nf, -0.068, tl, r + 0.027),
-    ]
+def back_collar(ctx: Ctx, shirt_x: Arr) -> tuple[Arr, Arr]:
+    """The collar round the back of the neck: a band lying on the shirt's yoke just outside and
+    BELOW the shirt collar's edge (the shirt's collar stays whole), its outer edge on the jacket."""
+    neck = ctx.J["neck"]
+    fig = ctx.fig
+    vid = fig.g["shirt"]["vid"]
+    away = np.hypot(shirt_x[:, 0], shirt_x[:, 2] - neck[2])  # the yoke, not the neck's column
+    top = (~fig.arm[vid]) & (shirt_x[:, 1] > neck[1] - 0.14) & (away > 0.066)
+    lin = LinearNDInterpolator(shirt_x[top][:, [0, 2]], shirt_x[top, 1])
+    near = NearestNDInterpolator(shirt_x[top][:, [0, 2]], shirt_x[top, 1])
+    phi = np.linspace(0.95, 2 * np.pi - 0.95, 33)  # round the back, from lapel to lapel
+    rings = []
+    for rho, lift in ((0.103, 0.003), (0.113, 0.009), (NECK_HOLE + 0.015, 0.016)):
+        x, z = rho * np.sin(phi), neck[2] + rho * np.cos(phi)
+        y = lin(x, z)
+        rings.append(np.stack([x, np.where(np.isnan(y), near(x, z), y) + lift, z], 1))
     return loft(rings, closed=False)
 
 
@@ -192,13 +198,11 @@ def _state(ctx: Ctx, g: dict[str, Any], opened: bool) -> list[tuple[Arr, Arr]]:
     x = _shell(ctx, g, opened)
     trunk_t = g["T"][(~fig.arm[g["vid"]][g["T"]]).all(1)]
     sx, _ = trunk_shell(ctx, "shirt", 0.0055, tucked=False)
-    nf, _, shirt_t = neck_frame(ctx, "shirt", sx, 0.012)
-    r_hi = neck_radius(sx, shirt_t, nf)
     return [
         (x, g["T"]),
         lapel(ctx, x, trunk_t, 1, opened),
         lapel(ctx, x, trunk_t, -1, opened),
-        back_collar(nf, r_hi),
+        back_collar(ctx, sx),
     ]
 
 

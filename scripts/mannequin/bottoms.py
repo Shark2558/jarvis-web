@@ -86,9 +86,9 @@ def shorts_garment(ctx: Ctx) -> None:
     g = fig.g["shortsG"]
     x = ctx.shell("shortsG", BOTTOM_EASE, 3)
     knee0 = fig.J0["kneeL"][1]
-    leg_tubes(ctx, "shortsG", x, (0.105, 0.105), (knee0 + 0.04, knee0 + 0.16))
+    leg_tubes(ctx, "shortsG", x, (0.100, 0.100), (knee0 + 0.02, knee0 + 0.14))
     top, bot = edges(ctx, "shortsG")
-    x[bot, 1] = j["kneeL"][1] + 0.045
+    x[bot, 1] = j["kneeL"][1] + 0.022
     x[top, 1] = j["trouser_top"]
     uv = legs_uv(ctx, x, g["T"], leg_sides(ctx, "shortsG")) if ctx.first else None
     ctx.put("shortsG", x, g["T"], uv)
@@ -119,10 +119,9 @@ def wrap(ctx: Ctx) -> None:
 
 def base_shorts(ctx: Ctx) -> None:
     """The base layer's boxer-length shorts (always drawn: the private zone's cover)."""
-    fig, j = ctx.fig, ctx.J
-    g = fig.g["shorts"]
-    x = ctx.shell("shorts", 0.0035, 2)
-    top, bot = edges(ctx, "shorts")
-    x[top, 1] = j["waist"] - 0.04
-    x[bot, 1] = j["crotch"] - 0.19 * j["scale"]
-    ctx.put("baseShorts", x, g["T"], rim=True)
+    j = ctx.J
+    g = ctx.fig.g["shorts"]
+    x = ctx.shell("shorts", 0.0035, 3)  # the bottoms' own smoothing: it stays inside them
+    top, _ = edges(ctx, "shorts")
+    x[top, 1] = j["waist"] - 0.05  # inside every waistband; the leg hems follow the body
+    ctx.put("baseShorts", x, g["T"])

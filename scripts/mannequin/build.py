@@ -137,7 +137,7 @@ def part_mesh(
     for key in base:
         if key.startswith(name + "@"):
             targets[key.split("@")[1]] = (base[key] - x)[vmap]
-    extras = {k: v for k, v in fig.meta[name].items() if k == "ranges"}
+    extras = {k: v for k, v in fig.meta[name].items() if k in ("ranges", "rim") and v is not True}
     if "ranges" in extras:  # sub-part ranges follow the welded order (welding keeps it)
         first = {k: int(np.searchsorted(vmap, a)) for k, (a, _) in extras["ranges"].items()}
         last = {k: int(np.searchsorted(vmap, a + n)) for k, (a, n) in extras["ranges"].items()}
@@ -232,6 +232,12 @@ def build(clone: Path) -> dict[str, bytes]:
     files["NOTICE-mannequin.txt"] = NOTICE.encode()
     facts.update(
         templates=TEMPLATES,
+        shape=dict(
+            cuff_end=tops.CUFF_END,
+            cuff_len=tops.CUFF_LEN,
+            sleeve_above_cuff=outer.SLEEVE_ABOVE_CUFF,
+            v_drop=outer.V_DROP,
+        ),
         base=list(BASE_PARTS),
         body=list(BODY_PARTS),
         triangles={n: len(m["index"]) for n, m in meshes.items()},

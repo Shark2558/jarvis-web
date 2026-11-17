@@ -90,3 +90,108 @@ def fake_clone(root: Path, sources: dict[str, str], data_dir: str) -> dict[str, 
     trap.parent.mkdir(parents=True, exist_ok=True)
     trap.write_bytes(b"never read")
     return sums
+
+
+CONTROLS = (
+    "swap_morphs", "no_waist_down", "no_shorts", "long_sleeve", "side_is_front",
+    "back_resets_tuck", "closed_is_open",
+)  # fmt: skip
+_RUNS: dict[str, dict[str, dict[str, Any]]] = {}
+
+
+def node_cases(control: str = "none") -> dict[str, dict[str, Any]]:
+    """The figure's Node checks (tests/fixtures/r13_1/b_check.mjs), by case name; run once a
+    control. Node missing is an error, never a skip."""
+    import shutil
+    import subprocess
+
+    if control not in _RUNS:
+        node = shutil.which("node")
+        if node is None:
+            raise RuntimeError("node is not installed")
+        got = subprocess.run(
+            [node, str(FIXTURES / "b_check.mjs"), control],
+            capture_output=True, text=True, timeout=300, check=False, cwd=ROOT,
+        )  # fmt: skip
+        if got.returncode != 0:
+            raise RuntimeError(f"b_check.mjs {control} failed: {got.stderr[-800:]}")
+        out = json.loads(got.stdout)
+        _RUNS[control] = {c["id"].split(":", 1)[1]: c for c in out["cases"]}
+    return _RUNS[control]
+
+
+def manifest() -> dict[str, Any]:
+    data: dict[str, Any] = json.loads((M1 / "MANIFEST.json").read_text(encoding="utf-8"))
+    return data
+
+
+MEASURE_OWN_CM, MEASURE_OTHERS_CM, QUANTISED_CM = 0.5, 3.5, 0.2
+BUDGET_BYTES = int(3.5 * 1024 * 1024)
+_CC0 = "f6089cba01cb570a24712b41ab8a586ccd3cc5ef53dc266ca50b95c288956d2c"
+_APACHE = "1d459b13c9650c763d6351ce21ad3b02433c80131195cf9d908de4fbc213cf27"
+LICENCE_SUMS = {"LICENSE-mpfb2-CC0.txt": _CC0, "LICENSE-anny-Apache-2.0.txt": _APACHE}
+ANNY = "8f35dc2df1c4062fd2fae86734f9705de50c0c2b"
+NOTICE_WORDS = (
+    "MakeHuman/MPFB2 assets (CC0 1.0)",
+    ANNY,
+    "anthropometry.py",
+    "(Apache-2.0, NAVER Corp.)",
+    "shaped, posed, cut and quantised by JARVIS",
+)
+
+
+def manifest_problems(folder: Path | None = None) -> list[str]:
+    """What is wrong with a release folder's manifest, sums, licences and size ([] when right)."""
+    root = folder or M1
+    out: list[str] = []
+    man = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
+    files = man.get("files", {})
+    on_disk = {p.name for p in root.iterdir() if p.is_file()} - {"MANIFEST.json"}
+    if set(files) != on_disk:
+        out.append(f"the manifest lists {sorted(files)} but the folder holds {sorted(on_disk)}")
+    for name, entry in files.items():
+        data = (root / name).read_bytes() if (root / name).is_file() else b""
+        if hashlib.sha256(data).hexdigest() != entry.get("sha256") or len(data) != entry.get(
+            "bytes"
+        ):
+            out.append(f"{name}: its sum or size differs from the manifest")
+        if not all(entry.get(k) for k in ("type", "source", "licence", "changes")):
+            out.append(f"{name}: type, source, licence or changes is missing")
+        if not str(entry.get("source", "")).endswith(ANNY):
+            out.append(f"{name}: the source is not the pinned commit")
+        if name.endswith(".glb") and entry.get("type") != "application/octet-stream":
+            out.append(f"{name}: a model is served as data only")
+    for name, sha in LICENCE_SUMS.items():
+        text = (root / name).read_bytes() if (root / name).is_file() else b""
+        if files.get(name, {}).get("sha256") != sha or hashlib.sha256(text).hexdigest() != sha:
+            out.append(f"{name}: the licence text is missing or changed")
+    notice = (
+        (root / "NOTICE-mannequin.txt").read_text()
+        if (root / "NOTICE-mannequin.txt").is_file()
+        else ""
+    )
+    for words in NOTICE_WORDS:
+        if words not in notice:
+            out.append(f"the NOTICE lacks: {words}")
+    total = sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
+    if total > BUDGET_BYTES:
+        out.append(f"the release is {total} bytes, over the 3.5 MB budget")
+    return out
+
+
+def measure_problems(
+    rows: list[dict[str, Any]], sample: dict[str, int], names: list[str]
+) -> list[str]:
+    """The measure table's rule: a measurement changed alone comes back within 0.5 cm, every
+    other within 3.5 cm, and the written file within 0.2 cm of the float build."""
+    out: list[str] = []
+    for row in rows:
+        changed = [k for k, w in zip(names, row["want"], strict=True) if w != sample[k]]
+        for k, want, got, flt in zip(names, row["want"], row["got"], row["float"], strict=True):
+            own = len(changed) <= 1 and (not changed or changed[0] == k)
+            limit = MEASURE_OWN_CM if own else MEASURE_OTHERS_CM
+            if abs(got - want) > limit:
+                out.append(f"{row['case']}: {k} wanted {want}, measured {got} (limit {limit})")
+            if abs(got - flt) > QUANTISED_CM:
+                out.append(f"{row['case']}: {k} moved {abs(got - flt):.2f} cm when quantised")
+    return out

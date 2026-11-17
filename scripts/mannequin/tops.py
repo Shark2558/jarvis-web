@@ -24,7 +24,6 @@ from .mesh import (
     slice_r,
     slide_boundary,
     smoothstep,
-    taubin,
 )
 
 CUFF_END = 0.012  # the shirt cuff ends this far above the wrist joint (m): the watch sits below it
@@ -149,8 +148,9 @@ def collar(r_hi: Arr, nf: Frame, drop0: float = 0.0) -> tuple[list[Arr], list[Ar
     fr = np.cos(tl)
     pt = np.exp(-(((np.minimum(tl, 2 * np.pi - tl) - gap) / 0.5) ** 2))  # 1 at the collar points
     htop = -0.014 - 0.004 * (fr > 0) * fr**2 - drop0
-    drop = 0.030 + 0.028 * pt
-    flare = 0.016 + 0.006 * pt + 0.008 * np.abs(np.sin(tl))
+    back = (1 - fr) / 2  # 1 at the nape: there the leaf lies down closer
+    drop = 0.030 + 0.028 * pt + 0.010 * back
+    flare = 0.013 + 0.006 * pt + 0.006 * np.abs(np.sin(tl)) - 0.007 * back
     sgn = np.where(tl < np.pi, 1.0, -1.0)
     leaf = [
         ring_pts(nf, htop, tl, rl + 0.0005),
@@ -329,8 +329,8 @@ def kurta(ctx: Ctx) -> None:
 def vest(ctx: Ctx) -> None:
     """The base layer's vest: skin-close, with clean curved armholes and neckline."""
     g: dict[str, Any] = ctx.fig.g["vest"]
-    x = taubin(ctx.shell("vest", 0.0012, 2), g["A"], 2)
+    x = ctx.shell("vest", 0.0012, 3)  # the tops' own smoothing: it stays inside them
     if "S" not in g:
         g["S"] = boundary_smoother(len(x), g["T"])
     x = slide_boundary(x, g["T"], g["S"], 60)
-    ctx.put("vest", x, g["T"], rim=True)
+    ctx.put("vest", x, g["T"])

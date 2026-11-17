@@ -29,6 +29,8 @@ TRIANGLES, LINES = 4, 1
 def quantise(a: Arr, centred: bool) -> tuple[Arr, list[float], list[float]]:
     """(n, 3) floats -> (n, 4) int16 (the last column pads), a scale and an offset per axis."""
     a = np.asarray(a, np.float64).reshape(-1, 3)
+    if not np.isfinite(a).all():
+        raise ValueError("a point that is not a number cannot be written")
     lo, hi = (a.min(0), a.max(0)) if len(a) else (np.zeros(3), np.zeros(3))
     off = (lo + hi) / 2 if centred else np.zeros(3)
     scale = np.maximum(np.abs(a - off).max(0) if len(a) else np.zeros(3), 1e-9)

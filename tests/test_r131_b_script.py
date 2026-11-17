@@ -203,6 +203,8 @@ def test_the_reader_refuses_what_is_outside_the_subset() -> None:
     bad = data.replace(b'"componentType":5122', b'"componentType":5126', 1)
     with pytest.raises(ValueError, match="not in the mannequin's subset"):
         glb.read_glb(bad)
+    with pytest.raises(ValueError, match="not a number"):
+        glb.GlbWriter().mesh("nan", np.array([[0.0, np.nan, 0]]), np.zeros((1, 3), int), None, {})
     with pytest.raises(ValueError, match="too many points"):
         glb.GlbWriter().mesh("big", np.zeros((70000, 3)), np.zeros((1, 3), int), None, {})
 

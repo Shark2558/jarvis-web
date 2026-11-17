@@ -2,16 +2,16 @@
  "release": "m1",
  "files": {
   "body.glb": {
-   "sha256": "d9697549280a01beaca9e9112e61dfa8d92a39afa80162cce91a72c8caee11fc",
-   "bytes": 1111032,
+   "sha256": "da9a9d74ee37c78da048ca89d264e73f75063df08adfc2aa4ba946701f100fcc",
+   "bytes": 1109448,
    "type": "application/octet-stream",
    "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
    "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt",
    "changes": "MakeHuman/MPFB2 base mesh, targets and standard rig weights read from the clone; a neutral shape solved for six measurements, posed, the private zone removed, garments cut from the helper-tights helper mesh and shaped, seven morph targets, quantised to int16 (JARVIS)"
   },
   "garments.glb": {
-   "sha256": "28ee08e38620e932abdeb565a90deed4dcb464bb650a0234f3802853800c1f44",
-   "bytes": 1207728,
+   "sha256": "6f83b8538cf415fa97710c382c56248954f96ffbc63217c90fcc39b47460fbbf",
+   "bytes": 1201480,
    "type": "application/octet-stream",
    "source": "naver/anny@8f35dc2df1c4062fd2fae86734f9705de50c0c2b",
    "licence": "CC0-1.0 (MakeHuman/MPFB2 assets); see NOTICE-mannequin.txt",
@@ -197,6 +197,12 @@
    "state": null
   }
  },
+ "shape": {
+  "cuff_end": 0.012,
+  "cuff_len": 0.064,
+  "sleeve_above_cuff": 0.015,
+  "v_drop": 0.2
+ },
  "base": [
   "vest",
   "baseShorts"
@@ -213,21 +219,21 @@
   "bodyCore": 15532,
   "bodyArms": 1408,
   "bodyShoulders": 1048,
-  "bodyShins": 1660,
-  "bodyThighs": 222,
+  "bodyShins": 1560,
+  "bodyThighs": 180,
   "bodyFeet": 3944,
   "vest": 1400,
-  "baseShorts": 920,
+  "baseShorts": 992,
   "trousers": 2184,
   "belt": 384,
   "buckle": 60,
-  "shortsG": 1060,
+  "shortsG": 1124,
   "wrap": 2176,
   "shirt": 3952,
   "shirtButtons": 530,
   "tee": 2096,
   "kurta": 4632,
-  "jacket": 2876,
+  "jacket": 2696,
   "shoes": 756,
   "soles": 560,
   "sandals": 1040,

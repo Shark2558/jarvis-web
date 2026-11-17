@@ -568,8 +568,9 @@ async function dressed(v, card) { // exactly the card's pieces, by ids (A's ?pie
     await show(v, look, { plan: card.plan, title: 'Your look' + (code ? ' \u00b7 ' + code : '') });
   } catch (e) { failed(v, e); draw(v); }
 }
-export async function garment(file) { // D22: the picture waits for See it on me ({ok: true}); sends nothing. Else {ok: false,
-  if (!(file instanceof Blob)) return { ok: false, code: 'file' }; // code, why}: the card module says it (review D-1 M6)
+export function garment(file) { return handOver(file); } // D22 (I0's seam pins this line)
+async function handOver(file) { // the picture waits for See it on me ({ok: true}); sends nothing. Else {ok: false, code, why}:
+  if (!(file instanceof Blob)) return { ok: false, code: 'file' }; // the card module says it (review D-1 M6)
   if (state() === 'unknown') { try { await readTryon(); } catch (_) { /* state() says it */ } }
   if (state() !== 'on') return { ok: false, code: S.off ? 'tryon_off' : 'tryon_down' };
   let me = null;

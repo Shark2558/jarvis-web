@@ -1,11 +1,11 @@
-Version v13.1.1 · 17 Nov 2026, 23:50 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 18 Nov 2026, 03:20 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — I1 notes (the four parts joined)
 
 Written by the R13.1 I1 integrator on `r13-1-i1`, cut from `r13-1-i0` @ `eb8b7e4`. Merged with
 `--no-ff` in this order: A `4dd58f6` (`dad08f8`), C `3660d24` (`8c63019`), B `eb7ea8d`
-(`f42253e`), with no conflicts; D after its fixer finished (section "D" below). `main` is not
-merged here.
+(`f42253e`), then D `de5a9b4` (`33b5fb1`) once its fixer finished, all with no conflicts. `main` is
+not merged here.
 
 Sources: the four `INTEGRATION-<X>.md` files ("Needs I1", A §8 and §11, B §6 and §8, C §6 and
 §10.4, D §6), the four `REVIEW-<X>-1.md` reviews' notes for I1, `I0-NOTES.md` §5, and the plan's
@@ -115,6 +115,96 @@ had, green when first run.
     the integrated reviews (`code-reviewer`, `python-reviewer`, `security-reviewer`), which the
     Workshop runs on this branch.
 
+26. **D's door lines** (INTEGRATION-D §9, "Needs I1" 1). Done `40f52c0`, red first: the door
+    (`console-r7-send.js`, 165 of 165) carries `make` (PictureIn's five fields, each checked
+    before a byte is sent), `keep`, `forget` and `garments`, to `/v1/seeme/` only. D's two proposal
+    pins now read the applied file.
+27. **"Show in 3D" with Try-on off** (D §9 "Needs I1" 2, review D-1 M7). Done `40f52c0`, red
+    first: I0's hook (302 of 306) draws it only while D's `state()` is "on" and draws again on
+    `jarvis:tryon-state`. D's "before I1" browser test became the joined behaviour (`010d808`).
+28. **B's real engine in D's card and section** (Workshop step 3). The product already loads B's
+    `console-tryon-3d.js` (D's fake engine was a test route only). Proved on the wired app
+    (`9c2f967`, `tests/r131_wired_server.py`: `create_app`, every part, C's real adapter on
+    recorded answers, a mock brain that answers "...wear..." with `outfit_suggest`) by
+    `tests/browser/test_r131_i1_wired.py` (9 tests, `0463bbb`, `8aa46e2`), with B's engine spied,
+    never replaced: row 388 typed and spoken (the figure in exactly the card's pieces, its first
+    frame drawn, a private slot covered), one stage between card and section, the section
+    dressed in tomorrow's plan, compare, the checklist with no WebGL2, See it on me end to end
+    on C's routes, console-only, the six Privacy rows.
+29. **B's contract honoured by D** (`forced`, host ≥ 150 px, `onLost` reasons, 30 s for files):
+    D's fix did it (D §9); checked on B's real engine above (no `onLost`, a frame drawn).
+30. **Use these measurements names the draft he saw** (A 11.4 item 2, review A-1 F7). Done
+    `3fe3155`, red first: D sent no `?at=`; it now sends the draft's `at`. Declined: making `at`
+    required on the server (every console press sends it; A's tests pin the optional form).
+31. **The gate flipped** (I0 §5 item 1). Done `446f63d`, red first: `STUBS_PASS = False`; every
+    part of `run.PARTS` is BUILT.
+32. **The guide** (I0 §5 item 5, plan D17). Done `cb8e341`, red first: v13.1.3; C72 and C73 built
+    and joined, with each part's modules; C63 "Three panels see pixels: Camera, Camera → Wardrobe
+    and Try-on's own photo check (…)"; R13's C63 pin and I0's guide pin move with it.
+33. **Found at I1: R13's "suggestion" row is no plan.** R13's `/v1/outfits` lists a day with no
+    plan as an entry whose id is "suggestion". D's section opened on `?plan=suggestion` (404) every
+    evening with no plan today, I0's hook drew Show in 3D on it, and compare offered it. Fixed
+    `0463bbb`, `8aa46e2` (red first on the wired app): a saved plan's id only (`op_` + 8 hex); a
+    suggestion is read by its day. The contract fakes had saved plans only.
+34. **Found at I1: A's 503 "off" read as "can't load right now".** A says Try-on is off with 503
+    `{"error": "off"}` (review A-1 F5); D took only a 404 as off, so R13's own Wardrobe browser
+    tests failed (5 of 10). Fixed `8c63587`, red first: `err.code === 'off'` is off; any other 503
+    stays "for now". `test_console.py`'s by-design console lines gain that 503.
+35. **Found at I1: the figure's files did not ship.** R14's packaging guard went red: no
+    package-data pattern matched `static/vendor/mannequin/m1/`, so `pip install .` (the deploy)
+    would have had no GLBs and every figure would fall back to the checklist. Fixed `b0d14e6`:
+    `"static/vendor/mannequin/*/*"`; a wheel built here holds all six files.
+36. **Found at I1: B's stage test broke CI's collection.** CI's test job runs plain `pytest` with
+    no Playwright; B's browser module imported it at its top. Fixed `62bae78`, red first: it uses
+    `pytest.importorskip`; `tests/test_r131_i1_ci.py` refuses a top-level Playwright import.
+37. **Found at I1: D's fakes changed I0's shared photo views at import**, so 152 of A's tests
+    failed in a full run (none alone). Fixed `6f5e772`, red first: D's views are added in D's server
+    process only.
+38. **D's tests after the joins.** AVT-15's "engine throws" case loaded the real engine file, which
+    is B's now: it serves its own throwing engine (`fee5a4c`). D's See it on me setup posted the
+    literal "c2": it sends the version it was shown (`82ae250`).
+39. **L6's second edge and L12's split of `console-tryon.js`** (D §9). Left for a later slice:
+    the file is at 599 of its 600-line guard (I1's three fixes there kept to existing lines); L6
+    holds no WebGL context (a new card already disposes the old card's stage). Moving the
+    measurements form, shapes and OPS-05 (about 80 lines) to a module of its own needs a new size
+    guard, an `arch_coverage.json` entry and the guide.
+40. **`keep_days` in the console** (D §6 item 4). Left: it needs `keep_days` in `SeeMeView`
+    (C's contract) and a 1–30 control; the server setting exists and the owner answered 30 days.
+
+## The checks (18 Nov 2026, at `8c63587` / `8aa46e2`; one at a time behind the heavy-run lock)
+
+| Check | Result |
+|---|---|
+| Unit, Python 3.12 (four parts, `tests/test_*.py`) | 4,251 + 4,705 + 4,665 + 4,957 = **18,578 passed**, 52 skipped, 2 failed: both the worktree's path (below). The packaging guard of item 35 was red in that run and passes since `b0d14e6` |
+| Unit, Python 3.11 | 4,252 + 4,705 + 4,665 + 4,957 = **18,579 passed**, 50 skipped, 2 failed: the same two |
+| The two "failures" | `test_r13_i1_evals::…r7_capture…` and `test_r7_seams::…r7_runner_passes…` search log rows for the needle `131`, which is in this worktree's own path (`/tmp/r131-i1`; B noted it first). From an export of HEAD at a path without it, both pass (91 passed; the export's one other failure needs a git checkout) |
+| R13.1 unit files after the last fixes (3.12) | 1,147 passed, 2 skipped |
+| `ruff check` / `ruff format --check` (src, tests, evals, scripts) | clean; 2,057 files formatted |
+| `mypy src` | the baseline error only (`memory/redis_store.py:67`) |
+| `evals/r13_1/run.py --mock` | **121/121**, no part unbuilt; every built part's control failed it (console 4, contract 10, e2e 1, figure 10, looks 10, needles 2, seeme 12 cases red) |
+| `evals/run_all_mock.py` | from the worktree: every suite passes but r7 67/68 (`body:sealed_no_value`, the path's `131`); from the export: **ALL MOCK EVALS: PASS** (r7 68/68, r13 110/110, r14 108/108, r13_1 121/121, 21 gated controls failing their suites), phase0 smoke 4/12 as usual |
+| `scripts/check_doc_versions.py` · `scripts/arch_coverage.py` | 30 documents OK · OK (66 packages, 103 console modules, 120 collections) |
+| `python -m jarvis.buildbook.gen --check` | two builds byte-identical |
+| Browser (Chromium, `-m browser`, one file at a time): R13.1 and R13's Wardrobe | B stage 23, D card 14, D section 18, D See it on me 14, D stage 11, D look 16, I1 wired 9, R13 camera 12, R13 helpers 10: **127 passed** |
+| The visual gate `tests/browser/test_ui_audit.py` | **116 passed** (56 night, 60 the rest) |
+| A wheel built from the branch | holds the six files of `vendor/mannequin/m1/` |
+
+Not run here: the whole browser suite (the Workshop's, after the integrated reviews); a live
+Google picture ("not called": it needs his typed YES; exit check 7); his phone's GPU.
+
+## Screenshots (not committed: drawn data, the wired app, B's real figure)
+
+`/tmp/r131-i1-shots/` (31 PNGs), laptop 1280 × 800 and phone 360 × 800, night and day:
+`01-card-real-figure-*` (the card under "What should I wear tomorrow?", dressed by itself),
+`02-section-real-figure-*` (Helpers → Wardrobe), `03-compare-*` (tomorrow's meeting beside
+today's look), `04-card-checklist-*` and `05-section-checklist-*` (no WebGL2),
+`06-seeme-garment-*`, `07-seeme-yes-laptop-night`, `08-seeme-rupee-confirm-*`,
+`09-seeme-picture-*` (I1's drawn PNG, decoded), `10-privacy-tryon-rows-*`,
+`11-tryon-off-wardrobe-tab-laptop-*` (A's 503 off: R13's tab with no Try-on section). Looked at:
+the console's own components and colours throughout, the figure dressed in the look's colours,
+no sideways scroll on the phone. Seen, R13's and not R13.1's: R13's suggestion row says "planned
+by hand" and its reasons line names piece ids (`11-…`).
+
 ## Known limits (recorded, not fixed)
 
 - **"Use this look" refuses a look with a removed watch, belt, outer layer or socks** (409
@@ -130,3 +220,4 @@ had, green when first run.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 23:50 IST | R13.1 | First edition: A, C and B merged; items 1–25 (the stub pins, the contract checked against B and C, the end date and cache settings, the deploy's role, the fakes, SciPy in CI, F8–F10, one fixed-words rule, OPS-05 in flight, the e2e and needles suites, console-only on the wired app, and what was declined or left with reasons); the known limits | 🛠 Mark XXIII (I1) |
+| v13.1.2 | 18 Nov 2026, 03:20 IST | R13.1 | D merged; items 26–40 (D's door and hook lines, B's real engine proved on the wired app, `?at=`, the gate flipped, the guide, five integration bugs found and fixed with tests first: the suggestion row, A's 503 off, the figure's files not shipped, CI's browser collection, D's fakes' shared state; what is left with reasons); the checks with their numbers; the screenshots | 🛠 Mark XXIII (I1) |

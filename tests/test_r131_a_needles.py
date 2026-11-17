@@ -49,13 +49,17 @@ def _said(record: logging.LogRecord) -> str:
 
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 HEX = re.compile(r"(?<![0-9A-Za-z])(?=[0-9a-f]*[a-f])[0-9a-f]{8,}(?![0-9A-Za-z])")
+# a moment the code itself stamps (the export's `generated_at` reads the real clock): its minute
+# can be 51, his shoulders (seen at I1's fix, 22:51 UTC): never a number of his
+WHEN = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[+-]\d{2}:\d{2}|Z)?")
 
 
 def _found(texts: list[str]) -> list[str]:
-    """The texts that carry one of his numbers. Random ids and hashes (a plan's `op_` id, the
-    audit's argument hash, a session's UUID) are masked first: "2b93d7" is not his waist."""
-    return [t for t in texts if any(n.search(HEX.sub("<hex>", UUID.sub("<id>", t)))
-                                    for n in NEEDLES)]  # fmt: skip
+    """The texts that carry one of his numbers. Random ids, hashes and moments (a plan's `op_` id,
+    the audit's argument hash, a session's UUID, a time stamp) are masked first: "2b93d7" is not
+    his waist, and 22:51 is not his shoulders."""
+    masked = [(t, HEX.sub("<hex>", UUID.sub("<id>", WHEN.sub("<when>", t)))) for t in texts]
+    return [t for t, m in masked if any(n.search(m) for n in NEEDLES)]
 
 
 def _tool_calls(a: AWorld) -> list[str]:

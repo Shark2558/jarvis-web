@@ -272,12 +272,12 @@ def test_a_script_without_his_console_is_refused_on_the_wired_app(
     c = Wired(browser, w_url, token, console=False)
     try:
         c.open()
-        got = c.page.evaluate(
-            """async () => { const r = await fetch('/v1/seeme/photo', {headers:
-               {Authorization: 'Bearer ' + localStorage.getItem('jarvis_token')}});
-               return [r.status, await r.text()]; }"""
+        got = c.page.evaluate(  # a script holding his token, in a page without his console
+            """async (t) => { const r = await fetch('/v1/seeme/photo', {headers:
+               {Authorization: 'Bearer ' + t}}); return [r.status, await r.text()]; }""",
+            token,
         )
-        assert got[0] in (401, 403)
+        assert got[0] == 403 and '"console_only"' in got[1], got  # his token, no console (L6)
     finally:
         c.close()
 

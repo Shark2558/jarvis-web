@@ -34,6 +34,22 @@ def _wired() -> ModuleType:
 W = _wired()
 CONSOLE = [(m, p) for m, p, _, _, _, _, console in http.ROUTES if console]
 IDS = {"/v1/seeme/pictures/": "tp_" + "a" * 12, "/v1/seeme/garments/": "tg_" + "b" * 12}
+# What his signed-in console gets from C's part, in a fresh world (no photo, no YES, no picture):
+# each route's OWN answer, so a 500 or a refusal from anywhere else can't pass (review I1 L6)
+REACHED: dict[tuple[str, str], tuple[int, str | None]] = {
+    ("POST", "/v1/seeme/photo"): (200, None),
+    ("GET", "/v1/seeme/photo"): (404, "no_photo"),
+    ("DELETE", "/v1/seeme/photo"): (200, None),
+    ("POST", "/v1/seeme/consent"): (422, "consent_needed"),  # not the version shown to him
+    ("POST", "/v1/seeme/pictures"): (409, "consent_needed"),
+    ("GET", "/v1/seeme/pictures/{id}"): (404, "gone"),
+    ("POST", "/v1/seeme/pictures/{id}/keep"): (404, "gone"),
+    ("DELETE", "/v1/seeme/pictures/{id}"): (404, "gone"),
+    ("PUT", "/v1/seeme/settings"): (200, None),
+    ("POST", "/v1/seeme/garments"): (200, None),
+    ("GET", "/v1/seeme/garments/{id}"): (404, "no_garment"),
+    ("DELETE", "/v1/seeme/garments/{id}"): (404, "no_garment"),
+}
 
 
 def _path(path: str) -> str:
@@ -82,5 +98,9 @@ async def test_a_script_with_the_token_is_refused_and_his_console_reaches_the_pa
         again.pop("url")
         with w.signed_in():
             console = await w.send(method, url, **again)
-        assert console.status_code != 403, (console.status_code, console.text[:200])
+        got = (
+            console.status_code,
+            console.json().get("error") if console.status_code >= 400 else None,
+        )
+        assert got == REACHED[(method, path)], (method, path, console.text[:200])
         assert w.google.seen == []  # nothing reached Google either way

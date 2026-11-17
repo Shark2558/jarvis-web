@@ -16,8 +16,10 @@ multi-region (`us`, `eu`) or `global`, with a bearer token from an injected sour
   never looks at a `text` field. `usageMetadata` becomes `TryOnUsage`; a `promptFeedback.
   blockReason` or a finish without an image is `blocked` (a fixed word; billed).
 - Billed or not (Google bills only 200s): any non-200, or a request that never left (no project,
-  no token, a connection refused) is `TryOnNotBilled`; a timeout after sending or a 200 cut short
-  is `TryOnMaybeBilled`. A 401 invalidates the token. Redirects are never followed.
+  no token, a connection refused) is `TryOnNotBilled`; a timeout after sending, a 200 cut short or
+  a 200 past `ANSWER_BODY_MAX` is `TryOnMaybeBilled`. A 401 invalidates the token. Redirects are
+  never followed. The answer is streamed and read under its byte cap (never buffered whole
+  first); a refusal's body is never read at all.
 - Logs carry class names and statuses only: never the token, a body, a byte, a text part or even
   the project.
 """
@@ -27,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import json
 import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -72,6 +75,7 @@ PROJECT = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")  # a Google Cloud projec
 WORDS = re.compile(r"^[a-z][a-z ]{0,59}$")  # "a new navy shirt": fixed words only
 ANSWER_MAX_BYTES = 16 * 1024 * 1024  # `wardrobe.tryon.model.ANSWER_MAX_BYTES`
 ANSWER_MAX = ANSWER_MAX_BYTES  # read at call time (a test lowers it)
+ANSWER_BODY_MAX = ANSWER_MAX_BYTES * 4 // 3 + 2 * 1024 * 1024  # 16 MB in base64 and its JSON
 CONNECT_S, CALL_S = 10.0, 120.0  # the press's own deadline is `TryOnAsk.timeout_s` (120 s)
 _JPEG, _PNG = b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n"
 # Failures where the request never left JARVIS: it can't have been billed.
@@ -245,13 +249,15 @@ class GeminiTryOn:
             raise TryOnNotBilled("not_configured") from None
         return {**got, "Content-Type": "application/json"}
 
-    async def _post(self, url: str, body: dict[str, Any], timeout_s: float) -> httpx.Response:
+    async def _post(self, url: str, body: dict[str, Any], timeout_s: float) -> tuple[int, bytes]:
+        """(status, the 200's body read under its cap); a refusal's body is never read."""
         sent = False  # from the moment the request is handed to httpx, Google may have it
         try:
             async with asyncio.timeout(timeout_s):
                 headers = await self._headers()
                 sent = True
-                return await self.http.post(url, json=body, headers=headers)
+                async with self.http.stream("POST", url, json=body, headers=headers) as r:
+                    return r.status_code, (await _capped(r) if r.status_code == 200 else b"")
         except TimeoutError:
             log.warning("try-on: the deadline passed", extra={"sent": sent})
             raise (TryOnMaybeBilled if sent else TryOnNotBilled)("timeout") from None
@@ -264,14 +270,14 @@ class GeminiTryOn:
     async def make(self, ask: TryOnAsk) -> TryOnResult:
         _check(ask)
         url = await self._where()
-        r = await self._post(url, request_body(ask), ask.timeout_s)
-        if r.status_code != 200:
-            log.warning("try-on: google refused", extra={"status": r.status_code})
-            if r.status_code == 401:
+        status, raw = await self._post(url, request_body(ask), ask.timeout_s)
+        if status != 200:
+            log.warning("try-on: google refused", extra={"status": status})
+            if status == 401:
                 self._tokens.invalidate()
-            raise TryOnNotBilled(f"status_{r.status_code}")
+            raise TryOnNotBilled(f"status_{status}")
         try:
-            body = r.json()
+            body = json.loads(raw)
         except ValueError:
             log.warning("try-on: a 200 cut short", extra={"status": 200})
             raise TryOnMaybeBilled("cut") from None
@@ -280,6 +286,19 @@ class GeminiTryOn:
         got = result_of(body)
         log.info("try-on: google answered", extra={"made": got.made, "blocked": got.blocked})
         return got
+
+
+async def _capped(r: httpx.Response) -> bytes:
+    """A 200's body, read until `ANSWER_BODY_MAX`: past it, maybe billed and never read whole."""
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in r.aiter_bytes():
+        size += len(chunk)
+        if size > ANSWER_BODY_MAX:
+            log.warning("try-on: an answer past its byte cap", extra={"status": 200})
+            raise TryOnMaybeBilled("too_large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def build(s: Settings, *, tokens: BearerTokens, project: ProjectFn) -> GeminiTryOn:
@@ -292,6 +311,7 @@ def build(s: Settings, *, tokens: BearerTokens, project: ProjectFn) -> GeminiTry
 
 
 __all__ = [
+    "ANSWER_BODY_MAX",
     "ANSWER_MAX_BYTES",
     "HOSTS",
     "GeminiTryOn",

@@ -315,3 +315,44 @@ def test_no_sdk_and_never_the_developer_api_key() -> None:
     assert "gemini_provider" not in text and "gemini_api_key" not in text
     assert "generativelanguage" not in text  # never the Developer API
     assert "follow_redirects=False" in text
+
+
+# ---- review C-1, finding 10: the answer is read under a byte cap, never whole first --------------
+class _Endless:
+    """A body streamed 64 KB at a time (`pulled` counts what was read), up to 32 MB."""
+
+    def __init__(self) -> None:
+        self.pulled = 0
+
+    async def __aiter__(self):  # type: ignore[no-untyped-def]
+        for _ in range(512):
+            self.pulled += 1
+            yield b" " * 65536
+
+
+async def test_an_answer_past_its_byte_cap_is_never_read_whole(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jarvis.llm import tryon_gemini
+
+    body = _Endless()
+    adapter = _adapter(FakeGoogle())
+    adapter.http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, content=body))
+    )
+    with pytest.raises(TryOnMaybeBilled, match="too_large"):  # a 200: it may be billed
+        await adapter.make(_ask())
+    cap = tryon_gemini.ANSWER_BODY_MAX
+    assert 16 * 1024 * 1024 * 4 // 3 < cap <= 24 * 1024 * 1024  # 16 MB in base64, and the JSON
+    assert body.pulled * 65536 <= cap + 65536  # stopped at the cap, not at 32 MB
+
+
+async def test_a_refusals_body_is_never_read() -> None:
+    body = _Endless()
+    adapter = _adapter(FakeGoogle())
+    adapter.http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(503, content=body))
+    )
+    with pytest.raises(TryOnNotBilled, match="status_503"):
+        await adapter.make(_ask())
+    assert body.pulled == 0  # untrusted, and not needed

@@ -59,6 +59,7 @@ Act = Callable[[TryonService], Awaitable[Any]]
 NOT_SET_UP = "Try-on isn't available on this server."
 BAD = "That request can't be read."
 DOWN = "That couldn't be done just now. Try again in a minute."
+DOWN_STATUS = 503  # Off, unreadable or storage trouble, on every route (the contract's rows)
 INTERNAL = "Something went wrong inside JARVIS. Try again later."
 UNREADABLE = (  # no cause named: a newer release's data reads the same (review A-1 F10)
     "Your try-on data can't be opened on this server. Nothing was changed; you can delete it in "
@@ -105,10 +106,10 @@ def _ok(model: BaseModel) -> JSONResponse:
     return JSONResponse(model.model_dump(mode="json"), headers=NO_STORE)
 
 
-def refused(exc: Exception, down: int, route: str = "") -> JSONResponse:
-    """A refusal in its own words; storage trouble is `down` (503, or the route's nearest); any
-    other error is a bug: logged at ERROR with where it happened and answered 500 `internal`
-    (review A-1 F3). Never the error's message or a trace: those can carry his numbers."""
+def refused(exc: Exception, route: str = "") -> JSONResponse:
+    """A refusal in its own words; Off and storage trouble are 503 on every route (review A-1
+    F5); any other error is a bug: logged at ERROR with where it happened and answered 500
+    `internal` (F3). Never the error's message or a trace: those can carry his numbers."""
     if isinstance(exc, _Bad):
         return no(422, "bad_request", BAD)
     if isinstance(exc, _TooLarge):
@@ -117,13 +118,13 @@ def refused(exc: Exception, down: int, route: str = "") -> JSONResponse:
         if isinstance(exc, kind):
             return no(status, code, str(exc))
     if isinstance(exc, (looks.StylingOff, store.Off)):
-        return no(down, "off", str(exc) or NOT_SET_UP)
+        return no(DOWN_STATUS, "off", str(exc) or NOT_SET_UP)
     if isinstance(exc, store.Unreadable):
-        return no(down, "unreadable", UNREADABLE)
+        return no(DOWN_STATUS, "unreadable", UNREADABLE)
     extra = {"route": route, "error": type(exc).__name__, "at": store.where(exc)}
     if store.storage_trouble(exc):
         log.warning("try-on route: storage trouble", extra=extra)
-        return no(down, "unavailable", DOWN)
+        return no(DOWN_STATUS, "unavailable", DOWN)
     log.error("try-on route failed", extra=extra)
     return no(500, "internal", INTERNAL)
 
@@ -138,19 +139,17 @@ def _service(request: Request) -> TryonService | str:
     return ready if ready.startswith("Off") else NOT_SET_UP
 
 
-async def _run(
-    request: Request, uid: str, route: str, act: Act, *, change: bool, down: int = 503
-) -> JSONResponse:
+async def _run(request: Request, uid: str, route: str, act: Act, *, change: bool) -> JSONResponse:
     key = f"tryon_{route}_{'change' if change else 'read'}"  # each allowance its own bucket
     if (busy := limited(request, key, uid, change=change)) is not None:
         return busy
     svc = _service(request)
     if isinstance(svc, str):
-        return no(down, "off", svc)
+        return no(DOWN_STATUS, "off", svc)
     try:
         got = await act(svc)
     except Exception as exc:  # noqa: BLE001 - every refusal in words, never a stack
-        return refused(exc, down, route)
+        return refused(exc, route)
     return got if isinstance(got, JSONResponse) else _ok(got)
 
 
@@ -275,7 +274,7 @@ async def put_asset(request: Request, piece: str, uid: str = Depends(current_use
             raise assets.NotIn(assets.NOT_IN)
         return await svc.choose(uid, piece, await body_of(request, AssetChoice))
 
-    return await _run(request, uid, "assets", act, change=True, down=422)
+    return await _run(request, uid, "assets", act, change=True)
 
 
 # ---- "Use this look" (AVT-09, D7, D20) ---------------------------------------------------------
@@ -311,7 +310,7 @@ async def confirm_look(request: Request, uid: str = Depends(current_user)) -> JS
 
         return _panel(await svc.confirm(uid, body, call))
 
-    return await _run(request, uid, "confirm", act, change=True, down=422)
+    return await _run(request, uid, "confirm", act, change=True)
 
 
 # ---- saved comparisons (AVT-11) ----------------------------------------------------------------
@@ -337,7 +336,7 @@ async def save(request: Request, uid: str = Depends(current_user)) -> JSONRespon
     async def act(svc: TryonService) -> Any:
         return await svc.save(uid, await body_of(request, SavedIn))
 
-    return await _run(request, uid, "saved", act, change=True, down=422)
+    return await _run(request, uid, "saved", act, change=True)
 
 
 @router.get("/v1/tryon/saved/{id}", include_in_schema=False)
@@ -349,7 +348,7 @@ async def saved_one(
     async def act(svc: TryonService) -> Any:
         return await svc.saved_one(uid, _saved_id(id))
 
-    return await _run(request, uid, "saved", act, change=False, down=404)
+    return await _run(request, uid, "saved", act, change=False)
 
 
 @router.delete("/v1/tryon/saved/{id}", include_in_schema=False)
@@ -361,7 +360,7 @@ async def saved_drop(
     async def act(svc: TryonService) -> Any:
         return await svc.saved_drop(uid, _saved_id(id))
 
-    return await _run(request, uid, "saved", act, change=True, down=404)
+    return await _run(request, uid, "saved", act, change=True)
 
 
 __all__ = ["body_of", "no", "refused", "router"]

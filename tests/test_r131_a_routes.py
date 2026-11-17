@@ -190,10 +190,10 @@ async def test_off_says_so_in_the_parts_own_words() -> None:
         got = _refusal(await c.get("/v1/tryon"), 503, "off")
         assert got.detail == a.part.ready and got.detail.startswith("Off")
         _refusal(await c.get(f"/v1/tryon/look?pieces=top:{T.shirt}"), 503, "off")
-        _refusal(await c.put(f"/v1/tryon/assets/{T.shirt}", json={"piece": T.shirt}), 422, "off")
+        _refusal(await c.put(f"/v1/tryon/assets/{T.shirt}", json={"piece": T.shirt}), 503, "off")
         _refusal(await c.post("/v1/tryon/confirm", json={"plan": "op_00000bad", "slots": [
-            {"slot": "top", "piece": T.shirt}]}), 422, "off")  # fmt: skip
-        _refusal(await c.get("/v1/tryon/saved/tc_0000abcd"), 404, "off")
+            {"slot": "top", "piece": T.shirt}]}), 503, "off")  # fmt: skip
+        _refusal(await c.get("/v1/tryon/saved/tc_0000abcd"), 503, "off")
 
 
 async def test_with_styling_off_the_view_still_answers_and_the_look_says_why() -> None:

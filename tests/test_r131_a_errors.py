@@ -144,3 +144,47 @@ async def test_a_document_this_server_cant_open_is_said_without_blaming_the_key(
     assert got.status_code == 503 and found.error == "unreadable"
     assert "can't be opened on this server" in found.detail and "key" not in found.detail
     assert "Nothing was changed" in found.detail  # a newer release's data is never blamed
+
+
+async def test_storage_trouble_and_off_are_503_on_every_route_never_404_or_422() -> None:
+    from jarvis.wardrobe.tryon.http import ROUTES
+
+    a = await a_world()
+    async with a.client() as c:
+        made = await c.post("/v1/tryon/saved", json={"looks": [{"slots": [
+            {"slot": "top", "piece": T.white}]}]})  # fmt: skip
+        sid = made.json()["id"]
+
+        async def down(*args: Any, **kw: Any) -> Any:
+            raise TimeoutError
+
+        a.service.store.read = down  # type: ignore[method-assign]
+        a.service.store.change = down  # type: ignore[method-assign]
+        asks = [
+            ("PUT", f"/v1/tryon/assets/{T.shirt}", {"piece": T.shirt, "card_only": True}),
+            (
+                "POST",
+                "/v1/tryon/saved",
+                {"looks": [{"slots": [{"slot": "top", "piece": T.white}]}]},
+            ),
+            ("GET", f"/v1/tryon/saved/{sid}", None),
+            ("DELETE", f"/v1/tryon/saved/{sid}", None),
+        ]
+        for meth, url, body in asks:
+            got = await c.request(meth, url, json=body)
+            assert (got.status_code, got.json()["error"]) == (503, "unavailable"), (meth, url)
+
+        async def r13_down(uid: str) -> Any:
+            raise WardrobeUnavailable("JARVIS couldn't open your wardrobe just now.")
+
+        a.styling.view = r13_down  # type: ignore[method-assign]
+        got = await c.post("/v1/tryon/confirm", json={"plan": "op_00000bad", "slots": [
+            {"slot": "top", "piece": T.white}]})  # fmt: skip
+        assert (got.status_code, got.json()["error"]) == (503, "unavailable")
+    off = await a_world(keyring=None)
+    async with off.client() as c:
+        for meth, url, body in (*asks, ("POST", "/v1/tryon/confirm", {"plan": "op_00000bad",
+                                "slots": [{"slot": "top", "piece": T.white}]})):  # fmt: skip
+            got = await c.request(meth, url, json=body)
+            assert (got.status_code, got.json()["error"]) == (503, "off"), (meth, url)
+    assert all(503 in e for _, _, part, _, _, e, _ in ROUTES if part == "tryon")  # every row

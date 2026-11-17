@@ -251,11 +251,12 @@ class TryonCap:
             mine = held.pop(hold.request_id, None)
             spent = m.spent_inr + spend if mine is not None else m.spent_inr
             took = float(mine["inr"]) if mine is not None else 0.0
+            once = 1 if mine is not None else 0  # a retry after a lost reply counts nothing twice
             rid = hold.request_id
             new = replace(
                 m, spent_inr=spent, held_inr=m.held_inr - took, holds=held,
                 done={**m.done, rid: dict(outcome)}, order=(*(r for r in m.order if r != rid), rid),
-                pictures=m.pictures + picture, blocked=m.blocked + blocked,
+                pictures=m.pictures + picture * once, blocked=m.blocked + blocked * once,
             )  # fmt: skip
             tx.set(path, encode(hold.uid, new, self.now()))
 

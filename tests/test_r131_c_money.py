@@ -112,6 +112,33 @@ async def test_the_next_press_closes_a_kept_close_first_so_it_isnt_busy() -> Non
     assert (month.spent_inr, month.held_inr, month.pictures) == (8.52, 11.22, 1)
 
 
+class LostReplyDocs(MemoryDocs):
+    """The next spend write commits, then its reply is lost (the caller sees an error)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lose = 0
+
+    async def transaction(self, fn: Callable[[DocTx], Awaitable[Any]]) -> Any:
+        out = await super().transaction(fn)
+        if self.lose > 0:
+            self.lose -= 1
+            raise RuntimeError("the commit's reply was lost")
+        return out
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+async def test_a_close_retried_after_a_lost_reply_counts_once(blocked: bool) -> None:
+    docs = LostReplyDocs()
+    cap = TryonCap(docs, "jarvis_", tz="Asia/Kolkata", now=FixedClock(NOW))
+    hold = await cap.reserve(UID, rid(1), 11.22, 300)
+    docs.lose = 1  # committed; the cap doesn't know, and tries again
+    await cap.settle(hold, 11.22, outcome={"error": "x"}, picture=not blocked, blocked=blocked)
+    month = await cap.month(UID)
+    assert (month.spent_inr, month.held_inr) == (11.22, 0.0)
+    assert (month.pictures, month.blocked) == ((0, 1) if blocked else (1, 0))
+
+
 # ---- the press ---------------------------------------------------------------------------------
 async def test_a_429_whose_release_fails_says_nothing_was_charged_and_is_released_later() -> None:
     docs = FlakyDocs()

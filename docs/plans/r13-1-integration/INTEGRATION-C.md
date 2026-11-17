@@ -1,9 +1,13 @@
-Version v13.1.1 · 17 Nov 2026, 21:40 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.2 · 17 Nov 2026, 19:35 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — Part C: See it on me (integration notes)
 
 Builder C (Opus), branch `r13-1-c` from `r13-1-i0` @ `eb8b7e4`. Briefs: `BRIEF-C.md` v13.1.2 and
 `BRIEF-COMMON.md` v13.1.2. Plan: v13.1.3 (D10–D15, D18, D19, D22).
+
+The first builder was stopped by a server restart at about 19:09 IST, just after it pushed v13.1.1
+of this file. A second builder took over. It ticked every item of BRIEF-C against the code and the
+tests, fixed what §2.1 lists, and ran every check again (§3).
 
 ## 1. The plan (written before code, first edition)
 
@@ -33,15 +37,39 @@ Each step was test first: the test was written, then the code.
 | `wardrobe/seeme/estimate.py` | 143 | the ₹ figures and their words; the estimate (`http.Estimate`) |
 | `wardrobe/seeme/cap.py` | 291 | `TryonCap`: the atomic reserve, settle, release, old holds; his own settings |
 | `wardrobe/seeme/pair.py` | 207 | what of his may be sent (`split`); `Pairer` (R13's engine around a transient piece) |
-| `wardrobe/seeme/make.py` | 333 | `Kit`, `off_reason`, `no_ai`, `Press` (the gates, the call, the settle) |
+| `wardrobe/seeme/make.py` | 339 | `Kit`, `off_reason`, `no_ai`, `Press` (the gates, the call, the settle) |
 | `wardrobe/seeme/pictures.py` | 234 | `PictureStore` (`tryon_picture/{uid}_{tp_id}`), `OnceCache` |
 | `wardrobe/seeme/privacy.py` | 120 | the three Privacy rows |
 | `wardrobe/seeme/jobs.py` | 98 | `seeme_daily` |
 | `wardrobe/seeme/part.py` | 272 | `SeeMeService` (also the `SeeMeErase`) and `build(ctx)` |
 | `src/jarvis/api/seeme.py` | 394 | the 16 `seeme` rows of `http.ROUTES` |
-| `evals/r13_1/seeme.py` | 463 | 13 cases × 2 providers, 6 controls; `BUILT = True` |
-| `tests/test_r131_c_*.py` (9 files) | — | 160 tests |
-| `tests/r131_fake_gemini.py`, `tests/r131_fakes_c.py` | — | the fakes (unique names) |
+| `evals/r13_1/seeme.py` | 387 | 13 cases × 2 providers, 6 controls; `BUILT = True` |
+| `tests/test_r131_c_*.py` (9 files) | — | 163 tests |
+| `tests/r131_fake_gemini.py`, `tests/r131_fakes_c.py` | — | the fakes (unique names); the eval's providers, `SlowProvider` and `grab_logs` live in `r131_fakes_c.py` |
+
+### 2.1 What the second builder fixed (each test first, seen red)
+
+1. **A made picture could be lost** (HIGH). The press read the list beside a picture ("not in the
+   picture") outside its `try/finally`. That list costs a storage read for each piece. A failure
+   there, after Google had made and billed the picture, lost the picture and left the hold
+   neither settled nor released.
+   - Now the list is best effort: nothing when it can't be read.
+   - The picture's record is built inside the `try`, so the cap and his month always hear it.
+   - Test: `test_a_made_picture_is_kept_and_settled_when_the_rest_of_the_look_cant_be_read`.
+2. **A repeat answered a code outside the contract** (MEDIUM). A repeated request id whose first
+   answer was "maybe billed" answered `503 maybe_billed`. That code is not in `http.SEEME_ERRORS`,
+   and the first answer had been `provider_unavailable`.
+   - Now a repeat answers the first status and code. That includes a hold `seeme_daily` settled.
+   - Test: `test_a_repeated_maybe_billed_request_id_answers_the_same_code`.
+3. **Ids by `fullmatch`** (LOW). `tg_` and `tp_` ids were checked with `re.match` against `^…$`.
+   Python's `$` also matches before a trailing newline (a `%0A` in the path).
+   - Now no document path is built from such an id.
+   - Test: `test_an_id_with_a_trailing_newline_never_reaches_a_path`.
+4. **The eval** was 463 lines, over the 400-line rule. It is now 387: its reusable fakes moved to
+   C's own `tests/r131_fakes_c.py`. Three cases now hold what BRIEF-C §4 says:
+   - `billed_or_not` releases on every non-200 (400, 403, 404, 429, 500, 503), not only 500;
+   - `d22_the_garment_and_never_his` takes R13's `rev` before an upload, so the upload is covered;
+   - the pairing check also refuses one of his pieces in the garment's own slot.
 
 ### The adapter
 
@@ -97,23 +125,23 @@ All at ₹95.24 a dollar with 18 % GST, for `gemini-3.1-flash-image` in `us`:
 
 ## 3. The checks, with their numbers
 
-All checks ran at `3b75cf4`; the heavy ones behind `/tmp/jarvis-heavy.lock`.
+All checks ran again at `2286c66`, after §2.1's fixes; the heavy ones behind
+`/tmp/jarvis-heavy.lock`. (The first builder's numbers at `3b75cf4` were 160 tests and 183 with
+I0's; its other results were the same as below.)
 
 | Check | Result |
 |---|---|
-| `tests/test_r131_c_*.py`, Python 3.11 | **160 passed**: gemini 44, cap 26, press 24, photos 20, consent 14, part 10, pair 9, jobs 7, api 6 |
-| The same, plus I0's `test_r131_port.py`, `test_r131_fakes.py` and `test_r131_spend.py`, Python 3.12 | **183 passed** |
-| Coverage: `wardrobe/seeme`, `api/seeme.py`, `llm/tryon_gemini.py` | **94 %** (1,775 statements, 113 missed); every module ≥ 89 % |
-| `test_r131_seams.py` and `test_r13_seams.py` | **524 passed** |
-| `test_r131_wiring.py` and `test_r13_wiring.py` | 2 failed, the rest passed. Both failures are I0's "not built yet" pins (§6.1) |
-| `test_r11_wiring.py`, `test_r2_wiring.py`, `test_r4_wiring.py`, `test_r51_wiring.py` | 7 failed before the pin move, **64 passed** after (§5) |
-| `evals/r13_1/run.py --mock --part seeme` | **26/26 passed**; the control failed the part: True |
+| `tests/test_r131_c_*.py` | **163 passed** on Python 3.11 and 3.12: gemini 44, press 27, cap 26, photos 20, consent 14, part 10, pair 9, jobs 7, api 6 |
+| The same, plus I0's `test_r131_port.py`, `test_r131_fakes.py` and `test_r131_spend.py` | **186 passed** on 3.11 and on 3.12 |
+| Coverage (3.12): `wardrobe/seeme`, `api/seeme.py`, `llm/tryon_gemini.py` | **94 %** (1,782 statements, 112 missed); every module ≥ 89 % |
+| `test_r131_seams.py`, `test_r131_wiring.py`, `test_r13_seams.py`, `test_r13_wiring.py`, and the four files of the tick pins (§5) | **642 passed, 2 failed** on 3.11 and on 3.12. Both failures are I0's "not built yet" pins in `test_r131_wiring.py` (§6.1); the eight tick pins pass |
+| `evals/r13_1/run.py --mock --part seeme` | **26/26 passed**; the control failed the part: True (12 cases red, listed below) |
 | `evals/r13_1/run.py --mock` (every part) | **48/48 passed**; the negative control failed the suite: True |
-| `ruff check` and `ruff format --check` on Part C's files | clean |
-| `mypy src` | the baseline error only (`memory/redis_store.py:67`) |
+| `ruff check` and `ruff format --check` on Part C's 27 files | clean |
+| `mypy` on C's modules, and `mypy src` | the baseline error only (`memory/redis_store.py:67`) |
 | `scripts/arch_coverage.py` | OK (66 packages, 103 console modules, 119 collections) |
 | `scripts/check_doc_versions.py` | 30 documents OK |
-| Function and module size | every function ≤ 45 lines; every module ≤ 400 (`api/seeme.py` 394) |
+| Function and module size (by the AST) | every function ≤ 33 lines; every module ≤ 400 (the largest `api/seeme.py`, 394; the eval 387) |
 
 - **The eval's controls.** Each control turns its own case red on BOTH providers (12 cases red):
   - a read-then-write reserve (`ten_at_once`);
@@ -180,6 +208,16 @@ All checks ran at `3b75cf4`; the heavy ones behind `/tmp/jarvis-heavy.lock`.
     - The deadline test (§7) was written after its change.
     - The adapter, cap, photos, consent, pairing and routes tests were run red first.
     - The eval's controls prove the guards bite.
+    - §2.1's three tests were run red first, each for its own reason.
+16. **The list beside a picture is best effort** (§2.1.1). This is the rest of the look, shown as
+    "not in the picture". When it can't be read, the picture is still shown and kept, with an
+    empty `not_sent`. `sent` is always exact.
+17. **Two edges at his month's end** (LOW, accepted). The cap's `done` and `holds` live in his IST
+    month's own document.
+    - A repeated request id from the old month is not found after midnight on the 1st.
+    - A hold from the old month's last seconds does not make the new month's press `busy`.
+    - Both need a retry or a second press within seconds of midnight on the 1st. The console
+      sends a fresh request id for each confirm.
 
 ## 5. The eight tick-job pins moved (the one exception, BRIEF-COMMON section 4)
 
@@ -250,12 +288,49 @@ eight pins were seen red first (7 tests), then green (64 passed).
 8. **The deploy:** see §7, notes (a) and (b).
 9. **One live picture after his YES** (the plan's exit check 7). Compare its `usageMetadata` and the
    ₹ settled with his Google bill.
+10. **The consent's hash and Google's cache** (MEDIUM; found by the second builder). The hash covers
+    exactly what BRIEF-C and D11 name: the template's version, provider, model, location and
+    location words. It does not cover `tryon_cache`.
+    - The problem: he may type YES under "Google's own short-term cache of requests is switched
+      off". If the deploy later sets `JARVIS_TRYON_CACHE=true` (its cache PATCH failed), his
+      consent stays current, but the words now say Google may keep each request for up to 24
+      hours. That is a change in what Google keeps, made without a new YES.
+    - Not changed here, because the brief names the hash's inputs. I1's call. Proposal (C's
+      `consent.py`, plus its callers in `make.py` and `consent.py`, and the eval's `_priced_text`
+      control taking `**kw`):
+
+    ```diff
+    -def template_text(desc: TryOnDescription) -> str:
+    +def template_text(desc: TryOnDescription, *, cache: bool) -> str:
+         fixed = {"version": VERSION, "provider": desc.provider, "model": desc.model,
+    -             "location": desc.location, "location_words": desc.location_words}  # fmt: skip
+    +             "location": desc.location, "location_words": desc.location_words,
+    +             "cache": cache}  # fmt: skip
+    -def digest(desc: TryOnDescription) -> str:
+    -    return hashlib.sha256(template_text(desc).encode()).hexdigest()
+    +def digest(desc: TryOnDescription, *, cache: bool) -> str:
+    +    return hashlib.sha256(template_text(desc, cache=cache).encode()).hexdigest()
+    ```
+
+    `Consent.current(uid, desc)` then takes `cache=`, and `Press._on` passes
+    `cache=self.kit.ctx.s.tryon_cache`. Add a test: cache off, then on, asks for his YES again.
 
 ## 7. The review
 
-The brief requires `security-reviewer`, `code-reviewer` and `python-reviewer`. This builder had no
-agent tool to start them in a fresh context. So the review below is C's own pass, written to their
-checklists. **I1 or the Workshop should run the three agents on `r13-1-c` before the merge.**
+The brief requires `security-reviewer`, `code-reviewer` and `python-reviewer`. Neither builder had
+an agent tool to start them in a fresh context. So the review below is C's own pass, written to
+their checklists. **I1 or the Workshop should run the three agents on `r13-1-c` before the merge.**
+
+The second builder read every C module and test again, in a context of its own, against BRIEF-C
+item by item. It found §2.1's four items and §6.10, and fixed the four. Its findings, by
+severity:
+
+- **HIGH:** §2.1.1, a made picture lost (fixed).
+- **MEDIUM:** §2.1.2, a repeat's code (fixed); §6.10, the consent's hash and the cache (for I1).
+- **LOW:** §2.1.3, ids by `fullmatch` (fixed); §4.17, the month's end (accepted); the 20-garment
+  limit, a query and then a write (§4.12, accepted).
+- **Checked and holding:** R13's backup file reads only R13's own catalog store and photo vault,
+  never C's collections. The 400-line eval was the only module over its limit.
 
 ### Security (consent, money, his photo, the adapter)
 
@@ -334,7 +409,7 @@ Three notes:
 
 ### Quality
 
-- Functions ≤ 45 lines; modules ≤ 400; no deep nesting.
+- Functions ≤ 33 lines; modules ≤ 400; no deep nesting.
 - Frozen dataclasses and pydantic models.
 - Errors are handled explicitly (no bare 500s).
 - I0's static tests hold: no real clock under `wardrobe/seeme` or `llm/tryon_gemini.py`, and no
@@ -383,5 +458,6 @@ the proto field in lowerCamelCase.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v13.1.0 | 17 Nov 2026, 20:10 IST | R13.1 | First edition: Part C's plan, before code | 🛠 Mark XXIII |
-| v13.1.1 | 17 Nov 2026, 21:40 IST | R13.1 | What C built, the checks with their numbers, the ₹ figures, the deviations, the eight tick pins, "Needs I1" with diffs, the review (C's own pass; the agents for I1), the deploy's block, the M5 names, what could not be verified | 🛠 Mark XXIII |
+| v13.1.0 | 17 Nov 2026, 18:20 IST | R13.1 | First edition: Part C's plan, before code | 🛠 Mark XXIII |
+| v13.1.1 | 17 Nov 2026, 19:09 IST | R13.1 | What C built, the checks with their numbers, the ₹ figures, the deviations, the eight tick pins, "Needs I1" with diffs, the review (C's own pass; the agents for I1), the deploy's block, the M5 names, what could not be verified | 🛠 Mark XXIII |
+| v13.1.2 | 17 Nov 2026, 19:35 IST | R13.1 | The second builder, after the server restart: BRIEF-C ticked item by item; fixed a made picture lost when its list couldn't be read, a repeat's code outside the contract, ids by `fullmatch`, and the eval over 400 lines (with three cases closer to the brief); two LOW edges at the month's end; "Needs I1" §6.10 (the consent's hash and the cache); every check run again (163 tests; 186 with I0's on 3.11 and 3.12; 94 %; the eval 26/26 with its controls; the runner 48/48). The two earlier rows' times corrected to their commits (they had said 20:10 and 21:40) | 🛠 Mark XXIII |

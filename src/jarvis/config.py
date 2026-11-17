@@ -34,7 +34,7 @@ class AuthMode(StrEnum):
 
 MIN_SESSION_SECRET_LEN = 32
 ENVS = frozenset({"dev", "staging", "prod"})  # JARVIS_ENV (R6.2 L3: nothing else starts)
-_HHMM, _DAY = r"^([01]\d|2[0-3]):[0-5]\d$", r"^20\d\d-(0[1-9]|1[0-2])-[0-3]\d$"  # R13, R13.1
+_HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"  # R13
 
 
 def _is_private_host(host: str) -> bool:
@@ -642,10 +642,9 @@ class Settings(BaseSettings):
     tryon_tax_pct: int = Field(default=18, ge=0, le=28, description="GST % in every try-on ₹")
     tryon_model: str = Field(default="gemini-3.1-flash-image", pattern=r"^gemini-[a-z0-9.-]+$")
     tryon_location: Literal["us", "eu", "global"] = Field(default="us", description="Google's")
-    tryon_model_retires: str = Field(default="2027-05-28", pattern=_DAY, description="D18")
     tryon_keep_days: int = Field(default=30, ge=1, le=30, description="A picture, unless kept")
     tryon_photo_max_kb: int = Field(default=700, ge=100, le=740, description="His photo's KB")
-    tryon_cache: bool = Field(default=False, description="Google kept its 24-hour cache")
+    tryon_cache: bool = Field(default=True, description="Google may keep its 24-hour cache")
 
     # --- persona ---
     user_honorific: str = Field(default="Sir", description="How JARVIS addresses the user")

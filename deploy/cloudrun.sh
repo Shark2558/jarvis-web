@@ -478,14 +478,23 @@ done
 # not needed, and voice falls back to the browser if it can't be granted.
 try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
   || echo "  Note: could not let JARVIS use the speech APIs; the browser voice will be used."
-# R13.1 (plan review M6): a custom role that can ONLY make prompt requests, so the server can't start
-# other paid models; Agent Platform User only when the custom role can't be made (with a note).
+# R13.1 (plan review M6): a custom role that can ONLY make prompt requests (to any Agent Platform model):
+# it can't deploy, tune or manage anything; JARVIS's own cap and the jarvis-tryon budget alert watch
+# the bill. An existing role is set back to that one permission. Agent Platform User only when the
+# custom role can't be made (with a note).
 TRYON_STATE=false
 TRYON_ROLE="projects/${PROJECT}/roles/jarvisTryOn"
 if [ "$TRYON_API" = on ]; then
-  if gcloud iam roles describe jarvisTryOn --project "$PROJECT" >/dev/null 2>&1 || \
-     gcloud iam roles create jarvisTryOn --project "$PROJECT" --title="JARVIS try-on (prompt requests only)" \
+  TRYON_MADE=false
+  if gcloud iam roles describe jarvisTryOn --project "$PROJECT" >/dev/null 2>&1; then
+    TRYON_MADE=true
+    gcloud iam roles update jarvisTryOn --project "$PROJECT" --permissions=aiplatform.endpoints.predict --quiet >/dev/null 2>&1 \
+      || echo "  Note: the try-on role could not be set back to prompt requests only; check jarvisTryOn in IAM, Roles."
+  elif gcloud iam roles create jarvisTryOn --project "$PROJECT" --title="JARVIS try-on (prompt requests only)" \
        --permissions=aiplatform.endpoints.predict --stage=GA --quiet >/dev/null 2>&1; then
+    TRYON_MADE=true
+  fi
+  if [ "$TRYON_MADE" = true ]; then
     try_bind "serviceAccount:${RUN_SA}" "$TRYON_ROLE" && TRYON_STATE=true
   fi
   if [ "$TRYON_STATE" = false ]; then

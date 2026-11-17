@@ -14,6 +14,7 @@ from r131_fake_tryon import Step
 from r131_fakes import UID, T, ist
 from r131_fakes_c import NEW_SHIRT, FakeBilling, StrictTryOn, add_front, ask, ready_world
 
+from jarvis.config import Settings
 from jarvis.llm.tryon import TryOnMaybeBilled
 from jarvis.llm.tryon_gemini import GeminiTryOn
 from jarvis.wardrobe.seeme.texts import SeeMeRefused
@@ -78,7 +79,8 @@ async def test_googles_cache_turned_on_after_his_yes_asks_for_it_again_before_an
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = ScriptedTryOn(max_garments=1)
-    sw, svc, g = await ready_world(provider=fake)  # his YES under "the cache is switched off"
+    off = Settings(_env_file=None, tryon_pictures=True, tryon_cache=False)  # type: ignore[call-arg]
+    sw, svc, g = await ready_world(provider=fake, s=off)  # his YES under "the cache is off"
     monkeypatch.setattr(sw.ctx.s, "tryon_cache", True)  # a later deploy: "up to 24 hours"
     view = await svc.overview(UID)
     assert view.consent is not None and view.consent.given and not view.consent.current
@@ -105,7 +107,7 @@ async def test_the_gate_the_notice_and_the_panel_read_the_models_own_date(
 ) -> None:
     adapter, _ = gemini()  # gemini-3.1-flash-image: "May 28, 2027 or later" (G9)
     sw, svc, g = await ready_world(provider=adapter, at=ist(2027, 5, 27, 23, 30))
-    monkeypatch.setattr(sw.ctx.s, "tryon_model_retires", "2030-01-01")  # never a second source
+    assert not hasattr(sw.ctx.s, "tryon_model_retires")  # I1: never a second source
     view = await svc.overview(UID)
     assert view.provider is not None and view.provider.retires_on == "2027-05-28"
     assert view.notice == "Google may retire this image model on 28 May 2027." and view.on

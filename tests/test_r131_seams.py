@@ -69,9 +69,12 @@ def test_the_r131_settings_have_safe_defaults() -> None:
     assert s.tryon_enabled is True and s.tryon_pictures is False  # pictures: the deploy sets it
     assert (s.tryon_month_cap_inr, s.tryon_tax_pct) == (300, 18)
     assert (s.tryon_model, s.tryon_location) == ("gemini-3.1-flash-image", "us")
-    assert s.tryon_model_retires == "2027-05-28"
     assert (s.tryon_keep_days, s.tryon_photo_max_kb) == (30, 700)  # owner question 3: 30 days
-    assert s.tryon_cache is False  # the deploy sets it when Google refused to switch caching off
+    # I1 (INTEGRATION-C 6.2, review C-1): fail toward disclosure. Unless the deploy proved Google's
+    # cache off (it passes JARVIS_TRYON_CACHE explicitly), the consent says it may be kept
+    assert s.tryon_cache is True
+    # I1 (INTEGRATION-C 10.4 b, review C-1 finding 6): ONE end date, the model's own
+    assert "tryon_model_retires" not in Settings.model_fields
 
 
 @pytest.mark.parametrize(
@@ -84,8 +87,6 @@ def test_the_r131_settings_have_safe_defaults() -> None:
         ("tryon_model", "imagen-4"),
         ("tryon_model", "virtual-try-on-001"),  # not built (D19)
         ("tryon_location", "asia-south1"),
-        ("tryon_model_retires", "28 May 2027"),
-        ("tryon_model_retires", "2027-13-01"),
         ("tryon_keep_days", 0),
         ("tryon_keep_days", 31),
         ("tryon_photo_max_kb", 99),
@@ -809,6 +810,13 @@ def test_the_deploy_switches_on_see_it_on_me_only_when_the_api_and_a_role_worked
     assert subprocess.run(["bash", "-n", str(ROOT / "deploy" / "cloudrun.sh")]).returncode == 0
     assert "gcloud services enable aiplatform.googleapis.com --quiet" in sh
     assert "--permissions=aiplatform.endpoints.predict --stage=GA" in sh  # prompt requests only
+    # I1 (INTEGRATION-C 7 (a), (b)): an existing role is set back to prompt requests only, and
+    # the comment says what the role really allows (prompts to ANY model, the alert the brake)
+    update = 'gcloud iam roles update jarvisTryOn --project "$PROJECT" '
+    assert update + "--permissions=aiplatform.endpoints.predict --quiet" in sh
+    assert sh.index("gcloud iam roles describe jarvisTryOn") < sh.index(update)
+    assert "can't start\n# other paid models" not in sh and "can't start other paid" not in sh
+    assert "ONLY make prompt requests (to any Agent Platform model)" in sh
     assert sh.index("roles/jarvisTryOn") < sh.index("roles/aiplatform.user")  # the fallback last
     assert "TRYON_STATE=true" in sh and "JARVIS_TRYON_PICTURES=true" not in sh  # never forced on
     infra = [ln for ln in sh.splitlines() if ln.startswith('INFRA_ENV="${INFRA_ENV},JARVIS_TRYON')]

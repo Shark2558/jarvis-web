@@ -26,7 +26,9 @@ from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.privacy.ports import CategoryView
 from jarvis.storage.docs import MemoryDocs, Set
 from jarvis.wardrobe.ports import NOT_BUILT, PARTS, WardrobeContext, WardrobePart
+from jarvis.wardrobe.seeme import texts as seeme_texts
 from jarvis.wardrobe.tryon import kept
+from jarvis.wardrobe.tryon import part as tryon_part
 
 UID = "owner-r131"
 
@@ -71,12 +73,15 @@ class _Row:
 
 
 # ---- the six parts ------------------------------------------------------------------------------
-def test_six_parts_build_through_the_real_modules_and_the_two_stubs_say_not_built(
+def test_six_parts_build_through_the_real_modules_and_say_off_in_words_without_a_key(
     settings: Settings,
 ) -> None:
     parts = wiring.build_parts(_ctx(settings, MemoryDocs()))
     assert tuple(parts) == PARTS and PARTS[-2:] == ("tryon", "seeme")
-    assert parts["tryon"].ready == parts["seeme"].ready == NOT_BUILT
+    # I1: A and C are built (no longer I0's NOT_BUILT stubs); with no keyring each says why
+    assert parts["tryon"].ready == tryon_part.OFF_NO_KEY
+    assert parts["seeme"].ready == f"off: {seeme_texts.OFF_NO_KEY}"
+    assert NOT_BUILT not in {parts[p].ready for p in PARTS}
     for name in ("tryon", "seeme"):
         assert parts[name].data == () and parts[name].tools == ()  # rows on privacy only (M4)
     assert [r.id for r in parts["tryon"].privacy] == ["tryon_figure", "tryon_all", "tryon_device"]
@@ -285,9 +290,16 @@ async def test_the_app_builds_six_parts_and_v1_r13_lists_them(settings: Settings
         body = (await c.get("/v1/r13", headers=AUTH)).json()
         assert body["version"] == "v13.1.0"
         assert [p["part"] for p in body["parts"]] == list(PARTS)
-        assert body["parts"][-1] == {"part": "seeme", "ready": NOT_BUILT}
-        assert (await c.get("/v1/tryon", headers=AUTH)).status_code == 404  # stub routers at I0
-        assert (await c.get("/v1/tryon")).status_code in (401, 404)
+        # I1: A's and C's routes are built; this app has no keyring, so each says Off in words
+        assert body["parts"][-2] == {"part": "tryon", "ready": tryon_part.OFF_NO_KEY}
+        assert body["parts"][-1] == {"part": "seeme", "ready": f"off: {seeme_texts.OFF_NO_KEY}"}
+        off = await c.get("/v1/tryon", headers=AUTH)
+        assert off.status_code == 503
+        assert off.json() == {"error": "off", "detail": tryon_part.OFF_NO_KEY}
+        seeme = await c.get("/v1/seeme", headers=AUTH)
+        assert seeme.status_code == 503 and seeme.json()["error"] == "not_configured"
+        assert (await c.get("/v1/tryon")).status_code == 401
+        assert (await c.get("/v1/seeme")).status_code == 401
 
 
 def _release(

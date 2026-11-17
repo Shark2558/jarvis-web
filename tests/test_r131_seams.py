@@ -587,7 +587,9 @@ def _node(src: str) -> str:
     return got.stdout
 
 
-def test_the_engine_stub_fits_the_contract_and_mount_throws_not_built() -> None:
+def test_the_engine_fits_the_contract_and_mount_without_a_host_throws() -> None:
+    # I1: B's engine replaced I0's stub (INTEGRATION-B section 6, item 1): the contract still
+    # holds, and a mount with no place on the page throws in words, as the stub's did
     contract = (ROOT / "tests" / "fixtures" / "r13_1" / "engine_contract.mjs").as_uri()
     engine = (STATIC / "console-tryon-3d.js").as_uri()
     out = _node(
@@ -604,7 +606,8 @@ def test_the_engine_stub_fits_the_contract_and_mount_throws_not_built() -> None:
     import json
 
     got = json.loads(out)
-    assert got["probs"] == [] and got["threw"] == "The 3D view is not built yet."
+    assert got["probs"] == [] and got["threw"] == "The 3D view needs a place on the page."
+    assert got["supported"] is False  # Node has no document, so no WebGL2
     assert got["priv"] == [] and got["views"] == {"front": 0, "side": 90, "back": 180}
     assert got["slot"] == [
         "slot", "piece", "template", "variant", "rgb", "pattern", "photo", "private",

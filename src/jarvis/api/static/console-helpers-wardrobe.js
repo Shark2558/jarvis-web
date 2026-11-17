@@ -2,6 +2,7 @@
 // Wardrobe, the sixth sub-tab (console-only: helpers/kinds.py TABS stays the five). Sections:
 //   Needs a check        B's review queue: which piece went in, "there was no deposit"
 //   Today and tomorrow   C's plans with their reasons, gaps and the weather's assumption; "Wearing it", "Done for today"
+//   Try it on            R13.1 (console-tryon.js, mounted ONCE here; each plan's "Show in 3D" / "See it on me" opens it)
 //   Laundry              B's basket, loads, drying, prep and outside batches; a step per piece
 //   Pieces               console-wardrobe-pieces.js: search, counts, pairs and sets, places, private basics behind a tap
 //   Labels               the sheet of 24 QR labels (a download), and which label is on which piece
@@ -15,7 +16,7 @@ const H = window.JarvisHelpers;
 const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
 const KEY_NOTE = 'The backup opens only on this JARVIS with today\u2019s key: after a key change older files can\u2019t be read.';
 const SLOTS = { base: 'Base', top: 'Top', bottom: 'Bottom', outer: 'Outer', socks: 'Socks', shoes: 'Shoes', belt: 'Belt', watch: 'Watch', extras: 'Extras' };
-const UI = { host: null, note: null, secs: {}, view: null, laundry: null, review: null, outfits: null, cal: null, busy: false, loading: null, priv: false, file: null, check: null, pieces: null };
+const UI = { host: null, note: null, secs: {}, view: null, laundry: null, review: null, outfits: null, cal: null, busy: false, loading: null, priv: false, file: null, check: null, pieces: null, tryon: null };
 const signedIn = () => !!(window.JarvisConsole && typeof window.JarvisConsole.ready === 'function' && window.JarvisConsole.ready());
 const when = (iso, t) => (window.JarvisMobile && window.JarvisMobile.when ? window.JarvisMobile.when(iso, t) : '');
 const say = (kind, text) => H.note(UI.note, kind, text);
@@ -63,6 +64,7 @@ async function load() {
       Object.assign(UI, { view: view.failed ? null : view, laundry, review, outfits });
       if (view.failed) say('bad', view.words);
       draw();
+      document.dispatchEvent(new CustomEvent('jarvis:wardrobe-fresh')); // R13.1: Try it on re-reads its look (D1)
     } catch (e) { failed(e); } finally { UI.loading = null; }
   })();
   return UI.loading;
@@ -124,6 +126,8 @@ function plan(day, p) {
   if (why.length) box.append(H.mk('p', 'sfine', why.map((x) => H.txt(x, 160)).join('. ') + '.'));
   [].concat((p.look && p.look.gaps) || [], p.needs || []).forEach((g) => box.append(H.mk('p', 'snote warn', H.txt(g, 160))));
   if (!p.cancelled) box.append(acts(btn('Wearing it', () => tool('wear_log', { action: 'start', plan: p.id }, 'Enjoy the day.')), btn('Done for today', () => tool('wear_log', { action: 'done', plan: p.id }))));
+  const see = !!(UI.tryon && UI.tryon.seeOn()); // R13.1 (D1): free 3D; "See it on me" only while it is on (its price on the confirm)
+  if (!p.cancelled) box.append(acts(btn('Show in 3D', () => tryOn(p.id, false)), see ? btn('See it on me', () => tryOn(p.id, true)) : null));
   return [box];
 }
 function laundryRows() {
@@ -269,6 +273,11 @@ async function restore() {
   await load();
 }
 
+function tryOn(plan, see) { // R13.1: the section opens with that plan's look
+  document.dispatchEvent(new CustomEvent('jarvis:tryon-open', { detail: { plan, see } }));
+  if (UI.secs.tryon && UI.secs.tryon.scrollIntoView) UI.secs.tryon.scrollIntoView({ block: 'start' });
+}
+
 // ---- the tab ------------------------------------------------------------------------------------------------------------
 function ctx() {
   return { H, view: UI.view, priv: UI.priv, nameOf, placeOf, tool, btn, acts, field, select, when,
@@ -278,8 +287,11 @@ function mount(host) {
   UI.host = host;
   UI.note = H.mk('p', 'sfine hp-note');
   UI.note.setAttribute('role', 'status');
-  ['review', 'plans', 'laundry', 'pieces', 'labels', 'settings'].forEach((k) => { UI.secs[k] = H.section(''); UI.secs[k].replaceChildren(); });
-  host.append(UI.note, ...['review', 'plans', 'laundry', 'pieces', 'labels', 'settings'].map((k) => UI.secs[k]));
+  const order = ['review', 'plans', 'tryon', 'laundry', 'pieces', 'labels', 'settings']; // R13.1: Try it on after the plans
+  order.forEach((k) => { UI.secs[k] = H.section(''); UI.secs[k].replaceChildren(); });
+  host.append(UI.note, ...order.map((k) => UI.secs[k]));
+  import('./console-tryon.js').then((m) => { UI.tryon = m; m.mount(UI.secs.tryon, ctx()); if (UI.outfits) draw(); })
+    .catch(() => UI.secs.tryon.replaceChildren(H.mk('h3', 'hp-h', 'Try it on'), H.empty('This part couldn\u2019t load.')));
   draw();
   if (signedIn()) load(); else say('', 'Sign in to see your wardrobe.');
 }

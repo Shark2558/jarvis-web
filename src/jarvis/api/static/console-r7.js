@@ -55,7 +55,8 @@ function when(iso, withTime) {
 window.JarvisMobile = { mk, api, part, parts, when };
 
 for (const href of ['/static/console-r7-share.css', '/static/console-camera.css',
-  '/static/console-r7-phone.css', '/static/console-r7-sos.css', '/static/console-wardrobe.css']) { // R13: the Wardrobe tabs' places
+  '/static/console-r7-phone.css', '/static/console-r7-sos.css', '/static/console-wardrobe.css', // R13: the Wardrobe tabs' places
+  '/static/console-tryon.css']) { // R13.1: Try it on's places
   const css = document.createElement('link');
   css.rel = 'stylesheet';
   css.href = href;

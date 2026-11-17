@@ -1,0 +1,4 @@
+/* src/jarvis/api/static/console-tryon.css -- R13.1 I0 STUB (docs/plans/r13-1-try-on.md D1): Part D's places only for
+   Try it on (the stage, its toolbar, the compare pair, the checklist); every colour, font, radius or shadow a var(--...).
+   Loaded by console-r7.js. At most 200 lines in all for console-tryon*.css (tests/test_r131_seams.py). */
+.tr-stage { position: relative; }

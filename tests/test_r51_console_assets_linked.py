@@ -74,6 +74,16 @@ NOT_IN_PAGE = {
         "import('./console-wardrobe-words.js')",
     ),
     "console-wardrobe.css": ("console-r7.js", "'/static/console-wardrobe.css'"),
+    # R13.1 I0 (docs/plans/r13-1-try-on.md seam 9): Try it on, from the Wardrobe tab; B and D keep
+    # these loads when they replace I0's stubs (a static import or a dynamic one: the path quoted)
+    "console-tryon.js": ("console-helpers-wardrobe.js", "import('./console-tryon.js')"),
+    "console-tryon-list.js": ("console-tryon.js", "'./console-tryon-list.js'"),
+    "console-tryon-me.js": ("console-tryon.js", "'./console-tryon-me.js'"),
+    "console-tryon-3d.js": ("console-tryon.js", "'./console-tryon-3d.js'"),
+    "console-tryon-photo.js": ("console-tryon-me.js", "'./console-tryon-photo.js'"),
+    "console-tryon-glb.js": ("console-tryon-3d.js", "'./console-tryon-glb.js'"),
+    "console-tryon-cloth.js": ("console-tryon-3d.js", "'./console-tryon-cloth.js'"),
+    "console-tryon.css": ("console-r7.js", "'/static/console-tryon.css'"),
 }
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {

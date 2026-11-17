@@ -9,7 +9,7 @@
 //   cost({text, files, brain, send, cancel}) -> {wait, unknown}   large or complex files: POST /v1/input/estimate
 //       and, from 5 rupees up, the line above Send with the two tiers; the owner chooses, then it is sent. An
 //       estimate that failed (unavailable, an error, an odd answer) asks "Couldn't estimate the cost; send anyway?"
-//   shrink(file) -> file   a picture made smaller in the browser before upload (longest side and weight from
+//   shrink(file, {maxKb, jpeg}) -> file   a picture made smaller in the browser before upload (longest side and weight from
 //       GET /v1/input; a canvas re-draw, which also drops camera and location data; R7 I1: every picture sent to the brain, attached or shared in is redrawn; one that cannot be is refused)
 //   folder(fileList) -> {blob, name, count, left}   a picked folder's readable files as ONE stored zip
 //   limits() -> what GET /v1/input said (accept list, files a message, megabytes); console-attach.js is told
@@ -185,15 +185,16 @@ const blobOf = (c, type, q) => new Promise(resolve => c.toBlob(resolve, type, q)
 /** R7 I1 (EXIF): every picture sent to the brain, attached to a message or shared into JARVIS is redrawn here before it leaves, so no camera or location data travels with it: a PNG
  *  small enough stays a lossless PNG (its chunks dropped), anything else becomes a JPEG (never the original). A picture
  *  that cannot be redrawn returns null (it must NOT go as it is); a file that is not a picture comes back unchanged. */
-async function shrink(file) {
+async function shrink(file, opts) { // R13.1 I0 (M7): opts.maxKb only LOWERS the limit; opts.jpeg: never a PNG
+  const o = opts || {}, low = Number(o.maxKb) > 0 ? Number(o.maxKb) : Infinity;
   if (!file || !PICTURE.test(file.name || '')) return file;
   if (typeof createImageBitmap !== 'function') return null;
   let bmp = null;
   try { bmp = await createImageBitmap(file); } catch (_) { return null; }
-  const side = limits.picture_side, most = limits.picture_max_kb * 1024;
+  const side = limits.picture_side, most = Math.min(limits.picture_max_kb, low) * 1024;
   const scale = Math.min(1, side / Math.max(bmp.width, bmp.height, 1));
   const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
-  if (scale === 1 && /\.png$/i.test(file.name)) {
+  if (scale === 1 && /\.png$/i.test(file.name) && !o.jpeg) {
     const p = drawn(bmp, w, h, false), png = p ? await blobOf(p, 'image/png') : null;
     if (png && png.size <= most) { if (bmp.close) bmp.close(); return new File([png], String(file.name), { type: 'image/png' }); }
   }

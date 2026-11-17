@@ -10,6 +10,8 @@
 //   sentToday() -> n            pictures this device sent today; line() -> "Pictures sent from this device today: n"
 //   wardrobe(blob, {piece, view}), tag(blob, {piece}) -> Promise<json>   R13 D9: Camera -> Wardrobe's only two ways
 //                               to send a picture: a saved piece's crop (POST /v1/wardrobe/photos) and its AI tag
+//   person(blob, {maxKb}) -> Promise<json>   R13.1 D12: his photo for See it on me (POST /v1/seeme/photo), redrawn down
+//                               to maxKb (GET /v1/seeme's photo_max_kb); picture(id), myPhoto() -> data: URLs, read back
 // Every picture is first redrawn on this device by R11.1's shrink (JarvisFixes.parts.files.shrink): JPEG of at
 // most 1,568 px, so a WebP or a full-size photo is never sent as it is; one the browser can't read is refused in
 // plain words. The counter lives only in this browser (localStorage, per day). Nothing here runs before a press.
@@ -38,12 +40,12 @@ function bump(by) {
 const isPicture = (f) => !!f && (/^image\//.test(f.type || '') || /\.(png|jpe?g|webp)$/i.test(f.name || ''));
 
 /** A picture redrawn on this device (R11.1's shrink), or a plain refusal. Other files pass unchanged. */
-async function prepared(file) {
+async function prepared(file, opts) {
   if (!isPicture(file)) return file;
   const F = window.JarvisFixes && window.JarvisFixes.parts && window.JarvisFixes.parts.files;
   if (!F || typeof F.shrink !== 'function') throw new Error(NOT_READY);
   let small = null;
-  try { small = await F.shrink(file); } catch (_) { small = null; }
+  try { small = await F.shrink(file, opts); } catch (_) { small = null; }
   if (!small || small === file) throw new Error(UNPREPARED); // not redrawn (null, or the very same file): never sent as it is
   if (!PICTURE_TYPES.includes(small.type) || !/\.(png|jpe?g)$/i.test(small.name || '')) throw new Error(UNREADABLE);
   return small;
@@ -101,12 +103,13 @@ async function vault(file) {
 const PIECE = /^wi_[0-9a-f]{12}$/;
 const VIEWS = ['front', 'back', 'detail'];
 const NOT_A_PIECE = 'That photo is not for a saved piece, so it was not sent, Sir.';
-async function postPicture(path, blob) {
+async function postPicture(path, blob, opts) {
   const chat = window.JarvisChat;
   if (!chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
   const file = blob instanceof File ? blob : new File([blob], 'piece.jpg', { type: 'image/jpeg' });
-  const doc = await prepared(file);
+  const doc = await prepared(file, opts);
   if (doc.type !== 'image/jpeg') throw new Error(UNREADABLE);
+  if (opts && opts.maxKb > 0 && doc.size > opts.maxKb * 1024) throw new Error(TOO_DETAILED); // nothing sent (M7)
   const r = await chat.raw(path, { method: 'POST', body: doc, headers: { 'Content-Type': 'image/jpeg' } });
   let j = null;
   try { j = await r.json(); } catch (_) {}
@@ -126,14 +129,28 @@ function tag(blob, meta) {
 }
 
 const PHOTO = /^wh_[0-9a-f]{12}$/;
-async function thumb(id) { // a saved crop, back as a data: URL for an <img>
+async function dataUrl(path) { // a picture read back, as a data: URL for an <img> (blob: is not in img-src)
   const chat = window.JarvisChat;
-  if (!PHOTO.test(String(id || '')) || !chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
-  const r = await chat.raw('/v1/wardrobe/photos/' + id);
+  if (!chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
+  const r = await chat.raw(path);
   if (!r.ok) throw new Error('That photo could not be shown.');
   const b = await r.blob();
   return new Promise((ok, no) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.onerror = no; f.readAsDataURL(b); });
 }
+async function thumb(id) { // a saved crop
+  if (!PHOTO.test(String(id || ''))) throw new Error(NOT_READY);
+  return dataUrl('/v1/wardrobe/photos/' + id);
+}
+// R13.1 I0 (docs/plans/r13-1-try-on.md D12, M7): his photo for See it on me, JPEG and at most maxKb, else nothing is sent.
+const TOO_DETAILED = 'This photo is too detailed to send: try a plainer background.';
+const TRYON_PICTURE = /^tp_[0-9a-f]{12}$/;
+function person(blob, meta) {
+  const kb = Number((meta || {}).maxKb);
+  if (!(kb >= 100 && kb <= 740)) return Promise.reject(new Error(NOT_READY));
+  return postPicture('/v1/seeme/photo', blob, { maxKb: kb, jpeg: true });
+}
+const picture = (id) => (TRYON_PICTURE.test(String(id || '')) ? dataUrl('/v1/seeme/pictures/' + id) : Promise.reject(new Error(NOT_READY)));
+const myPhoto = () => dataUrl('/v1/seeme/photo');
 async function drop(id) { // one photo, deleted
   const chat = window.JarvisChat;
   if (!PHOTO.test(String(id || '')) || !chat || typeof chat.raw !== 'function') throw new Error(NOT_READY);
@@ -142,4 +159,4 @@ async function drop(id) { // one photo, deleted
 }
 const line = () => 'Pictures sent from this device today: ' + readCount();
 
-if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, sentToday: readCount, line }));
+if (M) M.part('send', Object.freeze({ canAsk, ask, attach, vault, wardrobe, tag, thumb, drop, person, picture, myPhoto, sentToday: readCount, line }));

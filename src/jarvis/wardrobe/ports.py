@@ -11,6 +11,13 @@ wiring file (`api/r13_wiring.py` leaves out a part that breaks this contract: "s
 | `laundry` | B · LND-01-15, OPS-02     | `jarvis.wardrobe.laundry.part`  | `/v1/laundry`  |
 | `styling` | C · STY-01-17, LND-16, 04 | `jarvis.wardrobe.styling.part`  | `/v1/outfits`  |
 | `phone`   | D · OPS-01, UI, No-AI     | `jarvis.wardrobe.phone.part`    | none           |
+| `tryon`   | R13.1 A · try-on data     | `jarvis.wardrobe.tryon.part`    | `/v1/tryon`    |
+| `seeme`   | R13.1 C · See it on me    | `jarvis.wardrobe.seeme.part`    | `/v1/seeme`    |
+
+R13.1 (docs/plans/r13-1-try-on.md seam 3) adds `tryon` and `seeme`: no tool, their Privacy rows
+on `privacy` only (section "Try-on", `PRIVACY_OWNER`), never `data` (R13's Wardrobe rows fail
+closed on a source they don't know, M4), C's daily `seeme_daily`, A's `tryon_looks` and C's
+`seeme` services, and `WardrobeContext.tryon` (the try-on provider, built late; L12).
 
 - `WardrobePart`: its tools (names inside its `TOOL_FAMILIES` and `TOOL_OWNER`), its 5-minute
   jobs (`clock_jobs`: only C's `outfit_clock`) and morning-tick jobs (`daily_jobs`: A's
@@ -52,6 +59,7 @@ from jarvis.wardrobe.states import EventKind, State
 if TYPE_CHECKING:
     from jarvis.config import Settings
     from jarvis.keyring import Keyring
+    from jarvis.llm.tryon import TryOnProvider
     from jarvis.notify.ports import Notifier
     from jarvis.privacy.ports import PrivacySource
     from jarvis.storage.docs import Docs
@@ -60,7 +68,7 @@ if TYPE_CHECKING:
     from jarvis.tools.background import BackgroundReads
     from jarvis.tools.base import Tool
 
-PartName = Literal["catalog", "laundry", "styling", "phone"]
+PartName = Literal["catalog", "laundry", "styling", "phone", "tryon", "seeme"]
 PARTS: tuple[PartName, ...] = get_args(PartName)
 NOT_BUILT = "not built yet"
 
@@ -92,6 +100,8 @@ TOOL_FAMILIES: Mapping[PartName, tuple[str, ...]] = {
     "laundry": ("laundry_*",),
     "styling": ("outfit_*", "wear_*"),
     "phone": (),
+    "tryon": (),  # R13.1: no model-callable tool (plan "Tools: none new")
+    "seeme": (),
 }
 READ_TOOLS = frozenset({"wardrobe_find", "wardrobe_count", "laundry_status"}) | {
     "outfit_suggest",
@@ -111,6 +121,8 @@ ROUTE_PREFIX: Mapping[PartName, tuple[str, ...]] = {
     "laundry": ("/v1/laundry",),
     "styling": ("/v1/outfits",),
     "phone": (),
+    "tryon": ("/v1/tryon",),
+    "seeme": ("/v1/seeme",),
 }
 R13_STATUS_ROUTE = "/v1/r13"  # every part's ready word (I0)
 # Firestore collections (`{prefix}<name>/...`, flat ids, every document with `updated_at`); the
@@ -121,13 +133,16 @@ COLLECTIONS: Mapping[PartName, tuple[str, ...]] = {
     "laundry": ("wardrobe_laundry", "wardrobe_review", "wardrobe_told"),
     "styling": ("wardrobe_plans", "wardrobe_cal", "wardrobe_outlook", "wardrobe_told"),
     "phone": (),
+    "tryon": ("tryon",),  # R13.1 "Data model"; the guide's cards C72-C73 name every one
+    "seeme": ("tryon_person", "tryon_consent", "tryon_picture", "tryon_spend"),
 }
 TOLD_KEY_PREFIX: Mapping[PartName, str] = {"laundry": "laundry_", "styling": "styling_"}
-R13_JOB_NAMES: tuple[str, ...] = ("wardrobe_sweep", "laundry_daily", "outfit_clock")
+R13_JOB_NAMES: tuple[str, ...] = ("wardrobe_sweep", "laundry_daily", "outfit_clock", "seeme_daily")
 JOB_OWNER: Mapping[str, PartName] = {
     "wardrobe_sweep": "catalog",  # from 04:00 local: forgotten wears, holds without an entry
     "laundry_daily": "laundry",  # overdue and short batches, the review queue's morning line
     "outfit_clock": "styling",  # the 5-minute clock: calendar, weather, the evening's alert
+    "seeme_daily": "seeme",  # R13.1 D14: pictures past their time, old holds, the end-date notice
 }
 CLOCK_JOB_NAMES = frozenset({"outfit_clock"})
 SERVICE_OWNER: Mapping[str, PartName] = {
@@ -137,7 +152,20 @@ SERVICE_OWNER: Mapping[str, PartName] = {
     "review_writer": "laundry",
     "refresh": "styling",
     "phrases": "phone",
+    "tryon_looks": "tryon",  # R13.1 A: looks, the fresh check, OPS-05's `erase_all`
+    "seeme": "seeme",  # R13.1 C: his photo, consent, the cap, pictures; `erase` (tryon/ports.py)
 }
+# R13.1's Privacy rows (section "Try-on", D16) and the part that offers each; `tryon` and `seeme`
+# offer them on `WardrobePart.privacy` and never `data` (M4: `NO_DATA_PARTS`).
+PRIVACY_OWNER: Mapping[str, PartName] = {
+    "tryon_figure": "tryon",
+    "tryon_photo": "seeme",
+    "tryon_pictures": "seeme",
+    "tryon_spend": "seeme",
+    "tryon_all": "tryon",
+    "tryon_device": "tryon",
+}
+NO_DATA_PARTS: frozenset[PartName] = frozenset({"tryon", "seeme"})
 # Who raises each R13 alert kind (D19): the outfit kinds C, the other two B.
 KIND_OWNER: Mapping[str, PartName] = {
     "outfit_ready": "styling",
@@ -265,6 +293,8 @@ class PhotoVault(Protocol):
 
     async def delete_all(self, uid: str) -> int: ...
 
+    async def get(self, uid: str, photo: str) -> bytes | None: ...  # R13.1: a crop for C's call
+
 
 PrivacyRow = Literal["pieces", "history", "plans", "photos"]  # D20: a source's Privacy row
 
@@ -301,6 +331,10 @@ def _no_store() -> WardrobeStore | None:
     return None
 
 
+def _no_tryon() -> TryOnProvider | None:
+    return None
+
+
 @dataclass(frozen=True)
 class WardrobeContext:
     s: Settings
@@ -314,6 +348,7 @@ class WardrobeContext:
     reads: Callable[[], BackgroundReads | None] = lambda: None
     outside: Callable[[], Any] = lambda: None  # R11's OutsideStore (C's weather), read late
     store: Callable[[], WardrobeStore | None] = _no_store  # A's store, read late (B and C)
+    tryon: Callable[[], TryOnProvider | None] = _no_tryon  # R13.1: the try-on provider (C), late
 
 
 __all__ = [
@@ -325,7 +360,9 @@ __all__ = [
     "MAX_RESULT_PIECES",
     "NOT_BUILT",
     "NO_AI_TOOLS",
+    "NO_DATA_PARTS",
     "PARTS",
+    "PRIVACY_OWNER",
     "QUERY_TOOLS",
     "R13_JOB_NAMES",
     "R13_STATUS_ROUTE",

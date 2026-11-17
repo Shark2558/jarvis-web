@@ -76,7 +76,7 @@ def test_a_part_that_breaks_its_contract_is_left_out_and_the_rest_stay(
 
     monkeypatch.setattr(wiring, "_build", build)
     parts = wiring.build_parts(_ctx(settings))
-    assert [p.ready for p in parts.values()] == [wiring.SETUP_FAILED] * 4
+    assert [p.ready for p in parts.values()] == [wiring.SETUP_FAILED] * len(PARTS)  # R13.1: six
     assert wiring.r13_tools(parts) == () and wiring.r13_tools(None) == ()
 
 

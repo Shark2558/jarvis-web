@@ -29,13 +29,17 @@ LIMITED = {"error": "rate_limited", "detail": "Too many requests; wait a minute.
 router = APIRouter(dependencies=[Depends(require_auth)])
 
 
-def limited(request: Request, route: str, uid: str, *, change: bool) -> JSONResponse | None:
-    """A 429 when `uid` is past this route's allowance, else None."""
+def limited(
+    request: Request, route: str, uid: str, *, change: bool, per: int | None = None
+) -> JSONResponse | None:
+    """A 429 when `uid` is past this route's allowance, else None. `per`: a route's own tighter
+    allowance a minute (R13.1: `POST /v1/seeme/pictures`, 6), else R13's 30 changes or 60 reads."""
     limits = getattr(request.app.state, LIMITS_STATE, None)
     if not isinstance(limits, dict):
         limits = {}
         setattr(request.app.state, LIMITS_STATE, limits)
-    per = CHANGES_PER_MINUTE if change else READS_PER_MINUTE
+    if per is None:
+        per = CHANGES_PER_MINUTE if change else READS_PER_MINUTE
     limiter = limits.setdefault(route, RateLimiter(per))
     allowed, wait = limiter.allow(uid)
     if allowed:

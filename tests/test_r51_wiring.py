@@ -109,6 +109,7 @@ async def test_without_a_home_the_health_job_rides_the_tick_only(settings: Setti
             "backup_drill",
             "selfwatch_daily",
             "laundry_daily",  # R13: B's morning job, no key needed
+            "seeme_daily",  # R13.1 C: See it on me's morning job, by path (no key needed)
         ]
         assert app.state.health_job is app.state.tick_jobs[1]
 

@@ -330,6 +330,40 @@ def test_avt12_card_lists_his_pieces_sent_and_not_in_the_picture_with_their_thum
         c.close()
 
 
+def test_d22_garment_the_photo_he_gave_is_shown_in_its_row_the_pairing_and_the_confirm(
+    browser: Any, d_url: str, token: str
+) -> None:
+    # review D-1 M3: two navy shirts from two shops read the same; the photo he gave is read back
+    # by the door (garmentPhoto) once a page and shown wherever the garment is named
+    reset(d_url, token)
+    gid = with_photo_yes_and(d_url, token, "trousers", "black")["id"]
+    c = ready(browser, d_url, token)
+    pic = f"img.tr-thumb[data-garment='{gid}']"
+    decoded = "i => i.src.startsWith('data:image/jpeg;base64,') && i.complete && i.naturalWidth > 0"
+
+    def drawn_in(where: Any) -> bool:
+        img = where.locator(pic)
+        return img.count() == 1 and bool(img.evaluate(decoded))
+
+    try:
+        row = seeme(c).locator(".hp-row", has_text="new black trousers").first
+        until(c.page, lambda: drawn_in(row), "the garment's row")
+        use(c, "new black trousers")
+        until(c.page, lambda: "With your navy shirt." in text(c), "the pairing")
+        until(c.page, lambda: drawn_in(seeme(c).locator(".tr-pairing")), "beside the pairing")
+        seeme(c).get_by_role("button", name="See it on me", exact=True).click()
+        dlg = c.page.locator("dialog.bdialog.tr-dlg")
+        until(c.page, lambda: "Make 1 picture" in (dlg.text_content() or ""), "the confirm")
+        until(c.page, lambda: drawn_in(dlg), "in the confirm")
+        dlg.get_by_role("button", name="Cancel").click()
+        path = f"/v1/seeme/garments/{gid}"
+        reads = [r for r in c.sent if r["method"] == "GET" and path in r["url"]]
+        assert len(reads) == 1  # read once a page, never on each redraw
+        assert not c.posts("/v1/seeme/pictures")
+    finally:
+        c.close()
+
+
 def make_one(c: Page) -> None:
     seeme(c).get_by_role("button", name="See it on me", exact=True).click()
     dlg = c.page.locator("dialog.bdialog.tr-dlg")

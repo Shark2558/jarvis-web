@@ -44,6 +44,7 @@
 .tr-me .tr-garment{display:block;max-width:160px;max-height:160px;height:auto;margin:6px 0 0;border-radius:var(--r-md)}
 .tr-me .minput{height:44px;width:100%;box-sizing:border-box}
 .tr-me .hp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tr-me .hp-row > .tr-ref,.bdialog.tr-dlg .tr-ref{flex:none;align-items:flex-start}
 .bdialog.tr-dlg .minput{height:44px;width:100%;box-sizing:border-box;margin-top:10px}
 .bdialog.tr-dlg .sacts .btn{min-height:44px}
 .bdialog.tr-dlg ul{margin:8px 0 0;padding-left:18px}

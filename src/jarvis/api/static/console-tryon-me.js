@@ -14,7 +14,7 @@
 // The garment is never added to his wardrobe here. Refusals branch on err.code (Refusal's `error`). The door is the only
 // caller of the photo, picture and garment routes: its make, keep, forget and garments are proposed for I1
 // (INTEGRATION-D "Needs I1"); until they exist this says so and sends nothing. textContent only; no pixel API; ASCII.
-import { shownAs, when } from './console-tryon-list.js';
+import { crop, shownAs, when } from './console-tryon-list.js';
 
 const photo = () => import('./console-tryon-photo.js');
 // the fixed lists: wardrobe/tryon/model.py NEW_TYPES and wardrobe/model.py COLOURS (tests/test_r131_d_static.py pins both)
@@ -65,6 +65,13 @@ function picker(id, label, onFile) { // the console's way (Camera, Wardrobe; the
   input.addEventListener('change', () => { const f = input.files && input.files[0]; input.value = ''; if (f && f.size > FILE_MAX) say('bad', TOO_BIG); else if (f) onFile(f); });
   acts.append(M.o.btn(label, () => input.click()), input);
   return acts;
+}
+function newCard(g) { // the photo he gave of the new garment (the door's garmentPhoto, read once a page): two navy shirts differ (M3)
+  const f = H().mk('figure', 'tr-ref'), img = H().mk('img', 'tr-thumb');
+  img.alt = 'The photo you gave: ' + txt(g.words, 80); img.width = 56; img.height = 56; img.dataset.garment = g.id;
+  f.append(img);
+  if (has('garmentPhoto')) shownAs(img, crop(g.id, (x) => door().garmentPhoto(x)), () => f.append(H().mk('span', 'sfine', 'Photo not shown')));
+  return f;
 }
 const chosen = (f) => 'A photo is chosen (' + ({ 'image/png': 'PNG', 'image/jpeg': 'JPEG' }[f.type] || 'not a JPEG or PNG') + ', '
   + (f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB') + ').'; // never its name (D22.4)
@@ -144,8 +151,11 @@ function garmentRows() { // the new garment: its photo, its type and colour from
     out.push(h.mk('p', 'sfine', chosen(M.file)), image('tr-garment', M.url, 'The garment you chose'), grid, acts);
   }
   if (!has('garments')) out.push(h.mk('p', 'sfine', 'Your garment photos will be listed here. ' + LATER));
-  M.garments.forEach((g) => out.push(h.row(txt(g.words, 120), 'Added ' + when(g.at) + (g.until ? ' \u00b7 kept until ' + when(g.until) : ' \u00b7 kept while a kept picture shows it'),
-    [M.o.btn(M.garment && M.garment.id === g.id ? 'Chosen' : 'Use this one', () => choose(g)), M.o.btn('Delete', () => forget(g.id))])));
+  M.garments.forEach((g) => {
+    const r = h.row(txt(g.words, 120), 'Added ' + when(g.at) + (g.until ? ' \u00b7 kept until ' + when(g.until) : ' \u00b7 kept while a kept picture shows it'),
+      [M.o.btn(M.garment && M.garment.id === g.id ? 'Chosen' : 'Use this one', () => choose(g)), M.o.btn('Delete', () => forget(g.id))]);
+    r.prepend(newCard(g)); out.push(r);
+  });
   return out;
 }
 function candidates(slot) { // his non-private pieces in that slot, from the look's own options (the server's words)
@@ -160,8 +170,8 @@ function slotOf(piece) { // which slot of the look above holds it ('' when none 
 }
 function pairing() { // up to two of his pieces with it: R13's pick, which he may swap or untick; every piece sent is shown here
   if (!M.garment) return [];
-  const h = H(), out = [h.mk('p', 'snote', txt(M.garment.words, 120))];
-  if (M.pair && M.pair.words) out.push(h.mk('p', 'sfine', txt(M.pair.words, 200)));
+  const h = H(), head = h.row(txt(M.garment.words, 120), M.pair && M.pair.words ? txt(M.pair.words, 200) : ''), out = [head];
+  head.classList.add('tr-pairing'); head.prepend(newCard(M.garment));
   const rows = SENDABLE.filter((slot) => slot !== M.garment.slot).map((slot) => [slot, M.mine.find((x) => x.slot === slot)]);
   rows.concat(M.mine.filter((x) => !x.slot).map((x) => ['', x])).forEach(([slot, got]) => {
     const list = slot ? candidates(slot) : [];
@@ -318,7 +328,7 @@ async function pressed() {
   ['Sent: your photo, ' + txt(M.garment.words, 100)].concat((est.sent || []).map((s) => 'and your ' + txt(s.words, 60)))
     .concat((est.not_sent || []).map((n) => 'Not in the picture: ' + txt(n.words, 60))).forEach((t) => list.append(H().mk('li', '', t)));
   const money = rupees(est.typical_inr) + ' with GST is typical; at most ' + rupees(est.hold_inr) + ' is held until Google says what it cost.';
-  const go = await ask('Make 1 picture?', [txt(est.words, 300), list, money], [['Cancel', false], ['Make the picture', true, 'primary']]);
+  const go = await ask('Make 1 picture?', [newCard(M.garment), txt(est.words, 300), list, money], [['Cancel', false], ['Make the picture', true, 'primary']]);
   if (go !== true) { say('', 'Nothing was sent.'); return; }
   await make(pieces, est);
 }

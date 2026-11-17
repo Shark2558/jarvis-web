@@ -526,6 +526,19 @@ check('avt05_template_colour_and_texture_are_named_approximate', (need) => {
   for (const t of C.TEMPLATES) need(plan({ slots: [{ slot: 's', piece: 'wi_000000000001', template: t, variant: null, rgb: [9, 9, 9], pattern: 'solid', photo: null, private: false }, { slot: 'b', piece: 'wi_000000000002', template: 'trousers', variant: null, rgb: [9, 9, 9], pattern: 'solid', photo: null, private: false }] }, L.opts({ tucked: true })).approx.s || t === 'trousers', t + ' has no shape');
 });
 
+// review B-1, finding 9: a template name is looked up among the engine's OWN twelve, never among what every object
+// inherits. `constructor` or `toString` made the slot vanish from drawn, hidden and cards alike, which breaks the
+// exactness row 388 relies on (drawn + hidden + cards + the covered private slots = every slot of the look).
+check('a_slot_is_never_lost_whatever_its_template_says', (need) => {
+  const odd = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf', '', 7, null, 'Shirt'];
+  const slots = odd.map((template, i) => ({ slot: 's' + i, piece: 'wi_00000000000' + i, template, variant: null, rgb: [9, 9, 9], pattern: 'solid', photo: null, private: false }));
+  const look = { slots: [...L.formal().slots, ...slots] }, p = plan(look, L.opts());
+  need(JSON.stringify(p.cards) === JSON.stringify(slots.map((s) => s.slot)), 'each is an image card: ' + p.cards);
+  const named = [...p.drawn, ...p.hidden, ...p.cards].sort(), open = look.slots.filter((s) => !s.private).map((s) => s.slot).sort();
+  need(JSON.stringify(named) === JSON.stringify(open), 'drawn + hidden + cards is every slot that is not private');
+  need(p.covered === true && look.slots.filter((s) => s.private).length === 1, 'and the private slot is covered');
+});
+
 check('avt09_redraw_a_swap_changes_only_that_slot', (need) => {
   const m = model(), swapped = { slots: L.formal().slots.map((s) => (s.slot === 'outer' ? { ...s, piece: 'wi_0000000000ff', rgb: [110, 30, 40] } : s)) };
   m.show([L.figure(L.formal())], L.opts());

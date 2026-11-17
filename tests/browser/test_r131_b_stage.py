@@ -37,6 +37,7 @@ GL = [
     "--ignore-gpu-blocklist",
 ]
 LOADED = "() => window.__b && window.__b.loaded"
+LOADED_FILES = "() => window.__b.stage.stats().triangles > 0"  # the files are in and parsed
 
 
 @pytest.fixture(scope="module")
@@ -572,12 +573,123 @@ def test_avt15_signals_a_first_frame_that_never_comes_is_lost_after_ten_seconds(
     s = _open(browser, stage_url, "fail=timeout", frozen=True)
     try:
         s.js("(b.mount(), b.stage.show([b.L.figure(b.L.formal())], b.L.opts()))")
+        s.page.wait_for_function(LOADED_FILES, timeout=20000)  # the ten seconds start here
         s.page.clock.run_for(9000)
         assert s.js("b.lost") == [] and s.stats()["state"] == "loading"
         s.page.clock.run_for(1100)
         assert s.js("b.lost") == ["timeout"]
     finally:
         s.close()
+
+
+def test_the_ten_seconds_are_for_the_first_frame_not_for_the_download(
+    browser: Any, stage_url: str
+) -> None:
+    """Review B-1, finding 11: the clock started at show(), before 3 MB had arrived, so a slow
+    phone link fell to the checklist. The files now have their own 30 s; then the frame its 10."""
+    s = _open(browser, stage_url, frozen=True)
+    held: list[Any] = []
+    try:
+        s.page.route("**/vendor/mannequin/m1/garments.glb", lambda r: held.append(r))
+        s.js("(b.mount(), b.stage.show([b.L.figure(b.L.formal())], b.L.opts()))")
+        s.page.wait_for_timeout(500)
+        s.page.clock.run_for(15000)  # a slow link: 15 s and the file is still on its way
+        assert s.js("b.lost") == [] and s.stats()["state"] == "loading"
+        held.pop().continue_()
+        s.page.wait_for_function(LOADED_FILES, timeout=20000)
+        s.page.clock.run_for(200)  # the frame
+        assert s.js("b.lost") == [] and s.stats()["state"] == "ready"
+        s.js("b.stage.dispose()")
+    finally:
+        s.close()
+    s = _open(browser, stage_url, frozen=True)
+    try:
+        s.page.route("**/vendor/mannequin/m1/garments.glb", lambda r: held.append(r))
+        s.js("(b.mount(), b.stage.show([b.L.figure(b.L.formal())], b.L.opts()))")
+        s.page.wait_for_timeout(500)
+        s.page.clock.run_for(29000)
+        assert s.js("b.lost") == []
+        s.page.clock.run_for(1100)  # a file that never comes: 30 s
+        assert s.js("b.lost") == ["timeout"] and s.stats()["state"] == "lost"
+    finally:
+        s.close()
+
+
+def test_a_file_that_lacks_a_part_is_a_failed_file_not_a_figure_with_a_hole(
+    browser: Any, stage_url: str
+) -> None:
+    """Review B-1, finding 10: a missing mesh was skipped in silence (no base shorts, no vest)."""
+    from r131_fakes_b import M1
+
+    data = (M1 / "body.glb").read_bytes()
+    assert data.count(b'"name":"baseShorts"') == 2  # its node and its mesh
+    s = Stage(browser, stage_url)
+    try:
+        s.need_3d()
+        broken = data.replace(b'"name":"baseShorts"', b'"name":"baseShortz"')
+        s.page.route("**/vendor/mannequin/m1/body.glb", lambda r: r.fulfill(body=broken))
+        s.js("(b.mount(), b.stage.show([b.L.figure(b.L.formal())], b.L.opts()))")
+        s.page.wait_for_function("() => window.__b.lost.length > 0", timeout=20000)
+        assert s.js("b.lost") == ["asset"] and s.stats()["state"] == "lost"
+        assert s.errors == []
+    finally:
+        s.close()
+
+
+def test_the_label_stays_inside_the_host_and_a_short_host_is_not_overflowed(
+    browser: Any, stage_url: str
+) -> None:
+    """Review B-1, finding 8: the label's margin was not counted, so it straddled the panel's
+    edge; and a host under 270 px was overflowed by the canvas's 240 px minimum."""
+    fits = (
+        "(() => { const h = document.getElementById('stage').getBoundingClientRect(),"
+        " l = document.querySelector('#stage p.sfine').getBoundingClientRect(),"
+        " c = document.querySelector('#stage canvas').getBoundingClientRect();"
+        " return [l.bottom <= h.bottom + 0.5, c.top >= h.top - 0.5, Math.round(c.height)]; })()"
+    )
+    for query, least in (("h=560", 500), ("h=200", 150)):
+        s = _open(browser, stage_url, query)
+        try:
+            s.show("'formal'")
+            inside, below_top, tall = s.js(fits)
+            assert inside and below_top and tall >= least, (query, inside, tall)
+        finally:
+            s.close()
+
+
+def test_a_crop_is_read_once_a_page_and_only_a_photo_is_taken_as_cloth(
+    browser: Any, stage_url: str
+) -> None:
+    """Review B-1, finding 9: every show() asked the door and decoded the crop again; and any
+    data:image/ URL was taken, a drawing (SVG) included."""
+    s = _open(browser, stage_url, "door=1")
+    try:
+        s.show("'withCard'")
+        s.page.wait_for_function("() => window.__b.door.asked.length > 0", timeout=10000)
+        s.page.wait_for_timeout(300)
+        textured = s.shot()
+        s.show("'withCard'", "{open: false}")
+        s.show("'withCard'")
+        s.page.wait_for_timeout(300)
+        assert s.js("b.door.asked") == ["wh_000000000041"]  # asked once, drawn three times
+        assert _diff_box(textured, s.shot()) is None
+    finally:
+        s.close()
+    svg = (
+        "data:image/svg+xml;base64,' + btoa('<svg xmlns=\"http://www.w3.org/2000/svg\""
+        ' width="64" height="64"><rect width="64" height="64" fill="red"/></svg>\') + \''
+    )
+    plain = _open(browser, stage_url)
+    drawing = _open(browser, stage_url)
+    try:
+        drawing.js("(window.JarvisMobile = {parts: {send: {thumb: async () => '" + svg + "'}}}, 0)")
+        drawing.show("'withCard'")
+        plain.show("'withCard'")
+        drawing.page.wait_for_timeout(500)
+        assert _diff_box(drawing.shot(), plain.shot()) is None  # the colour only
+    finally:
+        plain.close()
+        drawing.close()
 
 
 def test_one_stage_at_a_time_dispose_frees_it_and_a_second_mount_works(
@@ -587,8 +699,10 @@ def test_one_stage_at_a_time_dispose_frees_it_and_a_second_mount_works(
     try:
         s.show("'formal'")
         first = s.stats()["triangles"]
-        s.js("b.stage.dispose()")
+        s.js("(window.__c = document.querySelector('#stage canvas'), b.stage.dispose())")
         assert s.stats()["state"] == "disposed"
+        # the contract's "the WebGL context with WEBGL_lose_context" (review B-1, finding 10)
+        assert s.js("window.__c.getContext('webgl2').isContextLost()") is True
         assert (
             s.page.locator("#stage canvas").count() == 0 and s.page.locator("#stage p").count() == 0
         )

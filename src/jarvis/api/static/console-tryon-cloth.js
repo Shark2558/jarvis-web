@@ -39,7 +39,7 @@ function picked(look) {
   for (const s of (look && Array.isArray(look.slots) ? look.slots : [])) {
     if (!s || typeof s.slot !== 'string') continue;
     if (s.private === true) { covered = true; continue; } // nothing else of a private slot is read
-    const t = TEMPLATES[s.template];
+    const t = typeof s.template === 'string' && Object.hasOwn(TEMPLATES, s.template) ? TEMPLATES[s.template] : null; // our twelve only
     if (!t || by[t.place]) cards.push(s.slot); else by[t.place] = s;
   }
   return { by, cards, covered };
@@ -90,13 +90,23 @@ function board(size) {
   return c;
 }
 
+const CROP = /^data:image\/(jpeg|png|webp);base64,/; // a photo, never a drawing (SVG) or anything else
+const crops = new Map(); // crop id -> its cloth canvas: read and decoded once a page (ids name their content)
+
 /** His crop as cloth: a 512 px canvas, or null when it can't be read (the piece is then its colour only). */
 async function photoCloth(id) {
   const door = window.JarvisMobile && window.JarvisMobile.parts && window.JarvisMobile.parts.send;
   if (!door || typeof door.thumb !== 'function' || !PHOTO.test(String(id || ''))) return null;
+  if (!crops.has(id)) {
+    if (crops.size >= 32) crops.delete(crops.keys().next().value);
+    crops.set(id, tiled(door, id).then((c) => { if (!c) crops.delete(id); return c; })); // a failure is tried again
+  }
+  return crops.get(id);
+}
+async function tiled(door, id) {
   try {
     const url = await door.thumb(id);
-    if (typeof url !== 'string' || !url.startsWith('data:image/')) return null;
+    if (typeof url !== 'string' || !CROP.test(url)) return null;
     const img = new Image();
     await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
     const side = Math.min(img.naturalWidth, img.naturalHeight) * 0.4;

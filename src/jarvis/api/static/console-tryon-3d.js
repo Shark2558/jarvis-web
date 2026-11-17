@@ -13,7 +13,7 @@
 // from /static/vendor/mannequin/<release>/, which the server checks against MANIFEST.json's SHA-256. Rendering is on demand (a
 // change, a drag, the spin), never a loop at rest; device pixel ratio <= 1.5; the governor judges what each frame cost
 // (never how often he touched a key) and steps down (shadows off and DPR 1), then retires 3D. Any failure calls onLost(reason) once: no WebGL2, a file missing or failing its sum,
-// the context lost, a first frame over 10 s, the governor. Test hooks: window.__glFail = 'no-webgl2' | 'lost' |
+// the context lost, the files over 30 s or the first frame over 10 s after them, the governor. Test hooks: window.__glFail = 'no-webgl2' | 'lost' |
 // 'asset' | 'timeout'. A drawing module: it draws only on its own canvases and never calls the door's senders.
 import { parse, join, geometry } from './console-tryon-glb.js';
 import { plan, photoCloth, weave, contact, picture, LAYERS } from './console-tryon-cloth.js';
@@ -25,7 +25,8 @@ const MORPHS = ['height', 'shoulders', 'chest', 'waist', 'hips', 'inseam', 'wais
 const LABEL = 'Estimated from your measurements';
 const BODY_GREY = 0xC3C9D2, BASE_GREY = 0x66748A; // preview v2's mannequin and base-layer greys (not theme colours)
 const PITCH = [0.22 * Math.PI, 0.56 * Math.PI], PITCH0 = 0.468 * Math.PI;
-const ZOOM_MAX = 4, GAP = 0.9, DPR_MAX = 1.5, FIRST_MS = 10000, SPIN_DEG_S = 40;
+const ZOOM_MAX = 4, GAP = 0.9, DPR_MAX = 1.5, SPIN_DEG_S = 40, MIN_H = 120;
+const LOAD_MS = 30000, FIRST_MS = 10000; // the files may take 30 s to arrive (a phone link); then the first frame 10 s
 const SLOW_MS = 45, WINDOW_MS = 2000, WINDOW_FRAMES = 8, AWAY_MS = 1000; // the governor (createGovernor)
 const fail = () => (typeof window !== 'undefined' && window.__glFail) || '';
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -228,13 +229,15 @@ function createStage(host, release, onLost) {
       const l = new T.DirectionalLight(colour, power); l.position.set(x, y, z); scene.add(l); // fill, rim, back
     }
     canvas.addEventListener('webglcontextlost', (e) => { if (!dead) { e.preventDefault(); gone('lost'); } }, on);
+    if (timer) { clearTimeout(timer); timer = setTimeout(() => gone('timeout'), FIRST_MS); } // the files are in: now the frame's ten seconds
     size();
     if (m.figures.length) rebuild();
   }
 
   function size() {
     if (!renderer) return;
-    const w = Math.max(1, host.clientWidth), h = Math.max(1, Math.round(clamp(host.clientHeight - label.offsetHeight, 240, 1200)));
+    const css = getComputedStyle(label), line = label.offsetHeight + (parseFloat(css.marginTop) || 0) + (parseFloat(css.marginBottom) || 0);
+    const w = Math.max(1, host.clientWidth), h = Math.max(1, Math.round(clamp(host.clientHeight - line, MIN_H, 1200))); // the label and its margin stay inside the host
     dpr = gov.tier() ? 1 : Math.min(window.devicePixelRatio || 1, DPR_MAX);
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
@@ -277,13 +280,13 @@ function createStage(host, release, onLost) {
     for (const o of owned) o.dispose();
     groups = []; owned = [];
     const mine = ++serial, two = m.figures.length > 1;
+    if (m.plans.some((p) => p.parts.some((part) => !A.meshes[part.name]))) { gone('asset'); return; } // a part is missing: never a figure with a hole
     figureH = 0; triangles = 0;
     m.figures.forEach((f, i) => {
       const group = new T.Group(), worn = new T.Group();
       let low = Infinity, high = -Infinity;
       for (const part of m.plans[i].parts) {
         const mesh = A.meshes[part.name];
-        if (!mesh) continue;
         const geo = geometry(T, mesh, Object.assign({}, f.weights, part.weights)), mat = material(part);
         dress(mat, part, mesh, mine);
         owned.push(geo, mat);
@@ -361,7 +364,7 @@ function createStage(host, release, onLost) {
 
   function show(figures, opts) {
     const res = model.show(figures, opts);
-    if (!drawnOnce && !timer && !lost) timer = setTimeout(() => gone('timeout'), FIRST_MS);
+    if (!drawnOnce && !timer && !lost) timer = setTimeout(() => gone('timeout'), renderer ? FIRST_MS : LOAD_MS);
     if (renderer && !lost) rebuild();
     return res;
   }

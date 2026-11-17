@@ -225,6 +225,10 @@ def test_a_shirt_over_a_wrap_says_it_is_drawn_tucked_instead_of_ignoring_the_cho
     _passed("a_top_over_a_wrap_says_it_is_drawn_tucked")
 
 
+def test_a_slot_is_never_lost_whatever_its_template_says() -> None:
+    _passed("a_slot_is_never_lost_whatever_its_template_says")
+
+
 def test_avt11_a_formal_and_a_festive_look_compare_with_both_lists_and_their_readiness() -> None:
     _passed("avt11_two_figures_each_with_its_own_slots")  # B's half: two figures, each its slots
 

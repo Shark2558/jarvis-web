@@ -102,7 +102,7 @@ async def test_the_fake_serves_the_same_reference_cards_as_a() -> None:
     async with client as c:
         for pid in (T.kurta, T.striped):
             ours = (await a.service.looks.for_pieces(UID, f"top:{pid}")).slots[0]
-            got = await c.get(f"/v1/tryon/look?pieces=top:{pid}")
+            got = await c.get(f"/v1/tryon/look?pieces=top:{pid}&day=today")  # its own day (H1)
             fake = http.TryonLook.model_validate(got.json()).slots[0]
             assert fake.refs == ours.refs and len(ours.refs) == 2  # D draws what A serves
 

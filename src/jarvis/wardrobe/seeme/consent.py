@@ -104,6 +104,14 @@ class Consent:
             return None
         return rec if isinstance(rec, dict) else None
 
+    async def given_at(self, uid: str) -> datetime | None:
+        """When he typed YES (for the Privacy export), or None."""
+        rec = await self._record(uid)
+        try:
+            return None if rec is None else datetime.fromisoformat(str(rec.get("at")))
+        except ValueError:
+            return None
+
     async def current(self, uid: str, desc: TryOnDescription) -> bool:
         rec = await self._record(uid)
         return rec is not None and rec.get("hash") == digest(desc)

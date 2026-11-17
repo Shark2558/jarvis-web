@@ -60,14 +60,21 @@ def _at(doc: dict[str, Any]) -> datetime:
 
 class GarmentStore:
     def __init__(
-        self, docs: Docs, prefix: str, sealer: Sealer, *, now: Callable[[], datetime]
+        self, docs: Docs, prefix: str, sealer: Sealer | None, *, now: Callable[[], datetime]
     ) -> None:
-        self.docs, self.prefix, self.sealer, self.now = docs, prefix, sealer, now
+        self.docs, self.prefix, self.now = docs, prefix, now
+        self._sealer = sealer  # None: the daily job's deletes by path only
+
+    @property
+    def sealer(self) -> Sealer:
+        if self._sealer is None:
+            raise RuntimeError("no token key: a garment's photo can't be sealed or opened")
+        return self._sealer
 
     def path(self, uid: str, gid: str) -> str:
         return f"{self.prefix}{GARMENT}/{uid}_{gid}"
 
-    async def _rows(self, uid: str) -> list[tuple[str, dict[str, Any]]]:
+    async def rows(self, uid: str) -> list[tuple[str, dict[str, Any]]]:
         rows = await self.docs.query(Query(f"{self.prefix}{GARMENT}", where=("owner", uid)))
         return [(i.removeprefix(f"{uid}_"), d) for i, d in rows if i.startswith(f"{uid}_")]
 
@@ -76,7 +83,7 @@ class GarmentStore:
     ) -> GarmentView:
         asked = checked(kind, colour)
         clean = clean_jpeg(data, max_kb=max_kb)
-        if len(await self._rows(uid)) >= GARMENT_MAX:
+        if len(await self.rows(uid)) >= GARMENT_MAX:
             raise SeeMeRefused(409, "too_many", texts.TOO_MANY.format(n=GARMENT_MAX))
         gid, at = new_garment_id(), self.now()
         body = sealed_doc(self.sealer, uid, aad_garment(uid, gid), clean, at)
@@ -110,7 +117,7 @@ class GarmentStore:
 
     async def list(self, uid: str, *, keep_days: int, kept: Collection[str]) -> GarmentList:
         out: list[GarmentView] = []
-        for gid, doc in sorted(await self._rows(uid), key=lambda r: str(r[1].get("at"))):
+        for gid, doc in sorted(await self.rows(uid), key=lambda r: (str(r[1].get("at")), r[0])):
             try:
                 out.append(self._view(gid, doc, keep_days, gid in kept))
             except (KeyError, ValueError, ValidationError):
@@ -135,7 +142,7 @@ class GarmentStore:
         """The paths `seeme_daily` deletes: past their time and shown by no kept picture."""
         cutoff = self.now() - timedelta(days=keep_days)
         out: list[str] = []
-        for gid, doc in await self._rows(uid):
+        for gid, doc in await self.rows(uid):
             try:
                 old = _at(doc) <= cutoff
             except (KeyError, ValueError):

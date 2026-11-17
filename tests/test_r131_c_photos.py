@@ -129,8 +129,10 @@ async def test_a_garment_photo_is_kept_under_a_tg_id_with_fixed_words() -> None:
 
 
 async def test_the_list_holds_words_and_sizes_never_the_bytes() -> None:
-    store = _garments()
+    clock = FixedClock(NOW)
+    store = _garments(clock=clock)
     await store.save(UID, "jeans", "light_blue", jpeg(600, 800), keep_days=30)
+    clock.set(NOW + timedelta(minutes=1))
     await store.save(UID, "blazer", "charcoal", jpeg(600, 800), keep_days=30)
     listed = await store.list(UID, keep_days=30, kept=set())
     assert [g.words for g in listed.garments] == [

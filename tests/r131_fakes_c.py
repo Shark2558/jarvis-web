@@ -11,6 +11,9 @@
 #                                 NOW, his photos with their views in R13's `wardrobe_photo`
 #                                 documents, I0's photo vault over the crops, and a context for
 #                                 Part C: `state("r13_parts")`, `billing`, `brain_mode`, `tryon`
+#   ready_world(...)              seeme_world + Part C built, his photo kept, his YES given and a
+#                                 new navy shirt's photo kept: (world, service, garment)
+#   ask(garment, pieces, ...)     a `PictureIn` for the press (confirm_cost, the ₹ shown, an id)
 from __future__ import annotations
 
 import asyncio
@@ -158,8 +161,48 @@ async def seeme_world(
     return SeeMeWorld(w, ctx, vault, state)
 
 
+PERSON = jpeg(600, 1200, 48)
+NEW_SHIRT = jpeg(600, 800, 24)
+
+
+async def ready_world(
+    *, provider: Any = None, billing: Any = None, mode: Any = None, at: datetime = NOW,
+    s: Settings | None = None, docs: MemoryDocs | None = None, consent: bool = True,
+) -> tuple[SeeMeWorld, Any, Any]:  # fmt: skip
+    """Part C built on `seeme_world`, his photo kept, his YES (unless `consent=False`) and a new
+    navy shirt's photo: (world, the `seeme` service, the new garment's view)."""
+    from r131_fake_tryon import ScriptedTryOn
+
+    from jarvis.wardrobe.seeme import consent as cmod
+    from jarvis.wardrobe.seeme.part import build
+
+    sw = await seeme_world(
+        at=at, s=s, docs=docs, provider=provider or ScriptedTryOn(max_garments=1),
+        billing=billing if billing is not None else FakeBilling(),
+        mode=mode if mode is not None else OnMode(),
+    )  # fmt: skip
+    svc = build(sw.ctx).services["seeme"]
+    await svc.save_photo(UID, PERSON)
+    if consent:
+        await svc.give_consent(UID, "YES", cmod.VERSION)
+    garment = await svc.add_garment(UID, "shirt", "navy", NEW_SHIRT)
+    return sw, svc, garment
+
+
+def ask(garment: str, pieces: tuple[str, ...] = (), *, inr: float = 8.9, n: int = 1,
+        confirm: bool = True) -> Any:  # fmt: skip
+    from jarvis.wardrobe.tryon.http import PictureIn
+
+    return PictureIn(garment=garment, pieces=pieces, confirm_cost=confirm, inr_shown=inr,
+                     request_id=f"tq_{n:016x}")  # fmt: skip
+
+
 __all__ = [
     "FRONT",
+    "NEW_SHIRT",
+    "PERSON",
+    "ask",
+    "ready_world",
     "MORE_CROPS",
     "RATE",
     "FakeBilling",

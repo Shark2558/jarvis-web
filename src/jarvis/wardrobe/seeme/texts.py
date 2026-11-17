@@ -28,6 +28,8 @@ RETIRED = (
 NOTICE = "Google may retire this image model on {day}."
 NO_AI = "See it on me is off while JARVIS runs without AI (No-AI mode)."
 NO_WARDROBE = "Your wardrobe isn't ready yet: try again in a minute."
+INVALID = "That request isn't one See it on me takes: refresh the page and try again."
+UNAVAILABLE_NOW = "See it on me can't be reached just now. Try again in a minute."
 CONSOLE_ONLY = "See it on me works only in the JARVIS console, signed in: not from a script."
 
 # ---- his photo, a garment's photo (D12, D22) ------------------------------------------------

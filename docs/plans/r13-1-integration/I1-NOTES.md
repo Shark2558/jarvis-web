@@ -1,4 +1,4 @@
-Version v13.1.3 · 18 Nov 2026, 06:20 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.4 · 18 Nov 2026, 10:50 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — I1 notes (the four parts joined)
 
@@ -238,6 +238,64 @@ room for H1, M3 and L3; `0aa45477` and `88c60a71` keep the guide's C72 and C73 i
 Not run here: the whole browser suite (the Workshop's, after the integrated reviews); a live
 Google picture ("not called": it needs his typed YES; exit check 7); his phone's GPU.
 
+## Full checks
+
+The Workshop's full checks after the integrated fixes, one suite at a time behind the heavy-run
+lock (2 CPUs, about 7 GB), each from a fresh export of HEAD at a path without "131" (R7's needle
+tests match it), in chunks of a few minutes across three server restarts. The export is a
+one-commit scratch git repository of `git archive HEAD` (the build-book tests need `git
+rev-parse`) and the unit runs set `PYTHONPATH` to its `src` (the venvs' editable install points at
+an older checkout, which a test's own subprocess would otherwise import). Every chunk's log is
+kept outside the repository, with the commit in its name.
+
+The suites ran at `39e9a1ab`. GitHub's browser job on draft PR #38 (run 44216933907, `39e9a1a`)
+then failed 11 of 1,574, fixed with the owner's approval in two test-only commits (below), so the
+new HEAD is `2efd3fd5`. What that delta touches was run again there.
+
+| Check | Result |
+|---|---|
+| Unit, Python 3.12, with coverage (`39e9a1ab`) | **18,643 passed**, 0 failed, 150 skipped (98 of them `tests/browser`, skipped without `JARVIS_BROWSER_TESTS`), 3 warnings, 19 chunks |
+| Coverage of `jarvis` (19 chunks combined) | **95.60 %** (86,691 statements, 3,811 missed); `scripts/coverage_floor.py`: floor 95 %, target 80 %. The delta to `2efd3fd5` touches no file under `src/` |
+| Unit, Python 3.11 (`39e9a1ab`) | **18,644 passed**, 0 failed, 149 skipped, 3 warnings (one test runs on 3.11 that 3.12 skips) |
+| At `2efd3fd5` | `tests/test_r131_png_pixels.py` 7 passed on 3.12 and on 3.11; every unit file that globs a folder (50 files, the tests that look at `tests/` among them) 2,153 passed, 2 skipped on 3.11; the seams, CI and D static pins 242 passed |
+| `ruff check src tests evals scripts` · `ruff format --check` (CI's scope and scripts) | clean · 2,065 files formatted (ruff 0.17.5) |
+| `ruff check .` · `ruff format --check .` | 88 errors, all in `.claude/skills/continuous-learning-v2/scripts/` (vendored tooling, the same on `main`) · 14 files: 13 as on `main` (`.claude/` and Python code blocks in older plan docs, which ruff 0.17 formats in Markdown) and `REVIEW-A-1.md:129`, a review quoting an indented excerpt as it stood (left as a quote) |
+| `mypy src` | the baseline error only (`memory/redis_store.py:67`), 909 files |
+| `evals/run_all_mock.py` | **ALL MOCK EVALS: PASS**: 43 gated suites pass, each control failing its suite (r7 68/68, r13 110/110, r14 108/108, r13_1 121/121); phase0 smoke 4/12, as always with the mock brain |
+| `evals/r13_1/run.py --mock` | **121/121**; all seven parts BUILT (`parts_not_built` empty, `stubs_pass` false); every part's control failed its cases: console 4, contract 10, e2e 1, figure 10 controls, looks 10, needles 2 (his photo, the garment's), seeme 12 |
+| `scripts/check_doc_versions.py` · `scripts/arch_coverage.py` | 30 documents OK · OK (66 packages and modules, 104 console modules with `console-tryon-form.js`, 2 Scheduler jobs, 31 outside services, 120 collections) |
+| `python -m jarvis.buildbook.gen --check`, twice | byte-identical both times, at `39e9a1ab` and at `2efd3fd5` (book.json 198,076 bytes) |
+| Clock sweep, 3.11, at 2 Jan 2027 09:00 IST (`39e9a1ab`) | 18,643 passed, **1 failed**, 149 skipped. The one: `test_r11_1_c_bridge_trouble.py::test_a_file_still_being_copied_waits_and_is_read_once_it_settles` (R11.1), the known artefact: the half-copied file's modification time comes from the real clock, so under the moved clock it looks weeks old and is read at once instead of waiting 60 s. It passes without the sweep. No date bomb |
+| Browser, the FULL suite (Chromium, `-m browser`, one file a chunk; the UI audit in two halves) | **1,574 passed, 0 failed**: 1,396 in 92 chunks at `39e9a1ab` (files 1–91, R13.1's eight among them: B stage 23, D card 17, D look 16, D section 21, D See it on me 15, D stage 11, I1 card day 4, I1 wired 9), 178 in the last 7 files at `2efd3fd5`. No flake: every file passed on its first run (a chunk cut by a restart was run again whole) |
+| The two changed browser files at `2efd3fd5`, with `import PIL` blocked | `test_r131_b_stage.py` 23 passed, `test_r131_d_look.py` 16 passed |
+
+**GitHub's browser job (run 44216933907): 11 failed, 1,563 passed.** Ten of B's stage tests imported
+Pillow, which that job never installs (`.[dev]` and Playwright only); here the browser venv sees the
+system's Pillow, so they passed (the R7 lesson). And row 388's fit test asked for exactly 100 % of
+the reply in view and got 0.99889 (a fraction of a pixel of layout rounding in that Chromium).
+Fixed with the owner's approval, test-only:
+
+- `ac0152b8`: `tests/r131_png_pixels.py` reads a PNG with zlib and struct (8-bit RGB or RGBA, not
+  interlaced, all five filters, CRCs checked; the alpha dropped as Pillow's `convert("RGB")`), and
+  the stage tests use it. `tests/test_r131_png_pixels.py`, red first, covers every filter type and
+  two PNGs Chromium itself wrote (`tests/fixtures/r13_1/png/`), read to the values Pillow read. A
+  pin keeps every module under `tests/` off Pillow. Proof: with an import blocker for `PIL`, the
+  stage file failed exactly CI's ten, and now passes 23 of 23. A scratch cross-check decoded every
+  PNG those tests read with both readers: 19 PNGs, 7,683,360 pixels, identical. A scan of `tests/`
+  finds no other import of a library CI's jobs don't install.
+- `2efd3fd5`: the fit test measures the pixels of the reply and of the figure that are hidden and
+  allows at most one (`FIT_SLACK_PX`), never a line of words.
+
+**Row 388's screenshots, re-taken at `2efd3fd5`** into `/tmp/r131-i1-shots/` (not committed):
+`01-card-real-figure-*` and `04-card-checklist-*`, laptop 1280 × 800 and phone 360 × 800, night and
+day. The scene: tonight's meeting is planned, tomorrow has none, and he asks at 19:00 "What should
+I wear tomorrow? Something formal.". Looked at, all eight. The card reads "Your look · business
+formal" with no "Draft". B's figure wears the white shirt tucked under the brown belt, the navy
+blazer and the grey trousers, its base layer covered and the whole figure in view on both sizes.
+The checklist for a device without WebGL2 lists the same pieces, each "Ready", under its why.
+
+Not run here: a live Google picture (it needs his typed YES); his phone's GPU.
+
 ## Screenshots (not committed: drawn data, the wired app, B's real figure)
 
 `/tmp/r131-i1-shots/` (31 PNGs), laptop 1280 × 800 and phone 360 × 800, night and day:
@@ -268,3 +326,4 @@ by hand" and its reasons line names piece ids (`11-…`).
 | v13.1.1 | 17 Nov 2026, 23:50 IST | R13.1 | First edition: A, C and B merged; items 1–25 (the stub pins, the contract checked against B and C, the end date and cache settings, the deploy's role, the fakes, SciPy in CI, F8–F10, one fixed-words rule, OPS-05 in flight, the e2e and needles suites, console-only on the wired app, and what was declined or left with reasons); the known limits | 🛠 Mark XXIII (I1) |
 | v13.1.2 | 18 Nov 2026, 03:20 IST | R13.1 | D merged; items 26–40 (D's door and hook lines, B's real engine proved on the wired app, `?at=`, the gate flipped, the guide, five integration bugs found and fixed with tests first: the suggestion row, A's 503 off, the figure's files not shipped, CI's browser collection, D's fakes' shared state; what is left with reasons); the checks with their numbers; the screenshots | 🛠 Mark XXIII (I1) |
 | v13.1.3 | 18 Nov 2026, 06:20 IST | R13.1 | The integrated reviews' fixes: every finding of both reviews with its commits (all done but code L6's exact-source pins, left as the review allows, and the concurred C-1 finding 7); L5 completed (a role that can't be set back is taken off JARVIS's account) and L6 checked against gcloud's reference; items 5, 6, 19 and 39 brought up to date; the departures from the plan's D3 and seam 13 recorded | 🛠 Mark XXIII (I1 fixes) |
+| v13.1.4 | 18 Nov 2026, 10:50 IST | R13.1 | Full checks after the integrated fixes, with their numbers: unit 3.12 18,643 passed and coverage 95.60 %, unit 3.11 18,644, lint and types, the mock evals (r13_1 121/121, every part BUILT and every control failing), the docs, architecture and book checks, the clock sweep (one known modification-time artefact), the full browser suite (1,574 passed); GitHub's browser job's 11 failures fixed test-only (`ac0152b8` pixels without Pillow, `2efd3fd5` a one-pixel fit); row 388's screenshots re-taken | 🛠 Mark XXIII (I1 fixes) |

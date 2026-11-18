@@ -506,9 +506,13 @@ def test_runtime_account_may_consume_the_projects_services_without_stopping_the_
     assert "||" in grant
     helper = script.split("try_bind() {", 1)[1].split("\n}", 1)[0]
     assert "die" not in helper and "return 1" in helper and "add-iam-policy-binding" in helper
-    # granted with the idempotent binding helper, never removed again
-    removed = script.split("remove-iam-policy-binding", 1)[0].rsplit("for role in", 1)[1]
+    # granted with the idempotent binding helper, never removed again: not by the build account's
+    # clean-up loop, nor by any other removal (R13.1's try-on role names its own role only)
+    build = 'remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${SA}"'
+    removed = script.split(build, 1)[0].rsplit("for role in", 1)[1]
     assert "serviceUsageConsumer" not in removed
+    removals = [ln for ln in script.splitlines() if "remove-iam-policy-binding" in ln]
+    assert len(removals) == 2 and not any("serviceUsageConsumer" in ln for ln in removals)
     assert _top_level_depth_at(script, 'try_bind "serviceAccount:${RUN_SA}"') == 0
 
 

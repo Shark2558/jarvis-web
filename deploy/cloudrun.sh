@@ -481,7 +481,8 @@ try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
 # R13.1 (plan review M6): a custom role that can ONLY make prompt requests (to any Agent Platform model):
 # it can't deploy, tune or manage anything; JARVIS's own cap and the jarvis-tryon budget alert watch
 # the bill. An existing role is set back to that one permission. Fail closed (security review L5):
-# a role that can't be set back (unknown or broader permissions, or deleted) is never bound, and no
+# a role that can't be set back (unknown or broader permissions, or deleted) is never bound, nor
+# kept bound from an earlier run (taken off jarvis-run; "not found" = it wasn't bound), and no
 # broader role is ever used instead; See it on me then stays off, with a note.
 TRYON_STATE=false
 TRYON_ROLE="projects/${PROJECT}/roles/jarvisTryOn"
@@ -491,6 +492,12 @@ if [ "$TRYON_API" = on ]; then
     if gcloud iam roles update jarvisTryOn --project "$PROJECT" --permissions=aiplatform.endpoints.predict --quiet >/dev/null 2>&1; then
       TRYON_MADE=true
     else
+      if ! OUT="$(gcloud projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${RUN_SA}" \
+           --role="$TRYON_ROLE" --condition=None --quiet 2>&1 >/dev/null)"; then
+        case "$OUT" in *not\ found*|*NOT_FOUND*|*does\ not\ exist*) ;;
+          *) echo "  Note: could not take the try-on role jarvisTryOn off JARVIS's account; remove it from jarvis-run in IAM." ;;
+        esac
+      fi
       echo "  Note: the try-on role jarvisTryOn could not be set back to prompt requests only (or it was deleted), so See it on me stays off. Check it in IAM, Roles, then re-run this script."
     fi
   elif gcloud iam roles create jarvisTryOn --project "$PROJECT" --title="JARVIS try-on (prompt requests only)" \

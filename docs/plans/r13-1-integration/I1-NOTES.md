@@ -1,4 +1,4 @@
-Version v13.1.2 · 18 Nov 2026, 03:20 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
+Version v13.1.3 · 18 Nov 2026, 06:20 IST · Release R13.1 · Status: Current · Owner: 🛠 Mark XXIII
 
 # R13.1 — I1 notes (the four parts joined)
 
@@ -38,14 +38,17 @@ had, green when first run.
    `tryon_model_retires` is removed from `Settings` (the model's own `RETIRES_ON` is the one
    date; a second could only disagree), with its unused `_DAY` pattern; `config.py` is 789 lines.
 5. **`tryon_cache` defaults to true** (INTEGRATION-C 6.2 and 10.4 d, review C-1). Done `7b7c2c5`,
-   red first: fail toward disclosure. The deploy passes `JARVIS_TRYON_CACHE` explicitly and sets
-   false only after its PATCH worked, so the deploy is unchanged. C's cache test now builds its
-   world with the cache proved off.
+   red first: fail toward disclosure. C's cache test now builds its world with the cache proved
+   off. Corrected by the integrated security review (finding 1): the deploy then started from
+   false, so a run whose role step failed claimed the cache off with no PATCH sent; since
+   `690b84d2` it starts from true and says false only after the PATCH AND a read-back.
 6. **The deploy's role** (INTEGRATION-C §7 (a), (b)). Done `7b7c2c5`, red first: an existing
    `jarvisTryOn` is set back to `aiplatform.endpoints.predict` only (a note if that fails; the
    role is still used, never the broader fallback); the comment says what the role allows:
    prompt requests to any Agent Platform model, with the cap and the `jarvis-tryon` budget alert
    as the brakes. (c), whether the cache PATCH covers the `us` endpoint, can't be checked here.
+   Superseded by the integrated security review L5: a role that can't be set back is no longer
+   used, nor kept bound, and the `roles/aiplatform.user` fallback is gone (`690b84d2`, `51e07b73`).
 7. **The fake server's consent version** (INTEGRATION-C 10.4 a). Done `c9d4c44`, red first:
    "c2-0123456789ab", the shape of C's "c2-" + 12 hex.
 8. **A decodable fake picture** (INTEGRATION-D §7). Done `c9d4c44`, red first:
@@ -97,6 +100,7 @@ had, green when first run.
 19. **The audit's risk level for a paid press** (INTEGRATION-C 10.4 g). Declined for R13.1:
     `record_change` is shared; the press's audit line already carries `code` and `inr`, the
     spend is in `tryon_spend` and Vitals, and every press sits behind his YES and a ₹ confirm.
+    Reversed by the integrated security review (finding 7): done `d3f7a8d4`.
 20. **The data model's new fields** (INTEGRATION-C 10.4 h): `tryon_spend/{uid}_{YYYY-MM}` gains
     `done_order`, the consent record gains `cache`, and `tryon_spend/{uid}_prefs` holds his
     switch, cap and keep days (C §4.1). Recorded here; the plan is not re-versioned for them.
@@ -167,9 +171,51 @@ had, green when first run.
     the file is at 599 of its 600-line guard (I1's three fixes there kept to existing lines); L6
     holds no WebGL context (a new card already disposes the old card's stage). Moving the
     measurements form, shapes and OPS-05 (about 80 lines) to a module of its own needs a new size
-    guard, an `arch_coverage.json` entry and the guide.
+    guard, an `arch_coverage.json` entry and the guide. L12's split was done at the integrated
+    fixes (`b04e353b`: `console-tryon-form.js`, its own 150-line guard; `console-tryon.js` 534).
 40. **`keep_days` in the console** (D §6 item 4). Left: it needs `keep_days` in `SeeMeView`
     (C's contract) and a 1–30 control; the server setting exists and the owner answered 30 days.
+
+## Fix (integrated reviews)
+
+The fixes of `REVIEW-I1-CODE.md` and `REVIEW-I1-SECURITY.md` (both at `b11205d`), on
+`r13-1-i1` from `b11205d` to the head named in "Full checks". Each commit's diff was read against
+its finding; "red first" as above. Every finding of both reviews:
+
+**Code review (0 critical, 1 high, 5 medium, 8 low).**
+
+| Finding | State | Commits |
+|---|---|---|
+| H1 · the card read for today with the default code | done, red first on the wired app: `cardQuery(card)` sends the card's slots (covered as `slot:`), its plan, else its day and code; swap, undo and refresh pass the look's own; every test builds the query through the console's own rule; both fakes refuse a no-plan `pieces=` with no day | `d1258052`, pins `c677e1e0`, `7d331c90` |
+| M1 · lock by slot unchecked | done, red first: the slot's pick is checked as a named piece (ready, held by no other plan); `transfer` checks the moved piece too | `c34c7a69` |
+| M2 · the day look takes a worn plan | done, red first: A's `for_day` uses R13's `planned`; R13's `PlanView.worn` (one field) and the console's `first()` skip a worn plan | `26983d96`, `a795a544` |
+| M3 · no checklist when the figure can't be read | done, red first: the figure is read in its own try; off or signed out says A's words, any other failure draws the checklist with its own why | `94079bd5` |
+| M4 · a billed picture not saved | done, red first: `not_saved` settles at the billed ₹, says "It may still be charged", audits the real ₹; its retry says the same (`REPEATED`) and never calls Google again; `seeme/books.py` keeps `make.py` under its guard | `b68b5543` |
+| M5 · the rules twice | done (no behaviour change; a static pin red first): `styling/ready.py` holds the readiness rule and its words; `PRIVATE_SLOTS` and `covered` live once in `styling.look` | `3c18a1b0` |
+| L1 · `settled_inr` unused | done: the press settles with it, else the hold | `b68b5543` |
+| L2 · standard logging in `tryon_card.py` | done, with a static pin for every wardrobe module | `e5775b5c` |
+| L3 · card viewers never let go | done, red first: a card whose row left the page is disposed, its observer disconnected | `2a238d28` |
+| L4 · a shared garment picture lost | done, red first: the hand-over loads See it on me first; if it can't, the tray keeps the picture | `905dacf2` |
+| L5 · silent console fallbacks | done, red first: the three reads say their failure and keep nothing | `06f4bc7d` |
+| L6 · weak and brittle pins | the weak one done (each console route's own status and code; the browser twin pins 403 `console_only`); the exact-source pins in `test_r131_i1_console.py` left, as the review allows: the browser tests carry the behaviour | `245a1728` |
+| L7 · two NumPy pins | done: the script's pin is the bridge's 2.5.4, pinned one against the other. This departs from the plan's D3 text ("numpy==2.5.3"); the release was rebuilt byte for byte with 2.5.4 (item 9) | `86469b6c` |
+| L8 · "131" needles match paths and clocks | done: R7's capture leaves out the code's own location beside the clock's fields (planted in all four, the record's own fields still searched); A's measurements needle masks the moments the code writes. The fixed 12-hex needle the review proposed was not needed for these. The suites are still run from a path without "131" (R7's runner has other path-bound needles) | `44afa149`, `47ee60f2` |
+
+**Security review (0 critical, 0 high, 1 medium, 6 low).**
+
+| Finding | State | Commits |
+|---|---|---|
+| 1 MEDIUM · the cache said off without trying | done, red first: `TRYON_CACHE=true` before the `if`; false only after the PATCH AND a read-back of `disableCache: true`; the only `TRYON_CACHE=false` in the deploy; item 5 corrected | `690b84d2` |
+| 2 LOW · "press again" replays a not-billed refusal | done, red first: a release is not kept in `done`, so a 429 then a press with the same id makes the picture (two calls, spent once) | `6366515e` |
+| 3 LOW · a retry across month-end | done, red first: the press and `reserve`'s transaction also read the month before for `SETTLE_HOURS` after his month's start; a `done` there answers, a fresh hold there is `busy` (tested at 23:59:50 and 00:00:20 IST) | `dbdf5de7` |
+| 4 LOW · a picture of a since-private piece | done, red first: the overview, the picture route and the Privacy export first delete every picture showing a piece now private or gone (`drop_taken`); an unreadable wardrobe leaves it to the morning job | `5ab3e154` |
+| 5 LOW · role fallbacks beyond prompt rights | done, red first, fail closed: an existing `jarvisTryOn` that can't be set back is never bound and (`51e07b73`) is taken off `jarvis-run` if an earlier run bound it ("not found" is silent, any other refusal a note); the `roles/aiplatform.user` fallback is gone; See it on me stays off with a note that says how to make the role. The residual risk (prompts to any Agent Platform model, outside JARVIS's cap) is stated in C73 with the budget alert as the outside brake (guide v13.1.5, `88c60a71`). This departs from the plan's seam 13 text ("falls back to `roles/aiplatform.user` with a note"); the plan is not re-versioned for it | `690b84d2`, `51e07b73`, `88c60a71` |
+| 6 LOW · the budget's "300" in the account's currency | done: `--budget-amount=300INR`. gcloud's reference says a currency given "must be the currency associated with the billing account", so a USD account refuses it and the deploy's note says to add the alert by hand at the try-on cap in the account's own currency; it never sets $300. No conversion is attempted (a rate in a deploy script would go stale) | `690b84d2` |
+| 7 LOW · the audit's risk level and timing | done, red first: `record_change` takes `risk` (REVERSIBLE by default, no caller moves); the press, its "sending" line (after the reserve, before the call, never raising) and the three deletes are IRREVERSIBLE | `d3f7a8d4` |
+| Concurred · review C-1 finding 7 | left, as item 18 (a contract change for a later release) | — |
+
+Also at the fixes: `b04e353b` split the section's forms out of `console-tryon.js` (item 39) to make
+room for H1, M3 and L3; `0aa45477` and `88c60a71` keep the guide's C72 and C73 in step.
 
 ## The checks (18 Nov 2026, at `8c63587` / `8aa46e2`; one at a time behind the heavy-run lock)
 
@@ -221,3 +267,4 @@ by hand" and its reasons line names piece ids (`11-…`).
 |---|---|---|---|---|
 | v13.1.1 | 17 Nov 2026, 23:50 IST | R13.1 | First edition: A, C and B merged; items 1–25 (the stub pins, the contract checked against B and C, the end date and cache settings, the deploy's role, the fakes, SciPy in CI, F8–F10, one fixed-words rule, OPS-05 in flight, the e2e and needles suites, console-only on the wired app, and what was declined or left with reasons); the known limits | 🛠 Mark XXIII (I1) |
 | v13.1.2 | 18 Nov 2026, 03:20 IST | R13.1 | D merged; items 26–40 (D's door and hook lines, B's real engine proved on the wired app, `?at=`, the gate flipped, the guide, five integration bugs found and fixed with tests first: the suggestion row, A's 503 off, the figure's files not shipped, CI's browser collection, D's fakes' shared state; what is left with reasons); the checks with their numbers; the screenshots | 🛠 Mark XXIII (I1) |
+| v13.1.3 | 18 Nov 2026, 06:20 IST | R13.1 | The integrated reviews' fixes: every finding of both reviews with its commits (all done but code L6's exact-source pins, left as the review allows, and the concurred C-1 finding 7); L5 completed (a role that can't be set back is taken off JARVIS's account) and L6 checked against gcloud's reference; items 5, 6, 19 and 39 brought up to date; the departures from the plan's D3 and seam 13 recorded | 🛠 Mark XXIII (I1 fixes) |

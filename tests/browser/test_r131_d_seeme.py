@@ -141,6 +141,9 @@ def test_d22_garment_a_picture_shared_in_that_see_it_on_me_cant_take_stays_and_s
     # and nothing said why; the tray keeps an item and shows the words when the hand-over throws
     reset(d_url, token)
     c = Page(browser, d_url, token)
+    # HARNESS stands in for the share worker here. The real worker sweeps on the real clock, not the
+    # page's pinned 17 Nov, so from 18 Nov 09:00 IST it deleted the picture as older than 24 hours.
+    c.ctx.route("**/app/share/sw.js", lambda r: r.abort())
     if why == "tryon_off":
         off = {"error": "not_found", "detail": "Try-on is off on this server."}
         c.page.route("**/v1/tryon", lambda r: r.fulfill(status=404, json=off))

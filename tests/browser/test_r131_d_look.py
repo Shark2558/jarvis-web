@@ -116,16 +116,24 @@ def test_row388_on_a_phone_the_card_opens_by_itself_under_the_reply(
 
 
 ENGINE_MIN_PX = 150  # Part B's engine needs a host at least this tall (INTEGRATION-B section 8)
+# Layout rounds to fractions of a pixel: GitHub's Chromium hid 0.1 % of the reply (a fraction of
+# one pixel, run 44216933907) where this machine's hides none. Up to one pixel may be cut, never a
+# line of words or the figure.
+FIT_SLACK_PX = 1.0
 CARD_FIT = """() => { // the card as it lands: its size, and how much of each part shows
   const s = document.getElementById('scroll'), sr = s.getBoundingClientRect();
   const row = [...document.querySelectorAll('.row.jarvis')].pop();
   const card = row.querySelector('.tr-card'), stage = card.querySelector('.tr-stage');
   const box = (e) => e.getBoundingClientRect();
+  const shows = (b) => Math.max(0, Math.min(b.bottom, sr.bottom) - Math.max(b.top, sr.top));
   const seen = (e) => { const b = e ? box(e) : null; if (!b || !b.height) return 0;
-    return Math.max(0, Math.min(b.bottom, sr.bottom) - Math.max(b.top, sr.top)) / b.height; };
+    return shows(b) / b.height; };
+  const cut = (e) => { const b = e ? box(e) : null; // the pixels of it hidden (none drawn: all)
+    return !b || !b.height ? 1e9 : b.height - shows(b); };
   const shown = [...card.querySelectorAll('button')].filter((b) => box(b).height);
   return { conversation: sr.height, card: box(card).height, stage_px: box(stage).height,
     stage: seen(stage), reply: seen(row.querySelector('.bubble')),
+    stage_cut: cut(stage), reply_cut: cut(row.querySelector('.bubble')),
     wide: box(card).right <= sr.right + 1, buttons: shown.map((b) => b.textContent) };
 }"""
 
@@ -148,7 +156,8 @@ def test_row388_the_card_fits_the_conversation_with_the_reply_and_the_whole_figu
         c.page.wait_for_timeout(300)
         got = c.page.evaluate(CARD_FIT)
         assert got["card"] <= got["conversation"], got  # the card fits the conversation
-        assert got["reply"] == 1 and got["stage"] == 1, got  # his reply and the WHOLE figure
+        # his reply and the WHOLE figure, but for a fraction of a pixel of layout rounding
+        assert got["reply_cut"] <= FIT_SLACK_PX and got["stage_cut"] <= FIT_SLACK_PX, got
         assert got["stage_px"] >= ENGINE_MIN_PX and got["wide"], got
         # a small set: turn it, the checklist, the full view in Helpers (layers, tuck, swap ...)
         assert got["buttons"][:3] == ["Turn around", "Show as a list", "Open in Helpers"], got

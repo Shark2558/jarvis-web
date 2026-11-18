@@ -15,16 +15,18 @@
 #   AVT-15  the failure signals: no WebGL2, a file that fails, the context lost, a first frame that
 #           never comes (10 s), and a second mount after dispose
 # Only a Chromium without WebGL2 may skip the 3D tests; an engine that fails must fail them.
+# Pixels are read with Python's own tools (tests/r131_png_pixels.py): GitHub's browser job has no
+# Pillow (run 44216933907, the R7 lesson).
 from __future__ import annotations
 
 import base64
-import io
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from r131_fake_server import serve
+from r131_png_pixels import Pixels, diff_box, read_png
 
 # CI's test job collects this module with no Playwright installed (I1): skip, never an error
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
@@ -111,23 +113,16 @@ class Stage:
     def stats(self) -> Any:
         return self.js("b.stage.stats()")
 
-    def shot(self) -> Any:
-        from PIL import Image
-
+    def shot(self) -> Pixels:
         self.page.wait_for_timeout(150)
-        return Image.open(io.BytesIO(self.page.locator("#stage canvas").screenshot())).convert(
-            "RGB"
-        )
+        return read_png(self.page.locator("#stage canvas").screenshot())
 
     def close(self) -> None:
         self.page.close()
 
 
-def _diff_box(a: Any, b: Any) -> tuple[int, int, int, int] | None:
-    from PIL import ImageChops
-
-    box: tuple[int, int, int, int] | None = ImageChops.difference(a, b).getbbox()
-    return box
+def _diff_box(a: Pixels, b: Pixels) -> tuple[int, int, int, int] | None:
+    return diff_box(a, b)
 
 
 def _open(browser: Any, url: str, query: str = "", **kw: Any) -> Stage:
@@ -301,7 +296,7 @@ def test_avt11_a_formal_and_a_festive_look_compare_with_both_lists_and_their_rea
         w, h = img.size
         halves = [img.crop((0, 0, w // 2, h)), img.crop((w // 2, 0, w, h))]
         for half in halves:  # a figure in each half
-            assert len(half.getcolors(maxcolors=1 << 20) or []) > 200
+            assert len(half.colours()) > 200
         s.js("b.stage.view('back')")
         assert s.stats()["yaw"] == 180 and s.stats()["figures"] == 2
     finally:
@@ -311,8 +306,6 @@ def test_avt11_a_formal_and_a_festive_look_compare_with_both_lists_and_their_rea
 def test_avt14_a_shared_look_shows_the_dressed_figure_and_only_approved_details(
     browser: Any, stage_url: str
 ) -> None:
-    from PIL import Image
-
     s = _open(browser, stage_url, "door=1")
     try:
         s.show(
@@ -327,21 +320,15 @@ def test_avt14_a_shared_look_shows_the_dressed_figure_and_only_approved_details(
             " for (const x of buf) t += String.fromCharCode(x); return [blob.type, btoa(t)]; })()"
         )
         assert png[0] == "image/png"
-        img = Image.open(io.BytesIO(base64.b64decode(png[1]))).convert("RGB")
+        img = read_png(base64.b64decode(png[1]))
         canvas = s.page.locator("#stage canvas").bounding_box()
         assert canvas is not None
         assert img.size[0] == round(canvas["width"]) and img.size[1] > round(canvas["height"]) + 60
         figure = img.crop((0, 0, img.size[0], round(canvas["height"])))
         words = img.crop((0, round(canvas["height"]), *img.size))
-        assert len(figure.getcolors(maxcolors=1 << 20) or []) > 500  # the dressed figure
-        assert (
-            2 < len(words.getcolors(maxcolors=1 << 20) or []) < 400
-        )  # only the lines, on the panel
-        assert not [
-            c
-            for _, c in (img.getcolors(maxcolors=1 << 22) or [])
-            if c[0] > 240 and c[1] < 30 and c[2] > 240
-        ]
+        assert len(figure.colours()) > 500  # the dressed figure
+        assert 2 < len(words.colours()) < 400  # only the lines, on the panel
+        assert not [c for c in img.colours() if c[0] > 240 and c[1] < 30 and c[2] > 240]
         assert s.js("b.door.asked") == []  # the private piece's crop is never read
         bare = s.js("await (async () => (await b.stage.snapshot({})).size)()")
         assert 0 < bare < len(base64.b64decode(png[1])) + 1

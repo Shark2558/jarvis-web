@@ -14,10 +14,19 @@ def _card(text: str, title: str) -> str:
     return text[start : text.index("\n#### ", start + 1)]
 
 
-def test_the_guide_is_v13_1_4_with_its_change_log_row() -> None:
+def test_the_guide_is_v13_1_5_with_its_change_log_row() -> None:
     text = GUIDE.read_text(encoding="utf-8")
-    assert text.splitlines()[0].startswith("Version v13.1.4 · ")
-    assert "| v13.1.4 | " in text.splitlines()[-1]
+    assert text.splitlines()[0].startswith("Version v13.1.5 · ")
+    assert "| v13.1.5 | " in text.splitlines()[-1]
+
+
+def test_c73_says_the_role_fails_closed_and_the_risk_it_leaves() -> None:
+    """I1's security review L5: the prompt-only role, never a broader one, and the residual risk
+    (prompts to any Agent Platform model) with the budget alert as the outside brake."""
+    c73 = _card(GUIDE.read_text(encoding="utf-8"), "#### C73 · See it on me (R13.1)")
+    for words in ("only `aiplatform.endpoints.predict`", "never a broader role",
+                  "any Agent Platform model", "outside JARVIS's cap", "`300INR`"):  # fmt: skip
+        assert words in c73, words
 
 
 def test_c72_and_c73_are_built_and_joined_not_planned() -> None:

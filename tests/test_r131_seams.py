@@ -875,7 +875,7 @@ def test_the_guide_has_c72_and_c73_with_every_collection_and_console_module() ->
     from jarvis.wardrobe.ports import COLLECTIONS
 
     guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
-    assert guide.splitlines()[0].startswith("Version v13.1.4 · ") and "Release R13.1" in guide[:200]
+    assert guide.splitlines()[0].startswith("Version v13.1.5 · ") and "Release R13.1" in guide[:200]
     for card in ("#### C72 · Try-on figure (R13.1)", "#### C73 · See it on me (R13.1)"):
         assert card in guide, card
     for name in (*COLLECTIONS["tryon"], *COLLECTIONS["seeme"]):

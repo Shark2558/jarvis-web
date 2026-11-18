@@ -88,10 +88,13 @@ async def test_the_helpers_start_with_four_empty_parts_and_both_composites(
         assert st.helpers_daily.job_names == ("breach_watch", "helpers_sweep")  # ... not here
         names = [j.name for j in st.tick_jobs]
         # R11's two composites, then R7's own two (never inside the helpers': code M5)
-        assert names[-8:-4] == ["helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily"]
+        assert names[-9:-5] == ["helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily"]
         # R14 I1: the parts' daily jobs (A's two, B's one; api/tick_wiring.py), then R13's: B's
-        # `laundry_daily` needs no key (A's `wardrobe_sweep` needs the keyring, which is off here)
-        assert names[-4:] == ["backup_canary", "backup_drill", "selfwatch_daily", "laundry_daily"]
+        # `laundry_daily` needs no key (A's `wardrobe_sweep` needs the keyring, which is off here);
+        # R13.1 C's `seeme_daily` neither (it forgets by path)
+        assert names[-5:] == [
+            "backup_canary", "backup_drill", "selfwatch_daily", "laundry_daily", "seeme_daily",
+        ]  # fmt: skip
         assert st.brief._helpers is not None  # noqa: SLF001 - the brief's Helpers source
         assert "helpers_nudge" in st.privacy.registry.ids()
 

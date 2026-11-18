@@ -11,6 +11,7 @@
 //   console-r7-lock.js      C   the app lock's unlock cover (console.js fires jarvis:device-locked)
 //   console-r7-sos.js       D   the SOS sheet and Integrations -> Emergency SOS
 //   console-wardrobe-scan.js R13 D  Camera -> Wardrobe (the second pixel panel, D9), and console-wardrobe.css
+//   console-tryon-card.js   R13.1 D  the try-on card under a "what should I wear?" reply (row 388), console-tryon.css
 // (Helpers -> Watch and Wardrobe are loaded by the Helpers frame.) Each part's stylesheet may only
 // place things: existing tokens and classes, no new colours, fonts, radii or shadows (plan D0), at most 150
 // lines. No build step; CSP script-src 'self' and style-src 'self'; textContent only. A module asks the server
@@ -55,7 +56,8 @@ function when(iso, withTime) {
 window.JarvisMobile = { mk, api, part, parts, when };
 
 for (const href of ['/static/console-r7-share.css', '/static/console-camera.css',
-  '/static/console-r7-phone.css', '/static/console-r7-sos.css', '/static/console-wardrobe.css']) { // R13: the Wardrobe tabs' places
+  '/static/console-r7-phone.css', '/static/console-r7-sos.css', '/static/console-wardrobe.css', // R13: the Wardrobe tabs' places
+  '/static/console-tryon.css']) { // R13.1: Try it on's places
   const css = document.createElement('link');
   css.rel = 'stylesheet';
   css.href = href;
@@ -70,6 +72,7 @@ const MODULES = [
   ['console-r7-phone.js', 'Phone app', 'integrations', () => import('./console-r7-phone.js')], ['console-r7-lock.js', 'The unlock cover', '', () => import('./console-r7-lock.js')],
   ['console-r7-sos.js', 'Emergency SOS', 'integrations', () => import('./console-r7-sos.js')],
   ['console-wardrobe-scan.js', 'Camera, Wardrobe', 'camera', () => import('./console-wardrobe-scan.js')], // R13 D: a pixel panel
+  ['console-tryon-card.js', 'The try-on card', '', () => import('./console-tryon-card.js')], // R13.1 D21: row 388
 ];
 function noLoad(file, label, where, err) {
   console.warn('JARVIS: ' + file + ' could not load (' + (err && err.message ? err.message : 'unknown') + ').');

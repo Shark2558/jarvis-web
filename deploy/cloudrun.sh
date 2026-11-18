@@ -100,6 +100,15 @@ gcloud services enable people.googleapis.com --quiet \
 # Google Photos (R4 D8, R11.1 O5): the Picker API, so "Choose photos" opens Google's picker.
 gcloud services enable photospicker.googleapis.com --quiet \
   || say "Note: the Google Photos Picker API could not be switched on; picking photos stays off. Re-run this script to try again."
+# R13.1 "See it on me" (docs/plans/r13-1-try-on.md D10, seam 13): Google's image model on the Agent
+# Platform. JARVIS_TRYON_PICTURES is true for this deploy only when the API AND a role worked in THIS
+# run (like Drive); nothing is called and nothing is charged by switching it on.
+TRYON_API=off
+if gcloud services enable aiplatform.googleapis.com --quiet; then
+  TRYON_API=on
+else
+  say "Note: the Agent Platform API could not be switched on, so See it on me is off for this deploy. Re-run this script to try again."
+fi
 
 # Quick (prompt-free) only for a service this script fully set up before: it has the owner set.
 QUICK=no
@@ -469,6 +478,77 @@ done
 # not needed, and voice falls back to the browser if it can't be granted.
 try_bind "serviceAccount:${RUN_SA}" roles/serviceusage.serviceUsageConsumer \
   || echo "  Note: could not let JARVIS use the speech APIs; the browser voice will be used."
+# R13.1 (plan review M6): a custom role that can ONLY make prompt requests (to any Agent Platform model):
+# it can't deploy, tune or manage anything; JARVIS's own cap and the jarvis-tryon budget alert watch
+# the bill. An existing role is set back to that one permission. Fail closed (security review L5):
+# a role that can't be set back (unknown or broader permissions, or deleted) is never bound, nor
+# kept bound from an earlier run (taken off jarvis-run; "not found" = it wasn't bound), and no
+# broader role is ever used instead; See it on me then stays off, with a note.
+TRYON_STATE=false
+TRYON_ROLE="projects/${PROJECT}/roles/jarvisTryOn"
+if [ "$TRYON_API" = on ]; then
+  TRYON_MADE=false
+  if gcloud iam roles describe jarvisTryOn --project "$PROJECT" >/dev/null 2>&1; then
+    if gcloud iam roles update jarvisTryOn --project "$PROJECT" --permissions=aiplatform.endpoints.predict --quiet >/dev/null 2>&1; then
+      TRYON_MADE=true
+    else
+      if ! OUT="$(gcloud projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${RUN_SA}" \
+           --role="$TRYON_ROLE" --condition=None --quiet 2>&1 >/dev/null)"; then
+        case "$OUT" in *not\ found*|*NOT_FOUND*|*does\ not\ exist*) ;;
+          *) echo "  Note: could not take the try-on role jarvisTryOn off JARVIS's account; remove it from jarvis-run in IAM." ;;
+        esac
+      fi
+      echo "  Note: the try-on role jarvisTryOn could not be set back to prompt requests only (or it was deleted), so See it on me stays off. Check it in IAM, Roles, then re-run this script."
+    fi
+  elif gcloud iam roles create jarvisTryOn --project "$PROJECT" --title="JARVIS try-on (prompt requests only)" \
+       --permissions=aiplatform.endpoints.predict --stage=GA --quiet >/dev/null 2>&1; then
+    TRYON_MADE=true
+  else
+    echo "  Note: the prompt-only try-on role could not be made, so See it on me stays off. Create the role jarvisTryOn with only aiplatform.endpoints.predict in IAM, Roles, then re-run this script."
+  fi
+  if [ "$TRYON_MADE" = true ]; then
+    if try_bind "serviceAccount:${RUN_SA}" "$TRYON_ROLE"; then
+      TRYON_STATE=true
+    else
+      echo "  Note: JARVIS could not be let use Google's image model, so See it on me stays off. Re-run this script to try again."
+    fi
+  fi
+fi
+# Google's own 24-hour cache of requests (G6), switched off for the project; the access token reaches
+# curl only on stdin (--config -), never on a command line, and is never printed. Fail toward
+# disclosure (security review finding 1): the consent says Google may keep each request up to 24
+# hours (JARVIS_TRYON_CACHE=true) unless THIS run's PATCH worked AND Google reads back
+# disableCache: true; a run whose role step failed never claims the cache is off.
+TRYON_CACHE=true
+if [ "$TRYON_STATE" = true ]; then
+  tok="$(gcloud auth print-access-token 2>/dev/null)" || tok=""
+  cfg="header = \"Authorization: Bearer ${tok}\""
+  body="{\"name\":\"projects/${PROJECT}/cacheConfig\",\"disableCache\":true}"
+  url="https://aiplatform.googleapis.com/v1/projects/${PROJECT}/cacheConfig"
+  if [ -n "$tok" ] \
+     && printf '%s\n' "$cfg" | curl -fsS --max-time 20 --config - -X PATCH \
+          -H "Content-Type: application/json" -d "$body" "$url" >/dev/null 2>&1 \
+     && printf '%s\n' "$cfg" | curl -fsS --max-time 20 --config - "$url" 2>/dev/null \
+          | grep -Eq '"disableCache": *true'; then
+    TRYON_CACHE=false
+  else
+    echo "  Note: Google's 24-hour request cache could not be switched off (or confirmed off); See it on me's consent says so."
+  fi
+  unset tok cfg body url
+fi
+# A budget alert at the try-on cap, ₹300 (300INR: gcloud refuses a currency other than the billing
+# account's, so a USD account never gets $300; security review L6) beside jarvis-any-charge: a
+# second brake on the bill itself. Made once; never stops.
+if [ "$TRYON_STATE" = true ] && [ -n "$BILLING_ACCOUNT" ]; then
+  if found="$(gcloud billing budgets list --billing-account="$BILLING_ACCOUNT" --filter='displayName=jarvis-tryon' --format='value(name)' 2>/dev/null)"; then
+    [ -n "$found" ] || gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" --display-name=jarvis-tryon \
+      --budget-amount=300INR --filter-projects="projects/${PROJECT}" \
+      --threshold-rule=percent=0.5 --threshold-rule=percent=0.9 --threshold-rule=percent=1.0 --quiet >/dev/null 2>&1 \
+      || echo "  Note: could not add the jarvis-tryon budget alert (it needs a billing account admin, and an account billed in rupees); add one at your try-on cap, in its own currency, in Billing, Budgets and alerts."
+  else
+    echo "  Note: could not check for the jarvis-tryon budget alert, so none was added this time; re-run this script to try again."
+  fi
+fi
 # An optional part never stops the deploy (code review CR-5): when JARVIS can't be let read the
 # Tavily or the Maps/YouTube key, that one is left unmounted (a quick re-run removes it) with a
 # plain note. Every other secret is required: failing to grant it stops here.
@@ -521,6 +601,7 @@ INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_P
 INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
 INFRA_ENV="${INFRA_ENV},${TG_ENV}"   # the Telegram answer (on / remembered skip), both paths
 INFRA_ENV="${INFRA_ENV},JARVIS_MAPS_PRICING=${MAPS_PRICING}"   # Google's Maps price list (india / global)
+INFRA_ENV="${INFRA_ENV},JARVIS_TRYON_PICTURES=${TRYON_STATE},JARVIS_TRYON_CACHE=${TRYON_CACHE}"   # R13.1 seam 13
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"

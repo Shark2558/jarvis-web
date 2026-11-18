@@ -69,13 +69,14 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name ------------------------------------------------
 def test_the_version_is_thirteen() -> None:
-    assert jarvis.__version__ == "13.0.0"  # R13 I0 (lower than 14.0.2: nothing compares it, D21)
+    assert jarvis.__version__ == "13.1.0"  # R13.1 I0 (13.0.0 at R13; nothing compares it, D21)
 
 
 def test_the_real_repository_is_r13_and_its_plan_comes_first() -> None:
-    repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R13"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r13-wardrobe.md"
+    repo = Repo.from_git(ROOT)  # R13.1 I0: the release is now R13.1 (tests/test_r131_seams.py)
+    assert plans.release_label(repo) == "R13.1"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r13-1-try-on.md"
+    assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 
 # ---- 2 · four alert kinds and every table that names one (D19) -----------------------------------
@@ -102,8 +103,8 @@ def test_the_held_words_the_alerts_card_the_book_and_push_know_every_new_kind() 
 
 # ---- 3 · two key purposes ------------------------------------------------------------------------
 def test_two_key_purposes_make_twenty_four() -> None:
-    assert keyring.PURPOSES[-2:] == ("wardrobe", "wardrobe_photos")
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 24
+    assert keyring.PURPOSES[-4:-2] == ("wardrobe", "wardrobe_photos")  # R13.1 + 2 after them
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 26
     ring = keyring.Keyring(bytes(range(7, 39)))
     blob = ring.cipher("wardrobe").encrypt(b"x", aad="wardrobe/u/v1")
     with pytest.raises(Exception):  # noqa: B017 - each purpose is its own key
@@ -227,14 +228,15 @@ def test_the_four_parts_and_what_each_owns() -> None:
     from jarvis.alerts import R13_ALERT_KINDS as KINDS
     from jarvis.wardrobe import ports
 
-    assert ports.PARTS == ("catalog", "laundry", "styling", "phone")
+    assert ports.PARTS[:4] == ("catalog", "laundry", "styling", "phone")  # R13.1 + tryon, seeme
     assert set(ports.TOOL_OWNER) == set(TOOLS13) and len(ports.TOOL_OWNER) == 18
     for tool, part in ports.TOOL_OWNER.items():
         assert ports.tool_allowed(part, tool), tool
         assert not any(ports.tool_allowed(p, tool) for p in ports.PARTS if p != part), tool
     assert not ports.tool_allowed("catalog", "wardrobe_shout")  # a family word alone is not enough
     assert set(ports.ROUTE_PREFIX) == set(ports.COLLECTIONS) == set(ports.PARTS)
-    assert ports.R13_JOB_NAMES == ("wardrobe_sweep", "laundry_daily", "outfit_clock")
+    assert ports.R13_JOB_NAMES[:3] == ("wardrobe_sweep", "laundry_daily", "outfit_clock")
+    assert ports.R13_JOB_NAMES[3:] == ("seeme_daily",)  # R13.1 C (tests/test_r131_seams.py)
     assert ports.CLOCK_JOB_NAMES == {"outfit_clock"} and set(ports.JOB_OWNER) == {
         *ports.R13_JOB_NAMES
     }
@@ -253,6 +255,9 @@ def test_every_planned_collection_is_named_and_flat() -> None:
         *("wardrobe", "wardrobe_log", "wardrobe_photo", "wardrobe_fp", "wardrobe_restore"),
         *("wardrobe_laundry", "wardrobe_review", "wardrobe_plans", "wardrobe_cal"),
         *("wardrobe_outlook", "wardrobe_told"),
+        # R13.1 (tests/test_r131_seams.py; the guide's cards C72-C73)
+        *("tryon", "tryon_person", "tryon_consent", "tryon_picture", "tryon_spend"),
+        "tryon_garment",  # R13.1 D22: a new garment's photo (See it on me)
     }
     guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
     for name in every:
@@ -475,10 +480,14 @@ def test_vision_assets_know_the_wardrobe_release() -> None:
     assert assets.installed({}, {assets.EMBED_FP32: "x"})["embed"]  # the fallback, if vendored
 
 
-PANELS = ("console-camera-panel.js", "console-wardrobe-scan.js")  # the two that may see pixels
+# the panels that may see pixels: R13's two and R13.1's photo check (tests/test_r131_seams.py
+# holds it to the scan module's rules, D12)
+PANELS = ("console-camera-panel.js", "console-wardrobe-scan.js", "console-tryon-photo.js")
 ENGINE = ("console-vision.js", "console-camera.js")  # the port and the camera's own door
-# the drawing modules that use canvas APIs on their OWN canvases (never a camera frame)
+# the drawing modules that use canvas APIs on their OWN canvases (never a camera frame); R13.1's
+# figure engine and its textures (B) too, held to their own rules in tests/test_r131_seams.py
 DRAWING = ("console-fx.js", "console-3d.js", "console-r111-files.js")
+DRAWING += ("console-tryon-3d.js", "console-tryon-cloth.js")
 PIXEL_APIS = ("drawImage", "getImageData", "toBlob", "createImageBitmap", "captureStream")
 _CALLS = re.compile(
     r"(?:JarvisVision|Vis\(\)|parts\s*\.\s*vision)\s*\.\s*(?:run|stream)\s*\("
@@ -593,7 +602,7 @@ def test_the_size_guards_hold() -> None:
     for path in STATIC.glob("console*.js"):
         assert _lines(path) <= 800, path.name
     assert _lines(STATIC / "console-camera-panel.js") <= 483
-    assert _lines(STATIC / "console-r7-send.js") <= 145
+    assert _lines(STATIC / "console-r7-send.js") <= 165  # R13.1 I0: person, picture, myPhoto
     assert _lines(STATIC / "console-helpers.js") <= 238
     new_css = [p for p in STATIC.glob("console-wardrobe*.css")]
     assert sum(_lines(p) for p in new_css) <= 300

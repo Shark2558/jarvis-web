@@ -154,6 +154,7 @@ async def test_without_the_token_key_everything_is_off_with_plain_words(off: App
         "backup_drill",
         "selfwatch_daily",
         "laundry_daily",  # R13: B needs no key; A's wardrobe_sweep needs the keyring (off here)
+        "seeme_daily",  # R13.1 C: forgets by path, so no key either
     ]
     assert st.notes_reason == NOT_CONFIGURED
     names = {s.name for s in st.gateway.registry.specs()}
@@ -258,6 +259,7 @@ async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> Non
     r11 = ["helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily"]  # R11 I0; R7's own
     r14 = ["backup_canary", "backup_drill", "selfwatch_daily"]  # R14 I1: A's two, B's one
     r13 = ["wardrobe_sweep", "laundry_daily"]  # R13: A's sweep (keyring on), B's morning job
+    r13 += ["seeme_daily"]  # R13.1 C: See it on me's morning job
     assert names == [
         *r2,
         "vitals_poll",

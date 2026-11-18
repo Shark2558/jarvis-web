@@ -40,6 +40,17 @@ def test_the_r7_capture_keeps_the_message_and_fields_but_not_the_clock_numbers()
     assert "saved" in row and "8123" in row  # but the message and its own fields are searched
 
 
+def test_the_r7_capture_leaves_out_the_codes_own_location() -> None:
+    # R13.1 integrated code review L8: a checkout path or a module name holding the needle (this
+    # worktree's own "/tmp/r131-...", say) is no value of his: the capture searches none of them
+    rec = _record("saved", heart={"max": 8123})
+    rec.pathname, rec.filename, rec.module = "/tmp/r131-x/a131.py", "a131.py", "a131"
+    rec.funcName = "f131"
+    cap = _load_r7_body().Capture()
+    cap.emit(rec)
+    assert "131" not in cap.rows[0] and "8123" in cap.rows[0]
+
+
 def test_nothing_in_the_product_calls_the_catalogs_own_correct() -> None:
     """Code review LOW: `CatalogStore.correct` would skip B's reconcile of loads, batches and
     the review queue, so every product path corrects through B (`LaundryFlows.correct`)."""

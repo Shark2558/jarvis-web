@@ -76,7 +76,7 @@ def test_a_part_that_breaks_its_contract_is_left_out_and_the_rest_stay(
 
     monkeypatch.setattr(wiring, "_build", build)
     parts = wiring.build_parts(_ctx(settings))
-    assert [p.ready for p in parts.values()] == [wiring.SETUP_FAILED] * 4
+    assert [p.ready for p in parts.values()] == [wiring.SETUP_FAILED] * len(PARTS)  # R13.1: six
     assert wiring.r13_tools(parts) == () and wiring.r13_tools(None) == ()
 
 
@@ -303,7 +303,7 @@ async def test_the_app_builds_the_four_parts_and_answers_v1_r13(settings: Settin
         got = await c.get("/v1/r13", headers=AUTH)
         assert got.status_code == 200 and got.headers["cache-control"] == "no-store"
         body = got.json()
-        assert body["version"] == "v13.0.0"
+        assert body["version"] == "v13.1.0"
         assert [p["part"] for p in body["parts"]] == list(PARTS)
         assert all(p["ready"] != wiring.SETUP_FAILED for p in body["parts"])
         assert body["parts"][0]["ready"].startswith("Off: the wardrobe needs")

@@ -29,10 +29,12 @@ def test_the_three_cards_are_built_and_name_no_planned_piece() -> None:
         assert "(R13)" in card.splitlines()[0], name
 
 
-def test_c63_says_two_panels_see_pixels_and_a_photo_is_kept_only_on_save() -> None:
+def test_c63_says_which_panels_see_pixels_and_a_photo_is_kept_only_on_save() -> None:
     card = _card("C63")
     for words in (
-        "Two panels see pixels: Camera and Camera → Wardrobe. A frame is never stored.",
+        # R13's two panels; R13.1 I1 adds Try-on's own photo check (tests/test_r131_i1_docs.py)
+        "Three panels see pixels: Camera, Camera → Wardrobe and Try-on's own photo check",
+        "A frame is never stored.",
         "A wardrobe photo is kept only when you press Save, cropped to the piece, after a check "
         "for a person or a face that can miss",
         "the use cases of R8 to R10 receive results only",

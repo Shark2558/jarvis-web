@@ -22,9 +22,11 @@ log = get_logger(__name__)
 
 
 async def record_change(
-    request: Request, *, agent: str, tool: str, args: dict[str, Any], detail: str = ""
-) -> None:
-    """One "changed" entry on the app's audit chain (the gateway's). Never raises."""
+    request: Request, *, agent: str, tool: str, args: dict[str, Any], detail: str = "",
+    risk: ActionRisk = ActionRisk.REVERSIBLE,
+) -> None:  # fmt: skip
+    """One "changed" entry on the app's audit chain (the gateway's), at `risk` (REVERSIBLE unless
+    the caller says what it is: a paid press or a delete is IRREVERSIBLE). Never raises."""
     gw = getattr(request.app.state, "gateway", None)
     if gw is None:
         log.warning("no audit chain for a settings change", extra={"tool": tool})
@@ -33,7 +35,7 @@ async def record_change(
         await gw.audit.append(
             agent=agent,
             tool=tool,
-            risk=ActionRisk.REVERSIBLE,
+            risk=risk,
             outcome="changed",
             args=args,
             detail=detail,

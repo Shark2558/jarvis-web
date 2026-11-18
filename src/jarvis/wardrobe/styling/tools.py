@@ -29,7 +29,7 @@ from jarvis.tools.base import Tool
 from jarvis.tools.provenance import vouch
 from jarvis.wardrobe.model import WardrobeView
 from jarvis.wardrobe.ports import MAX_RESULT_PIECES
-from jarvis.wardrobe.styling import actions, prefs, views
+from jarvis.wardrobe.styling import actions, prefs, tryon_card, views
 from jarvis.wardrobe.styling.answers import plural, ready, refused
 from jarvis.wardrobe.styling.cards import (
     Cards,
@@ -57,6 +57,14 @@ _SETTING: dict[str, Any] = {
     "description": "indoor or outdoor (rain-ok shoes and an outer layer outdoors when rain)",
 }  # fmt: skip
 SETTINGS = {"indoor": False, "outdoor": True}
+# R13.1 D17, D21, D22: where the AI can say Try-on is (fixed words, never a ₹ figure: the price is
+# shown on each picture's own confirm); in `outfit_suggest`'s result only while Try-on is on, when
+# the reply's try-on card opens the look by itself; See it on me is for a garment he may buy
+SEE_IT = (
+    "In the app this look opens on your 3D figure by itself, free. To see a garment you are "
+    "thinking of buying on you, use See it on me in Helpers, Wardrobe; its price is shown before "
+    "each picture."
+)
 
 
 def _schema(props: dict[str, Any], required: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -156,6 +164,9 @@ class StylingTools:
             "looks": looks,
             "alternatives": views.alternatives(view, first, budget),
         }
+        if s.ctx.s.tryon_enabled:  # R13.1 D17, D21: the words, and the card that opens itself
+            out["see_it"] = SEE_IT
+            tryon_card.show(view, first)
         return vouch(out, True)
 
     async def plans(self, args: dict[str, Any]) -> Any:
@@ -270,4 +281,4 @@ def styling_tools(s: Styling) -> tuple[Tool, ...]:
     )  # fmt: skip
 
 
-__all__ = ["AGENT", "StylingTools", "styling_tools"]
+__all__ = ["AGENT", "SEE_IT", "StylingTools", "styling_tools"]

@@ -256,5 +256,12 @@
   document.addEventListener('jarvis:panel', (e) => { const d = e.detail || {}; if (d.id === 'privacy' && d.open) load(false); });
   document.addEventListener('jarvis:ready', () => { if (shown()) load(false); });
   document.addEventListener('DOMContentLoaded', () => { if (shown()) load(false); });
-  window.JarvisPrivacy = Object.freeze({ refresh: () => load(true) });
+  // R13.1 I0 (docs/plans/r13-1-try-on.md D16, M10): another panel opens one category's own delete (its passkey, its words)
+  async function remove(id) {
+    await load(true);
+    const c = S.data && S.data.cats.find((x) => x.id === id);
+    if (!c || c.del === 'none' || !c.available) return false;
+    askDelete(c, document.activeElement); return true;
+  }
+  window.JarvisPrivacy = Object.freeze({ refresh: () => load(true), remove });
 })();

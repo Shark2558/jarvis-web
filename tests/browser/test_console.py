@@ -72,6 +72,10 @@ class Console:
         by_design = ("/v1/integrations", "/v1/brief/today", "/v1/memory", "/v1/voice")
         if "404" in msg.text and url.endswith(by_design):
             return
+        # R13.1 (I1): Try-on off answers GET /v1/tryon with 503 {"error": "off"} (no token key, no
+        # storage, switched off); the Wardrobe tab's section then takes no room, as R13's tab was
+        if "503" in msg.text and url.endswith("/v1/tryon"):
+            return
         self.errors.append(f"console.error: {msg.text} @ {msg.location.get('url', '')}")
 
     def open(self, path: str = "/") -> None:

@@ -177,6 +177,17 @@ APP_ASSETS: dict[str, str] = {
     "console-wardrobe-words.js": _JS,  # its non-pixel words (imported by console-wardrobe-scan.js)
     "console-vision-r13.js": _JS,  # the wardrobe tasks' arithmetic (imported by console-vision.js)
     "console-wardrobe.css": "text/css",  # the Wardrobe tabs' places only (loaded by console-r7.js)
+    # R13.1 I0 (docs/plans/r13-1-try-on.md seam 9; stubs at I0): Try it on, in Helpers -> Wardrobe
+    "console-tryon.js": _JS,  # D: the section (mounted by console-helpers-wardrobe.js)
+    "console-tryon-list.js": _JS,  # D: the checklist, image cards, the share caption's words
+    "console-tryon-form.js": _JS,  # D: the section's forms (measurements, shapes, OPS-05)
+    "console-tryon-me.js": _JS,  # D: See it on me (photo, YES, estimate, confirm, pictures)
+    "console-tryon-photo.js": _JS,  # D: his photo's check on the device, a pixel panel
+    "console-tryon-3d.js": _JS,  # B: the figure engine (window.JarvisTryOn3D), a drawing module
+    "console-tryon-glb.js": _JS,  # B: the GLB reader for the build script's subset
+    "console-tryon-cloth.js": _JS,  # B: textures from his crops, on its own canvas
+    "console-tryon-card.js": _JS,  # D: the card under "what should I wear?" (row 388, D21)
+    "console-tryon.css": "text/css",  # D: the section's places only (loaded by console-r7.js)
 }
 
 # Self-hosted OFL fonts (licences beside them).
@@ -356,19 +367,24 @@ def _vision_stamp(folder: Path) -> _Stamp:
 
 
 class _VisionFiles:
-    """`vision_files(release)`: checked once per change of the release folder, not per process."""
+    """`vision_files(release)`: checked once per change of the release folder, not per process.
+    R13.1 I0 (seam 9, L2): the folder is read at CALL time (`folder()`), so the R7 tests that
+    monkeypatch `console._VISION` stay as they are, and the mannequin's files use the same check
+    (`api/tryon_assets.py`)."""
 
-    def __init__(self) -> None:
+    def __init__(self, folder: Callable[[], Path] | None = None) -> None:
+        self._folder = folder or (lambda: _VISION)  # R7's tests build it bare: the vision folder
         self._seen: dict[str, tuple[_Stamp, Mapping[str, str]]] = {}
 
     def __call__(self, release: str) -> Mapping[str, str]:
-        if not (_VISION / release / "MANIFEST.json").is_file():
+        root = self._folder()
+        if not (root / release / "MANIFEST.json").is_file():
             return {}  # not a release: answered at once, never hashed, never remembered
-        stamp = _vision_stamp(_VISION / release)
+        stamp = _vision_stamp(root / release)
         kept = self._seen.get(release)
         if kept is not None and kept[0] == stamp:
             return kept[1]
-        good = _check_vision(_VISION / release, release)
+        good = _check_vision(root / release, release)
         self._seen.pop(release, None)
         while len(self._seen) >= _VISION_KEEP:
             self._seen.pop(next(iter(self._seen)))
@@ -405,7 +421,7 @@ def _check_vision(folder: Path, release: str) -> Mapping[str, str]:
     return good
 
 
-vision_files = _VisionFiles()
+vision_files = _VisionFiles(lambda: _VISION)
 
 
 @router.get("/static/vendor/vision/{release}/{name}", include_in_schema=False)

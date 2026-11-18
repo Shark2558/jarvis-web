@@ -1,0 +1,215 @@
+# src/jarvis/wardrobe/tryon/part.py
+"""R13.1 Part A's one join (docs/plans/r13-1-try-on.md "Part split" A, D4-D7, D16).
+
+`build(ctx) -> WardrobePart("tryon", privacy=..., services={"tryon_looks": TryonService},
+ready=...)`: no tool, no job, no `data` (the wiring refuses `data` on this part, M4). Its Privacy
+rows are `tryon_figure`, `tryon_all` and `tryon_device` (`ports.PRIVACY_OWNER`). With no storage,
+no token key, or Try-on switched off, `ready` says so in words ("Off: ..."), no service is offered
+(the routes say the same words), nothing is ever kept in clear, and the rows still answer for
+what is on disk (I0's `kept` stand-ins: found and deleted by path with no key).
+
+`TryonService` is what the routes and C use: the looks (`ports.TryonLooks.look`), his
+measurements and their versions, his figure choices, saved comparisons, the fresh check before
+"Use this look", and OPS-05's `erase_all`. Each reads fresh; nothing is cached between calls.
+The modules are called through their names (`versions.use`, `confirm.first_draft` ...), so the
+eval's controls can swap one.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
+from typing import Any, TypeVar
+
+from jarvis.logging import get_logger
+from jarvis.wardrobe.model import WardrobeView
+from jarvis.wardrobe.ports import WardrobeContext, WardrobePart
+from jarvis.wardrobe.styling import texts
+from jarvis.wardrobe.tryon import assets, confirm, erase, kept, privacy, saved, versions
+from jarvis.wardrobe.tryon.http import (
+    AssetChoice,
+    BodyVersions,
+    ConfirmIn,
+    Deleted,
+    RangeView,
+    SavedIn,
+    SavedList,
+    SavedView,
+    TryonLook,
+    TryonView,
+)
+from jarvis.wardrobe.tryon.looks import Looks, Read, StylingOff
+from jarvis.wardrobe.tryon.model import RANGES, range_words
+from jarvis.wardrobe.tryon.store import Saved, TryonDoc, TryonStore, storage_trouble, where
+
+log = get_logger(__name__)
+READY = "ready"
+OFF_NO_STORE = "Off: no storage is set up, so Try-on keeps nothing."
+OFF_NO_KEY = "Off: JARVIS has no token key to seal your measurements."
+OFF_SWITCHED = "Off: Try-on is switched off on this server."
+RANGE_VIEWS = tuple(
+    RangeView(measure=k, low=lo, high=hi, words=range_words(k)) for k, (lo, hi) in RANGES.items()
+)
+R = TypeVar("R")
+
+
+class TryonService:
+    """The `tryon_looks` service (A's; `ports.SERVICE_OWNER`)."""
+
+    def __init__(self, ctx: WardrobeContext) -> None:
+        self.ctx = ctx
+        self.store = TryonStore(ctx.docs, ctx.keyring, prefix=ctx.s.firestore_prefix, now=ctx.now)
+        self.looks = Looks(ctx, self.store)
+
+    async def look(self, uid: str, plan: str) -> TryonLook:
+        """`ports.TryonLooks`: a plan's look as the figure shows it, read fresh (for C)."""
+        return await self.looks.for_plan(uid, plan)
+
+    async def _read(self, uid: str) -> Read | None:
+        """R13's records for the view's extras; None when they can't be read now (the figure
+        still answers: saved comparisons then read "Draft" and no figure choice is listed until
+        they can be checked, so a piece made private since is never named, AVT-14). Any other
+        error is a bug, never "no figure": the route logs and answers it (review A-1 F3)."""
+        try:
+            return await self.looks.read(uid)
+        except StylingOff:
+            return None
+        except Exception as exc:  # noqa: BLE001 - R13's store down: the figure still answers
+            if not storage_trouble(exc):
+                raise
+            extra = {"error": type(exc).__name__, "at": where(exc)}
+            log.warning("try-on: R13's records unreadable", extra=extra)
+            return None
+
+    async def tryon_view(self, uid: str, *, release: str, files: tuple[str, ...]) -> TryonView:
+        doc, r = await self.store.read(uid), await self._read(uid)
+        chosen = assets.tidy(doc.assets, r.view) if r is not None else {}
+        return TryonView(
+            ready=READY, release=release, files=files, body=versions.versions_view(doc),
+            ranges=RANGE_VIEWS, assets=tuple(assets.choice_of(p, a) for p, a in chosen.items()),
+            saved=tuple(saved.ref_of(r, x) for x in doc.saved), words=versions.figure_words(doc),
+        )  # fmt: skip
+
+    # ---- measurements (D4) ----------------------------------------------------------------------
+    async def put_body(self, uid: str, typed: Mapping[str, object]) -> BodyVersions:
+        at = self.ctx.now()
+        doc = await self.store.change(uid, lambda d: versions.draft(d, typed, at))
+        return versions.versions_view(doc)
+
+    async def use_body(self, uid: str, seen: datetime | None = None) -> BodyVersions:
+        """ "Use these measurements": the draft he saw (`seen`, its `at`), in one transaction."""
+        doc = await self.store.change(uid, lambda d: versions.use(d, seen))
+        return versions.versions_view(doc)
+
+    async def drop_draft(self, uid: str) -> BodyVersions:
+        return versions.versions_view(await self.store.change(uid, lambda d: versions.drop(d)))
+
+    # ---- figure choices (AVT-05) ----------------------------------------------------------------
+    async def _view(self, uid: str) -> WardrobeView:
+        store = self.ctx.store()
+        if store is None:
+            raise StylingOff(texts.NOT_READY_YET)
+        return await store.view(uid)
+
+    async def view_or_none(self, uid: str) -> WardrobeView | None:
+        """R13's view for Privacy's tidy; None while it can't be read (storage trouble only)."""
+        try:
+            return await self._view(uid)
+        except StylingOff:
+            return None
+        except Exception as exc:  # noqa: BLE001 - R13's store down: the entries as stored
+            if not storage_trouble(exc):
+                raise
+            extra = {"error": type(exc).__name__, "at": where(exc)}
+            log.warning("try-on: R13's view unreadable for Privacy", extra=extra)
+            return None
+
+    async def choose(self, uid: str, pid: str, body: AssetChoice) -> AssetChoice:
+        view = await self._view(uid)
+        made: list[AssetChoice] = []
+
+        def fn(doc: TryonDoc) -> TryonDoc:
+            new, one = assets.choose(doc, view, pid, body)
+            made[:] = [one]  # a retried transaction keeps only its last run's
+            return new
+
+        await self.store.change(uid, fn)
+        return made[0]
+
+    # ---- "Use this look" (AVT-09) ---------------------------------------------------------------
+    async def confirm(
+        self, uid: str, body: ConfirmIn, call: Callable[[dict[str, Any]], Awaitable[R]]
+    ) -> R:
+        """The fresh check, then ONE `outfit_plan` lock through `call` (`run_panel_tool`)."""
+        return await confirm.check_and_lock(self.looks, uid, body, call)
+
+    # ---- saved comparisons (AVT-11) -------------------------------------------------------------
+    async def save(self, uid: str, body: SavedIn) -> SavedView:
+        r = await self.looks.read(uid)
+        made: list[Saved] = []
+
+        def fn(doc: TryonDoc) -> TryonDoc:
+            new, one = saved.add(doc, r, body, self.ctx.now())
+            made[:] = [one]
+            return new
+
+        await self.store.change(uid, fn)
+        return saved.saved_view(r, made[0])
+
+    async def saved_list(self, uid: str) -> SavedList:
+        doc, r = await self.store.read(uid), await self.looks.read(uid)
+        return SavedList(saved=tuple(saved.saved_view(r, x) for x in doc.saved))
+
+    async def saved_one(self, uid: str, sid: str) -> SavedView:
+        found = saved.find(await self.store.read(uid), sid)
+        return saved.saved_view(await self.looks.read(uid), found)
+
+    async def saved_drop(self, uid: str, sid: str) -> Deleted:
+        gone: list[bool] = []
+
+        def fn(doc: TryonDoc) -> TryonDoc:
+            new, went = saved.drop(doc, sid)
+            gone[:] = [went]
+            return new
+
+        await self.store.change(uid, fn)
+        return saved.deleted(gone[0])
+
+    # ---- OPS-05 ---------------------------------------------------------------------------------
+    async def erase_all(self, uid: str) -> int:
+        return await erase.erase_all(self.ctx, self.store, uid)
+
+
+def off_words(ctx: WardrobeContext) -> str | None:
+    if ctx.docs is None:
+        return OFF_NO_STORE
+    if ctx.keyring is None:
+        return OFF_NO_KEY
+    if not ctx.s.tryon_enabled:
+        return OFF_SWITCHED
+    return None
+
+
+def build(ctx: WardrobeContext) -> WardrobePart:
+    off = off_words(ctx)
+    if off is not None or ctx.docs is None:
+        docs, prefix = ctx.docs, ctx.s.firestore_prefix
+        rows = kept.stand_ins("tryon", docs, prefix) if docs is not None else ()
+        return WardrobePart("tryon", privacy=rows, ready=off or OFF_NO_STORE)
+    svc = TryonService(ctx)
+    rows = privacy.rows(
+        ctx.docs, ctx.s.firestore_prefix, svc.store, svc.erase_all, svc.view_or_none
+    )
+    return WardrobePart("tryon", privacy=rows, services={"tryon_looks": svc}, ready=READY)
+
+
+__all__ = [
+    "OFF_NO_KEY",
+    "OFF_NO_STORE",
+    "OFF_SWITCHED",
+    "RANGE_VIEWS",
+    "READY",
+    "TryonService",
+    "build",
+    "off_words",
+]

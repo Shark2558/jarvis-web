@@ -870,6 +870,9 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         # R13: the wardrobe, and its photos and fingerprints (tests/test_r13_seams.py)
         "wardrobe",
         "wardrobe_photos",
+        # R13.1: his measurements and his YES; his photo and the pictures (test_r131_seams.py)
+        "tryon",
+        "tryon_photos",
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):

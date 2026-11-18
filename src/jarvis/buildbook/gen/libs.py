@@ -52,6 +52,7 @@ _TEXT_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("GPL-2.0", re.compile(r"GNU GENERAL PUBLIC LICENSE\s+Version 2", re.I)),
     ("GPL", re.compile(r"GNU GENERAL PUBLIC LICENSE", re.I)),
     ("OFL-1.1", re.compile(r"SIL Open Font License")),
+    ("CC0-1.0", re.compile(r"\bCC0 1\.0 Universal\b")),  # R13.1: the MakeHuman/MPFB2 assets
     ("Apache-2.0", re.compile(r"Apache License[\s\S]{0,80}Version 2\.0", re.I)),
     ("MIT", re.compile(r"\bMIT License\b|Permission is hereby granted, free of charge")),
     ("BSD", re.compile(r"Redistribution and use in source and binary forms")),
@@ -122,6 +123,20 @@ VENDORED: dict[str, tuple[str, str, str, str]] = {
         "",
         "model",
         "vision",
+    ),
+    # R13.1 D3 (I0): the 3D figure's base, Part B's files under vendor/mannequin/m1/ (the
+    # MakeHuman/MPFB2 assets as shipped in NAVER's Anny, and Anny's waist loop; NOTICE beside them)
+    "vendor/mannequin/m1/LICENSE-mpfb2-CC0.txt": (
+        "MakeHuman/MPFB2 base mesh and garments (via NAVER Anny)",
+        "",
+        "model",
+        "3d",
+    ),
+    "vendor/mannequin/m1/LICENSE-anny-Apache-2.0.txt": (
+        "NAVER Anny (the waist measurement loop)",
+        "",
+        "vendored",
+        "3d",
     ),
 }
 VISION_DIR = "vendor/vision/"

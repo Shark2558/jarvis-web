@@ -209,5 +209,5 @@ def test_the_real_repo_builds_and_the_show_is_about_six_thousand_characters() ->
     # The real repo's release is R7 (its own version 7.0.0, R7 I0 seam 2; R11.1's plan still has
     # the higher number): pinned here, not derived from plans.release_label, which the generator
     # itself calls. The version comes from this checkout (pinned once in test_about).
-    assert book.release.label == "R13"  # R13 I0 (R6.2 at R6.2, R14 from R14 I0, R7 before)
+    assert book.release.label == "R13.1"  # R13.1 I0 (R13 at R13, R6.2 at R6.2, R14 from R14 I0)
     assert book.release.version == f"v{jarvis.__version__}"

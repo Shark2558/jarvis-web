@@ -19,6 +19,13 @@
   routes read it with `read_capped` at `wardrobe_backup_max_mb`.
 - `install_r13_routes(app)`: `GET /v1/r13` and the parts' routers (`api/wardrobe.py`,
   `api/laundry.py`, `api/outfits.py`; each part owns its own).
+
+R13.1 (docs/plans/r13-1-try-on.md seam 6) adds two parts, `tryon` (A) and `seeme` (C), built the
+same way after R13's four: `check_part` refuses either one offering `data` or a Privacy row,
+service or job it doesn't own (M4); `_with_kept` gives either one that offers no Privacy rows
+`wardrobe/tryon/kept.py`'s stand-ins (R13's four as before); `ctx.tryon()` is the try-on
+provider (`api/tryon_wiring.py`); `install_r13_routes` adds `api/tryon.py`, `api/seeme.py` and
+the mannequin's files (`api/tryon_assets.py`). `api/app.py`: no line.
 """
 
 from __future__ import annotations
@@ -36,6 +43,10 @@ from jarvis.api.laundry import router as laundry_router
 from jarvis.api.outfits import router as outfits_router
 from jarvis.api.r4_wiring import _notifier
 from jarvis.api.r13_status import router as status_router
+from jarvis.api.seeme import router as seeme_router
+from jarvis.api.tryon import router as tryon_router
+from jarvis.api.tryon_assets import router as mannequin_router
+from jarvis.api.tryon_wiring import tryon_provider
 from jarvis.api.wardrobe import router as wardrobe_router
 from jarvis.brief.store import BriefStore
 from jarvis.config import Settings
@@ -52,7 +63,9 @@ from jarvis.wardrobe.kept import stand_ins
 from jarvis.wardrobe.ports import (
     CLOCK_JOB_NAMES,
     JOB_OWNER,
+    NO_DATA_PARTS,
     PARTS,
+    PRIVACY_OWNER,
     SERVICE_OWNER,
     ChangeObserver,
     PartName,
@@ -66,6 +79,7 @@ from jarvis.wardrobe.ports import (
 )
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.styling.wear import close_forgotten
+from jarvis.wardrobe.tryon import kept as tryon_kept
 
 log = get_logger(__name__)
 
@@ -74,6 +88,8 @@ PART_MODULES: Mapping[PartName, str] = {
     "laundry": "jarvis.wardrobe.laundry.part",
     "styling": "jarvis.wardrobe.styling.part",
     "phone": "jarvis.wardrobe.phone.part",
+    "tryon": "jarvis.wardrobe.tryon.part",
+    "seeme": "jarvis.wardrobe.seeme.part",
 }
 SETUP_FAILED = "setup failed"
 RESTORE_PATHS = ("/v1/wardrobe/restore", "/v1/wardrobe/restore/check")
@@ -116,7 +132,18 @@ def check_part(name: PartName, part: object) -> WardrobePart:
         raise ValueError(f"part {name} offers data without count, export and delete")
     if any(d.row not in get_args(PrivacyRow) for d in part.data):
         raise ValueError(f"part {name} offers data with no Privacy row")
+    if name in NO_DATA_PARTS:
+        _check_rows(name, part)
     return part
+
+
+def _check_rows(name: PartName, part: WardrobePart) -> None:
+    """R13.1's parts: their Privacy rows on `privacy`, never `data` (M4), and only their own."""
+    if part.data:
+        raise ValueError(f"part {name} offers data: its Privacy rows go on privacy (M4)")
+    for src in part.privacy:
+        if not isinstance(src, PrivacySource) or PRIVACY_OWNER.get(src.id) != name:
+            raise ValueError(f"part {name} offers a Privacy row it doesn't own")
 
 
 def build_parts(ctx: WardrobeContext) -> dict[PartName, WardrobePart]:
@@ -136,10 +163,18 @@ def build_parts(ctx: WardrobeContext) -> dict[PartName, WardrobePart]:
 
 def _with_kept(part: WardrobePart, ctx: WardrobeContext) -> WardrobePart:
     """A part that is off or failed offers no data of its own: it still answers for what it left
-    on disk (Privacy says "Couldn't check right now" and can delete it; never "Nothing kept")."""
-    if part.data or ctx.docs is None:
+    on disk (Privacy says "Couldn't check right now" and can delete it; never "Nothing kept").
+    R13.1's two parts get their stand-in Privacy ROWS instead, and their `data` stays empty."""
+    if ctx.docs is None:
         return part
-    return replace(part, data=stand_ins(part.name, ctx.docs, ctx.s.firestore_prefix))
+    prefix = ctx.s.firestore_prefix
+    if part.name in NO_DATA_PARTS:
+        if part.privacy:
+            return part
+        return replace(part, privacy=tryon_kept.stand_ins(part.name, ctx.docs, prefix))
+    if part.data:
+        return part
+    return replace(part, data=stand_ins(part.name, ctx.docs, prefix))
 
 
 def _parts(app: FastAPI) -> Mapping[PartName, WardrobePart]:
@@ -208,6 +243,7 @@ def context(
         reads=lambda: reads,
         outside=lambda: _outside(app),
         store=lambda: wardrobe_store(app),
+        tryon=tryon_provider(s),
     )
 
 
@@ -316,6 +352,8 @@ def r13_data(app: FastAPI) -> Sequence[WardrobeData]:
 
 def install_r13_routes(app: FastAPI) -> None:
     for router in (status_router, wardrobe_router, laundry_router, outfits_router):
+        app.include_router(router)
+    for router in (tryon_router, seeme_router, mannequin_router):  # R13.1 (seam 6)
         app.include_router(router)
 
 

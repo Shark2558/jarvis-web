@@ -123,7 +123,7 @@ def fake_routes(store: MemoryWardrobeStore, clock: Callable[[], datetime]) -> AP
     async def status() -> JSONResponse:
         parts = tuple(http.Ready(part=p, ready=READY) for p in ("catalog", "laundry", "styling"))
         return _ok(
-            http.R13Status(version="v13.0.0", parts=(*parts, http.Ready(part="phone", ready=READY)))
+            http.R13Status(version="v13.1.0", parts=(*parts, http.Ready(part="phone", ready=READY)))
         )
 
     @r.get("/v1/wardrobe")

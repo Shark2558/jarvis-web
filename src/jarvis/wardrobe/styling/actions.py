@@ -7,10 +7,19 @@ another writer changed meanwhile is refused ("That plan changed meanwhile: try a
 - save: a plan for a day (and a time, an occasion or a dress code), its picks from the engine's
   primary look (a code he names is his: not tentative; an occasion's is tentative, STY-03); with
   `plan`, that plan again; `setting` marks it indoors or outdoors (STY-07, code review M7);
-- lock: a slot's current pick, or a piece he names into its slot, kept from now on (STY-12);
+- lock: a slot's current pick, or a piece he names into its slot, kept from now on (STY-12); with
+  `pieces` (one a slot), every slot at once in the ONE change, all or nothing (R13.1 D20); every
+  way of naming it is checked alike (R13.1 integrated review M1);
 - change: one slot again, every other pick kept while still eligible (STY-12);
 - reserve: a piece (or its pair) into this plan, refused while another plan holds it (STY-14);
-- transfer: deliberately from another plan (that one then needs a new one, STY-14);
+
+R13.1 D20 (plan review H2, the R13 fix): `lock` and `reserve` refuse a piece that isn't ready by
+the engine's own rule (`unready`: only Ready; a pair whole; a set part that can't be worn alone
+only with its whole set; an In-use piece only as the plan's declared shared base and reusable),
+before anything is written: "The navy jacket is in the laundry: it can't be locked into this
+plan." The check reads the view the tool itself just read: the guarantee behind any early check.
+- transfer: deliberately from another plan (that one then needs a new one, STY-14), the moved
+  piece ready by the same rule;
 - release: a piece out of the plan (its slot re-suggested), or the whole plan;
 - share: a shared base from an earlier plan the same day (STY-13).
 """
@@ -20,7 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 from jarvis.wardrobe.model import WardrobeView
-from jarvis.wardrobe.styling import reserve
+from jarvis.wardrobe.styling import ready, reserve
 from jarvis.wardrobe.styling.plans import Plan, PlanPick, PlanRefused, StylingDoc, strict
 from jarvis.wardrobe.styling.service import Here, Styling
 
@@ -44,6 +53,22 @@ def _slot_of(s: Styling, view: WardrobeView, pid: Any) -> tuple[str, tuple[str, 
 
 
 SETTINGS = {"indoor": False, "outdoor": True}
+CANT_LOCK = "it can't be locked into this plan."
+
+
+def unready(s: Styling, view: WardrobeView, plan: Plan, unit: tuple[str, ...]) -> str | None:
+    """The refusal's words when a piece of `unit` can't go into `plan` now, else None: the ONE
+    readiness rule (`styling.ready`), which R13.1's figure reads too (review I1 M5)."""
+    for pid in unit:
+        p = view.pieces.get(pid)
+        if p is None:
+            return "That piece isn't in your wardrobe any more."
+        if not ready.fits(s.rules, plan, p):
+            return f"{ready.the(p)} {ready.state_words(p)}: {CANT_LOCK}"
+        sid = ready.broken_set(view, pid)
+        if sid is not None:
+            return f"{ready.the(p)} is worn only with its set {sid}, which isn't ready: {CANT_LOCK}"
+    return None
 
 
 async def save(
@@ -117,12 +142,15 @@ def _held(
     if action == "reserve":
         slot, unit = _slot_of(s, view, asked)
         first = (asked, *(i for i in unit if i != asked))
-        words = reserve.conflict(doc, plan, first, here.zone)
+        words = unready(s, view, plan, first) or reserve.conflict(doc, plan, first, here.zone)
         if words is not None:
             raise PlanRefused(words)
         return doc.put(reserve.with_pick(plan, PlanPick(slot=slot, pieces=unit, locked=True)))
-    if action == "transfer":
+    if action == "transfer":  # the moved piece is locked into this plan: D20 holds (review I1 M1)
         source = _plan(doc, a.get("from_plan"))
+        words = unready(s, view, plan, reserve.unit_of(view, asked) if asked in view.pieces else ())
+        if words is not None:
+            raise PlanRefused(words)
         return reserve.transfer(doc, plan, source, asked, view, s.rules)
     if action == "release":
         left, _slot = reserve.without(plan, [asked])
@@ -134,19 +162,40 @@ def _held(
     raise PlanRefused("Say save, lock, change, reserve, transfer, release or share.")
 
 
+def _one(
+    s: Styling, here: Here, doc: StylingDoc, view: WardrobeView, plan: Plan, asked: Any
+) -> PlanPick:
+    """The locked pick for a piece he names: ready by the engine's rule (D20), held by no other
+    plan (as `reserve` does: security review L1, STY-14); else `PlanRefused`, nothing written."""
+    slot, unit = _slot_of(s, view, asked)
+    first = (str(asked), *(i for i in unit if i != asked))
+    words = unready(s, view, plan, first) or reserve.conflict(doc, plan, first, here.zone)
+    if words is not None:
+        raise PlanRefused(words)
+    return PlanPick(slot=slot, pieces=unit, locked=True)
+
+
 def _lock(
     s: Styling, here: Here, doc: StylingDoc, view: WardrobeView, plan: Plan, a: dict[str, Any]
 ) -> Plan:
     if a.get("piece"):
-        slot, unit = _slot_of(s, view, a.get("piece"))
-        asked = str(a["piece"])
-        words = reserve.conflict(doc, plan, (asked, *(i for i in unit if i != asked)), here.zone)
-        if words is not None:  # as `reserve` does (security review L1, STY-14)
-            raise PlanRefused(words)
-        return reserve.with_pick(plan, PlanPick(slot=slot, pieces=unit, locked=True))
+        return reserve.with_pick(plan, _one(s, here, doc, view, plan, a.get("piece")))
+    if a.get("pieces"):  # every slot at once (D20): each checked before any is applied
+        picks = [_one(s, here, doc, view, plan, pid) for pid in a["pieces"]]
+        slots = [p.slot for p in picks]
+        twice = next((x for x in slots if slots.count(x) > 1), None)
+        if twice is not None:
+            raise PlanRefused(f"One piece a slot: {twice} has two.")
+        for pick in picks:
+            plan = reserve.with_pick(plan, pick)
+        return plan
     current = plan.slot(a["slot"]) if isinstance(a.get("slot"), str) else None
     if current is None:
         raise PlanRefused("That slot isn't in this plan.")
+    words = unready(s, view, plan, current.pieces)  # the slot's pick, as by piece (review I1 M1)
+    words = words or reserve.conflict(doc, plan, current.pieces, here.zone)
+    if words is not None:
+        raise PlanRefused(words)
     return reserve.with_pick(plan, current.model_copy(update={"locked": True}))
 
 

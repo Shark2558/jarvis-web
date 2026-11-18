@@ -52,6 +52,7 @@ R11_JOBS = ("helpers_clock", "helpers_daily", "mobile_clock", "mobile_daily")
 R11_JOBS += ("backup_canary", "backup_drill", "selfwatch_daily")
 # R13: B's morning job needs no key (A's wardrobe_sweep needs the keyring, off in these apps)
 R11_JOBS += ("laundry_daily",)
+R11_JOBS += ("seeme_daily",)  # R13.1 C: See it on me's morning job, by path (no key needed)
 
 
 @dataclass

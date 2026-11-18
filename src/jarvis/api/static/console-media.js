@@ -147,6 +147,9 @@
     // R11.1 A: what a calendar batch did ("Undo all", "Retry"): console-r111-plan.js draws its own kind
     const plan = window.JarvisFixes && window.JarvisFixes.parts ? window.JarvisFixes.parts.plan : null;
     if (plan && typeof plan.cards === 'function') plan.cards(row, list);
+    // R13.1 D21 (row 388): "what should I wear?" -> the try-on card opens itself (console-tryon-card.js)
+    const tryon = window.JarvisTryOnCard;
+    if (tryon && typeof tryon.cards === 'function') tryon.cards(row, list);
     const wrap = mk('div', 'mcards');
     // ChatResponse.cards also carries other kinds (a WhatsApp draft: console-whatsapp.js): only
     // this module's kinds count towards its cap

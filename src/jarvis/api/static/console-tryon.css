@@ -1,0 +1,56 @@
+/* src/jarvis/api/static/console-tryon.css -- R13.1 Part D (docs/plans/r13-1-try-on.md D1, D7, D8, D21): where Try it on
+   places things, in Helpers -> Wardrobe (.tr-sec) and in the card under a reply (.tr-card, inside the media cards' own
+   .mcard). It only places: every colour, font, radius or shadow is a var(--...) token (tests/test_r13_seams.py's rule,
+   tests/test_r131_d_static.py). The components are the existing ones (.hp-row, .btn.sact in .sacts, .minput, .snote,
+   .sfine, .bdialog). The section's stage is 480 px tall on a laptop and 56 % of the viewport's height on a phone; the
+   card's is compact (review D-1 H1: 150 to 260 px, beside its few controls, under its one line of pieces) so his reply
+   and the whole figure fit the conversation together. Every target is 44 px. Loaded by console-r7.js. */
+.tr-view{display:block;min-width:0}
+.tr-stage{position:relative;height:480px;min-height:240px;margin:6px 0 0;overflow:hidden;border-radius:var(--r-md)}
+.tr-stage > svg{display:block;width:100%;height:calc(100% - 24px)}
+.tr-stage:fullscreen{height:100vh}
+.tr-status:empty{display:none}
+.tr-tools,.tr-style,.tr-acts{margin-top:8px}
+.tr-sec .sacts .btn.sact,.tr-card .sacts .btn.sact{height:auto;min-height:44px;max-width:100%;flex-shrink:1;padding:8px 12px;line-height:1.25;white-space:normal;overflow-wrap:anywhere}
+.tr-sec .btn.sact,.tr-card .btn.sact{height:auto;min-height:44px;min-width:44px}
+.tr-sec .bsw,.tr-card .bsw{min-height:44px;min-width:44px}
+.tr-list{margin-top:8px}
+.tr-col{min-width:0}
+.tr-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.tr-item{flex-wrap:wrap}
+.tr-item .hp-acts .btn.sact{min-height:44px}
+.tr-refs{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:0 0 8px}
+.tr-refs .snote{flex:1 1 100%;margin:2px 0 0}
+.tr-ref{display:flex;flex-direction:column;align-items:center;gap:2px;margin:0}
+.tr-ref .sfine{margin:0}
+.tr-thumb{display:block;width:56px;height:56px;object-fit:cover;border-radius:var(--r-md);border:1px solid var(--line-2)}
+.tr-thumb:not([src]){visibility:hidden}
+.tr-opts{margin:0 0 10px}
+.tr-shot{display:block;max-width:100%;height:auto;margin:8px 0 0;border-radius:var(--r-md)}
+.tr-extra:empty{display:none}
+.tr-form{margin-top:6px}
+.tr-form .minput{height:44px;width:100%;box-sizing:border-box}
+.tr-sec label.wd-tick,.tr-me label.wd-tick{display:flex;align-items:center;gap:8px;min-height:44px}
+.tr-sec input[type="checkbox"]{width:20px;height:20px;margin:0}
+.tr-card{width:340px;max-width:100%;box-sizing:border-box;padding:8px 10px 10px}
+.tr-card .tr-view[data-mode="3d"]{display:grid;grid-template-columns:minmax(0,1fr) minmax(104px,128px);column-gap:10px;align-items:start}
+.tr-card .tr-view[data-mode="3d"] > .tr-head,.tr-card .tr-view[data-mode="3d"] > .tr-status,.tr-card .tr-view[data-mode="3d"] > .tr-list{grid-column:1 / -1}
+.tr-card .tr-view[data-mode="3d"] > .tr-list{grid-row:2;margin:0 0 6px}
+.tr-card .tr-view[data-mode="3d"] > .tr-stage{grid-column:1;grid-row:4;height:clamp(150px,30vh,260px);margin:0}
+.tr-card .tr-view[data-mode="3d"] > .tr-acts{grid-column:2;grid-row:4;flex-direction:column;align-items:stretch;margin:0}
+.tr-card .tr-sum{margin:0}
+.tr-card .hp-row{min-height:0;padding:6px 0}
+.tr-me .tr-pic{display:block;max-width:100%;height:auto;margin:8px 0 0;border-radius:var(--r-md)}
+.tr-me .tr-garment{display:block;max-width:160px;max-height:160px;height:auto;margin:6px 0 0;border-radius:var(--r-md)}
+.tr-me .minput{height:44px;width:100%;box-sizing:border-box}
+.tr-me .hp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tr-me .hp-row > .tr-ref,.bdialog.tr-dlg .tr-ref{flex:none;align-items:flex-start}
+.bdialog.tr-dlg .minput{height:44px;width:100%;box-sizing:border-box;margin-top:10px}
+.bdialog.tr-dlg .sacts .btn{min-height:44px}
+.bdialog.tr-dlg ul{margin:8px 0 0;padding-left:18px}
+@media (max-width:899px){
+  .tr-stage{height:56vh}
+  .tr-pair{grid-template-columns:minmax(0,1fr)}
+  .tr-sec .hp-row,.tr-card .hp-row{flex-wrap:wrap}
+  .tr-sec .hp-row .hp-acts,.tr-card .hp-row .hp-acts{flex:1 1 100%;justify-content:flex-start}
+}

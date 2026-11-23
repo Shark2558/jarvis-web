@@ -26,6 +26,7 @@ from jarvis.buildbook.writer.model import (
     JOB_BUDGET_S,
     JOB_NAME,
     Draft,
+    DraftState,
     Page,
     PageMeta,
     PagesFile,
@@ -197,7 +198,7 @@ class Steps:
         else:
             if not blob:
                 fid, blob = self.store.seal(uid, run.release, b"{}")
-            state = "failed" if codes else "ok"
+            state: DraftState = "failed" if codes else "ok"
             draft = Draft(
                 owner=uid, page=item.page.id, attempt=out.attempt, state=state,
                 checks=codes or out.first, meta=meta, blob=blob, fid=fid,

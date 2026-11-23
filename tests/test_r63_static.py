@@ -3,7 +3,8 @@
 #
 # - D4: the writer imports nothing that reaches the owner's data or the brain's core (memory, vault,
 #   mail, contacts, documents, tools, core, integrations, the app) and no vendor SDK; from
-#   `jarvis.llm` only `write`, `brains` and `router` (its `ModelTier`).
+#   `jarvis.llm` only `write`, `brains`, `router` (its `ModelTier`) and `base` (its `ChatMessage`,
+#   I1: INTEGRATION-B, instead of reaching it through `vars(write)`).
 # - D1, L3: no model id, vendor name or price in a string literal of the writer's files (the brain
 #   is asked by tier; who it is comes from the registry and `jarvis.llm.write.maker`).
 # - No real clock in the writer or `llm/write.py` (every test takes a fixed clock).
@@ -43,7 +44,7 @@ FORBIDDEN = (
     "openai",
     "httpx",
 )
-LLM_OK = {"jarvis.llm.write", "jarvis.llm.brains", "jarvis.llm.router"}
+LLM_OK = {"jarvis.llm.write", "jarvis.llm.brains", "jarvis.llm.router", "jarvis.llm.base"}
 MODEL_ID = re.compile(r"\b(?:claude-|gemini-\d|gpt-\d|o\d-|llama|mistral)", re.IGNORECASE)
 VENDOR = re.compile(r"\b(?:Anthropic|Claude|Gemini|Google|OpenAI|Sonnet|Opus|Haiku|Groq|Ollama)\b")
 PRICE = re.compile(r"(?:US)?\$\s?\d|\bper million\b|\bmtok\b|\busd\b", re.IGNORECASE)
@@ -100,6 +101,16 @@ def test_from_the_router_only_the_tier() -> None:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ImportFrom) and node.module == "jarvis.llm.router":
                 assert [a.name for a in node.names] == ["ModelTier"], path.name
+
+
+def test_from_the_base_only_the_message_type_and_no_module_reached_into() -> None:
+    for path in WRITER_FILES:
+        text = path.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.ImportFrom) and node.module == "jarvis.llm.base":
+                assert [a.name for a in node.names] == ["ChatMessage"], path.name
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                assert node.func.id != "vars", path.name  # a module's own imports, reached into
 
 
 @pytest.mark.parametrize("path", WRITER_FILES, ids=lambda p: p.name)

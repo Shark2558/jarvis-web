@@ -19,6 +19,7 @@ import datetime as dt
 from collections.abc import Awaitable, Callable, Collection
 from typing import Literal
 
+from jarvis.alerts import AlertKind
 from jarvis.buildbook.model import MIB
 from jarvis.buildbook.ports import BookError
 from jarvis.buildbook.writer import carry, pages, texts
@@ -71,7 +72,7 @@ async def tell(
         return False
     if ctx.notifier is None:
         return True
-    kind = "book_seal_failed" if what == "failed" else "book_sealed"
+    kind: AlertKind = "book_seal_failed" if what == "failed" else "book_sealed"
     try:
         await ctx.notifier.notify(uid, Signal(source="system", kind=kind), text)
     except Exception as exc:  # noqa: BLE001 - the next run tries again

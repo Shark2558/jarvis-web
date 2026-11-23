@@ -12,10 +12,9 @@ from fastapi import FastAPI
 
 from jarvis.api.book_http import book_now
 from jarvis.api.identity import primary_user_id
-from jarvis.buildbook.ports import BookSource
 from jarvis.buildbook.writer import part as writer_part
 from jarvis.buildbook.writer.model import JOB_NAME
-from jarvis.buildbook.writer.ports import WriterContext
+from jarvis.buildbook.writer.ports import FactSource, WriterContext
 from jarvis.config import Settings
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
@@ -33,7 +32,7 @@ def writer_context(
     audit: AuditTrail,
     *,
     keyring: Keyring,
-    source: BookSource,
+    source: FactSource,
     notifier: Notifier | None,
 ) -> WriterContext:
     st = app.state
@@ -63,7 +62,7 @@ def wire_writer(
     audit: AuditTrail,
     *,
     keyring: Keyring,
-    source: BookSource,
+    source: FactSource,
     notifier: Notifier | None,
 ) -> None:
     st = app.state

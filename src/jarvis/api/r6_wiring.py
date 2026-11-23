@@ -55,7 +55,6 @@ from jarvis.api.identity import primary_user_id
 from jarvis.api.r4_wiring import _notifier
 from jarvis.buildbook.lock import DocShowLock
 from jarvis.buildbook.owner import BookSettingsStore, BookTickets
-from jarvis.buildbook.ports import BookSource
 from jarvis.buildbook.privacy import BookSealedSource, BookSessionsSource, BookSettingsSource
 from jarvis.buildbook.release import default_source
 from jarvis.buildbook.seal import DocsBookVault
@@ -63,6 +62,7 @@ from jarvis.buildbook.sealer import BookSealer, BookSealJob
 from jarvis.buildbook.service import BookService
 from jarvis.buildbook.show_script import Prefs
 from jarvis.buildbook.writer.model import JOB_NAME as WRITER_JOB
+from jarvis.buildbook.writer.ports import FactSource  # R6's BookSource + facts() (R6.3)
 from jarvis.config import AuthMode, Settings
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
@@ -131,7 +131,7 @@ def wire_book(
     docs: Docs,
     audit: AuditTrail,
     *,
-    source: BookSource,
+    source: FactSource,
     keyring: Keyring | None,
     notifier: Notifier | None = None,
     prefs: Prefs | None = None,

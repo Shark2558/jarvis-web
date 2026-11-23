@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from jarvis.buildbook.facts_model import FactPack
 from jarvis.buildbook.ports import BookSource, BookVault
 from jarvis.keyring import Keyring
 from jarvis.llm.brains import BrainRegistry
@@ -40,13 +41,19 @@ class Billing(Protocol):
     async def usage(self, uid: str) -> Any: ...
 
 
+class FactSource(BookSource, Protocol):
+    """R6's `BookSource` plus R6.3's `facts()` (`ReleaseSource`; I1: typed for mypy)."""
+
+    def facts(self) -> FactPack: ...
+
+
 @dataclass(frozen=True)
 class WriterContext:
     docs: Docs
     keyring: Keyring
     brains: BrainRegistry
     billing: Billing
-    source: BookSource  # R6's ReleaseSource: book.json, source.zip and facts() (in the image)
+    source: FactSource  # R6's ReleaseSource: book.json, source.zip and facts() (in the image)
     vault: BookVault  # R6's sealed index: read only (what is sealed, its size), never written
     notifier: Notifier | None
     audit: Any  # the gateway's audit chain (`append(agent=, tool=, risk=, outcome=, args=)`)

@@ -90,7 +90,7 @@ class WriterSource:
         count += await self._store.drop(DRAFTS, uid)
         await self._store.docs.write([Delete(self._store.path(WRITER, uid))])
         log.info("book writer data deleted", extra={"count": count})
-        return count
+        return int(count)
 
 
 __all__ = ["LABEL", "ROW_ID", "WriterSource"]

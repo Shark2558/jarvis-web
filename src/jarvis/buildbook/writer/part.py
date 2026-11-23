@@ -12,7 +12,7 @@ a step of an approved run (job.py, run.py). Rupees only; ids, counts and rupees 
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 import jarvis.llm.write as write
 from jarvis.buildbook.gen.scrub import default_scrubber
@@ -26,6 +26,7 @@ from jarvis.buildbook.writer.model import (
     Confirmed,
     Consent,
     Page,
+    PagesFile,
     Pick,
     Run,
     RunKind,
@@ -39,6 +40,8 @@ from jarvis.buildbook.writer.sweep import WARN_SHARE, FreeWork
 from jarvis.buildbook.writer.vault import PagesVault
 from jarvis.logging import get_logger
 
+Off = Literal["no_key", "no_ai", "no_brain"]  # http.WriterView.why
+Said = Literal["first", "redrafted", "refused"]  # http.TrialRow.state
 log = get_logger(__name__)
 WRITER_BRAINS = ("anthropic", "gemini")  # the registry ids the writer offers (D1, M2)
 NOT_SET_UP, PRICE_UNKNOWN = "not set up on this server", "price unknown: not offered"
@@ -268,7 +271,7 @@ class WriterService:
     async def view(self, uid: str) -> h.WriterView:
         doc = await self.store.doc(uid)
         offers = self._offers()
-        why = None if any(b.offered for b in offers) else "no_key"
+        why: Off | None = None if any(b.offered for b in offers) else "no_key"
         why = "no_ai" if why is None and await self._no_ai() else why
         try:
             m = await money(self.ctx.billing, uid)
@@ -291,7 +294,7 @@ class WriterService:
     async def trial_rows(self, uid: str) -> h.TrialPages:
         rows = []
         for nn, t in sorted((await self.store.trials(uid)).items()):
-            state = "refused" if not t.blob else ("redrafted" if t.attempt == 2 else "first")
+            state: Said = "refused" if not t.blob else ("redrafted" if t.attempt == 2 else "first")
             rows.append(h.TrialRow(nn=nn, page=t.page, brain=t.brain, state=state, checks=t.checks,
                                    inr=t.inr, seconds=t.seconds))  # fmt: skip
         return h.TrialPages(rows=tuple(rows))
@@ -318,7 +321,7 @@ class WriterService:
         return h.Deleted(deleted=await self.store.drop(TRIAL, uid))
 
     # ---- the full book (D14) -----------------------------------------------------------------
-    async def _kept(self, uid: str, rid: str | None) -> tuple[str, pages.PagesFile | None]:
+    async def _kept(self, uid: str, rid: str | None) -> tuple[str, PagesFile | None]:
         rid = rid or self._rid()
         if rid not in {r.id for r in await self.ctx.vault.releases(uid)}:
             raise refuse("no_page")  # a pages file whose release R6 doesn't keep is never served

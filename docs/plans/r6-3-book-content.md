@@ -39,8 +39,9 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
    has two brains write the same **5 sample pages**: Claude on its everyday "balanced" tier (Sonnet 5.5)
    and the free Gemini brain. You first see the estimate (**about ₹40**, ₹25–51 by how long the pages
    come out; Gemini is ₹0), then type **YES**; the trial stops at **₹60** whatever happens. The pages
-   appear side by side, with which checks each passed. Gemini's free tier may let Google learn from what it reads, so it is
-   given only JARVIS's public code and the numbers computed from it, never anything of yours.
+   appear side by side, with which checks each passed. Gemini's free tier may let Google learn from
+   what it reads, so both brains are given only JARVIS's public code and the numbers computed from
+   it, with your name, handle and places removed, and no test or example data at all.
 4. **Then you pick** the writer and the caps in Book settings, and confirm them by typing **YES** on
    the ₹ shown (so does any later raise of a cap, a switch to a paid brain, or "update by itself"
    turned on; lowering is instant). The proposed caps (yours to confirm):
@@ -361,7 +362,7 @@ between scenes. Beat ids are `tNNbMM` (today's are `sNNbMM`).
 | t06b02 | I have {{keys.purposes}} separate keys, all made from one key in Google's Secret Manager, so the key for notes can never open the vault. | `keyring.py:42–84`; C51 |
 | t06b03 | When text from outside, like an email or a web page, reaches me, I treat it as information, never as orders: anything I would do because of it asks first. | `tools/gateway.py:18–24` (a tainted round never relaxes to Allow); `tools/taint.py` |
 | t06b04 | My owner signs in with Google. Anything that can't be undone always asks first, and can be set to need a passkey on my owner's own device; changing the passkeys always needs one. | C02 (`api/auth.py`); C52 (`permissions/`) |
-| t06b05 | The privacy panel lists everything I keep and for how long, and lets my owner export or delete each kind. I work with {{services.count}} outside services; the full book names every one and what it sees. | C53 (`privacy/`); the guide §5.2, checked by `scripts/arch_coverage.py` |
+| t06b05 | The privacy panel lists everything I keep and for how long, and lets my owner export or delete each kind. I work with {{services.count}} outside services; the full book names every one and what it sees. | C53 (`privacy/`); the coverage checker's services inventory (`gen/services.py`, `scripts/arch_coverage.py`; M7) |
 
 ### T07 · Highlight 1 of 7: Voice — picture 6 · ≈ 40 s · everyone
 
@@ -461,12 +462,12 @@ that is not in this table fails the build, D9):
 | `release.new` | this release's own plan title, after its em dash, without the version in brackets | "The Build Book: written by AI, short tour and full book" |
 | `tour.minutes` | the timer over the filled script (`gen/tour.py`), whole minutes | 14 (owner), 13 (guest) |
 | `cards.count`, `modules.count`, `modules.else_count` | the guide's cards; the module map (`gen/modules.py`); modules minus the seven | 73, 18, 11 |
-| `loc.python_code` | the counter (`gen/loc.py`), Python code lines in `src/` | 124,475 (rounded in words: "about 124 thousand") |
+| `loc.python_code` | the counter (`gen/loc.py`), Python code lines in `src/` | 124,475, written in words as "124 thousand" (the line says "about"; L1: never "about about") |
 | `layers.count` | `buildbook/sections.py:31` `LAYERS` without the band | 8 |
 | `brain.balanced_model` | `config.py:134` `model_balanced` default, named by `gen/costs.model_label` | Claude Sonnet 5.5 |
 | `undo.keep_days` | `undo/models.py:23` `RETENTION_DAYS` | 30 |
 | `keys.purposes` | `len(keyring.PURPOSES)` (AST of `keyring.py:42–84`) | 26 |
-| `services.count` | rows of the guide's §5.2 (`arch_coverage.py` keeps it equal to the code) | 31 |
+| `services.count` | the coverage checker's services inventory (`gen/services.py`, shared with `scripts/arch_coverage.py`, seam 17; the guide's §5.2 has 24 rows, M7) | 31 |
 | `approvals.max_new_cards` | `tools/budget.py:33` `MAX_NEW_CARDS` | 5 |
 | `memory.facts_per_turn` | `recall/models.py:28` `MAX_FACTS_PER_TURN` | 12 |
 | `memory.learn_a_day` | `config.py:341` `memory_learn_daily_cap` default | 20 |
@@ -476,8 +477,8 @@ that is not in this table fails the build, D9):
 | `sos.hold_s`, `sos.countdown_s` | `sos/service.py:68` `HOLD_S, WEB_COUNTDOWN_S` | 2, 5 |
 | `sos.max_contacts` | `config.py:537` `sos_max_contacts` default | 5 |
 | `sos.emergency` | `sos/message.py:19` `EMERGENCY` | 112 |
-| `tryon.measures` | `len(wardrobe/tryon/model.py:32 MEASURES)` | 6 |
-| `seeme.inr_a_picture` | `llm/tryon.py:75` `TRYON_PRICES` typical × `FALLBACK_RATE` × (1 + `tryon_tax_pct` 18 %), "about ₹N" | about ₹9 |
+| `tryon.measures` | the members of the `Measure` Literal (`wardrobe/tryon/model.py:30`; `MEASURES` at `:31` is `get_args(Measure)`, not a literal, L2) | 6 |
+| `seeme.inr_a_picture` | `llm/tryon.py:75–80` `TRYON_PRICES` at the configured model and location (`config.py:643–644` defaults `gemini-3.1-flash-image`, `us`; L2: the table has three entries) × `FALLBACK_RATE` × (1 + `tryon_tax_pct` 18 %), as "₹N" (the line says "about", L1) | ₹9 (₹8.83) |
 | `seeme.month_cap_inr` | `config.py:641` `tryon_month_cap_inr` default | ₹300 |
 | `libs.python_pins` | pins in `requirements.lock` | 67 |
 | `costs.rate` | `gen/costs.py:62` `rate` (`billing/fx.py:33` `DEFAULT_RATE`) | 95.24 |
@@ -539,16 +540,33 @@ so no estimate, cap or 80 % gate can read ₹0 while a vendor bills him.
 
 **D2 · The fact pack: computed at CI, quoted by the AI, never typed.** A builds `gen/facts.py` (stdlib,
 deterministic) and the generator writes `_book/facts.json` beside `book.json` (its SHA-256 in
-`release.json` as `facts_sha256`; `--check` builds it twice; cap 1 MiB; ≈ 0.45 MB on `47ee8fc`, 383
-KB of it the index). It holds: versions and dates; routes (an AST scan of `@router.<verb>` and
-`add_api_route` in `src/jarvis/api/*.py`, method and path); Firestore collections and the 18 modules
-and 73 cards (read from the guide, which `arch_coverage.py` keeps equal to the code); the 22 console
-panels (`id="p-*"` in `console.html`), `/book/show` and the Android activities; the 31 outside
-services (the guide §5.2); lines of code (D2a); limits (every `Settings` field's default and bounds,
-179); costs (`gen/costs.py`); the tour's named constants (the table under the script); the **index**
-(every tracked path, every top-level function and class of `src/` as `path:symbol`, every setting,
-every collection, every route); and a `verified` flag on every hosting and security fact (false until
-a live check sets it; C6's facts all false in R6.3). **D2a · Lines of code:** `gen/loc.py` counts
+`release.json` as `facts_sha256`; `--check` builds it twice; cap 1 MiB; ≈ 0.6 MB on `47ee8fc`: the
+index ≈ 383 KB, the constants ≈ 60 KB, every limitation ≈ 100 KB at most). It holds: versions and
+dates; **routes** (plan review M9: every module-level `APIRouter(...)` and `FastAPI(...)` anywhere
+under `src/jarvis/**`, by AST, with every route decorator on it whatever its name, `router`,
+`session_router`, `public`, `console`, `auth_router`, `internal_router`, `internal`, `hook_router`,
+`challenge_router` or `app`, every `add_api_route`, and the router's `prefix=` joined to the path:
+46 routers carry one; a test, not the generator, compares the list with the routes of the app built
+with mock settings, with a control); Firestore collections and the 18 modules and 73 cards (read
+from the guide, which `arch_coverage.py` keeps equal to the code); the 22 console panels (`id="p-*"`
+in `console.html`), `/book/show` and the Android activities; the **31 outside services** (M7: the
+coverage checker's own inventory, the services the settings and the code's API hosts name, with the
+names the cards spell; not the guide's §5.2, which has 24 rows; I0 moves that part of
+`scripts/arch_inventory.py` into `gen/services.py` so the checker and `facts.py` call one function,
+seam 17; a test pins `facts.json`'s count to the checker's); lines of code (D2a); limits (every
+`Settings` field's default and bounds, 179); costs (`gen/costs.py`); the tour's named constants (the
+table under the script); **every module constant** (H5: each top-level UPPER_CASE name in `src/`
+bound to a literal number, or to arithmetic or a unary minus on literals, as `path:NAME` = its value,
+by AST: 1,461 in 506 files on this branch, so a page can say `llm/fallback.py:BREAKER_S` = 120 or
+`llm/router.py:GUARD_REFRESH_S` = 5 as a fact); **every limitation** (G4); the **index** (every
+tracked path, every top-level function and class of `src/` as `path:symbol`, every constant, every
+setting, every collection, every route); and a `verified` flag on every hosting and security fact
+(false until a live check sets it; C6's facts all false in R6.3). **Paths are stored in their
+scrubbed form** (plan review H6): 46 tracked paths, all under `android/`, carry the owner's GitHub
+handle, which `gen/redact.json` holds as a hash, so the index stores `Scrubber.clean(path)` (a
+stable `[removed]` in place of the handle), `facts.json` passes `Scrubber.verify` like `book.json`
+(else `ScrubLeak` would leave the release with no book), and packs, check (1) and the reader's code
+chips all use that same form. **D2a · Lines of code:** `gen/loc.py` counts
 Python with `tokenize` (code, docstring, comment-only, blank) and JS, CSS, HTML and Kotlin with a
 comment-aware scanner, split into source / tests / config / generated / vendored (left out), each
 file under the one module that owns it; a test pins the counter on a fixture against a hand count.
@@ -571,7 +589,16 @@ map** is `gen/modules.py` (I0; Phase A §9.4's 17 plus **Wardrobe & Try-on: C69�
 module or in two fails the generator (`GenError`), so a new card must be placed before its release
 builds. Each page cites its sources: a card its "Where in the code" paths; a module its cards'; a
 screen its console modules (`console-<panel>*.js`) and routes; a service the cards naming it; a
-chapter a fixed list in `pages_index.py`. **Every page has the same sections (row 379):** `plain`
+chapter a fixed list in `pages_index.py`. **Every reference is resolved to a full path** (plan review
+H5: the cells hold 201 full paths, ≈ 383 short names, ≈ 108 of them file names found in more than
+one package, and 88 directories) **by the rule the guide's own check already uses**:
+`scripts/arch_files.py` `cited` tries the folder of the previous hit in the same cell, then
+`src/jarvis/api/static`, `src/jarvis/api`, `src/jarvis` and the repository, first hit wins
+(`arch_files.py:45–62`); I0 moves that resolver into `gen/refs.py` and `cited` calls it, unchanged
+in behaviour (seam 17). Today every reference resolves under it (`arch_coverage.py` is OK), so
+nothing in the guide needs editing; a reference that stops resolving already fails CI's
+`arch_coverage.py`, and `pages_index` refuses it too (`GenError`). Each page stores its `refs` as
+full, scrubbed paths; a directory reference expands to its files for D12's change test. **Every page has the same sections (row 379):** `plain`
 ("In plain words", ≤ 900 characters), `example` (a worked example, made up, in a block marked
 "Example (made up)", ≤ 900), `how` ("How it works", with source references, ≤ 2,400), `costs` (from
 facts), `fails` ("When it fails"), `code` ("Where in the code": the references, generated, not
@@ -582,13 +609,20 @@ the section's rows) labelled "Not written by AI yet".
 `writer/packs.py`), built from the release's `source.zip` and `facts.json` only (both in the image,
 both public): the page's catalogue card, the docstrings, signatures and route tables of the files it
 cites (never a whole file), the matching plan sections (by C-id or path, newest first), and its slice
-of the fact pack, capped at **24,000 tokens** (characters ÷ 4; a pack over the cap drops plan text
-first, then signatures, never the card). **Never in a pack:** `.claude/**` (46 files, fact 17),
-`tests/fixtures/**`, every `evals/**` fixture, `.env*` (names only, from `.env.example`), key-shaped
-files, `gen/fake_secrets.txt`, `gen/redact.json`, `*.lock`, binaries, the 97 files the snapshot leaves
-out; and nothing from Firestore, the vault, memory, mail, contacts, photos, cameras, Book settings
+of the fact pack with the list of references the page may cite (its own `refs` and the index entries
+of the files it cites; the prompt asks for references from that list only, H5), capped at **96,000
+UTF-8 bytes** (≈ 24,000 tokens at 4 bytes a token, at most 38,400 at 2.5; a pack over the cap drops
+plan text first, then signatures, never the card). **Never in a pack:** `.claude/**` (46 files,
+fact 17), **any file under `tests/**` or `evals/**`** (plan review M8: test data there holds a city
+and an employer-like name; a page may cite a test by its path, from the index, never its text), any
+file named `.env*`, `*.env` or `*.env.*` (L7: `deploy/home/bridge.env.example` is in the zip; names
+only, from `.env.example`), key-shaped files, `gen/fake_secrets.txt`, `gen/redact.json`, `*.lock`,
+binaries, the 97 files the snapshot leaves out; and nothing from Firestore, the vault, memory, mail, contacts, photos, cameras, Book settings
 (not even the creator's name), logs or sealed bundles. Every pack goes through `gen/scrub.Scrubber.clean`
-(with the new kinds of D10) before any brain sees it, and the **same pack goes to Claude and to Gemini**:
+(with the new kinds of D10, and the owner's locality, workplace and employer added to
+`gen/redact.json` as hashes only at I0, M8: two place examples used as his home and work sit in
+`src/jarvis/api/static/console-media.js:297` and `evals/maps/cases.jsonl:7` and pass `clean`
+unchanged today) before any brain sees it, and the **same pack goes to Claude and to Gemini**:
 the free brain's rule ("only the release's public code and the fact pack, after the scrub") is the
 writer's rule for every brain. The pack is data, not instructions: it is fenced with a canary as the
 talk lane's `prompt.reference` does, and the system prompt (`writer/prompts.py`, fixed words) says to
@@ -708,11 +742,20 @@ of an owner-only id is 404 `unknown_line`, seam 10). **Changing the script later
 
 **D10 · The checks before anything is kept (Phase A §7.5), and the content gaps they close.**
 `writer/checks.py` (B) runs on every draft; a page that fails is redrafted once with the failures
-listed, then kept out (its previous text stays). (1) **Every reference exists**: each backticked
-path, `path:symbol`, setting name, collection and route in the page is in the fact index. (2)
-**Numbers come from facts**: outside an "Example (made up)" block every number is a `{{fact:…}}`
-placeholder the filler knows (years in dates and version strings of the fact pack excepted); the
-filler then writes the value. (3) **Personal data and secrets**: `Scrubber.verify` (URLs off the
+listed, then kept out (its previous text stays). Before the checks, a page whose call did not end
+complete (`Written.complete` false: cut, or stopped at `max_tokens`, L10) is refused as it is.
+(1) **Every reference exists**: each backticked path (full and scrubbed, as D2 stores them),
+`path:symbol`, `path:CONSTANT`, setting name, collection and route in the page is in the fact index;
+a short name is resolved by D3's rule against the page's own `refs` first. (2) **Numbers come from
+facts**: outside an "Example (made up)" block every number is a `{{fact:…}}` placeholder the filler
+knows (module constants included, D2); the filler then writes the value. **Not numbers to it** (plan
+review H5): digits inside a backticked reference (`r6_wiring.py`, `/v1/…`), C-ids (`C\d{2}`),
+release labels (`R\d+(\.\d+)*`), versions and dates of the fact pack, HTTP statuses (`[1-5]\d\d`
+next to a route or the word "status") and a fixed list of standard names in `writer/checks.py`
+(SHA-256, AES-256-GCM, UTF-8, IPv4, IPv6, WebGL2, 3D, 2D, HTTP/2, ES2020, OAuth 2.0, ISO 8601).
+**A precision case** proves the checks pass good pages: one hand-written good page for each trial
+sample, citing short names, constants and HTTP statuses, passes all six (its control: one exemption
+removed, and the case fails). (3) **Personal data and secrets**: `Scrubber.verify` (URLs off the
 allow list, private hosts, e-mails, Indian phone numbers, 10+ digit runs, secret shapes, hashed
 names), `buildbook/owner_id.in_book`, and **new kinds (G8)**: IPv4 and IPv6 addresses (`gen/scrub.py`
 leaves them alone today, `:17`), PAN (`[A-Z]{5}[0-9]{4}[A-Z]`), Aadhaar in groups (`\d{4} \d{4} \d{4}`),
@@ -1000,6 +1043,19 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
 16. `docs/plans/r6-3-integration/BRIEF-COMMON.md` (R13.1's rules plus: ₹ only in owner-facing words;
     no real model call in any test or eval; a fixed clock; part D copies the approved script
     verbatim, every spoken line as approved on 23 Nov) and `I0-NOTES.md`.
+17. **One source for references and services** (plan review H5, M7): the resolver of
+    `scripts/arch_files.py` `cited` (`:45–62`) moves into `buildbook/gen/refs.py` (`resolve(repo,
+    where) -> [(span, path | None)]`), and the services part of `scripts/arch_inventory.py`
+    (`_settings_services`, `_host_services`, the tables of `scripts/arch_coverage.json`) into
+    `buildbook/gen/services.py` (stdlib, taking the repository path); both scripts call them (the
+    scripts already import the package: `arch_files.scan` imports `gen.scrub`). The check that the
+    move changed nothing: `python scripts/arch_coverage.py` prints the same "OK – 66 packages/modules,
+    104 console modules, 2 Scheduler jobs, 31 outside services, 120 Firestore collections" before and
+    after. **The redact list** (M8): the Workshop hands the integrator the owner's locality,
+    workplace and employer outside the repository; only their SHA-256 hashes go into
+    `gen/redact.json` (as the name and handle are today); then `--check` and `arch_coverage.py`'s
+    scan run on the real repository (on this branch those words appear in no tracked path and not
+    in the guide, so neither can start failing).
 
 ## Part split (four builders; worktrees; branches `r6-3-a` … `r6-3-d` from `r6-3-i0`; disjoint files)
 
@@ -1008,7 +1064,8 @@ first; only the planned collections, routes and job; never a wiring or shared fi
 
 - **A · The fact pack and the generator** (CI, stdlib; D2, D2a, D2b, D3, D10's G3–G8): `gen/facts.py`,
   `gen/loc.py`, `gen/inventory.py`, `gen/pages_index.py`, changes to `gen/scrub.py`, `gen/plans.py`
-  (G4), `gen/code.py` and `gen/libs.py` (G3, G5), `gen/costs.py` (G7), `tests/test_r63_a_*.py`,
+  (G4), `gen/code.py` and `gen/libs.py` (G3, G5), `gen/costs.py` (G7), using I0's `gen/refs.py` and
+  `gen/services.py` (seam 17) without editing them, `tests/test_r63_a_*.py`,
   `evals/r6_3/facts.py`, INTEGRATION-A.md. Determinism first: `--check` on the fixture and on the real
   repository after every module.
 - **B · The writer** (D1's use, D4–D8, D10's checks, D11, D12, D13): `buildbook/writer/{packs,
@@ -1088,11 +1145,11 @@ clock.
 | Suite | Cases | Control that must fail it |
 |---|---|---|
 | `contract` (I0, built) | the parts build through the real wiring and own only their routes, collections and job; the stubs answer `not_built_yet`; `book_write` does nothing without a run; `47ee8fc`'s real `book.json` and a two-file index still load; `console.html`'s hash | the job's "no run, no call" guard removed: `test_nothing_spends_by_itself_after_a_deploy` fails |
-| `facts` (A) | `--check` twice identical with `facts.json`; every tour key known; the module map has all 73 cards once; the index has every tracked path and every `src` top-level symbol; the counter on a fixture equals its hand count; the inventory's Android, home-kit, bridge and dev rows with SPDX names; the scrubber's new kinds found (IPv4, IPv6, PAN, Aadhaar groups, hostnames, project ids) and versions, dates and line numbers left alone; G3's 31, G4's "+N more" | a set iterated unsorted in `facts.py`: `--check` fails; the IP pattern removed: its case fails; C69 removed from the map: the generator does not refuse and the case fails |
-| `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the pages file sealed in its own index (attach, then replace with the old chunk set orphaned), carried forward free at each new release, and only changed pages rewritten; three seals without an Update keep every unchanged AI page; a first write stopped at its cap and continued with a new YES replaces its pages file; an update over the release cap or with nothing to carry is 409 `use_first`; a run across a deploy stops, seals its own release's file and its pages join the new estimate, its YES not carried (M5); an attach in flight when Privacy → Delete lands is refused and its chunks go; R6's index after a pages seal still opens with `47ee8fc`'s `BookIndex` (M4); auto-update only within the cap; the first pick, a cap raised, a paid brain, a training brain and auto-update on each 422 `yes_needed` and nothing saved, then saved on the YES with that `terms_id`, 409 on a stale one, lowering instant (H2); a paid-tier Gemini and an unpriced custom brain listed "not offered" (M2); Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; auto-update accepted without its YES: the H2 case fails; a paid-tier Gemini offered at ₹0: the M2 case fails; `write_text` built on `complete()`: the no-laptop case fails; the carry run only on Update: the three-seal case fails; no replace in the pages vault: the continue case fails; the Privacy hold check off in the pages vault: the delete case fails; a pages entry written into R6's index: the rollback-reader case fails; the run's YES carried to a new release: the M5 case fails; the reference check off: the fake path is sealed; `.claude/**` in a pack: the never-reads case fails |
-| `needles` (I1) | planted in the fakes: the creator name, his e-mail, a vault document's text, a memory fact, a mail subject, a fake secret, the pack's canary — never in a pack, a prompt, a page, a draft, a trial page, a log record, the audit, a notice or the Privacy export; a positive control per sink | the pack builder reading Book settings: the creator-name needle is found |
+| `facts` (A) | `--check` twice identical with `facts.json`; every tour key known; the module map has all 73 cards once; the index has every tracked path and every `src` top-level symbol; the counter on a fixture equals its hand count; the inventory's Android, home-kit, bridge and dev rows with SPDX names; the scrubber's new kinds found (IPv4, IPv6, PAN, Aadhaar groups, hostnames, project ids) and versions, dates and line numbers left alone; every module constant with a literal value as `path:NAME` (H5); every guide reference resolved to one full path by D3's rule, and every page's `refs` full and scrubbed; `facts.json` passes `Scrubber.verify` and every Android page's references resolve (H6); the services list equals the coverage checker's inventory, 31 (M7); the route list equals the routes of the app built with mock settings (M9); G3's 31, G4's "+N more" | a set iterated unsorted in `facts.py`: `--check` fails; the IP pattern removed: its case fails; C69 removed from the map: the generator does not refuse and the case fails; the raw path stored instead of the scrubbed one: the H6 case fails; one router name dropped from the scan: the M9 case fails |
+| `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the precision case: a hand-written good page for each trial sample passes all six (H5); a page cut by `max_tokens` or a cut stream refused before the checks (L10); no pack holds a file under `tests/**` or `evals/**`, or a `*.env.*` file (M8, L7); the pages file sealed in its own index (attach, then replace with the old chunk set orphaned), carried forward free at each new release, and only changed pages rewritten; three seals without an Update keep every unchanged AI page; a first write stopped at its cap and continued with a new YES replaces its pages file; an update over the release cap or with nothing to carry is 409 `use_first`; a run across a deploy stops, seals its own release's file and its pages join the new estimate, its YES not carried (M5); an attach in flight when Privacy → Delete lands is refused and its chunks go; R6's index after a pages seal still opens with `47ee8fc`'s `BookIndex` (M4); auto-update only within the cap; the first pick, a cap raised, a paid brain, a training brain and auto-update on each 422 `yes_needed` and nothing saved, then saved on the YES with that `terms_id`, 409 on a stale one, lowering instant (H2); a paid-tier Gemini and an unpriced custom brain listed "not offered" (M2); Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; auto-update accepted without its YES: the H2 case fails; a paid-tier Gemini offered at ₹0: the M2 case fails; `write_text` built on `complete()`: the no-laptop case fails; the carry run only on Update: the three-seal case fails; no replace in the pages vault: the continue case fails; the Privacy hold check off in the pages vault: the delete case fails; a pages entry written into R6's index: the rollback-reader case fails; the run's YES carried to a new release: the M5 case fails; the reference check off: the fake path is sealed; one exemption of check (2) removed: the precision case fails; `.claude/**` or `tests/**` in a pack: the never-reads case fails |
+| `needles` (I1) | planted in the fakes: the creator name, his e-mail, a vault document's text, a memory fact, a mail subject, a fake secret, the pack's canary, the handle inside a tracked path (H6), and a stand-in for each new hashed word (locality, workplace, employer, M8) in a cited file — never in a pack, a prompt, a page, a draft, a trial page, `facts.json`, a log record, the audit, a notice or the Privacy export; a positive control per sink | the pack builder reading Book settings: the creator-name needle is found |
 | `console` (C, browser) | the trial (estimate → what is sent → the YES box refuses "yes" → progress with "Step while I watch" → side by side with checks); the pick (caps filled with the defaults; the first save, a raise, a paid brain and "update by itself" each show the server's ₹ words and the YES box; "Keep" sends nothing; lowering saves at once); the first write's YES; Update's YES and Stop; the Full book (a written page, a "Not written by AI yet" page, references, an older release); continue; 44 px targets; 360 × 800 and 1280 × 800, day and night; the Book panel's screenshots with the writer off unchanged against `47ee8fc` | the YES box sending "yes": its case fails |
-| `tour` (D) | the filled tour inside both bands; the seven highlights in his order; both running-example lines; a guest's tour has no ₹, no T16, no owner-only line; a guest's `POST /v1/book/show/speak` of every owner-only tour id (`t13b03`, `t16b01`) is 404 `unknown_line`, through the real route; every tour id of the session's audience speaks; the player runs all 17 scenes, Questions and Closing in 2D, in 3D (WebGL2) and under Motion Off; an older book plays today's 11 scenes; "What else" lists the 11 other modules from the map | T13's owner line left in the guest's tour: the no-₹ case fails; `tour_line_text` ignoring the audience: the guest-speak case fails; a highlight dropped: the seven case fails; the pace set to 290 words a minute: the band case fails |
+| `tour` (D) | the filled tour inside both bands; the seven highlights in his order; both running-example lines; no filled line has a doubled word ("about about", L1) and every spoken line is byte-identical to the approved script once filled; a guest's tour has no ₹, no T16, no owner-only line; a guest's `POST /v1/book/show/speak` of every owner-only tour id (`t13b03`, `t16b01`) is 404 `unknown_line`, through the real route; every tour id of the session's audience speaks; the player runs all 17 scenes, Questions and Closing in 2D, in 3D (WebGL2) and under Motion Off; an older book plays today's 11 scenes; "What else" lists the 11 other modules from the map | T13's owner line left in the guest's tour: the no-₹ case fails; `tour_line_text` ignoring the audience: the guest-speak case fails; a highlight dropped: the seven case fails; the pace set to 290 words a minute: the band case fails |
 | `e2e` (I1) | the trial with the fake brains (estimate, YES, steps, side by side), the pick, the first write's YES, sealing, a page in the reader; a new release id → `update_ready` → Update → only the changed pages; a guest's tour | the update writing every page: the changed-only case fails |
 
 **A control for every row's own case:** row 379 — the tier check off (a FAST page is sealed); row

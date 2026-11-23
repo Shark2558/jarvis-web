@@ -6,19 +6,22 @@ import re
 import threading
 from typing import Any
 
+import pytest
 from book_app_fakes import OWNER, book, book_app, open_book, owner_uid, register_passkey, sign_in
-from r63_fake_brains import claude_like, gemini_like, registry
+from r63_fake_brains import GOOD_DRAFT, Step, claude_like, gemini_like, registry
 from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES, RELEASE
 from r63_fakes_b import seal_r6, service
 
 from jarvis.buildbook.gen.scrub import default_scrubber
 from jarvis.buildbook.gen.snapshot import _zip
 from jarvis.buildbook.ports import VaultTampered
-from jarvis.buildbook.writer import carry, packs
+from jarvis.buildbook.writer import carry, packs, prompts
 from jarvis.buildbook.writer.caps import CapRefused
 from jarvis.buildbook.writer.model import Run
 from jarvis.buildbook.writer.texts import REFUSED
 from jarvis.config import Settings
+from jarvis.llm.router import ModelTier
+from jarvis.llm.write import WriterUnavailable, write_text
 
 C01 = FIXTURE_FACTS.page("pg_card_c01")
 assert C01 is not None
@@ -141,3 +144,24 @@ async def test_m1_the_routes_answer_unavailable_in_words_when_the_vault_or_ledge
 def _a_run(doc: Any) -> tuple[Any, None]:
     run = Run(kind="trial", release=RELEASE.id, estimate_id="we_" + "0" * 12, total=1)
     return doc.model_copy(update={"run": run}), None
+
+
+# ---- M-2: a stream that breaks with any error after it started is a cut call (billed) ----------
+async def test_m2_a_non_llm_error_mid_stream_is_a_cut_call_and_before_any_text_waits() -> None:
+    odd = ValueError("a chunk the provider could not parse")
+    spec = claude_like(Step(text=GOOD_DRAFT, chunks=6, fail=odd, fail_after=2))  # type: ignore[arg-type]
+    got = await write_text(
+        registry(spec).router_for("anthropic"), tier=ModelTier.BALANCED, system="SYSTEM",
+        system_dynamic=None, messages=[prompts.message("user", "Write it.")], max_tokens=4000,
+        timeout_s=5.0,
+    )  # fmt: skip
+    assert not got.complete and got.text and GOOD_DRAFT.startswith(got.text)
+    assert got.cost_usd > 0  # settled at its usage, never released at Rs 0
+    spec = claude_like(Step(fail=odd))  # type: ignore[arg-type]
+    with pytest.raises(WriterUnavailable) as err:
+        await write_text(
+            registry(spec).router_for("anthropic"), tier=ModelTier.BALANCED, system="SYSTEM",
+            system_dynamic=None, messages=[prompts.message("user", "Write it.")], max_tokens=4000,
+            timeout_s=5.0,
+        )  # fmt: skip
+    assert err.value.why == "no_answer"

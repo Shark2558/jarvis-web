@@ -5,10 +5,11 @@
 the router's `complete`/`stream` it never asks the laptop brain and never changes tier; it refuses
 under No-AI (`BrainOff`) and while the breaker is open (`WriterUnavailable("cloud_down")`); it
 streams through the provider's `no_retry()` view (M1). Nothing received -> `WriterUnavailable`
-(the call never left: release its hold); a stream that broke after it started, or our own
-`timeout_s` -> a `Written` with `complete=False` (settle at its usage, D8); a length stop is not
-complete either (L10). Prices only through `jarvis.llm.pricing`: the Book reads no model id or price
-(`estimate_usd`, `worst_usd`, `offered`, `paid`, `model_of`). No tools are ever sent.
+(the call never left: release its hold); a stream that broke after it started (with ANY error,
+review I1 M-2), or our own `timeout_s` -> a `Written` with `complete=False` (settle at its usage,
+D8); a length stop is not complete either (L10). Prices only through `jarvis.llm.pricing`: the
+Book reads no model id or price (`estimate_usd`, `worst_usd`, `offered`, `paid`, `model_of`). No
+tools are ever sent.
 """
 
 from __future__ import annotations
@@ -98,9 +99,10 @@ async def write_text(
                 parts.append(delta)
     except TimeoutError:
         cut = True  # our own deadline: the call left and may be billed
-    except base.LLMError as exc:
+    except Exception as exc:  # noqa: BLE001 - any break: settled or released, never lost (I1 M-2)
         if not parts and not usage.reported:
-            raise WriterUnavailable(_why(exc)) from None
+            why = _why(exc) if isinstance(exc, base.LLMError) else "no_answer"
+            raise WriterUnavailable(why) from None
         cut = True  # it started, then broke: settle at what it used
     text = "".join(parts)
     sent = len(system) + len(system_dynamic or "") + sum(len(m.text()) for m in messages)

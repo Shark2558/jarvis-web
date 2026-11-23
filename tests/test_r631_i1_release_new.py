@@ -15,7 +15,10 @@ from jarvis.buildbook.gen.scrub import default_scrubber
 
 S = default_scrubber()
 R63 = "Version v6.3.3 · 23 Nov 2026 · Release R6.3\n\n# Release R6.3 — The old title (`v6.3.0`)\n"
-R631 = "Version v6.3.1 · 24 Nov 2026 · Release R6.3.1\n\n# Release R6.3.1 — The new title (`v6.3.2`)\n"
+R631 = (
+    "Version v6.3.1 · 24 Nov 2026 · Release R6.3.1\n\n"
+    "# Release R6.3.1 — The new title (`v6.3.2`)\n"
+)
 
 
 def _repo(tmp: Path, version: str, plans: dict[str, str]) -> Repo:

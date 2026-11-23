@@ -113,7 +113,7 @@ def test_the_guide_names_the_writer_its_data_and_the_roadmap() -> None:
     assert guide.splitlines()[0].startswith("Version v6.3.") and "Release R6.3" in guide[:200]
     c57 = guide[guide.index("#### C57 · Build book") : guide.index("#### C58")]
     for name in COLLECTIONS:
-        assert f"`{name}`" in c57, name
+        assert f"`{name}/" in c57, name  # each with its document id, as the card names R6's
     assert "Gemini (free)" in c57 and "only after the owner's typed YES" in c57
     assert "Outside services | Anthropic (the talk-through only)" not in c57  # G2 closed
     roadmap = guide[guide.index("## 11. Roadmap") : guide.index("## 12. Glossary")]

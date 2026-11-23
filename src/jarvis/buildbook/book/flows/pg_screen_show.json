@@ -1,0 +1,27 @@
+{
+  "title": "A guest's Build Book show",
+  "dir": "down",
+  "nodes": [
+    {"id": "open", "label": "You open it for a guest", "kind": "person", "rank": 0, "col": 0},
+    {"id": "passkey", "label": "Your passkey", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/book_show.py"},
+    {"id": "lock", "label": "Your consoles lock", "kind": "guard", "rank": 2, "col": 1},
+    {"id": "show", "label": "Narrated scenes", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/static/console-book-show.js"},
+    {"id": "ask", "label": "Questions", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/api/static/console-book-talk.js"},
+    {"id": "close", "label": "Closing, session deleted", "kind": "store", "rank": 4, "col": 0},
+    {"id": "resume", "label": "Resume with your passkey", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/book_show.py"},
+    {"id": "back", "label": "Console back", "kind": "person", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "open", "to": "passkey"},
+    {"from": "passkey", "to": "show"},
+    {"from": "passkey", "to": "lock", "style": "side"},
+    {"from": "show", "to": "ask"},
+    {"from": "ask", "to": "close"},
+    {"from": "close", "to": "resume"},
+    {"from": "resume", "to": "back"}
+  ]
+}

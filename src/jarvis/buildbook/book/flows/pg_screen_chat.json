@@ -1,0 +1,25 @@
+{
+  "title": "Pressing Send in Conversation",
+  "dir": "down",
+  "nodes": [
+    {"id": "send", "label": "You press Send", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console.html"},
+    {"id": "route", "label": "Your sign-in sets the user", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/routes.py"},
+    {"id": "limit", "label": "Monthly limit check", "kind": "guard", "rank": 2, "col": 0},
+    {"id": "refused", "label": "Limit note in the thread", "kind": "step", "rank": 2, "col": 1},
+    {"id": "brain", "label": "The brain answers", "kind": "service", "rank": 3, "col": 0},
+    {"id": "card", "label": "Card waits in Approvals", "kind": "step", "rank": 4, "col": 1},
+    {"id": "reply", "label": "Reply and its cost shown", "kind": "step", "rank": 4, "col": 0},
+    {"id": "saved", "label": "Conversation saved", "kind": "store", "rank": 5, "col": 0}
+  ],
+  "edges": [
+    {"from": "send", "to": "route"},
+    {"from": "route", "to": "limit"},
+    {"from": "limit", "to": "brain", "label": "allowed"},
+    {"from": "limit", "to": "refused", "label": "used up", "style": "side"},
+    {"from": "brain", "to": "reply"},
+    {"from": "brain", "to": "card", "label": "needs your yes", "style": "side"},
+    {"from": "reply", "to": "saved"}
+  ]
+}

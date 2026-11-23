@@ -1,0 +1,25 @@
+{
+  "title": "Pressing Approve on a card",
+  "dir": "down",
+  "nodes": [
+    {"id": "press", "label": "You press Approve", "kind": "person", "rank": 0, "col": 0},
+    {"id": "passkey", "label": "Passkey asked for?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/static/console-approvals.js"},
+    {"id": "prompt", "label": "Device passkey prompt", "kind": "step", "rank": 1, "col": 1},
+    {"id": "send", "label": "Send the decision", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/routes.py"},
+    {"id": "gateway", "label": "Tool runs via the gateway", "kind": "service", "rank": 3, "col": 0},
+    {"id": "chat", "label": "Outcome shown in Chat", "kind": "step", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console-approvals.js"},
+    {"id": "list", "label": "Card leaves the list", "kind": "store", "rank": 5, "col": 0}
+  ],
+  "edges": [
+    {"from": "press", "to": "passkey"},
+    {"from": "passkey", "to": "send", "label": "no"},
+    {"from": "passkey", "to": "prompt", "label": "yes", "style": "side"},
+    {"from": "prompt", "to": "send", "style": "side"},
+    {"from": "send", "to": "gateway"},
+    {"from": "gateway", "to": "chat"},
+    {"from": "chat", "to": "list"}
+  ]
+}

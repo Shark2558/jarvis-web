@@ -16,7 +16,7 @@ sources:
 When JARVIS needs your say before acting, it shows an approval card that says exactly what will happen: the real event title and time, who will be told, what changes from what to what. The card's words are written by JARVIS's code from the action itself, never by the AI, so nobody's clever wording slips onto it. You press Approve or Decline in the console, and anything irreversible needs your passkey as well. When several undoable cards are waiting, Approve all clears them with one tap.
 
 ## Example (made up)
-You forward a school circular and say "add these five events". Because the circular is outside content, JARVIS proposes five calendar cards, each with its date, time and title. You check them and press "Approve all (5)". Four are added; one fails because Google is busy. The reply says so plainly, and that card waits with its own Approve for another try.
+You forward a school circular and say "add these three events". Because the circular is outside content, JARVIS proposes three calendar cards, each with its date, time and title. You check them and press "Approve all (3)". Two are added; one fails because Google is busy. The reply says so plainly, and that card waits with its own Approve for another try.
 
 ## How it works
 `one_line` and `quoted` flatten every value on a card to one honest line, removing characters that render as nothing or reorder their neighbours, because a title may come from someone else (`src/jarvis/tools/card.py`).

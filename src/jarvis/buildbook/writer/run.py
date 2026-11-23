@@ -148,6 +148,7 @@ class Runner:
         self._timer = timer
         self._trees: dict[str, dict[str, str]] = {}
         self._packs: dict[tuple[str, str], packs.Pack] = {}  # this release's packs, built once
+        self._clean: dict[str, str] = {}  # this release's scrubbed blocks (review M-4)
 
     def now_s(self) -> float:
         return self._timer() if self._timer is not None else asyncio.get_running_loop().time()
@@ -156,7 +157,7 @@ class Runner:
         """The current release's readable source files (cached by release)."""
         if rid not in self._trees:
             self._trees = {rid: packs.read_source(self.ctx.source.read("source"))}
-            self._packs = {}
+            self._packs, self._clean = {}, {}
         return self._trees[rid]
 
     def left(self, start: float, budget: float, on_clock: bool) -> float:
@@ -185,7 +186,9 @@ class Runner:
         reserve = len(prompts.head(ip, canary).encode("utf-8"))
         tree = self.tree(rid)
         if (rid, ip.id) not in self._packs:
-            self._packs[(rid, ip.id)] = packs.build(ip, facts, tree, self.scrub, reserve=reserve)
+            self._packs[(rid, ip.id)] = packs.build(
+                ip, facts, tree, self.scrub, reserve=reserve, cache=self._clean
+            )
         return prompts.first(ip, self._packs[(rid, ip.id)], canary), canary
 
     async def page(
@@ -197,7 +200,7 @@ class Runner:
         spec, router = self.ctx.brains.get(item.brain), self.ctx.brains.router_for(item.brain)
         if await router.blocked_now():
             return Out(stop="no_ai")
-        msgs, canary = self.first_turn(item.page, facts, run.release)
+        msgs, canary = await asyncio.to_thread(self.first_turn, item.page, facts, run.release)
         out = Out()
         for attempt in (1, 2):
             if attempt == 2 and left() < need:

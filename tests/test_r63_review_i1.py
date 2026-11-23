@@ -2,7 +2,12 @@
 # REVIEW-I1.md): one test (or a few) a finding, each written red before its fix. No model is called.
 from __future__ import annotations
 
+import re
+import threading
+from typing import Any
+
 from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES
+from r63_fakes_b import service
 
 from jarvis.buildbook.gen.scrub import default_scrubber
 from jarvis.buildbook.gen.snapshot import _zip
@@ -45,3 +50,50 @@ def test_h2_the_free_carry_sees_a_changed_file_and_the_cards_across_two_releases
     assert carry.is_changed(C01, old, new)
     same = carry.tree_of(_snapshot("ccccccc", base))
     assert not carry.is_changed(C01, old, same)  # only the root differs: nothing changed
+
+
+# ---- M-4: building the packs never stops the event loop, and is not done twice -----------------
+def _mentioned_by_regex(names: list[str], texts: list[str]) -> list[str]:
+    """The rule as B wrote it: one regex a name (the reference for the faster form)."""
+    joined = "\n".join(texts)
+    return [n for n in names if re.search(rf"(?<![\w]){re.escape(n)}(?![\w])", joined)]
+
+
+def test_m4_mentioned_finds_exactly_what_one_regex_a_name_finds() -> None:
+    texts = ["demo_limit = Field(1)", "x.demo_notes, 1demo_x, café_ok", "book-pages and jarvis.x"]
+    names = ["demo_limit", "demo_notes", "demo_x", "café_ok", "café", "book-pages", "jarvis.x",
+             "missing", "demo", "x"]  # fmt: skip
+    assert packs._mentioned(names, texts) == _mentioned_by_regex(names, texts)
+
+
+async def test_m4_the_estimate_builds_its_packs_off_the_event_loop() -> None:
+    built = service()
+    svc, uid = built.service, built.job._ctx.uid
+    seen: list[str] = []
+    turn = svc.est.first_turn
+
+    def first_turn(*args: Any) -> Any:
+        seen.append(threading.current_thread().name)
+        return turn(*args)
+
+    svc.est.first_turn = first_turn
+    await svc.estimate(uid, "trial")
+    main = threading.main_thread().name
+    assert seen and main not in seen  # every pack was built in a worker thread
+
+
+def test_m4_a_block_is_scrubbed_once_a_release_however_many_pages_quote_it() -> None:
+    calls: list[str] = []
+    scrub = default_scrubber()
+
+    class Counting:
+        def clean(self, text: str) -> str:
+            calls.append(text)
+            return scrub.clean(text)
+
+    cache: dict[str, str] = {}
+    tree = {**FIXTURE_FILES}
+    first = packs.build(C01, FIXTURE_FACTS, tree, Counting(), cache=cache)  # type: ignore[arg-type]
+    n = len(calls)
+    again = packs.build(C01, FIXTURE_FACTS, tree, Counting(), cache=cache)  # type: ignore[arg-type]
+    assert again == first and len(calls) == n  # the second page's blocks came from the cache

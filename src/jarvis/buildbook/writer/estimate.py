@@ -13,6 +13,7 @@ The estimate's id is bound to every input, the release included (M5: a YES never
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -175,6 +176,14 @@ class Estimates:
             self._sizes[(rid, page_id)] = sum(len(m.text().encode("utf-8")) for m in msgs)
         return self._sizes[(rid, page_id)]
 
+    async def sizes(self, rid: str, ids: Sequence[str]) -> list[int]:
+        """The pages' first calls in UTF-8 bytes; the packs not built yet are built in a worker
+        thread, so the event loop never waits on them (review M-4)."""
+        missing = [i for i in ids if (rid, i) not in self._sizes]
+        if missing:
+            await asyncio.to_thread(lambda: [self.size(rid, i) for i in missing])
+        return [self.size(rid, i) for i in ids]
+
     def spec(self, doc: WriterDoc) -> BrainSpec:
         chosen = doc.pick.confirmed.brain
         if chosen is not None:
@@ -198,7 +207,7 @@ class Estimates:
         doc = await self.store.doc(uid)
         spec, rate = self.spec(doc), await self.rate(uid)
         return estimate(
-            run="update", spec=spec, sizes=[self.size(rid, i) for i in ids], rate=rate,
+            run="update", spec=spec, sizes=await self.sizes(rid, ids), rate=rate,
             cap=doc.pick.confirmed.caps.release, release=rid, sent_to=self.sent_to([spec]),
         )  # fmt: skip
 
@@ -216,13 +225,13 @@ class Estimates:
                 raise texts.WriterRefused("no_key")
             ids = [p for p in TRIAL_PAGES if facts.page(p) is not None]
             return estimate(
-                run="trial", spec=specs[0], sizes=[self.size(rid, i) for i in ids], rate=rate,
+                run="trial", spec=specs[0], sizes=await self.sizes(rid, ids), rate=rate,
                 cap=Caps().trial, release=rid, brains=len(specs), sent_to=self.sent_to(specs),
             )  # fmt: skip
         spec = self.spec(doc)
         ids2 = carry.to_write(facts, await self.pages_file(uid, rid))
         cap = doc.pick.confirmed.caps.first if doc.pick.confirmed.brain else Caps().first
         return estimate(
-            run="first", spec=spec, sizes=[self.size(rid, i) for i in ids2], rate=rate, cap=cap,
+            run="first", spec=spec, sizes=await self.sizes(rid, ids2), rate=rate, cap=cap,
             release=rid, sent_to=self.sent_to([spec]),
         )  # fmt: skip

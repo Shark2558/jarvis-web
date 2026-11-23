@@ -49,6 +49,7 @@ _COMMENT = re.compile(r"^\s*(?://|#|/\*|\*|<!--)")
 _FUNC = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+\w+\s*\(|^\s*fun\s+\w+\s*\(")
 _UPPER = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _ROOT = re.compile(r"^JARVIS-source-[^/]+/")  # R6's snapshot root (gen/snapshot.py `_zip`)
+_WORD = re.compile(r"\w+")  # a run of word characters (`_mentioned`)
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,10 @@ def summary(path: str, text: str) -> str:
 def plan_sections(tree: Mapping[str, str], marks: Sequence[str]) -> list[tuple[str, str]]:
     """Plan sections naming a C-id or a path of the page, newest plan first (by path)."""
     found: list[tuple[str, str]] = []
-    words = [re.compile(rf"(?<![\w/.]){re.escape(m)}(?![\w])") for m in marks]
+    if not marks:
+        return found
+    alts = "|".join(re.escape(m) for m in marks)
+    named = re.compile(rf"(?<![\w/.])(?:{alts})(?![\w])")  # one pattern: any mark (review M-4)
     for path in sorted(
         (p for p in tree if p.startswith(PLANS) and p.endswith(".md")), reverse=True
     ):
@@ -156,7 +160,7 @@ def plan_sections(tree: Mapping[str, str], marks: Sequence[str]) -> list[tuple[s
         cuts = [m.start() for m in _PLAN_HEAD.finditer(text)] + [len(text)]
         for n, (a, b) in enumerate(zip(cuts, cuts[1:], strict=False)):
             part = text[a:b]
-            if any(w.search(part) for w in words):
+            if named.search(part):
                 found.append((f"plan:{path}#{n}", part.strip()))
             if len(found) >= PLAN_SECTIONS:
                 return found
@@ -168,8 +172,17 @@ COMMON_KEYS = ("cards.count", "modules.count", "services.count")
 
 
 def _mentioned(names: Sequence[str], texts: Sequence[str]) -> list[str]:
+    """The names standing alone in the texts (no word character either side). The texts' word
+    runs are read once; a name that is one word is looked up there, any other by its regex."""
     joined = "\n".join(texts)
-    return [n for n in names if re.search(rf"(?<![\w]){re.escape(n)}(?![\w])", joined)]
+    words = set(_WORD.findall(joined))
+
+    def alone(n: str) -> bool:
+        if _WORD.fullmatch(n):
+            return n in words
+        return re.search(rf"(?<![\w]){re.escape(n)}(?![\w])", joined) is not None
+
+    return [n for n in names if alone(n)]
 
 
 def fact_lines(page: IndexedPage, facts: FactPack, cited: Sequence[str]) -> list[str]:
@@ -234,6 +247,14 @@ def fit(fixed: list[Block], optional: list[Block], budget: int) -> list[Block]:
     return out
 
 
+def _clean(scrub: Scrubber, text: str, cache: dict[str, str] | None) -> str:
+    if cache is None:
+        return scrub.clean(text)
+    if text not in cache:
+        cache[text] = scrub.clean(text)
+    return cache[text]
+
+
 def build(
     page: IndexedPage,
     facts: FactPack,
@@ -241,9 +262,11 @@ def build(
     scrub: Scrubber,
     *,
     reserve: int = PROMPT_RESERVE,
+    cache: dict[str, str] | None = None,
 ) -> Pack:
     """One page's pack (D4): scrubbed, fenced, at most the cap with the prompt's own words
-    (`reserve` bytes: the marker line and the page's instructions)."""
+    (`reserve` bytes: the marker line and the page's instructions). `cache` (text -> scrubbed
+    text, one release's) scrubs a block that many pages quote once (review M-4)."""
     cited = [summary(ref, tree[ref]) for ref in page.refs if ref in tree]
     sigs = [(f"code:{ref}", summary(ref, tree[ref])) for ref in page.refs if ref in tree]
     cids = [s for s in page.sources if re.fullmatch(r"C\d{2}", s)]
@@ -257,7 +280,7 @@ def build(
         ("may_cite", "\n".join(may)),
     ]
     plans = plan_sections(tree, (*cids, *page.refs))
-    clean = [[(i, scrub.clean(t)) for i, t in group] for group in (fixed, sigs, plans)]
+    clean = [[(i, _clean(scrub, t, cache)) for i, t in group] for group in (fixed, sigs, plans)]
     blocks = fit(clean[0], clean[1] + clean[2], PACK_CAP_BYTES - reserve)
     return Pack(page_id=page.id, body="".join(fence(*b) for b in blocks), allowed=may)
 

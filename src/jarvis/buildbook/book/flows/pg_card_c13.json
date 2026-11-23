@@ -1,0 +1,32 @@
+{
+  "title": "One message through the core loop",
+  "dir": "down",
+  "nodes": [
+    {"id": "msg", "label": "Your message", "kind": "person", "rank": 0, "col": 0},
+    {"id": "guard", "label": "Check words and limit", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/core/guardrails.py"},
+    {"id": "store", "label": "Store your message", "kind": "store", "rank": 2, "col": 0,
+     "ref": "src/jarvis/core/saving.py"},
+    {"id": "context", "label": "Window, notes, persona", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/core/window.py"},
+    {"id": "brain", "label": "Ask the brain", "kind": "service", "rank": 4, "col": 0,
+     "ref": "src/jarvis/core/brain.py"},
+    {"id": "tools", "label": "Tool calls via gateway", "kind": "guard", "rank": 4, "col": 1,
+     "ref": "src/jarvis/core/rounds.py"},
+    {"id": "card", "label": "Approval card waits", "kind": "person", "rank": 5, "col": 1},
+    {"id": "finish", "label": "Words or a fixed line", "kind": "step", "rank": 5, "col": 0,
+     "ref": "src/jarvis/core/finish.py"},
+    {"id": "save", "label": "Save reply and cost", "kind": "store", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "msg", "to": "guard"},
+    {"from": "guard", "to": "store", "label": "allowed"},
+    {"from": "store", "to": "context"},
+    {"from": "context", "to": "brain"},
+    {"from": "brain", "to": "tools", "label": "asks for tools", "style": "side"},
+    {"from": "tools", "to": "brain", "label": "results", "style": "side"},
+    {"from": "tools", "to": "card", "label": "needs your yes", "style": "side"},
+    {"from": "brain", "to": "finish", "label": "answers"},
+    {"from": "finish", "to": "save"}
+  ]
+}

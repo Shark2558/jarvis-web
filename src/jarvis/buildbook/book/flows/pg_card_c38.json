@@ -1,0 +1,26 @@
+{
+  "title": "Linking the home laptop once",
+  "dir": "down",
+  "nodes": [
+    {"id": "press", "label": "You press Link", "kind": "person", "rank": 0, "col": 0},
+    {"id": "code", "label": "One-time code made", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/home/link.py"},
+    {"id": "bridge", "label": "Laptop sends the code", "kind": "service", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/home.py"},
+    {"id": "check", "label": "Address checked", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/home/client.py"},
+    {"id": "test", "label": "Signed test call", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/home/signing.py"},
+    {"id": "save", "label": "Link saved, sealed", "kind": "store", "rank": 5, "col": 0,
+     "ref": "src/jarvis/home/store.py"},
+    {"id": "retry", "label": "Code kept for a retry", "kind": "step", "rank": 5, "col": 1}
+  ],
+  "edges": [
+    {"from": "press", "to": "code"},
+    {"from": "code", "to": "bridge"},
+    {"from": "bridge", "to": "check"},
+    {"from": "check", "to": "test"},
+    {"from": "test", "to": "save", "label": "answer signed"},
+    {"from": "test", "to": "retry", "label": "no answer", "style": "side"}
+  ]
+}

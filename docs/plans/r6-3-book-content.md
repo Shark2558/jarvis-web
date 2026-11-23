@@ -937,19 +937,177 @@ first; only the planned collections, routes and job; never a wiring or shared fi
 
 ## R6.3.1: images, de-duplication, diagrams and the setup guide (planned here, built next)
 
+`v6.3.1`, its own plan file and I0 after R6.3 merges (this section is its binding scope; its seams
+are written against the code R6.3 leaves). Four parts, ≈ 6.5–7 builder-days.
+
+- **E · Pictures (Phase A §9.8).** A **demo household** seed (made-up names from a fixed list, SAMPLE
+  documents, drawn avatars, a camera test pattern, a fixed IST clock; `scripts/ui_snapshots.py`'s
+  fixtures from `tests/browser/ui_checks.py` extended), captured in CI's existing `browser` job
+  (Chromium is already there) as a build artifact the deploy job packs into the image: about **7
+  pictures a module** (overview, 2–6 steps, one error state, a phone view, one schematic SVG) ≈ 126 for
+  18 modules, WebP quality 80 (measured at Phase A: desktop 1x 73 KB, phone 1x 21 KB), each ≤ 250 KB,
+  **8 MB a release** at most (decision 7; expected 2–4.5 MB). A **privacy gate** before any picture is
+  kept: the vendored tesseract.js (`static/vendor/vision/r7-1`, Apache-2.0, no new dependency) reads
+  every picture in the same Chromium, and a picture with any name, e-mail, phone or number shape not
+  on the demo list is refused; a manifest (`id, module, caption, viewport, theme, bytes, sha256, ocr`)
+  is checked by a test. Native Android screens get schematics (an emulator step is later).
+- **Approval stop 3, inside E's build:** once the seed and the capture run work, and **before any
+  picture is packed into an image or sealed**, E produces the **contact sheet** for the Workshop to
+  hand to the owner (not committed; only demo data in it): one page per module with every picture as
+  a thumbnail, its caption, desktop or phone, day or night, its size, the OCR gate's verdict and any
+  masked box drawn on it, the module's total and the release's total against 8 MB. Nothing goes
+  further until his YES; a correction is a seed or caption change and a new sheet.
+- **F · De-duplicated storage (§8.4, decision 7, G9, G14).** Sealing v2: every code file and picture
+  sealed once per owner as a content-addressed blob (`book_blobs/{uid}_{sha16}`, the `BookCrypto`
+  envelope with a blob AAD), a release = `book.json`, its pages file and a manifest of path → blob; the
+  single-use code download rebuilds the deterministic zip from blobs (`ZIP_STAMP`); the 60 MB cap
+  counts unique blobs; two-file releases stay readable; the 15 MiB snapshot cap becomes a cap on a
+  release's new bytes. Measured on `47ee8fc`: three kept releases with pictures and no de-duplication
+  ≈ 59.5 MB (at the cap); with it ≈ 43 MB (72 %), ≈ 34 MB at the expected picture use.
+- **G · Eight diagrams with C-ids (§9.2, G10).** The table of Phase A §9.2 from the 14 Markdy sources
+  plus two new (module dependencies from the cards' "Depends on", backup and restore); a C-id on every
+  node; CI checks (`scripts/markdy_export.py --check`, `scripts/arch_coverage.py`) that every card
+  appears in at least one diagram and ids match across diagrams; the full book's pages show their
+  module's diagram.
+- **H · The local setup guide, run (C8, §9.7).** `jarvis serve` with the mock brain; the Book in
+  Google mode at `localhost` (R6.2 INTEGRATION-A §6's steps) and the Firestore emulator, each step
+  actually run and its output kept as the chapter's evidence; plus the Cloud Run guard's last
+  condition (memory sessions refused when `K_SERVICE` is set, R6.2 §8 item 9). `config.py` has one
+  line left (fact 15): the condition joins the existing guard's set, or the Workshop raises the pin.
+
 ## Tests and evals (mock only; each control must make its suite fail)
+
+**Every acceptance check in the first table is a named test** in its part's files and an eval case
+of the same name. No test or eval calls a real model, Google or Anthropic; every test takes a fixed
+clock.
+
+| Suite | Cases | Control that must fail it |
+|---|---|---|
+| `contract` (I0, built) | the parts build through the real wiring and own only their routes, collections and job; the stubs answer `not_built_yet`; `book_write` does nothing without a run; `47ee8fc`'s real `book.json` and a two-file index still load; `console.html`'s hash | the job's "no run, no call" guard removed: `test_nothing_spends_by_itself_after_a_deploy` fails |
+| `facts` (A) | `--check` twice identical with `facts.json`; every tour key known; the module map has all 73 cards once; the index has every tracked path and every `src` top-level symbol; the counter on a fixture equals its hand count; the inventory's Android, home-kit, bridge and dev rows with SPDX names; the scrubber's new kinds found (IPv4, IPv6, PAN, Aadhaar groups, hostnames, project ids) and versions, dates and line numbers left alone; G3's 31, G4's "+N more" | a set iterated unsorted in `facts.py`: `--check` fails; the IP pattern removed: its case fails; C69 removed from the map: the generator does not refuse and the case fails |
+| `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the pages file attached as the third kind, carried forward, and only changed pages rewritten; auto-update only within the cap; Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; `write_text` built on `complete()`: the no-laptop case fails; the reference check off: the fake path is sealed; `.claude/**` in a pack: the never-reads case fails |
+| `needles` (I1) | planted in the fakes: the creator name, his e-mail, a vault document's text, a memory fact, a mail subject, a fake secret, the pack's canary — never in a pack, a prompt, a page, a draft, a trial page, a log record, the audit, a notice or the Privacy export; a positive control per sink | the pack builder reading Book settings: the creator-name needle is found |
+| `console` (C, browser) | the trial (estimate → what is sent → the YES box refuses "yes" → progress with "Step while I watch" → side by side with checks); the pick (caps filled with the defaults, a raise opens the ₹ dialog, "Keep" sends nothing); the first write's YES; Update and Stop; the Full book (a written page, a "Not written by AI yet" page, references, an older release); continue; 44 px targets; 360 × 800 and 1280 × 800, day and night; the Book panel's screenshots with the writer off unchanged against `47ee8fc` | the YES box sending "yes": its case fails |
+| `tour` (D) | the filled tour inside both bands; the seven highlights in his order; both running-example lines; a guest's tour has no ₹, no T16, no owner-only line; every tour id speaks; the player runs all 17 scenes, Questions and Closing in 2D, in 3D (WebGL2) and under Motion Off; an older book plays today's 11 scenes; "What else" lists the 11 other modules from the map | T13's owner line left in the guest's tour: the no-₹ case fails; a highlight dropped: the seven case fails; the pace set to 290 words a minute: the band case fails |
+| `e2e` (I1) | the trial with the fake brains (estimate, YES, steps, side by side), the pick, the first write's YES, sealing, a page in the reader; a new release id → `update_ready` → Update → only the changed pages; a guest's tour | the update writing every page: the changed-only case fails |
+
+**A control for every row's own case:** row 379 — the tier check off (a FAST page is sealed); row
+380 (tour) — Wardrobe & Try-on dropped; row 380 (grows) — the pages index reading a fixed list
+instead of the guide (C74 gets no page); trial — the cap check off; pick — `first` accepted without
+the second YES; deploy — `book_write` starting an update without his Update.
+
+**Browser (Playwright, `-m browser`).** C against `tests/r63_fake_server.py` while building, the
+wired app at I1; D against the show page with `book_mocks.FakeBook` serving a tour script; 3D cases
+only in a Chromium with WebGL2 (the Book's `_need_3d` rule). **Static tests:** `console.html`'s hash;
+the Book JS and CSS sizes, ASCII and no HTML sink (`test_book_static.py`, extended); no ₹ figure in a
+guest's tour; no `$` in owner-facing writer words; no model id, vendor or price literal under
+`buildbook/`; the writer's import guard; no real clock under `buildbook/writer/` or `llm/write.py`.
 
 ## Size guards
 
+`api/app.py` 732 (no edit, ≤ 735), `tools/gateway.py` 760 (no edit), `core/brain.py` 713 (no edit),
+`config.py` 789 (no edit, ≤ 790), `console.html` 782 (no edit, hash), `console-book.js` ≤ 390,
+`console-book-show.js` ≤ 370 after the move, `console-book-script.js` ≤ 200, every Book JS ≤ 400 and
+CSS ≤ 300, `book.html` ≤ 130, `api/console.py` ≤ 473 (pin ≤ 475), `api/r6_wiring.py` ≤ 300,
+`buildbook/model.py` ≤ 420, `buildbook/service.py` 397 (no edit, ≤ 400), every new Python module ≤ 400
+and function ≤ 50, `llm/write.py` ≤ 160, `facts.json` ≤ 1 MiB, a pages file ≤ 2 MiB gzipped, the
+keyring 26. `tests/test_r63_seams.py` pins each.
+
 ## Risks and known limits
+
+- The AI writer's quality is unproven for this code base; the trial is the test, and the checks only
+  catch what they can see (a reference, a number, a shape), not a subtly wrong explanation: every
+  page names its brain, and "How it works" cites its sources so a reader can check.
+- The free Gemini brain may be slow or refused (no published free quota, `phase2-slice3` plan: expect
+  429s): a first write on it may take days; and Google may learn from what it reads (only public code
+  is sent).
+- Time to write depends on the home watchdog being on; without it the morning clock alone gives
+  about 4 days for a first write, and nothing runs between 11:30 and 04:00 IST unless Book settings is
+  open.
+- The estimates rest on assumed page sizes; each call's hold and every cap are hard, so the risk is a
+  run stopping early, never an overspend.
+- Anthropic's invoice may add 18 % GST that JARVIS's ₹ does not count (as Vitals today).
+- Code and plans are untrusted text for the writer (the owner's plans quote him): fenced, no tools,
+  checked; the worst case is an odd page that the checks or the owner catch.
+- The checks can refuse a good page (for example a number inside prose that is really a name); the
+  page then keeps the generator's text, and the refusal is listed by page and check.
+- The tour borrows today's pictures; a picture that misleads is swapped for its 2D card by D, and R6.4
+  draws each scene its own.
+- The timer's pace is an estimate: the browser's British voice may read faster (about 170 words a
+  minute would make the owner's tour ≈ 11.6 minutes, still inside 10–15); one stopwatch run sets it.
+- The 15 MiB code-zip cap is about 6 feature releases away (fact 2): R6.3.1's de-duplication must land
+  before it, or a book stops being written (the deploy itself is never blocked).
+- Hotfixes count as kept releases; each adds a pages file (≈ 0.5 MB) until R6.3.1's blobs.
+- Pins churn at I0: 10 version, 5 label, 3 tick-list, the static lists.
+- Cloud Run gives CPU only during a request: a step must finish inside its tick's or its own request.
+- The owner's original 557-line prompt is lost; this plan covers what Phase A summarised of it, no
+  more.
 
 ## Needs the owner (safe defaults; none blocks the build)
 
+1. **Approval stop 2:** the tour's script above, as written (default: D waits for your YES; any
+   change is a Workshop edit, ₹0, shown to you again).
+2. **The tour's length:** about 13–14 minutes at the timer's pace (default); or a shorter 10–11
+   minutes (each highlight cut to its first line).
+3. **The trial's five pages:** the running example, the brain router, Wardrobe & Try-on, the Vitals
+   screen and Telegram (default); or five you name.
+4. **The trial's cap:** ₹60 (default; the estimate is about ₹40); or ₹50 or ₹100.
+5. **Where the writer runs:** on JARVIS's existing clocks, with "Step while I watch" (default,
+   decision 3); a Cloud Run Job only if the trial shows the clocks are crowded, as its own small
+   release with your YES.
+6. **GST:** the caps count JARVIS's metered price, as Vitals does, and each estimate says "your
+   Anthropic bill may add 18 % GST" (default); or the caps count 18 % on top.
+7. **Release updates:** ask you each release with its ₹ (default); or update by itself within the
+   ₹500 release cap.
+8. **A guest's tour:** no costs scene and no ₹ anywhere (default).
+9. **If Gemini isn't set up on the server:** a one-brain trial, said so (default); or wait until it
+   is.
+10. **The caps at the pick:** ₹1,500 first write, ₹500 a release, ₹1,000 a month, stop at 80 % of your
+    monthly limit (default, Phase A's); yours to change there.
+11. **Trial pages and drafts:** kept 30 days (default).
+12. **The split:** pictures, de-duplication, diagrams and the setup guide as R6.3.1 (default).
+
 ## Exit check (before the PR)
+
+1. The row tests and the 23 Nov cases pass; every suite's control and every row's own control fails
+   its suite; `STUBS_PASS` flipped; results in `docs/plans/r6-3-integration/I1-NOTES.md`.
+2. The full browser suite once on the joined branch (queued, never beside another whole suite).
+3. **Screenshots** to the orchestrator: the Writer trial (estimate, YES box, progress, side by
+   side), the pick, the first write's YES, Update, a Full book page and a "Not written by AI yet"
+   page, the tour's 17 scenes for the owner and a guest's T13, at 360 × 800 and 1280 × 800, day and
+   night; the Book panel and show with the writer off, unchanged.
+4. `python -m jarvis.buildbook.gen --check` (two identical builds with `facts.json`); `facts.json` ≤
+   1 MiB; the tour's seconds in both bands.
+5. `ruff check`, `ruff format --check`, `mypy src` (the baseline), `evals/run_all_mock.py` ALL PASS,
+   `scripts/check_doc_versions.py`, `scripts/arch_coverage.py`, the coverage floor, the PR title.
+6. After the deploy, one stopwatch run of the tour (owner or Workshop) to set the timer's pace.
+7. **No live writer call in the PR** ("not called" in I1-NOTES): the trial is the owner's, after
+   go-live, with his YES.
+8. The clock sweep: his IST month's end (23:30 and 00:30 IST) for the ledger, 1 Jan 2027, 29 Feb 2028.
 
 ## What can't be verified from this workspace
 
+A real writer call (no key here and no YES): Sonnet 5.5's and Gemini's speed and page quality in
+this project, Gemini's free quota, the tokens a real page bills; whether Anthropic's invoice to this
+account adds GST; whether the home watchdog is on in his deployment and how much of its 50 s the
+other jobs leave; Cloud Run's free CPU left in a month; the browser voice's real pace; whether R7,
+R13 and R13.1 are live (the guide says "joined, not yet deployed" for R7, R13 and R13.1; the brief
+says R13.1 is live); the workbook's own acceptance checks for rows 379 and 380 and the owner's lost
+prompt; the project's current release plan (for §11); whether GitHub's standard runners are free for
+this public repository.
+
 ## Sources (read 23 Nov 2026)
+
+| # | Source |
+|---|---|
+| S1 | Phase A findings, `docs/plans/r6-2-book-rebuild/PHASE-A-FINDINGS.md` v6.2.1 (15 Nov 2026), copied unchanged into this branch from `r6-2-plan` |
+| S2 | R6.2's integration notes `docs/plans/r6-2-integration/INTEGRATION-A.md` v6.2.2 (decision 4, G11, the guest free-only rule) and its reviews |
+| S3 | R13.1's plan `docs/plans/r13-1-try-on.md` v13.1.3 (the plan format; the consent, cap and hold patterns) and `docs/plans/r13-wardrobe.md`; R14's `docs/plans/r14-hardening.md` |
+| S4 | The architecture guide `docs/architecture/JARVIS-Architecture.md` v13.1.5 (cards C01–C73, §5.2, §6.2, §6.5, §11) |
+| S5 | The code at `main` @ `47ee8fc`, every file:line cited above; the generator run and the scratch counts described in "What the code says today" |
+| S6 | The owner's decisions of 15 Nov 2026 (approval stop 1) and 23 Nov 2026 (the writer trial inside JARVIS, the seven highlights, plan from Phase A's summary), relayed by the Workshop — not in the repository |
+| S7 | His requirements workbook, rows 379 and 380 (titles as relayed) — not in the repository |
+| A1 | Anthropic pricing (Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20, Haiku 5.5 $0.10 / $0.50 per million tokens up to 100k-token prompts; cache reads $0.10 / $0.20 / $0.01; no India tax note) — https://platform.claude.com/docs/en/about-claude/pricing (read 23 Nov 2026; matches `llm/pricing.py`) |
 
 ## Change log
 

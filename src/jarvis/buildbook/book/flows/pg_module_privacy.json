@@ -1,0 +1,30 @@
+{
+  "title": "Export or delete from the privacy panel",
+  "dir": "down",
+  "nodes": [
+    {"id": "open", "label": "You open Privacy", "kind": "person", "rank": 0, "col": 0},
+    {"id": "list", "label": "List each kind of data", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/privacy.py"},
+    {"id": "choose", "label": "You pick Export or Delete", "kind": "person", "rank": 2, "col": 0},
+    {"id": "console", "label": "Console in your browser?", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/api/privacy.py"},
+    {"id": "refused", "label": "Refused: console only", "kind": "step", "rank": 3, "col": 1},
+    {"id": "proof", "label": "Passkey if gone for good", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console-privacy.js"},
+    {"id": "file", "label": "Download a JSON file", "kind": "step", "rank": 5, "col": 1},
+    {"id": "same", "label": "Unchanged since you looked?", "kind": "guard", "rank": 5, "col": 0},
+    {"id": "changed", "label": "This changed: list reloads", "kind": "step", "rank": 6, "col": 1},
+    {"id": "gone", "label": "Removed from its store", "kind": "store", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "open", "to": "list"},
+    {"from": "list", "to": "choose"},
+    {"from": "choose", "to": "console"},
+    {"from": "console", "to": "refused", "label": "bearer token", "style": "side"},
+    {"from": "console", "to": "proof"},
+    {"from": "proof", "to": "file", "label": "export"},
+    {"from": "proof", "to": "same", "label": "delete"},
+    {"from": "same", "to": "changed", "label": "changed", "style": "side"},
+    {"from": "same", "to": "gone"}
+  ]
+}

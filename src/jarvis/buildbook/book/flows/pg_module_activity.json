@@ -1,0 +1,35 @@
+{
+  "title": "A delete you can undo",
+  "dir": "down",
+  "nodes": [
+    {"id": "ask", "label": "You ask for a delete", "kind": "person", "rank": 0, "col": 0},
+    {"id": "risk", "label": "Undoable? Only yours", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/tools/calendar_undo.py"},
+    {"id": "card", "label": "Approval card first", "kind": "guard", "rank": 1, "col": 1},
+    {"id": "copy", "label": "Keep a copy first", "kind": "store", "rank": 2, "col": 0,
+     "ref": "src/jarvis/tools/undo_delete.py"},
+    {"id": "nocopy", "label": "No copy: nothing deleted", "kind": "step", "rank": 2, "col": 1},
+    {"id": "delete", "label": "Delete in Google", "kind": "service", "rank": 3, "col": 0},
+    {"id": "row", "label": "A row in Activity", "kind": "store", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/activity.py"},
+    {"id": "undo", "label": "You press Undo", "kind": "person", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/static/console-activity.js"},
+    {"id": "gone", "label": "Original really gone?", "kind": "guard", "rank": 6, "col": 0,
+     "ref": "src/jarvis/api/deleted.py"},
+    {"id": "still", "label": "Still there: refused", "kind": "step", "rank": 6, "col": 1},
+    {"id": "back", "label": "Put back in Google", "kind": "service", "rank": 7, "col": 0,
+     "ref": "src/jarvis/tools/tasks_undo.py"}
+  ],
+  "edges": [
+    {"from": "ask", "to": "risk"},
+    {"from": "risk", "to": "card", "label": "guests or repeats", "style": "side"},
+    {"from": "risk", "to": "copy"},
+    {"from": "copy", "to": "nocopy", "label": "copy failed", "style": "side"},
+    {"from": "copy", "to": "delete"},
+    {"from": "delete", "to": "row"},
+    {"from": "row", "to": "undo"},
+    {"from": "undo", "to": "gone"},
+    {"from": "gone", "to": "still", "style": "side"},
+    {"from": "gone", "to": "back"}
+  ]
+}

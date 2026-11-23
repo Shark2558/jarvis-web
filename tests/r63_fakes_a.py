@@ -5,7 +5,9 @@
 # the show, and I0's three-card guide (r63_fakes.GUIDE) with a fourth card added on demand.
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from r63_fakes import FIXTURE_FILES, GUIDE
 
@@ -210,6 +212,77 @@ INVENTORY_FILES: dict[str, str] = {
 }
 
 
+# the plan's "The tour's facts" table, on this branch (the release's own values)
+TOUR = {
+    "release.label": "R6.3",
+    "release.version": "v6.3.0",
+    "release.new": "The Build Book: written by AI, short tour and full book",
+    "cards.count": 73,
+    "modules.count": 18,
+    "modules.else_count": 11,
+    "layers.count": 8,
+    "brain.balanced_model": "Claude Sonnet 5.5",
+    "undo.keep_days": 30,
+    "keys.purposes": 26,
+    "services.count": 31,
+    "approvals.max_new_cards": 5,
+    "memory.facts_per_turn": 12,
+    "memory.learn_a_day": 20,
+    "vault.unlock_minutes": 10,
+    "vault.reminder_days_first": 180,
+    "home.offline_minutes": 6,
+    "sos.hold_s": 2,
+    "sos.countdown_s": 5,
+    "sos.max_contacts": 5,
+    "sos.emergency": "112",
+    "tryon.measures": 6,
+    "seeme.inr_a_picture": "₹9",
+    "seeme.month_cap_inr": "₹300",
+    "costs.rate": 95.24,
+    "roadmap.next": "R6.3.1, the Build Book's pictures and storage",
+    "roadmap.after": "R6.4, the Book's new look",
+}
+
+
+def flat_routes(routes: Any, prefix: str = "") -> Iterator[tuple[str, str]]:
+    for r in routes:
+        inner = getattr(r, "original_router", None)  # FastAPI's lazily included routers
+        if inner is not None:
+            yield from flat_routes(inner.routes, prefix + r.include_context.prefix)
+            continue
+        methods = getattr(r, "methods", None) or ("WEBSOCKET",)
+        for m in methods:
+            yield m, prefix + r.path
+
+
+def app_routes() -> set[tuple[str, str]]:
+    """(method, path) of every route of the app built with mock settings (M9)."""
+    from jarvis.api import create_app
+    from jarvis.config import LLMBackend, SessionBackend, Settings
+
+    s = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        env="dev",
+        llm_backend=LLMBackend.MOCK,
+        session_backend=SessionBackend.MEMORY,
+        usd_inr_live=False,
+    )
+    return set(flat_routes(create_app(s).routes))
+
+
+# routes the code declares that the app built with mock settings does not mount: the home
+# bridge's own apps (the home laptop), Google sign-in (auth mode google), Google's tools link (a
+# vault key) and the Scheduler's tick (its service account), each by module and path
+NOT_MOUNTED_HERE = (
+    ("src/jarvis/homebridge/app.py", "/"),
+    ("src/jarvis/homebridge/local_page.py", "/"),
+    ("src/jarvis/api/auth.py", "/auth/"),
+    ("src/jarvis/api/integrations.py", "/connect/google"),
+    ("src/jarvis/api/integrations.py", "/v1/integrations"),
+    ("src/jarvis/api/brief.py", "/internal/brief/tick"),
+)
+
+
 def write_files(root: Path, files: dict[str, str]) -> Path:
     for rel, text in files.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -237,6 +310,10 @@ def a_repo(root: Path, *, c74: bool = False) -> Repo:
 
 __all__ = [
     "C74",
+    "NOT_MOUNTED_HERE",
+    "TOUR",
+    "app_routes",
+    "flat_routes",
     "COMMITTED",
     "DEMO",
     "EXTRA_FILES",

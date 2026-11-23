@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from jarvis.buildbook.facts_model import PARTS
 from jarvis.buildbook.writer import http
@@ -57,6 +57,11 @@ from r63_fakes import FIXTURE_FACTS, RELEASE  # noqa: E402
 
 NO_STORE = {"Cache-Control": "no-store"}
 CONTROL = "/v1/test/r63-c"
+# evals/r6_3/console.py's negative control, in this server's child process only: a changed COPY of
+# C's module is served (the YES box sends "yes" whatever was typed); the file on disk is untouched
+CONTROL_ENV = "R63C_CONTROL"
+YES_LINE = "const got = await go(inp.value);"
+YES_SENT_YES = "const got = await go('yes');"
 STALE_ESTIMATE = "we_" + "9" * 12
 WRITTEN, CHANGED = "pg_card_c01", "pg_card_c02"
 NEW_CARD = "pg_card_c74"
@@ -276,10 +281,27 @@ def control_routes(state: FakeWriterC) -> APIRouter:
     return r
 
 
+def yes_box_sends_yes() -> APIRouter:
+    """The control's route: console-book-writer.js with its YES box sending "yes"."""
+    static = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
+    text = (static / "console-book-writer.js").read_text(encoding="utf-8")
+    if text.count(YES_LINE) != 1:
+        raise RuntimeError("the console control's line moved in console-book-writer.js")
+    r = APIRouter()
+
+    @r.get("/static/console-book-writer.js")
+    async def changed() -> Response:
+        return Response(text.replace(YES_LINE, YES_SENT_YES), media_type="text/javascript")
+
+    return r
+
+
 def c_app(state: FakeWriterC | None = None) -> FastAPI:
     st = state or FakeWriterC()
     app = fake_app(st)
     app.router.routes[:0] = [*control_routes(st).routes, *c_routes(st).routes]
+    if os.environ.get(CONTROL_ENV) == "yes_box_sends_yes":
+        app.router.routes[:0] = list(yes_box_sends_yes().routes)
 
     @app.middleware("http")
     async def seen_and_refused(request: Request, call_next: Any) -> Any:
@@ -392,6 +414,7 @@ def until(page: Any, check: Callable[[], bool], what: str, timeout_s: float = 20
 __all__ = [
     "CHANGED",
     "CONTROL",
+    "CONTROL_ENV",
     "GUEST_BOOK",
     "NEW_CARD",
     "OLDER",

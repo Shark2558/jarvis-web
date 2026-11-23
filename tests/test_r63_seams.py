@@ -45,7 +45,9 @@ def test_the_version_is_six_point_three() -> None:
 # ---- 12 · the staged eval runner ----------------------------------------------------------------
 def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
     runner = _load(ROOT / "evals" / "r6_3" / "run.py", "r6_3_run_pin")
-    assert runner.STUBS_PASS is True  # I1 flips it to False (and this pin with it)
+    assert runner.STUBS_PASS is False  # I1 flipped it: a stub never reads as green
+    for part in runner.PARTS:  # and every part is built (I1: console, needles, e2e)
+        assert _load(ROOT / "evals" / "r6_3" / f"{part}.py", f"r6_3_{part}_pin").BUILT is True, part
     assert runner.PARTS == ("facts", "writer", "console", "tour", "needles", "e2e", "contract")
     contract = _load(ROOT / "evals" / "r6_3" / "contract.py", "r6_3_contract_pin")
     assert contract.BUILT is True  # I0's own part, with its own control (L12)

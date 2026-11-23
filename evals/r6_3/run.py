@@ -68,7 +68,7 @@ for _p in (HERE.parent, ROOT / "tests", ROOT / "src"):  # appended: no evals/r6_
 from r1d_common import finish  # noqa: E402
 
 PARTS = ("facts", "writer", "console", "tour", "needles", "e2e", "contract")
-STUBS_PASS = True  # I0: unbuilt parts pass as not_built_yet until I1 flips this (pinned)
+STUBS_PASS = False  # I1: every part is built; a stub never reads as green (pinned)
 
 
 def load(part: str) -> ModuleType | None:

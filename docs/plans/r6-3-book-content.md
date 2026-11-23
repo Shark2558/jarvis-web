@@ -330,7 +330,7 @@ between scenes. Beat ids are `tNNbMM` (today's are `sNNbMM`).
 |---|---|---|
 | t04b01 | Every tool call passes one gateway. It checks the request against my owner's rules, Allow, Ask first or Never, chosen for each group of tools. | `tools/gateway.py`; C52 (`api/permissions.py`) |
 | t04b02 | Because this request was spoken, the gateway is stricter: something that would normally just go ahead must ask first, because someone else in the room might have said it. | `tools/gateway.py:10–17`; `tools/taint.py:82` `spoken_in_context` |
-| t04b03 | So a card appears, written by code, not by the AI, saying exactly what will happen: a new event on Friday at 5 pm. An event with guests would send invitations that can't be taken back, so it would always ask, and can be set to need a passkey. | C18 (`console-approvals.js`); C30 (an event with attendees is irreversible); C52 ("require passkey for irreversible actions") |
+| t04b03 | So a card appears, written by code, not by the AI, saying exactly what will happen, here "add an event: dentist appointment, Friday, 5 pm". An event with guests would send invitations that can't be taken back, so it would always ask, and can be set to need a passkey. | C18 (`console-approvals.js`); C30 (an event with attendees is irreversible); C52 ("require passkey for irreversible actions") |
 | t04b04 | My owner taps Approve. The event goes into Google Calendar, and the gateway adds the call to an audit trail that can only grow. Then I answer on screen and, for a spoken question, out loud. | `POST /v1/approvals/{id}/approve` (`api/routes.py`); `tools/google_calendar.py`; C28 (append-only, hash-chained audit); `POST /v1/voice/speak`, `console-voice-speech.js` |
 
 ### T05 · One request: "Cancel it" — picture 3 · ≈ 50 s · everyone
@@ -397,7 +397,7 @@ between scenes. Beat ids are `tNNbMM` (today's are `sNNbMM`).
 | Beat | Narration | Traces to |
 |---|---|---|
 | t12b01 | On Android, my app is the console, full screen, with a few parts of its own: a Talk tile, shortcuts, alerts sorted into Urgent, Alerts and Nudges, and steps, heart rate and sleep from Health Connect. | C62 (`android/`); C64 |
-| t12b02 | In an emergency, hold the SOS button for {{sos.hold_s}} seconds; after a {{sos.countdown_s}}-second countdown I send a fixed message with the location to up to {{sos.max_contacts}} contacts on Telegram, open the phone's text messages filled in for my owner to press Send, and offer to call 112. I'm not an emergency service. | C65; `sos/service.py:68`; `config.py:537` |
+| t12b02 | In an emergency, hold the SOS button for {{sos.hold_s}} seconds; after a {{sos.countdown_s}}-second countdown I send a fixed message with the location to up to {{sos.max_contacts}} contacts on Telegram, open the phone's text messages filled in for my owner to press Send, and offer to call {{sos.emergency}}. I'm not an emergency service. | C65; `sos/service.py:68`; `config.py:537`; `sos/message.py:19` `EMERGENCY` |
 
 ### T13 · Highlight 7 of 7: Wardrobe & Try-on — picture 9 · ≈ 40 s · everyone (one line differs)
 
@@ -464,6 +464,7 @@ that is not in this table fails the build, D9):
 | `home.offline_minutes` | `config.py:265` `home_offline_after_s` default ÷ 60 | 6 |
 | `sos.hold_s`, `sos.countdown_s` | `sos/service.py:68` `HOLD_S, WEB_COUNTDOWN_S` | 2, 5 |
 | `sos.max_contacts` | `config.py:537` `sos_max_contacts` default | 5 |
+| `sos.emergency` | `sos/message.py:19` `EMERGENCY` | 112 |
 | `tryon.measures` | `len(wardrobe/tryon/model.py:32 MEASURES)` | 6 |
 | `seeme.inr_a_picture` | `llm/tryon.py:75` `TRYON_PRICES` typical × `FALLBACK_RATE` × (1 + `tryon_tax_pct` 18 %), "about ₹N" | about ₹9 |
 | `seeme.month_cap_inr` | `config.py:641` `tryon_month_cap_inr` default | ₹300 |
@@ -481,6 +482,263 @@ month inside the free 900,000 (`voice_tts_free_chars`, shared with the console),
 free-only (R6.2).
 
 ## Decisions (binding)
+
+**D0 · Scope, the split, parts, order, and what does not change.** Phase A put Part 2 at ≈ 9–10
+builder-days; written out against `47ee8fc` it is ≈ 15 (R6.3 ≈ 9: I0 1, A 2, B 3, C 1.5, D 1.5; R6.3.1
+≈ 6.5). One release of 15 builder-days would hold every part behind the slowest (the pictures need
+the demo household, a capture run and stop 3), and the content engine is useful without pictures.
+So **R6.3** (`v6.3.0`) = I0 + **A · The fact pack and the generator**, **B · The writer**, **C · The
+owner's console**, **D · The short tour**; **R6.3.1** (`v6.3.1`) = the pictures (Phase D, stop 3),
+de-duplicated storage, the eight diagrams with C-ids and the setup guide (section "R6.3.1"). Order:
+I0 → A, B, C in parallel → D after approval stop 2 (his YES on the script) → I1. **Unchanged:**
+`api/app.py`, `tools/gateway.py`, `core/brain.py`, `config.py` (no edit: 789 of 790), `console.html`
+(byte-identical), the keyring (26), the persona, the permission rows, the tools, Telegram, the
+Scheduler jobs, the guest lock and the talk-through's lane (the guest talk reads `book.digest` as
+today; AI text joins it only in R6.4). No new alert kind: the writer's notices ride R6's
+`book_sealed` and `book_seal_failed` with their own words (D11). The look does not change: only
+existing classes (`.bset`, `.dsc`, `.dbody`, `.bsec`, `.blines`, `.bchips`, `.btn`, `.bdialog`,
+`.minput`, `.snote`, `.tag`); no new CSS file (a placement-only `console-book-pages.css` ≤ 60 lines
+if C needs one, checked by the R13 rule: no colour, font, radius or shadow literal).
+
+**D1 · Model-agnostic: one write call in `jarvis.llm`, by tier, that never falls back.** I0 adds
+`src/jarvis/llm/write.py` (≤ 160 lines, test first): `write_text(router, *, tier, system,
+system_dynamic, messages, max_tokens, timeout_s) -> Written(text, model, provider, tier, usage,
+cost_usd, seconds)`. It refuses while No-AI is on (`router.blocked_now()` → `BrainOff`) and while the
+router's breaker is open (`WriterUnavailable("cloud_down")`); it streams from `router.provider` with
+`model=router.resolve(tier)` (a page of ≈ 3,000 tokens is never cut by the 20 s per-read timeout of
+fact 6), never calls the laptop and never changes tier; it counts tokens with `StreamUsage` and prices
+them with `pricing.stream_usage` and the price table. It also gives `estimate_usd(spec, tier, in, out)`
+and `worst_usd(spec, tier, in_cap, out_cap)` so the Book never reads a model id or a price. The Book
+code imports `jarvis.llm.write`, `jarvis.llm.brains` and `jarvis.llm.router.ModelTier` only (a static
+test, the lane guard's way); no model id, vendor name or price appears in `buildbook/` (a static test
+over string literals). **Every page records** `{brain, brain_label, tier, model, provider, release,
+version, written_at, attempt, tokens_in, tokens_out, inr}` from the `Written` result; the writer
+**refuses a page** whose `tier` is not BALANCED, whose `model` differs from
+`brains.get(brain).tiers[BALANCED]`, or that came back empty (Phase A §7.2). The trial and the pick
+offer only brains in the registry: Claude when `JARVIS_ANTHROPIC_API_KEY` is set, Gemini (free) when
+`JARVIS_GEMINI_API_KEY` is set (fact 8); a missing one is shown as "not set up on this server".
+
+**D2 · The fact pack: computed at CI, quoted by the AI, never typed.** A builds `gen/facts.py` (stdlib,
+deterministic) and the generator writes `_book/facts.json` beside `book.json` (its SHA-256 in
+`release.json` as `facts_sha256`; `--check` builds it twice; cap 1 MiB; ≈ 0.45 MB on `47ee8fc`, 383
+KB of it the index). It holds: versions and dates; routes (an AST scan of `@router.<verb>` and
+`add_api_route` in `src/jarvis/api/*.py`, method and path); Firestore collections and the 18 modules
+and 73 cards (read from the guide, which `arch_coverage.py` keeps equal to the code); the 22 console
+panels (`id="p-*"` in `console.html`), `/book/show` and the Android activities; the 31 outside
+services (the guide §5.2); lines of code (D2a); limits (every `Settings` field's default and bounds,
+179); costs (`gen/costs.py`); the tour's named constants (the table under the script); the **index**
+(every tracked path, every top-level function and class of `src/` as `path:symbol`, every setting,
+every collection, every route); and a `verified` flag on every hosting and security fact (false until
+a live check sets it; C6's facts all false in R6.3). **D2a · Lines of code:** `gen/loc.py` counts
+Python with `tokenize` (code, docstring, comment-only, blank) and JS, CSS, HTML and Kotlin with a
+comment-aware scanner, split into source / tests / config / generated / vendored (left out), each
+file under the one module that owns it; a test pins the counter on a fixture against a hand count.
+Scene 1's "about 206,413 lines" (raw newlines, G6) becomes the code count. **D2b · The technology
+inventory (C4, G5):** `gen/inventory.py` adds Android (`android/gradle/libs.versions.toml`), the home
+kit's images (`deploy/home/docker-compose.yml`), the bridge's pins
+(`deploy/home/bridge-requirements.txt`) and the dev tools (`tools/markdy/package-lock.json`, the `dev`
+extra), one SPDX spelling per licence, and a run-time / build-and-maintenance split, in `book.json`'s
+`libraries` (its reader rows unchanged).
+
+**D3 · The full book's pages.** `gen/pages_index.py` (A) lists every page from the guide and the
+code, deterministic, into `facts.json` `pages`: **parts** "JARVIS in plain words" (8 chapters: what
+JARVIS is; the running example, C2; data, hosting, security and recovery, C6; how answers are made,
+C7; a local setup, C8, text only until R6.3.1 runs it; the technology inventory, C4, prose around the
+generated table; costs; what's planned), "Modules" (the **18 modules**, each a chapter page),
+"Parts" (the **73 cards**, each under its module), "Screens" (the **22 panels** and the show) and
+"Outside services" (the **31**): **152 pages** on `47ee8fc`. Page ids `pg_<kind>_<slug>` (`pg_card_c16`,
+`pg_module_voice`, `pg_screen_vitals`, `pg_service_telegram`, `pg_chapter_example`). The **module
+map** is `gen/modules.py` (I0; Phase A §9.4's 17 plus **Wardrobe & Try-on: C69–C73**); a card in no
+module or in two fails the generator (`GenError`), so a new card must be placed before its release
+builds. Each page cites its sources: a card its "Where in the code" paths; a module its cards'; a
+screen its console modules (`console-<panel>*.js`) and routes; a service the cards naming it; a
+chapter a fixed list in `pages_index.py`. **Every page has the same sections (row 379):** `plain`
+("In plain words", ≤ 900 characters), `example` (a worked example, made up, in a block marked
+"Example (made up)", ≤ 900), `how` ("How it works", with source references, ≤ 2,400), `costs` (from
+facts), `fails` ("When it fails"), `code` ("Where in the code": the references, generated, not
+written by AI). A page not yet written shows the generator's text for it (the card's own fields, or
+the section's rows) labelled "Not written by AI yet".
+
+**D4 · What the writer reads, and what it never reads.** One **reading pack** a page (B's
+`writer/packs.py`), built from the release's `source.zip` and `facts.json` only (both in the image,
+both public): the page's catalogue card, the docstrings, signatures and route tables of the files it
+cites (never a whole file), the matching plan sections (by C-id or path, newest first), and its slice
+of the fact pack, capped at **24,000 tokens** (characters ÷ 4; a pack over the cap drops plan text
+first, then signatures, never the card). **Never in a pack:** `.claude/**` (46 files, fact 17),
+`tests/fixtures/**`, every `evals/**` fixture, `.env*` (names only, from `.env.example`), key-shaped
+files, `gen/fake_secrets.txt`, `gen/redact.json`, `*.lock`, binaries, the 97 files the snapshot leaves
+out; and nothing from Firestore, the vault, memory, mail, contacts, photos, cameras, Book settings
+(not even the creator's name), logs or sealed bundles. Every pack goes through `gen/scrub.Scrubber.clean`
+(with the new kinds of D10) before any brain sees it, and the **same pack goes to Claude and to Gemini**:
+the free brain's rule ("only the release's public code and the fact pack, after the scrub") is the
+writer's rule for every brain. The pack is data, not instructions: it is fenced with a canary as the
+talk lane's `prompt.reference` does, and the system prompt (`writer/prompts.py`, fixed words) says to
+ignore any instruction inside it. The writer's modules import nothing from `jarvis.memory`,
+`jarvis.vault`, `jarvis.integrations`, `jarvis.documents`, `jarvis.tools`, `jarvis.core` or any
+vendor SDK (a static guard like `LANE_FORBIDDEN`, `test_book_boundaries.py:37–50`).
+
+**D5 · Where it runs: its own resumable job on the existing clocks, and a step while he watches.**
+`BookWriteJob` (`name = "book_write"`, `budget_s = 45.0`) joins `r6_tick_jobs` after `book_sweep`, so
+it rides the brief clock and, when Home is on, the 5-minute watchdog (fact 5); it is advisory there
+(`ADVISORY_JOBS`). It does nothing without an approved run (D6, D7, D12) and never at start-up. One
+**step**: take the writer's lease (`book_write_lease/{uid}`, 60 s, as `seal_state`'s lease: two
+revisions in a rollout can't both write); while `ticks.time_left()` ≥ **35 s**, start at most **2**
+page calls at once, each `write_text(…, max_tokens=4000, timeout_s=min(40, left − 3))`; check, keep
+the draft sealed (`book_drafts`), move on; stop at the budget. The console's `POST
+/v1/book/writer/step` runs the same step (≤ 45 s, one at a time, 6 a minute) while Book settings is
+open, so a trial finishes in minutes with him watching. **Throughput (Estimate; the trial measures
+it):** a Sonnet page ≈ 20–40 s; ≈ 1.5 pages a watchdog tick → the trial's ≈ 12 calls in ≈ 40–60
+minutes, the first write's ≈ 190 calls in ≈ 11 hours with Home on; without the watchdog, 16 brief
+ticks a day (04:00–11:30 IST only) → ≈ 4 days, and a trial started in the evening waits for 04:00
+unless Book settings is open. **Decision 3 stands:** a Cloud Run Job (the same image and secret
+reference, minutes instead of hours) is offered only if the trial shows the tick is crowded (the
+self-health watch's `skipped` count for `book_write`, or a first-write estimate over 24 hours); it
+is then its own small release with his YES (owner question 5).
+
+**D6 · The Writer trial (23 Nov).** Owner-only and console-only, in Book settings, after R6.3 is
+live. **Five fixed sample pages** chosen to span the kinds (owner question 3): `pg_chapter_example`
+(the running example, many files), `pg_card_c16` (the brain router, technical),
+`pg_module_wardrobe` (the new module), `pg_screen_vitals` (a screen), `pg_service_telegram` (an
+outside service). Each is written by **Claude at BALANCED** (Sonnet 5.5) and by **Gemini (free) at
+BALANCED** (`gemini-3.8-flash`) from the same packs and prompt, with one redraft each when a check
+fails, as in production. **First the estimate** from the five real packs (`GET …/estimate?run=trial`):
+"about ₹40" (₹25–51 by the low / mid / high assumptions of D8; Gemini ₹0), the cap, what is sent and
+to whom (both brains, their makers, "Gemini's free tier may let Google use what it reads to improve
+its products: only JARVIS's public code is sent"). **Then his YES:** a box that accepts exactly `YES`
+once trimmed ("yes", "Yes", "YES!" refused, nothing changes), bound to the `estimate_id` he was
+shown (a changed estimate asks again). **Hard cap:** ₹60 for the trial (D8's holds make it exact:
+no call starts that could pass it). **The result:** both brains' five pages side by side (C), each
+with its checks (passed first time, passed after a redraft, refused and why), tokens, seconds and ₹;
+owner only, never in a guest session, never sealed into a release (`book_trial/{uid}_{n}`, kept 30
+days or until he deletes them or picks). A second trial needs a new estimate and YES. A missing
+brain makes it a one-brain trial, said so.
+
+**D7 · The pick, the caps and the first full write.** After the trial, Book settings → **Writer**:
+the brain (Claude or Gemini (free); the tier is always BALANCED and not offered), and the caps,
+filled with Phase A's figures as **proposed defaults he confirms**: first write **₹1,500** (one time),
+**₹500** a release, **₹1,000** a month (release updates; the first write is outside this cap but inside
+his overall limit), stop before his Vitals month would pass **80 %** of his monthly limit (no limit set
+→ the Book's caps only), and "update by itself within the release cap" **off**. Bounds: first 0–5,000,
+release 0–2,000, month 0–5,000, 10–100 %. Saving the pick spends nothing; raising a cap above what he
+last confirmed needs `confirm_cost: true` (R6.2's pattern), lowering is instant. **The first full
+write** starts only with `POST …/first {typed: "YES", estimate_id}`: the estimate (about ₹1,120,
+₹770–1,560 for 152 pages with Claude; ₹0 with Gemini), the cap, the time it may take (D5) and what is
+sent; with Gemini, the same YES (no ₹, the learning note). At the cap the run stops, says how many
+pages are left, and those pages keep the generator's text until next month or a raised cap (with its
+own `confirm_cost`). A pick of Gemini still passes every check; a page Gemini fails twice keeps the
+generator's text (never a Claude call he didn't pick).
+
+**D8 · Money: one ledger, holds before every call, estimates in ₹.** `writer/caps.py` (B), R13.1's
+pattern (`wardrobe/seeme/cap.py`): `book_write_spend/{uid}_{YYYY-MM}` (his IST month, numbers only).
+Before each paid call, ONE transaction reserves its **hold** = `worst_usd` (the pack cap + the system
+prompt ≈ 27,000 tokens in, 4,000 out) at the day's rate: **₹8.95** for Sonnet at ₹95.24; refused with
+nothing written when spent + held + hold would pass the run's cap (trial, first write or this
+release), the Book's month cap (release updates), or 80 % of his monthly limit
+(`billing.spend.ensure_spend_allowed` with the hold, plus the 80 % gate); refused while a hold under
+10 minutes exists for the same page (`busy`). After the call: **settle** at the reported usage
+(`Written.cost_usd`), or **at the hold** when the stream was cut (it may have been billed); a call
+that never left (`WriterUnavailable`, a 4xx before the stream) is **released**. Every settled call is
+also recorded in his month through `billing.record(uid, "book", usd)` so Vitals shows it as "Book
+writer" (`LABELS["book"]`, I0) and his monthly limit sees it. An unreadable ledger or limit refuses
+(fail closed). **Estimates** (`writer/estimate.py`) use the real packs' sizes and D8's low / mid / high
+outputs (2,200 / 3,000 / 3,500 tokens a page, 15 / 25 / 30 % redrafted), the registry's price for the
+brain's BALANCED model through `estimate_usd`, and the day's rate; shown as "about ₹mid (₹low–₹high)",
+never in dollars. **GST:** Anthropic's invoice may add 18 % GST (Unverified for this account); like
+Vitals, the caps count JARVIS's metered price, and every estimate carries the line "your Anthropic
+bill may add 18 % GST" (owner question 6 can make the caps count it).
+
+**D9 · The short tour: the Workshop's fixed script, seven highlights, timed, in today's player.** The
+approved script lives in `src/jarvis/buildbook/gen/tour.json` (package data, ASCII with `\u` escapes):
+17 scenes, each `{n, id, title, visual (1–11, today's picture), chapter (a page id), audience
+(both | owner), beats [{id ^t\d{2}b\d{2}$, text ≤ 400, audience (both | owner | guest), focus}], facts
+[keys]}`. `gen/tour.py` (D) fills every `{{key}}` from `facts.json` (an unknown key, a beat over 400
+characters after filling, or a digit typed in a beat's text outside a placeholder fails the
+generator, except inside the running example's quoted words and in "3D") and times each audience: **145 words a minute, 0.8 s after each line, 1.4 s between
+scenes** (to be checked once with a stopwatch, exit check 6). **Bands:** 600–900 s hard (the
+generator refuses outside 10–15 minutes); 780–870 s owner and 760–850 s guest aimed (a test). The
+filled tour goes into `book.json` as `tour` (optional: an older book has none and plays today's 11
+scenes). **The seven highlights**, in his order: Voice; Approvals and passkeys; Memory; Vault and
+documents; Home bridge and cameras; the phone app and SOS; **Wardrobe & Try-on**. **The running
+example** is T03–T05 ("Add a dentist appointment on Friday at 5 pm", "Cancel it"). **"What else"**
+(T14) lists the 11 other modules on screen from the module map, so a new module grows the screen, not
+the time. **Audiences:** a guest's tour leaves out T16 (costs) and every owner-only line, and has no ₹
+anywhere (a static test over the guest's filled lines); the owner's has `{h}` filled by
+`lines.render`'s words. **In the player:** `show_script.py` (D) serves `kind: "tour"` with the tour's
+scenes for that audience when the book has one; I0's `console-book-script.js` accepts tour scenes (n
+1–17, ids `t…`) and hands each picture module its `visual` number, so today's 3D and 2D pictures
+draw the tour's own labels; the chapters menu lists the tour's titles, and for the owner each
+scene's full-book chapter by name. The voice is R6.2's (browser by default, ₹0); `POST
+/v1/book/show/speak` reads tour lines by id. **Changing the script later** is a Workshop edit of
+`tour.json` with his approval, never the AI writer (₹0).
+
+**D10 · The checks before anything is kept (Phase A §7.5), and the content gaps they close.**
+`writer/checks.py` (B) runs on every draft; a page that fails is redrafted once with the failures
+listed, then kept out (its previous text stays). (1) **Every reference exists**: each backticked
+path, `path:symbol`, setting name, collection and route in the page is in the fact index. (2)
+**Numbers come from facts**: outside an "Example (made up)" block every number is a `{{fact:…}}`
+placeholder the filler knows (years in dates and version strings of the fact pack excepted); the
+filler then writes the value. (3) **Personal data and secrets**: `Scrubber.verify` (URLs off the
+allow list, private hosts, e-mails, Indian phone numbers, 10+ digit runs, secret shapes, hashed
+names), `buildbook/owner_id.in_book`, and **new kinds (G8)**: IPv4 and IPv6 addresses (`gen/scrub.py`
+leaves them alone today, `:17`), PAN (`[A-Z]{5}[0-9]{4}[A-Z]`), Aadhaar in groups (`\d{4} \d{4} \d{4}`),
+hostnames under the owner's domains, Google project-id shapes; A extends the scrubber (it also guards
+`book.json`), B calls it. (4) **Unverified stays Unverified**: a sentence using a fact with `verified:
+false` must carry "From repo configuration" or "Unverified". (5) **No invented features**: every
+claim sentence in `how` cites a reference; a guide §11 (PLANNED) item may appear only under a
+"Planned" heading. (6) **Shape**: the six sections, their caps, no HTML, no link outside the allow
+list. **Content gaps closed in R6.3 (A):** G2 (C57's outside services, at I0 in the guide), G3 (the
+book's integrations are the guide's 31, not 15), G4 (limitations: all of them, the reader pages them;
+`MAX_LIMITATIONS` stays the cap of the first page and the rest say "+N more"), G5 (D2b), G6 (D2a), G7
+(costs: GitHub Actions on a public repository marked Unverified; Firestore's daily free reads, writes
+and deletes listed from `FREE_TIER`), G8 (above). G9, G10, G14 are R6.3.1's.
+
+**D11 · Sealing the AI pages: a third file of the release.** When a run's pages are all written (or
+stopped), B assembles the release's **pages file** (`PagesFile {v: 1, release, pages: [page with
+filled text and meta], templates: [the AI text with placeholders], skipped: [page id, why]}`, gzipped
+JSON, cap 2 MiB, ≈ 0.5 MB expected) and **attaches** it to the already-sealed release
+(`seal_attach.py`, B): `FileKind` += `"pages"`, `SealedRelease.files` 2–3, the same `BookCrypto`
+envelope and AADs (no new keyring purpose), one transaction on the index, the 60 MB cap counting it.
+The sealer's two CI files and `checked_files` are unchanged. A release with no pages file reads as
+"not written by AI". **Carry forward:** an update opens the previous release's pages file, carries
+every unchanged page's template, refills its facts from the new release, and writes only the changed
+pages (D12). Notices: `book_sealed` gains words for "The AI-written pages for R6.3 are sealed (152
+pages, about ₹1,030)" and `book_seal_failed` for "The AI writer stopped: <plain reason>" (owner
+only, content-free beyond counts and ₹). **The 80 % warning:** when the sealed total passes 80 % of
+`book_max_total_mb` (48 MB of 60), the Book panel says so with the sizes, and the sealer's notice
+says it once a release; nothing is dropped without the existing oldest-first rule.
+
+**D12 · Release updates: nothing spends by itself after a deploy.** When a new release seals, the
+writer works out (free, local) which pages changed: a page is **changed** when any file it cites
+changed content (by SHA-256 inside the two `source.zip`s), its card's text changed, or it is new;
+otherwise it is carried (D11). It stores `update_ready {release, estimate_id, pages, inr}` and the
+seal notice adds "The AI pages wait for your Update (about ₹300)". Nothing is called until he taps
+**Update** in the Book panel (`POST …/update {confirm_cost: true, estimate_id}`, the ₹ dialog as
+R6.2's) or he chose "update by itself" at the pick (then only within the release cap). A hotfix
+(1–3 pages, under ₹30) is the same rule. If he never updates, the reader shows the last release's AI
+pages for unchanged parts and the generator's text, labelled, for changed ones.
+
+**D13 · Who sees what, and how it is deleted.** The writer's routes are **owner and console-only**
+(`book_gate.console_only`, a signed-in browser; never a guest, never token mode); the pages routes
+need an **owner** book session (`X-Jarvis-Book`, audience owner; a guest session gets 403
+`owner_only`). A guest's show is the tour with no ₹ and no costs scene (D9); the trial's pages never
+enter a `SealedRelease` and are never in a guest session's reach. Privacy: R6's `book_sealed` row
+counts the pages files; a new row **"Build book: writer"** (trial pages, drafts, the pick, the
+consents; the ₹ ledger stays 13 months as numbers, like `tryon_spend`) deletes with his passkey and
+stops any run. Logs never hold page text, pack text, a prompt or a reply (the Book's AST log scan,
+`test_book_boundaries.py`, extended to `writer/`); the audit records each run's start, stop, YES and
+pick by ids and ₹ only.
+
+**D14 · The reader: the full book in today's look, and "continue where I left off".** C's
+`console-book-pages.js` adds **Full book** to the Book panel's reader beside the eight sections:
+parts as `.dsc` disclosures, chapters as `.bsec` rows, a page as its six sections (`plain` and
+`example` open, `how`, `costs`, `fails`, `code` closed), its line "Written by Claude (balanced tier,
+claude-sonnet-5-5) for v6.3.0 on 24 Nov 2026" from the page's meta (or "Not written by AI yet"), and
+its references as code chips. Older kept releases' pages through the existing release picker.
+**Continue where I left off:** this browser keeps `{release, page}` for the reader and `{release,
+scene}` for the tour in `localStorage` (`jarvis_book_place_v1`, ids only, owner only); reopening
+offers "Continue: <page or scene title>" for the same release. The tour's own continue starts the
+scene, not the middle of a line. Text only through `textContent`; no `innerHTML` (the Book's static
+test).
 
 ## Data model (prefix `jarvis_`; flat ids; every document carries `updated_at` and a plain `owner`)
 

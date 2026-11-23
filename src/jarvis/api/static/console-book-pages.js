@@ -14,7 +14,6 @@
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PLACE = 'jarvis_book_place_v1';
   const PAGE = /^pg_(?:chapter|module|card|screen|service)_[a-z0-9_]{1,40}$/, RID = /^[0-9a-f]{7}$/, VER = /^v\d{1,3}\.\d{1,3}\.\d{1,4}$/;
-  const PLACE_ID = /^[A-Za-z0-9_]{1,40}$/; // another part's id in the place (the tour's scene)
   const SECTIONS = ['plain', 'example', 'how', 'costs', 'fails', 'code'], OPEN = { plain: true, example: true };
   const NOT_WRITTEN = 'Not written by AI yet', CHANGED = 'Changed in this release: waiting for your Update'; // writer.model
   const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
@@ -120,15 +119,18 @@
     }, !!OPEN[s.id])));
   }
 
-  // ---- continue where I left off (ids only; another part's place for the same release is kept) ---------
+  // ---- continue where I left off (ids only). The key is shared with the tour (console-book-tour.js keeps
+  // {release, scene} there): read first and merge, never overwrite another part's fields. ------------------
   function place() {
     try { return obj(JSON.parse(localStorage.getItem(PLACE) || 'null')) || {}; } catch (_) { return {}; }
   }
   function remember(rid, pageId) {
-    const old = place(), next = {};
-    if (old.release === rid) Object.keys(old).forEach((k) => { if (k !== 'page' && k !== 'release' && PLACE_ID.test(String(old[k]))) next[k] = old[k]; });
+    const old = place(), others = Object.keys(old).filter((k) => k !== 'page' && k !== 'release');
+    if (others.length && old.release !== rid) return; // the tour's place of another release stays as it is
+    const next = {};
+    others.forEach((k) => { next[k] = old[k]; }); // the tour's fields, exactly as it wrote them
     next.release = rid; next.page = pageId;
-    try { localStorage.setItem(PLACE, JSON.stringify(next)); } catch (_) {}
+    try { localStorage.setItem(PLACE, JSON.stringify(next)); } catch (_) { /* full or blocked: nothing kept */ }
   }
   function offered(rid) {
     const p = place();

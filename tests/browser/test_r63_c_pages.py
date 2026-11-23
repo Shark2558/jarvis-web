@@ -6,8 +6,9 @@
 #     a page not written by AI says so, a changed one waits for the Update
 #   - every request carries the owner's book session (X-Jarvis-Book); an older kept release reads
 #     its own pages; a 403 (a guest's session) draws nothing at all
-#   - continue where I left off: `jarvis_book_place_v1` {release, page}, ids only, another part's
-#     place kept; reopening offers "Continue: <title>"
+#   - continue where I left off: `jarvis_book_place_v1` {release, page}, ids only; reopening offers
+#     "Continue: <title>"; Part D's tour fields in the same key merged, never overwritten (another
+#     release's tour place left alone); a storage that throws breaks nothing
 #   - the reader's limitations section: "+32 more in the full book" (owner session only)
 #   - test_r63_c_a_new_card_is_listed: a page the index lists is in the Full book
 from __future__ import annotations
@@ -179,13 +180,16 @@ def test_r63_c_pages_an_older_release_reads_its_own_pages(
         c.close()
 
 
+def kept(c: Console) -> Any:
+    return json.loads(c.page.evaluate(f"localStorage.getItem('{PLACE}')") or "null")
+
+
 def test_r63_c_pages_continue_where_i_left_off(browser: Any, c_url: str, token: str) -> None:
-    c, _ = owner(browser, c_url, token, place={"release": "3f2a1c9", "scene": "t07"})
+    c, _ = owner(browser, c_url, token)
     try:
         part(c, "Parts")
         read(c, "Demo router")
-        kept = json.loads(c.page.evaluate(f"localStorage.getItem('{PLACE}')"))
-        assert kept == {"release": "3f2a1c9", "scene": "t07", "page": "pg_card_c01"}  # ids only
+        assert kept(c) == {"release": "3f2a1c9", "page": "pg_card_c01"}  # ids only
         c.page.get_by_role("button", name="End session").click()
         c.page.locator("#bookDialog").get_by_role("button", name="End").click()
         c.page.get_by_role("button", name="Open for me").click()
@@ -193,6 +197,38 @@ def test_r63_c_pages_continue_where_i_left_off(browser: Any, c_url: str, token: 
         go.wait_for()
         go.click()
         c.page.locator(f"{PAGES} .bk-rhead", has_text="Reading Demo router").wait_for()
+        clean(c)
+    finally:
+        c.close()
+
+
+def test_r63_c_pages_the_tours_place_in_the_same_key_is_merged_never_overwritten(
+    browser: Any, c_url: str, token: str
+) -> None:
+    """Part D's tour keeps {release, scene} (an integer) under the same key: the reader reads it
+    first and keeps D's fields as they are; another release's tour place is left alone; a
+    storage that throws (full or blocked) keeps nothing and breaks nothing."""
+    c, _ = owner(browser, c_url, token, place={"release": "3f2a1c9", "scene": 7})
+    try:
+        part(c, "Parts")
+        read(c, "Demo router")
+        assert kept(c) == {"release": "3f2a1c9", "scene": 7, "page": "pg_card_c01"}
+        older = {"release": "aebff3a", "scene": 3}
+        c.page.evaluate(f"(v) => localStorage.setItem('{PLACE}', JSON.stringify(v))", older)
+        c.page.locator(PAGES).get_by_role("button", name="Back to the contents").click()
+        read(c, "Demo console")
+        assert kept(c) == older  # D's place of another release: not replaced by the reader's
+        c.page.evaluate(
+            """(key) => {
+              const S = Storage.prototype, get = S.getItem, set = S.setItem;
+              const no = () => { throw new DOMException('no room', 'QuotaExceededError'); };
+              S.getItem = function (k) { return k === key ? no() : get.call(this, k); };
+              S.setItem = function (k, v) { return k === key ? no() : set.call(this, k, v); };
+            }""",
+            PLACE,
+        )
+        c.page.locator(PAGES).get_by_role("button", name="Back to the contents").click()
+        read(c, "Demo router")  # still reads
         clean(c)
     finally:
         c.close()

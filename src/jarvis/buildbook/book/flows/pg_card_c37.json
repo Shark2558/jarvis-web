@@ -1,0 +1,33 @@
+{
+  "title": "One photo's trip from the picker to your laptop",
+  "dir": "down",
+  "nodes": [
+    {"id": "pick", "label": "You pick in Google's picker", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/photos/service.py"},
+    {"id": "ids", "label": "Keep the picked ids only", "kind": "store", "rank": 1, "col": 0,
+     "ref": "src/jarvis/photos/import_store.py"},
+    {"id": "laptop", "label": "Laptop awake?", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/photos/imports.py"},
+    {"id": "paused", "label": "Paused, says why", "kind": "step", "rank": 2, "col": 1},
+    {"id": "download", "label": "Download one photo", "kind": "service", "rank": 3, "col": 0,
+     "ref": "src/jarvis/photos/picker.py"},
+    {"id": "strip", "label": "Strip location and camera", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/photos/imaging.py"},
+    {"id": "edge", "label": "Send to the home laptop", "kind": "service", "rank": 5, "col": 0,
+     "ref": "src/jarvis/photos/edge.py"},
+    {"id": "back", "label": "Ids and counts come back", "kind": "guard", "rank": 6, "col": 0},
+    {"id": "save", "label": "Save progress, drop photo", "kind": "store", "rank": 7, "col": 0,
+     "ref": "src/jarvis/photos/import_store.py"}
+  ],
+  "edges": [
+    {"from": "pick", "to": "ids"},
+    {"from": "ids", "to": "laptop"},
+    {"from": "laptop", "to": "paused", "label": "asleep", "style": "side"},
+    {"from": "laptop", "to": "download", "label": "yes"},
+    {"from": "download", "to": "strip"},
+    {"from": "strip", "to": "edge"},
+    {"from": "edge", "to": "back"},
+    {"from": "back", "to": "save"},
+    {"from": "save", "to": "laptop", "label": "next photo", "style": "side"}
+  ]
+}

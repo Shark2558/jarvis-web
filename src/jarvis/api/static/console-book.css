@@ -54,6 +54,49 @@
 .bk-namerow .btn{flex:none;height:36px;padding:0 12px;font-size:12px}
 .bk-setnote{margin-top:8px}
 
+/* R6.3.1 D10: a page's flowchart (console-book-flow.js), framed like the Brief's sections. The cards are the console's
+   HUD cards (--well fill, --line stroke, --r-md corners, --font labels in --ink, the ref in --mono --ink-3); the kind is
+   the SHAPE plus a corner glyph; the main path is the accent with the theme's --glow, a side path dashed in --ink-3.
+   Text is at least 12 px (the chart is never drawn below 1:1); one fade at most, none with reduced motion. */
+.bk-flow{position:relative;margin:10px 0 0;padding:10px 12px 12px;border-radius:var(--r-md);background:var(--well-2);border:1px solid var(--line)}
+.bk-flowcap{margin:0 0 8px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink);overflow-wrap:anywhere}
+.bk-flowbox{display:flex;justify-content:center;min-width:0}
+.bk-flowslot:empty{display:none}
+.bk-flowbox .fl-svg{display:block;max-width:100%;height:auto;overflow:visible}
+.bk-flowbox .fl-svg.fl-in{animation:fadeIn .5s var(--ease) both}
+html[data-motion="calm"] .bk-flowbox .fl-svg,html[data-motion="off"] .bk-flowbox .fl-svg{animation:none}
+@media (prefers-reduced-motion: reduce){.bk-flowbox .fl-svg{animation:none}}
+.fl-card{fill:var(--well);stroke:var(--line);stroke-width:1}
+.fl-node.fl-k-step .fl-card,.fl-node.fl-k-service .fl-card{rx:var(--r-md)}
+.fl-node .fl-inner{rx:var(--r-sm)}
+.fl-inner{fill:none;stroke:var(--line);stroke-width:1}
+.fl-lid{fill:color-mix(in srgb,var(--accent-2) 18%,var(--well));stroke:var(--line);stroke-width:1}
+.fl-k-guard .fl-card{stroke:var(--amber);stroke-width:1.4}
+.fl-t{font:500 13px/1 var(--font);fill:var(--ink);color:var(--ink)}
+.fl-ref{font:400 12px/1 var(--mono);fill:var(--ink-3);color:var(--ink-3)}
+.fl-glyph{fill:none;stroke:var(--accent-ink);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.fl-glyph.fl-g-store{stroke:var(--accent-2)}
+.fl-glyph.fl-g-guard{stroke:var(--amber-ink);fill:var(--amber-tint)}
+.fl-glyph.fl-g-person{stroke:var(--ok-ink)}
+.fl-edge{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.fl-mains{filter:drop-shadow(var(--glow))}
+.fl-mains .fl-edge{stroke:var(--accent);stroke-width:2}
+.fl-mains .fl-head{fill:var(--accent)}
+.fl-sides .fl-edge{stroke:var(--ink-3);stroke-dasharray:5 4}
+.fl-sides .fl-head{fill:var(--ink-3)}
+.fl-pill rect{fill:var(--well);stroke:var(--line-2);stroke-width:1}
+.fl-pt{font:400 12px/1 var(--font);fill:var(--ink-2);color:var(--ink-2)}
+.bk-flowfoot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-top:8px}
+.bk-flowkey{display:flex;flex-wrap:wrap;gap:4px 12px;list-style:none;margin:0;padding:0;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.bk-flowkey li{display:flex;align-items:center;gap:6px}
+.bk-flowkey .fl-swatch{flex:none;overflow:visible}
+.bk-flowbtn{flex:none;height:32px;padding:0 12px;font-size:12px}
+.bk-flowsteps{margin-top:8px}
+.bk-flowsteps-h{margin:0;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.bk-flowsteps ol{margin:4px 0 0;padding:0 0 0 22px;font-size:13px;line-height:1.45;color:var(--ink)}
+.bk-flowsteps li{overflow-wrap:anywhere}
+.bk-flow .sr-only{position:absolute;width:1px;height:1px;margin:0;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
 @media (max-width: 899px){
   #p-book .btn,.bk-racts .btn,.bk-rhead .btn,.bk-namerow .btn{min-height:44px}
   #p-book .actions .btn{height:44px}

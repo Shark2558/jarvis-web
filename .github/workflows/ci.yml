@@ -122,10 +122,19 @@ jobs:
   # The console in a real browser (slice 6): loads with zero JS errors and zero CSP violations,
   # chats with the mock brain, restores History, switches Night -> Day, renders the Integrations
   # panel in every state, and fits a 390 px phone. Opt-in locally: `make browser-test`.
+  # Split across 4 machines in parallel (the owner's ask of 23 Nov 2026: about 30 minutes instead of
+  # 90): each test file runs on exactly one shard (tests/browser/shard_plan.py), and deploy still
+  # waits for all four.
   browser:
+    name: browser (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       JARVIS_BROWSER_TESTS: "1"
+      JARVIS_BROWSER_SHARD: "${{ matrix.shard }}/4"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5

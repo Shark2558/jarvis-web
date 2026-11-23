@@ -3,6 +3,7 @@
 # `make browser-test`). Without it every test here is skipped, never failed.
 from __future__ import annotations
 
+import importlib.util
 import os
 import socket
 import subprocess
@@ -12,6 +13,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -26,8 +28,46 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
+def _shard_plan() -> ModuleType:
+    """Load shard_plan.py beside this file (CI runs plain pytest: tests/ is not a package)."""
+    path = Path(__file__).with_name("shard_plan.py")
+    spec = importlib.util.spec_from_file_location("jarvis_browser_shard_plan", path)
+    if spec is None or spec.loader is None:
+        raise pytest.UsageError("tests/browser/shard_plan.py could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _file_of(item: pytest.Item) -> str:
+    return item.nodeid.split("::", 1)[0]
+
+
+def _keep_shard(config: pytest.Config, items: list[pytest.Item], spec: str) -> None:
+    """Keep only this machine's share of the browser tests (JARVIS_BROWSER_SHARD=i/n)."""
+    plan_mod = _shard_plan()
+    try:
+        index, total = plan_mod.parse(spec)
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+    counts: dict[str, int] = {}
+    for item in items:
+        if "browser" in item.keywords:
+            counts[_file_of(item)] = counts.get(_file_of(item), 0) + 1
+    plan = plan_mod.assign(counts, total)
+    kept = [i for i in items if "browser" not in i.keywords or plan[_file_of(i)] == index]
+    kept_ids = {id(i) for i in kept}
+    dropped = [i for i in items if id(i) not in kept_ids]
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+    items[:] = kept
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if os.environ.get("JARVIS_BROWSER_TESTS") == "1":
+        spec = os.environ.get("JARVIS_BROWSER_SHARD", "").strip()
+        if spec:
+            _keep_shard(config, items, spec)
         return
     skip = pytest.mark.skip(reason="set JARVIS_BROWSER_TESTS=1 to run the Playwright smoke tests")
     for item in items:

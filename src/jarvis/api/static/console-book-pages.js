@@ -9,6 +9,8 @@
 // line "+N more in the full book" under its limitations, from the index's `limitations`).
 // Routes: GET /v1/book/pages?release=, GET /v1/book/pages/{id}?release= (X-Jarvis-Book). A refusal (a guest's 403, a
 // release without pages) draws nothing. No build step; CSP script-src 'self'; textContent only; ASCII; <= 400 lines.
+// R6.3.1 F (docs/plans/r6-3-1-book-at-build.md D3, D10): a page's optional `flow` is drawn above its "How it works" by
+// console-book-flow.js (an ES module, imported at the first Read); no flow, or a module that can't load: nothing changes.
 (() => {
   'use strict';
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
@@ -54,7 +56,8 @@
     arr(p.sections).map(obj).filter(Boolean).forEach((s) => { if (SECTIONS.includes(s.id)) by[s.id] = s; });
     const sections = SECTIONS.filter((id) => by[id]).map((id) => ({ id, heading: txt(by[id].heading, 60) || id,
       text: typeof by[id].text === 'string' ? by[id].text.replace(INVISIBLE, '').slice(0, 2400) : '', refs: arr(by[id].refs).map((r) => txt(r, 200)).filter(Boolean) }));
-    return sections.length ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.meta), changed: p.changed === true, sections } : null;
+    return sections.length ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.meta), changed: p.changed === true, sections,
+      flow: obj(p.flow) } : null; // the flowchart module checks the flow field by field
   }
   const pages = () => (index ? index.parts.flatMap((p) => p.chapters.flatMap((c) => c.pages)) : []);
   const find = (id) => pages().find((p) => p.id === id) || null;
@@ -109,7 +112,7 @@
     const ul = mk('ul', 'bchips'); ul.setAttribute('aria-label', 'Where in the code');
     list.forEach((r) => ul.append(mk('li', 'bchip', r))); body.append(ul);
   }
-  /** One page: who wrote it, the changed label, its six sections (plain and example open). */
+  /** One page: who wrote it, the changed label, its six sections (plain and example open), its flowchart if it has one. */
   function drawPage(box, p, rid) {
     box.append(mk('p', 'bfine', writtenBy(p.meta, rid)));
     if (p.changed) box.append(mk('p', 'bfine', CHANGED));
@@ -117,6 +120,21 @@
       words(body, s.text); refs(body, s.refs);
       if (!body.childElementCount) body.append(mk('p', 'bempty', 'Nothing here yet.'));
     }, !!OPEN[s.id])));
+    if (p.flow) chartAt(box, p);
+  }
+  // R6.3.1 F: the flowchart module, imported once (console-book-flow.js); null when it can't load
+  let flows = null;
+  const flowModule = () => (flows = flows || import('./console-book-flow.js').catch(() => null));
+  /** The chart above "How it works" (or where that section would be): a slot now, the figure when the module is here. */
+  function chartAt(box, p) {
+    const slot = mk('div', 'bk-flowslot'), how = SECTIONS.indexOf('how');
+    const i = p.sections.findIndex((s) => SECTIONS.indexOf(s.id) >= how);
+    box.insertBefore(slot, i < 0 ? null : box.querySelectorAll(':scope > .bk-sec')[i] || null);
+    flowModule().then((F) => {
+      let fig = null;
+      try { fig = F && typeof F.figure === 'function' ? F.figure(p.flow) : null; } catch (_) { fig = null; } // a chart never breaks a page
+      if (fig) slot.replaceWith(fig); else slot.remove();
+    });
   }
 
   // ---- continue where I left off (ids only). The key is shared with the tour (console-book-tour.js keeps
@@ -190,6 +208,7 @@
   }
   async function open(pageId) {
     if (!PAGE.test(pageId)) return;
+    flowModule(); // R6.3.1 F: on its way while the page is read
     const mine = gen;
     try {
       const got = normalPage(await D.api('/v1/book/pages/' + pageId + query(), D.booked()));

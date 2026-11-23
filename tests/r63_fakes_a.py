@@ -169,6 +169,47 @@ C74 = """#### C74 · Demo extra
 """
 
 
+# D2b: the technology inventory's five sources, each with what the scan must keep and leave
+INVENTORY_FILES: dict[str, str] = {
+    "android/gradle/libs.versions.toml": (
+        "# Libraries (Part E): all Apache 2.0, exact versions only.\n"
+        '[versions]\nagp = "9.5.1"\nkotlin = "2.4.10"\nandroidx-core = "1.17.0"\n\n'
+        "[libraries]\n"
+        'androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }\n'
+        'health = { module = "androidx.health.connect:connect-client", version = "1.1.0" }\n\n'
+        "[plugins]\n"
+        'android-application = { id = "com.android.application", version.ref = "agp" }\n'
+        'kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }\n'
+    ),
+    "deploy/home/docker-compose.yml": (
+        "services:\n  mosquitto:\n    image: ${MOSQUITTO_IMAGE:-eclipse-mosquitto:2.0.20}\n"
+        "  frigate:\n    image: ${FRIGATE_IMAGE:-ghcr.io/example/frigate:0.17.2}\n"
+        "  bridge:\n    image: jarvis-home-bridge:local\n"
+    ),
+    "deploy/home/bridge-requirements.txt": (
+        "# MQTT for the camera: aiomqtt 2.5.1 (BSD-3-Clause) and paho-mqtt 2.1.0\n"
+        "# (EPL-2.0 OR BSD-3-Clause). Not in the cloud image. opencv-python-headless 4.12.0.88\n"
+        "# (OpenCV: Apache-2.0; the packaging: MIT): a note, not a licence expression.\n"
+        "aiomqtt==2.5.1 \\\n    --hash=sha256:00\n"
+        "fastapi==0.115.0 \\\n    --hash=sha256:11\n"
+        "paho-mqtt==2.1.0 \\\n    --hash=sha256:22\n"
+        "opencv-python-headless==4.12.0.88 \\\n    --hash=sha256:33\n"
+    ),
+    "requirements.lock": "fastapi==0.115.0 \\\n    --hash=sha256:44\n",
+    "pyproject.toml": (
+        '[project]\nname = "jarvis"\nrequires-python = ">=3.11"\n'
+        'dependencies = ["fastapi>=0.115"]\n'
+        '\n[project.optional-dependencies]\ndev = ["pytest>=8", "ruff>=0.5"]\n'
+        'home = ["aiomqtt==2.5.1"]\n'
+    ),
+    "tools/markdy/package-lock.json": (
+        '{"packages": {"": {"devDependencies": {"@markdy/cli": "1.5.7"}},'
+        ' "node_modules/@markdy/cli": {"version": "1.5.7", "license": "MIT", "dev": true},'
+        ' "node_modules/@markdy/core": {"version": "1.5.7", "license": "MIT", "dev": true}}}\n'
+    ),
+}
+
+
 def write_files(root: Path, files: dict[str, str]) -> Path:
     for rel, text in files.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +240,7 @@ __all__ = [
     "COMMITTED",
     "DEMO",
     "EXTRA_FILES",
+    "INVENTORY_FILES",
     "SHA",
     "a_repo",
     "i0_repo",

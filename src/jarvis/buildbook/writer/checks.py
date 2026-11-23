@@ -57,6 +57,7 @@ _FENCE = re.compile(r"<<|>>")
 _CID = re.compile(r"\bC\d{2}\b")
 _LABEL = re.compile(r"\bR\d+(?:\.\d+)*\b")
 _VERSION = re.compile(r"\bv?\d+\.\d+\.\d+\b")
+_RUPEE_ZERO = re.compile(r"₹0(?![\d.,])")  # R6.3.1: "₹0" says plainly that a part is free
 _STATUS = re.compile(r"\b[1-5]\d\d\b")
 _ROUTE = re.compile(r"^(?:(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|WEBSOCKET) )?(/\S*)$")
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -159,7 +160,9 @@ def _ref_ok(span: str, ctx: Context) -> bool:
         )
     if "/" in s or "." in s:
         return resolve(s, ctx) is not None
-    return _IDENT.match(s) is not None and _name_ok(s, ctx)
+    if _IDENT.match(s) is not None and _name_ok(s, ctx):
+        return True
+    return s in ctx.known("paths")  # R6.3.1: a bare tracked file name (`Dockerfile`, `Makefile`)
 
 
 def _name_ok(name: str, ctx: Context) -> bool:
@@ -200,7 +203,7 @@ def _numbers_ok(text: str, facts: FactPack) -> bool:
     t = _TICK.sub(" ", t)
     for word in (*STANDARD_NAMES, *_pack_words(facts)):
         t = t.replace(word, " ")
-    for pattern in (_CID, _LABEL, _VERSION):
+    for pattern in (_CID, _LABEL, _VERSION, _RUPEE_ZERO):
         t = pattern.sub(" ", t)
     return not any(c.isdigit() for c in t)
 

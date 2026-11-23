@@ -179,7 +179,7 @@ export function renderFlow(spec, host) {
     const L = layout(spec, box.clientWidth);
     if (L.key !== laid) {
       const svg = chart(spec, L, id, steps.id);
-      if (first) { svg.classList.add('fl-in'); first = false; } // a one-time fade (none with reduced motion: console-book.css)
+      if (first && box.isConnected && box.clientWidth) { svg.classList.add('fl-in'); first = false; } // one fade, when first seen
       laid = L.key; fitted = false; box.replaceChildren(svg);
     }
     if (!fitted && box.isConnected && box.clientWidth) { fit(box.firstChild); fitted = true; } // measured once it is shown

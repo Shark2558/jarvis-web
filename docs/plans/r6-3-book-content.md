@@ -41,15 +41,18 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
    come out; Gemini is ₹0), then type **YES**; the trial stops at **₹60** whatever happens. The pages
    appear side by side, with which checks each passed. Gemini's free tier may let Google learn from what it reads, so it is
    given only JARVIS's public code and the numbers computed from it, never anything of yours.
-4. **Then you pick** the writer and the caps in Book settings. The proposed caps (yours to confirm):
+4. **Then you pick** the writer and the caps in Book settings, and confirm them by typing **YES** on
+   the ₹ shown (so does any later raise of a cap, a switch to a paid brain, or "update by itself"
+   turned on; lowering is instant). The proposed caps (yours to confirm):
    **₹1,500** for the first full write (one time), **₹500** a release, **₹1,000** a month, and it stops
    before your monthly limit in Vitals would pass **80 %**. The **first full write** (about 152 pages)
    starts only after a **second typed YES** with its estimate: **about ₹1,120** (₹770–1,560) with
    Claude, ₹0 with Gemini.
 5. **Nothing spends money by itself after a deploy.** At each new release the Book works out which
    pages changed and shows the estimate (a feature release: about ₹300, ₹130–620; a hotfix: under
-   ₹30); it writes them only when you tap **Update** and confirm the ₹. At the pick you may instead let
-   it update by itself within the ₹500 cap (off unless you choose it).
+   ₹30); it writes them only when you tap **Update** and type YES on its ₹. You may instead let it
+   update by itself within the ₹500 cap: off unless you turn it on, and turning it on takes your typed
+   YES on "up to ₹500 a release and ₹1,000 a month, with no question asked".
 6. **Checked before anything is kept.** Every file, function and setting a page names must exist;
    every number comes from the code, never from the AI; personal data and secret shapes are refused; an
    unverified fact stays marked "Unverified"; a feature that isn't built may appear only under
@@ -90,7 +93,7 @@ case of the same name runs it through the wired app at I1.
 | 380 | "two versions: a short 10–15 minute tour and a descriptive full book that grows with JARVIS" | The tour lasts 10–15 minutes by the timer (13–14 aimed), has the seven highlights he chose and the running example; the full book has a page for every catalogue card, module, console screen and outside service, and a new card gets a page at the next release with no hand edit | A (pages index, facts), D (tour), B (update), C (reader) | `test_row380_the_tour_is_ten_to_fifteen_minutes_with_his_seven_highlights` (the filled tour of `47ee8fc` times 780–870 s for the owner and 760–850 s for a guest, inside the hard 600–900 s band; its highlight ids are exactly the seven, in his order; the running example has both lines) and `test_row380_a_new_card_gets_its_own_page_at_the_next_release` (a fixture guide with a C74 card: the pages index gains `pg_card_c74` in its module's chapter, the update's estimate counts it, and after the update the reader lists it) |
 | 23 Nov · trial | "an owner-only Writer trial in Book settings: 5 representative sample pages each by the BALANCED Claude brain and by the free Gemini brain; the ₹ estimate shown first, his typed YES, a hard cap; the pages shown side by side" | As his words; never for a guest; nothing spent before the YES | B, C | `test_the_trial_spends_nothing_before_yes_and_stops_at_its_cap`: zero brain calls before `YES`; "yes", "Yes", "YES!" refused; with the fake brains, 5 + 5 pages; with every Claude call settling at its hold (₹8.95 at ₹95.24 a dollar, D8) the cap of ₹60 lets 6 calls through and refuses the 7th before it is sent; the side-by-side view lists both brains' pages with their checks; a guest session gets 403 on every trial route |
 | 23 Nov · pick | "then he picks the writer and the caps; the full first write starts only after his pick and a second typed YES with its ₹ estimate" | No first write without a pick and a second YES bound to the estimate shown | B, C | `test_the_first_write_needs_the_pick_and_a_second_yes_on_the_estimate_shown`: `POST …/first` before a pick is 409 `pick_needed`; with a pick but a stale `estimate_id` 409 `estimate_changed`; with both, the run starts and its cap is the pick's |
-| 23 Nov · deploy | "nothing spends money by itself after a deploy" | After a new release, zero brain calls until his Update (or his opt-in) | B | `test_nothing_spends_by_itself_after_a_deploy`: a new release id in the fake source, 50 `book_write` ticks: no brain call, one `book_update_ready` state with its estimate; after `POST …/update` with `confirm_cost: true`, the changed pages only |
+| 23 Nov · deploy | "nothing spends money by itself after a deploy" | After a new release, zero brain calls until his Update with a typed YES (or "update by itself", itself granted only by a typed YES) | B | `test_nothing_spends_by_itself_after_a_deploy`: a new release id in the fake source, 50 `book_write` ticks: no brain call, the new release's pages file carried for free (H3), one `book_update_ready` state with its estimate; after `POST …/update` with `typed: "YES"`, the changed pages only; and `test_spending_authority_needs_a_typed_yes` (H2): the first pick, a cap raised, a paid brain and "update by itself" on each answer 422 `yes_needed` with the ₹ words and save nothing until the YES on that `terms_id` |
 
 **Where Phase A goes further than what he approved, and what this plan does.**
 
@@ -122,7 +125,8 @@ case of the same name runs it through the wired app at I1.
 
 No change to the reference architecture. Two rules are widened in the open (security-reviewer to
 confirm): (1) a Book job calls a paid model in the background, only inside a run the owner started
-with a typed YES (or his opt-in for release updates), under four caps; (2) a brain that may train on
+with a typed YES (or his opt-in for release updates, itself granted by his typed YES on its ₹
+limits), under four caps; (2) a brain that may train on
 what it reads (the free Gemini brain) may be sent the release's **public** code and fact pack, only
 by the writer, only after his choice, never with tools (the registry's rule, `llm/brains.py:1–6`,
 still holds: no tool specs, no tool output). The writer names no model: it asks `jarvis.llm` for the
@@ -523,6 +527,13 @@ version, written_at, attempt, tokens_in, tokens_out, inr}` from the `Written` re
 `brains.get(brain).tiers[BALANCED]`, or that came back empty (Phase A §7.2). The trial and the pick
 offer only brains in the registry: Claude when `JARVIS_ANTHROPIC_API_KEY` is set, Gemini (free) when
 `JARVIS_GEMINI_API_KEY` is set (fact 8); a missing one is shown as "not set up on this server".
+**A brain is offered only when its price is known** (plan review M2): its BALANCED model
+`pricing.is_priced` and either `pricing.is_paid` or the brain is the free tier
+(`trains_on_content`); otherwise it is listed as "price unknown: not offered". Today that is
+`anthropic` and the free `gemini` only: a paid-tier Gemini (`gemini_paid_tier`, labelled "Gemini",
+not training, still priced at $0 in `llm/pricing.py:32–36`) and the OpenAI-compatible brain (its
+model usually not in the price table, metered at $0 with one warning, `:94–100`) are not offered,
+so no estimate, cap or 80 % gate can read ₹0 while a vendor bills him.
 
 **D2 · The fact pack: computed at CI, quoted by the AI, never typed.** A builds `gen/facts.py` (stdlib,
 deterministic) and the generator writes `_book/facts.json` beside `book.json` (its SHA-256 in
@@ -625,14 +636,29 @@ filled with Phase A's figures as **proposed defaults he confirms**: first write 
 **₹500** a release, **₹1,000** a month (release updates; the first write is outside this cap but inside
 his overall limit), stop before his Vitals month would pass **80 %** of his monthly limit (no limit set
 → the Book's caps only), and "update by itself within the release cap" **off**. Bounds: first 0–5,000,
-release 0–2,000, month 0–5,000, 10–100 %. Saving the pick spends nothing; raising a cap above what he
-last confirmed needs `confirm_cost: true` (R6.2's pattern), lowering is instant. **The first full
-write** starts only with `POST …/first {typed: "YES", estimate_id}`: the estimate (about ₹1,120,
-₹770–1,560 for 152 pages with Claude; ₹0 with Gemini), the cap, the time it may take (D5) and what is
+release 0–2,000, month 0–5,000, 10–100 %. **Every grant of spending authority is his typed YES on the
+₹ shown first** (his binding rule; plan review H2 found that `confirm_cost: true` alone, and nothing
+at all for the switch, would have let it be granted without one): the **first saved pick** (its
+`confirmed` terms start at zero, so every non-zero cap is a raise), **any cap raised** (a ₹ cap or
+the % line), a **switch to a paid brain** (its BALANCED model `pricing.is_paid`), and **"update by
+itself" turned on**, shown as "up to ₹500 a release and ₹1,000 a month (your caps), by itself after
+each deploy, with no question asked". A switch to a brain that `trains_on_content` needs the same YES
+with the learning note (no ₹). `PUT …/pick` without that YES saves nothing and answers 422
+`yes_needed` with `{terms_id, words}`: the ₹ words the console shows above the YES box (C); the
+console resends the same pick with `typed: "YES"` and that `terms_id` (`we_`-style, 12 hex of the
+pick, the brain's BALANCED price and the day's rate); a pick that changed meanwhile is 409
+`terms_changed`. Lowering a cap or turning "update by itself" off is instant, with no YES. Saving
+the pick spends nothing. The writer's Gemini pick is its **own consent**, separate from the talk-through's
+`allow_training_brain` (`buildbook/owner.py:89`): Book settings says so beside both, so turning the
+talk-through's switch off never reads as "no Gemini for the Book" (L8). **The first full write**
+starts only with `POST …/first {typed: "YES", estimate_id}`: the estimate (about ₹1,140,
+₹780–1,590 for 152 pages with Claude; ₹0 with Gemini), the cap, the time it may take (D5) and what is
 sent; with Gemini, the same YES (no ₹, the learning note). At the cap the run stops, says how many
-pages are left, and those pages keep the generator's text until next month or a raised cap (with its
-own `confirm_cost`). A pick of Gemini still passes every check; a page Gemini fails twice keeps the
-generator's text (never a Claude call he didn't pick).
+pages are left, and those pages keep the generator's text; going on is `POST …/first` again with the
+remaining pages' estimate and a new YES, inside what is left of the one-time ₹1,500 or a cap he
+raised with its own YES (D11 replaces the release's pages file). A pick of Gemini still passes
+every check; a page Gemini fails twice keeps the generator's text (never a Claude call he didn't
+pick).
 
 **D8 · Money: one ledger, holds before every call, estimates in ₹.** `writer/caps.py` (B), R13.1's
 pattern (`wardrobe/seeme/cap.py`): `book_write_spend/{uid}_{YYYY-MM}` (his IST month, numbers only).
@@ -719,8 +745,8 @@ writer works out (free, local) which pages changed: a page is **changed** when a
 changed content (by SHA-256 inside the two `source.zip`s), its card's text changed, or it is new;
 otherwise it is carried (D11). It stores `update_ready {release, estimate_id, pages, inr}` and the
 seal notice adds "The AI pages wait for your Update (about ₹300)". Nothing is called until he taps
-**Update** in the Book panel (`POST …/update {confirm_cost: true, estimate_id}`, the ₹ dialog as
-R6.2's) or he chose "update by itself" at the pick (then only within the release cap). A hotfix
+**Update** in the Book panel and types YES on its ₹ (`POST …/update {typed: "YES", estimate_id}`)
+or he turned "update by itself" on with its own YES (D7; then only within the release cap). A hotfix
 (1–3 pages, under ₹30) is the same rule. If he never updates, the reader shows the last release's AI
 pages for unchanged parts and the generator's text, labelled, for changed ones.
 
@@ -751,7 +777,7 @@ test).
 
 | Collection / file | Part | Holds | Sealed | Kept |
 |---|---|---|---|---|
-| `book_writer/{uid}` | B | the pick `{brain, caps {trial, first, release, month, limit_pct}, auto_update, picked_at, confirmed {caps}}`; consents `{trial, first}: {at, estimate_id, release}`; the run `{kind trial\|first\|update, release, estimate_id, state queued\|running\|paused\|done\|stopped, why, total, done, failed, started_at, ended_at}`; `update_ready {release, estimate_id, pages, inr_mid}`; `rev` | no (ids, enums, numbers) | until deleted |
+| `book_writer/{uid}` | B | the pick `{brain, caps {trial, first, release, month, limit_pct}, auto_update, picked_at, confirmed {brain, caps, auto_update, terms_id, at}}` (`confirmed` starts with every cap 0, no brain and `auto_update` false: what his last typed YES granted, H2); consents `{trial, first}: {at, estimate_id, release}`; the run `{kind trial\|first\|update, release, estimate_id, state queued\|running\|paused\|done\|stopped, why, total, done, failed, started_at, ended_at}`; `update_ready {release, estimate_id, pages, inr_mid}`; `rev` | no (ids, enums, numbers) | until deleted |
 | `book_write_lease/{uid}` | B | `{holder, until}` (60 s) | no | while held |
 | `book_write_spend/{uid}_{YYYY-MM}` | B | `spent_inr, held_inr, holds {call_id: {inr, at, run, page}}, runs {trial, first, update_<rid>: spent}, calls, refused` | no (numbers only) | 13 months |
 | `book_drafts/{uid}_{rid}_{page}` | B | one page's draft: `{page, attempt, state ok\|failed, checks [code], meta, blob}` (the text and template, `BookCrypto` under the release id and a fresh `bf_` file id) | blob only | until the run's pages file is sealed, ≤ 30 days |
@@ -780,9 +806,9 @@ show-only browser, which the guest lock already refuses). **Owner session** rout
 | `GET /v1/book/writer` | B | **console**; on or off and why (`no_key`, `no_ai`, `no_brain`); the brains offered (id, label, `trains_on_content`, the balanced model's name from the registry, "not set up" when missing); the trial (state, pages done, ₹ spent, results' ids); the pick; the run (kind, done / total, ₹ spent / cap, why stopped); `update_ready`; the month (Book ₹, his limit, 80 % line) |
 | `GET /v1/book/writer/estimate?run=trial\|first\|update` | B | **console**; `Estimate {id, run, brain, pages, low, mid, high, hold, cap, minutes_low, minutes_high, gst_note, sent_to}`; ₹ only |
 | `POST /v1/book/writer/trial` | B | **console**; `{typed, estimate_id}` → the trial queued; 422 `not_yes`; 409 `estimate_changed`, `running`; 503 `no_brain`, `no_ai` |
-| `PUT /v1/book/writer/pick` | B | **console**; `{brain, caps, auto_update, confirm_cost?}`; 422 `bad_cap`, `unknown_brain`, `confirm_needed` (a cap raised without `confirm_cost: true`); audited by field names and `cost_confirmed`, never values |
+| `PUT /v1/book/writer/pick` | B | **console**; `{brain, caps, auto_update, typed?, terms_id?}`; 422 `bad_cap`, `unknown_brain`, `not_offered` (price unknown, M2), `not_yes`, and `yes_needed` with `{terms_id, words}` when the pick grants more than `confirmed` (the first pick, a cap raised, a paid brain, a training brain, "update by itself" on: H2), nothing saved; 409 `terms_changed`; audited by field names and `yes_confirmed`, never values |
 | `POST /v1/book/writer/first` | B | **console**; `{typed, estimate_id}`; 409 `pick_needed`, `estimate_changed`, `running`, `already_written`; 422 `not_yes` |
-| `POST /v1/book/writer/update` | B | **console**; `{confirm_cost: true, estimate_id}`; 409 `nothing_to_update`, `estimate_changed`, `running`; 422 `confirm_needed` |
+| `POST /v1/book/writer/update` | B | **console**; `{typed: "YES", estimate_id}` (his typed YES on the update's ₹, his binding rule); 409 `nothing_to_update`, `estimate_changed`, `running`, `use_first` (more than the release cap's worth of pages, or nothing to carry from: H3); 422 `not_yes` |
 | `POST /v1/book/writer/stop` | B | **console**; stops the run after the calls in flight (their holds settle); the pages written stay as drafts and are sealed as a partial pages file with `skipped` |
 | `POST /v1/book/writer/step` | B | **console**; one step (D5), ≤ 45 s, at most one at a time (409 `busy`), 6 a minute; → the run's view |
 | `GET /v1/book/writer/trial/pages` · `GET …/trial/pages/{nn}` · `DELETE /v1/book/writer/trial` | B | **console**; the side-by-side list (page, brain, checks, ₹, seconds) · one trial page (sections and meta) · delete the trial |
@@ -797,8 +823,8 @@ minute (`api/book_show_wiring.py` `LIMITS` style, in the new modules). 14 routes
 
 R6.3 adds no model-callable tool, so no permission row, no Telegram pattern, no skill-register group,
 no persona line. The writer is not a tool: the brain cannot start, raise or steer it; only the
-owner's console routes can, each with its typed YES or `confirm_cost` (the pattern R6.2 and R13.1 set
-for spending), so no e-mail, web page or chat message can make the Book spend (security-reviewer to
+owner's console routes can, each grant of spending with his typed YES on the ₹ shown (R13.1's
+pattern, D7), so no e-mail, web page or chat message can make the Book spend (security-reviewer to
 confirm). The writer's brain calls carry `tools=None`.
 
 ## Per part: failures, security, cost
@@ -936,8 +962,8 @@ first; only the planned collections, routes and job; never a wiring or shared fi
   brain's data rule, the checks, sealing).
 - **C · The owner's console** (D6's and D7's screens, D12's Update, D14): `static/console-book-writer.js`
   (Book settings → Writer trial: estimate, what is sent, the YES box, progress with "Step while I
-  watch", the side-by-side pages; Writer: the pick, the caps, the first write's YES, Update, Stop;
-  ≤ 400), `static/console-book-pages.js` (Full book, a page, references, continue; ≤ 400), the
+  watch", the side-by-side pages; Writer: the pick, the caps, the server's ₹ words and the YES box
+  for every grant (H2), the first write's YES, Update's YES, Stop; ≤ 400), `static/console-book-pages.js` (Full book, a page, references, continue; ≤ 400), the
   optional placement CSS (D0), `tests/test_r63_c_*.py`, `tests/browser/test_r63_c_*.py` (against
   `tests/r63_fake_server.py`), screenshots (360 × 800, 1280 × 800, day and night), INTEGRATION-C.md.
   `security-reviewer` for the YES and ₹ dialogs.
@@ -1000,9 +1026,9 @@ clock.
 |---|---|---|
 | `contract` (I0, built) | the parts build through the real wiring and own only their routes, collections and job; the stubs answer `not_built_yet`; `book_write` does nothing without a run; `47ee8fc`'s real `book.json` and a two-file index still load; `console.html`'s hash | the job's "no run, no call" guard removed: `test_nothing_spends_by_itself_after_a_deploy` fails |
 | `facts` (A) | `--check` twice identical with `facts.json`; every tour key known; the module map has all 73 cards once; the index has every tracked path and every `src` top-level symbol; the counter on a fixture equals its hand count; the inventory's Android, home-kit, bridge and dev rows with SPDX names; the scrubber's new kinds found (IPv4, IPv6, PAN, Aadhaar groups, hostnames, project ids) and versions, dates and line numbers left alone; G3's 31, G4's "+N more" | a set iterated unsorted in `facts.py`: `--check` fails; the IP pattern removed: its case fails; C69 removed from the map: the generator does not refuse and the case fails |
-| `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the pages file attached as the third kind, carried forward, and only changed pages rewritten; auto-update only within the cap; Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; `write_text` built on `complete()`: the no-laptop case fails; the reference check off: the fake path is sealed; `.claude/**` in a pack: the never-reads case fails |
+| `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the pages file attached as the third kind, carried forward, and only changed pages rewritten; auto-update only within the cap; the first pick, a cap raised, a paid brain, a training brain and auto-update on each 422 `yes_needed` and nothing saved, then saved on the YES with that `terms_id`, 409 on a stale one, lowering instant (H2); a paid-tier Gemini and an unpriced custom brain listed "not offered" (M2); Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; auto-update accepted without its YES: the H2 case fails; a paid-tier Gemini offered at ₹0: the M2 case fails; `write_text` built on `complete()`: the no-laptop case fails; the reference check off: the fake path is sealed; `.claude/**` in a pack: the never-reads case fails |
 | `needles` (I1) | planted in the fakes: the creator name, his e-mail, a vault document's text, a memory fact, a mail subject, a fake secret, the pack's canary — never in a pack, a prompt, a page, a draft, a trial page, a log record, the audit, a notice or the Privacy export; a positive control per sink | the pack builder reading Book settings: the creator-name needle is found |
-| `console` (C, browser) | the trial (estimate → what is sent → the YES box refuses "yes" → progress with "Step while I watch" → side by side with checks); the pick (caps filled with the defaults, a raise opens the ₹ dialog, "Keep" sends nothing); the first write's YES; Update and Stop; the Full book (a written page, a "Not written by AI yet" page, references, an older release); continue; 44 px targets; 360 × 800 and 1280 × 800, day and night; the Book panel's screenshots with the writer off unchanged against `47ee8fc` | the YES box sending "yes": its case fails |
+| `console` (C, browser) | the trial (estimate → what is sent → the YES box refuses "yes" → progress with "Step while I watch" → side by side with checks); the pick (caps filled with the defaults; the first save, a raise, a paid brain and "update by itself" each show the server's ₹ words and the YES box; "Keep" sends nothing; lowering saves at once); the first write's YES; Update's YES and Stop; the Full book (a written page, a "Not written by AI yet" page, references, an older release); continue; 44 px targets; 360 × 800 and 1280 × 800, day and night; the Book panel's screenshots with the writer off unchanged against `47ee8fc` | the YES box sending "yes": its case fails |
 | `tour` (D) | the filled tour inside both bands; the seven highlights in his order; both running-example lines; a guest's tour has no ₹, no T16, no owner-only line; a guest's `POST /v1/book/show/speak` of every owner-only tour id (`t13b03`, `t16b01`) is 404 `unknown_line`, through the real route; every tour id of the session's audience speaks; the player runs all 17 scenes, Questions and Closing in 2D, in 3D (WebGL2) and under Motion Off; an older book plays today's 11 scenes; "What else" lists the 11 other modules from the map | T13's owner line left in the guest's tour: the no-₹ case fails; `tour_line_text` ignoring the audience: the guest-speak case fails; a highlight dropped: the seven case fails; the pace set to 290 words a minute: the band case fails |
 | `e2e` (I1) | the trial with the fake brains (estimate, YES, steps, side by side), the pick, the first write's YES, sealing, a page in the reader; a new release id → `update_ready` → Update → only the changed pages; a guest's tour | the update writing every page: the changed-only case fails |
 
@@ -1072,8 +1098,10 @@ keyring 26. `tests/test_r63_seams.py` pins each.
    release with your YES.
 6. **GST:** the caps count JARVIS's metered price, as Vitals does, and each estimate says "your
    Anthropic bill may add 18 % GST" (default); or the caps count 18 % on top.
-7. **Release updates:** ask you each release with its ₹ (default); or update by itself within the
-   ₹500 release cap.
+7. **Release updates:** ask you each release with its ₹, Update with your typed YES (default); or
+   update by itself within the ₹500 release cap and ₹1,000 month, which you turn on in Book settings
+   with your typed YES on those limits (changed by plan review H2: it can no longer be ticked on
+   without one).
 8. **A guest's tour:** no costs scene and no ₹ anywhere (default).
 9. **If Gemini isn't set up on the server:** a one-brain trial, said so (default); or wait until it
    is.

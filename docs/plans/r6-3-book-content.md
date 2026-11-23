@@ -820,7 +820,7 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
 - **Against the proposed caps:** the trial (₹60) holds even the high case; the first write (₹1,500)
   holds low and mid; at high it stops ≈ 6 pages short (they keep the generator's text until next month
   or a raised cap); a release (₹500) holds low and mid, and at high stops ≈ 11 pages short; the month
-  (₹1,000) holds two high releases. With 18 % GST added by an invoice: first write mid ≈ ₹1,324.
+  (₹1,000) holds three mid releases, or one high and one mid. With 18 % GST added by an invoice: first write mid ≈ ₹1,324.
 - **Prompt caching** of the fixed system prompt (≈ 3k tokens, reads at 5 %) saves ≈ ₹0.5 a call,
   ≈ ₹100 on the first write; not counted above.
 - **Everything else is ₹0:** the fact pack and tour at CI (GitHub's runners; Unverified whether
@@ -835,7 +835,105 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
 
 ## The I0 seam list (branch `r6-3-i0`; the integrator owns these files)
 
+1. **Version** `6.3.0`: `__init__.py` and the six exact pins, the prefix pin (`test_r11_seams.py:60` →
+   `"6."`), `v6.3.0` in `tests/r13_fake_server.py:126`, `test_r13_wiring.py:306`,
+   `test_r131_wiring.py:291`; the label `R6.3` at `test_book_gen_determinism.py:212`,
+   `test_r7_seams.py:160`, `test_r14_seams.py:104`; `test_book_gen_plans.py:212` →
+   `docs/plans/r6-3-book-content.md` / `R6.3` and `:218` (fact 1). The persona is unchanged.
+2. **The write seam** `llm/write.py` (D1, test first: no laptop call with a ready fallback, no tier
+   change on a transient error, the model reported is `resolve(tier)`, a cut stream reported as cut,
+   `BrainOff` under No-AI, prices only through `pricing`) and its fake in `tests/r63_fake_brains.py`.
+3. **Types**: `buildbook/writer/model.py` (pages, sections, meta, pick, caps with defaults and bounds,
+   runs, estimates, views; ≤ 400), `buildbook/tour_model.py` (`TourBeat`, `TourScene`, `Tour`; ≤ 200);
+   `buildbook/model.py` `FileKind` += `"pages"`, `SealedRelease.files` 2–3, `Book.tour: Tour | None =
+   None`, `Release.facts_sha256: str | None = None` (≤ +8 lines; old books and indexes still load: a
+   test on `47ee8fc`'s real `book.json` and a two-file index); `seal_index.py` `ATTACHABLE =
+   ("pages",)` and `CAPS["pages"]`.
+4. **The module map** `buildbook/gen/modules.py` (18 modules, D3; the check "every card in exactly
+   one"), read by A and D.
+5. **Generator joins** (`gen/write.py`, `gen/__main__.py`, `gen/runner.py`, `release.py`): `facts =
+   facts.build(repo)` (A's stub `{}`), `tour = tour.build(repo, facts)` (D's stub `None`),
+   `pages_index.build(repo, facts)` (A's stub `()`), `_book/facts.json` written and checked
+   (`--check`), `ReleaseSource.facts()`; `gen/tour.json` (an empty script) as package data
+   (`pyproject.toml` `"jarvis.buildbook.gen"` += `"tour.json"`).
+6. **Wiring** `api/r6_wiring.py` (263 → ≤ 300): `book_writer` on `app.state` (built with the keyring,
+   the brain registry and billing; None without a keyring); `r6_tick_jobs` += B's `BookWriteJob`
+   (stub: does nothing) after `book_sweep`; `R6_JOB_NAMES` += `"book_write"`; `home/watchdog.py`
+   `ADVISORY_JOBS` += `"book_write"`; `install_r6_routes` += `api/book_writer.py`, `api/book_pages.py`
+   (stubs: 503 `not_built_yet`); `r6_privacy_sources` += the writer's row (stub with zero counts).
+   Pins that move: `test_r6_wiring_seams.py:154`, `test_r6_wiring.py:133–137` (3 jobs),
+   `test_r2_wiring.py:258–272` (the ordered list gains `book_write` after `book_sweep`).
+7. **Money** `billing/service.py` `LABELS["book"] = "Book writer"` (the same line).
+8. **Console loading** `console-book.js` (≤ +6 lines, ≤ 390): load `console-book-writer.js` and
+   `console-book-pages.js` once at the panel's first open (a `<script defer>` built in JS, as R13.1's
+   loader does) and hand them `deps`; the stubs `window.JarvisBookWriter = {settings(host, deps)}` and
+   `window.JarvisBookPages = {mount(host, deps)}`; `api/console.py` `APP_ASSETS` += both (≤ 473);
+   `tests/test_book_static.py` `JS` += both; `tests/test_r51_console_assets_linked.py` (loaded by a
+   module, not by the page). `console.html` unchanged.
+9. **The show's script reader** `console-book-script.js` (new): `line`, `normalScene`, `normalScript`,
+   `timeline` moved out of `console-book-show.js` unchanged in behaviour (390 → ≈ 355), plus the tour's
+   shape (`kind: "tour"`, n 1–17, `t` ids, `visual`, `audience`, `chapter`); `book.html` loads it before
+   `console-book-show.js` and loads D's stub `console-book-tour.js`; today's show browser tests must
+   stay green on the move alone (the refactor's own check).
+10. **The serve joins** `show_script.py` (I0 only): `build()` asks D's `buildbook/tour_serve.py`
+    `tour_lines(book, audience, words)` (stub: None → `kind: "show"`, as today); `line_text` passes a
+    `^t\d{2}b\d{2}$` id to D's `tour_line_text` (stub: None); `api/book_show.py` unchanged in shape.
+11. **The scrubber's new kinds** are A's (`gen/scrub.py`); I0 pins the list in a test that A turns
+    green (IPv4, IPv6, PAN, Aadhaar groups, hostnames under listed domains, project-id shapes).
+12. **Fakes and evals:** `tests/r63_fake_brains.py` (scripted providers through the real
+    `BrainRegistry`: a Claude-like paid brain and a Gemini-like free one; pages that pass, one citing a
+    fake path, one with a typed number, one with an e-mail, one with an invented feature, a slow stream,
+    429, 5xx, a cut stream, a ready laptop fallback), `tests/r63_fakes.py` (a fixed IST clock, a fixture
+    repo with a three-card guide, its `source.zip` and `facts.json`), `tests/r63_fake_server.py` (the
+    HTTP contract for C), `evals/r6_3/run.py` (R13.1's staged gate: unbuilt parts pass as
+    `not_built_yet` until I1 flips `STUBS_PASS = False`, pinned) gated in `evals/run_all_mock.py`;
+    `tests/test_r63_seams.py`, `tests/test_r63_wiring.py`. CI runs plain `pytest`: fakes are imported
+    bare and named `r63_*`.
+13. **The Book's static guards** extended: `test_book_boundaries.py` `C_MODULES` += the writer's
+    modules and `api/book_writer.py`, `api/book_pages.py` (≤ 400 lines, functions ≤ 50, the content-free
+    log scan); a writer import guard (D4); "no model id, vendor name or price literal under
+    `buildbook/`" (D1).
+14. **The guide** (`docs/architecture/JARVIS-Architecture.md`): C57 ("What it does" with the AI pages
+    and the tour; "Outside services": the writer's brain, Anthropic or Gemini (free), only after the
+    owner's YES; Google Text-to-Speech and Speech-to-Text only when Cloud voice is chosen; the talk
+    brain; G2), its data (the five new collections), §6.2, §6.5 ("Anthropic or Gemini (free): the
+    release's public code and facts, for the Book's writer"), the edition line and change log;
+    `scripts/arch_coverage.json` if the checker needs it.
+15. **The roadmap (§11)** refreshed with the Workshop's current release rows (R6.3.1, R6.4 and what
+    follows, as the project's release plan has them; that plan is not in the repository), so the tour's
+    `roadmap.next` and `roadmap.after` are true.
+16. `docs/plans/r6-3-integration/BRIEF-COMMON.md` (R13.1's rules plus: ₹ only in owner-facing words;
+    no real model call in any test or eval; a fixed clock; part D starts only after the owner's YES on
+    the script) and `I0-NOTES.md`.
+
 ## Part split (four builders; worktrees; branches `r6-3-a` … `r6-3-d` from `r6-3-i0`; disjoint files)
+
+Every agent on Opus; Python modules ≤ 400 lines, functions ≤ 50, JS ≤ 400 (the Book's rule); test
+first; only the planned collections, routes and job; never a wiring or shared file.
+
+- **A · The fact pack and the generator** (CI, stdlib; D2, D2a, D2b, D3, D10's G3–G8): `gen/facts.py`,
+  `gen/loc.py`, `gen/inventory.py`, `gen/pages_index.py`, changes to `gen/scrub.py`, `gen/plans.py`
+  (G4), `gen/code.py` and `gen/libs.py` (G3, G5), `gen/costs.py` (G7), `tests/test_r63_a_*.py`,
+  `evals/r6_3/facts.py`, INTEGRATION-A.md. Determinism first: `--check` on the fixture and on the real
+  repository after every module.
+- **B · The writer** (D1's use, D4–D8, D10's checks, D11, D12, D13): `buildbook/writer/{packs,
+  prompts, checks, fill, caps, consent, estimate, run, job, store, pages, privacy, texts}.py`,
+  `buildbook/seal_attach.py`, `api/book_writer.py`, `api/book_pages.py`, `tests/test_r63_b_*.py`,
+  `evals/r6_3/writer.py`, INTEGRATION-B.md. `security-reviewer` required (money, consent, the free
+  brain's data rule, the checks, sealing).
+- **C · The owner's console** (D6's and D7's screens, D12's Update, D14): `static/console-book-writer.js`
+  (Book settings → Writer trial: estimate, what is sent, the YES box, progress with "Step while I
+  watch", the side-by-side pages; Writer: the pick, the caps, the first write's YES, Update, Stop;
+  ≤ 400), `static/console-book-pages.js` (Full book, a page, references, continue; ≤ 400), the
+  optional placement CSS (D0), `tests/test_r63_c_*.py`, `tests/browser/test_r63_c_*.py` (against
+  `tests/r63_fake_server.py`), screenshots (360 × 800, 1280 × 800, day and night), INTEGRATION-C.md.
+  `security-reviewer` for the YES and ₹ dialogs.
+- **D · The short tour** (D9; starts after approval stop 2): `gen/tour.json` (the approved script,
+  verbatim), `gen/tour.py` (fill, audiences, timer, bands), `buildbook/tour_serve.py` (`tour_lines`,
+  `tour_line_text`), `static/console-book-tour.js` (the picture per `visual`,
+  chapter names, owner-only scenes, continue; ≤ 300), `tests/test_r63_d_*.py`,
+  `tests/browser/test_r63_d_*.py` (the tour plays end to end with the browser voice stub and the 2D
+  and 3D pictures; a guest's tour; Motion Off), `evals/r6_3/tour.py`, INTEGRATION-D.md.
 
 ## R6.3.1: images, de-duplication, diagrams and the setup guide (planned here, built next)
 

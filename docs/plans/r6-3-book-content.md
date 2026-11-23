@@ -37,9 +37,9 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
    already know, with its current pictures; new pictures come with R6.4's new look.
 3. **Nothing is written by AI until you try it.** In Book settings, a new **Writer trial** (yours only)
    has two brains write the same **5 sample pages**: Claude on its everyday "balanced" tier (Sonnet 5.5)
-   and the free Gemini brain. You first see the estimate (**about ₹40**, most likely ₹30–50; Gemini is
-   ₹0), then type **YES**; the trial stops at **₹60** whatever happens. The pages appear side by side,
-   with which checks each passed. Gemini's free tier may let Google learn from what it reads, so it is
+   and the free Gemini brain. You first see the estimate (**about ₹40**, ₹25–51 by how long the pages
+   come out; Gemini is ₹0), then type **YES**; the trial stops at **₹60** whatever happens. The pages
+   appear side by side, with which checks each passed. Gemini's free tier may let Google learn from what it reads, so it is
    given only JARVIS's public code and the numbers computed from it, never anything of yours.
 4. **Then you pick** the writer and the caps in Book settings. The proposed caps (yours to confirm):
    **₹1,500** for the first full write (one time), **₹500** a release, **₹1,000** a month, and it stops
@@ -943,7 +943,8 @@ are written against the code R6.3 leaves). Four parts, ≈ 6.5–7 builder-days.
 - **E · Pictures (Phase A §9.8).** A **demo household** seed (made-up names from a fixed list, SAMPLE
   documents, drawn avatars, a camera test pattern, a fixed IST clock; `scripts/ui_snapshots.py`'s
   fixtures from `tests/browser/ui_checks.py` extended), captured in CI's existing `browser` job
-  (Chromium is already there) as a build artifact the deploy job packs into the image: about **7
+  (Chromium is already there) as a build artifact the deploy job packs into the image (R6.3.1's plan
+  checks the jobs' order in `ci.yml`): about **7
   pictures a module** (overview, 2–6 steps, one error state, a phone view, one schematic SVG) ≈ 126 for
   18 modules, WebP quality 80 (measured at Phase A: desktop 1x 73 KB, phone 1x 21 KB), each ≤ 250 KB,
   **8 MB a release** at most (decision 7; expected 2–4.5 MB). A **privacy gate** before any picture is
@@ -962,8 +963,9 @@ are written against the code R6.3 leaves). Four parts, ≈ 6.5–7 builder-days.
   envelope with a blob AAD), a release = `book.json`, its pages file and a manifest of path → blob; the
   single-use code download rebuilds the deterministic zip from blobs (`ZIP_STAMP`); the 60 MB cap
   counts unique blobs; two-file releases stay readable; the 15 MiB snapshot cap becomes a cap on a
-  release's new bytes. Measured on `47ee8fc`: three kept releases with pictures and no de-duplication
-  ≈ 59.5 MB (at the cap); with it ≈ 43 MB (72 %), ≈ 34 MB at the expected picture use.
+  release's new bytes. Estimate from the sizes measured on `47ee8fc`: three kept releases with
+  pictures and no de-duplication ≈ 59.5 MB (at the cap); with it ≈ 43 MB (72 %), ≈ 34 MB at the
+  expected picture use.
 - **G · Eight diagrams with C-ids (§9.2, G10).** The table of Phase A §9.2 from the 14 Markdy sources
   plus two new (module dependencies from the cards' "Depends on", backup and restore); a C-id on every
   node; CI checks (`scripts/markdy_export.py --check`, `scripts/arch_coverage.py`) that every card

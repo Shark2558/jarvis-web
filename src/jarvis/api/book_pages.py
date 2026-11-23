@@ -22,11 +22,11 @@ from pydantic import BaseModel
 from jarvis.api.auth import require_auth
 from jarvis.api.book_gate import BookRefused, owner_session
 from jarvis.api.book_http import TOKEN_HEADER
-from jarvis.api.book_writer import answer, limited, primary, refused, service_of
+from jarvis.api.book_writer import answered, limited, primary, service_of
 from jarvis.buildbook.facts_model import PAGE_ID
 from jarvis.buildbook.model import RELEASE_ID
 from jarvis.buildbook.writer.http import PAGES_PREFIX, ROUTES  # by name: A's route scan (M9)
-from jarvis.buildbook.writer.texts import REFUSED, WriterRefused
+from jarvis.buildbook.writer.texts import REFUSED
 
 NOT_BUILT_WORDS = "The full book isn't built on this server yet."
 router = APIRouter(prefix=PAGES_PREFIX, dependencies=[Depends(require_auth)])
@@ -48,10 +48,7 @@ def route(act: Act) -> Callable[[Request], Awaitable[JSONResponse]]:
         uid = primary(request, svc)
         await owner_session(request, uid, request.headers.get(TOKEN_HEADER))
         limited(request, "pages", uid)
-        try:
-            return answer(await act(svc, uid, release_of(request), request))
-        except WriterRefused as no:
-            return refused(no)
+        return await answered(act(svc, uid, release_of(request), request))
 
     return handler
 

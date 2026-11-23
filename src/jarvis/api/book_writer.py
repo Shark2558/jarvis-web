@@ -24,15 +24,19 @@ from pydantic import BaseModel, ValidationError
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.book_gate import BookRefused, console_only, need, now, owner_session
 from jarvis.api.book_http import TOKEN_HEADER, book_json
+from jarvis.buildbook.ports import BookError
 from jarvis.buildbook.writer import http
+from jarvis.buildbook.writer.caps import CapRefused
 from jarvis.buildbook.writer.http import ROUTES, WRITER_PREFIX  # by name: A's route scan (M9)
 from jarvis.buildbook.writer.texts import REFUSED, WriterRefused
+from jarvis.logging import get_logger
 
 NOT_BUILT_WORDS = "The Book's writer isn't built on this server yet."
 BODY_MAX = 4_096
 MINUTE_S = 60.0
 router = APIRouter(prefix=WRITER_PREFIX, dependencies=[Depends(require_auth)])
 Handler = Callable[[Request], Awaitable[JSONResponse]]
+log = get_logger(__name__)
 
 
 class Window:
@@ -83,6 +87,18 @@ def answer(model: BaseModel) -> JSONResponse:
     return book_json(model.model_dump(mode="json"))
 
 
+async def answered(work: Awaitable[BaseModel]) -> JSONResponse:
+    """The service's answer, or its refusal in words: a store, vault or ledger that breaks is
+    503 `unavailable` (logged by type only), never a bare 500 (review I1 M-1)."""
+    try:
+        return answer(await work)
+    except WriterRefused as no:
+        return refused(no)
+    except (BookError, CapRefused) as exc:
+        log.error("book writer route unavailable", extra={"error": type(exc).__name__})
+        return refused(WriterRefused("unavailable"))
+
+
 def refused(no: WriterRefused) -> JSONResponse:
     if no.code == "yes_needed":
         body = http.YesNeeded(
@@ -112,10 +128,7 @@ def route(kind: str, act: Callable[[Any, str, Request], Awaitable[BaseModel]]) -
         uid = primary(request, svc)
         await no_guest(request, uid)
         limited(request, kind, uid)
-        try:
-            return answer(await act(svc, uid, request))
-        except WriterRefused as no:
-            return refused(no)
+        return await answered(act(svc, uid, request))
 
     return handler
 
@@ -198,4 +211,4 @@ def install_book_writer(app: FastAPI) -> None:
     app.include_router(router)
 
 
-__all__ = ["NOT_BUILT_WORDS", "Window", "install_book_writer", "router"]
+__all__ = ["NOT_BUILT_WORDS", "Window", "answered", "install_book_writer", "router"]

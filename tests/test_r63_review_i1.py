@@ -6,12 +6,19 @@ import re
 import threading
 from typing import Any
 
-from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES
-from r63_fakes_b import service
+from book_app_fakes import OWNER, book, book_app, open_book, owner_uid, register_passkey, sign_in
+from r63_fake_brains import claude_like, gemini_like, registry
+from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES, RELEASE
+from r63_fakes_b import seal_r6, service
 
 from jarvis.buildbook.gen.scrub import default_scrubber
 from jarvis.buildbook.gen.snapshot import _zip
+from jarvis.buildbook.ports import VaultTampered
 from jarvis.buildbook.writer import carry, packs
+from jarvis.buildbook.writer.caps import CapRefused
+from jarvis.buildbook.writer.model import Run
+from jarvis.buildbook.writer.texts import REFUSED
+from jarvis.config import Settings
 
 C01 = FIXTURE_FACTS.page("pg_card_c01")
 assert C01 is not None
@@ -97,3 +104,40 @@ def test_m4_a_block_is_scrubbed_once_a_release_however_many_pages_quote_it() -> 
     n = len(calls)
     again = packs.build(C01, FIXTURE_FACTS, tree, Counting(), cache=cache)  # type: ignore[arg-type]
     assert again == first and len(calls) == n  # the second page's blocks came from the cache
+
+
+# ---- M-1: a store, vault or ledger failure is a refusal in words, never a bare 500 --------------
+async def test_m1_the_routes_answer_unavailable_in_words_when_the_vault_or_ledger_breaks(
+    settings: Settings,
+) -> None:
+    async for app in book_app(settings):
+        built = service(
+            brains=registry(claude_like(), gemini_like()), uid=owner_uid(OWNER), emails=(OWNER,)
+        )
+        app.state.book_writer = svc = built.service
+        await seal_r6(built)
+
+        async def broken_index(uid: str) -> Any:
+            raise VaultTampered("the AI pages failed their check")
+
+        async def broken_ledger(*args: Any) -> float:
+            raise CapRefused("unreadable")
+
+        async with sign_in(app) as c:
+            auth = await register_passkey(c)
+            owner = await open_book(c, auth, "owner")
+            svc.vault.index = broken_index
+            for url, headers in (("/v1/book/writer", {}), ("/v1/book/pages", book(owner["token"]))):
+                r = await c.get(url, headers=headers)
+                assert r.status_code == 503 and r.json()["error"] == "unavailable", (url, r.text)
+                assert r.headers["cache-control"] == "no-store"
+            svc.vault.index = type(svc.vault).index.__get__(svc.vault)
+            svc.ledger.run_spent = broken_ledger
+            await svc.store.change(built.job._ctx.uid, _a_run)
+            r = await c.get("/v1/book/writer")
+            assert r.status_code == 503 and r.json()["detail"] == REFUSED["unavailable"]
+
+
+def _a_run(doc: Any) -> tuple[Any, None]:
+    run = Run(kind="trial", release=RELEASE.id, estimate_id="we_" + "0" * 12, total=1)
+    return doc.model_copy(update={"run": run}), None

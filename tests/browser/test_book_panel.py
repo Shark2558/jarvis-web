@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -308,6 +309,26 @@ def test_a_bad_version_is_never_shown(browser: Any, server_url: str, token: str)
         head = c.page.locator("#p-book .bk-release .ihead b")
         assert head.inner_text() == "R6.1 · 8308815"
         assert c.page.locator("#p-book img").count() == 0
+        _clean(c)
+    finally:
+        c.close()
+
+
+def test_the_section_counts_say_1_plan_never_1_plans(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R6.3 review I1 L-6: the reader's counts are pluralised ("1 plan", "2 parts")."""
+    c, _ = _panel(browser, server_url, token)
+    try:
+        c.page.get_by_role("button", name="Open for me").click()
+        c.page.locator("#p-book .bk-reader").wait_for()
+        sums = c.page.locator("#p-book .bk-reader .dsc .dsum").all_inner_texts()
+        joined = " | ".join(sums)
+        assert "1 plan" in joined, joined  # the mock book has one plan
+        assert not re.search(
+            r"\b1 (?:plans|parts|flows|libraries|packages|layers|services)\b", joined
+        )
+        assert not re.search(r"\b1 (?:prices|alert kinds)\b", joined), joined
         _clean(c)
     finally:
         c.close()

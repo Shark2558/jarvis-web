@@ -7,14 +7,18 @@
 # "aadhaar" (12 digits in groups of four), "host" (a hostname under a domain whose SHA-256 is in
 # gen/redact.json's `domains` list: `Scrubber(redact, domains=...)`), "project_id" (a Google
 # Cloud project-id shape: 6-30 lower-case letters, digits and hyphens, a letter first, with a
-# digit run of 4 or more, as `my-proj-123456`). Versions, dates, line numbers and code paths are
-# NOT personal and stay as they are (the unmarked tests: true today, true after A).
+# digit run of 4 or more, as `my-proj-123456`), and M8's phrases ("name": a several-word name from
+# redact.json's `phrases`, matched as consecutive words). Versions, dates, line numbers and code
+# paths are NOT personal and stay as they are (the unmarked tests: true today, true after A).
 from __future__ import annotations
 
 import hashlib
+import json
+from pathlib import Path
 
 import pytest
 
+from jarvis.buildbook.gen import scrub as scrub_mod
 from jarvis.buildbook.gen.scrub import REMOVED, Scrubber, default_scrubber
 
 NEW_KINDS = ("ipv4", "ipv6", "pan", "aadhaar", "host", "project_id")
@@ -51,6 +55,20 @@ def test_a_hostname_under_a_listed_domain_is_removed() -> None:
     text = f"the camera at cam.{OWNER_DOMAIN} and {OWNER_DOMAIN}"
     assert "host" in scrub.findings(text) and OWNER_DOMAIN not in scrub.clean(text)
     assert scrub.findings("docs at cloud.google.com") == ()  # an unlisted public host stays
+
+
+@A_BUILDS
+def test_a_listed_phrase_is_removed_whole_and_its_words_alone_stay(tmp_path: Path) -> None:
+    """M8: a several-word name (gen/redact.json `phrases`, scripts/redact_add.py) is matched as
+    consecutive words, in any case, spacing or accent; its ordinary words alone stay."""
+    phrase = hashlib.sha256(b"quimbledorf works").hexdigest()
+    redact = tmp_path / "redact.json"
+    redact.write_text(json.dumps({"sha256": [], "phrases": [phrase], "v": 1}), encoding="utf-8")
+    assert scrub_mod.load_phrases(redact) == frozenset({phrase})  # type: ignore[attr-defined]
+    scrub = Scrubber(frozenset(), phrases=frozenset({phrase}))  # type: ignore[call-arg]
+    text = "we met at QUIMBLEDORF   Wörks today"
+    assert "name" in scrub.findings(text) and "uimbledorf" not in scrub.clean(text).lower()
+    assert scrub.findings("the Works page") == ()
 
 
 @A_BUILDS

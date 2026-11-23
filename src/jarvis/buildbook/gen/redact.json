@@ -1,10 +1,20 @@
 {
   "about": "R6 D3: lower-case SHA-256 of words gen/scrub.py removes from the build book (people's names, a personal account handle and the test fixture's made-up name; R6.3 M8: the owner's locality, workplace and employer words). Hashes only, so this file names no one and nothing. Add words with scripts/redact_add.py WORDS_FILE (the file kept outside the repository; it prints counts only).",
+  "phrases": [
+    "74144bbe2f0fd61379e9a5167e8106a7d181436c47339556e49c8f041d121393",
+    "7d152be4754a48506c5ba4b071cc187c44e90e04f9049d2f24a4b2b8bfd8f32c",
+    "917db6584980fbe38e94af761950400aff4fc60759e5caded93bbc510d661c20",
+    "95a004bf658a1bb117fe81b368a867578a549c5927f00ab68729e334c0bd8f5b"
+  ],
   "sha256": [
+    "365eac0b332c473bad51326d13ee06b3ae2585d46194c29acbd4b5cb9e0fd66e",
     "6e4947346abd14af9db128b7648d58f25f5f310e405813a64cf44ca2453e3e68",
+    "8e8afcfbc3c13beedbeda4945b8c1bca649ed5d6efd36a8d2b68f5aff7627974",
     "950771ddde4e28160f71aa740233109890939894521c83fd50bf21bb66fb0b67",
+    "9e0d34c03f40a36fcfd3ea4273763f4159d07d377a483b917674394d64ad4a24",
     "a6eac1a0ae42d3e466b45dd4610e18decdb339b59bda075853ae0229fd4edc35",
-    "bf56d4dd050c683076cda3d5883708606fee04432c495dd0fdb5ca808b8dab5d"
+    "bf56d4dd050c683076cda3d5883708606fee04432c495dd0fdb5ca808b8dab5d",
+    "dd871491b735edf38f3d7f9fe87a2905b3d2a5b978437ce1a89a69e810ceae2c"
   ],
   "v": 1
 }

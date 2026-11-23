@@ -81,8 +81,9 @@ async def test_a_tour_line_is_read_for_the_sessions_audience_only(
     seen: list[tuple[str, str]] = []
     owner_only = {"t13b03", "t16b01"}
 
-    def text(book_: Any, line_id: str, audience: str) -> str | None:
-        seen.append((line_id, audience))
+    def text(book_: Any, line_id: str, audience: str, words: Any = None) -> str | None:
+        seen.append((line_id, audience))  # I1: the script's own words come along (D 5.3)
+        assert words is not None and set(words) == {"h", "his", "by"}
         if line_id in owner_only and audience != "owner":
             return None
         return "A tour line."
@@ -108,7 +109,7 @@ async def test_the_owners_audience_reaches_the_tour_too(
     monkeypatch.setattr(
         tour_serve,
         "tour_line_text",
-        lambda b, i, a: seen.append(a) or "Line.",  # type: ignore[func-returns-value]
+        lambda b, i, a, w=None: seen.append(a) or "Line.",  # type: ignore[func-returns-value]
     )
     async for app in book_app(settings):
         async with sign_in(app) as c:

@@ -55,7 +55,8 @@ async def keyed_app(keyed: Settings) -> AsyncIterator[Any]:
 # ---- seam 6 · on and off ------------------------------------------------------------------------
 async def test_with_the_keyring_the_writer_is_built_by_its_one_join(keyed_app: Any) -> None:
     st = keyed_app.state
-    assert isinstance(st.book_writer, writer_part.NotBuilt) and st.book_writer_off is None
+    assert isinstance(st.book_writer, writer_part.WriterService)  # part B's service (I1)
+    assert st.book_writer_off is None
     assert isinstance(st.book_writer_part.job, BookWriteJob) and "book_writer" in r6.R6_STATE
     assert r6.R6_JOB_NAMES == frozenset({"book_seal", "book_sweep", "book_write"})
 
@@ -165,15 +166,18 @@ async def test_the_stub_job_does_nothing_and_calls_no_brain(keyed_app: Any) -> N
 
 
 # ---- seam 6 · the stub routes, the Privacy row; seam 7 · the label ------------------------------
-async def test_every_new_route_says_not_built_yet_and_console_routes_refuse_a_script(
+async def test_every_new_route_answers_from_its_part_and_console_routes_refuse_a_script(
     settings: Settings,
 ) -> None:
+    """I1: B's routes replaced I0's stubs, so no row says not_built_yet; each answers one of the
+    statuses its row of the contract lists, never cached."""
     async for app in book_app(settings):
         async with sign_in(app) as c:
-            for method, path, *_ in ROUTES:
+            for method, path, _part, _req, _reply, codes, _gate in ROUTES:
                 url = path.replace("{nn}", "01").replace("{page_id}", "pg_card_c16")
                 r = await c.request(method, url, headers=CSRF, json={} if method != "GET" else None)
-                assert r.status_code == 503 and r.json()["error"] == NOT_BUILT, (method, path)
+                assert r.status_code in (200, *codes), (method, path, r.status_code)
+                assert r.json().get("error") != NOT_BUILT, (method, path)
                 assert r.headers["cache-control"] == "no-store"
         async with AsyncClient(transport=app.transport, base_url="http://test") as bare:
             r = await bare.get("/v1/book/writer")

@@ -181,8 +181,8 @@ def test_the_fact_keys_and_page_ids() -> None:
         fm.FactPack.model_validate({"values": {"bad key": {"value": 1, "source": "x"}}})
 
 
-def test_facts_json_is_capped_at_one_mib() -> None:
-    with pytest.raises(ValueError, match="1 MiB"):
+def test_facts_json_is_capped_at_two_mib() -> None:  # I1: 1 MiB at I0 (INTEGRATION-A 5.4)
+    with pytest.raises(ValueError, match="2 MiB"):
         fm.load_facts(b" " * (fm.FACTS_JSON_CAP_BYTES + 1))
     with pytest.raises(ValueError, match="not a v1"):
         fm.load_facts(b'{"v": 2}')

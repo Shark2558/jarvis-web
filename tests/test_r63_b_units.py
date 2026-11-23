@@ -121,8 +121,9 @@ PRECISION = {
     "pg_chapter_example": draft(
         "One request goes through the demo router and the demo store.",
         "Ravi asks twice in 2 minutes; both answers come from one tier.",
-        "The router (`router.py`) calls `pick` and tries {{fact:src/jarvis/demo/router.py:MAX_TRIES}}"
-        " times. The store (`store.py`) keeps notes {{fact:src/jarvis/demo/store.py:KEEP_DAYS}} "
+        "The router (`router.py`) calls `pick` and tries "
+        "{{fact:src/jarvis/demo/router.py:MAX_TRIES}} times. The store (`store.py`) keeps "
+        "notes {{fact:src/jarvis/demo/store.py:KEEP_DAYS}} "
         "days, with SHA-256 checks and UTF-8 text.",
         "Nothing: it runs inside the server.",
         "`GET /v1/demo` answers status 503 while the store is down. It says so plainly.",
@@ -170,7 +171,9 @@ def test_the_precision_case_a_good_page_for_each_trial_sample_passes_all_six(pag
 def test_the_precision_case_fails_with_one_exemption_removed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(checks, "STANDARD_NAMES", tuple(n for n in checks.STANDARD_NAMES if n != "3D"))
+    monkeypatch.setattr(
+        checks, "STANDARD_NAMES", tuple(n for n in checks.STANDARD_NAMES if n != "3D")
+    )
     assert "numbers" in _codes(PRECISION["pg_card_c16"], "pg_card_c16")
 
 
@@ -192,7 +195,9 @@ def test_the_first_pick_grants_everything_so_it_needs_the_words() -> None:
 def test_lowering_grants_nothing_and_a_raise_names_it() -> None:
     held = Confirmed(brain="anthropic", caps=Caps())
     lower = Caps(release=300, month=800, limit_pct=70)
-    assert consent.grants(spec=claude_like(), caps=lower, auto=False, confirmed=held, rate=RATE) == ()
+    assert (
+        consent.grants(spec=claude_like(), caps=lower, auto=False, confirmed=held, rate=RATE) == ()
+    )
     raised = consent.grants(
         spec=claude_like(), caps=Caps(release=800), auto=False, confirmed=held, rate=RATE
     )

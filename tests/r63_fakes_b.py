@@ -2,13 +2,13 @@
 # Imported bare (`from r63_fakes_b import ...`). Everything here is fixed and in memory: no model,
 # Google or Anthropic is ever called (the scripted brains of r63_fake_brains only).
 #
-#   TRIAL_FACTS / trial_source()   the fixture's fact pack with the five trial pages added (D6), so a
-#                                  trial runs on the fixture; `big=True` adds a 150 KB docstring to a
-#                                  cited file, so every pack fills its 96,000-byte cap (the holds of
-#                                  Rs 11.84 of the trial's cap case)
-#   HoldPayer                      a Claude-like provider that reports exactly the tokens of its call's
-#                                  hold (D8's worst case: bytes / 2.5 in, the system prompt at the
-#                                  cache-write price, 4,000 out): "every call settles at its hold"
+#   TRIAL_FACTS / trial_source()   the fixture's facts with the five trial pages added (D6), so
+#                                  a trial runs on the fixture; `big=True` adds a 150 KB docstring
+#                                  to a cited file, so every pack fills its 96,000-byte cap (the
+#                                  holds of Rs 11.84 of the trial's cap case)
+#   HoldPayer                      a Claude-like provider reporting exactly its call's hold's
+#                                  tokens (D8's worst case: bytes / 2.5 in, the system prompt at
+#                                  the cache-write price, 4,000 out): every call settles at it
 #   service(...)                   the writer's service over writer_context(...) with these
 #   good_draft(page_id)            a draft that passes all six checks for that page of the fixture
 from __future__ import annotations
@@ -41,9 +41,7 @@ SYSTEM_TOKENS_AT_INPUT = 3_750  # 3,000 system tokens at the cache-write price (
 
 
 def _trial(pid: str, kind: str, part: str, title: str) -> IndexedPage:
-    return IndexedPage(
-        id=pid, kind=kind, title=title, part=part, refs=(_ROUTER,), sources=("C01",)
-    )  # type: ignore[arg-type]
+    return IndexedPage(id=pid, kind=kind, title=title, part=part, refs=(_ROUTER,), sources=("C01",))  # type: ignore[arg-type]
 
 
 TRIAL_EXTRA = (

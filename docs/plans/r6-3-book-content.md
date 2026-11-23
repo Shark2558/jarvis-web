@@ -1,4 +1,4 @@
-Version v6.3.1 · 23 Nov 2026, 14:28 IST · Release R6.3 · Status: Draft · Owner: 🛠 Mark XXIV
+Version v6.3.2 · 23 Nov 2026, 15:16 IST · Release R6.3 · Status: Ready · Owner: 🛠 Mark XXIV
 
 # Release R6.3 — The Build Book: written by AI, short tour and full book (`v6.3.0`)
 
@@ -21,7 +21,7 @@ full book, AI text in the guest talk-through. **Branches:** plan `r6-3-plan` (fr
 that commit. The basis is Phase A (`docs/plans/r6-2-book-rebuild/PHASE-A-FINDINGS.md` v6.2.1, copied
 unchanged into this branch); every Phase A fact this plan uses was re-checked on `47ee8fc` and the
 ones that moved are corrected in "What the code says today". This document's version line is the
-plan's edition (v6.3.1); the code's version is `6.3.0`.
+plan's edition (v6.3.2); the code's version is `6.3.0`.
 
 ## Summary for the owner (plain words)
 
@@ -1350,9 +1350,10 @@ keyring 26. `tests/test_r63_seams.py` pins each.
 ## What can't be verified from this workspace
 
 A real writer call (no key here and no YES): Sonnet 5.5's and Gemini's speed and page quality in
-this project, Gemini's free quota, the tokens a real page bills; whether Anthropic's invoice to this
-account adds GST; whether the home watchdog is on in his deployment and how much of its 50 s the
-other jobs leave; Cloud Run's free CPU left in a month; the browser voice's real pace; whether R7,
+this project (D5's window and H7's gate turn on it), Gemini's free quota, the tokens a real page
+bills and a real pack's bytes per token (the hold assumes at least 2.5, M1); whether Anthropic's
+invoice to this account adds GST; how much of the 5-minute clock's 50 s the other jobs leave the
+writer, Home on or off (M3, H7); Cloud Run's free CPU left in a month; the browser voice's real pace; whether R7,
 R13 and R13.1 are live (the guide says "joined, not yet deployed" for R7, R13 and R13.1; the brief
 says R13.1 is live); the workbook's own acceptance checks for rows 379 and 380 and the owner's lost
 prompt; the project's current release plan (for §11); whether GitHub's standard runners are free for
@@ -1370,9 +1371,51 @@ this public repository.
 | S6 | The owner's decisions of 15 Nov 2026 (approval stop 1) and 23 Nov 2026 (the writer trial inside JARVIS, the seven highlights, plan from Phase A's summary), relayed by the Workshop — not in the repository |
 | S7 | His requirements workbook, rows 379 and 380 (titles as relayed) — not in the repository |
 | A1 | Anthropic pricing (Sonnet 5.5 $2 / $10, Opus 5.5 $4 / $20, Haiku 5.5 $0.10 / $0.50 per million tokens up to 100k-token prompts; cache reads $0.10 / $0.20 / $0.01; no India tax note) — https://platform.claude.com/docs/en/about-claude/pricing (read 23 Nov 2026; matches `llm/pricing.py`) |
+| S8 | Plan review 1, `docs/plans/r6-3-integration/PLAN-REVIEW-1.md` v6.3.1 (APPROVE WITH CHANGES: 0 CRITICAL, 7 HIGH, 9 MEDIUM, 12 LOW), on `r6-3-plan` @ `1f8c2c0`; every finding re-checked here against the code on this branch (identical to `47ee8fc` outside `docs/plans/`) with scratch scripts outside the repository |
+| S9 | The owner's YES on the tour's script, 23 Nov 2026, 14:53 IST (approval stop 2), relayed by the Workshop — not in the repository |
+
+## Plan review 1 — how each finding was handled
+
+Every finding was re-checked against the code before it was taken (S8). **Taken: 28 of 28**, one in
+part: H5's "an ambiguous reference fails the generator and I0 fixes those cells" was replaced by the
+rule the guide's own check already uses (below). H2 was taken in a stricter form than proposed: the
+owner's binding rule is a typed YES on the ₹ shown, so `confirm_cost: true` is not enough for any
+grant of spending. No spoken line of the approved tour changed (all 55 beats compared with `ad65e99`).
+
+| Id | Finding (one line) | What changed, or why not | Where |
+|---|---|---|---|
+| H1 | A guest's speak could read owner-only tour lines: `service.py:345` passes no audience | Taken: `ShowScript.line_text` and `tour_line_text` take the audience; an owner-only id in a guest session is 404 `unknown_line`; `service.py:345` passes `session.audience` (one line, 397); a route-level test and its control | Seam 10; D9; size guards; `tour` suite; per-part row D |
+| H2 | Spending authority (auto-update, a paid brain, the first caps) could be granted without confirmation | Taken, stricter: the first pick, any cap raised, a paid or training brain and "update by itself" on each need a typed YES on the server's ₹ words (`yes_needed` with `terms_id`), and so does Update; lowering is instant; `confirmed` starts at zero | D7; D12; data model; HTTP contract; summary 4, 5; row test; `writer` and `console` suites; owner question 7 |
+| H3 | AI pages carried only on Update would be pruned after three seals; a release's pages file could not be replaced | Taken: a free carry builds every new release's pages file with no brain call; the pages vault attaches or replaces (old chunks orphaned); more than a release cap's worth, or no carry source, goes through `first` with its YES (409 `use_first`) | D11; D12; HTTP (`update`); data model; summary 5; `writer` suite and controls; part B failures |
+| H4 | The parts' file lists miss shared files B, A and D must change (`seal.py`, `ports.py`, notices, Privacy, `api/book.py`, `model.py`, G4, `service.py`) | Taken, mostly through M4: none of R6's sealing files, `privacy.py` or `api/book.py` is edited; the writer's own vault, notice claims and Privacy row; the storage line in `GET /v1/book/writer`; G4's home is `facts.json` plus C's "+N more" line in `console-book-reader.js`; `service.py` in seam 10 | D10 (G4); D11; seam 3; part B and C lists; HTTP; size guards |
+| H5 | Checks (1) and (2) would refuse good pages: no constants in the facts, short and ambiguous guide references, too few exemptions | Taken in part: every literal module constant is a fact (1,461 here); references resolve to full paths by `arch_files.cited`'s own rule (moved to `gen/refs.py`), which every reference already passes in CI, so no guide cell is edited and ambiguity is settled the way the guide's check settles it (the declined part: failing the generator on an ambiguous name would make a documentation choice stop the release's book); the prompt cites only the pack's list; check (2) exempts references, C-ids, release labels, versions, HTTP statuses and a fixed list of standard names; a precision case with its control | D2; D3; D4; D10; seam 17; `facts` and `writer` suites |
+| H6 | The owner's handle is in 46 Android paths: `facts.json` would leak it or every Android reference would fail | Taken: the index stores scrubbed paths, `facts.json` passes `Scrubber.verify`, packs, check (1) and the code chips use that form; a needle and the Android-references test | D2; `facts` and `needles` suites |
+| H7 | One page in one call does not fit a 40 s window; a cut call was billed at its hold and redrafted | Taken: the console step has its own 150 s deadline (one call, `timeout_s` 120) and runs the trial; a clock starts a call only when the brain's p90 + 5 s fits `time_left()`; a page past its window waits for the step; a cut call settles at its usage plus a margin; the slow-stream case and its control | D5; D6; D8; part B failures; summary 8; risks; owner question 5; `writer` suite |
+| M1 | Holds were not an upper bound, the 80 % gate could not see open holds, stale holds had no rule, SDK retries looked like cut streams | Taken: the hold counts bytes ÷ 2.5 (₹11.84, a redraft ≈ ₹13.13; the trial's worst case lets 5 calls through, not 6); the 80 % gate is meter + open holds + this hold in one place; `close_later`, `settle_old` and the month-before read copied; `write_text` uses a no-retry provider view; "stops at ₹60" worded as true | D1; D6; D8; cost table; row test; summary 3; risks; `writer` suite |
+| M2 | A brain of unknown price would be offered at ₹0 | Taken: offered only when its BALANCED model is priced and paid, or free and training; paid-tier Gemini and the custom brain "not offered" | D1; HTTP (`not_offered`); `writer` suite |
+| M3 | The writer rode the 5-minute clock only with Home on; the "few days" sum was also wrong | Taken: `book_write` registers through `add_clock_job`, last in `clock_jobs`, not extended onto the watchdog; the morning tick as well; the times redone with H7 | D5; seam 6; summary 8; risks; owner question 5 |
+| M4 | A pages entry in R6's index would read as tampered in every older revision | Taken: the pages files live in their own sealed index `book_pages/{uid}` (purpose `book_index`, AAD `book/pages/{uid}/v1`); R6's index and models are untouched; a rollback-reader test | D11; data model; seam 3; risks; R6.3.1 F |
+| M5 | A run spanning a deploy had no rule | Taken: a run is bound to its release; a new release stops it, seals its own file, and its pages join the new estimate with a new YES | D12; part B failures; `writer` suite |
+| M6 | The tour's pictures had no data of their own | Taken: each scene has `picture {visual, facts}`, `from_show` for the same subject or its own list (T12–T14); `gen/tour.py` checks each visual's groups; the guest no-₹ test reads picture facts | D9; seam 3 (`TourPicture`); seam 9; `tour` suite |
+| M7 | "31 outside services" had no single source (§5.2 has 24 rows) | Taken: the coverage checker's inventory, moved into `gen/services.py` and shared; a test pins the count; 152 pages stand | D2; D10 (G3); seam 17; the tour's facts table; t06b05's "Traces to" (not its words) |
+| M8 | The free brain could still read place and employer words, and test data | Taken: no `tests/**` or `evals/**` file in any pack; the owner's locality, workplace and employer join `redact.json` as hashes at I0 (the Workshop relays them outside the repository); needles for each; summary 3 reworded | D4; seam 17; summary 3; `needles` suite |
+| M9 | The route scan missed routers, prefixes and routes outside `api/` | Taken: every module-level `APIRouter` and `FastAPI` under `src/jarvis/**`, every decorator, every prefix; a test against the built app with a control | D2; `facts` suite |
+| L1 | Two lines would say "about about" | Taken in the values ("124 thousand", "₹9"), not the approved lines; a doubled-word test | The tour's facts table; `tour` suite |
+| L2 | `tryon.measures` and `seeme.inr_a_picture` were not literal sources | Taken: the `Measure` Literal; `TRYON_PRICES` at the configured model and location | The tour's facts table |
+| L3 | "No vendor literal under `buildbook/`" fails on today's code | Taken: scoped to the writer's files | D1; seam 13; static tests |
+| L4 | Rounding differed between places | Taken: "about" is the mid rounded to ₹10 (₹5 under ₹100) everywhere; D11's notice now ₹1,140 | D8; D11; summary |
+| L5 | Line cites off (`pricing.py:30`; the boundary lists) | Taken, with this branch's own lines: `pricing.py:30`, `C_MODULES` `:20–39`, `LANE_FORBIDDEN` `:40–53`, the function check `:156` (the review's `:19–37` / `:38–51` were one line early) | Fact 15; D4; cost |
+| L6 | Estimate inputs: a redraft's extra input, caching unlikely, what a release's pages include | Taken: +3k tokens a redraft counted (figures +1–2 %: trial ₹38, first write ₹1,144, a release ₹301); caching said unlikely; what the 25 / 40 / 60 pages include, with the review's re-measure | D8; cost table; summary; Phase A table |
+| L7 | `.env*` misses `bridge.env.example` | Taken: `.env*`, `*.env`, `*.env.*` | D4; `writer` suite |
+| L8 | `allow_training_brain` is the talk-through's switch | Taken: the writer's Gemini pick is its own consent, said beside both | D7 |
+| L9 | The cap is MiB, the sizes were MB | Taken: MiB for the cap and the 80 % line (48 MiB); 9.54 MiB a release | Summary 10; D11; cost (storage) |
+| L10 | `Written` could not tell a page cut by `max_tokens` | Taken: `complete` and `stop_reason` (from `message_delta` and Gemini's `finishReason`); an incomplete page refused before the checks | D1; D10; seam 2; `writer` suite |
+| L11 | Primary owner only was not said | Taken: the job and routes serve `identity.primary_user_id`; others 403 `not_primary` | D13 |
+| L12 | The contract suite's control depended on B | Taken: I0's own control (the stub job calling the fake brain once) | Tests (`contract`) |
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.3.1 | 23 Nov 2026, 14:28 IST | R6.3 | First edition, from the code at `47ee8fc` and Phase A v6.2.1 (copied unchanged): the owner's summary in ₹; rows 379 and 380 and his 23 Nov decisions as named tests; every Phase A fact re-checked and the moved ones corrected (10.0 MB a release, 97 left out, 73 cards and 18 modules, 31 services, 120 collections, 179 settings, the LOC, ≈ 152 pages, the router's `allow_degrade` but no laptop switch, the 20 s LLM timeout, `.claude/**` in the zip); the short tour's first script for approval stop 2 (17 scenes, seven highlights, ≈ 13.6 min owner, ≈ 13.0 guest, every number a fact); D0–D14 (the split into R6.3 and R6.3.1, the `jarvis.llm` write seam, the fact pack, the pages, the reading packs, the job and the step, the trial, the pick and the second YES, the ledger and holds, the tour, the checks, sealing the pages, release updates, audiences, the reader); the data model, 13 new routes, no new tool, keyring or alert kind; ₹ estimates (trial ≈ ₹37, first write ≈ ₹1,122, a release ≈ ₹295); the I0 seams; parts A–D; R6.3.1 with approval stop 3; suites with controls; size guards; risks; 12 owner questions with defaults; the exit check | 🛠 Mark XXIV |
+| v6.3.2 | 23 Nov 2026, 15:16 IST | R6.3 | Plan review 1 folded in (S8; section "Plan review 1 — how each finding was handled"): 28 of 28 findings taken, H5 in part; the speak route reads tour lines for the session's audience (H1); every grant of spending is a typed YES on the ₹ shown: the first pick, a cap raised, a paid or training brain, "update by itself", Update (H2); the AI pages in their own sealed index beside R6's, carried free at each release, attach or replace, `use_first` past the release cap (H3, H4, M4); runs bound to their release (M5); constants as facts, references resolved by the guide's own rule, check (2)'s exemptions and a precision case (H5); scrubbed paths (H6); the console step's own 150 s and the p90 gate on the clocks (H7); upper-bound holds (₹11.84), one 80 % gate, R13.1's stale-hold rules, no SDK retries (M1); only priced brains offered (M2); the 5-minute clock with Home on or off (M3); the tour scenes' picture data (M6); one services source (M7); no test data and new hashed words for the free brain (M8); the full route scan (M9); L1–L12; costs recomputed with a redraft's input (trial ≈ ₹38, first write ≈ ₹1,144, a release ≈ ₹301); owner questions 5 and 7 reworded; approval stop 2 passed (the owner's YES, 23 Nov, 14:53 IST): no spoken line changed, part D starts with A–C; Status Ready | 🛠 Mark XXIV |

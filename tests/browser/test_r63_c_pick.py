@@ -143,9 +143,7 @@ def test_r63_c_pick_the_first_save_shows_the_servers_words_and_keep_sends_nothin
     try:
         save(c)
         dialog = c.page.locator("#bookYesDialog")
-        dialog.get_by_text(
-            "Up to Rs 1,500 for the first full write"
-        ).wait_for()  # the server's words
+        dialog.get_by_text("Up to ₹1,500 for the first full write").wait_for()  # the server's words
         assert puts(sent) == [{"brain": "anthropic", "caps": DEFAULTS, "auto_update": False}]
         keep(c)
         assert len(puts(sent)) == 1  # "Keep" sends nothing

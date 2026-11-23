@@ -410,9 +410,18 @@ __all__ = [
 ]
 
 
+def rupee_words(words: Callable[[Any], tuple[str, ...]]) -> Callable[[Any], tuple[str, ...]]:
+    """I0's fake writes a grant's words with "Rs "; part B's real words (writer/texts.py, through
+    texts.inr) carry the rupee sign, which the console shows as sent. The browser's server uses
+    this, so the dialogs and their pictures read as the owner will see them."""
+    return lambda pick: tuple(w.replace("Rs ", "₹") for w in words(pick))
+
+
 def main(argv: list[str]) -> int:
+    import r63_fake_server
     import uvicorn
 
+    r63_fake_server._words = rupee_words(r63_fake_server._words)  # this child process only
     port = int(argv[1]) if len(argv) > 1 else 8768
     uvicorn.run(c_app(), host="127.0.0.1", port=port, log_level="warning")
     return 0

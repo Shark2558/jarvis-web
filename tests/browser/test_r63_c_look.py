@@ -7,6 +7,7 @@
 # screenshots stay as they were (47ee8fc's look): the same picture, byte for byte.
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -34,6 +35,7 @@ PICKED = {
         "at": "2026-11-24T10:00:00+05:30",
     },
 }
+PLACE = {"release": "3f2a1c9", "page": "pg_card_c01"}  # continue: Demo router
 BOXES = ".bk-wtop, .bk-writer, .bk-pages"  # R6.3's three boxes (console-book.js, I0 seam 8)
 LAYOUT_JS = """(sel) => [...document.querySelectorAll(sel + ' *')]
   .filter((e) => e.getClientRects().length)
@@ -63,9 +65,14 @@ def browser() -> Iterator[Any]:
         b.close()
 
 
-def panel(browser: Any, url: str, token: str, size: str, surface: str, **state: Any) -> Console:
+def panel(
+    browser: Any, url: str, token: str, size: str, surface: str, place: Any = None, **state: Any
+) -> Console:
     set_state(url, reset=True, **state)
     c = Console(browser, url, token, SIZES[size])
+    if place is not None:
+        js = json.dumps(json.dumps(place))
+        c.page.add_init_script(f"localStorage.setItem('jarvis_book_place_v1', {js});")
     FakeBook(c.page)
     route_c(c.page)
     c.open()
@@ -189,7 +196,7 @@ def test_r63_c_look_the_picks_yes_and_the_first_writes_yes(
         open_writer(c)
         c.page.locator("#bkCapFirst").wait_for()
         c.page.locator(WRITER).get_by_role("button", name="Save the pick").click()
-        c.page.locator(DIALOG).get_by_text("Up to Rs 1,500").wait_for()
+        c.page.locator(DIALOG).get_by_text("Up to ₹1,500").wait_for()
         gate(c, DIALOG, size, f"pick yes {size} {surface}", f"pick-yes-{size}-{surface}")
         c.page.locator(f"{DIALOG} #bookYes").fill("YES")
         c.page.locator(DIALOG).get_by_role("button", name="Confirm").click()
@@ -206,9 +213,10 @@ def test_r63_c_look_the_picks_yes_and_the_first_writes_yes(
 def test_r63_c_look_the_full_book_a_written_page_and_one_not_written(
     browser: Any, c_url: str, token: str, size: str, surface: str
 ) -> None:
-    c = panel(browser, c_url, token, size, surface)
+    c = panel(browser, c_url, token, size, surface, place=PLACE)
     try:
         c.page.get_by_role("button", name="Open for me").click()
+        c.page.locator(PAGES).get_by_role("button", name="Continue: Demo router").wait_for()
         c.page.locator(f"{PAGES} .dsc", has_text="Parts").click()
         c.page.locator(f"{PAGES} .bk-row", has_text="Demo router").wait_for()
         scrolled(c, f"{PAGES} .bk-rhead")
@@ -239,7 +247,8 @@ def test_r63_c_look_with_the_writer_off_the_panel_is_as_it_was(
 ) -> None:
     c = panel(browser, c_url, token, size, "night", off="no_key")
     try:
-        c.page.emulate_media(reduced_motion="reduce")  # the ambient loops still: two pictures can match
+        # the ambient loops held still, so two pictures of the same layout can match byte for byte
+        c.page.emulate_media(reduced_motion="reduce")
         until(
             c.page,
             lambda: c.page.locator(WRITER).get_attribute("hidden") is not None,

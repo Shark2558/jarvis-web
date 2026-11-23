@@ -20,7 +20,7 @@ sources:
 Telegram is a second front door to JARVIS. After pairing your Telegram account once, you chat with JARVIS from your phone much as you do in the console, and its alerts reach you there too. Only you get in: a message from anyone else gets no reply. Bot chats sit on Telegram's servers rather than being locked end to end, so your mail, Drive, documents, contacts and other private reads stay off there until you switch them on, and anything irreversible still waits for your approval and passkey in the console.
 
 ## Example (made up)
-In the console you press Pair and get the code 7KQ2M9XA, good for ten minutes. You tap the link on your phone, Telegram opens the bot with the code, and JARVIS answers "Paired. Ask me anything." That evening on the bus you type "add a to-do: buy milk". JARVIS replies with a one-line card and two buttons; you tap Approve and it is done. When you ask it to send an e-mail, Telegram only says it is waiting in the console for your approval and passkey.
+In the console you press Pair and get the code 7KQ2M9XA, good for ten minutes. You tap the link on your phone, Telegram opens the bot with the code, and JARVIS answers "Paired. Ask me anything." That evening on the bus you type "add a to-do: buy milk". You set to-dos to Ask first, so JARVIS replies with a one-line card and two buttons; you tap Approve and it is done. When you ask it to send an e-mail, Telegram only says it is waiting in the console for your approval and passkey.
 
 ## How it works
 Telegram delivers each message to `POST /telegram/webhook`, which answers only when the secret header matches (`telegram_webhook_secret`) and the body is at most {{fact:src/jarvis/api/telegram.py:WEBHOOK_BODY_BYTES}} bytes.

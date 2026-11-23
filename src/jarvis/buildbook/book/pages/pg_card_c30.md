@@ -12,7 +12,7 @@ sources:
 JARVIS reads your Google Calendar, finds free time, adds and changes events, and deletes them with an undo. A reminder ("remind me to call the plumber at five") is a small tagged event on your own calendar, and its pop-up appears on your phone through the Google Calendar app. Anything that would e-mail other people, such as inviting guests, always waits in the console for your approval and passkey.
 
 ## Example (made up)
-At 8:15 am you say "remind me to pay the electricity bill at 6 pm every month". JARVIS shows a card for a monthly reminder at 18:00 with an end date; you approve and it lands on your calendar with a pop-up. At noon you ask "when am I free for an hour tomorrow afternoon?" and get three slots inside your working hours. Then you ask to invite a colleague to Friday's review. The colleague would get an e-mail invitation, so the card waits for your approval and passkey.
+At 8:15 am you say aloud "remind me to pay the electricity bill at 6 pm every month". Because it was spoken, JARVIS shows a card for a monthly reminder at 18:00 with an end date; you approve on screen and it lands on your calendar with a pop-up. At noon you ask "when am I free for an hour tomorrow afternoon?" and get three slots inside your working hours. Then you ask to invite a colleague to Friday's review. The colleague would get an e-mail invitation, so the card waits for your approval and passkey.
 
 ## How it works
 `calendar_tools` offers list, free slots, create, update and delete, on your primary calendar only and always through the tool gateway (`src/jarvis/tools/google_calendar.py`).

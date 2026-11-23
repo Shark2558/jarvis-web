@@ -11,7 +11,9 @@ capped at `PACK_CAP_BYTES` UTF-8 bytes with the prompt's own words (`PROMPT_RESE
 goes first, then signatures, never the card. Never read: `.claude/**`, `tests/**`, `evals/**`,
 `.env*` / `*.env` / `*.env.*`, key-shaped files, `gen/fake_secrets.txt`, `gen/redact.json`,
 `*.lock`, binaries. Every block goes through the scrubber and is fenced as data
-(`buildbook.prompt.fence`); the same pack goes to every brain.
+(`buildbook.prompt.fence`); the same pack goes to every brain. A member's path is the repository's:
+R6's snapshot root `JARVIS-source-<id>/` is taken off first (`member_name`, review I1 H-1), and a
+`.claude` folder is never read at any depth.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ _PLAN_HEAD = re.compile(r"^## ", re.M)
 _COMMENT = re.compile(r"^\s*(?://|#|/\*|\*|<!--)")
 _FUNC = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+\w+\s*\(|^\s*fun\s+\w+\s*\(")
 _UPPER = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_ROOT = re.compile(r"^JARVIS-source-[^/]+/")  # R6's snapshot root (gen/snapshot.py `_zip`)
 
 
 @dataclass(frozen=True)
@@ -55,11 +58,19 @@ class Pack:
     allowed: tuple[str, ...]  # the references the page may cite (H5)
 
 
+def member_name(name: str) -> str:
+    """A `source.zip` member's repository path: R6's root folder `JARVIS-source-<id>/` taken off
+    (a member without it is kept as it is)."""
+    return _ROOT.sub("", name, count=1)
+
+
 def readable(path: str) -> bool:
     """May a pack read this tracked file at all (D4, M8, L7)?"""
     name = path.rsplit("/", 1)[-1].lower()
     low = path.lower()
-    if low.startswith(NEVER_DIRS) or any(low.endswith(f) for f in NEVER_FILES):
+    if low.startswith(NEVER_DIRS) or ".claude" in low.split("/")[:-1]:
+        return False
+    if any(low.endswith(f) for f in NEVER_FILES):
         return False
     if name.startswith(".env") or name.endswith(".env") or ".env." in name:
         return False
@@ -73,7 +84,8 @@ def read_source(zipped: bytes) -> dict[str, str]:
     out: dict[str, str] = {}
     with zipfile.ZipFile(io.BytesIO(zipped)) as zf:
         for info in zf.infolist():
-            if info.is_dir() or not readable(info.filename) or info.file_size > MEMBER_CAP:
+            name = member_name(info.filename)
+            if info.is_dir() or not readable(name) or info.file_size > MEMBER_CAP:
                 continue
             raw = zf.read(info)
             try:
@@ -81,7 +93,7 @@ def read_source(zipped: bytes) -> dict[str, str]:
             except UnicodeDecodeError:
                 continue
             if "\x00" not in text:
-                out[info.filename] = text
+                out[name] = text
     return out
 
 
@@ -259,6 +271,7 @@ __all__ = [
     "cards",
     "fact_lines",
     "fit",
+    "member_name",
     "plan_sections",
     "read_source",
     "readable",

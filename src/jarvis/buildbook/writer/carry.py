@@ -36,9 +36,13 @@ def _sha(data: bytes | str) -> str:
 
 
 def tree_of(zipped: bytes) -> Tree:
+    """The release's files by content and its guide's cards, by repository path (R6's snapshot
+    root taken off, review I1 H-2: two releases' roots differ)."""
     with zipfile.ZipFile(io.BytesIO(zipped)) as zf:
-        hashes = {i.filename: _sha(zf.read(i)) for i in zf.infolist() if not i.is_dir()}
-        guide = zf.read(packs.GUIDE).decode("utf-8", "replace") if packs.GUIDE in hashes else ""
+        members = {packs.member_name(i.filename): i for i in zf.infolist() if not i.is_dir()}
+        hashes = {name: _sha(zf.read(i)) for name, i in members.items()}
+        found = members.get(packs.GUIDE)
+        guide = zf.read(found).decode("utf-8", "replace") if found is not None else ""
     all_ids = [m.group(1) for m in packs._CARD.finditer(guide)]
     return Tree(files=hashes, cards={c: _sha(t) for c, t in packs.cards(guide, all_ids).items()})
 

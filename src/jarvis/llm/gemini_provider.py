@@ -250,7 +250,7 @@ class GeminiProvider:
         model: str,
         max_tokens: int,
         effort: Effort | None = None,
-        usage: StreamUsage | None = None,  # not filled yet (free models): the caller estimates
+        usage: StreamUsage | None = None,  # the stop reason only (R6.3): the caller estimates
     ) -> AsyncIterator[str]:
         body = self._body(
             system=system,
@@ -279,6 +279,8 @@ class GeminiProvider:
                         continue
                     chunk = json.loads(payload)
                     cand = (chunk.get("candidates") or [{}])[0]
+                    if usage is not None and isinstance(cand.get("finishReason"), str):
+                        usage.stop_reason = _STOP.get(cand["finishReason"], cand["finishReason"])
                     text = self._text((cand.get("content") or {}).get("parts") or [])
                     if text:
                         yield text

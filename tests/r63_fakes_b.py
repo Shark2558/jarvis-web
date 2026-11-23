@@ -54,11 +54,11 @@ TRIAL_FACTS = FIXTURE_FACTS.model_copy(update={"pages": (*FIXTURE_FACTS.pages, *
 BIG_DOC = "\n".join(f"Line {n:05d} of a long, made-up module docstring." for n in range(3_500))
 
 
-def files(*, big: bool = False, **changed: str) -> dict[str, str]:
+def files(changed: dict[str, str] | None = None, *, big: bool = False) -> dict[str, str]:
     out = dict(FIXTURE_FILES)
     if big:
         out[_ROUTER] = f'"""{BIG_DOC}"""\n\n' + out[_ROUTER].split("\n", 1)[1]
-    out.update({k.replace("__", "/"): v for k, v in changed.items()})
+    out.update(changed or {})
     return out
 
 

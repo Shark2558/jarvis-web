@@ -150,9 +150,7 @@ def decode_flows(data: bytes) -> dict[str, dict[str, Any]]:
 
 
 # ---- the reader's views (D14) --------------------------------------------------------------------
-def _chapters(
-    f: PagesFile, part: PartId, rows: list[tuple[Page, PageRow]]
-) -> tuple[Chapter, ...]:
+def _chapters(f: PagesFile, part: PartId, rows: list[tuple[Page, PageRow]]) -> tuple[Chapter, ...]:
     if part != "parts":
         title = dict(PARTS)[part]
         return (Chapter(id=part, title=title, pages=tuple(r for _, r in rows)),) if rows else ()

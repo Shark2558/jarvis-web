@@ -76,6 +76,7 @@ from jarvis.buildbook.writer.model import FLOWS_FILE, PAGES_FILE
 
 FILES = ("book.json", "source.zip", FACTS_FILE, PAGES_FILE, FLOWS_FILE)
 RELEASE_FILE = "release.json"
+EMAILS_ENV = "JARVIS_OWNER_EMAILS"
 
 
 @dataclass(frozen=True)
@@ -177,8 +178,9 @@ def _scrubber(opts: Options) -> Scrubber:
 
 
 def owner_emails() -> tuple[str, ...]:
-    """JARVIS_OWNER_EMAILS (comma-separated; never printed): the pages' owner-address check."""
-    raw = os.environ.get("JARVIS_OWNER_EMAILS", "")
+    """JARVIS_OWNER_EMAILS (comma-separated; never printed): the pages' owner-address check,
+    here and in `pages --check` (`pages_cli`)."""
+    raw = os.environ.get(EMAILS_ENV, "")
     return tuple(e.strip() for e in raw.split(",") if "@" in e)
 
 

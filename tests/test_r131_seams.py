@@ -114,7 +114,7 @@ def test_config_stays_under_its_guard() -> None:
 def test_try_on_has_its_own_usage_label() -> None:
     from jarvis.billing.service import LABELS
 
-    assert LABELS == {"voice": "Voice", "tryon": "Try-on"}
+    assert LABELS == {"voice": "Voice", "tryon": "Try-on", "book": "Book writer"}  # + R6.3 I0
 
 
 @pytest.mark.parametrize(

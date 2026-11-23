@@ -56,7 +56,7 @@ log = get_logger(__name__)
 WARN_AT = 0.8  # the console turns amber at 80 % of the limit
 METER_GRACE_S = 10.0  # how long a cancelled request still waits for its meter write
 # Meter labels that are not brains (shown in GET /v1/usage by_brain).
-LABELS = {"voice": "Voice", "tryon": "Try-on"}  # R13.1: Vitals shows "Try-on"
+LABELS = {"voice": "Voice", "tryon": "Try-on", "book": "Book writer"}  # R13.1 "Try-on", R6.3
 
 
 def utcnow() -> datetime:

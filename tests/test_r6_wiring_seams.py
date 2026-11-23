@@ -151,7 +151,7 @@ async def test_without_the_keyring_wire_r6_leaves_the_book_off(settings: Setting
     assert all(getattr(app.state, name) is None for name in R6_STATE)
     assert "book_lock" in R6_STATE and len(R6_STATE) == len(set(R6_STATE))
     assert r6_tick_jobs(app) == ()
-    assert R6_JOB_NAMES == frozenset({"book_seal", "book_sweep"})
+    assert R6_JOB_NAMES == frozenset({"book_seal", "book_sweep", "book_write"})  # R6.3 I0
 
 
 @pytest.fixture

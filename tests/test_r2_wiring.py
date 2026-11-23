@@ -266,6 +266,7 @@ async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> Non
         "health_check",
         "book_seal",
         "book_sweep",
+        "book_write",  # R6.3 I0: the Book writer after the sweep (D5)
         *r11,
         *r14,
         *r13,

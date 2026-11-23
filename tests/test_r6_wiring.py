@@ -130,10 +130,9 @@ async def test_the_jobs_ride_the_tick_and_the_watchdog_and_never_503_it(keyed_ap
 
     st.book_jobs, st.home_watchdog = None, Dog()
     jobs = r6.r6_tick_jobs(keyed_app)
-    assert st.home_watchdog.jobs == list(jobs) and [j.name for j in jobs] == [
-        "book_seal",
-        "book_sweep",
-    ]
+    # R6.3 I0 (M3): book_write joins the tick after the sweep, but never the watchdog's R6 loop
+    assert [j.name for j in jobs] == ["book_seal", "book_sweep", "book_write"]
+    assert st.home_watchdog.jobs == list(jobs[:2])
     assert r6.r6_tick_jobs(keyed_app) is jobs and len(st.home_watchdog.jobs) == 2  # once
 
 

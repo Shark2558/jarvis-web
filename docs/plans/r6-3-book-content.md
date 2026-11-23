@@ -473,10 +473,10 @@ that is not in this table fails the build, D9):
 | `roadmap.next`, `roadmap.after` | the guide §11 rows 1 and 2, release and content in words | (after I0's refresh, seam 15) |
 
 **Size, measured on the filled script above** (a scratch count with the `47ee8fc` values, at the
-timer's pace): the owner's tour **54 lines, 1,761 words, 9,390 characters, ≈ 796 s**; a guest's 53
-lines, 1,699 words, 9,067 characters, ≈ 768 s. With the unchanged ask line and closing (≈ 15 s, ≈ 180
+timer's pace): the owner's tour **54 lines, 1,762 words, 9,415 characters, ≈ 796 s**; a guest's 53
+lines, 1,700 words, 9,092 characters, ≈ 768 s. With the unchanged ask line and closing (≈ 15 s, ≈ 180
 characters): **≈ 13.6 minutes for the owner, ≈ 13.0 for a guest**. Every line is under the 400-character
-beat cap (`model.py` `Beat.text`). The cloud voice, if chosen, reads ≈ 9,570 characters: ≈ 94 tours a
+beat cap (`model.py` `Beat.text`). The cloud voice, if chosen, reads ≈ 9,600 characters: ≈ 94 tours a
 month inside the free 900,000 (`voice_tts_free_chars`, shared with the console), then ≈ ₹27 a tour
 (US$30 a million, `voice_price_chirp3_hd_usd_per_m`); the browser's voice is ₹0, and a guest is
 free-only (R6.2).
@@ -742,13 +742,96 @@ test).
 
 ## Data model (prefix `jarvis_`; flat ids; every document carries `updated_at` and a plain `owner`)
 
+| Collection / file | Part | Holds | Sealed | Kept |
+|---|---|---|---|---|
+| `book_writer/{uid}` | B | the pick `{brain, caps {trial, first, release, month, limit_pct}, auto_update, picked_at, confirmed {caps}}`; consents `{trial, first}: {at, estimate_id, release}`; the run `{kind trial\|first\|update, release, estimate_id, state queued\|running\|paused\|done\|stopped, why, total, done, failed, started_at, ended_at}`; `update_ready {release, estimate_id, pages, inr_mid}`; `rev` | no (ids, enums, numbers) | until deleted |
+| `book_write_lease/{uid}` | B | `{holder, until}` (60 s) | no | while held |
+| `book_write_spend/{uid}_{YYYY-MM}` | B | `spent_inr, held_inr, holds {call_id: {inr, at, run, page}}, runs {trial, first, update_<rid>: spent}, calls, refused` | no (numbers only) | 13 months |
+| `book_drafts/{uid}_{rid}_{page}` | B | one page's draft: `{page, attempt, state ok\|failed, checks [code], meta, blob}` (the text and template, `BookCrypto` under the release id and a fresh `bf_` file id) | blob only | until the run's pages file is sealed, ≤ 30 days |
+| `book_trial/{uid}_{nn}` | B | `nn` 01–10: one trial page, `{brain, page, attempt, checks, meta, seconds, inr, blob}` | blob only | 30 days, or until he deletes, re-runs or picks |
+| the release's pages file | B | `PagesFile {v, release, pages [id, kind, title, part, chapter, sections [{id, heading, text, refs}], meta], templates, skipped}`, gzipped JSON ≤ 2 MiB, a third `SealedFile` of kind `pages` in `book/{uid}`'s index, chunks in `book/{uid}/book_chunks` | yes (R6's envelope) | with its release (KEEP 3) |
+| `_book/facts.json` (CI, in the image) | A | D2's fact pack and D3's pages index, ≤ 1 MiB | no (public, package data) | with the image |
+| `book.json` `tour` (CI) | D | the filled tour per audience, its seconds, words and characters | as `book.json` | with its release |
+
+Ids: a page `pg_<kind>_<slug>`; a run's call `wc_` + 16 hex; an estimate `we_` + 12 hex of its
+inputs' SHA-256 (packs, prices, rate, assumptions). Keyring: **no new purpose** (fact 16). **Never
+stored:** a pack, a prompt or a reply outside a sealed blob; a page in any log; the creator name in
+any writer document; a model's raw error text (R14 D9's fixed words only). Sizes: a draft ≈ 6–14 KB
+sealed; the trial ≈ 120 KB; a pages file ≈ 0.4–0.6 MB plain. R14's drill counts the new root
+collections (flat ids, `updated_at`); the guide §6.2 lists them (I0).
+
 ## The HTTP contract
+
+Every route is the signed-in owner's, `no-store`, CSRF as every cookie write (`X-Requested-With`),
+rate-limited, and answers `{"error": <code>, "detail": <plain words>}` on a refusal. **Console**
+routes pass `book_gate.console_only` (a signed-in browser; never token mode, never a guest's
+show-only browser, which the guest lock already refuses). **Owner session** routes need
+`X-Jarvis-Book` of an owner book session (a guest's is 403 `owner_only`).
+
+| Route | Part | What |
+|---|---|---|
+| `GET /v1/book/writer` | B | **console**; on or off and why (`no_key`, `no_ai`, `no_brain`); the brains offered (id, label, `trains_on_content`, the balanced model's name from the registry, "not set up" when missing); the trial (state, pages done, ₹ spent, results' ids); the pick; the run (kind, done / total, ₹ spent / cap, why stopped); `update_ready`; the month (Book ₹, his limit, 80 % line) |
+| `GET /v1/book/writer/estimate?run=trial\|first\|update` | B | **console**; `Estimate {id, run, brain, pages, low, mid, high, hold, cap, minutes_low, minutes_high, gst_note, sent_to}`; ₹ only |
+| `POST /v1/book/writer/trial` | B | **console**; `{typed, estimate_id}` → the trial queued; 422 `not_yes`; 409 `estimate_changed`, `running`; 503 `no_brain`, `no_ai` |
+| `PUT /v1/book/writer/pick` | B | **console**; `{brain, caps, auto_update, confirm_cost?}`; 422 `bad_cap`, `unknown_brain`, `confirm_needed` (a cap raised without `confirm_cost: true`); audited by field names and `cost_confirmed`, never values |
+| `POST /v1/book/writer/first` | B | **console**; `{typed, estimate_id}`; 409 `pick_needed`, `estimate_changed`, `running`, `already_written`; 422 `not_yes` |
+| `POST /v1/book/writer/update` | B | **console**; `{confirm_cost: true, estimate_id}`; 409 `nothing_to_update`, `estimate_changed`, `running`; 422 `confirm_needed` |
+| `POST /v1/book/writer/stop` | B | **console**; stops the run after the calls in flight (their holds settle); the pages written stay as drafts and are sealed as a partial pages file with `skipped` |
+| `POST /v1/book/writer/step` | B | **console**; one step (D5), ≤ 45 s, at most one at a time (409 `busy`), 6 a minute; → the run's view |
+| `GET /v1/book/writer/trial/pages` · `GET …/trial/pages/{nn}` · `DELETE /v1/book/writer/trial` | B | **console**; the side-by-side list (page, brain, checks, ₹, seconds) · one trial page (sections and meta) · delete the trial |
+| `GET /v1/book/pages?release=` | B | **owner session**; the index: parts → chapters → pages `{id, kind, title, written: meta \| null}` for that kept release |
+| `GET /v1/book/pages/{id}?release=` | B | **owner session**; one page (sections, refs, meta), or the generator's text labelled "Not written by AI yet"; 404 `no_page` |
+| `GET /v1/book/show/script` (existing) | D | adds `kind: "tour" \| "show"` and, for a tour, its scenes for the session's audience (owner-only scenes and lines removed for a guest) and `seconds` |
+
+Limits: the writer's reads 30 a minute, its writes 10 a minute, `step` 6 a minute, the pages 60 a
+minute (`api/book_show_wiring.py` `LIMITS` style, in the new modules). 14 routes in all (13 new).
 
 ## Tools: none new
 
+R6.3 adds no model-callable tool, so no permission row, no Telegram pattern, no skill-register group,
+no persona line. The writer is not a tool: the brain cannot start, raise or steer it; only the
+owner's console routes can, each with its typed YES or `confirm_cost` (the pattern R6.2 and R13.1 set
+for spending), so no e-mail, web page or chat message can make the Book spend (security-reviewer to
+confirm). The writer's brain calls carry `tools=None`.
+
 ## Per part: failures, security, cost
 
+| Part | Failure modes and handling | Security and privacy | ₹ a month |
+|---|---|---|---|
+| A · Facts and generator | a fact source missing or not a literal → `GenError` with one plain line (the deploy goes on, as today: `--best-effort`); a card in no module → `GenError`; facts over 1 MiB → `GenError`; the counter meets an unreadable file → counted as "unreadable", never guessed | stdlib only, no network; the scrubber's new kinds guard `book.json` too; the index lists paths and names, never file content | 0 |
+| B · The writer | No-AI → paused, said so; breaker open or 5xx → this page waits (no laptop, no tier change); 429 → the step ends, next tick; a cut stream → settled at the hold, redrafted once; a failed check → redraft once, then the previous text; the cap, the month cap or 80 % → stopped, said so; a lost lease → the step ends; an unreadable ledger or limit → refused (fail closed); an unreadable previous pages file → the update rewrites those pages (with its estimate) | packs from public files only, scrubbed, fenced, same for both brains; no tools; nothing personal read (static guard); page text sealed; logs content-free; console-only consent and spend; the audit by ids and ₹ | trial ≤ ₹60 once; first write ≤ ₹1,500 once; ≤ ₹500 a release, ≤ ₹1,000 a month (Claude); ₹0 (Gemini) |
+| C · Console | a route refusal → its `detail` in the line under the button; offline → "Can't reach JARVIS…"; a stale estimate → asks again | `textContent` only; the YES box never pre-filled; no ₹ sent from the page is trusted (the server re-estimates) | 0 |
+| D · The tour | no tour in an older book → today's 11 scenes; a missing fact → the generator refuses (CI) | a guest's tour has no ₹ and no owner-only line (tested); lines served by id only | 0 (browser voice); Cloud voice ≈ ₹27 a tour after the free allowance (owner only; guests free-only) |
+
 ## Cost (₹)
+
+At ₹95.24 a dollar (`billing/fx.py:33`; JARVIS uses the day's rate), Claude Sonnet 5.5 at US$2 / 10
+per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k tokens in, 2.2k / 3k /
+3.5k out a page, 15 / 25 / 30 % redrafted), no GST (see D8).
+
+| Item | Pages | Low | **Mid** | High | Opus 5.5 (mid, for comparison) | Haiku 5.5 (mid) | Gemini (free) |
+|---|---|---|---|---|---|---|---|
+| Writer trial (Claude half) | 5 | ₹25 | **₹37** | ₹51 | ₹74 | ₹2 | ₹0 |
+| First full write | 152 | ₹766 | **₹1,122** | ₹1,562 | ₹2,244 | ₹56 | ₹0 |
+| A feature release (cards touched: R6.2 8, R13 34, R13.1 25) | 25 / 40 / 60 | ₹126 | **₹295** | ₹617 | ₹590 | ₹15 | ₹0 |
+| A hotfix | 1–3 | ₹5 | ₹15 | ₹31 | — | — | ₹0 |
+| One worst-case call (the hold: 27k in, 4k out) | — | — | ₹8.95 | — | — | — | ₹0 |
+
+- **Against the proposed caps:** the trial (₹60) holds even the high case; the first write (₹1,500)
+  holds low and mid; at high it stops ≈ 6 pages short (they keep the generator's text until next month
+  or a raised cap); a release (₹500) holds low and mid, and at high stops ≈ 11 pages short; the month
+  (₹1,000) holds two high releases. With 18 % GST added by an invoice: first write mid ≈ ₹1,324.
+- **Prompt caching** of the fixed system prompt (≈ 3k tokens, reads at 5 %) saves ≈ ₹0.5 a call,
+  ≈ ₹100 on the first write; not counted above.
+- **Everything else is ₹0:** the fact pack and tour at CI (GitHub's runners; Unverified whether
+  standard runners are free for this public repository, G7); the writer's CPU inside Cloud Run's free
+  vCPU-seconds (≈ 1–2 hours of request time for a first write: Unverified against the month's other
+  use); Firestore: drafts ≈ 2 MB, the trial ≈ 120 KB, the pages files ≈ 1.5 MB for three releases,
+  inside the free 1 GiB; R14's backups ≈ ₹0.1 a month more. No new Scheduler job, secret or resource.
+- **The tour's voice:** ₹0 with the browser's (the default); with the Cloud voice ≈ 94 tours a month
+  free (shared with the console's spoken replies), then ≈ ₹27 a tour; a guest is never charged.
+- **Storage:** one release 10.0 MB + ≈ 0.5 MB of AI pages; three kept ≈ 31.5 MB of 60 (53 %); the 80 %
+  warning at 48 MB (D11). R6.3.1's pictures need its de-duplication to stay under the cap (its section).
 
 ## The I0 seam list (branch `r6-3-i0`; the integrator owns these files)
 

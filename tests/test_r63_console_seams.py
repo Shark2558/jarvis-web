@@ -47,8 +47,8 @@ def test_the_panel_loads_the_writer_and_the_pages_once_at_its_first_open() -> No
     assert "if (d.open) { more(); load(); }" in panel and "if (X.top) return;" in panel
     for name in ("console-book-writer.js", "console-book-pages.js"):
         assert f"/static/{name}" not in _read("console.html")  # loaded by code, not by the page
-    assert "settings: () => {}" in _read("console-book-writer.js")  # I0's stub draws nothing
-    assert "mount: () => {}" in _read("console-book-pages.js")
+    assert "Object.freeze({ settings })" in _read("console-book-writer.js")  # C's, I1
+    assert "Object.freeze({ mount, page, more })" in _read("console-book-pages.js")
 
 
 def test_the_show_page_loads_the_script_reader_before_the_show() -> None:

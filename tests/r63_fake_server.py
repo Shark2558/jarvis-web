@@ -194,12 +194,12 @@ def _terms(pick: http.PickIn) -> str:
 def _words(pick: http.PickIn) -> tuple[str, ...]:
     c = pick.caps
     out = [
-        f"Up to Rs {c.first:,} for the first full write, Rs {c.release:,} a release and "
-        f"Rs {c.month:,} a month, and never past {c.limit_pct} % of your monthly limit."
+        f"Up to ₹{c.first:,} for the first full write, ₹{c.release:,} a release and "
+        f"₹{c.month:,} a month, and never past {c.limit_pct} % of your monthly limit."
     ]
     if pick.auto_update:
         out.append(
-            f"Up to Rs {c.release:,} a release and Rs {c.month:,} a month (your caps), by "
+            f"Up to ₹{c.release:,} a release and ₹{c.month:,} a month (your caps), by "
             "itself after each deploy, with no question asked."
         )
     return tuple(out)

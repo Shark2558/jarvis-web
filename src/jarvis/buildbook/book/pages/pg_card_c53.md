@@ -8,7 +8,7 @@ sources:
   "src/jarvis/privacy/__init__.py": "50f731c22de44512"
   "src/jarvis/privacy/existing.py": "021f304566e63a19"
   "src/jarvis/privacy/export.py": "7af0681ad7ec0319"
-  "src/jarvis/privacy/ports.py": "b905feed47b9fbbd"
+  "src/jarvis/privacy/ports.py": "66951d35347caa3a"
   "src/jarvis/privacy/service.py": "216cb38b625ffa31"
   "src/jarvis/privacy/sources.py": "312d6572b6dd061e"
   "src/jarvis/privacy/sources_r1.py": "cc0a709ab284ea09"
@@ -21,6 +21,7 @@ On a quiet evening you open Privacy. The Conversations row reads 214, kept until
 
 ## How it works
 Every feature that keeps something about you registers a `PrivacySource`, and `PrivacyRegistry` asks them all at once, each within {{fact:src/jarvis/privacy/ports.py:SOURCE_BUDGET_S}} seconds; a slow or failing one still keeps its row, marked "Couldn't check right now" (`src/jarvis/privacy/ports.py`).
+The one exception is a retired feature's leftover row, such as the Book's old writer trial: it is listed while it still holds something, and leaves the list once a check finds it empty (`leftover_empty`).
 Each row is a `CategoryView`: section, label, what it holds, a count, how long it is kept, where it lives, and its delete class.
 The delete class decides what you must prove first (`PrivacyService`): none (explained, not deletable here), simple (a setting you can make again), confirm (a dialog listing what goes), or passkey (content that can't be brought back).
 With passkeys in force, a passkey check bound to that row is needed; without them, the typed word DELETE plus a Google sign-in less than a few minutes old (`src/jarvis/privacy/service.py`).

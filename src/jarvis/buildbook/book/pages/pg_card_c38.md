@@ -20,7 +20,7 @@ sources:
   "src/jarvis/home/signing.py": "4499c07dbb6aa847"
   "src/jarvis/home/store.py": "df4eb9b455c772e0"
   "src/jarvis/home/tools.py": "cfbe1c5b4edaeda8"
-  "src/jarvis/home/watchdog.py": "adb8fe67d29e2bc2"
+  "src/jarvis/home/watchdog.py": "5ed83e7a835b50e2"
   "src/jarvis/home/webhook.py": "2d41ed0e356a9910"
 ---
 ## In plain words

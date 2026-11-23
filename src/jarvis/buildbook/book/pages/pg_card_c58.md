@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   ".github/pull_request_template.md": "507326d6a36186c6"
-  ".github/workflows/ci.yml": "b6bf43ad74eb66a6"
+  ".github/workflows/ci.yml": "9a6b5662e765a438"
   "Dockerfile": "ec8c53957aaefd1a"
   "Makefile": "3c446b64c5b9cb98"
   "deploy/cloudrun.sh": "291d919ed466219d"
@@ -25,6 +25,7 @@ At 22:05 a builder opens a pull request titled "v9.2.0 · R9.2 Shopping lists ·
 ## How it works
 `.github/workflows/ci.yml` runs on every pull request: the unit tests on both supported Python versions with coverage, the linter, the mock evals, the Build Book check, a Firestore emulator test and the browser tests.
 Separate jobs check the pull request's title with `scripts/check_pr_title.py` and every plan's version line and change log with `scripts/check_doc_versions.py`; neither ever holds up a deploy.
+The documents job also checks that every page of the Build Book is written, passes its checks and is up to date with the code it describes, and fails the pull request when one is not (`.github/workflows/ci.yml`).
 On a merge to main, the deploy job signs in to Google without a stored key, builds the image from the repository's Dockerfile with the exact package versions in `requirements.lock`, and pushes it (`.github/workflows/ci.yml`).
 It refuses to deploy if main has moved on since, so re-running an old job never rolls JARVIS back, then rolls the image out with no traffic and checks its health page before switching traffic to it (`.github/workflows/ci.yml`).
 `deploy/cloudrun.sh` sets up the cloud project once from Cloud Shell: the services, the secrets, the scheduler clocks, and the image clean-up, and skips whatever already exists.

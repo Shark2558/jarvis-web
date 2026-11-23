@@ -24,7 +24,7 @@ sources:
   "src/jarvis/core/saving.py": "c92f295af587766d"
   "src/jarvis/core/window.py": "06c365d979fdc3cf"
   "src/jarvis/helpers/house/service_request.py": "94e882c398af35c0"
-  "src/jarvis/llm/anthropic_provider.py": "539447cd93cfeaaa"
+  "src/jarvis/llm/anthropic_provider.py": "60484f5c3cd11faf"
   "src/jarvis/llm/base.py": "8904b3d0d806dc4a"
   "src/jarvis/llm/brains.py": "926e3ef2f35fcb02"
   "src/jarvis/llm/factory.py": "bc538ec75083020d"

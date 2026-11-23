@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/llm/__init__.py": "838b6f0468da343f"
-  "src/jarvis/llm/anthropic_provider.py": "539447cd93cfeaaa"
+  "src/jarvis/llm/anthropic_provider.py": "60484f5c3cd11faf"
   "src/jarvis/llm/base.py": "8904b3d0d806dc4a"
   "src/jarvis/llm/brains.py": "926e3ef2f35fcb02"
   "src/jarvis/llm/factory.py": "bc538ec75083020d"
@@ -17,7 +17,6 @@ sources:
   "src/jarvis/llm/router.py": "c72db7b28cbba849"
   "src/jarvis/llm/tryon.py": "839f8746d75d6c7d"
   "src/jarvis/llm/tryon_gemini.py": "3e233dc06019ff0c"
-  "src/jarvis/llm/write.py": "92ceb933eb94a0d1"
 ---
 ## In plain words
 This is the only part of JARVIS that talks to AI companies. Everything else asks for a level of thinking, fast, balanced or strong, never a particular model, so a brain is easy to swap without touching the rest (`src/jarvis/llm/router.py:ModelTier`). It also decides what happens when a brain is busy or out of reach: a smaller model, or the free brain on your laptop (`src/jarvis/llm/router.py`).

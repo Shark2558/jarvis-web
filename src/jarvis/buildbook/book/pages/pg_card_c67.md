@@ -7,7 +7,7 @@ sources:
   "src/jarvis/api/r14_status.py": "efb328e795d63aa9"
   "src/jarvis/api/r14_wiring.py": "9a389842728e9471"
   "src/jarvis/api/selfwatch.py": "c1f21790ef9e24a9"
-  "src/jarvis/api/tick_wiring.py": "898a9b9cb3be458d"
+  "src/jarvis/api/tick_wiring.py": "ab30c19996a2944c"
   "src/jarvis/hardening/__init__.py": "1086f4e41654c4e2"
   "src/jarvis/hardening/ports.py": "3ec5ccd3d6c3c19f"
   "src/jarvis/home/heartbeat.py": "028d88e299dd4f48"

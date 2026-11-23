@@ -3,7 +3,7 @@ page: pg_card_c01
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/api/console.py": "00a751a9f79bad8f"
+  "src/jarvis/api/console.py": "af52a1294522fbe9"
   "src/jarvis/api/static/console-3d-scenes.js": "80d2691e8bb110de"
   "src/jarvis/api/static/console-3d.js": "b590fd5947ccb313"
   "src/jarvis/api/static/console-deck.js": "856dae35d81cdbc3"

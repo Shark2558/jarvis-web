@@ -6,7 +6,7 @@ sources:
   "deploy/cloudrun.sh": "291d919ed466219d"
   "src/jarvis/api/brief.py": "384e3c31e281a98b"
   "src/jarvis/api/scheduler_auth.py": "346bb43278c2d8f2"
-  "src/jarvis/home/watchdog.py": "adb8fe67d29e2bc2"
+  "src/jarvis/home/watchdog.py": "5ed83e7a835b50e2"
   "src/jarvis/ticks.py": "d10b0a94172bdd16"
 ---
 ## In plain words

@@ -41,7 +41,7 @@ sources:
   "src/jarvis/core/rounds.py": "4e7f24f94d989836"
   "src/jarvis/core/saving.py": "c92f295af587766d"
   "src/jarvis/core/window.py": "06c365d979fdc3cf"
-  "src/jarvis/llm/anthropic_provider.py": "539447cd93cfeaaa"
+  "src/jarvis/llm/anthropic_provider.py": "60484f5c3cd11faf"
   "src/jarvis/llm/base.py": "8904b3d0d806dc4a"
   "src/jarvis/llm/brains.py": "926e3ef2f35fcb02"
   "src/jarvis/llm/fallback.py": "785b07e24d85a2ff"

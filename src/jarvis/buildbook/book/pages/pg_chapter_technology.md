@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   ".github/pull_request_template.md": "507326d6a36186c6"
-  ".github/workflows/ci.yml": "b6bf43ad74eb66a6"
+  ".github/workflows/ci.yml": "9a6b5662e765a438"
   "Dockerfile": "ec8c53957aaefd1a"
   "Makefile": "3c446b64c5b9cb98"
   "android/gradle/libs.versions.toml": "eb0839fef229e7ee"

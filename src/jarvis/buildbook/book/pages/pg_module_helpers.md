@@ -77,7 +77,7 @@ sources:
   "src/jarvis/helpers/today/pending.py": "b59a876c2a2a7995"
   "src/jarvis/helpers/today/qr.py": "d81712162d609186"
   "src/jarvis/helpers/today/upi.py": "7ec14bb46c86c8b3"
-  "src/jarvis/home/watchdog.py": "adb8fe67d29e2bc2"
+  "src/jarvis/home/watchdog.py": "5ed83e7a835b50e2"
   "src/jarvis/homebridge/decoder.py": "cda8f3cd13aacc84"
   "src/jarvis/homebridge/face_db.py": "543c9a151c7f23cb"
   "src/jarvis/homebridge/face_engine.py": "69e0f1992e047153"

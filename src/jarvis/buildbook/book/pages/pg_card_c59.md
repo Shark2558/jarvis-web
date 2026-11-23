@@ -3,7 +3,7 @@ page: pg_card_c59
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "evals/run_all_mock.py": "ebdad74252eb0595"
+  "evals/run_all_mock.py": "71170909a3d7921a"
   "evals/run_real.py": "ce0ae50e362c19f3"
   "scripts/arch_coverage.py": "16b033ee883f89d6"
   "scripts/ui_snapshots.py": "f7ee1329fa9806d1"

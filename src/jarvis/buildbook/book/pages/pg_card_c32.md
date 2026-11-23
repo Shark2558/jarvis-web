@@ -16,7 +16,7 @@ On Monday evening you say aloud "add a to-do: renew the car insurance by Friday"
 ## How it works
 `tasks_tools` offers list, add, change, complete and delete, all through the tool gateway; listing is read-only, and the rest are undoable changes to your own list, which run straight away when you type them and become a card when you speak them, after outside content, or when you chose Ask first (`src/jarvis/tools/google_tasks.py`).
 A change, completion or delete first looks the to-do up, so the card shows its real title and date, and a failed look-up proposes nothing (`TasksAPI`).
-A delete keeps a copy, subtasks included, in Recently deleted first; a to-do assigned from Docs or Chat, or one whose subtasks can't all be read, needs your passkey instead (`src/jarvis/tools/google_tasks.py`).
+A delete keeps a copy, subtasks included, in Recently deleted first; a to-do assigned from Docs or Chat, or one whose subtasks can't all be read, is irreversible and always asks instead (`src/jarvis/tools/google_tasks.py`).
 The list shows at most {{fact:src/jarvis/tools/google_tasks.py:MAX_SHOWN}} to-dos, reads up to {{fact:src/jarvis/tools/tasks_api.py:MAX_LISTS}} lists, and fences titles and notes as outside content (`TasksAPI`).
 `TasksClient` makes every call through your Google link and checks each answer's shape before using it (`src/jarvis/tools/tasks_api.py`).
 Google keeps only a date for a due day, so `parse_due` and `due_to_api` treat it as a calendar date, and "today" or "overdue" follow your own time zone.

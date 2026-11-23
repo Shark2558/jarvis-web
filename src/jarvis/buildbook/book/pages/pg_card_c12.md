@@ -28,7 +28,7 @@ A restore is first claimed in a transaction, so two clicks never make two copies
 A restorer that finds the original still there makes nothing and says so (`StillThere`), and one that finds it removed for good drops the entry (`Gone`).
 An event comes back without its guests, so restoring never sends anyone an invitation (`restore_body`).
 Your list shows the newest {{fact:src/jarvis/undo/store.py:PANEL_LISTED}} items, and the brain's look-up sees the newest {{fact:src/jarvis/undo/store.py:MAX_LISTED}}, with titles fenced as outside text (`undo_tools`).
-"Remove now" deletes a copy at once; for vault documents, notes and things that is final, so it needs your passkey (`src/jarvis/api/deleted.py`).
+"Remove now" deletes a copy at once; for vault documents, notes and things that is final, so it needs your passkey when passkeys are on (`src/jarvis/api/deleted.py`).
 The scheduler's tick sweeps away expired copies (`UndoBin`), and `src/jarvis/api/static/console-deleted.js` lists them from `GET /v1/deleted` and restores through `POST /v1/deleted/{undo_id}/restore`.
 
 ## What it costs

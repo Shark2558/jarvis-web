@@ -13,7 +13,7 @@ sources:
   "src/jarvis/tools/tasks_cards.py": "18cb6c64d784d443"
 ---
 ## In plain words
-When JARVIS needs your say before acting, it shows an approval card that says exactly what will happen: the real event title and time, who will be told, what changes from what to what. The card's words are written by JARVIS's code from the action itself, never by the AI, so nobody's clever wording slips onto it. You press Approve or Decline in the console, and anything irreversible needs your passkey as well. When several undoable cards are waiting, Approve all clears them with one tap.
+When JARVIS needs your say before acting, it shows an approval card that says exactly what will happen: the real event title and time, who will be told, what changes from what to what. The card's words are written by JARVIS's code from the action itself, never by the AI, so nobody's clever wording slips onto it. You press Approve or Decline in the console, and anything irreversible asks for your passkey too when passkeys are on. When several undoable cards are waiting, Approve all clears them with one tap.
 
 ## Example (made up)
 You forward a school circular and say "add these three events". Because the circular is outside content, JARVIS proposes three calendar cards, each with its date, time and title. You check them and press "Approve all (3)". Two are added; one fails because Google is busy. The reply says so plainly, and that card waits with its own Approve for another try.

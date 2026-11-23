@@ -8,17 +8,17 @@ sources:
   "src/jarvis/tools/gmail_mime.py": "7096ad94b71e768a"
 ---
 ## In plain words
-JARVIS searches and reads your Gmail, writes drafts, and sends mail only after you approve each send with your passkey. Ask "read my unread mail" and you get a short spoken round-up: who wrote, about what, and the first line, with codes, bank messages and long numbers kept out of anything said aloud. What other people wrote in their mail is treated as something to read, never as orders for JARVIS.
+JARVIS searches and reads your Gmail, writes drafts, and sends mail only after you approve each send in the console, with your passkey when passkeys are on. Ask "read my unread mail" and you get a short spoken round-up: who wrote, about what, and the first line, with codes, bank messages and long numbers kept out of anything said aloud. What other people wrote in their mail is treated as something to read, never as orders for JARVIS.
 
 ## Example (made up)
-At 7:40 am, making tea, you ask "anything new in my mail?". JARVIS says: "Six unread in the last week. People: Suresh, about Saturday's cricket, two hours ago. Bills and orders: your broadband bill. One message withheld — it looks like a code or bank message." You then say "reply to Suresh that I'm in". Suresh's address came from his own mail rather than from your words, so JARVIS shows a draft card first; sending it later needs your approval and passkey.
+At 7:40 am, making tea, you ask "anything new in my mail?". JARVIS says: "Six unread in the last week. People: Suresh, about Saturday's cricket, two hours ago. Bills and orders: your broadband bill. One message withheld — it looks like a code or bank message." You then say "reply to Suresh that I'm in". Suresh's address came from his own mail rather than from your words, so JARVIS shows a draft card first; sending it later always needs your own approval.
 
 ## How it works
 `gmail_tools` offers a search, a read, a draft and a send, each through the tool gateway (`src/jarvis/tools/gmail.py`).
 A search returns at most {{fact:src/jarvis/tools/gmail.py:MAX_RESULTS}} messages with sender, date, subject and a short snippet, never whole bodies, and a read cuts the body to {{fact:src/jarvis/tools/gmail.py:BODY_LIMIT}} characters and lists attachments by name and size without opening them (`GmailAPI`).
 Mail text reaches the brain fenced as outside content, and HTML mail is turned into plain text first (`html_to_text`).
 A draft is saved without asking only when every recipient is an address you typed in this very message; an address taken from a mail, a page or memory makes it a card first (`src/jarvis/tools/gmail.py`).
-A send is irreversible: its card shows every recipient, the subject, the start of the body and whether it replies in a thread, and it always needs your passkey (`GmailAPI`).
+A send is irreversible: its card shows every recipient, the subject, the start of the body and whether it replies in a thread, and it always asks, with your passkey when passkeys are on (`GmailAPI`).
 `build_raw_message` writes the outgoing message, and `check_header_value` refuses a subject or address that would sneak in extra header lines (`src/jarvis/tools/gmail_mime.py`).
 `digest_tools` gives the unread round-up: metadata and Gmail's own snippet only, at most {{fact:src/jarvis/tools/gmail_digest.py:MAX_ITEMS}} items with sender, subject and a first line of up to {{fact:src/jarvis/tools/gmail_digest.py:FIRST_LINE}} characters (`src/jarvis/tools/gmail_digest.py`).
 Anything that looks like a code, a card, an account or an ID is withheld, so the brain gets only a count, never the text (`withheld`).

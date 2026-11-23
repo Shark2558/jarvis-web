@@ -29,8 +29,6 @@ The join (`gen/write.py`) sets `release` and `pages` and checks the pack: they s
 from __future__ import annotations
 
 from collections.abc import Mapping
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from jarvis.buildbook.facts_model import (
@@ -44,6 +42,7 @@ from jarvis.buildbook.facts_model import (
     Setting,
 )
 from jarvis.buildbook.gen import (
+    code,
     facts_code,
     facts_guide,
     facts_routes,
@@ -70,18 +69,12 @@ def _services(
     its table (a fixture): the services the cards name, as the guide writes them."""
     if table is not None:
         return services_mod.inventory(repo.root, table).names, True
-    if repo.has(services_mod.TABLE):
-        return _inventory(repo.root, repo.sha, repo.dirty, repo.files), True
+    names = code.inventory_names(repo)
+    if names is not None:
+        return names, True
     field = "Outside services"
     named = {s for c in cards for s in facts_guide.service_items(c.fields.get(field, ""))}
     return tuple(sorted(named)), False
-
-
-@lru_cache(maxsize=4)
-def _inventory(root: Path, sha: str, dirty: bool, files: tuple[str, ...]) -> tuple[str, ...]:
-    """The checker's inventory of one checkout state (it parses every module: `--check`'s
-    second build reuses it)."""
-    return services_mod.inventory(root).names
 
 
 def _guide(

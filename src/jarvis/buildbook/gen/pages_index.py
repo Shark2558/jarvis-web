@@ -36,6 +36,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from jarvis.buildbook.facts_model import CHAPTERS, CardFact, FactPack, IndexedPage
 from jarvis.buildbook.gen import plans
 from jarvis.buildbook.gen import services as services_mod
+from jarvis.buildbook.gen.code import service_owners, slug
 from jarvis.buildbook.gen.repo import GenError, Repo
 
 # each chapter's cards (when the guide has them) and files (when the checkout has them)
@@ -62,17 +63,11 @@ CHAPTER_SOURCES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "costs": (("C44", "C54", "C55"), ("src/jarvis/llm/pricing.py", "src/jarvis/billing/fx.py")),
     "planned": ((), ("docs/architecture/JARVIS-Architecture.md",)),
 }
-SLUG_MAX = 40
 CONFIG = "src/jarvis/config.py"
 SRC = "src/jarvis/"
 VENDORED = re.compile(r"(?:^|/)(?:vendor|node_modules)/")
 PACKLESS = ("tests/", "evals/", ".claude/")  # D4: no reading pack reads these
 BINARY = (".woff2", ".woff", ".ttf", ".onnx", ".wasm", ".glb", ".png", ".jpg", ".webp", ".ico")
-
-
-def slug(name: str) -> str:
-    """ "Google Cloud Speech-to-Text" -> "google_cloud_speech_to_text" (a page id's tail)."""
-    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:SLUG_MAX] or "x"
 
 
 def quoted(path: str) -> bool:
@@ -139,14 +134,6 @@ def _chapters(repo: Repo, facts: FactPack) -> list[IndexedPage]:
     return out
 
 
-def _owners(name: str, fields: Sequence[Sequence[object]]) -> tuple[str, ...]:
-    """The services a setting belongs to (`service_fields`: a key ending in "_" is a prefix)."""
-    for key, owners in fields:
-        if isinstance(key, str) and (name == key or (key.endswith("_") and name.startswith(key))):
-            return tuple(str(o) for o in owners) if isinstance(owners, list) else ()
-    return ()
-
-
 def _either(names: Iterable[str], head: str, tail: str) -> re.Pattern[str] | None:
     alts = sorted(map(re.escape, names))
     return re.compile(head + "(" + "|".join(alts) + ")" + tail) if alts else None
@@ -160,7 +147,7 @@ def service_files(repo: Repo, facts: FactPack) -> dict[str, tuple[str, ...]]:
         return {}
     fields = tuple(table.get("service_fields", ()))
     hosts: Mapping[str, str] = dict(table.get("api_hosts", {}))
-    readers = {s.name: o for s in facts.settings if (o := _owners(s.name, fields))}
+    readers = {s.name: o for s in facts.settings if (o := service_owners(s.name, fields))}
     found: dict[str, set[str]] = {}
     for owners in readers.values():
         for owner in owners:

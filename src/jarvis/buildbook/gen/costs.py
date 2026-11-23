@@ -7,7 +7,8 @@ DEFAULT_RATE (and its date), read with the rest from the code as ASTs:
             the free monthly characters and seconds JARVIS may use
     search  web/allowance.py MONTHLY_CREDITS (JARVIS stops there: ₹0)
     maps    quota/ledger.py _TABLE, Google's global price list (JARVIS stops at the allowance)
-    cloud   the free tiers JARVIS runs inside (`FREE_TIER`, as the R6 plan lists them)
+    cloud   the free tiers JARVIS runs inside (`FREE_TIER`, as the R6 plan lists them; R6.3 G7:
+            Firestore's daily reads, writes and deletes, GitHub Actions Unverified)
 
 A checkout without billing/fx.py (the test fixture) is priced at `FALLBACK_RATE`, and a module that
 isn't there gives no items; a module that IS there but can't be read (not Python, a value that
@@ -26,12 +27,16 @@ from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.sections import CostItem, Costs
 
 FALLBACK_RATE: tuple[float, str] = (95.24, "2026-11-01")  # billing.fx at R6
+# R6.3 G7: Firestore's daily free use as Google lists it (the guide's 6.5 row); GitHub's 2,000
+# minutes are a private repository's allowance, and this repository is public (not checked live)
+FIRESTORE_FREE = "1 GiB stored; 50,000 reads, 20,000 writes and 20,000 deletes a day"
+ACTIONS_FREE = "free on standard runners for a public repository (Unverified)"
 FREE_TIER: tuple[tuple[str, str, str, str], ...] = (
     ("cloud_run", "Cloud Run", "month", "2 million requests a month"),
-    ("firestore", "Firestore", "month", "1 GiB stored"),
+    ("firestore", "Firestore", "month", FIRESTORE_FREE),
     ("secret_manager", "Secret Manager", "month", "6 secret versions"),
     ("cloud_scheduler", "Cloud Scheduler", "month", "3 jobs"),
-    ("github_actions", "GitHub Actions", "month", "2,000 minutes a month"),
+    ("github_actions", "GitHub Actions", "month", ACTIONS_FREE),
 )
 CostKind = Literal["model", "voice", "search", "maps", "cloud", "other"]
 FREE_BRAIN = "free of charge; Google may learn from what it is told"

@@ -239,6 +239,7 @@ def test_r63_c_look_with_the_writer_off_the_panel_is_as_it_was(
 ) -> None:
     c = panel(browser, c_url, token, size, "night", off="no_key")
     try:
+        c.page.emulate_media(reduced_motion="reduce")  # the ambient loops still: two pictures can match
         until(
             c.page,
             lambda: c.page.locator(WRITER).get_attribute("hidden") is not None,
@@ -247,10 +248,11 @@ def test_r63_c_look_with_the_writer_off_the_panel_is_as_it_was(
         c.page.wait_for_timeout(300)
         c.page.evaluate(FINISH_ANIMATIONS_JS)
         with_boxes = c.page.evaluate(LAYOUT_JS, "#p-book")
-        shot = c.page.locator("#p-book").screenshot()
+        shot = c.page.locator("#p-book").screenshot(animations="disabled")
         c.page.evaluate(f"() => document.querySelectorAll('{BOXES}').forEach((n) => n.remove())")
         assert c.page.evaluate(LAYOUT_JS, "#p-book") == with_boxes  # the boxes take no room at all
-        assert c.page.locator("#p-book").screenshot() == shot  # the same picture, byte for byte
+        again = c.page.locator("#p-book").screenshot(animations="disabled")
+        assert again == shot  # the same picture, byte for byte
         if SHOTS:
             Path(SHOTS).mkdir(parents=True, exist_ok=True)
             (Path(SHOTS) / f"writer-off-{size}-night.png").write_bytes(shot)

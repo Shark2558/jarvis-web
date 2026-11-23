@@ -1,0 +1,29 @@
+{
+  "title": "A systems check, from probes to what you hear",
+  "dir": "down",
+  "nodes": [
+    {"id": "ask", "label": "You ask, or the tick runs", "kind": "person", "rank": 0, "col": 0},
+    {"id": "probes", "label": "One probe per system", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/health/probes.py"},
+    {"id": "rollup", "label": "Roll up the results", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/health/report.py"},
+    {"id": "store", "label": "Last report kept", "kind": "store", "rank": 2, "col": 1,
+     "ref": "src/jarvis/health/store.py"},
+    {"id": "brief", "label": "Fixed-sentence briefing", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/health/briefing.py"},
+    {"id": "debounce", "label": "Problem lasts?", "kind": "guard", "rank": 3, "col": 1,
+     "ref": "src/jarvis/health/changes.py"},
+    {"id": "speak", "label": "Pop-up speaks it", "kind": "person", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console-systems-voice.js"},
+    {"id": "alert", "label": "Alert through the policy", "kind": "service", "rank": 4, "col": 1}
+  ],
+  "edges": [
+    {"from": "ask", "to": "probes"},
+    {"from": "probes", "to": "rollup"},
+    {"from": "rollup", "to": "store", "style": "side"},
+    {"from": "rollup", "to": "brief"},
+    {"from": "rollup", "to": "debounce", "label": "status changed"},
+    {"from": "brief", "to": "speak"},
+    {"from": "debounce", "to": "alert", "label": "yes"}
+  ]
+}

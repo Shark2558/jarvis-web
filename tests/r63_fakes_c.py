@@ -42,6 +42,7 @@ from jarvis.buildbook.writer.model import (
     TRIAL_PAGES,
     Page,
     PageSection,
+    Pick,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -253,9 +254,12 @@ def control_routes(state: FakeWriterC) -> APIRouter:
                 state="done", done=10, total=10, inr=38.0, results=tuple(range(1, 11))
             )
             state.run = http.RunView(kind="trial", state="done", done=10, total=10, inr=38.0)
+        models = {"pick": Pick, "run": http.RunView, "trial": http.TrialView}
         for key, value in body.items():
             if key == "refuse":
                 value = {k: tuple(v) for k, v in value.items()}
+            if key in models:
+                value = models[key].model_validate(value)
             setattr(state, key, value)
         return {"ok": True}
 

@@ -55,7 +55,7 @@ TRIAL_PAGES: tuple[str, ...] = (  # D6, owner question 3
     "pg_service_telegram",
 )
 YES = "YES"
-GST_NOTE = "Your Anthropic bill may add 18 % GST."
+GST_NOTE = "Your {maker} bill may add 18 % GST."  # D8; the maker: jarvis.llm.write.maker
 NOT_WRITTEN = "Not written by AI yet"
 CHANGED_WAITING = "Changed in this release: waiting for your Update"
 EXAMPLE_MARK = "Example (made up)"

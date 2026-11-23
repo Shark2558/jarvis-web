@@ -66,10 +66,6 @@ def _no_retry(provider: base.LLMProvider) -> base.LLMProvider:
     return view() if callable(view) else provider
 
 
-def _chars(system: str, dynamic: str | None, messages: list[base.ChatMessage]) -> int:
-    return len(system) + len(dynamic or "") + sum(len(m.text()) for m in messages)
-
-
 async def write_text(
     router: ModelRouter,
     *,
@@ -107,13 +103,19 @@ async def write_text(
             raise WriterUnavailable(_why(exc)) from None
         cut = True  # it started, then broke: settle at what it used
     text = "".join(parts)
-    used = pricing.stream_usage(
-        usage, input_chars=_chars(system, system_dynamic, messages), output_chars=len(text)
-    )
+    sent = len(system) + len(system_dynamic or "") + sum(len(m.text()) for m in messages)
+    used = pricing.stream_usage(usage, input_chars=sent, output_chars=len(text))
     stop = None if cut else usage.stop_reason
     cost, took = pricing.cost_usd(model, used), max(0.0, now() - started)
     name, whole = getattr(router.provider, "name", ""), not cut and stop not in LENGTH_STOPS
     return Written(text, model, name, tier, used, cost, took, whole, stop)
+
+
+MAKERS = {"anthropic": "Anthropic", "gemini": "Google"}  # the Book names no vendor itself (L3)
+
+
+def maker(spec: BrainSpec) -> str:
+    return MAKERS.get(getattr(spec.provider, "name", ""), spec.label)
 
 
 def model_of(spec: BrainSpec, tier: ModelTier = ModelTier.BALANCED) -> str:

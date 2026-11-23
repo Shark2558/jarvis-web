@@ -163,6 +163,8 @@ def test_only_a_priced_brain_is_offered() -> None:
     assert not write.offered(paid_gemini())  # not training, $0 in the table: not offered (M2)
     assert not write.offered(custom_brain())  # its model has no price: not offered (M2)
     assert write.model_of(claude_like()) == "claude-sonnet-5-5"
+    assert write.maker(claude_like()) == "Anthropic" and write.maker(gemini_like()) == "Google"
+    assert write.maker(custom_brain()) == "Custom"  # its own label
 
 
 # ---- the providers' halves, inside jarvis.llm only ----------------------------------------------

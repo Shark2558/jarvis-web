@@ -1,4 +1,4 @@
-Version v6.3.1 · 23 Nov 2026, 14:10 IST · Release R6.3 · Status: Draft · Owner: 🛠 Mark XXIV
+Version v6.3.1 · 23 Nov 2026, 14:28 IST · Release R6.3 · Status: Draft · Owner: 🛠 Mark XXIV
 
 # Release R6.3 — The Build Book: written by AI, short tour and full book (`v6.3.0`)
 
@@ -447,7 +447,7 @@ that is not in this table fails the build, D9):
 | Fact | Source (read as code, never typed) | On `47ee8fc` it would read |
 |---|---|---|
 | `release.label`, `release.version`, `release.date` | `gen/plans.py:78`; `src/jarvis/__init__.py:3`; `gen/repo.py` commit date | R6.3, v6.3.0, its day |
-| `release.new` | this release's own plan title, after its em dash | "The Build Book: written by AI, short tour and full book" |
+| `release.new` | this release's own plan title, after its em dash, without the version in brackets | "The Build Book: written by AI, short tour and full book" |
 | `tour.minutes` | the timer over the filled script (`gen/tour.py`), whole minutes | 14 (owner), 13 (guest) |
 | `cards.count`, `modules.count`, `modules.else_count` | the guide's cards; the module map (`gen/modules.py`); modules minus the seven | 73, 18, 11 |
 | `loc.python_code` | the counter (`gen/loc.py`), Python code lines in `src/` | 124,475 (rounded in words: "about 124 thousand") |
@@ -1115,4 +1115,4 @@ this public repository.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v6.3.1 | 23 Nov 2026, 14:10 IST | R6.3 | Skeleton | 🛠 Mark XXIV |
+| v6.3.1 | 23 Nov 2026, 14:28 IST | R6.3 | First edition, from the code at `47ee8fc` and Phase A v6.2.1 (copied unchanged): the owner's summary in ₹; rows 379 and 380 and his 23 Nov decisions as named tests; every Phase A fact re-checked and the moved ones corrected (10.0 MB a release, 97 left out, 73 cards and 18 modules, 31 services, 120 collections, 179 settings, the LOC, ≈ 152 pages, the router's `allow_degrade` but no laptop switch, the 20 s LLM timeout, `.claude/**` in the zip); the short tour's first script for approval stop 2 (17 scenes, seven highlights, ≈ 13.6 min owner, ≈ 13.0 guest, every number a fact); D0–D14 (the split into R6.3 and R6.3.1, the `jarvis.llm` write seam, the fact pack, the pages, the reading packs, the job and the step, the trial, the pick and the second YES, the ledger and holds, the tour, the checks, sealing the pages, release updates, audiences, the reader); the data model, 13 new routes, no new tool, keyring or alert kind; ₹ estimates (trial ≈ ₹37, first write ≈ ₹1,122, a release ≈ ₹295); the I0 seams; parts A–D; R6.3.1 with approval stop 3; suites with controls; size guards; risks; 12 owner questions with defaults; the exit check | 🛠 Mark XXIV |

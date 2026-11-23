@@ -11,6 +11,9 @@
     --licences      rewrite requirements.licences.json from the installed dists (run with
                     requirements.lock installed; refuses if any installed version differs)
 
+    pages ...       R6.3.1 D5: the Workshop's tools for the full book's written pages
+                    (--list, --pack ID, --check [ID ...], --stamp ID ...; `gen/pages_cli.py`)
+
 An earlier build's files in --out are removed FIRST, so a stale book is never served as this
 release. This module and `fallback` import the standard library only: when the generator's own
 packages are missing (the deploy's `pip install` failed), best effort still writes a release.json
@@ -51,6 +54,11 @@ def _without_packages(args: argparse.Namespace, exc: ImportError) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["pages"]:  # R6.3.1 D5: its own subcommand; the flags below are unchanged
+        from jarvis.buildbook.gen import pages_cli
+
+        return pages_cli.main(argv[1:])
     args = _args(argv)
     if args.out is not None:
         fallback.clear(args.out)  # an earlier build's files never pass as this one's

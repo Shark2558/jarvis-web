@@ -1,26 +1,38 @@
 # src/jarvis/buildbook/gen/scrub.py
 """R6 D3: no personal data in the book. Every text the generator takes from the repository (plan
-lines, docstrings, setting descriptions) passes `Scrubber.clean`, which replaces with "[removed]":
+lines, docstrings, setting descriptions) passes `Scrubber.clean`, which puts "[removed]" for:
 
-    url     a URL (any case; `http(s)://`, `gs://`, `s3://`, `ftp://` or a bare `www.`) unless it
-            is http(s) on the public-docs allow list (`PUBLIC_DOCS`) with no user part and, once
-            percent-decoded, no e-mail address or secret in it
+    url     a URL (any case; http(s), gs, s3, ftp or a bare `www.`) unless it is http(s) on the
+            public-docs allow list (`PUBLIC_DOCS`) with no user part and, percent-decoded, no
+            e-mail address or secret in it
     host    a `*.run.app`, `*.ts.net` or other project-id-like host (`PRIVATE_HOSTS`), and an
             Artifact Registry / Container Registry / Cloud Storage address with its path
     email   an e-mail address
-    phone   an Indian mobile number, with or without +91 / 0091 / 0 and any single spaces,
-            hyphens or dots between its digits ("98765 43210", "987 654 3210"); an 11-digit
-            number starting with 0 (a landline with its STD code); a number written with "+"
-            and 8-15 digits
-    digits  any run of 10 or more digits (account and project numbers), also when written in
-            groups of 3 or more digits split by single spaces or hyphens ("1234 5678 9012");
-            dates (2-digit groups), versions, decimals and IP addresses are left alone
-    secret  a secret-shaped string (the same shapes the snapshot scan refuses, `SECRET_SHAPES`;
-            a private key as its whole block)
-    name    any word whose SHA-256 is in gen/redact.json (hashes only: no one named), matched on
-            its NFKD form with accents, zero-width and other format characters removed, Cyrillic /
-            Greek look-alikes folded and case folded; also its camel-case parts and the word
-            without leading or trailing digits ("NameSurname", "name2558")
+    phone   an Indian mobile number, with or without +91 / 0091 / 0 and single spaces, hyphens or
+            dots between its digits; an 11-digit number starting with 0 (a landline with its
+            STD code); a number written with "+" and 8-15 digits
+    digits  a run of 10+ digits, also in groups of 3+ split by single spaces or hyphens; dates,
+            versions, decimals and IP addresses are left alone
+    secret  a secret-shaped string (the snapshot scan's `SECRET_SHAPES`; a private key whole)
+    name    a word whose SHA-256 is in gen/redact.json (hashes only), matched on its NFKD form
+            without accents and format characters, look-alikes folded, case folded; also its
+            camel-case parts and the word without leading or trailing digits; and (R6.3 M8) a
+            several-word name from redact.json's `phrases`: 2-8 consecutive words folded the
+            same way and joined by one space (`scripts/redact_add.py`), whatever the case,
+            accents or spacing (a line wrap or one `-`, `.`, `,` too); its words alone stay
+
+R6.3 D10 G8 adds (each found before the digits rules, so it is named for what it is):
+
+    ipv4        a dotted IPv4 address (not loopback, 0.0.0.0 or 255.255.255.255); a global one in
+                a version's place (after `==`, `@` or a package name and a space, or a whole
+                field: "opencv-python-headless 4.12.0.88") is a version and stays
+    ipv6        an IPv6 address with 4+ groups, or 2+ with a first group of 3+ hex digits (not
+                ::1 or ::; times, slices and MAC addresses are not addresses)
+    pan         an Indian PAN, [A-Z]{5}[0-9]{4}[A-Z] standing alone
+    aadhaar     12 digits in groups of four ("2345 6789 0123", "2345-6789-0123")
+    host        a hostname under a domain whose SHA-256 is in redact.json's `domains`
+    project_id  a Google Cloud project-id shape: 6-30 lower-case letters, digits and hyphens, a
+                letter first, a hyphen and a run of 4+ digits ("my-proj-123456")
 
 `verify` walks the finished book and raises `ScrubLeak` (paths and kinds, never the text) if any
 of these is left anywhere but a commit id or a code symbol. `NoScrub` is the eval's negative
@@ -30,6 +42,7 @@ control: with it a plan's e-mail reaches book.json, and the `gen` suite must fai
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import re
 import unicodedata
@@ -48,29 +61,13 @@ REMOVED = "[removed]"
 REDACT_FILE: Traversable | Path = files("jarvis.buildbook.gen") / "redact.json"
 SKIP_KEYS = frozenset({"sha", "symbol"})  # a commit id, a code symbol: never personal
 
-PUBLIC_DOCS = frozenset(
-    {
-        "ai.google.dev",
-        "cloud.google.com",
-        "core.telegram.org",
-        "developer.mozilla.org",
-        "developers.google.com",
-        "docs.anthropic.com",
-        "docs.claude.com",
-        "docs.github.com",
-        "docs.pydantic.dev",
-        "docs.python.org",
-        "fastapi.tiangolo.com",
-        "firebase.google.com",
-        "platform.claude.com",
-        "pypi.org",
-        "spdx.org",
-        "support.google.com",
-        "threejs.org",
-        "www.home-assistant.io",
-        "www.w3.org",
-    }
-)
+PUBLIC_DOCS = frozenset({
+    "ai.google.dev", "cloud.google.com", "core.telegram.org", "developer.mozilla.org",
+    "developers.google.com", "docs.anthropic.com", "docs.claude.com", "docs.github.com",
+    "docs.pydantic.dev", "docs.python.org", "fastapi.tiangolo.com", "firebase.google.com",
+    "platform.claude.com", "pypi.org", "spdx.org", "support.google.com", "threejs.org",
+    "www.home-assistant.io", "www.w3.org",
+})  # fmt: skip
 PRIVATE_HOSTS = (
     "run.app",
     "appspot.com",
@@ -135,6 +132,59 @@ _CONFUSABLES = str.maketrans(
 )
 
 
+_IPV4 = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w]|\.\d)")
+_IPV6 = re.compile(r"(?<![\w:.])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:.])")
+_PAN = re.compile(r"(?<![A-Za-z0-9])[A-Z]{5}[0-9]{4}[A-Z](?![A-Za-z0-9])")
+_AADHAAR = re.compile(  # exactly three groups: a longer grouped number is the digits rule's
+    rf"{_START}(?<!\d{_GAP})\d{{4}}{_GAP}\d{{4}}{_GAP}\d{{4}}(?!\d|{_GAP}\d)"
+)
+_PROJECT = re.compile(r"(?<![\w./@-])[a-z][a-z0-9-]{4,28}[a-z0-9](?![\w/-]|\.\w)")
+_DOTTED = re.compile(
+    r"(?<![\w.@/-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]"
+    r"(?![\w-]|\.\w)",
+    re.IGNORECASE,
+)
+_PHRASE_GAP = re.compile(r"[\s\u00a0]*[-_.,&/'\u2019]?[\s\u00a0]*")
+PHRASE_WORDS = (2, 8)  # the shortest and longest phrase looked for, in words
+FOLDED_WORDS = 65_536  # distinct words kept folded (the repository's plans hold about 40,000)
+_V6_GROUPS, _V6_HEAD = 4, 3  # an IPv6 address: 4+ groups, or a first group of 3+ hex digits
+_PROJECT_DIGITS = re.compile(r"\d{4,}")
+
+
+def _not_ipv4(text: str) -> bool:
+    try:
+        addr = ipaddress.IPv4Address(text)
+    except ValueError:
+        return True  # 999.1.1.1 is not an address
+    return addr.is_loopback or addr.is_unspecified or text == "255.255.255.255"
+
+
+_VERSIONED = re.compile(r"(?:==|@|[A-Za-z][\w.]*[-_.][\w.-]* )$")
+
+
+def _a_version(m: re.Match[str]) -> bool:
+    """A global dotted quad in a version's place (versions stay as they are, BRIEF-A)."""
+    if not ipaddress.IPv4Address(m.group(0)).is_global:
+        return False  # a private, shared or link-local address is always an address
+    before = m.string[: m.start()]
+    return (not before and m.end() == len(m.string)) or bool(_VERSIONED.search(before))
+
+
+def _not_ipv6(text: str) -> bool:
+    groups = [g for g in text.split(":") if g]
+    if len(groups) < 2 or (len(groups) < _V6_GROUPS and len(groups[0]) < _V6_HEAD):
+        return True  # "1::2", "a:b:c": a slice or a label, not an address
+    try:
+        addr = ipaddress.IPv6Address(text)
+    except ValueError:
+        return True  # a time, a MAC address
+    return addr.is_loopback or addr.is_unspecified
+
+
+def _not_project(text: str) -> bool:
+    return "-" not in text or _PROJECT_DIGITS.search(text) is None
+
+
 class ScrubLeak(GenError):
     """Personal text survived into the book (the message names paths and kinds only)."""
 
@@ -160,6 +210,12 @@ def _plain(word: str) -> str:
     return "".join(kept).translate(_CONFUSABLES)
 
 
+@lru_cache(maxsize=FOLDED_WORDS)
+def _folded(word: str) -> str:
+    """A word as a phrase is hashed (scripts/redact_add.py `key_of`)."""
+    return _plain(word).casefold()
+
+
 def name_keys(word: str) -> frozenset[str]:
     """The case-folded forms a hashed name is looked up by: the word, the word without leading
     or trailing digits, and its camel-case parts."""
@@ -175,18 +231,31 @@ def _few_digits(text: str) -> bool:
 class Scrubber:
     """`clean` replaces personal text with "[removed]"; `findings` names what is left."""
 
-    def __init__(self, redact: frozenset[str]) -> None:
-        self._redact = redact
+    def __init__(
+        self,
+        redact: frozenset[str],
+        *,
+        domains: frozenset[str] = frozenset(),
+        phrases: frozenset[str] = frozenset(),
+    ) -> None:
+        self._redact, self._domains, self._phrases = redact, domains, phrases
 
     def _rules(self) -> tuple[tuple[str, re.Pattern[str], Callable[[str], bool]], ...]:
         never: Callable[[str], bool] = lambda _s: False  # noqa: E731 - a tiny predicate
         secrets = tuple((kind, pat, never) for kind, pat in SECRET_SHAPES)
+        listed = (("host", _DOTTED, self._not_listed),) if self._domains else ()
         return (
             ("url", _URL, _url_allowed),
             *secrets,
             ("host", _HOST, never),
             ("email", _EMAIL, never),
+            *listed,
+            ("ipv4", _IPV4, _not_ipv4),
+            ("ipv6", _IPV6, _not_ipv6),
+            ("pan", _PAN, never),
+            ("project_id", _PROJECT, _not_project),
             ("phone", _PHONE, never),
+            ("aadhaar", _AADHAAR, never),
             ("digits", _DIGITS, never),
             ("digits", _GROUPED, _few_digits),
             ("name", _WORD, self._not_a_name),
@@ -195,13 +264,45 @@ class Scrubber:
     def _not_a_name(self, word: str) -> bool:
         return not any(_hash(k) in self._redact for k in name_keys(word))
 
+    def _not_listed(self, host: str) -> bool:
+        labels = host.lower().split(".")
+        return not any(_hash(".".join(labels[i:])) in self._domains for i in range(len(labels) - 1))
+
+    def _phrase_spans(self, text: str) -> list[tuple[int, int]]:
+        """(start, end) of every listed phrase: consecutive words, any gap `_PHRASE_GAP` allows."""
+        words = list(_WORD.finditer(text))
+        keys = [_folded(w.group(0)) for w in words]
+        spans: list[tuple[int, int]] = []
+        low, high = PHRASE_WORDS
+        for i in range(len(words)):
+            for j in range(i + 1, min(i + high, len(words))):
+                if not _PHRASE_GAP.fullmatch(text, words[j - 1].end(), words[j].start()):
+                    break
+                if j + 1 - i >= low and _hash(" ".join(keys[i : j + 1])) in self._phrases:
+                    spans.append((words[i].start(), words[j].end()))
+        return spans
+
+    def _without_phrases(self, text: str, found: set[str]) -> str:
+        if not self._phrases:
+            return text
+        out: list[str] = []
+        last = 0
+        for start, end in self._phrase_spans(text):
+            if start < last:  # inside a phrase already removed
+                continue
+            out.extend((text[last:start], REMOVED))
+            last = end
+            found.add("name")
+        return "".join(out) + text[last:]
+
     def _pass(self, text: str) -> tuple[str, frozenset[str]]:
         """One pass of every rule in order: the cleaned text and the kinds it removed."""
-        out, found = unicodedata.normalize("NFC", text), set()
+        found: set[str] = set()
+        out = self._without_phrases(unicodedata.normalize("NFC", text), found)
         for kind, pattern, keep in self._rules():
 
             def swap(m: re.Match[str], k: Callable[[str], bool] = keep, kd: str = kind) -> str:
-                if k(m.group(0)):
+                if k(m.group(0)) or (kd == "ipv4" and _a_version(m)):
                     return m.group(0)
                 found.add("secret" if kd in _SECRET_KINDS else kd)
                 return REMOVED
@@ -247,17 +348,33 @@ class NoScrub(Scrubber):
         return ()
 
 
-def load_redact(path: Traversable | Path | None = None) -> frozenset[str]:
+def _hashes(path: Traversable | Path | None, key: str) -> frozenset[str]:
     data = json.loads((path or REDACT_FILE).read_text(encoding="utf-8"))
-    hashes = data.get("sha256", [])
-    if not all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes):
+    hashes = data.get(key, [])
+    if not isinstance(hashes, list) or not all(
+        isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in hashes
+    ):
         raise GenError("gen/redact.json must hold lower-case SHA-256 hex strings only")
     return frozenset(hashes)
 
 
+def load_redact(path: Traversable | Path | None = None) -> frozenset[str]:
+    return _hashes(path, "sha256")
+
+
+def load_phrases(path: Traversable | Path | None = None) -> frozenset[str]:
+    """R6.3 M8: the several-word names (`phrases`), hashes only."""
+    return _hashes(path, "phrases")
+
+
+def load_domains(path: Traversable | Path | None = None) -> frozenset[str]:
+    """R6.3 G8: the owner's domains (`domains`), hashes only; a host under one is removed."""
+    return _hashes(path, "domains")
+
+
 @lru_cache(maxsize=1)
 def default_scrubber() -> Scrubber:
-    return Scrubber(load_redact())
+    return Scrubber(load_redact(), domains=load_domains(), phrases=load_phrases())
 
 
 __all__ = [
@@ -269,5 +386,7 @@ __all__ = [
     "ScrubLeak",
     "Scrubber",
     "default_scrubber",
+    "load_domains",
+    "load_phrases",
     "load_redact",
 ]

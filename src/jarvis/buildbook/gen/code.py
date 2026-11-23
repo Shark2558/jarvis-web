@@ -8,15 +8,21 @@ app, so it documents exactly the checkout it is given — the real repo or the t
   its tracked files, its lines of code and the first line of its docstring, in its layer.
 - Integrations: `settings_fields` (class `Settings` in config.py: names and descriptions),
   `integrations` (services by setting prefix and probe, keyring purposes, alert kinds + levels).
+  R6.3 G3: after the rows in plain words, one row for each of the coverage checker's services
+  (`gen/services.inventory`, 31 on R6.3) none of them stands for (`services_named`).
 """
 
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping
+import re
+from collections.abc import Iterable, Mapping, Sequence
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from jarvis.buildbook import plain
+from jarvis.buildbook.gen import services as services_mod
 from jarvis.buildbook.gen.layers import layer_for
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import Scrubber
@@ -251,6 +257,73 @@ def _services(repo: Repo, scrub: Scrubber) -> tuple[Service, ...]:
     return tuple(out)
 
 
+# ---- R6.3 G3: every service the coverage checker counts ---------------------------------------
+OTHER_WHAT = "An outside service the code reaches, found from its settings or its API address."
+SLUG_MAX = 40
+
+
+def slug(name: str) -> str:
+    """ "Google Cloud Speech-to-Text" -> "google_cloud_speech_to_text" (an id's tail)."""
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:SLUG_MAX] or "x"
+
+
+def service_owners(setting: str, fields: Iterable[Sequence[object]]) -> tuple[str, ...]:
+    """The services the checker's `service_fields` maps a setting to (a key ending in "_" is a
+    prefix; the first key that matches wins, as the checker reads it)."""
+    for key, owners in fields:
+        if isinstance(key, str) and (
+            setting == key or (key.endswith("_") and setting.startswith(key))
+        ):
+            return tuple(str(o) for o in owners) if isinstance(owners, (list, tuple)) else ()
+    return ()
+
+
+def _universe(table: Mapping[str, Any]) -> set[str]:
+    owners = (o for _, named in table.get("service_fields", ()) for o in named)
+    return {str(o) for o in owners} | {str(v) for v in dict(table.get("api_hosts", {})).values()}
+
+
+def services_named(rows: Iterable[Service], table: Mapping[str, Any]) -> set[str]:
+    """The checker's service names the book's rows stand for: what their settings map to, and
+    every name a row's label spells or its id is."""
+    fields, universe = tuple(table.get("service_fields", ())), _universe(table)
+    found: set[str] = set()
+    for row in rows:
+        found.update(o for name in row.settings for o in service_owners(name, fields))
+        found.update(n for n in universe if n.lower() in row.label.lower() or slug(n) == row.id)
+    return found & universe
+
+
+@lru_cache(maxsize=4)
+def _inventory(root: Path, sha: str, dirty: bool, files: tuple[str, ...]) -> tuple[str, ...]:
+    """The checker's services of one checkout state (it parses every module: `--check`'s
+    second build, and the fact pack, reuse it)."""
+    return services_mod.inventory(root).names
+
+
+def inventory_names(repo: Repo) -> tuple[str, ...] | None:
+    """The coverage checker's services (M7), or None for a checkout without its table."""
+    if not (repo.has(services_mod.TABLE) and repo.has(f"{SRC}config.py")):
+        return None
+    return _inventory(repo.root, repo.sha, repo.dirty, repo.files)
+
+
+def _others(repo: Repo, rows: Sequence[Service]) -> tuple[Service, ...]:
+    names = inventory_names(repo)
+    if not names:
+        return ()
+    table = services_mod.tables(repo.root)
+    fields, covered = tuple(table.get("service_fields", ())), services_named(rows, table)
+    settings = [n for n, _ in settings_fields(repo)]
+    taken = {r.id for r in rows}
+    out = []
+    for name in sorted(set(names) - covered):
+        sid = slug(name) if slug(name) not in taken else f"{slug(name)}_service"
+        own = tuple(sorted(s for s in settings if name in service_owners(s, fields)))
+        out.append(Service(id=sid, label=name, what=OTHER_WHAT, settings=own))
+    return tuple(out)
+
+
 def _alerts(repo: Repo, scrub: Scrubber) -> tuple[AlertRow, ...]:
     kinds_tree = tree(repo, module_path(repo, "alerts"))
     kinds = literal_args(kinds_tree, "AlertKind") if kinds_tree else ()
@@ -274,24 +347,30 @@ def integrations(repo: Repo, scrub: Scrubber) -> Integrations:
     purposes = top_value(ring, "PURPOSES") if ring else ()
     if not (isinstance(purposes, tuple) and all(isinstance(p, str) for p in purposes)):
         raise GenError(f"{rel}: PURPOSES isn't a literal tuple of names")
+    services = _services(repo, scrub)
     return Integrations(
-        services=_services(repo, scrub),
+        services=(*services, *_others(repo, services)),
         key_purposes=tuple(purposes),
         alert_kinds=_alerts(repo, scrub),
     )
 
 
 __all__ = [
+    "OTHER_WHAT",
     "clip",
     "defines",
     "integrations",
+    "inventory_names",
     "literal_args",
     "module_path",
     "package_names",
     "packages",
     "probe_keys",
+    "service_owners",
+    "services_named",
     "settings_defaults",
     "settings_fields",
+    "slug",
     "top_expr",
     "top_value",
     "tree",

@@ -37,10 +37,8 @@ LEFT_ALONE = (
     "the hold is Rs 11.84 at 95.24 a dollar",
     "`api/r6_wiring.py` and `/v1/book/writer/step`",
 )
-A_BUILDS = pytest.mark.xfail(strict=True, reason="part A builds the new kinds (D10 G8)")
 
 
-@A_BUILDS
 @pytest.mark.parametrize(("kind", "text"), CAUGHT)
 def test_each_new_kind_is_found_and_removed(kind: str, text: str) -> None:
     scrub = default_scrubber()
@@ -48,7 +46,6 @@ def test_each_new_kind_is_found_and_removed(kind: str, text: str) -> None:
     assert REMOVED in scrub.clean(text)
 
 
-@A_BUILDS
 def test_a_hostname_under_a_listed_domain_is_removed() -> None:
     domains = frozenset({hashlib.sha256(OWNER_DOMAIN.encode()).hexdigest()})
     scrub = Scrubber(frozenset(), domains=domains)  # type: ignore[call-arg]
@@ -57,7 +54,6 @@ def test_a_hostname_under_a_listed_domain_is_removed() -> None:
     assert scrub.findings("docs at cloud.google.com") == ()  # an unlisted public host stays
 
 
-@A_BUILDS
 def test_a_listed_phrase_is_removed_whole_and_its_words_alone_stay(tmp_path: Path) -> None:
     """M8: a several-word name (gen/redact.json `phrases`, scripts/redact_add.py) is matched as
     consecutive words, in any case, spacing or accent; its ordinary words alone stay."""
@@ -71,7 +67,6 @@ def test_a_listed_phrase_is_removed_whole_and_its_words_alone_stay(tmp_path: Pat
     assert scrub.findings("the Works page") == ()
 
 
-@A_BUILDS
 def test_book_json_is_guarded_by_the_new_kinds_too() -> None:
     with pytest.raises(Exception, match="ipv4"):
         default_scrubber().verify({"architecture": {"note": "on 10.0.0.7"}})

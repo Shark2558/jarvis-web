@@ -9,9 +9,10 @@ three.js, onnxruntime-web and openWakeWord code, the wake-word models and the co
 the licence their own licence file states. Copyleft (GPL / AGPL / LGPL, and file-level MPL / EPL /
 EUPL / CDDL, with no permissive choice; SPDX AND binds tighter than OR) and non-commercial (the CC
 BY-NC-SA wake model) licences are flagged, and `licence_limits` turns each flag into a Limitation.
+R6.3 G5: every licence in one SPDX spelling (`inventory.spdx`).
 
-Stack: Python and the build backend (pyproject.toml), the Dockerfile's base images, each direct
-dependency at its locked version, the CI jobs, and the vendored releases named in api/console.py.
+Stack: `gen/inventory.py` (R6.3 D2b moved it there with the technology inventory's rows);
+`stack` and `locked` are re-exported here, where the generator and the tests call them.
 """
 
 from __future__ import annotations
@@ -20,22 +21,19 @@ import ast
 import importlib.metadata as md
 import json
 import re
-import tomllib
 from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 from jarvis.buildbook.gen.code import clip, tree
+from jarvis.buildbook.gen.inventory import CONSOLE, LOCK, locked, spdx, stack
 from jarvis.buildbook.gen.repo import Repo
-from jarvis.buildbook.sections import Library, Limitation, Stack, StackItem
+from jarvis.buildbook.sections import Library, Limitation
 
 NOT_STATED = "not stated"
-LOCK = "requirements.lock"
 STATIC = "src/jarvis/api/static/"
-CONSOLE = "src/jarvis/api/console.py"
 LicenceLookup = Callable[[str], str]
 Flag = Literal["copyleft", "non_commercial"]
 
-_PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s\\;]+)")
 _NC = re.compile(r"\bNC\b|NonCommercial|non-commercial", re.IGNORECASE)
 # GPL / AGPL / LGPL, and file-level (weak) copyleft: MPL, EPL, EUPL, CDDL, flagged like LGPL
 _COPYLEFT = re.compile(
@@ -143,7 +141,6 @@ VISION_DIR = "vendor/vision/"
 MANIFEST_PREFIX = "manifest:"
 _NPM_SOURCE = re.compile(r"^npm:((?:@[\w.-]+/)?[\w.-]+)@([\w.+-]+)/")
 _RAW_SOURCE = re.compile(r"^https://raw\.githubusercontent\.com/[\w.-]+/([\w.-]+)/([\w.+-]+)/")
-RELEASE_NAMES = {"three": "three.js", "ort": "onnxruntime-web", "oww": "openWakeWord models"}
 ROLES: dict[str, tuple[str, ...]] = {
     "ai": ("anthropic", "jiter", "docstring-parser"),
     "web": ("fastapi", "starlette", "uvicorn", "httpx", "httpx2", "httpcore", "httpcore2", "h11",
@@ -162,10 +159,6 @@ ROLES: dict[str, tuple[str, ...]] = {
 }  # fmt: skip
 _ROLE_OF = {name: role for role, names in ROLES.items() for name in names}
 _KIND_ORDER = {"python": 0, "vendored": 1, "model": 2, "font": 3}
-
-
-def _norm(name: str) -> str:
-    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 # ---- licences --------------------------------------------------------------------------------
@@ -250,11 +243,6 @@ def flag_of(licence: str) -> Flag | None:
 
 
 # ---- libraries -------------------------------------------------------------------------------
-def locked(repo: Repo) -> tuple[tuple[str, str], ...]:
-    pins = (_PIN.match(line) for line in (repo.text(LOCK) or "").splitlines())
-    return tuple(sorted({(_norm(m.group(1)), m.group(2)) for m in pins if m}))
-
-
 def _releases(repo: Repo) -> dict[str, str]:
     """`THREE_RELEASE = "three-0.187.0"` -> {"THREE_RELEASE": "0.187.0"} (api/console.py)."""
     module = tree(repo, CONSOLE)
@@ -339,7 +327,7 @@ def sort_key(lib: Library) -> tuple[int, str]:
 def libraries(repo: Repo, licence: LicenceLookup) -> tuple[Library, ...]:
     python = []
     for name, version in locked(repo):
-        lic = licence(name)
+        lic = spdx(licence(name))  # R6.3 G5: one spelling a licence
         python.append(
             Library(
                 name=name,
@@ -370,93 +358,6 @@ def licence_limits(libs: Sequence[Library], label: str) -> tuple[Limitation, ...
         for lib in libs
         if lib.flag
     )
-
-
-# ---- stack -----------------------------------------------------------------------------------
-def _pyproject(repo: Repo, pins: dict[str, str]) -> tuple[list[StackItem], list[StackItem]]:
-    """(Python and the build backend, the direct dependencies by name)."""
-    try:
-        cfg = tomllib.loads(repo.text("pyproject.toml") or "")
-    except tomllib.TOMLDecodeError:
-        return [], []
-    project, out = cfg.get("project", {}), []
-    if project.get("requires-python"):
-        out.append(
-            StackItem(
-                role="language",
-                name="Python",
-                version=project["requires-python"],
-                source="pyproject.toml",
-            )
-        )
-    backend = cfg.get("build-system", {}).get("build-backend")
-    deps = []
-    for spec in project.get("dependencies", []):
-        m = re.match(r"\s*([A-Za-z0-9._-]+)(?:\[[^\]]*\])?\s*(.*)", spec)
-        if m:
-            name = _norm(m.group(1))
-            deps.append(
-                StackItem(
-                    role="dependency",
-                    name=name,
-                    version=clip(pins.get(name) or m.group(2).strip(), 40),
-                    source="pyproject.toml",
-                )
-            )
-    if backend:
-        out.append(StackItem(role="build backend", name=backend, source="pyproject.toml"))
-    return out, sorted(deps, key=lambda i: i.name)
-
-
-def _base_images(repo: Repo) -> list[StackItem]:
-    out = []
-    for line in (repo.text("Dockerfile") or "").splitlines():
-        m = re.match(r"^\s*FROM\s+(?:--\S+\s+)*([^\s:@]+)(?::([^\s@]+))?", line, re.IGNORECASE)
-        if m:
-            out.append(
-                StackItem(
-                    role="base image",
-                    name=clip(m.group(1), 80),
-                    version=clip(m.group(2) or "", 40),
-                    source="Dockerfile",
-                )
-            )
-    return out
-
-
-def _ci_jobs(repo: Repo) -> list[StackItem]:
-    out = []
-    for rel in repo.under(".github/workflows/"):
-        in_jobs = False
-        for line in (repo.text(rel) or "").splitlines():
-            if re.match(r"^jobs:\s*(#.*)?$", line):
-                in_jobs = True
-            elif in_jobs and line and not line[0].isspace() and not line.startswith("#"):
-                in_jobs = False
-            elif in_jobs and (m := re.match(r"^  ([A-Za-z0-9_-]+):\s*(#.*)?$", line)):
-                out.append(StackItem(role="ci job", name=m.group(1), source=rel))
-    return out
-
-
-def _vendored_releases(repo: Repo) -> list[StackItem]:
-    out = []
-    module = tree(repo, CONSOLE)
-    for node in module.body if module else []:
-        if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)):
-            continue
-        value = node.value.value
-        names = [t.id for t in node.targets if isinstance(t, ast.Name)]
-        if isinstance(value, str) and any(n.endswith("_RELEASE") for n in names):
-            head, _, version = value.partition("-")
-            name = RELEASE_NAMES.get(head, head)
-            out.append(StackItem(role="vendored", name=name, version=version, source=CONSOLE))
-    return out
-
-
-def stack(repo: Repo) -> Stack:
-    head, deps = _pyproject(repo, dict(locked(repo)))
-    items = [*head, *_base_images(repo), *deps, *_ci_jobs(repo), *_vendored_releases(repo)]
-    return Stack(items=tuple(items))
 
 
 __all__ = [

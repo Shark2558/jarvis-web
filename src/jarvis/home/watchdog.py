@@ -78,10 +78,9 @@ def took(delivery: Delivery, *, idle: bool) -> bool:
 # R11 D3: the helpers' 5-minute clock rides here too; its reminders never fail the laptop check
 # R14 D7: self-health's 5-minute job runs FIRST (before the laptop check), for the brief's owners
 # R13: the wardrobe's 5-minute outfit_clock (calendar, weather, the evening's alert) is advisory
-# R6.3 D5: the Book writer's book_write (the 5-minute clock, last; a page waits for the next run)
 ADVISORY_JOBS = frozenset(
     {"health_check", "book_seal", "book_sweep", "helpers_clock", "mobile_clock", "selfwatch_clock"}
-    | {"outfit_clock", "book_write"}
+    | {"outfit_clock"}
 )
 
 

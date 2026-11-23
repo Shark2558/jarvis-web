@@ -60,7 +60,10 @@ def _summary(built: write.Built, seconds: float, checked: bool) -> str:
     head = f"build book {r.label} ({r.id}): book.json {len(built.book):,} bytes, "
     tail = f"source.zip {len(built.source):,} bytes, {r.skipped} files left out, {seconds:.1f} s"
     facts = f"facts.json {len(built.facts):,} bytes, "  # R6.3 D2
-    return head + facts + tail + ("; two builds are byte-identical" if checked else "")
+    n = built.counts  # R6.3.1 D4: the full book (counts only)
+    full = f"pages.json.gz {len(built.pages):,} bytes ({n.get('written', 0)} written, "
+    full += f"{n.get('generator', 0)} the generator's), "
+    return head + facts + full + tail + ("; two builds are byte-identical" if checked else "")
 
 
 def _fail(args: argparse.Namespace, repo: Repo | None, message: str) -> int:

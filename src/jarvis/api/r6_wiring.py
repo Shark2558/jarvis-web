@@ -23,12 +23,11 @@ so that file stays a short list of named steps, as R4's `api/r4_wiring.py` does.
   R5.1's 5-minute home watchdog (both idempotent; `home/watchdog.py` keeps them advisory).
 - `r6_privacy_sources(app)`: D16's rows (B's `book_sealed`, `book_sessions` whose delete is C's
   wipe, `book_settings`), registered before Faces (which stays last).
-- R6.3 I0 seam 6 (docs/plans/r6-3-book-content.md D5, D13, M3): the writer, built by its part's
-  ONE join (`api/book_writer_wiring.py` -> `buildbook/writer/part.build(ctx)`), on
-  `app.state.book_writer` (None without a keyring, or `book_writer_off = "setup_failed"`); its
-  `book_write` job after `book_sweep` on the morning tick and LAST on the 5-minute clock
-  (`tick_wiring.add_clock_job`), never on the home watchdog's R6 loop; its routes
-  (`api/book_writer.py`, `api/book_pages.py`) and its Privacy row.
+- R6.3.1 D7-D9 (docs/plans/r6-3-1-book-at-build.md): the runtime writer is gone. The full book is
+  compiled at build time and sealed with each release; `app.state.book_pages`
+  (`buildbook/writer/serve.BookPages`) reads a kept release's pages for `api/book_pages.py`, and
+  the old trial's records keep a Privacy row (`writer/privacy.OldWriterSource`, on
+  `app.state.book_old_writer`) until he deletes them.
 
 One name for each Book setting across B (the store and `PUT /v1/book/settings`), C (`Prefs`) and
 D (the reader's switches): `SETTINGS_KEYS` (`talk_on`, as the Contract's `talk: {on}`).
@@ -49,8 +48,6 @@ from jarvis.api.book_pages import install_book_pages
 from jarvis.api.book_show import install_book_show
 from jarvis.api.book_show_hear import install_book_hear
 from jarvis.api.book_show_wiring import C_STATE, book_sweep_job, wire_book_c
-from jarvis.api.book_writer import install_book_writer
-from jarvis.api.book_writer_wiring import wire_writer
 from jarvis.api.identity import primary_user_id
 from jarvis.api.r4_wiring import _notifier
 from jarvis.buildbook.lock import DocShowLock
@@ -61,8 +58,9 @@ from jarvis.buildbook.seal import DocsBookVault
 from jarvis.buildbook.sealer import BookSealer, BookSealJob
 from jarvis.buildbook.service import BookService
 from jarvis.buildbook.show_script import Prefs
-from jarvis.buildbook.writer.model import JOB_NAME as WRITER_JOB
 from jarvis.buildbook.writer.ports import FactSource  # R6's BookSource + facts() (R6.3)
+from jarvis.buildbook.writer.privacy import OldWriterSource
+from jarvis.buildbook.writer.serve import BookPages
 from jarvis.config import AuthMode, Settings
 from jarvis.keyring import Keyring
 from jarvis.logging import get_logger
@@ -82,9 +80,10 @@ R6_STATE = (
     "book_tickets",  # B: buildbook/owner.py (the code download's single-use tickets)
     "book_settings",  # B: buildbook/owner.py (D16 Book settings)
     *C_STATE,  # C: sessions, lock (the middleware's store), talk, service, show_limits
-    "book_writer",  # R6.3 B: the writer's service (buildbook/writer/part.py)
+    "book_pages",  # R6.3.1 D7: a kept release's full book (buildbook/writer/serve.py)
+    "book_old_writer",  # R6.3.1 D9: the old writer trial's Privacy row (writer/privacy.py)
 )
-R6_JOB_NAMES = frozenset({"book_seal", "book_sweep", WRITER_JOB})
+R6_JOB_NAMES = frozenset({"book_seal", "book_sweep"})
 SETTINGS_KEYS = ("creator_name", "show_voice", "listening", "talk_on", "allow_training_brain")
 BOOK_OFF_NOTE = (
     "The build book is OFF: no encryption key on this server (it is sealed in the vault)"
@@ -120,7 +119,7 @@ def _book_off(app: FastAPI, s: Settings, lock: DocShowLock, why: str) -> None:
     st = app.state
     for name in R6_STATE:
         setattr(st, name, None)
-    st.book_jobs = st.book_writer_part = None
+    st.book_jobs = None
     st.book_lock = lock if s.auth_mode is AuthMode.GOOGLE else None
     st.book_off, st.book_off_error = why, None
 
@@ -174,7 +173,8 @@ def wire_book(
         on_close=st.book_tickets.clear,  # B-sec 4: a closed session's download tickets go too
         lock=lock,
     )
-    wire_writer(app, s, docs, audit, keyring=keyring, source=source, notifier=tell)
+    st.book_pages = BookPages(source, vault)
+    st.book_old_writer = OldWriterSource(docs, prefix=p)
     st.book_off = None
 
 
@@ -205,8 +205,7 @@ def install_r6_routes(app: FastAPI) -> None:
     install_book(app)
     install_book_show(app)
     install_book_hear(app)
-    install_book_writer(app)  # R6.3 B (I0's stubs: 503 not_built_yet)
-    install_book_pages(app)
+    install_book_pages(app)  # R6.3.1 D7: the full book's two routes (after install_book)
 
 
 def install_show_lock(app: FastAPI, s: Settings) -> None:
@@ -216,9 +215,7 @@ def install_show_lock(app: FastAPI, s: Settings) -> None:
 
 def r6_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
     """D7 `book_seal` and D14 `book_sweep` on the existing tick (no new Scheduler job), the SAME
-    instances the 5-minute home watchdog runs (added to it once, when they are first built); R6.3
-    `book_write` after them on the tick and LAST on the one 5-minute clock (M3), never added to
-    the watchdog here (with Home on it would then run twice)."""
+    instances the 5-minute home watchdog runs (added to it once, when they are first built)."""
     st = app.state
     built: tuple[TickJob, ...] | None = getattr(st, "book_jobs", None)
     if built is not None:
@@ -228,16 +225,10 @@ def r6_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
         jobs.append(BookSealJob(st.book_sealer, primary_user_id(st.settings)))
     if (sweep := book_sweep_job(app)) is not None:
         jobs.append(sweep)
-    if (writer := getattr(st, "book_writer_part", None)) is not None:
-        jobs.append(writer.job)
     assert {j.name for j in jobs} <= R6_JOB_NAMES  # the names the tick checks know
     if jobs and getattr(st, "home_watchdog", None) is not None:
-        for job in (j for j in jobs if j.name != WRITER_JOB):
+        for job in jobs:
             st.home_watchdog.extend(job)  # around the clock, every 5 minutes (R5.1 D4)
-    if writer is not None:
-        from jarvis.api.tick_wiring import add_clock_job  # late: tick_wiring imports this module
-
-        add_clock_job(app, writer.job)
     out = st.book_jobs = tuple(jobs)
     return out
 
@@ -245,7 +236,8 @@ def r6_tick_jobs(app: FastAPI) -> tuple[TickJob, ...]:
 def r6_privacy_sources(app: FastAPI) -> tuple[PrivacySource, ...]:
     """D16: the sealed releases (passkey delete), the live session (delete = C's wipe: every
     session ends with its audit line and notice; their content-free notice records go with them)
-    and Book settings (the creator name)."""
+    and Book settings (the creator name); R6.3.1 D9: the old writer trial's records (listed only
+    while some are left)."""
     st, s = app.state, app.state.settings
     if st.book_vault is None or st.book_service is None:
         return ()
@@ -258,15 +250,8 @@ def r6_privacy_sources(app: FastAPI) -> tuple[PrivacySource, ...]:
             clock=book_clock(app),
         ),
         BookSettingsSource(st.book_settings),
-        *(getattr(st, "book_writer_part", None) or _NO_WRITER).privacy,  # R6.3 B
+        *((st.book_old_writer,) if getattr(st, "book_old_writer", None) is not None else ()),
     )
-
-
-class _NoWriter:
-    privacy: tuple[PrivacySource, ...] = ()
-
-
-_NO_WRITER = _NoWriter()
 
 
 def _wipe(app: FastAPI, service: BookService) -> Callable[[str], Awaitable[int]]:

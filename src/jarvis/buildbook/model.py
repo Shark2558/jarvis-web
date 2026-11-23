@@ -67,6 +67,8 @@ KEEP = 3  # releases kept sealed (D5: fixed)
 MIB = 1024 * 1024
 SNAPSHOT_CAP_BYTES = 15 * MIB  # one source snapshot (D5)
 BOOK_JSON_CAP_BYTES = 2 * MIB  # book.json (D5)
+PAGES_FILE_CAP_BYTES = 2 * MIB  # R6.3.1 D4: the compiled pages, gzipped canonical JSON
+FLOWS_FILE_CAP_BYTES = 1 * MIB  # R6.3.1 D4: the compiled flowcharts, canonical JSON
 DIGEST_CHUNK_CHARS = 1_500  # D2 / D11
 MAX_LIMITATIONS = 80  # D2
 ZIP_STAMP = (2026, 1, 1, 0, 0, 0)  # every zip entry's time, as home/kit.py (D5)
@@ -81,7 +83,9 @@ FILE_ID = r"^bf_[0-9a-f]{12}$"  # a sealed file (D6)
 LINE_ID = r"^s[0-9]{2}b[0-9]{2}$"  # a show beat: scene nn, beat nn (D15); fixed lines: lines.LINES
 
 Audience = Literal["owner", "guest"]
-FileKind = Literal["book", "source"]
+FileKind = Literal["book", "source", "pages", "flows"]  # R6.3.1 D4, D7: pages and flows
+REQUIRED_KINDS: tuple[FileKind, ...] = ("book", "source")
+EXTRA_KINDS: tuple[FileKind, ...] = ("pages", "flows")  # from R6.3.1 (v6.3.2) on
 SHOW_SCENES: tuple[tuple[int, str, str], ...] = (
     (1, "book", "The build book"),
     (2, "layers", "Eight layers"),
@@ -132,7 +136,8 @@ class ReleaseRef(Frozen):
         """No version (a release from before R6.1): dumped exactly as R6 wrote it, so a sealed
         R6 book's canonical bytes and the R6 routes' answers are unchanged."""
         data: dict[str, Any] = handler(self)
-        for key in ("version", "facts_sha256"):  # R6.3: no facts file before R6.3 either
+        # R6.3: no facts file before R6.3 either; R6.3.1: no pages or flows file before it
+        for key in ("version", "facts_sha256", "pages_sha256", "flows_sha256"):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
@@ -143,6 +148,8 @@ class Release(ReleaseRef):
     book_sha256: str | None = Field(default=None, pattern=SHA256)
     source_sha256: str | None = Field(default=None, pattern=SHA256)
     facts_sha256: str | None = Field(default=None, pattern=SHA256)  # R6.3 D2: _book/facts.json
+    pages_sha256: str | None = Field(default=None, pattern=SHA256)  # R6.3.1 D4: pages.json.gz
+    flows_sha256: str | None = Field(default=None, pattern=SHA256)  # R6.3.1 D4: flows.json
     source_bytes: int = Field(default=0, ge=0, le=SNAPSHOT_CAP_BYTES)
     skipped: int = Field(default=0, ge=0)
     error: str | None = Field(default=None, min_length=1, max_length=200)
@@ -152,9 +159,22 @@ class Release(ReleaseRef):
         digests = (self.book_sha256, self.source_sha256)
         if self.error is None and None in digests:
             raise ValueError("a good build names both files' SHA-256")
-        if self.error is not None and digests != (None, None):
+        extra = (self.pages_sha256, self.flows_sha256)
+        if self.error is not None and (digests, extra) != ((None, None), (None, None)):
             raise ValueError("a failed build wrote no book")
         return self
+
+    def kinds(self) -> tuple[FileKind, ...]:
+        """The files this release has: its book and source, then its pages and flows (R6.3.1)
+        when it names them; a failed build has none."""
+        if not self.ok:
+            return ()
+        named = {"pages": self.pages_sha256, "flows": self.flows_sha256}
+        return (*REQUIRED_KINDS, *(k for k in EXTRA_KINDS if named[k] is not None))
+
+    def digest(self, kind: FileKind) -> str | None:
+        return {"book": self.book_sha256, "source": self.source_sha256,
+                "pages": self.pages_sha256, "flows": self.flows_sha256}[kind]  # fmt: skip
 
     @property
     def ok(self) -> bool:
@@ -276,14 +296,18 @@ class SealedFile(Frozen):
 
 
 class SealedRelease(ReleaseRef):
+    """R6.3.1 D7: from v6.3.2 on a release is sealed with its pages and flows files too (an
+    older one is its book and source only, and keeps reading as it was)."""
+
     sealed_at: Instant
-    files: tuple[SealedFile, ...] = Field(min_length=2, max_length=2)
+    files: tuple[SealedFile, ...] = Field(min_length=2, max_length=4)
 
     @field_validator("files")
     @classmethod
     def _one_of_each(cls, v: tuple[SealedFile, ...]) -> tuple[SealedFile, ...]:
-        if sorted(f.kind for f in v) != ["book", "source"]:
-            raise ValueError("a sealed release is one book and one source snapshot")
+        kinds = [f.kind for f in v]
+        if len(kinds) != len(set(kinds)) or not set(REQUIRED_KINDS) <= set(kinds):
+            raise ValueError("a sealed release is one book and one source snapshot (and pages)")
         return v
 
     @property
@@ -292,6 +316,9 @@ class SealedRelease(ReleaseRef):
 
     def file(self, kind: FileKind) -> SealedFile:
         return next(f for f in self.files if f.kind == kind)
+
+    def has(self, kind: FileKind) -> bool:
+        return any(f.kind == kind for f in self.files)
 
     def view(self) -> dict[str, Any]:
         """The status route's row: {id, label, sealed_at, mb}, plus `version` from R6.1 on."""
@@ -364,10 +391,14 @@ class TalkReply(Frozen):
 __all__ = [
     "BOOK_JSON_CAP_BYTES",
     "BOOK_SCENES",
+    "EXTRA_KINDS",
+    "FLOWS_FILE_CAP_BYTES",
     "FLOW_IDS",
     "KEEP",
     "LAYERS",
     "LOCK_ID",
+    "PAGES_FILE_CAP_BYTES",
+    "REQUIRED_KINDS",
     "SCHEMA_VERSION",
     "SECTION_IDS",
     "SESSION_ID",

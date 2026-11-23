@@ -5,6 +5,9 @@ Every feature that keeps something about the owner registers a `PrivacySource`; 
 asks all of them at once (`PrivacyRegistry.describe_all`), each within its own time budget. A
 source that fails, is slow or answers for another id still gets its row ("Couldn't check right
 now", no count, nothing deletable): a category never disappears from the list (R1 D9 lesson).
+The one exception is a retired feature's leftover row (a source with `only_while_kept = True`,
+R6.3.1 D9: the Book's old writer trial): it is listed while it holds something and leaves the
+list once a check finds it empty (a check that fails still shows its row).
 Error text is logged as a class name only and never shown.
 """
 
@@ -110,8 +113,16 @@ class PrivacyRegistry:
         return view
 
     async def describe_all(self, uid: str) -> list[CategoryView]:
-        """One view per registered source, in registration order. Never raises."""
-        return list(await asyncio.gather(*(self._one(uid, s) for s in self._sources.values())))
+        """One view per registered source, in registration order (an empty leftover row left
+        out, `leftover_empty`). Never raises."""
+        sources = list(self._sources.values())
+        views = await asyncio.gather(*(self._one(uid, s) for s in sources))
+        return [v for s, v in zip(sources, views, strict=True) if not leftover_empty(s, v)]
+
+
+def leftover_empty(source: PrivacySource, view: CategoryView) -> bool:
+    """A retired feature's leftover row (`only_while_kept`) that was checked and holds nothing."""
+    return getattr(source, "only_while_kept", False) is True and view.available and view.count == 0
 
 
 __all__ = [
@@ -121,5 +132,6 @@ __all__ = [
     "DeleteClass",
     "PrivacyRegistry",
     "PrivacySource",
+    "leftover_empty",
     "unavailable",
 ]

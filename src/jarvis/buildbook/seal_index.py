@@ -11,7 +11,8 @@ purpose `book_index`. No new crypto here.
 `BookIndex` is what the index blob holds: the releases (`model.SealedRelease`), plus, as the R2
 vault index keeps them, the chunk sets of seals still in flight (`pending`) and of releases already
 shredded whose chunk deletes have yet to succeed (`orphans`). `checked_files` is the check a seal
-starts with: exactly the release's two files, each under its cap and matching its SHA-256.
+starts with: exactly the release's files (its book and source; from R6.3.1 on its pages and
+flows too, `Release.kinds()`), each under its cap and matching its SHA-256.
 """
 
 from __future__ import annotations
@@ -27,6 +28,9 @@ from pydantic import Field
 from jarvis.buildbook.model import (
     BOOK_JSON_CAP_BYTES,
     FILE_ID,
+    FLOWS_FILE_CAP_BYTES,
+    PAGES_FILE_CAP_BYTES,
+    REQUIRED_KINDS,
     SNAPSHOT_CAP_BYTES,
     FileKind,
     Instant,
@@ -40,8 +44,13 @@ from jarvis.integrations.vault import TokenCipher
 from jarvis.keyring import Keyring
 from jarvis.vault.crypto import CHUNK_BYTES, chunk_count
 
-KINDS: tuple[FileKind, ...] = ("book", "source")
-CAPS: Mapping[FileKind, int] = {"book": BOOK_JSON_CAP_BYTES, "source": SNAPSHOT_CAP_BYTES}
+KINDS: tuple[FileKind, ...] = REQUIRED_KINDS  # every sealed release has these two
+CAPS: Mapping[FileKind, int] = {
+    "book": BOOK_JSON_CAP_BYTES,
+    "source": SNAPSHOT_CAP_BYTES,
+    "pages": PAGES_FILE_CAP_BYTES,  # R6.3.1 D7
+    "flows": FLOWS_FILE_CAP_BYTES,  # R6.3.1 D7
+}
 
 
 def index_aad(uid: str) -> str:
@@ -145,17 +154,19 @@ def age(part: Part, now: dt.datetime) -> float:
 
 
 def checked_files(release: Release, files: Mapping[FileKind, bytes]) -> dict[FileKind, bytes]:
+    """The release's files in `Release.kinds()` order, each checked (R6.3.1: with its pages and
+    flows when release.json names them)."""
     if not release.ok:
         raise BookUnavailable("This release has no build book.")
-    if set(files) != set(KINDS):
-        raise ValueError("a sealed release is its book and its source snapshot")
-    want = {"book": release.book_sha256, "source": release.source_sha256}
-    for kind in KINDS:
+    kinds = release.kinds()
+    if set(files) != set(kinds):
+        raise ValueError("a sealed release is its book and its source snapshot (and its pages)")
+    for kind in kinds:
         if len(files[kind]) > CAPS[kind]:
             raise BookUnavailable("A file of this release is over its size cap.")
-        if hashlib.sha256(files[kind]).hexdigest() != want[kind]:
+        if hashlib.sha256(files[kind]).hexdigest() != release.digest(kind):
             raise BookUnavailable("The files don't match their release.")
-    return {kind: files[kind] for kind in KINDS}
+    return {kind: files[kind] for kind in kinds}
 
 
 __all__ = [

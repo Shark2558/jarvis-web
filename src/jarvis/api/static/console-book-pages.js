@@ -5,8 +5,8 @@
 // console-book.js loads it ONCE at the panel's first open and calls mount(host, deps): `host` sits under the reader of an
 // open OWNER session; deps = { api, booked, ask, say, render, token(), release() }. The panel re-renders by itself, so
 // this module watches its host: it reads the index again when the session or the release read changes.
-// Also page(host, raw) (a page's meta line and sections, for the writer's trial pages) and more(node) (the reader's G4
-// line "+N more in the full book" under its limitations, from the index's `limitations`).
+// Also page(host, raw) (a page's meta line and sections) and more(node) (the reader's G4 line "+N more in the full
+// book" under its limitations, from the index's `limitations`). R6.3.1: the Workshop writes the pages at build time.
 // Routes: GET /v1/book/pages?release=, GET /v1/book/pages/{id}?release= (X-Jarvis-Book). A refusal (a guest's 403, a
 // release without pages) draws nothing. No build step; CSP script-src 'self'; textContent only; ASCII; <= 400 lines.
 (() => {
@@ -15,7 +15,7 @@
   const PLACE = 'jarvis_book_place_v1';
   const PAGE = /^pg_(?:chapter|module|card|screen|service)_[a-z0-9_]{1,40}$/, RID = /^[0-9a-f]{7}$/, VER = /^v\d{1,3}\.\d{1,3}\.\d{1,4}$/;
   const SECTIONS = ['plain', 'example', 'how', 'costs', 'fails', 'code'], OPEN = { plain: true, example: true };
-  const NOT_WRITTEN = 'Not written by AI yet', CHANGED = 'Changed in this release: waiting for your Update'; // writer.model
+  const NOT_WRITTEN = 'Not written yet', BY = 'Written by the Workshop'; // writer.model (R6.3.1)
   const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const arr = (v) => (Array.isArray(v) ? v : []);
@@ -30,13 +30,13 @@
   // ---- shapes: what the routes send, checked field by field ----------------------------------------
   function meta(v) {
     const m = obj(v);
-    if (!m || !txt(m.model, 80)) return null;
-    return { label: txt(m.brain_label, 60) || txt(m.brain, 40), model: txt(m.model, 80), version: VER.test(m.version || '') ? m.version : '',
-      release: RID.test(m.release || '') ? m.release : '', at: txt(m.written_at, 40) };
+    if (!m || !txt(m.written_by, 60)) return null;
+    return { by: txt(m.written_by, 60), version: VER.test(m.version || '') ? m.version : '', release: RID.test(m.release || '') ? m.release : '',
+      at: txt(m.written_on, 10) };
   }
   function row(v) {
     const p = obj(v);
-    return p && PAGE.test(p.id || '') ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.written), changed: p.changed === true } : null;
+    return p && PAGE.test(p.id || '') ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.written) } : null;
   }
   function normalIndex(raw) {
     const d = obj(raw);
@@ -54,7 +54,7 @@
     arr(p.sections).map(obj).filter(Boolean).forEach((s) => { if (SECTIONS.includes(s.id)) by[s.id] = s; });
     const sections = SECTIONS.filter((id) => by[id]).map((id) => ({ id, heading: txt(by[id].heading, 60) || id,
       text: typeof by[id].text === 'string' ? by[id].text.replace(INVISIBLE, '').slice(0, 2400) : '', refs: arr(by[id].refs).map((r) => txt(r, 200)).filter(Boolean) }));
-    return sections.length ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.meta), changed: p.changed === true, sections } : null;
+    return sections.length ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.meta), sections } : null;
   }
   const pages = () => (index ? index.parts.flatMap((p) => p.chapters.flatMap((c) => c.pages)) : []);
   const find = (id) => pages().find((p) => p.id === id) || null;
@@ -88,11 +88,11 @@
     if (isNaN(d)) return '';
     try { return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(d); } catch (_) { return ''; }
   }
-  /** "Written by Claude (balanced tier, claude-sonnet-5-5) for v6.3.0 on 24 Nov 2026", or "Not written by AI yet". */
-  function writtenBy(m, rid) {
+  /** "Written by the Workshop \u00b7 24 Nov 2026", or "Not written yet". */
+  function writtenBy(m) {
     if (!m) return NOT_WRITTEN;
-    const when = day(m.at), forRel = m.version || m.release || rid;
-    return 'Written by ' + m.label + ' (balanced tier, ' + m.model + ')' + (forRel ? ' for ' + forRel : '') + (when ? ' on ' + when : '');
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.at), when = ymd ? day(ymd[0] + 'T12:00:00Z') : '';
+    return BY + (when ? ' \u00b7 ' + when : '');
   }
   /** A section's words: blank lines part paragraphs; a block of "- " lines is a list. */
   function words(body, text) {
@@ -109,10 +109,9 @@
     const ul = mk('ul', 'bchips'); ul.setAttribute('aria-label', 'Where in the code');
     list.forEach((r) => ul.append(mk('li', 'bchip', r))); body.append(ul);
   }
-  /** One page: who wrote it, the changed label, its six sections (plain and example open). */
+  /** One page: who wrote it, its six sections (plain and example open). */
   function drawPage(box, p, rid) {
     box.append(mk('p', 'bfine', writtenBy(p.meta, rid)));
-    if (p.changed) box.append(mk('p', 'bfine', CHANGED));
     p.sections.forEach((s) => box.append(disclosure(s.heading, '', (body) => {
       words(body, s.text); refs(body, s.refs);
       if (!body.childElementCount) body.append(mk('p', 'bempty', 'Nothing here yet.'));
@@ -149,7 +148,7 @@
     const list = mk('div', 'bk-sections');
     index.parts.forEach((part) => {
       const all = part.chapters.flatMap((c) => c.pages), ai = all.filter((p) => p.meta).length;
-      const sum = all.length + (all.length === 1 ? ' page' : ' pages') + (ai ? ', ' + ai + ' written by AI' : '');
+      const sum = all.length + (all.length === 1 ? ' page' : ' pages') + (ai ? ', ' + ai + ' written' : '');
       list.append(disclosure(part.title, sum, (body) => part.chapters.forEach((c) => body.append(chapter(c))), !!opened[part.id],
         (on) => { opened[part.id] = on; }));
     });
@@ -160,7 +159,7 @@
     h.append(mk('span', 'bcount', String(c.pages.length)));
     c.pages.forEach((p) => {
       const li = mk('li', 'bk-row'), t = mk('span', 'bk-rtxt'), acts = mk('span', 'bk-racts');
-      t.append(mk('b', '', p.title), mk('small', '', p.changed ? CHANGED : p.meta ? 'Written by ' + p.meta.label : NOT_WRITTEN));
+      t.append(mk('b', '', p.title), mk('small', '', p.meta ? BY : NOT_WRITTEN));
       const go = button('Read', '', () => open(p.id)); go.setAttribute('aria-label', 'Read ' + p.title);
       acts.append(go); li.append(t, acts); ul.append(li);
     });

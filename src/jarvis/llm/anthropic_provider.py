@@ -13,7 +13,6 @@ changes.
 
 from __future__ import annotations
 
-import copy
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -117,13 +116,6 @@ class AnthropicProvider:
             api_key=api_key, timeout=timeout_s, max_retries=max_retries
         )
         self.cache_history = cache_history  # R14 D9: the history's breakpoint (the setting)
-
-    def no_retry(self) -> AnthropicProvider:
-        """R6.3 D1 (plan review M1): the same provider over a client that never retries, for the
-        Book writer: a 429 or 529 is then one clean error, never a retry hidden inside a call."""
-        view = copy.copy(self)
-        view._client = self._client.with_options(max_retries=0)
-        return view
 
     # ---- helpers -------------------------------------------------------------------------
 

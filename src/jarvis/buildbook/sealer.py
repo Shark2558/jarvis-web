@@ -15,6 +15,9 @@ traffic, so it never seals a release that didn't go live.
 
 The lease document (`seal_state.SealState`) also remembers what was told (claimed before a notice
 goes) and what Privacy held. No content goes in it, nor in a log or a notice (`seal_words`).
+R6.3.1 D7 (docs/plans/r6-3-1-book-at-build.md): a release that names its full book's files
+(`Release.kinds()`) is sealed with its pages and flows too, under the same cap, and the owner check
+reads them as well (the pages file opened first).
 """
 
 from __future__ import annotations
@@ -26,8 +29,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from jarvis.buildbook.model import KEEP, MIB, FileKind, Release, SealedRelease
+from jarvis.buildbook.owner_id import Hit
 from jarvis.buildbook.ports import BookError, BookSource, BookUnavailable, BookVault, VaultTampered
-from jarvis.buildbook.seal_index import KINDS
 from jarvis.buildbook.seal_notices import Audit, SealNotices
 from jarvis.buildbook.seal_state import SealHeld, SealState, held_of
 from jarvis.buildbook.seal_words import (
@@ -40,6 +43,7 @@ from jarvis.buildbook.seal_words import (
     owner_hit,
     personal_words,
 )
+from jarvis.buildbook.writer import pages
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Notifier
 from jarvis.storage.docs import Docs
@@ -151,11 +155,11 @@ class BookSealer:
         if await self._held(uid, release):  # Privacy deleted while the lease was being taken
             return SealOutcome("held", release.id)
         try:
-            files: dict[FileKind, bytes] = {k: self._source.read(k) for k in KINDS}
+            files: dict[FileKind, bytes] = {k: self._source.read(k) for k in release.kinds()}
         except BookUnavailable:
             await self._say.fail_once(uid, release.id, self._say.words(FAILED, release))
             return SealOutcome("failed", release.id)
-        if (hit := owner_hit(files["book"], self._emails)) is not None:
+        if (hit := self._owner_named(files)) is not None:
             log.error("book seal refused: the book names an owner address")
             words = self._say.words(personal_words(hit), release)
             await self._say.fail_once(uid, f"{release.id}:personal", words)
@@ -167,6 +171,20 @@ class BookSealer:
         await self._say.audit_seal(release, removed, sum(len(b) for b in files.values()))
         await self._say.tell(uid, release, kept)
         return SealOutcome("sealed", release.id, kept=kept, removed=removed)
+
+    def _owner_named(self, files: Mapping[FileKind, bytes]) -> Hit | None:
+        """D3's last check, over the book and (R6.3.1 D7) the full book's pages and flows."""
+        for kind in ("book", "pages", "flows"):
+            data = files.get(kind)
+            if data is None:
+                continue
+            try:
+                text = pages.unzipped(data) if kind == "pages" else data
+            except ValueError:
+                return "word"  # a pages file that won't open is never sealed unread
+            if (hit := owner_hit(text, self._emails)) is not None:
+                return hit
+        return None
 
     def _room(self, sealed: Sequence[SealedRelease], incoming: int) -> int | None:
         """How many of the newest sealed releases stay so the new one fits under the limit: all

@@ -1,18 +1,23 @@
 # src/jarvis/buildbook/gen/write.py
 """R6 D2-D5: assemble the book, build its files, check determinism, write them.
 
-    build(repo, opts)      -> Built(release, book, source and facts bytes); GenError when the
+    build(repo, opts)      -> Built(release and the files' bytes); GenError when the
                               book can't be built honestly (an unmapped package, a flow naming
                               missing code, personal text left, a secret, a file over its cap)
     check(repo, opts)      -> builds twice and refuses if the bytes differ (the CI gate)
-    write(out, built)      -> book.json, source.zip, facts.json, then release.json (last, so a
-                              reader never sees a release naming files that aren't there yet)
+    write(out, built)      -> book.json, source.zip, facts.json, pages.json.gz, flows.json, then
+                              release.json (last, so a reader never sees a release naming files
+                              that aren't there yet)
 
 R6.3 I0 seam 5 (docs/plans/r6-3-book-content.md D2, D3, D9): the fact pack is A's `facts.build`
 with A's `pages_index.build` (the join sets its `release` and `pages`), scrubbed (`verify`, H6)
 and capped at 2 MiB (I1; a warning past 80 %); the tour is D's `tour.build` over that pack and
 the show (`Book.tour`, None: no tour).
     write_error(out, repo, message) -> the best-effort release.json: `error`, no book (D4)
+
+R6.3.1 D4 (docs/plans/r6-3-1-book-at-build.md): the Workshop's authored pages are compiled into
+the release's `pages.json.gz` and `flows.json` (`compile_pages`, against the same fact pack), and
+release.json names both SHA-256s, so the sealer seals them with the release (D7).
 
 `Options` carries what tests replace: the flows, the layer table, the scrubber (the eval's
 negative control passes `NoScrub`), the known fakes, the snapshot cap and the licence lookup
@@ -39,6 +44,7 @@ from jarvis.buildbook.facts_model import (
 )
 from jarvis.buildbook.gen import (
     code,
+    compile_pages,
     costs,
     facts,
     fallback,
@@ -66,8 +72,9 @@ from jarvis.buildbook.model import (
     canonical_bytes,
 )
 from jarvis.buildbook.sections import Architecture
+from jarvis.buildbook.writer.model import FLOWS_FILE, PAGES_FILE
 
-FILES = ("book.json", "source.zip", FACTS_FILE)
+FILES = ("book.json", "source.zip", FACTS_FILE, PAGES_FILE, FLOWS_FILE)
 RELEASE_FILE = "release.json"
 
 
@@ -87,6 +94,9 @@ class Built:
     book: bytes
     source: bytes
     facts: bytes = b""  # R6.3: facts.json
+    pages: bytes = b""  # R6.3.1 D4: pages.json.gz
+    flows: bytes = b""  # R6.3.1 D4: flows.json
+    counts: dict[str, int] = field(default_factory=dict)  # the pages written / the generator's
 
 
 def release_version(repo: Repo) -> str | None:
@@ -133,7 +143,7 @@ def fact_pack(repo: Repo, release: ReleaseRef, scrub: Scrubber) -> FactPack:
 
 
 def assemble(repo: Repo, opts: Options) -> tuple[Book, FactPack]:
-    scrub = opts.scrubber or default_scrubber()
+    scrub = _scrubber(opts)
     try:
         p = _parts(repo, opts, scrub)
         pack = fact_pack(repo, p.release, scrub)
@@ -162,6 +172,16 @@ def assemble(repo: Repo, opts: Options) -> tuple[Book, FactPack]:
 _MIB_CAP = f"{FACTS_JSON_CAP_BYTES // (1 << 20)} MiB"
 
 
+def _scrubber(opts: Options) -> Scrubber:
+    return opts.scrubber or default_scrubber()
+
+
+def owner_emails() -> tuple[str, ...]:
+    """JARVIS_OWNER_EMAILS (comma-separated; never printed): the pages' owner-address check."""
+    raw = os.environ.get("JARVIS_OWNER_EMAILS", "")
+    return tuple(e.strip() for e in raw.split(",") if "@" in e)
+
+
 def facts_warning(size: int) -> str | None:
     """The words the generator says when facts.json passes 80 % of its cap (sizes only)."""
     if size <= FACTS_JSON_WARN_BYTES:
@@ -178,6 +198,7 @@ def build(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008 - froze
         raise GenError(f"facts.json is {len(fact_bytes):,} bytes, over its {_MIB_CAP} cap")
     fakes = opts.fakes if opts.fakes is not None else snapshot.load_fakes()
     snap = snapshot.build(repo, fakes, cap=opts.snapshot_cap)
+    full = compile_pages.compile_pages(repo, pack, scrub=_scrubber(opts), emails=owner_emails())
     release = Release(
         id=repo.id,
         sha=repo.sha,
@@ -187,10 +208,13 @@ def build(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008 - froze
         book_sha256=hashlib.sha256(data).hexdigest(),
         source_sha256=snap.sha256,
         facts_sha256=hashlib.sha256(fact_bytes).hexdigest(),
+        pages_sha256=hashlib.sha256(full.pages).hexdigest(),
+        flows_sha256=hashlib.sha256(full.flows).hexdigest(),
         source_bytes=len(snap.data),
         skipped=snap.skipped,
     )
-    return Built(release=release, book=data, source=snap.data, facts=fact_bytes)
+    return Built(release=release, book=data, source=snap.data, facts=fact_bytes,
+                 pages=full.pages, flows=full.flows, counts=full.counts)  # fmt: skip
 
 
 def check(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008
@@ -201,6 +225,8 @@ def check(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008
             ("book.json", first.book, second.book),
             ("source.zip", first.source, second.source),
             (FACTS_FILE, first.facts, second.facts),
+            (PAGES_FILE, first.pages, second.pages),
+            (FLOWS_FILE, first.flows, second.flows),
         )
         if a != b
     ]
@@ -225,6 +251,8 @@ def write(out: Path, built: Built) -> None:
     _put(out, FILES[0], built.book)
     _put(out, FILES[1], built.source)
     _put(out, FILES[2], built.facts)
+    _put(out, FILES[3], built.pages)
+    _put(out, FILES[4], built.flows)
     _put(out, RELEASE_FILE, release_bytes(built.release))
 
 
@@ -256,6 +284,7 @@ __all__ = [
     "check",
     "fact_pack",
     "facts_warning",
+    "owner_emails",
     "release_bytes",
     "release_version",
     "write",

@@ -16,18 +16,27 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any
 
 import jarvis.llm.write as write
+from jarvis.buildbook.writer import carry, texts
+from jarvis.buildbook.writer.caps import CapRefused, money
 from jarvis.buildbook.writer.http import Estimate
 from jarvis.buildbook.writer.model import (
     BYTES_PER_TOKEN_WORST,
     GST_NOTE,
     MAX_TOKENS,
     SYSTEM_TOKENS,
+    TRIAL_PAGES,
+    Caps,
+    PagesFile,
     RunKind,
+    WriterDoc,
     about_inr,
 )
+from jarvis.buildbook.writer.ports import WriterContext
+from jarvis.buildbook.writer.store import WriterStore
 from jarvis.llm.brains import BrainSpec
 from jarvis.llm.router import ModelTier
 
@@ -39,6 +48,14 @@ ASSUME: tuple[tuple[float, int, float], ...] = (
 )
 REDRAFT_EXTRA_TOKENS = 3_000
 CALL_SECONDS = (30, 50)  # a page call on the step (Estimate; the trial measures it, D5)
+
+
+def trial_brains(specs: list[BrainSpec]) -> tuple[str, ...]:
+    """The trial's brains: the first paid one offered and the first free (training) one."""
+    offered = [s for s in specs if write.offered(s)]
+    paid = next((s.id for s in offered if write.paid(s)), None)
+    free = next((s.id for s in offered if s.trains_on_content), None)
+    return tuple(b for b in (paid, free) if b is not None)
 
 
 def price_of(spec: BrainSpec) -> float:
@@ -110,6 +127,8 @@ def estimate(
 
 
 __all__ = [
+    "Estimates",
+    "trial_brains",
     "ASSUME",
     "CALL_SECONDS",
     "REDRAFT_EXTRA_TOKENS",
@@ -119,3 +138,91 @@ __all__ = [
     "price_of",
     "tokens_worst",
 ]
+
+
+class Estimates:
+    """The estimates the routes show and the runs bind to (`GET .../estimate?run=`), from the
+    real packs' sizes (cached a release), the day's rate and his granted caps."""
+
+    def __init__(
+        self,
+        ctx: WriterContext,
+        store: WriterStore,
+        first_turn: Callable[..., tuple[list[Any], str]],
+        pages_file: Callable[[str, str], Awaitable[PagesFile | None]],
+    ) -> None:
+        self.ctx, self.store, self.first_turn, self.pages_file = ctx, store, first_turn, pages_file
+        self._sizes: dict[tuple[str, str], int] = {}
+
+    async def rate(self, uid: str) -> float:
+        try:
+            return (await money(self.ctx.billing, uid)).rate
+        except CapRefused:
+            raise texts.WriterRefused("unavailable") from None
+
+    def rid(self) -> str:
+        current = self.ctx.source.current()
+        if current is None:
+            raise texts.WriterRefused("no_page")
+        return current.id
+
+    def size(self, rid: str, page_id: str) -> int:
+        """A page's first call in UTF-8 bytes (its real pack), cached a release."""
+        if (rid, page_id) not in self._sizes:
+            facts = self.ctx.source.facts()
+            ip = facts.page(page_id)
+            msgs = self.first_turn(ip, facts, rid)[0] if ip is not None else []
+            self._sizes[(rid, page_id)] = sum(len(m.text().encode("utf-8")) for m in msgs)
+        return self._sizes[(rid, page_id)]
+
+    def spec(self, doc: WriterDoc) -> BrainSpec:
+        chosen = doc.pick.confirmed.brain
+        if chosen is not None:
+            return self.ctx.brains.get(chosen)
+        brains = trial_brains(self.ctx.brains.list())
+        if not brains:
+            raise texts.WriterRefused("no_key")
+        return self.ctx.brains.get(brains[0])
+
+    @staticmethod
+    def sent_to(specs: Sequence[BrainSpec]) -> tuple[str, ...]:
+        words = [texts.SENT_WORDS.format(label=s.label, maker=write.maker(s)) for s in specs]
+        words += [
+            texts.TRAINS_WORDS.format(label=s.label, maker=write.maker(s))
+            for s in specs
+            if s.trains_on_content
+        ]
+        return tuple(words)
+
+    async def for_update(self, uid: str, ids: tuple[str, ...], rid: str) -> Estimate:
+        doc = await self.store.doc(uid)
+        spec, rate = self.spec(doc), await self.rate(uid)
+        return estimate(
+            run="update", spec=spec, sizes=[self.size(rid, i) for i in ids], rate=rate,
+            cap=doc.pick.confirmed.caps.release, release=rid, sent_to=self.sent_to([spec]),
+        )  # fmt: skip
+
+    async def of(self, uid: str, kind: RunKind) -> Estimate:
+        doc, rid = await self.store.doc(uid), self.rid()
+        if kind == "update":
+            ready = doc.update_ready
+            if ready is None or ready.release != rid:
+                raise texts.WriterRefused("nothing_to_update")
+            return await self.for_update(uid, ready.pages, rid)
+        rate, facts = await self.rate(uid), self.ctx.source.facts()
+        if kind == "trial":
+            specs = [self.ctx.brains.get(b) for b in trial_brains(self.ctx.brains.list())]
+            if not specs:
+                raise texts.WriterRefused("no_key")
+            ids = [p for p in TRIAL_PAGES if facts.page(p) is not None]
+            return estimate(
+                run="trial", spec=specs[0], sizes=[self.size(rid, i) for i in ids], rate=rate,
+                cap=Caps().trial, release=rid, brains=len(specs), sent_to=self.sent_to(specs),
+            )  # fmt: skip
+        spec = self.spec(doc)
+        ids2 = carry.to_write(facts, await self.pages_file(uid, rid))
+        cap = doc.pick.confirmed.caps.first if doc.pick.confirmed.brain else Caps().first
+        return estimate(
+            run="first", spec=spec, sizes=[self.size(rid, i) for i in ids2], rate=rate, cap=cap,
+            release=rid, sent_to=self.sent_to([spec]),
+        )  # fmt: skip

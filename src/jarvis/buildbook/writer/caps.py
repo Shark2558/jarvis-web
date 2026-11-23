@@ -271,4 +271,48 @@ async def _tries(write: Callable[[], Awaitable[None]], waits: Sequence[float]) -
     await write()
 
 
-__all__ = ["CLOSE_WAITS_S", "CapRefused", "Gate", "Held", "WriterCaps", "decode", "encode"]
+@dataclass(frozen=True)
+class Money:
+    """What billing says now: the day's rate, his metered month and his limit (None: none)."""
+
+    rate: float
+    used_inr: float
+    limit_inr: float | None
+
+
+def _number(v: object) -> float:
+    if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v) or v < 0:
+        raise CapRefused("unreadable")
+    return float(v)
+
+
+async def money(billing: object, uid: str) -> Money:
+    """Billing's view for the gate, fail closed: an unreadable meter, limit or rate refuses."""
+    try:
+        usage = await billing.usage(uid)  # type: ignore[attr-defined]
+    except Exception as exc:  # noqa: BLE001
+        log.error("book writer meter unreadable", extra={"error": type(exc).__name__})
+        raise CapRefused("unreadable") from None
+    if getattr(usage, "limit_unreadable", False):
+        raise CapRefused("unreadable")
+    rate = getattr(getattr(usage, "rate", None), "inr_per_usd", None)
+    rate = rate if rate is not None else getattr(billing, "rate", None)
+    limit = getattr(usage, "limit_inr", None)
+    return Money(
+        rate=_number(rate),
+        used_inr=_number(getattr(usage, "used_inr", None)),
+        limit_inr=None if limit is None else _number(limit),
+    )
+
+
+__all__ = [
+    "CLOSE_WAITS_S",
+    "CapRefused",
+    "Gate",
+    "Held",
+    "Money",
+    "WriterCaps",
+    "decode",
+    "encode",
+    "money",
+]

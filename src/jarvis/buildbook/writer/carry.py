@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from jarvis.buildbook.facts_model import FactPack, IndexedPage
 from jarvis.buildbook.writer import fill, packs, pages
-from jarvis.buildbook.writer.model import Page, PagesFile
+from jarvis.buildbook.writer.model import Page, PagesFile, Skipped
 
 
 @dataclass(frozen=True)
@@ -50,10 +50,10 @@ def is_changed(ip: IndexedPage, old: Tree, new: Tree) -> bool:
 
 
 def changed_ids(
-    new_facts: FactPack, old_facts: FactPack | None, old: Tree, new: Tree
+    new_facts: FactPack, known: Collection[str], old: Tree, new: Tree
 ) -> tuple[str, ...]:
-    """The new release's pages that changed or are new (in the pages index's order)."""
-    known = {p.id for p in old_facts.pages} if old_facts is not None else set()
+    """The new release's pages that changed or are new (`known`: the page ids the older pages
+    file had), in the pages index's order."""
     return tuple(ip.id for ip in new_facts.pages if ip.id not in known or is_changed(ip, old, new))
 
 
@@ -86,10 +86,28 @@ def carry(rid: str, facts: FactPack, old: PagesFile | None, changed: Collection[
     return PagesFile(release=rid, pages=tuple(out_pages), templates=tuple(out_templates))
 
 
+def merge(
+    rid: str,
+    base: PagesFile | None,
+    new: dict[str, tuple[Page, Page]],
+    skipped: tuple[Skipped, ...],
+) -> PagesFile:
+    """A release's fuller pages file: its current one with the pages written now on top (the
+    newest text of a page wins, D11 "Continuing"); `new` is page id -> (filled, template)."""
+    old_pages = base.pages if base is not None else ()
+    old_templates = base.templates if base is not None else ()
+    return PagesFile(
+        release=rid,
+        pages=(*(p for p in old_pages if p.id not in new), *(f for f, _ in new.values())),
+        templates=(*(t for t in old_templates if t.id not in new), *(t for _, t in new.values())),
+        skipped=tuple(s for s in skipped if s.page not in new),
+    )
+
+
 def to_write(facts: FactPack, carried: PagesFile | None) -> tuple[str, ...]:
     """The pages an update writes: every page without carried AI text (changed, new or left)."""
     have = {p.id for p in (carried.pages if carried is not None else ()) if p.meta is not None}
     return tuple(ip.id for ip in facts.pages if ip.id not in have)
 
 
-__all__ = ["Tree", "carry", "changed_ids", "is_changed", "to_write", "tree_of"]
+__all__ = ["Tree", "carry", "changed_ids", "is_changed", "merge", "to_write", "tree_of"]

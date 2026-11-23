@@ -222,8 +222,16 @@ def fit(fixed: list[Block], optional: list[Block], budget: int) -> list[Block]:
     return out
 
 
-def build(page: IndexedPage, facts: FactPack, tree: Mapping[str, str], scrub: Scrubber) -> Pack:
-    """One page's pack (D4): scrubbed, fenced, at most the cap with the prompt's own words."""
+def build(
+    page: IndexedPage,
+    facts: FactPack,
+    tree: Mapping[str, str],
+    scrub: Scrubber,
+    *,
+    reserve: int = PROMPT_RESERVE,
+) -> Pack:
+    """One page's pack (D4): scrubbed, fenced, at most the cap with the prompt's own words
+    (`reserve` bytes: the marker line and the page's instructions)."""
     cited = [summary(ref, tree[ref]) for ref in page.refs if ref in tree]
     sigs = [(f"code:{ref}", summary(ref, tree[ref])) for ref in page.refs if ref in tree]
     cids = [s for s in page.sources if re.fullmatch(r"C\d{2}", s)]
@@ -238,7 +246,7 @@ def build(page: IndexedPage, facts: FactPack, tree: Mapping[str, str], scrub: Sc
     ]
     plans = plan_sections(tree, (*cids, *page.refs))
     clean = [[(i, scrub.clean(t)) for i, t in group] for group in (fixed, sigs, plans)]
-    blocks = fit(clean[0], clean[1] + clean[2], PACK_CAP_BYTES - PROMPT_RESERVE)
+    blocks = fit(clean[0], clean[1] + clean[2], PACK_CAP_BYTES - reserve)
     return Pack(page_id=page.id, body="".join(fence(*b) for b in blocks), allowed=may)
 
 

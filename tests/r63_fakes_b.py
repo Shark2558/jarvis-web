@@ -163,3 +163,46 @@ __all__ = [
     "service",
     "trial_source",
 ]
+
+
+# ---- driving the service -------------------------------------------------------------------------
+async def seal_r6(built: Any) -> None:
+    """R6's sealer's part: the current release sealed in R6's index (book and source)."""
+    ctx = built.job._ctx
+    rel = ctx.source.current()
+    zipped = ctx.source.read("source")
+    await ctx.vault.seal(ctx.uid, rel, {"book": zipped, "source": zipped}, now=ctx.clock())
+
+
+async def pick(built: Any, brain: str = "anthropic", **caps: int) -> Any:
+    """His pick saved with his typed YES on the words it asked for (H2)."""
+    from jarvis.buildbook.writer.http import PickIn
+    from jarvis.buildbook.writer.model import Caps
+    from jarvis.buildbook.writer.texts import WriterRefused
+
+    svc, uid = built.service, built.job._ctx.uid
+    body = PickIn(brain=brain, caps=Caps(**caps))
+    try:
+        return await svc.pick(uid, body)
+    except WriterRefused as no:
+        assert no.code == "yes_needed", no.code
+        yes = body.model_copy(update={"typed": "YES", "terms_id": no.extra["terms_id"]})
+        return await svc.pick(uid, yes)
+
+
+async def run_first(built: Any) -> Any:
+    from jarvis.buildbook.writer.http import RunIn
+
+    svc, uid = built.service, built.job._ctx.uid
+    est = await svc.estimate(uid, "first")
+    return await svc.first(uid, RunIn(typed="YES", estimate_id=est.id))
+
+
+async def steps(built: Any, n: int = 20) -> Any:
+    svc, uid = built.service, built.job._ctx.uid
+    view = None
+    for _ in range(n):
+        view = await svc.step(uid)
+        if view.state not in ("queued", "running"):
+            break
+    return view

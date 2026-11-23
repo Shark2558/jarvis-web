@@ -6,7 +6,30 @@ maker `jarvis.llm.write.maker` (L3), filled in where a sentence needs them.
 
 from __future__ import annotations
 
+from typing import Any
+
 from jarvis.billing.service import rupees
+
+STATUS = {
+    "not_primary": 403, "owner_only": 403, "no_key": 503, "no_ai": 503, "no_brain": 503,
+    "not_yes": 422, "yes_needed": 422, "bad_cap": 422, "unknown_brain": 422, "not_offered": 422,
+    "terms_changed": 409, "estimate_changed": 409, "running": 409, "busy": 409,
+    "pick_needed": 409, "already_written": 409, "nothing_to_update": 409, "use_first": 409,
+    "no_page": 404, "no_trial": 404, "unavailable": 503, "rate_limited": 429,
+}  # fmt: skip
+
+
+class WriterRefused(Exception):
+    """A refusal the routes answer as `http.Refusal` (or `http.YesNeeded`): its code, plain words
+    and, for `yes_needed`, the terms id and the rupee words (`extra`)."""
+
+    def __init__(self, code: str, extra: dict[str, Any] | None = None) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = STATUS.get(code, 409)
+        self.detail = YES_NEEDED if code == "yes_needed" else REFUSED.get(code, REFUSED["busy"])
+        self.extra: dict[str, Any] = extra or {}
+
 
 # ---- refusals: `http.Refusal.detail` by code ----------------------------------------------------
 REFUSED: dict[str, str] = {
@@ -101,6 +124,7 @@ def inr(value: float) -> str:
 
 
 __all__ = [
+    "STATUS",
     "AUTO_WORDS",
     "CAP_NAMES",
     "NOTICE_FAILED",
@@ -117,5 +141,6 @@ __all__ = [
     "TRAINS_WORDS",
     "WHY",
     "YES_NEEDED",
+    "WriterRefused",
     "inr",
 ]

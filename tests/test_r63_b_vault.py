@@ -31,6 +31,7 @@ from jarvis.buildbook.writer.vault import PagesVault
 from jarvis.storage.docs import MemoryDocs
 
 RID, RID2, RID3 = "6363636", "7070707", "7171717"
+KNOWN = tuple(p.id for p in FIXTURE_FACTS.pages)
 META = PageMeta(
     brain="anthropic", brain_label="Claude", model="m-balanced", provider="anthropic",
     release=RID, written_at=NOW.isoformat(), attempt=1, tokens_in=1, tokens_out=1, inr=1.0,
@@ -165,14 +166,13 @@ def test_a_page_is_changed_when_a_file_it_cites_or_its_card_changes_or_it_is_new
     old = carry.tree_of(source_zip())
     same = carry.tree_of(source_zip())
     store = carry.tree_of(source_zip(files({"src/jarvis/demo/store.py": '"""Changed."""\n'})))
-    assert carry.changed_ids(FIXTURE_FACTS, FIXTURE_FACTS, old, same) == ()
-    moved = carry.changed_ids(FIXTURE_FACTS, FIXTURE_FACTS, old, store)
+    assert carry.changed_ids(FIXTURE_FACTS, KNOWN, old, same) == ()
+    moved = carry.changed_ids(FIXTURE_FACTS, KNOWN, old, store)
     assert "pg_card_c02" in moved and "pg_card_c01" not in moved and "pg_module_demo" in moved
     guide = files()["docs/architecture/JARVIS-Architecture.md"].replace("Keeps the demo's", "Keeps")
     card = carry.tree_of(source_zip(files({"docs/architecture/JARVIS-Architecture.md": guide})))
-    assert "pg_card_c02" in carry.changed_ids(FIXTURE_FACTS, FIXTURE_FACTS, old, card)
-    fewer = FIXTURE_FACTS.model_copy(update={"pages": FIXTURE_FACTS.pages[:-1]})
-    assert carry.changed_ids(FIXTURE_FACTS, fewer, old, same) == ("pg_service_anthropic",)
+    assert "pg_card_c02" in carry.changed_ids(FIXTURE_FACTS, KNOWN, old, card)
+    assert carry.changed_ids(FIXTURE_FACTS, KNOWN[:-1], old, same) == ("pg_service_anthropic",)
 
 
 def test_the_free_carry_refills_unchanged_pages_and_marks_changed_ones_waiting() -> None:

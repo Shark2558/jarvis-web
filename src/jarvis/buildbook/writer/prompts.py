@@ -63,9 +63,13 @@ def message(role: str, content: str) -> Any:
     return _BASE.ChatMessage(role=role, content=content)
 
 
+def head(page: IndexedPage, canary: str) -> str:
+    """The user turn's words before the pack (its bytes are the pack's `reserve`)."""
+    return MARKER.format(canary=canary) + ASK.format(page_id=page.id, title=page.title)
+
+
 def first(page: IndexedPage, pack: Pack, canary: str) -> list[Any]:
-    head = MARKER.format(canary=canary) + ASK.format(page_id=page.id, title=page.title)
-    return [message("user", head + pack.body)]
+    return [message("user", head(page, canary) + pack.body)]
 
 
 def redraft(first_turn: Sequence[Any], draft_text: str, failed: Sequence[str]) -> list[Any]:
@@ -81,4 +85,4 @@ def sent_bytes(messages: Sequence[Any]) -> int:
     return sum(len(m.text().encode("utf-8")) for m in messages)
 
 
-__all__ = ["AGAIN", "ASK", "MARKER", "SYSTEM", "first", "message", "redraft", "sent_bytes"]
+__all__ = ["AGAIN", "ASK", "MARKER", "SYSTEM", "first", "head", "message", "redraft", "sent_bytes"]

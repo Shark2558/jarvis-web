@@ -1,0 +1,36 @@
+{
+  "title": "One message, from you to the reply",
+  "dir": "down",
+  "nodes": [
+    {"id": "you", "label": "Console, voice or Telegram", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/core/channel.py"},
+    {"id": "guard", "label": "Size and shape checked", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/core/guardrails.py"},
+    {"id": "context", "label": "Chat, memory and persona", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/core/prompts.py"},
+    {"id": "offer", "label": "Tools this message needs", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/skills/offer.py"},
+    {"id": "model", "label": "A brain at the right tier", "kind": "service", "rank": 4, "col": 0,
+     "ref": "src/jarvis/llm/router.py"},
+    {"id": "gateway", "label": "Tool through the gateway", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/core/rounds.py"},
+    {"id": "outside", "label": "Outside text: writes ask", "kind": "guard", "rank": 5, "col": 1,
+     "ref": "src/jarvis/tools/taint.py"},
+    {"id": "card", "label": "A card for you", "kind": "person", "rank": 6, "col": 1},
+    {"id": "mask", "label": "Masked if spoken", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/tools/spoken.py"},
+    {"id": "saved", "label": "Reply saved and metered", "kind": "store", "rank": 7, "col": 0,
+     "ref": "src/jarvis/core/saving.py"}
+  ],
+  "edges": [
+    {"from": "you", "to": "guard"},
+    {"from": "guard", "to": "context"},
+    {"from": "context", "to": "offer"},
+    {"from": "offer", "to": "model"},
+    {"from": "model", "to": "gateway", "label": "wants a tool"},
+    {"from": "gateway", "to": "outside", "label": "mail or web", "style": "side"},
+    {"from": "outside", "to": "card", "style": "side"},
+    {"from": "gateway", "to": "mask"},
+    {"from": "mask", "to": "saved"}
+  ]
+}

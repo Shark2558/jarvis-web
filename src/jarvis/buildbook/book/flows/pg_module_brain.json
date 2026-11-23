@@ -1,0 +1,42 @@
+{
+  "title": "How one message is thought through",
+  "dir": "down",
+  "nodes": [
+    {"id": "msg", "label": "Your message", "kind": "person", "rank": 0, "col": 0},
+    {"id": "window", "label": "Recent chat and memory", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/core/window.py"},
+    {"id": "limit", "label": "Within your monthly limit?", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/core/brain.py"},
+    {"id": "over", "label": "Says the limit is reached", "kind": "step", "rank": 2, "col": 1},
+    {"id": "tools", "label": "Only the tools it needs", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/skills/offer.py"},
+    {"id": "router", "label": "Router picks a tier", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/llm/router.py"},
+    {"id": "noai", "label": "No-AI: fixed rules", "kind": "step", "rank": 4, "col": 2,
+     "ref": "src/jarvis/offline/phrases_r14.py"},
+    {"id": "claude", "label": "Cloud brain answers", "kind": "service", "rank": 5, "col": 0,
+     "ref": "src/jarvis/llm/anthropic_provider.py"},
+    {"id": "laptop", "label": "Laptop brain answers", "kind": "service", "rank": 5, "col": 1,
+     "ref": "src/jarvis/llm/fallback.py"},
+    {"id": "gateway", "label": "Tools via the gateway", "kind": "guard", "rank": 6, "col": 0,
+     "ref": "src/jarvis/core/rounds.py"},
+    {"id": "save", "label": "Turn saved", "kind": "store", "rank": 7, "col": 0,
+     "ref": "src/jarvis/storage/sessions.py"},
+    {"id": "reply", "label": "Your reply", "kind": "step", "rank": 8, "col": 0,
+     "ref": "src/jarvis/core/finish.py"}
+  ],
+  "edges": [
+    {"from": "msg", "to": "window"},
+    {"from": "window", "to": "limit"},
+    {"from": "limit", "to": "over", "label": "limit reached", "style": "side"},
+    {"from": "limit", "to": "tools"},
+    {"from": "tools", "to": "router"},
+    {"from": "router", "to": "noai", "label": "AI switched off", "style": "side"},
+    {"from": "router", "to": "claude"},
+    {"from": "router", "to": "laptop", "label": "cloud unreachable", "style": "side"},
+    {"from": "claude", "to": "gateway"},
+    {"from": "laptop", "to": "gateway", "style": "side"},
+    {"from": "gateway", "to": "save"},
+    {"from": "save", "to": "reply"}
+  ]
+}

@@ -132,6 +132,15 @@ FIXTURE_FILES: dict[str, str] = {
         'def pick(asked: str) -> str:\n    """The tier for `asked`."""\n    return "balanced"\n'
     ),
     "src/jarvis/demo/store.py": '"""The demo store."""\n\nKEEP_DAYS = 30\n',
+    # I1 (INTEGRATION-A 5.3): the sources of the region, the route and the collection that
+    # FIXTURE_FACTS names, so part A's facts.build computes them from this repository too
+    "src/jarvis/demo/routes.py": (
+        '"""The demo\'s one route."""\n\nfrom fastapi import APIRouter\n\n'
+        'router = APIRouter(prefix="/v1/demo")\n\n\n@router.get("")\n'
+        "async def notes() -> list[str]:\n    return []\n"
+    ),
+    "src/jarvis/demo/stores.py": 'COLLECTION = "demo_notes"\n',
+    "deploy/cloudrun.sh": 'REGION="${REGION:-asia-south1}"\n',
     "src/jarvis/config.py": (
         "from pydantic import Field\n\n\nclass Settings:\n"
         "    demo_limit: int = Field(default=5, ge=1, le=10)\n"
@@ -161,6 +170,7 @@ def _v(value: Any, source: str, *, verified: bool = True) -> FactValue:
 
 _PATHS = tuple(sorted(FIXTURE_FILES))
 _ROUTER, _STORE = "src/jarvis/demo/router.py", "src/jarvis/demo/store.py"
+_ROUTES = "src/jarvis/demo/routes.py"
 _JS = "src/jarvis/api/static/console-demo.js"
 FIXTURE_FACTS = FactPack(
     release=RELEASE,
@@ -181,7 +191,7 @@ FIXTURE_FACTS = FactPack(
         collections=("demo_notes",),
         routes=("GET /v1/demo",),
     ),
-    routes=(Route(method="GET", path="/v1/demo", module="src/jarvis/demo/router.py"),),
+    routes=(Route(method="GET", path="/v1/demo", module=_ROUTES),),
     settings=(Setting(name="demo_limit", kind="int", default=5, ge=1, le=10),),
     collections=("demo_notes",),
     modules=(ModuleFact(id="demo", title="The demo", cards=("C01", "C02", "C03")),),

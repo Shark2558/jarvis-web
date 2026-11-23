@@ -188,23 +188,28 @@ def test_a_repository_without_a_guide_builds_a_pack(tmp_path: Path) -> None:
 
 def test_i0s_fixture_pack_where_its_files_allow(tmp_path: Path) -> None:
     """What `facts.build` computes for r63_fakes.fixture_repo equals FIXTURE_FACTS wherever the
-    fixture's files hold the source (the differences are INTEGRATION-A's "Needs I1")."""
+    fixture's files hold the source. I1 (INTEGRATION-A 5.3): the fixture now holds the region's,
+    the route's and the collection's sources too. Left by design: FIXTURE_FACTS keeps three tour
+    keys B's filler tests fill (a pack A never makes: all or none) and its hand-written pages;
+    the `e2e` eval runs B on A's own pack of this repository."""
     got, want = facts.build(i0_repo(tmp_path), S, modules=DEMO), FIXTURE_FACTS
     for key in (
         "src/jarvis/demo/router.py:MAX_TRIES",
         "src/jarvis/demo/store.py:KEEP_DAYS",
         "settings.demo_limit",
+        "hosting.region",
     ):
         assert got.values[key].value == want.values[key].value, key
-    # the tour's keys are all or none: the fixture holds few of their sources (Needs I1)
-    assert not set(FACT_TOUR_KEYS) & set(got.values)
+    assert not set(FACT_TOUR_KEYS) & set(got.values)  # all or none
     assert got.index.paths == want.index.paths
     assert got.index.constants == want.index.constants
     assert got.index.settings == want.index.settings
+    assert got.index.collections == want.index.collections == ("demo_notes",)
+    assert got.index.routes == want.index.routes == ("GET /v1/demo",)
     assert set(want.index.symbols) <= set(got.index.symbols)
     assert got.settings == want.settings and got.modules == want.modules
     assert got.cards == want.cards and got.services == want.services
-    assert got.routes == () and want.routes  # the fixture's files hold no router (Needs I1)
+    assert got.routes == want.routes and got.collections == want.collections
 
 
 @pytest.mark.parametrize(

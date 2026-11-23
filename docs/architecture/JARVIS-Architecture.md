@@ -1,4 +1,4 @@
-Version v6.3.1 · 23 Nov 2026, 16:34 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
+Version v6.3.2 · 23 Nov 2026, 19:25 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
 
 # JARVIS Architecture & Technology Guide
 
@@ -11,8 +11,8 @@ restore drill, self-health, cheaper replies and the skill register; cards C66 to
 and release R13, "Wardrobe & laundry, phone first" (cards C69 to C71), built and joined (the version
 number goes down from 14.0.2 to 13.0.0 on purpose, as nothing compares it), and release R13.1,
 "Try-on" (cards C72 and C73), built and joined at its I1 (v13.1.0), and release R6.3, "The Build Book:
-written by AI, short tour and full book" (card C57; v6.3.0, its joins built at I0, its four parts not yet;
-the version number goes down again on purpose). Anything that is planned but not built yet is marked
+written by AI, short tour and full book" (card C57; v6.3.0, its four parts built and joined at its I1, not
+yet deployed; the version number goes down again on purpose). Anything that is planned but not built yet is marked
 PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
@@ -1339,10 +1339,10 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | The build book |
-| What it does | At every release JARVIS documents itself (a deterministic generator, no model), seals the book and that release's source code in the vault family, and presents it behind your passkey and a fresh Google sign-in. A guest show locks your other consoles until your passkey lifts the lock; a talk-through answers questions from the book only. R6.3 (PLANNED: I0 built the joins, the parts are building): a **short tour** of about 13–14 minutes (the Workshop's fixed script, approved by the owner, every number filled from the code; a guest's has no costs and no ₹), a **fact pack** computed at CI (`facts.json` beside the book), and a **full book** with a page for every part, module, screen and outside service, written by AI from the release's public code and facts only after the owner's typed YES on the ₹ shown (a Writer trial first, then his pick and caps), every page checked before it is kept and sealed in its own index beside R6's. |
+| What it does | At every release JARVIS documents itself (a deterministic generator, no model), seals the book and that release's source code in the vault family, and presents it behind your passkey and a fresh Google sign-in. A guest show locks your other consoles until your passkey lifts the lock; a talk-through answers questions from the book only. R6.3 (built and joined at its I1, not yet deployed): a **short tour** of about 13–14 minutes (the Workshop's fixed script, approved by the owner, every number filled from the code; a guest's has no costs and no ₹), a **fact pack** computed at CI (`facts.json` beside the book), and a **full book** with a page for every part, module, screen and outside service, written by AI from the release's public code and facts only after the owner's typed YES on the ₹ shown (a Writer trial first, then his pick and caps), every page checked before it is kept and sealed in its own index beside R6's. |
 | Layer | X Cross-cutting |
 | Skill | Learning |
-| Where in the code | `src/jarvis/buildbook/` (generator in `gen/`), `src/jarvis/api/book.py` and the other `api/book_*.py` routes, `src/jarvis/api/r6_wiring.py`, `src/jarvis/api/static/book.html`, `console-book.js`, `console-book-reader.js`, `console-book-show.js`, `console-book-talk.js`, `console-book-voice.js`, `console-book-2d.js`, `console-book-3d.js`, `console-book-scenes.js`, `console-book-scenes-data.js`, `console-book-scenes-flow.js`; R6.3: `src/jarvis/buildbook/writer/` (the writer: `model.py`, `http.py`, `ports.py`, `part.py`), `src/jarvis/buildbook/facts_model.py`, `tour_model.py`, `tour_serve.py`, `src/jarvis/buildbook/gen/facts.py`, `pages_index.py`, `tour.py`, `tour.json`, `modules.py`, `refs.py`, `services.py`, `src/jarvis/llm/write.py` (the writer's one call by tier), `src/jarvis/api/book_writer.py`, `book_pages.py`, `book_writer_wiring.py`, `src/jarvis/api/static/console-book-script.js`, `console-book-tour.js`, `console-book-writer.js`, `console-book-pages.js` |
+| Where in the code | `src/jarvis/buildbook/` (generator in `gen/`), `src/jarvis/api/book.py` and the other `api/book_*.py` routes, `src/jarvis/api/r6_wiring.py`, `src/jarvis/api/static/book.html`, `console-book.js`, `console-book-reader.js`, `console-book-show.js`, `console-book-talk.js`, `console-book-voice.js`, `console-book-2d.js`, `console-book-3d.js`, `console-book-scenes.js`, `console-book-scenes-data.js`, `console-book-scenes-flow.js`; R6.3: `src/jarvis/buildbook/writer/` (the writer: `model.py`, `http.py`, `ports.py`, `part.py`, `run.py`, `job.py`, `caps.py` (the ₹ ledger and holds), `consent.py` (his typed YES on a `wt_` terms id), `estimate.py`, `packs.py`, `prompts.py`, `checks.py` (the six checks), `fill.py`, `pages.py`, `vault.py` (the pages index), `carry.py`, `sweep.py`, `store.py`, `texts.py`, `privacy.py`), `src/jarvis/buildbook/facts_model.py`, `tour_model.py`, `tour_serve.py`, `src/jarvis/buildbook/gen/facts.py` (with `facts_code.py`, `facts_routes.py`, `facts_guide.py`, `facts_values.py`), `pages_index.py`, `loc.py`, `inventory.py`, `tour.py`, `tour.json`, `modules.py`, `refs.py`, `services.py`, `src/jarvis/llm/write.py` (the writer's one call by tier), `src/jarvis/api/book_writer.py`, `book_pages.py`, `book_writer_wiring.py`, `src/jarvis/api/static/console-book-script.js`, `console-book-tour.js`, `console-book-writer.js`, `console-book-pages.js` |
 | Depends on | C42 Vault family, C51 Keyring, C52 Passkeys, C16 Brain router (talk-through; R6.3: the writer, by tier, never the laptop), C46 Alert policy, C54 Costs (R6.3: the writer's ₹ ledger and caps) |
 | Data it keeps | `book/{uid}` (the sealed index, `book_index` key) with `book_chunks` under it, `book_lease/{uid}` (the sealer's lease), `book_lock/{uid}` (the guest lock), `book_sessions/{id}` (sessions: 45 minutes at most, 10 idle), `book_settings/{uid}`, `book_tickets/{uid}` (single-use code downloads), `book_notices/{id}` and `book_closed/{uid}` (content-free notices). At most 60 MB. R6.3: `book_writer/{uid}` (the pick, the caps, his YES records, the run: ids and numbers), `book_write_lease/{uid}`, `book_write_spend/{uid}_{month}` (the ₹ ledger and holds, 13 months), `book_drafts/{uid}_{rid}_{page}` and `book_trial/{uid}_{nn}` (sealed text, 30 days), `book_pages/{uid}` (the AI pages' own sealed index, `book_index` key, AAD `book/pages/{uid}/v1`, chunks under it), and `facts.json` in the image. |
 | Outside services | Anthropic (the talk-through, at most 20 questions a session); R6.3: the writer's brain, Anthropic or Gemini (free), only after the owner's typed YES, sent the release's public code and facts only (scrubbed, never test data, never tools); Google Cloud Text-to-Speech and Speech-to-Text only when the owner chose the Cloud voice or listening |
@@ -2020,18 +2020,20 @@ the Cloud project.
 ## 11. Roadmap (PLANNED)
 
 Nothing in this section is built. The first two rows are the plan `docs/plans/r6-3-book-content.md`'s
-(section "R6.3.1", and its "Not in scope"); the rest follow the Workshop's build order of 15–17 Nov 2026
-(the project's release plan is not in this repository). The short tour reads its "next" and "after
-that" from the first two rows.
+(section "R6.3.1", and its "Not in scope"); the rows after them follow the owner's order after R6.3,
+relayed by the Workshop on 23 Nov 2026 (the project's release plan, with each release's full content, is
+not in this repository). The short tour reads its "next" and "after that" from the first two rows.
 
 | Release | PLANNED content |
 |---|---|
 | R6.3.1 The Build Book's pictures and storage | Pictures of every module from a made-up demo household (a contact sheet approved by the owner first), the code and pictures stored once instead of once per release, eight diagrams with part numbers, and a local setup guide that is actually run |
 | R6.4 The Book's new look | The Build Book's new look, a guest-safe full book, search and print |
-| Voice | The voice build: the microphone and listening fixes the owner asked for |
 | Calls | JARVIS making and answering phone calls from the owner's laptop |
-| R8–R10 Vision use cases | The home vision use cases on R7's on-device engine, each starting after the owner confirms its cameras; the fitness coach, kitchen and care use cases |
-| Later | R12 smart home extras, R15–R18 subscription releases, an 11th core skill "Health & Wellbeing", R19 a trading desk (decision later), Phase 7 OpenTelemetry tracing |
+| R5.2 Voice | The voice build: the microphone and listening fixes the owner asked for |
+| R8 Home cameras | The home cameras' setup and the first home vision use cases on R7's on-device engine, each starting after the owner confirms its cameras |
+| R8.1 | The release after R8 in the owner's order (its content is in the project's release plan) |
+| R9 Kitchen | The kitchen vision use cases on R7's on-device engine |
+| Later | R10 the care use cases and the fitness coach, R12 smart home extras, R15–R18 subscription releases, an 11th core skill "Health & Wellbeing", R19 a trading desk (decision later), Phase 7 OpenTelemetry tracing |
 
 ## 12. Glossary
 
@@ -2293,3 +2295,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v13.1.4 | 18 Nov 2026, 05:30 IST | R13.1 | The integrated reviews' fixes: C72 names `console-tryon-form.js` (the section's forms, split out of `console-tryon.js`, review D-1 L12) and `styling/ready.py` (one readiness rule for `outfit_plan` and the figure); C73 names `seeme/books.py` (the press's close, his usage month and the audit line written before the call) | 🛠 Mark XXIII (I1) |
 | v13.1.5 | 18 Nov 2026, 06:15 IST | R13.1 | I1's security review L5 and L6 in C73: the deploy's role `jarvisTryOn` is prompt-only and fails closed (never a broader role; one it can't set back is taken off JARVIS's account), the accepted risk it leaves (prompts to any Agent Platform model) and the `jarvis-tryon` budget alert in rupees (`300INR`) as the outside brake | 🛠 Mark XXIII (I1) |
 | v6.3.1 | 23 Nov 2026, 16:34 IST | R6.3 | R6.3 I0 (the joins for 'The Build Book: written by AI, short tour and full book'): C57 (PLANNED parts, with what I0 built: the writer's one call by tier `llm/write.py`, the writer's data model and HTTP contract, the tour's and the fact pack's types, the module map, the generator's joins and `facts.json`, the writer's join, job and routes as stubs, the show's script reader and the tour's joins, the console's loader; G2: the writer's brain, Gemini (free) and the Cloud voice in its Outside services), its six collections in 6.2, the writer's brains in 6.5, the roadmap refreshed (R6.3.1, R6.4, then the Workshop's order) | 🛠 Mark XXIV |
+| v6.3.2 | 23 Nov 2026, 19:25 IST | R6.3 | R6.3 I1 (the four parts merged and joined): C57's R6.3 sentences from PLANNED to built and joined (not yet deployed), its module list filled (the writer's modules, the fact pack's helpers, the counter and the inventory); the roadmap's rows after the first two in the owner's order after R6.3 (calls from his laptop, R5.2, R8, R8.1, R9, then later) | 🛠 Mark XXIV |

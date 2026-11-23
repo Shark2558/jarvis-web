@@ -1,0 +1,38 @@
+{
+  "title": "Add a dentist appointment, then cancel it",
+  "dir": "down",
+  "nodes": [
+    {"id": "say", "label": "You say: add a dentist", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-voice-capture.js"},
+    {"id": "stt", "label": "Speech becomes text", "kind": "service", "rank": 1, "col": 0,
+     "ref": "src/jarvis/voice/google_cloud.py"},
+    {"id": "brain", "label": "Brain asks for a tool", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/core/brain.py"},
+    {"id": "gateway", "label": "Gateway: spoken, so ask", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/tools/gateway.py"},
+    {"id": "card", "label": "Card written by code", "kind": "step", "rank": 4, "col": 0,
+     "ref": "src/jarvis/tools/calendar_cards.py"},
+    {"id": "approve", "label": "You tap Approve", "kind": "person", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/static/console-approvals.js"},
+    {"id": "calendar", "label": "Event in Google Calendar", "kind": "service", "rank": 6, "col": 0,
+     "ref": "src/jarvis/tools/google_calendar.py"},
+    {"id": "audit", "label": "Audit and activity", "kind": "store", "rank": 6, "col": 1,
+     "ref": "src/jarvis/api/activity.py"},
+    {"id": "cancel", "label": "You say: cancel it", "kind": "person", "rank": 7, "col": 0},
+    {"id": "copy", "label": "Copy kept, then deleted", "kind": "store", "rank": 8, "col": 0,
+     "ref": "src/jarvis/tools/calendar_undo.py"},
+    {"id": "undo", "label": "Undo brings it back", "kind": "step", "rank": 9, "col": 0}
+  ],
+  "edges": [
+    {"from": "say", "to": "stt"},
+    {"from": "stt", "to": "brain"},
+    {"from": "brain", "to": "gateway"},
+    {"from": "gateway", "to": "card"},
+    {"from": "card", "to": "approve"},
+    {"from": "approve", "to": "calendar"},
+    {"from": "calendar", "to": "audit", "style": "side"},
+    {"from": "calendar", "to": "cancel"},
+    {"from": "cancel", "to": "copy", "label": "asks first"},
+    {"from": "copy", "to": "undo", "label": "one tap", "style": "side"}
+  ]
+}

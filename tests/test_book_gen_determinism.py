@@ -115,11 +115,12 @@ def test_a_book_over_its_cap_is_refused(fx: Repo, monkeypatch: pytest.MonkeyPatc
         write.build(fx, OPTS)
 
 
-def test_write_puts_three_files_and_the_release_last(fx: Repo, tmp_path: Path) -> None:
+def test_write_puts_four_files_and_the_release_last(fx: Repo, tmp_path: Path) -> None:
     built = write.build(fx, OPTS)
     out = tmp_path / "out"
     write.write(out, built)
-    assert sorted(p.name for p in out.iterdir()) == ["book.json", "release.json", "source.zip"]
+    names = sorted(p.name for p in out.iterdir())  # R6.3 I0: + facts.json (seam 5)
+    assert names == ["book.json", "facts.json", "release.json", "source.zip"]
     assert (out / "book.json").read_bytes() == built.book
     assert Release.model_validate_json((out / "release.json").read_bytes()) == built.release
 

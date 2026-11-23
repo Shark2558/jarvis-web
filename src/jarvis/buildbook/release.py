@@ -10,6 +10,9 @@ importlib.resources and checks both SHA-256s ONCE per process:
                deploy (best effort) and there is no book — the sealer sends book_seal_failed
     read(kind) the verified bytes of book.json or source.zip (re-verified on every read)
     book()     book.json parsed (`model.load_book`), once
+    facts()    R6.3 D2: facts.json parsed (`facts_model.load_facts`), once, only when it matches
+               release.json's `facts_sha256` (BookUnavailable otherwise, the book still opens;
+               a release from before R6.3 has none)
 
 `owner_mentioned` is D3's check (`owner_id`, the D3 amendment): a book naming a configured owner
 must not be sealed. Nothing here logs book text or an address.
@@ -28,6 +31,7 @@ from threading import Lock
 from pydantic import ValidationError
 
 from jarvis.buildbook import owner_id
+from jarvis.buildbook.facts_model import FACTS_FILE, FactPack, load_facts
 from jarvis.buildbook.model import Book, FileKind, Release, load_book
 from jarvis.buildbook.ports import BookUnavailable
 from jarvis.logging import get_logger
@@ -36,6 +40,7 @@ log = get_logger(__name__)
 
 BOOK_DIR: Traversable | Path = files("jarvis.buildbook") / "_book"
 NO_BOOK = "This server has no build book"
+NO_FACTS = "This release has no fact pack"
 FILE_OF: dict[FileKind, str] = {"book": "book.json", "source": "source.zip"}
 
 
@@ -52,6 +57,7 @@ class ReleaseSource:
         self._checked = False
         self._current: Release | None = None
         self._book: Book | None = None
+        self._facts: FactPack | None = None
 
     def _bytes(self, name: str) -> bytes | None:
         try:
@@ -100,6 +106,19 @@ class ReleaseSource:
                 raise BookUnavailable(NO_BOOK) from None
         return self._book
 
+    def facts(self) -> FactPack:
+        if self._facts is None:
+            release = self.current()
+            data = self._bytes(FACTS_FILE) if release is not None and release.ok else None
+            want = release.facts_sha256 if release is not None else None
+            if data is None or want is None or hashlib.sha256(data).hexdigest() != want:
+                raise BookUnavailable(NO_FACTS)
+            try:
+                self._facts = load_facts(data)
+            except ValueError:
+                raise BookUnavailable(NO_FACTS) from None
+        return self._facts
+
 
 @lru_cache(maxsize=1)
 def default_source() -> ReleaseSource:
@@ -118,4 +137,12 @@ def owner_mentioned(data: bytes, emails: Iterable[str]) -> bool:
     return owner_id.in_book(data, emails) is not None
 
 
-__all__ = ["BOOK_DIR", "NO_BOOK", "ReleaseSource", "current", "default_source", "owner_mentioned"]
+__all__ = [
+    "BOOK_DIR",
+    "NO_BOOK",
+    "NO_FACTS",
+    "ReleaseSource",
+    "current",
+    "default_source",
+    "owner_mentioned",
+]

@@ -1,9 +1,9 @@
 # src/jarvis/buildbook/gen/fallback.py
 """R6 D4 best effort that works when the generator itself can't run: STANDARD LIBRARY ONLY.
 
-    clear(out)                      unlink an earlier build's book.json, source.zip, release.json
-                                    (and their temp files), so a stale `_book/` is never served
-                                    as this release; nothing else in `out` is touched
+    clear(out)                      unlink an earlier build's book.json, source.zip, facts.json,
+                                    release.json (and their temp files), so a stale `_book/`
+                                    is never served as this release; nothing else is touched
     error_release(start, out, msg)  a release.json that names the error and no book, from git
                                     alone (no pydantic): the deploy's `pip install` failed, yet the
                                     app still learns that this release has no book
@@ -28,6 +28,7 @@ import subprocess
 from pathlib import Path
 
 BOOK_FILES = ("book.json", "source.zip")
+FACTS_FILE = "facts.json"  # R6.3 D2 (facts_model.FACTS_FILE; this module is stdlib only)
 RELEASE_FILE = "release.json"
 PLANS = "docs/plans/"
 ERROR_MAX = 200
@@ -42,7 +43,7 @@ _VERSION = re.compile(
 def clear(out: Path) -> None:
     if not out.is_dir():
         return
-    for name in (*BOOK_FILES, RELEASE_FILE):
+    for name in (*BOOK_FILES, FACTS_FILE, RELEASE_FILE):
         for path in (out / name, out / f".{name}.tmp"):
             path.unlink(missing_ok=True)
 
@@ -142,6 +143,7 @@ def error_release(start: Path, out: Path | None, error: str) -> Path | None:
 
 __all__ = [
     "BOOK_FILES",
+    "FACTS_FILE",
     "RELEASE_FILE",
     "VERSION_FILE",
     "clear",

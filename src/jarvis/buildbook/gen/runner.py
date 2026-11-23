@@ -59,7 +59,8 @@ def _summary(built: write.Built, seconds: float, checked: bool) -> str:
     r = built.release
     head = f"build book {r.label} ({r.id}): book.json {len(built.book):,} bytes, "
     tail = f"source.zip {len(built.source):,} bytes, {r.skipped} files left out, {seconds:.1f} s"
-    return head + tail + ("; two builds are byte-identical" if checked else "")
+    facts = f"facts.json {len(built.facts):,} bytes, "  # R6.3 D2
+    return head + facts + tail + ("; two builds are byte-identical" if checked else "")
 
 
 def _fail(args: argparse.Namespace, repo: Repo | None, message: str) -> int:

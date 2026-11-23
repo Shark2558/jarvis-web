@@ -19,7 +19,7 @@ filler (part D), the writer's packs, checks and filler (part B) and, through B's
   `limitations` (all of them, G4), and `pages`: D3's pages index, every page of the full book
   with its full, scrubbed `refs`.
 `canonical_facts` is THE byte form (sorted keys, NFC, compact UTF-8; the generator's `--check`
-builds it twice); `load_facts` checks the 1 MiB cap first.
+builds it twice); `load_facts` checks the 2 MiB cap first.
 """
 
 from __future__ import annotations
@@ -34,7 +34,8 @@ from jarvis.buildbook.model import MIB, ReleaseRef
 from jarvis.buildbook.sections import NAME, Frozen, Limitation
 
 FACTS_FILE = "facts.json"
-FACTS_JSON_CAP_BYTES = 1 * MIB
+FACTS_JSON_CAP_BYTES = 2 * MIB  # I1: 1 MiB at I0; the joined pack was 1,018,018 bytes (97 %)
+FACTS_JSON_WARN_BYTES = FACTS_JSON_CAP_BYTES * 4 // 5  # the generator warns past 80 %
 FACT_KEY = r"^[A-Za-z0-9_\[][A-Za-z0-9_./:\[\]-]{0,199}$"
 CARD_ID = r"^C[0-9]{2}$"
 PAGE_ID = r"^pg_(?:chapter|module|card|screen|service)_[a-z0-9_]{1,40}$"
@@ -184,9 +185,9 @@ def canonical_facts(pack: FactPack) -> bytes:
 
 
 def load_facts(data: bytes) -> FactPack:
-    """Parse facts.json. ValueError (never a partial pack): over 1 MiB, not JSON, not v1."""
+    """Parse facts.json. ValueError (never a partial pack): over 2 MiB, not JSON, not v1."""
     if len(data) > FACTS_JSON_CAP_BYTES:
-        raise ValueError("facts.json is over its 1 MiB cap")
+        raise ValueError("facts.json is over its 2 MiB cap")
     try:
         return FactPack.model_validate_json(data)
     except ValidationError as exc:
@@ -200,6 +201,7 @@ __all__ = [
     "CHAPTERS",
     "FACTS_FILE",
     "FACTS_JSON_CAP_BYTES",
+    "FACTS_JSON_WARN_BYTES",
     "FACT_KEY",
     "FACT_TOUR_KEYS",
     "PAGE_ID",

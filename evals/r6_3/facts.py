@@ -185,7 +185,7 @@ def index() -> list[str]:
         for f in FactIndex.model_fields
         if list(getattr(ix, f)) != sorted(set(getattr(ix, f)))
     ]
-    return out + _need(len(canonical_facts(real())) <= FACTS_JSON_CAP_BYTES, "over 1 MiB")
+    return out + _need(len(canonical_facts(real())) <= FACTS_JSON_CAP_BYTES, "over its 2 MiB cap")
 
 
 def counter() -> list[str]:

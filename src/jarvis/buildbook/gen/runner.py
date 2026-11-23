@@ -104,6 +104,9 @@ def run(args: argparse.Namespace) -> int:
         if not args.best_effort:
             raise
         return _fail(args, repo, unexpected(exc))
+    warning = write.facts_warning(len(built.facts))  # I1: the pack's headroom (2 MiB cap)
+    if warning:
+        say(f"build book warning: {warning}", err=True)
     say(_summary(built, time.monotonic() - started, args.check))
     return 0
 

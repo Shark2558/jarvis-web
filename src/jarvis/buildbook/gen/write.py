@@ -10,7 +10,8 @@
 
 R6.3 I0 seam 5 (docs/plans/r6-3-book-content.md D2, D3, D9): the fact pack is A's `facts.build`
 with A's `pages_index.build` (the join sets its `release` and `pages`), scrubbed (`verify`, H6)
-and capped at 1 MiB; the tour is D's `tour.build` over that pack (`Book.tour`, None: no tour).
+and capped at 2 MiB (I1; a warning past 80 %); the tour is D's `tour.build` over that pack and
+the show (`Book.tour`, None: no tour).
     write_error(out, repo, message) -> the best-effort release.json: `error`, no book (D4)
 
 `Options` carries what tests replace: the flows, the layer table, the scrubber (the eval's
@@ -29,7 +30,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from jarvis.buildbook.facts_model import FACTS_FILE, FACTS_JSON_CAP_BYTES, FactPack, canonical_facts
+from jarvis.buildbook.facts_model import (
+    FACTS_FILE,
+    FACTS_JSON_CAP_BYTES,
+    FACTS_JSON_WARN_BYTES,
+    FactPack,
+    canonical_facts,
+)
 from jarvis.buildbook.gen import (
     code,
     costs,
@@ -130,6 +137,7 @@ def assemble(repo: Repo, opts: Options) -> tuple[Book, FactPack]:
     try:
         p = _parts(repo, opts, scrub)
         pack = fact_pack(repo, p.release, scrub)
+        show = build_show(p)
         book = Book(
             release=p.release,
             architecture=p.architecture,
@@ -140,9 +148,9 @@ def assemble(repo: Repo, opts: Options) -> tuple[Book, FactPack]:
             limitations=p.limitations,
             costs=p.costs,
             decisions=p.decisions,
-            show=build_show(p),
+            show=show,
             digest=build_digest(p),
-            tour=tour.build(repo, pack),
+            tour=tour.build(repo, pack, show=show),  # I1: D's from_show pictures
         )
     except ValidationError as exc:
         where = sorted({".".join(str(x) for x in e["loc"][:2]) for e in exc.errors()})[:5]
@@ -151,13 +159,23 @@ def assemble(repo: Repo, opts: Options) -> tuple[Book, FactPack]:
     return book, pack
 
 
+_MIB_CAP = f"{FACTS_JSON_CAP_BYTES // (1 << 20)} MiB"
+
+
+def facts_warning(size: int) -> str | None:
+    """The words the generator says when facts.json passes 80 % of its cap (sizes only)."""
+    if size <= FACTS_JSON_WARN_BYTES:
+        return None
+    return f"facts.json is {size:,} bytes, over 80 % of its {_MIB_CAP} cap"
+
+
 def build(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008 - frozen, immutable
     book, pack = assemble(repo, opts)
     data, fact_bytes = canonical_bytes(book), canonical_facts(pack)
     if len(data) > BOOK_JSON_CAP_BYTES:
         raise GenError(f"book.json is {len(data):,} bytes, over its {BOOK_JSON_CAP_BYTES:,} cap")
     if len(fact_bytes) > FACTS_JSON_CAP_BYTES:
-        raise GenError(f"facts.json is {len(fact_bytes):,} bytes, over its 1 MiB cap")
+        raise GenError(f"facts.json is {len(fact_bytes):,} bytes, over its {_MIB_CAP} cap")
     fakes = opts.fakes if opts.fakes is not None else snapshot.load_fakes()
     snap = snapshot.build(repo, fakes, cap=opts.snapshot_cap)
     release = Release(
@@ -237,6 +255,7 @@ __all__ = [
     "build",
     "check",
     "fact_pack",
+    "facts_warning",
     "release_bytes",
     "release_version",
     "write",

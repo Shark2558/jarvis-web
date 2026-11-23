@@ -6,7 +6,8 @@ plan review L12), on in-memory fakes and the scripted brains (no model is ever c
   with the server's keyring; `book_write` rides the morning tick after `book_sweep` and the
   5-minute clock LAST; R6's watchdog loop never gets it;
 - `routes`: the writer's and the pages' routers answer exactly the 13 rows of
-  `buildbook/writer/http.ROUTES`, each a signed-in owner's 503 `not_built_yet` (B fills them);
+  `buildbook/writer/http.ROUTES` (at I0 each a 503 `not_built_yet`; since I1, B's routes: each
+  answers a status its row lists, never `not_built_yet`, never cached);
 - `no_run_no_call`: `book_write` with no run, 50 ticks, makes ZERO brain calls on either brain;
 - `old_book`: 47ee8fc's real book.json loads with no tour and keeps its bytes;
 - `r6_untouched`: R6's sealing files, Privacy rows and `api/book.py` are byte-identical to 47ee8fc
@@ -109,12 +110,13 @@ async def _routes() -> list[str]:
     out = _stray_routes()
     async for app in book_app(_settings()):
         async with sign_in(app) as c:
-            for method, path, *_ in http.ROUTES:
+            for method, path, _part, _req, _reply, codes, _gate in http.ROUTES:
                 url = path.replace("{nn}", "01").replace("{page_id}", "pg_card_c16")
                 body = None if method == "GET" else {}
                 r = await c.request(method, url, headers=CSRF, json=body)
-                if r.status_code != 503 or r.json().get("error") != http.NOT_BUILT:
-                    out.append(f"{method} {path} answered {r.status_code}")
+                built = r.status_code in (200, *codes) and r.json().get("error") != http.NOT_BUILT
+                if not built or r.headers.get("cache-control") != "no-store":
+                    out.append(f"{method} {path} answered {r.status_code}")  # I1: B's, not I0's 503
     return out
 
 

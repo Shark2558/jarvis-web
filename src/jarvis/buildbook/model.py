@@ -60,6 +60,7 @@ from jarvis.buildbook.sections import (
     Step,
     Workflow,
 )
+from jarvis.buildbook.tour_model import Tour
 
 SCHEMA_VERSION = 1
 KEEP = 3  # releases kept sealed (D5: fixed)
@@ -131,8 +132,9 @@ class ReleaseRef(Frozen):
         """No version (a release from before R6.1): dumped exactly as R6 wrote it, so a sealed
         R6 book's canonical bytes and the R6 routes' answers are unchanged."""
         data: dict[str, Any] = handler(self)
-        if data.get("version") is None:
-            data.pop("version", None)
+        for key in ("version", "facts_sha256"):  # R6.3: no facts file before R6.3 either
+            if data.get(key) is None:
+                data.pop(key, None)
         return data
 
 
@@ -140,6 +142,7 @@ class Release(ReleaseRef):
     v: Literal[1] = 1
     book_sha256: str | None = Field(default=None, pattern=SHA256)
     source_sha256: str | None = Field(default=None, pattern=SHA256)
+    facts_sha256: str | None = Field(default=None, pattern=SHA256)  # R6.3 D2: _book/facts.json
     source_bytes: int = Field(default=0, ge=0, le=SNAPSHOT_CAP_BYTES)
     skipped: int = Field(default=0, ge=0)
     error: str | None = Field(default=None, min_length=1, max_length=200)
@@ -237,6 +240,7 @@ class Book(Frozen):
     decisions: tuple[PlanDecisions, ...]
     show: Show
     digest: Digest
+    tour: Tour | None = None  # R6.3 D9: the short tour (an older book has none: today's show)
 
     def sections(self) -> dict[str, Any]:
         """The eight reader sections (GET /v1/book/sections), JSON-ready, in SECTION_IDS order."""
@@ -246,9 +250,8 @@ class Book(Frozen):
 
 def canonical_bytes(book: Book) -> bytes:
     """THE bytes of book.json: sorted keys, compact separators, UTF-8, NFC (D2)."""
-    text = json.dumps(
-        book.model_dump(mode="json"), sort_keys=True, ensure_ascii=False, separators=(",", ":")
-    )
+    tree = book.model_dump(mode="json", exclude=None if book.tour else {"tour"})  # R6.3: as R6.2
+    text = json.dumps(tree, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return unicodedata.normalize("NFC", text).encode("utf-8")
 
 

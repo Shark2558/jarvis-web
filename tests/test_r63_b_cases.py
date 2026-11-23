@@ -323,3 +323,36 @@ async def test_a_pack_never_reads_tests_or_claude_files() -> None:
         n for n in ("NEEDLE_TESTS", "NEEDLE_CLAUDE", "NEEDLE_EVALS", "NEEDLE_ENV") if n in body
     ]
     assert FAKE_PATH_DRAFT
+
+
+async def test_a_trial_stopped_at_the_monthly_line_names_the_line_it_used() -> None:
+    """R6.3 hotfix 1 (v6.3.1; the owner's trial of 24 Nov, 00:52 IST): with no writer picked, the
+    gate holds a trial at the default 80 % of his monthly limit, but the stop's words read the
+    unpicked pick's floor and said "10 %". The words name the line the gate used."""
+    billing = FakeBilling(limit_inr=1_500)
+    built = service(billing=billing)
+    uid = built.job._ctx.uid
+    billing.recorded.append((uid, "anthropic", 1_404.79 / billing.rate))  # 94 % used, as his
+    await _trial(built)
+    view = await built.service.step(uid)
+    assert view.state == "stopped" and view.done == 0 and view.inr == 0.0
+    assert f"{Caps().limit_pct} % of your monthly limit" in view.why
+    assert "10 %" not in view.why
+
+
+async def test_a_page_counted_denser_than_the_old_worst_case_is_kept_not_stopped() -> None:
+    """R6.3 hotfix 1 (v6.3.1; the owner's trial of 24 Nov, 01:00 IST): Claude counted the first
+    sample page's pack denser than 2.5 bytes a token, so its bill (Rs 11.83) passed its hold and the
+    safety stop ended the trial with no page kept. The hold now assumes 1.5 bytes a token: a page
+    counted at 1.8 with every output token used settles inside its hold and is kept."""
+    claude = claude_like(Step(text=GOOD_DRAFT, bytes_per_token=1.8, output_tokens=4_000))
+    built = service(brains=registry(claude, gemini_like()), source=trial_source(big=True))
+    uid = built.job._ctx.uid
+    await _trial(built)
+    view = await built.service.step(uid)
+    sent = sum(len(m.text().encode("utf-8")) for m in provider_of(claude).calls[0].messages)
+    assert sent > 60_000  # a full-size pack, as his (the cap is 96,000)
+    assert "worst case" not in view.why and view.state in ("running", "queued", "done")
+    assert view.done >= 1 and view.inr > 0
+    month = await built.service.ledger.month(uid)
+    assert month.held_inr == 0.0 and month.holds == {}  # settled, nothing left held

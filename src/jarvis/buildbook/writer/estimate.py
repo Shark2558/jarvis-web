@@ -42,10 +42,12 @@ from jarvis.llm.brains import BrainSpec
 from jarvis.llm.router import ModelTier
 
 BAL = ModelTier.BALANCED
+# (bytes a token, output tokens, share redrafted): low, mid, high. R6.3 hotfix 1: one notch denser
+# than 4.0/3.0/2.5, as Claude billed his first full pack (Rs 11.83: 2.2 bytes a token at 3,000 out).
 ASSUME: tuple[tuple[float, int, float], ...] = (
-    (4.0, 2_200, 0.15),
-    (3.0, 3_000, 0.25),
-    (2.5, 3_500, 0.30),
+    (3.0, 2_200, 0.15),
+    (2.2, 3_000, 0.25),
+    (1.8, 3_500, 0.30),
 )
 REDRAFT_EXTRA_TOKENS = 3_000
 CALL_SECONDS = (30, 50)  # a page call on the step (Estimate; the trial measures it, D5)

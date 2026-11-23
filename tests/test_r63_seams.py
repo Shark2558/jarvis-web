@@ -36,7 +36,7 @@ def _load(path: Path, name: str) -> ModuleType:
 
 # ---- 1 · the version and the release ------------------------------------------------------------
 def test_the_version_is_six_point_three() -> None:
-    assert jarvis.__version__ == "6.3.0"  # R6.3 I0 (13.1.0 at R13.1); the persona is unchanged
+    assert jarvis.__version__ == "6.3.1"  # R6.3 I0 (13.1.0 at R13.1); the persona is unchanged
     repo = Repo.from_git(ROOT)
     assert plans.release_label(repo) == "R6.3"
     assert plans.plan_paths(repo)[0] == "docs/plans/r6-3-book-content.md"

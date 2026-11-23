@@ -215,7 +215,7 @@ INVENTORY_FILES: dict[str, str] = {
 # the plan's "The tour's facts" table, on this branch (the release's own values)
 TOUR = {
     "release.label": "R6.3",
-    "release.version": "v6.3.0",
+    "release.version": "v6.3.1",  # R6.3 hotfix 1 (v6.3.0 at R6.3)
     "release.new": "The Build Book: written by AI, short tour and full book",
     "cards.count": 73,
     "modules.count": 18,

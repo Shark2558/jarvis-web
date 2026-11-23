@@ -42,7 +42,9 @@ def aad_pages_index(uid: str) -> str:
 CALL_ID, ESTIMATE_ID, TERMS_ID = r"^wc_[0-9a-f]{16}$", r"^we_[0-9a-f]{12}$", r"^wt_[0-9a-f]{12}$"
 JOB_NAME = "book_write"
 JOB_BUDGET_S, STEP_BUDGET_S, STEP_CALL_TIMEOUT_S = 45.0, 150.0, 120.0  # D5
-MAX_TOKENS, PACK_CAP_BYTES, BYTES_PER_TOKEN_WORST = 4_000, 96_000, 2.5  # D4, D8
+# D4, D8. The hold's input is bytes / BYTES_PER_TOKEN_WORST: 2.5 until R6.3 hotfix 1, when Claude
+# (Sonnet 5.5) billed a full pack above that hold (Rs 11.83, 24 Nov 2026); 1.5 leaves room.
+MAX_TOKENS, PACK_CAP_BYTES, BYTES_PER_TOKEN_WORST = 4_000, 96_000, 1.5
 SYSTEM_TOKENS = 3_000  # the fixed system prompt, at the cache-write price in a hold (D8)
 LEASE_S, SECONDS_KEPT, HOLD_BUSY_S, HOLD_STALE_S = 60, 20, 600, 3_600  # D5, D8
 KEEP_DAYS = 30  # trial pages and drafts (owner question 11)

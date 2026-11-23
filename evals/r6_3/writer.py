@@ -186,7 +186,7 @@ CASES: dict[str, Case] = {
         f"precision:{pid}": _t(t_units, "test_the_precision_case_a_good_page", pid)
         for pid in sorted(t_units.PRECISION)
     },
-    "hold_rs_11_84": _t(t_units, "test_the_hold_of_a_full_pack"),
+    "hold_rs_16_71": _t(t_units, "test_the_hold_of_a_full_pack"),
     "grants": _t(t_units, "test_lowering_grants_nothing"),
 }
 

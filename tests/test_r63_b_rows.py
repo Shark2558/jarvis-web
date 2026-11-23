@@ -122,17 +122,17 @@ async def test_the_trial_spends_nothing_before_yes_and_stops_at_its_cap() -> Non
     one = await svc.trial_page(uid, rows[0].nn)
     assert one.page.meta is not None and one.page.meta.tier == "balanced"
 
-    # every Claude call settles at its hold (Rs 11.84 a full pack): 8 calls fit Rs 100, the 9th
-    # is refused before it is sent
+    # every Claude call settles at its hold (Rs 16.71 a full pack since hotfix 1; Rs 11.84 and 8
+    # calls before): 5 calls fit Rs 100, the 6th is refused before it is sent
     payer = hold_payer(*([FAKE_PATH_DRAFT] * 10))
     capped = service(brains=registry(payer, gemini_like()), source=trial_source(big=True))
     s2 = capped.service
     est2 = await s2.estimate(uid, "trial")
-    assert est2.hold == pytest.approx(11.84, abs=0.02) and est2.cap == 100
+    assert est2.hold == pytest.approx(16.71, abs=0.02) and est2.cap == 100  # 11.84 before hotfix 1
     await s2.start_trial(uid, TrialIn(typed="YES", estimate_id=est2.id))
     view = await steps(capped)
-    assert _calls(payer) == 8 and view.state == "stopped" and "cap" in view.why.lower()
-    assert 94.0 <= view.inr <= 100.0
+    assert _calls(payer) == 5 and view.state == "stopped" and "cap" in view.why.lower()
+    assert 83.0 <= view.inr <= 84.0  # five holds of about Rs 16.7: a sixth would pass Rs 100
 
     # a call billed above its hold stops the trial at once (M1)
     over = hold_payer(over=5_000)

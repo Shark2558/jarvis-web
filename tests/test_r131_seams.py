@@ -33,7 +33,7 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name -----------------------------------------------
 def test_the_version_is_thirteen_point_one() -> None:
-    assert jarvis.__version__ == "6.3.0"  # R6.3 I0 (13.1.0 at R13.1); the persona stays p13.0
+    assert jarvis.__version__ == "6.3.1"  # R6.3 I0 (13.1.0 at R13.1); the persona stays p13.0
 
 
 def test_the_real_repository_is_r13_1_and_its_plan_comes_first() -> None:

@@ -236,3 +236,53 @@ def test_r63_c_trial_side_by_side_with_checks_and_one_sample_page(
         clean(c)
     finally:
         c.close()
+
+
+def test_r63_hotfix1_the_writer_is_there_after_a_refresh_with_the_book_open(
+    browser: Any, c_url: str, token: str
+) -> None:
+    """R6.3 hotfix 1 (v6.3.1; the owner, 24 Nov 00:37 IST): the Book panel came back open after a
+    refresh, but its Book writer (the estimate, the trial) did not, until the panel was closed and
+    opened again. A panel the deck restores fires no "jarvis:panel"; the Book's ready() now loads
+    the writer and the full-book modules too."""
+    c, sent = writer_open(browser, c_url, token)
+    try:
+        until(c.page, lambda: "About ₹40" in text(c), "the estimate before the refresh")
+        c.open()  # the refresh: the deck restores the Book panel from its stored layout
+        c.page.locator("#p-book .bk-release").wait_for()
+        head = c.page.locator(f"{WRITER} .dsc").first
+        head.wait_for(timeout=10_000)
+        head.click()
+        until(c.page, lambda: "About ₹40" in text(c), "the estimate after the refresh")
+        assert c.page.locator(WRITER).get_by_role("button", name="Start the trial").is_visible()
+        assert posts(sent, "/trial") == []  # still nothing spent before his YES
+        clean(c)
+    finally:
+        c.close()
+
+
+def test_r63_hotfix1_a_trial_that_stopped_says_why_above_start(
+    browser: Any, c_url: str, token: str
+) -> None:
+    """R6.3 hotfix 1 (v6.3.1; the owner's video of 24 Nov, 00:52 IST): his YES started the trial and
+    its first step stopped it at the monthly line, but the section still said "Not run yet" with
+    no reason. A trial that ended with nothing written shows how it ended and why, above Start."""
+    why = "It would pass 80 % of your monthly limit: the rest (10 pages) waits."
+    stopped = {"state": "stopped", "done": 0, "total": 10, "inr": 0.0}
+    c, sent = writer_open(
+        browser, c_url, token,
+        run={"kind": "trial", "cap_inr": 100, "why": why, **stopped},
+        trial={**stopped, "results": []},
+    )  # fmt: skip
+    try:
+        until(c.page, lambda: why in text(c), "the reason the trial stopped")
+        words = text(c)
+        assert "The trial, stopped: 0 of 10 pages" in words and "₹100" in words
+        assert words.index(why) < words.index("Two brains each write")  # first, before the offer
+        start = c.page.locator(WRITER).get_by_role("button", name="Start the trial")
+        assert start.is_visible()  # a new YES may try again (the estimate is shown again too)
+        assert c.page.locator(WRITER).get_by_role("button", name="Step while I watch").count() == 0
+        assert posts(sent, "/trial") == [] and posts(sent, "/step") == []
+        clean(c)
+    finally:
+        c.close()

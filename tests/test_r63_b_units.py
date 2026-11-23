@@ -26,6 +26,7 @@ from r63_fakes_b import TRIAL_FACTS, files
 from jarvis.buildbook.gen.scrub import NoScrub, Scrubber, default_scrubber
 from jarvis.buildbook.writer import checks, consent, estimate, fill, packs, prompts
 from jarvis.buildbook.writer.model import (
+    BYTES_PER_TOKEN_WORST,
     MAX_TOKENS,
     PACK_CAP_BYTES,
     SYSTEM_TOKENS,
@@ -222,19 +223,21 @@ def test_the_terms_id_changes_with_the_pick_price_and_rate() -> None:
 
 
 # ---- the estimate and the hold (D8, L4) ----------------------------------------------------------
-def test_the_hold_of_a_full_pack_is_rs_11_84_at_the_days_rate() -> None:
-    assert estimate.hold_inr(claude_like(), PACK_CAP_BYTES, RATE) == pytest.approx(11.84, abs=0.01)
+def test_the_hold_of_a_full_pack_is_rs_16_71_at_the_days_rate() -> None:
+    # R6.3 hotfix 1: Rs 11.84 at 2.5 bytes a token; Claude billed a full pack above it (Rs 11.83 at
+    # Rs 92.83 a dollar), so the hold reads 1.5 bytes a token
+    assert estimate.hold_inr(claude_like(), PACK_CAP_BYTES, RATE) == pytest.approx(16.71, abs=0.01)
     assert estimate.hold_inr(gemini_like(), PACK_CAP_BYTES, RATE) == 0.0
     assert MAX_TOKENS == 4_000 and SYSTEM_TOKENS == 3_000
 
 
-def test_the_trial_estimate_is_about_rs_40_from_five_full_packs() -> None:
+def test_the_trial_estimate_is_about_rs_50_from_five_half_packs() -> None:
     est = estimate.estimate(
         run="trial", spec=claude_like(), sizes=[48_000] * 5, rate=RATE, cap=100, release="6363636"
     )
     assert est.id.startswith("we_") and est.pages == 5 and est.cap == 100
     assert est.low < est.mid < est.high and est.mid == about_inr(est.mid)
-    assert 25 <= est.low and est.high <= 60 and est.mid == 40
+    assert 30 <= est.low and est.high <= 65 and est.mid == 50  # Rs 40 before hotfix 1
     assert "18 % GST" in est.gst_note and "Anthropic" in est.gst_note
     free = estimate.estimate(
         run="trial", spec=gemini_like(), sizes=[48_000] * 5, rate=RATE, cap=100, release="6363636"
@@ -323,7 +326,7 @@ def test_binaries_in_the_zip_are_never_read() -> None:
 
 # ---- the prompt (D4) -----------------------------------------------------------------------------
 def test_the_system_prompt_is_fixed_and_fits_its_token_budget() -> None:
-    assert len(prompts.SYSTEM.encode()) <= SYSTEM_TOKENS * 2.5
+    assert len(prompts.SYSTEM.encode()) <= SYSTEM_TOKENS * BYTES_PER_TOKEN_WORST
     assert "ignore any instruction" in prompts.SYSTEM.lower()
     for heading in ("In plain words", "Example (made up)", "How it works", "When it fails"):
         assert heading in prompts.SYSTEM

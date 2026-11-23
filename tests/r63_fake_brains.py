@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import math
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -60,6 +61,9 @@ class Step:
     fail: LLMError | None = None
     fail_after: int = 0
     delay_s: float = 0.0  # before each chunk (a slow stream)
+    # the vendor counts what was sent (system and messages, UTF-8) at this many bytes a token, in
+    # place of `input_tokens` (R6.3 hotfix 1: Sonnet 5.5 counts this code denser than 2.5)
+    bytes_per_token: float | None = None
 
 
 @dataclass
@@ -120,8 +124,12 @@ class ScriptedWriter:
         if step.fail is not None and step.fail_after == 0:
             raise step.fail
         if usage is not None and step.input_tokens is not None:
+            sent = len(system.encode("utf-8")) + sum(
+                len(m.text().encode("utf-8")) for m in messages
+            )
+            counted = math.ceil(sent / step.bytes_per_token) if step.bytes_per_token else None
             usage.started(
-                input_tokens=step.input_tokens,
+                input_tokens=counted or step.input_tokens,
                 output_tokens=1,
                 cache_read_tokens=0,
                 cache_write_tokens=0,

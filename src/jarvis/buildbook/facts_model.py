@@ -90,7 +90,7 @@ class FactIndex(Frozen):
     constants: tuple[str, ...] = ()  # "src/jarvis/llm/fallback.py:BREAKER_S"
     settings: tuple[str, ...] = ()  # "vault_unlock_minutes"
     collections: tuple[str, ...] = ()  # "book_writer" (no prefix)
-    routes: tuple[str, ...] = ()  # "GET /v1/book/writer"
+    routes: tuple[str, ...] = ()  # "GET /v1/book/pages"
 
 
 class Route(Frozen):

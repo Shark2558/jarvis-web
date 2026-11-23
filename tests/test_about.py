@@ -22,7 +22,7 @@ def test_the_version_lives_in_one_place() -> None:
     """The one literal of this release's number in the tests; every other test derives it.
     pyproject.toml has no number of its own: setuptools reads `jarvis.__version__` (review L2)."""
     # R6.3 hotfix 1 (6.3.0 at R6.3 I0, 13.1.0 at R13.1, 13.0.0 at R13, 6.2.0 at R6.2, 7.0.0 at R7)
-    assert jarvis.__version__ == "6.3.1"
+    assert jarvis.__version__ == "6.3.2"
     meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert "version" not in meta["project"] and "version" in meta["project"]["dynamic"]
     assert meta["tool"]["setuptools"]["dynamic"]["version"] == {"attr": "jarvis.__version__"}

@@ -23,25 +23,24 @@ from fastapi.responses import JSONResponse
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.book_gate import BookRefused, console_only, limit, need, owner_session
 from jarvis.api.book_http import TOKEN_HEADER, book_json
-from jarvis.api.identity import primary_user_id
-from jarvis.api.ratelimit import RateLimiter
 from jarvis.buildbook.facts_model import PAGE_ID
 from jarvis.buildbook.model import RELEASE_ID
-from jarvis.buildbook.writer.http import LIMITS, PAGES_PREFIX, ROUTES  # by name: A's route scan
+from jarvis.buildbook.writer.http import PAGES_PREFIX, ROUTES  # by name: A's route scan
 from jarvis.buildbook.writer.texts import REFUSED, PagesRefused
 
 router = APIRouter(prefix=PAGES_PREFIX, dependencies=[Depends(require_auth)])
 Act = Callable[[Any, str, str | None, Request], Awaitable[Any]]
 
 
-def primary(request: Request) -> str:
-    """The primary owner's id (L11); another owner's browser is 403 `not_primary`."""
+def primary(request: Request, svc: Any) -> str:
+    """The primary owner's id (L11, the service's); another owner's browser is 403
+    `not_primary`."""
     s = request.app.state.settings
     email = session_email(request, s)
     owners = tuple(e.lower() for e in s.owner_emails)
     if email is not None and owners and email.lower() != owners[0]:
         raise BookRefused(403, "not_primary", REFUSED["not_primary"])
-    return primary_user_id(s)
+    return str(svc.uid)
 
 
 def release_of(request: Request) -> str | None:
@@ -56,7 +55,7 @@ def release_of(request: Request) -> str | None:
 def route(act: Act) -> Callable[[Request], Awaitable[JSONResponse]]:
     async def handler(request: Request) -> JSONResponse:
         svc = need(request, "book_pages")
-        uid = primary(request)
+        uid = primary(request, svc)
         await owner_session(request, uid, request.headers.get(TOKEN_HEADER))
         console_only(request)  # after the session: an unsigned script stays 401 (review I1 L-1)
         limit(request, "pages", uid)
@@ -90,9 +89,8 @@ for _method, _path, _part, _req, _reply, _codes, _gate in ROUTES:
 
 
 def install_book_pages(app: FastAPI) -> None:
-    """Mounted by `r6_wiring.install_r6_routes` after `install_book` (its limits and its
-    refusal handler)."""
-    app.state.book_limits["pages"] = RateLimiter(LIMITS["pages"])
+    """Mounted by `r6_wiring.install_r6_routes` after `install_book` (its refusal handler; the
+    wiring adds the `pages` limit, `http.LIMITS`, to R6's per-owner limits)."""
     app.include_router(router)
 
 

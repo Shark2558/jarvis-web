@@ -30,6 +30,7 @@ from r631_i0_fakes import (
 from jarvis.buildbook.gen import compile_pages, fallback, write
 from jarvis.buildbook.gen.repo import Repo
 from jarvis.buildbook.gen.scrub import default_scrubber
+from jarvis.buildbook.seal_index import kinds_of
 from jarvis.buildbook.writer import pages
 from jarvis.buildbook.writer.model import FLOWS_FILE, NOT_WRITTEN, PAGES_FILE
 
@@ -124,7 +125,7 @@ def test_the_generator_writes_and_names_both_files(tmp_path: Path) -> None:
     rel = built.release
     assert rel.pages_sha256 == hashlib.sha256(built.pages).hexdigest()
     assert rel.flows_sha256 == hashlib.sha256(built.flows).hexdigest()
-    assert rel.kinds() == ("book", "source", "pages", "flows")
+    assert kinds_of(rel) == ("book", "source", "pages", "flows")
     out = tmp_path / "_book"
     write.write(out, built)
     assert (out / PAGES_FILE).read_bytes() == built.pages

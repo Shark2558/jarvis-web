@@ -35,6 +35,7 @@ from jarvis.buildbook.seal_index import (
     Part,
     age,
     checked_files,
+    has_file,
     parts_of,
 )
 from jarvis.buildbook.seal_state import SealHeld, held_of, lease_path
@@ -296,7 +297,7 @@ class DocsBookVault:
         found = (await self._load(uid)).find(rid)
         if found is None:
             raise LookupError("That release isn't sealed in your vault.")
-        if not found.has(kind):  # R6.3.1: a release sealed before v6.3.2 has no pages or flows
+        if not has_file(found, kind):  # R6.3.1: sealed before v6.3.2: no pages or flows file
             raise LookupError("That release was sealed without this file.")
         f = found.file(kind)
         try:

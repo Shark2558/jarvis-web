@@ -5,8 +5,8 @@
 // console-book.js loads it ONCE at the panel's first open and calls mount(host, deps): `host` sits under the reader of an
 // open OWNER session; deps = { api, booked, ask, say, render, token(), release() }. The panel re-renders by itself, so
 // this module watches its host: it reads the index again when the session or the release read changes.
-// Also page(host, raw) (a page's meta line and sections) and more(node) (the reader's G4 line "+N more in the full
-// book" under its limitations, from the index's `limitations`). R6.3.1: the Workshop writes the pages at build time.
+// Also page(host, raw) (a page's meta line and sections, for the writer's trial pages) and more(node) (the reader's G4
+// line "+N more in the full book" under its limitations, from the index's `limitations`).
 // Routes: GET /v1/book/pages?release=, GET /v1/book/pages/{id}?release= (X-Jarvis-Book). A refusal (a guest's 403, a
 // release without pages) draws nothing. No build step; CSP script-src 'self'; textContent only; ASCII; <= 400 lines.
 (() => {
@@ -16,6 +16,7 @@
   const PAGE = /^pg_(?:chapter|module|card|screen|service)_[a-z0-9_]{1,40}$/, RID = /^[0-9a-f]{7}$/, VER = /^v\d{1,3}\.\d{1,3}\.\d{1,4}$/;
   const SECTIONS = ['plain', 'example', 'how', 'costs', 'fails', 'code'], OPEN = { plain: true, example: true };
   const NOT_WRITTEN = 'Not written yet', BY = 'Written by the Workshop'; // writer.model (R6.3.1)
+  const CHANGED = 'Changed in this release'; // R6.3's label: the server no longer sends `changed` (R6.3.1)
   const OFFLINE = 'Can\u2019t reach JARVIS. Check your connection.';
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
   const arr = (v) => (Array.isArray(v) ? v : []);
@@ -54,7 +55,7 @@
     arr(p.sections).map(obj).filter(Boolean).forEach((s) => { if (SECTIONS.includes(s.id)) by[s.id] = s; });
     const sections = SECTIONS.filter((id) => by[id]).map((id) => ({ id, heading: txt(by[id].heading, 60) || id,
       text: typeof by[id].text === 'string' ? by[id].text.replace(INVISIBLE, '').slice(0, 2400) : '', refs: arr(by[id].refs).map((r) => txt(r, 200)).filter(Boolean) }));
-    return sections.length ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.meta), sections } : null;
+    return sections.length ? { id: p.id, title: txt(p.title, 120) || p.id, meta: meta(p.meta), changed: p.changed === true, sections } : null;
   }
   const pages = () => (index ? index.parts.flatMap((p) => p.chapters.flatMap((c) => c.pages)) : []);
   const find = (id) => pages().find((p) => p.id === id) || null;
@@ -109,9 +110,10 @@
     const ul = mk('ul', 'bchips'); ul.setAttribute('aria-label', 'Where in the code');
     list.forEach((r) => ul.append(mk('li', 'bchip', r))); body.append(ul);
   }
-  /** One page: who wrote it, its six sections (plain and example open). */
+  /** One page: who wrote it, the changed label, its six sections (plain and example open). */
   function drawPage(box, p, rid) {
     box.append(mk('p', 'bfine', writtenBy(p.meta, rid)));
+    if (p.changed) box.append(mk('p', 'bfine', CHANGED));
     p.sections.forEach((s) => box.append(disclosure(s.heading, '', (body) => {
       words(body, s.text); refs(body, s.refs);
       if (!body.childElementCount) body.append(mk('p', 'bempty', 'Nothing here yet.'));

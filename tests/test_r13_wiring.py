@@ -303,7 +303,7 @@ async def test_the_app_builds_the_four_parts_and_answers_v1_r13(settings: Settin
         got = await c.get("/v1/r13", headers=AUTH)
         assert got.status_code == 200 and got.headers["cache-control"] == "no-store"
         body = got.json()
-        assert body["version"] == "v6.3.1"  # R6.3 hotfix 1 (6.3.0 at R6.3 I0)
+        assert body["version"] == "v6.3.2"  # R6.3.1 (6.3.1 at R6.3 hotfix 1, 6.3.0 at R6.3 I0)
         assert [p["part"] for p in body["parts"]] == list(PARTS)
         assert all(p["ready"] != wiring.SETUP_FAILED for p in body["parts"])
         assert body["parts"][0]["ready"].startswith("Off: the wardrobe needs")

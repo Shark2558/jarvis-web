@@ -1,5 +1,7 @@
 # tests/test_r63_static.py -- R6.3 I0 seam 13 (docs/plans/r6-3-book-content.md D1, D4, L3): static
-# guards over the writer's files, written at I0 so every module B adds is held to them.
+# guards over the full book's files, written at I0 so every module B adds is held to them (R6.3.1
+# D8: the runtime writer and `llm/write.py` are gone; the guards hold for what stays, and for the
+# generator's compile of the authored pages).
 #
 # - D4: the writer imports nothing that reaches the owner's data or the brain's core (memory, vault,
 #   mail, contacts, documents, tools, core, integrations, the app) and no vendor SDK; from
@@ -24,7 +26,7 @@ WRITER_FILES = [
     *WRITER,
     SRC / "buildbook" / "tour_serve.py",
     SRC / "buildbook" / "gen" / "tour.py",
-    SRC / "api" / "book_writer.py",
+    SRC / "buildbook" / "gen" / "compile_pages.py",
     SRC / "api" / "book_pages.py",
 ]
 FORBIDDEN = (
@@ -81,7 +83,10 @@ def _literals(path: Path) -> Iterator[str]:
 
 def test_the_writer_files_are_there() -> None:
     names = {p.name for p in WRITER}
-    assert {"model.py", "http.py", "ports.py", "part.py", "job.py", "privacy.py"} <= names
+    assert {"model.py", "http.py", "ports.py", "pages.py", "serve.py", "privacy.py"} <= names
+    gone = {"part.py", "job.py", "run.py", "caps.py", "consent.py", "estimate.py", "prompts.py",
+            "store.py", "sweep.py", "vault.py"}  # fmt: skip
+    assert not names & gone and not (SRC / "llm" / "write.py").exists()  # R6.3.1 D8
     assert all(p.is_file() for p in WRITER_FILES)
 
 
@@ -121,7 +126,7 @@ def test_no_model_id_vendor_or_price_in_a_literal(path: Path) -> None:
         assert not PRICE.search(lit), (path.name, lit[:60])
 
 
-@pytest.mark.parametrize("path", [*WRITER, SRC / "llm" / "write.py"], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", WRITER_FILES, ids=lambda p: p.name)
 def test_no_real_clock(path: Path) -> None:
     assert not CLOCK.search(path.read_text(encoding="utf-8")), path.name
 

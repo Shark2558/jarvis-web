@@ -35,6 +35,7 @@ from jarvis.api.r6_wiring import r6_tick_jobs
 from jarvis.api.r11_wiring import r11_tick_jobs
 from jarvis.ticks import TickJob
 
+
 def tick_jobs(app: FastAPI) -> tuple[Any, ...]:
     """Every morning-tick job, in this order; the names are unique and never a sweep's."""
     jobs = (

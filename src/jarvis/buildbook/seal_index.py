@@ -12,7 +12,7 @@ purpose `book_index`. No new crypto here.
 vault index keeps them, the chunk sets of seals still in flight (`pending`) and of releases already
 shredded whose chunk deletes have yet to succeed (`orphans`). `checked_files` is the check a seal
 starts with: exactly the release's files (its book and source; from R6.3.1 on its pages and
-flows too, `Release.kinds()`), each under its cap and matching its SHA-256.
+flows too, `kinds_of`), each under its cap and matching its SHA-256.
 """
 
 from __future__ import annotations
@@ -28,9 +28,6 @@ from pydantic import Field
 from jarvis.buildbook.model import (
     BOOK_JSON_CAP_BYTES,
     FILE_ID,
-    FLOWS_FILE_CAP_BYTES,
-    PAGES_FILE_CAP_BYTES,
-    REQUIRED_KINDS,
     SNAPSHOT_CAP_BYTES,
     FileKind,
     Instant,
@@ -40,11 +37,13 @@ from jarvis.buildbook.model import (
 )
 from jarvis.buildbook.ports import BookUnavailable
 from jarvis.buildbook.sections import Frozen
+from jarvis.buildbook.writer.model import FLOWS_FILE_CAP_BYTES, PAGES_FILE_CAP_BYTES
 from jarvis.integrations.vault import TokenCipher
 from jarvis.keyring import Keyring
 from jarvis.vault.crypto import CHUNK_BYTES, chunk_count
 
-KINDS: tuple[FileKind, ...] = REQUIRED_KINDS  # every sealed release has these two
+KINDS: tuple[FileKind, ...] = ("book", "source")  # every sealed release has these two
+EXTRA_KINDS: tuple[FileKind, ...] = ("pages", "flows")  # R6.3.1 D7: from v6.3.2 on
 CAPS: Mapping[FileKind, int] = {
     "book": BOOK_JSON_CAP_BYTES,
     "source": SNAPSHOT_CAP_BYTES,
@@ -153,24 +152,44 @@ def age(part: Part, now: dt.datetime) -> float:
     return (now - dt.datetime.fromisoformat(part.since)).total_seconds()
 
 
+def digest_of(release: Release, kind: FileKind) -> str | None:
+    """The SHA-256 release.json names for one of its files (None: it has no such file)."""
+    return {"book": release.book_sha256, "source": release.source_sha256,
+            "pages": release.pages_sha256, "flows": release.flows_sha256}[kind]  # fmt: skip
+
+
+def has_file(sealed: SealedRelease, kind: FileKind) -> bool:
+    """R6.3.1: a release sealed before v6.3.2 has no pages or flows file."""
+    return any(f.kind == kind for f in sealed.files)
+
+
+def kinds_of(release: Release) -> tuple[FileKind, ...]:
+    """The files a release has: its book and source, then (R6.3.1) its pages and flows when
+    release.json names them; a failed build has none."""
+    if not release.ok:
+        return ()
+    return (*KINDS, *(k for k in EXTRA_KINDS if digest_of(release, k) is not None))
+
+
 def checked_files(release: Release, files: Mapping[FileKind, bytes]) -> dict[FileKind, bytes]:
-    """The release's files in `Release.kinds()` order, each checked (R6.3.1: with its pages and
+    """The release's files in `kinds_of` order, each checked (R6.3.1: with its pages and
     flows when release.json names them)."""
     if not release.ok:
         raise BookUnavailable("This release has no build book.")
-    kinds = release.kinds()
+    kinds = kinds_of(release)
     if set(files) != set(kinds):
         raise ValueError("a sealed release is its book and its source snapshot (and its pages)")
     for kind in kinds:
         if len(files[kind]) > CAPS[kind]:
             raise BookUnavailable("A file of this release is over its size cap.")
-        if hashlib.sha256(files[kind]).hexdigest() != release.digest(kind):
+        if hashlib.sha256(files[kind]).hexdigest() != digest_of(release, kind):
             raise BookUnavailable("The files don't match their release.")
     return {kind: files[kind] for kind in kinds}
 
 
 __all__ = [
     "CAPS",
+    "EXTRA_KINDS",
     "KINDS",
     "BookCrypto",
     "BookIndex",
@@ -179,6 +198,9 @@ __all__ = [
     "checked_files",
     "chunk_aad",
     "dek_aad",
+    "digest_of",
+    "has_file",
     "index_aad",
+    "kinds_of",
     "parts_of",
 ]

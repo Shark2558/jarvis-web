@@ -17,6 +17,7 @@ from collections import OrderedDict
 from typing import Any
 
 from jarvis.buildbook.ports import BookError, BookSource, BookVault
+from jarvis.buildbook.seal_index import has_file
 from jarvis.buildbook.writer import pages
 from jarvis.buildbook.writer.http import PagesView
 from jarvis.buildbook.writer.model import PagesFile
@@ -31,8 +32,8 @@ Flows = dict[str, dict[str, Any]]
 class BookPages:
     """`app.state.book_pages`: one owner's kept releases' full books (the primary owner's)."""
 
-    def __init__(self, source: BookSource, vault: BookVault) -> None:
-        self._source, self._vault = source, vault
+    def __init__(self, source: BookSource, vault: BookVault, *, uid: str) -> None:
+        self._source, self._vault, self.uid = source, vault, uid  # uid: the primary owner (L11)
         self._open: OrderedDict[tuple[str, ...], tuple[PagesFile, Flows]] = OrderedDict()
 
     async def _kept(self, uid: str, rid: str | None) -> Any:
@@ -46,7 +47,7 @@ class BookPages:
         found = next((r for r in kept if r.id == rid), None)
         if found is None:
             raise PagesRefused("no_page")
-        if not found.has("pages"):
+        if not has_file(found, "pages"):
             raise PagesRefused("no_pages")
         return found
 
@@ -65,7 +66,7 @@ class BookPages:
 
     async def files(self, uid: str, rid: str | None) -> tuple[PagesFile, Flows]:
         sealed = await self._kept(uid, rid)
-        has_flows = sealed.has("flows")
+        has_flows = has_file(sealed, "flows")
         key = (uid, sealed.id, sealed.file("pages").sha256,
                sealed.file("flows").sha256 if has_flows else "")  # fmt: skip
         if key not in self._open:

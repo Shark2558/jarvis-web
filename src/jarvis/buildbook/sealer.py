@@ -16,8 +16,8 @@ traffic, so it never seals a release that didn't go live.
 The lease document (`seal_state.SealState`) also remembers what was told (claimed before a notice
 goes) and what Privacy held. No content goes in it, nor in a log or a notice (`seal_words`).
 R6.3.1 D7 (docs/plans/r6-3-1-book-at-build.md): a release that names its full book's files
-(`Release.kinds()`) is sealed with its pages and flows too, under the same cap, and the owner check
-reads them as well (the pages file opened first).
+(`seal_index.kinds_of`) is sealed with its pages and flows too, under the same cap, and the
+owner check reads them as well (the pages file opened first).
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from typing import Literal
 from jarvis.buildbook.model import KEEP, MIB, FileKind, Release, SealedRelease
 from jarvis.buildbook.owner_id import Hit
 from jarvis.buildbook.ports import BookError, BookSource, BookUnavailable, BookVault, VaultTampered
+from jarvis.buildbook.seal_index import kinds_of
 from jarvis.buildbook.seal_notices import Audit, SealNotices
 from jarvis.buildbook.seal_state import SealHeld, SealState, held_of
 from jarvis.buildbook.seal_words import (
@@ -155,7 +156,7 @@ class BookSealer:
         if await self._held(uid, release):  # Privacy deleted while the lease was being taken
             return SealOutcome("held", release.id)
         try:
-            files: dict[FileKind, bytes] = {k: self._source.read(k) for k in release.kinds()}
+            files: dict[FileKind, bytes] = {k: self._source.read(k) for k in kinds_of(release)}
         except BookUnavailable:
             await self._say.fail_once(uid, release.id, self._say.words(FAILED, release))
             return SealOutcome("failed", release.id)

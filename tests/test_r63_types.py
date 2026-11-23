@@ -1,6 +1,7 @@
 # tests/test_r63_types.py -- R6.3 I0 seam 3 (docs/plans/r6-3-book-content.md "Data model", D2, D3,
-# D6-D9, D11, H2, M4, M6, L4): the types every part builds on. The writer's data model and HTTP
-# contract (`buildbook/writer/{model,http}.py`), the tour's two shapes (`buildbook/tour_model.py`),
+# D6-D9, D11, H2, M4, M6, L4): the types every part builds on. The pages' data model and HTTP
+# contract (`buildbook/writer/{model,http}.py`; R6.3.1 D8: the writer's money, brain and run
+# models went with it), the tour's two shapes (`buildbook/tour_model.py`),
 # the fact pack (`buildbook/facts_model.py`), and `Book.tour` / `Release.facts_sha256`, which leave
 # an older book's and release's bytes exactly as they were (47ee8fc's real book.json round-trips).
 from __future__ import annotations
@@ -174,7 +175,14 @@ def test_the_fact_keys_and_page_ids() -> None:
     keys = (*fm.FACT_TOUR_KEYS, "src/jarvis/llm/fallback.py:BREAKER_S", "settings.demo_limit")
     assert all(re.fullmatch(fm.FACT_KEY, k) for k in keys)
     assert not re.fullmatch(fm.FACT_KEY, "has space")
-    for page in (*model.TRIAL_PAGES, "pg_chapter_what", "pg_service_google_cloud_text_to_speech"):
+    trial = (
+        "pg_chapter_example",
+        "pg_card_c16",
+        "pg_module_wardrobe",
+        "pg_screen_vitals",
+        "pg_service_telegram",
+    )  # R6.3's trial pages (the writer's TRIAL_PAGES, R6.3.1 D8)
+    for page in (*trial, "pg_chapter_what", "pg_service_google_cloud_text_to_speech"):
         assert re.fullmatch(fm.PAGE_ID, page), page
     assert [c for c, _ in fm.CHAPTERS][1] == "example" and len(fm.CHAPTERS) == 8
     with pytest.raises(ValidationError):
@@ -188,56 +196,7 @@ def test_facts_json_is_capped_at_two_mib() -> None:  # I1: 1 MiB at I0 (INTEGRAT
         fm.load_facts(b'{"v": 2}')
 
 
-# ---- the writer's model (D3, D7, D8, D11, H2, L4) ------------------------------------------------
-def test_the_caps_defaults_are_his_and_the_plans() -> None:
-    caps = model.Caps()
-    assert (caps.trial, caps.first, caps.release, caps.month, caps.limit_pct) == (
-        100,  # his answer of 23 Nov 2026 (the plan proposed Rs 60)
-        1_500,
-        500,
-        1_000,
-        80,
-    )
-    for name, (lo, hi) in model.CAP_BOUNDS.items():
-        with pytest.raises(ValidationError):
-            model.Caps(**{name: hi + 1})
-        with pytest.raises(ValidationError):
-            model.Caps(**{name: lo - 1})
-
-
-def test_the_trial_cap_lets_eight_worst_case_calls_through_and_refuses_the_ninth() -> None:
-    hold = 11.84  # D8: one Sonnet first draft's worst case at Rs 95.24
-    assert int(model.Caps().trial // hold) == 8 and 9 * hold > model.Caps().trial
-
-
-def test_nothing_is_granted_before_his_first_yes() -> None:
-    granted = model.Pick().confirmed
-    assert granted.brain is None and not granted.auto_update and granted.terms_id is None
-    assert (granted.caps.trial, granted.caps.first, granted.caps.release, granted.caps.month) == (
-        0,
-        0,
-        0,
-        0,
-    )
-    assert granted.caps.limit_pct == 10 < model.Caps().limit_pct  # the default line is a raise
-
-
-YES_CASES = [("YES", True), (" YES ", True), ("yes", False), ("Yes", False), ("YES!", False)]
-YES_CASES += [("", False), (None, False)]
-ABOUT_CASES = [(38, 40), (37, 35), (1_144, 1_140), (301, 300), (15, 15), (12.4, 10), (95, 95)]
-ABOUT_CASES += [(104, 100)]
-
-
-@pytest.mark.parametrize(("typed", "ok"), YES_CASES)
-def test_only_an_exact_yes_is_a_yes(typed: object, ok: bool) -> None:
-    assert model.is_yes(typed) is ok
-
-
-@pytest.mark.parametrize(("mid", "about"), ABOUT_CASES)
-def test_about_is_the_mid_rounded_to_ten_or_five_under_a_hundred(mid: float, about: int) -> None:
-    assert model.about_inr(mid) == about
-
-
+# ---- the page model (D3; R6.3.1 D4, D8: no money or brain fields) ------------------------------
 def _section(sid: model.SectionId, text: str = "words") -> dict[str, Any]:
     return {"id": sid, "heading": model.HEADINGS[sid], "text": text}
 
@@ -259,42 +218,24 @@ def test_a_page_has_the_six_sections_in_order_each_within_its_cap() -> None:
     assert model.DRAFT_SECTIONS == ("plain", "example", "how", "costs", "fails")
 
 
-def test_the_page_meta_is_always_the_balanced_tier() -> None:
-    meta = {
-        "brain": "anthropic",
-        "brain_label": "Claude",
-        "model": "claude-sonnet-5-5",
-        "provider": "anthropic",
-        "release": "abcdef0",
-        "written_at": "2026-11-24T10:00:00+05:30",
-        "attempt": 1,
-        "tokens_in": 1,
-        "tokens_out": 1,
-        "inr": 1.0,
-    }
-    assert model.PageMeta.model_validate(meta).tier == "balanced"
+def test_the_page_meta_is_who_wrote_it_when_and_for_which_release() -> None:
+    meta = {"written_by": "Workshop · Mark XXIV", "written_on": "2026-11-24",
+            "release": "abcdef0", "version": "v6.3.2"}  # fmt: skip
+    assert model.PageMeta.model_validate(meta).model_dump(mode="json") == meta
+    for bad in ({"tier": "balanced"}, {"inr": 1.0}, {"written_by": ""}, {"release": "x"}):
+        with pytest.raises(ValidationError):
+            model.PageMeta.model_validate({**meta, **bad})
+
+
+def test_a_pages_file_holds_each_page_once() -> None:
+    one = model.Page.model_validate(_page())
+    f = model.PagesFile(release="abcdef0", pages=(one,), modules={"demo": "Demo"}, limitations=3)
+    assert f.v == 2 and f.limitations == 3
     with pytest.raises(ValidationError):
-        model.PageMeta.model_validate({**meta, "tier": "fast"})
+        model.PagesFile(release="abcdef0", pages=(one, one))
 
 
-def test_the_pages_index_holds_one_file_a_release_under_its_own_aad() -> None:
-    entry = {
-        "release": "abcdef0",
-        "fid": "bf_" + "1" * 12,
-        "size": 10,
-        "sha256": SHA,
-        "count": 1,
-        "dek": "w",
-        "sealed_at": "2026-11-24T10:00:00+05:30",
-    }
-    assert model.PagesIndex.model_validate({"files": [entry]}).find("abcdef0") is not None
-    with pytest.raises(ValidationError):
-        model.PagesIndex.model_validate({"files": [entry, entry]})
-    assert model.aad_pages_index("u1") == "book/pages/u1/v1" != "book/index/u1/v1"
-    assert model.INDEX_PURPOSE == "book_index"  # no new keyring purpose (fact 16)
-
-
-def test_the_collections_and_ids() -> None:
+def test_the_old_writer_collections_are_named_for_the_privacy_row() -> None:
     assert model.COLLECTIONS == (
         "book_writer",
         "book_write_lease",
@@ -303,27 +244,17 @@ def test_the_collections_and_ids() -> None:
         "book_trial",
         "book_pages",
     )
-    for pattern, good in ((model.CALL_ID, "wc_" + "0" * 16), (model.ESTIMATE_ID, "we_" + "a" * 12),
-                          (model.TERMS_ID, "wt_" + "b" * 12)):  # fmt: skip
-        assert re.fullmatch(pattern, good)
-    assert not re.fullmatch(model.TERMS_ID, "we_" + "b" * 12)  # an estimate id is never terms
 
 
 # ---- the HTTP contract ---------------------------------------------------------------------------
-def test_the_thirteen_new_routes() -> None:
+def test_the_two_pages_routes() -> None:
     keys = [(m, p) for m, p, *_ in http.ROUTES]
-    assert len(keys) == 13 == len(set(keys))
-    assert {g for *_, g in http.ROUTES} == {"console", "session"}
-    assert [p for _, p, *_, g in http.ROUTES if g == "session"] == [
-        "/v1/book/pages",
-        "/v1/book/pages/{page_id}",
-    ]
-    assert all(p.startswith((http.WRITER_PREFIX, http.PAGES_PREFIX)) for _, p in keys)
+    assert keys == [("GET", "/v1/book/pages"), ("GET", "/v1/book/pages/{page_id}")]
+    assert {g for *_, g in http.ROUTES} == {"session"}
+    assert all(p.startswith(http.PAGES_PREFIX) for _, p in keys)
 
 
 def test_every_refusal_code_fits_the_refusal_model() -> None:
     for code in http.ERRORS:
         assert http.Refusal(error=code, detail="Plain words.").error == code
-    assert http.NOT_BUILT in http.ERRORS and len(set(http.ERRORS)) == len(http.ERRORS)
-    need = http.YesNeeded(detail="d", terms_id="wt_" + "c" * 12, words=("Up to Rs 500.",))
-    assert need.error == "yes_needed"
+    assert len(set(http.ERRORS)) == len(http.ERRORS) and "no_pages" in http.ERRORS

@@ -63,8 +63,9 @@ class FullSource(FixtureSource):
     def current(self) -> Release | None:
         rel = super().current()
         assert rel is not None
-        return rel.model_copy(update={"pages_sha256": hashlib.sha256(self.pages).hexdigest(),
-                                      "flows_sha256": hashlib.sha256(self.flows).hexdigest()})  # fmt: skip
+        named = {"pages_sha256": hashlib.sha256(self.pages).hexdigest(),
+                 "flows_sha256": hashlib.sha256(self.flows).hexdigest()}  # fmt: skip
+        return rel.model_copy(update=named)
 
     def read(self, kind: FileKind) -> bytes:
         return {"pages": self.pages, "flows": self.flows}.get(kind) or super().read(kind)
@@ -111,9 +112,9 @@ async def test_the_routes_serve_the_kept_release_s_pages_with_their_flow(
                                     "written_on": "2026-11-24", "release": RID,
                                     "version": "v6.3.2"}  # fmt: skip
             assert page["flow"]["edges"][0] == {"from": "ask", "to": "pick", "style": "main"}
-            card = (await c.get(f"/v1/book/pages/{CARD}", params={"release": RID}, headers=h))
+            card = await c.get(f"/v1/book/pages/{CARD}", params={"release": RID}, headers=h)
             assert card.json()["flow"] is None and card.json()["meta"] is None
-            for path, params in ((f"/v1/book/pages/pg_card_c99", {}),
+            for path, params in (("/v1/book/pages/pg_card_c99", {}),
                                  ("/v1/book/pages", {"release": "0000000"})):  # fmt: skip
                 r = await c.get(path, params=params, headers=h)
                 assert r.status_code == 404 and r.json()["error"] == "no_page"
@@ -137,6 +138,21 @@ async def test_the_gates_hold_for_a_guest_another_owner_and_a_script(settings: S
                 url = path.replace("{page_id}", MODULE)
                 r = await c.request(method, url, headers=book(guest["token"]))
                 assert r.status_code in (403, 423), (method, path, r.status_code)
+
+
+async def test_l1_a_bearer_script_with_an_owner_book_token_never_reads_the_full_book(
+    settings: Settings,
+) -> None:
+    """R6.3 review I1 L-1, kept: the session first (an unsigned script stays 401), then G11."""
+    async for app in book_app(settings, source=FullSource()):
+        await _sealed(app)
+        async with sign_in(app) as c:
+            owner = await open_book(c, await register_passkey(c), "owner")
+            assert (await c.get("/v1/book/pages", headers=book(owner["token"]))).status_code == 200
+        async with AsyncClient(transport=app.transport, base_url="http://test") as bare:
+            assert (await bare.get("/v1/book/pages", headers=BEARER)).status_code == 401
+            r = await bare.get("/v1/book/pages", headers={**BEARER, **book(owner["token"])})
+            assert r.status_code == 403 and r.json()["error"] == "console_only"
 
 
 async def test_a_release_sealed_before_v6_3_2_has_no_full_book(settings: Settings) -> None:
@@ -180,8 +196,11 @@ def _sealed_release(pages_bytes: bytes, flows_bytes: bytes) -> Any:
     [
         ({"pages": b"not gzip", "flows": b"{}"}, False, "unavailable"),
         ({"pages": full_files("0000000")[0], "flows": b"{}"}, False, "unavailable"),
-        ({"pages": full_files()[0], "flows": b'{"pg_card_c01": {"title": 1}}'}, False,
-         "unavailable"),
+        (
+            {"pages": full_files()[0], "flows": b'{"pg_card_c01": {"title": 1}}'},
+            False,
+            "unavailable",
+        ),
         ({}, True, "unavailable"),
     ],
 )
@@ -189,7 +208,7 @@ async def test_a_file_that_fails_its_check_or_a_vault_down_is_unavailable(
     data: dict[str, bytes], down: bool, code: str
 ) -> None:
     rel = _sealed_release(data.get("pages", b"x"), data.get("flows", b"x"))
-    svc = BookPages(FixtureSource(), _Vault(rel, data, down=down))
+    svc = BookPages(FixtureSource(), _Vault(rel, data, down=down), uid="uid")
     with pytest.raises(PagesRefused) as no:
         await svc.index("uid", None)
     assert no.value.code == code and no.value.status == 503
@@ -198,7 +217,7 @@ async def test_a_file_that_fails_its_check_or_a_vault_down_is_unavailable(
 async def test_a_release_s_files_are_opened_once_and_read_again_after_a_change() -> None:
     files = full_files()
     vault = _Vault(_sealed_release(*files), {"pages": files[0], "flows": files[1]})
-    svc = BookPages(FixtureSource(), vault)
+    svc = BookPages(FixtureSource(), vault, uid="uid")
     await svc.index("uid", None)
     await svc.page("uid", MODULE, RID)
     assert vault.reads == 2  # pages and flows, once

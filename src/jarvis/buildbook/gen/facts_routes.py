@@ -25,7 +25,7 @@ from jarvis.buildbook.gen.scrub import Scrubber
 
 ROUTER_TYPES = frozenset({"APIRouter", "FastAPI"})
 VERBS = frozenset({"get", "post", "put", "patch", "delete", "head", "options"})
-TABLE = ("jarvis.buildbook.writer.http", "ROUTES")  # the writer's routes table (I0, seam 6)
+TABLE = ("jarvis.buildbook.writer.http", "ROUTES")  # the full book's routes table (I0, seam 6)
 MAX_DEPTH = 12  # names resolved through other names
 Env = Mapping[str, str]
 _COMPOUND = ("body", "orelse", "finalbody", "handlers")

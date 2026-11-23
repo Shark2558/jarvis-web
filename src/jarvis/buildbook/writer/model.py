@@ -25,11 +25,13 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from jarvis.buildbook.facts_model import PAGE_ID, PageKind, PartId
-from jarvis.buildbook.model import FLOWS_FILE_CAP_BYTES, PAGES_FILE_CAP_BYTES, RELEASE_ID, VERSION
+from jarvis.buildbook.model import MIB, RELEASE_ID, VERSION
 from jarvis.buildbook.sections import Frozen
 
 # ---- the files the generator writes beside book.json (R6.3.1 D4) --------------------------------
 PAGES_FILE, FLOWS_FILE = "pages.json.gz", "flows.json"
+PAGES_FILE_CAP_BYTES = 2 * MIB  # gzipped canonical JSON (sealed with the release, D7)
+FLOWS_FILE_CAP_BYTES = 1 * MIB  # canonical JSON
 PACK_CAP_BYTES = 96_000  # what `writer/packs.build` fits a page's pack into (R6.3 D4)
 NOT_WRITTEN = "Not written yet"
 EXAMPLE_MARK = "Example (made up)"

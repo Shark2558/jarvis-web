@@ -50,6 +50,7 @@ from jarvis.api.book_show_hear import install_book_hear
 from jarvis.api.book_show_wiring import C_STATE, book_sweep_job, wire_book_c
 from jarvis.api.identity import primary_user_id
 from jarvis.api.r4_wiring import _notifier
+from jarvis.api.ratelimit import RateLimiter
 from jarvis.buildbook.lock import DocShowLock
 from jarvis.buildbook.owner import BookSettingsStore, BookTickets
 from jarvis.buildbook.privacy import BookSealedSource, BookSessionsSource, BookSettingsSource
@@ -58,6 +59,7 @@ from jarvis.buildbook.seal import DocsBookVault
 from jarvis.buildbook.sealer import BookSealer, BookSealJob
 from jarvis.buildbook.service import BookService
 from jarvis.buildbook.show_script import Prefs
+from jarvis.buildbook.writer.http import LIMITS as PAGES_LIMITS
 from jarvis.buildbook.writer.ports import FactSource  # R6's BookSource + facts() (R6.3)
 from jarvis.buildbook.writer.privacy import OldWriterSource
 from jarvis.buildbook.writer.serve import BookPages
@@ -173,7 +175,7 @@ def wire_book(
         on_close=st.book_tickets.clear,  # B-sec 4: a closed session's download tickets go too
         lock=lock,
     )
-    st.book_pages = BookPages(source, vault)
+    st.book_pages = BookPages(source, vault, uid=primary_user_id(s))
     st.book_old_writer = OldWriterSource(docs, prefix=p)
     st.book_off = None
 
@@ -205,7 +207,8 @@ def install_r6_routes(app: FastAPI) -> None:
     install_book(app)
     install_book_show(app)
     install_book_hear(app)
-    install_book_pages(app)  # R6.3.1 D7: the full book's two routes (after install_book)
+    app.state.book_limits["pages"] = RateLimiter(PAGES_LIMITS["pages"])  # R6.3.1 D7: 60 a minute
+    install_book_pages(app)  # the full book's two routes (after install_book)
 
 
 def install_show_lock(app: FastAPI, s: Settings) -> None:

@@ -1,0 +1,32 @@
+{
+  "title": "JARVIS in one picture",
+  "dir": "down",
+  "nodes": [
+    {"id": "you", "label": "You type or speak", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console.html"},
+    {"id": "console", "label": "The console", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/static/console.js"},
+    {"id": "book", "label": "Build Book panel", "kind": "step", "rank": 1, "col": 1,
+     "ref": "src/jarvis/api/static/console-book.js"},
+    {"id": "brain", "label": "The brain reads it", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/core/brain.py"},
+    {"id": "window", "label": "Recent conversation", "kind": "store", "rank": 2, "col": 1,
+     "ref": "src/jarvis/core/window.py"},
+    {"id": "tools", "label": "Tools through the gateway", "kind": "guard", "rank": 3, "col": 0},
+    {"id": "approve", "label": "You approve a change", "kind": "person", "rank": 3, "col": 1},
+    {"id": "reply", "label": "Reply shown and saved", "kind": "step", "rank": 4, "col": 0,
+     "ref": "src/jarvis/core/saving.py"},
+    {"id": "pages", "label": "Full book, page by page", "kind": "store", "rank": 2, "col": 2,
+     "ref": "src/jarvis/api/static/console-book-pages.js"}
+  ],
+  "edges": [
+    {"from": "you", "to": "console"},
+    {"from": "console", "to": "brain"},
+    {"from": "window", "to": "brain", "label": "context", "style": "side"},
+    {"from": "brain", "to": "tools", "label": "a tool is needed"},
+    {"from": "tools", "to": "approve", "label": "a change", "style": "side"},
+    {"from": "tools", "to": "reply"},
+    {"from": "console", "to": "book", "style": "side"},
+    {"from": "book", "to": "pages", "label": "how it is built", "style": "side"}
+  ]
+}

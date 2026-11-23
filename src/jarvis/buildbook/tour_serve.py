@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from jarvis.buildbook.model import Audience, Book
-from jarvis.buildbook.tour_model import TOUR_LINE_ID, AudienceTour, TourScene
+from jarvis.buildbook.tour_model import TOUR_LINE_ID, AudienceTour, Tour, TourScene
 
 TOUR_LINE = re.compile(TOUR_LINE_ID)
 KIN = ("h", "his", "by")  # lines.render's words: the honorific, its possessive, the credit
@@ -38,7 +38,7 @@ def render(text: str, words: Mapping[str, str]) -> str:
 
 
 def _own(book: Book, audience: Audience) -> AudienceTour | None:
-    tour = getattr(book, "tour", None)
+    tour: Tour | None = getattr(book, "tour", None)  # an older book (or a stand-in) has none
     if tour is None:
         return None
     return tour.owner if audience == "owner" else tour.guest

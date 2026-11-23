@@ -1,0 +1,35 @@
+{
+  "title": "Where your data lives and how it comes back",
+  "dir": "down",
+  "nodes": [
+    {"id": "you", "label": "You save something", "kind": "person", "rank": 0, "col": 0},
+    {"id": "key", "label": "Its own key, if private", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/keyring.py"},
+    {"id": "off", "label": "No key: feature stays off", "kind": "step", "rank": 1, "col": 1},
+    {"id": "store", "label": "One small store port", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/storage/docs.py"},
+    {"id": "firestore", "label": "Firestore database", "kind": "store", "rank": 3, "col": 0,
+     "ref": "src/jarvis/storage/firestore_docs.py"},
+    {"id": "secrets", "label": "Secret Manager", "kind": "service", "rank": 2, "col": 2,
+     "ref": "deploy/cloudrun.sh"},
+    {"id": "privacy", "label": "Privacy: export, delete", "kind": "person", "rank": 4, "col": 1,
+     "ref": "src/jarvis/api/privacy.py"},
+    {"id": "copy", "label": "Daily copy by Google", "kind": "service", "rank": 4, "col": 0,
+     "ref": "deploy/backup_setup.sh"},
+    {"id": "drill", "label": "Monthly restore drill", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/backup/drill.py"},
+    {"id": "proven", "label": "Copy proven, then removed", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/backup/verify.py"}
+  ],
+  "edges": [
+    {"from": "you", "to": "key"},
+    {"from": "key", "to": "off", "label": "no token key", "style": "side"},
+    {"from": "key", "to": "store"},
+    {"from": "secrets", "to": "key", "label": "token key", "style": "side"},
+    {"from": "store", "to": "firestore"},
+    {"from": "firestore", "to": "privacy", "style": "side"},
+    {"from": "firestore", "to": "copy"},
+    {"from": "copy", "to": "drill"},
+    {"from": "drill", "to": "proven"}
+  ]
+}

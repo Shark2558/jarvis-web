@@ -1,4 +1,4 @@
-Version v6.3.1 · 23 Nov 2026, 20:36 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
+Version v6.3.2 · 23 Nov 2026, 20:51 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
 
 # R6.3 combined review of I1 (fresh context, 23 Nov 2026)
 
@@ -10,7 +10,9 @@ Reviewed: `r6-3-i1` @ `bbb9aa8` (the four parts joined and wired) against `main`
 the reviewer fixes what it finds (section "Fix"). Besides reading, the writer's packs were built on
 this checkout's REAL `source.zip` and fact pack (`gen.write.build`, outside the repository).
 
-**Verdict: BLOCK until fixed** (two HIGH), then approve. CRITICAL 0 · HIGH 2 · MEDIUM 4 · LOW 10.
+**Verdict: BLOCK until fixed** (two HIGH), then approve. CRITICAL 0 · HIGH 2 · MEDIUM 5 · LOW 11
+(M-5 and L-11 were found while fixing; see "Fix"). **After the fixes: APPROVE**: every
+CRITICAL, HIGH and MEDIUM fixed, seven LOW fixed, three declined with their reasons.
 
 What holds, checked route by route: every spending grant is his typed `YES` on the server's ₹ words
 (trial on its `we_` estimate, ₹100 from `Caps().trial`, never the pick's; the pick's grants on a
@@ -119,6 +121,22 @@ not an identifier), `plan_sections` one combined pattern, the scrubbed block tex
 release in the runner; the estimate's sizes are built in a worker thread
 (`asyncio.to_thread`), so the loop never waits on them.
 
+### M-5 · R6's browser tests are red on the joined branch (found while fixing L-6)
+
+**Evidence.** Since I0 the Book panel asks `GET /v1/book/writer` at its first open and
+`GET /v1/book/pages` once an owner session is open (`console-book.js`'s `more()`, C's modules).
+R6's page-route mock `tests/browser/book_mocks.FakeBook._route` answers neither and falls through
+to 404, and R6's files fail their "no console error" check: `test_book_panel.py` 5 of 13 red here
+(the browser's "Failed to load resource: 404 … /v1/book/writer"). Its other users
+(`test_book_lock_ui.py`, `test_book_show*.py`, `test_r62_book_listen.py`) share the mock. I1 ran
+C's and D's browser files only.
+
+**Why it matters.** CI's browser job runs every file on the pull request: it would be red.
+
+**Fix.** The mock answers both as a server whose writer is off (`{"on": false}`, a pages index
+with no parts), so both modules draw nothing; C's files still send those routes on to C's fake
+server (`r63_fakes_c.route_c`, registered after the mock).
+
 ## LOW
 
 | Id | Evidence | Why it matters | Fix |
@@ -133,6 +151,7 @@ release in the runner; the estimate's sizes are built in a worker thread
 | L-8 | `writer/caps.py:247-259`: a stale hold settles into the ledger, not into billing | after a crash mid-call the % line (Vitals month + open holds) misses that one call | **declined**: the run and month caps count it (`runs[kind]`); writing a maybe-unbilled call into Vitals would overstate his bill; at most one call (₹11.84 worst case) a crash |
 | L-9 | `writer/privacy.py:82-95` does not wait for a step in flight | a draft or trial page that step keeps can land after Privacy → Delete | **declined**: the writer's document (the grants) is gone, so the step's next page reads no run and nothing more is spent; what landed is ids and sealed blobs, swept at 30 days (`drop_old`) |
 | L-10 | `api/r6_wiring.py:128` `wire_book` is 51 lines with the writer's one line | over the 50-line rule by one | **declined**: R6's function (its body 38 lines, the signature 11); splitting it moves R6's wiring order for no behaviour |
+| L-11 | `api/book_writer.py:57-61`: with the writer off (no keyring, `setup_failed`) `GET /v1/book/writer` is 503 | the browser logs one "Failed to load resource" line at each Book panel open | **declined** for R6.3: no behaviour or data at stake; R6's own status route answers a plain 200 `{available: false}` for this, and the writer's view could do the same in R6.4 |
 
 Seen and not findings: `judge`'s tier check compares the tier the writer asked for (the model
 check is the one that refuses a resolved fallback); the trial's estimate prices the paid brain
@@ -141,10 +160,30 @@ page list (pages of that release that are no longer in it are not shown).
 
 ## Fix
 
-(Filled as the fixes land: finding → commit.)
+Each fix had its test first (red for the reason the finding names, then green); only the files a
+fix touched were run with it. New tests: `tests/test_r63_review_i1.py` (one or more a finding),
+`tests/browser/test_book_panel.py::test_the_section_counts_say_1_plan_never_1_plans`, and the
+trial's browser cases in `tests/browser/test_r63_c_trial.py`.
+
+| Finding | Commit | What changed |
+|---|---|---|
+| H-1, H-2 | `b8d36b1` | `packs.member_name` takes R6's snapshot root off in `read_source` and `carry.tree_of`; `readable` refuses a `.claude` folder at any depth. On this checkout's real build: 2,855 of the 3,032 page references found (the rest are folders, vendored or binary files a pack never reads), the guide and its 73 cards found, 0 `.claude/**` and 0 `tests/**` members readable |
+| M-4 | `720be3a` | `_mentioned` reads the text's word runs once, `plan_sections` one pattern, each release's scrubbed blocks cached in the runner, the estimate's and the step's packs built in a worker thread: 153 packs 183 s → 30 s, never on the event loop (the first write's estimate still takes about 30 s once a release; cached after) |
+| M-1 | `311383f` | `book_writer.answered()` (both routers): `BookError` and `CapRefused` → 503 `unavailable` in words, `no-store`, logged by type |
+| M-2 | `671e9e4` | `write_text`: any exception after text or usage arrived is a cut call; before anything, `WriterUnavailable("no_answer")` |
+| M-3 | `9a65e10` | the cap raises are one sentence (`texts.RAISE_WORDS` + `RAISE_ONE`, `texts.listed`); `grants` never cuts (five lines at most) |
+| L-1, L-2, L-3, L-7 | `860bd9b` | pages: `console_only` after the book session; `_start` refuses `running` inside its transaction; the free work's failure logged (`free_failed`) and the clock step still runs; `texts.pages_words` ("1 page") in the sealed notice and the run's words |
+| L-4, L-5 | `400e4d0` | `TrialRow.title` (a seam addition, default "") filled from the fact pack and shown by the console (the id's words only as a fallback); the console's own "may learn" line removed from the trial's YES box |
+| L-6 | `6b5fdff` | the reader's `count(n, one, many)` for every section summary |
+| M-5 | `eae6683` | `book_mocks.FakeBook` answers `GET /v1/book/writer` and `GET /v1/book/pages` as a server whose writer is off |
+| L-8, L-9, L-10, L-11 | — | declined, the reasons in the table above |
+
+Seam note (for `INTEGRATION-B.md`/`-C.md` readers): `writer/http.TrialRow` has one new optional
+field, `title`; I0's fake server leaves it "", C's fake fills it.
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v6.3.2 | 23 Nov 2026, 20:51 IST | R6.3 | The fixes: H-1, H-2, M-1 to M-5 and L-1 to L-7 fixed with their commits; M-5 and L-11 added (found while fixing); L-8 to L-11 declined; verdict after the fixes APPROVE | 🛠 Mark XXIV |
 | v6.3.1 | 23 Nov 2026, 20:36 IST | R6.3 | First edition: the combined security, code and Python review of I1 @ `bbb9aa8`, block until the two HIGH are fixed | 🛠 Mark XXIV |

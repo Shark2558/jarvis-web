@@ -48,8 +48,9 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
    before your monthly limit in Vitals would pass **80 %**. The **first full write** (about 152 pages)
    starts only after a **second typed YES** with its estimate: **about ₹1,120** (₹770–1,560) with
    Claude, ₹0 with Gemini.
-5. **Nothing spends money by itself after a deploy.** At each new release the Book works out which
-   pages changed and shows the estimate (a feature release: about ₹300, ₹130–620; a hotfix: under
+5. **Nothing spends money by itself after a deploy.** At each new release the Book carries every
+   unchanged AI page to it for free (so no page is lost if you skip updates), works out which pages
+   changed and shows the estimate (a feature release: about ₹300, ₹130–620; a hotfix: under
    ₹30); it writes them only when you tap **Update** and type YES on its ₹. You may instead let it
    update by itself within the ₹500 cap: off unless you turn it on, and turning it on takes your typed
    YES on "up to ₹500 a release and ₹1,000 a month, with no question asked".
@@ -69,9 +70,10 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
    voice, if you switch to it, uses the free allowance first (about 94 tours a month, shared with the
    console's spoken replies), then about ₹27 a tour. A guest never
    costs you anything.
-10. **Storage.** One release's book and code now take **10.0 MB** (measured today; 7.98 MB at Phase A);
-    three kept are about 30 MB of the 60 MB cap. The AI pages add about 0.5 MB a release. A warning
-    comes at 80 % (48 MB) before anything has to be dropped.
+10. **Storage.** One release's book and code now take **9.5 MiB** (10.0 MB; measured today; 7.98 MB
+    at Phase A); three kept are about 28.6 MiB of the 60 MiB cap (the cap counts MiB). The AI pages
+    add about 0.5 MiB a release, kept beside the books. A warning comes at 80 % (48 MiB) before
+    anything has to be dropped.
 11. **What follows in R6.3.1.** Pictures of every module from a made-up demo household (you approve a
     **contact sheet** of all of them first: **approval stop 3**), storing the code and pictures once
     instead of once per release, eight diagrams with part numbers, and a local setup guide that is
@@ -119,7 +121,7 @@ case of the same name runs it through the wired app at I1.
 | The trial, the pick, the caps and the two typed YES | X costs · Finance & Analytics | 7 | Build now |
 | The full book in the owner's reader, "continue where I left off" | L8 rich output · Learning | 7 | Build now |
 | The short tour (fixed script, seven highlights, timer) in the existing player | L8 · Learning | 7 | Build now |
-| The AI pages sealed as a third file of a release, the 80 % storage warning | L7 data · Security Advisor | 7 | Build now |
+| The AI pages sealed one file a release in their own index beside R6's, carried free at every release, the 80 % storage warning | L7 data · Security Advisor | 7 | Build now |
 | Module pictures, the demo household, the OCR privacy gate, de-duplicated storage, 8 diagrams with C-ids, the local setup guide | L8, L7, X | 7 | R6.3.1 |
 | The Book's new look, the guest-safe full book, search, print | L8 | 7 | Later (R6.4) |
 
@@ -720,46 +722,95 @@ false` must carry "From repo configuration" or "Unverified". (5) **No invented f
 claim sentence in `how` cites a reference; a guide §11 (PLANNED) item may appear only under a
 "Planned" heading. (6) **Shape**: the six sections, their caps, no HTML, no link outside the allow
 list. **Content gaps closed in R6.3 (A):** G2 (C57's outside services, at I0 in the guide), G3 (the
-book's integrations are the guide's 31, not 15), G4 (limitations: all of them, the reader pages them;
-`MAX_LIMITATIONS` stays the cap of the first page and the rest say "+N more"), G5 (D2b), G6 (D2a), G7
+book's integrations are the coverage checker's 31, not 15, M7), G4 (limitations: all of them go into
+`facts.json` `limitations`, and the full book's "What's planned" chapter page lists them all, paged;
+`book.json` keeps its first 80 as today, `Book.limitations` with `MAX_LIMITATIONS`, `model.py:235`,
+unchanged; the reader's limitations section adds one line "+N more in the full book" from
+`GET /v1/book/pages`'s `limitations {shown, total}`, in C's `console-book-reader.js`, H4), G5 (D2b), G6 (D2a), G7
 (costs: GitHub Actions on a public repository marked Unverified; Firestore's daily free reads, writes
 and deletes listed from `FREE_TIER`), G8 (above). G9, G10, G14 are R6.3.1's.
 
-**D11 · Sealing the AI pages: a third file of the release.** When a run's pages are all written (or
-stopped), B assembles the release's **pages file** (`PagesFile {v: 1, release, pages: [page with
-filled text and meta], templates: [the AI text with placeholders], skipped: [page id, why]}`, gzipped
-JSON, cap 2 MiB, ≈ 0.5 MB expected) and **attaches** it to the already-sealed release
-(`seal_attach.py`, B): `FileKind` += `"pages"`, `SealedRelease.files` 2–3, the same `BookCrypto`
-envelope and AADs (no new keyring purpose), one transaction on the index, the 60 MB cap counting it.
-The sealer's two CI files and `checked_files` are unchanged. A release with no pages file reads as
-"not written by AI". **Carry forward:** an update opens the previous release's pages file, carries
-every unchanged page's template, refills its facts from the new release, and writes only the changed
-pages (D12). Notices: `book_sealed` gains words for "The AI-written pages for R6.3 are sealed (152
-pages, about ₹1,030)" and `book_seal_failed` for "The AI writer stopped: <plain reason>" (owner
-only, content-free beyond counts and ₹). **The 80 % warning:** when the sealed total passes 80 % of
-`book_max_total_mb` (48 MB of 60), the Book panel says so with the sizes, and the sealer's notice
-says it once a release; nothing is dropped without the existing oldest-first rule.
+**D11 · Sealing the AI pages: one pages file a release, in its own sealed index beside R6's.** When a
+run's pages are all written (or stopped), B assembles the release's **pages file** (`PagesFile {v: 1,
+release, pages: [page with filled text and meta], templates: [the AI text with placeholders],
+skipped: [page id, why]}`, gzipped JSON, cap 2 MiB, ≈ 0.5 MB expected). **Where (plan review M4):**
+not in R6's index but in its own sealed index document `{prefix}book_pages/{uid}` (`PagesIndex {v: 1,
+files, pending, orphans}`), sealed under the keyring's existing `book_index` purpose with its own AAD
+`book/pages/{uid}/v1` (no new purpose), its chunks in `{prefix}book_pages/{uid}/book_chunks` with
+R6's chunk envelope (`BookCrypto.seal`, `BookChunks`, `seal_index.py:69–81`). R6's index,
+`SealedRelease`, `FileKind`, `seal.py`, `seal_index.py`, `sealer.py`, `seal_notices.py`,
+`seal_words.py`, `privacy.py`, `ports.py` and `api/book.py` stay exactly as they are. Why: every R6
+index model forbids extra keys (`sections.py:58–59`), `files` is exactly two of `book` and `source`
+(`model.py:277–284`), and `_decode` turns any `ValidationError` into `VaultTampered`
+(`seal.py:90–100`), so a pages entry in R6's index would make every pre-R6.3 revision (a traffic
+rollback, or the old instance during a rollout) raise a false tamper alarm and stop sealing; and
+`read()` would hit a bare `next()` for a release without a pages file (`model.py:291`). An older
+revision never reads the pages index. **The pages vault** (B's `writer/vault.py`): `put(uid, rid,
+data, now)` is **attach or replace** in ONE transaction on the pages index (chunks written first as
+`pending`, the index last; a replace moves that release's old chunk set to `orphans`, R6's prune
+pattern, so the newest pages file of a release always wins: plan review H3); every write checks
+R6's Privacy hold in the same transaction (`seal_state.lease_path`, `held_of`, as `seal.py:116–121`),
+so an attach in flight when Privacy → Delete lands is refused (`SealHeld`) and its chunks go;
+`read(uid, rid)` gives the bytes or `LookupError`; a pages file whose release is not in R6's index
+is never served. **Storage:** an attach is refused when R6's sealed total plus the pages files would
+pass `book_max_total_mb` (60 MiB, L9); R6's sealer does not see the pages files (it is not edited),
+so the total can pass 60 MiB by at most the kept pages files (≈ 1.5 MiB expected, 6 MiB at the
+2 MiB cap). **The sweep** (the writer's free work, D5) drops a pages file whose release has left
+R6's index, except the newest one while R6's index still holds a release (the carry source), and
+every one once R6's index is empty (after Privacy → Delete of the sealed books). **The free carry at
+each new release (H3):** when `book_write` first sees a new current release sealed in R6's index, it
+builds that release's pages file **with no brain call**: every unchanged page carried from the
+newest pages file with its facts refilled from the new release, every changed or new page as the
+generator's text labelled "Changed in this release: waiting for your Update"; only then does it
+work out `update_ready` and its ₹ (D12). So releases and hotfixes sealed without an Update lose no
+AI page (R6's prune of three, `sealer.py:140–145`, `KEEP = 3`, takes a pages file only with its
+release, and the newest always carries the rest). **Continuing** a run that stopped (a cap, Stop or a
+new release, D12) replaces that release's pages file with the fuller one. A release with no pages
+file reads as "not written by AI". **Notices** are the writer's own, sent through the notifier with
+R6's kinds and claimed in `book_writer/{uid}` `told` per (release, what), never in R6's per-release
+"told" claim (`seal_notices.py:88`, which would swallow a second `book_sealed` for the same
+release): `pages` "The AI-written pages for R6.3 are sealed (152 pages, about ₹1,140)", `update`
+"The AI pages wait for your Update (about ₹300)", `storage` "The build books use 48 of 60 MiB
+(80 %): …", and `book_seal_failed` "The AI writer stopped: <plain reason>" (owner only, content-free
+beyond counts and ₹). **The 80 % warning:** when R6's sealed total plus the pages files pass 80 % of
+`book_max_total_mb` (48 MiB of 60), `GET /v1/book/writer` `storage {used_mib, pages_mib,
+limit_mib, warn}` says so and C shows the line at the top of the Book panel (C's module loads at the
+panel's first open, whether or not the writer is used); the `storage` notice says it once a
+release; nothing is dropped beyond the existing oldest-first rule.
 
 **D12 · Release updates: nothing spends by itself after a deploy.** When a new release seals, the
 writer works out (free, local) which pages changed: a page is **changed** when any file it cites
-changed content (by SHA-256 inside the two `source.zip`s), its card's text changed, or it is new;
-otherwise it is carried (D11). It stores `update_ready {release, estimate_id, pages, inr}` and the
-seal notice adds "The AI pages wait for your Update (about ₹300)". Nothing is called until he taps
-**Update** in the Book panel and types YES on its ₹ (`POST …/update {typed: "YES", estimate_id}`)
-or he turned "update by itself" on with its own YES (D7; then only within the release cap). A hotfix
-(1–3 pages, under ₹30) is the same rule. If he never updates, the reader shows the last release's AI
-pages for unchanged parts and the generator's text, labelled, for changed ones.
+changed content (by SHA-256 inside the two `source.zip`s; a directory reference counts every file
+under it), its card's text changed, or it is new; otherwise it is carried (D11's free carry, done at
+once). It stores `update_ready {release, estimate_id, pages, inr}` and its `update` notice says
+"The AI pages wait for your Update (about ₹300)". Nothing is called until he taps **Update** in the
+Book panel and types YES on its ₹ (`POST …/update {typed: "YES", estimate_id}`) or he turned
+"update by itself" on with its own YES (D7; then only within the release cap and the month cap). A
+hotfix (1–3 pages, about ₹15) is the same rule. **More than a release's worth (H3):** an update
+whose estimate passes the release cap, or one with nothing to carry from (no pages file left, as
+after Privacy → Delete), is never a tap and never "by itself": `POST …/update` answers 409
+`use_first`, and it goes through `POST …/first` with its own estimate and typed YES (D7). **A run
+across a deploy (plan review M5):** every run is bound to its release id; when the current release
+changes, the next step stops the run ("a new release came"), seals what it wrote into its own
+release's pages file (`skipped` lists the rest), the free carry builds the new release's file from
+it, and the pages left plus the new release's changed pages join the new release's estimate with its
+own YES. A YES never carries to another release. If he never updates, the reader shows the newest
+pages file: AI pages for unchanged parts and the generator's text, labelled, for changed ones.
 
 **D13 · Who sees what, and how it is deleted.** The writer's routes are **owner and console-only**
 (`book_gate.console_only`, a signed-in browser; never a guest, never token mode); the pages routes
 need an **owner** book session (`X-Jarvis-Book`, audience owner; a guest session gets 403
-`owner_only`). A guest's show is the tour with no ₹ and no costs scene (D9); the trial's pages never
-enter a `SealedRelease` and are never in a guest session's reach. Privacy: R6's `book_sealed` row
-counts the pages files; a new row **"Build book: writer"** (trial pages, drafts, the pick, the
-consents; the ₹ ledger stays 13 months as numbers, like `tryon_spend`) deletes with his passkey and
-stops any run. Logs never hold page text, pack text, a prompt or a reply (the Book's AST log scan,
-`test_book_boundaries.py`, extended to `writer/`); the audit records each run's start, stop, YES and
-pick by ids and ₹ only.
+`owner_only`). **Primary owner only (L11):** the writer's job and routes serve
+`identity.primary_user_id` like `BookSealJob` (`sealer.py:259–275`); another owner e-mail gets 403
+`not_primary`. A guest's show is the tour with no ₹ and no costs scene (D9); the trial's pages never
+enter a release and are never in a guest session's reach. Privacy: R6's `book_sealed` row is
+unchanged (it counts R6's index); a new row **"Build book: writer"** (the pages files with their
+count and MiB, trial pages, drafts, the pick, the consents; the ₹ ledger stays 13 months as numbers,
+like `tryon_spend`) deletes with his passkey and stops any run. After Privacy → Delete of the sealed
+books the pages files are unreadable at once (their releases are gone) and the sweep drops them on
+its next run; writing them again is a new first write with its own YES (D12). Logs never hold page
+text, pack text, a prompt or a reply (the Book's AST log scan, `test_book_boundaries.py`, extended
+to `writer/`); the audit records each run's start, stop, YES and pick by ids and ₹ only.
 
 **D14 · The reader: the full book in today's look, and "continue where I left off".** C's
 `console-book-pages.js` adds **Full book** to the Book panel's reader beside the eight sections:
@@ -777,12 +828,13 @@ test).
 
 | Collection / file | Part | Holds | Sealed | Kept |
 |---|---|---|---|---|
-| `book_writer/{uid}` | B | the pick `{brain, caps {trial, first, release, month, limit_pct}, auto_update, picked_at, confirmed {brain, caps, auto_update, terms_id, at}}` (`confirmed` starts with every cap 0, no brain and `auto_update` false: what his last typed YES granted, H2); consents `{trial, first}: {at, estimate_id, release}`; the run `{kind trial\|first\|update, release, estimate_id, state queued\|running\|paused\|done\|stopped, why, total, done, failed, started_at, ended_at}`; `update_ready {release, estimate_id, pages, inr_mid}`; `rev` | no (ids, enums, numbers) | until deleted |
+| `book_writer/{uid}` | B | the pick `{brain, caps {trial, first, release, month, limit_pct}, auto_update, picked_at, confirmed {brain, caps, auto_update, terms_id, at}}` (`confirmed` starts with every cap 0, no brain and `auto_update` false: what his last typed YES granted, H2); consents `{trial, first}: {at, estimate_id, release}`; the run `{kind trial\|first\|update, release, estimate_id, state queued\|running\|paused\|done\|stopped, why, total, done, failed, started_at, ended_at}`; `update_ready {release, estimate_id, pages, inr_mid}`; `told {release: [pages \| update \| storage]}` (the writer's own notice claims, D11); `seconds {brain: [the last 20 calls' seconds]}` (the p90 window, D5); `rev` | no (ids, enums, numbers) | until deleted |
 | `book_write_lease/{uid}` | B | `{holder, until}` (60 s) | no | while held |
 | `book_write_spend/{uid}_{YYYY-MM}` | B | `spent_inr, held_inr, holds {call_id: {inr, at, run, page}}, runs {trial, first, update_<rid>: spent}, calls, refused` | no (numbers only) | 13 months |
 | `book_drafts/{uid}_{rid}_{page}` | B | one page's draft: `{page, attempt, state ok\|failed, checks [code], meta, blob}` (the text and template, `BookCrypto` under the release id and a fresh `bf_` file id) | blob only | until the run's pages file is sealed, ≤ 30 days |
 | `book_trial/{uid}_{nn}` | B | `nn` 01–10: one trial page, `{brain, page, attempt, checks, meta, seconds, inr, blob}` | blob only | 30 days, or until he deletes, re-runs or picks |
-| the release's pages file | B | `PagesFile {v, release, pages [id, kind, title, part, chapter, sections [{id, heading, text, refs}], meta], templates, skipped}`, gzipped JSON ≤ 2 MiB, a third `SealedFile` of kind `pages` in `book/{uid}`'s index, chunks in `book/{uid}/book_chunks` | yes (R6's envelope) | with its release (KEEP 3) |
+| the release's pages file | B | `PagesFile {v, release, pages [id, kind, title, part, chapter, sections [{id, heading, text, refs}], meta], templates, skipped}`, gzipped JSON ≤ 2 MiB, one a release, chunks in `book_pages/{uid}/book_chunks` | yes (R6's chunk envelope) | while its release is in R6's index (KEEP 3); the newest stays as the carry source while any release is kept |
+| `book_pages/{uid}` | B | the pages index `PagesIndex {v, files [{release, fid, size, sha256, count, dek, sealed_at, written, changed, skipped}], pending, orphans}` (M4: R6's `book/{uid}` index is never touched) | yes (`book_index`, AAD `book/pages/{uid}/v1`) | until deleted (the writer's Privacy row) |
 | `_book/facts.json` (CI, in the image) | A | D2's fact pack and D3's pages index, ≤ 1 MiB | no (public, package data) | with the image |
 | `book.json` `tour` (CI) | D | the filled tour per audience, its seconds, words and characters | as `book.json` | with its release |
 
@@ -803,7 +855,7 @@ show-only browser, which the guest lock already refuses). **Owner session** rout
 
 | Route | Part | What |
 |---|---|---|
-| `GET /v1/book/writer` | B | **console**; on or off and why (`no_key`, `no_ai`, `no_brain`); the brains offered (id, label, `trains_on_content`, the balanced model's name from the registry, "not set up" when missing); the trial (state, pages done, ₹ spent, results' ids); the pick; the run (kind, done / total, ₹ spent / cap, why stopped); `update_ready`; the month (Book ₹, his limit, 80 % line) |
+| `GET /v1/book/writer` | B | **console**; on or off and why (`no_key`, `no_ai`, `no_brain`); the brains offered (id, label, `trains_on_content`, the balanced model's name from the registry, "not set up" when missing); the trial (state, pages done, ₹ spent, results' ids); the pick; the run (kind, done / total, ₹ spent / cap, why stopped); `update_ready`; the month (Book ₹, his limit, 80 % line); `storage {used_mib, pages_mib, limit_mib, warn}` (D11's 80 % line, so `api/book.py` stays unchanged) |
 | `GET /v1/book/writer/estimate?run=trial\|first\|update` | B | **console**; `Estimate {id, run, brain, pages, low, mid, high, hold, cap, minutes_low, minutes_high, gst_note, sent_to}`; ₹ only |
 | `POST /v1/book/writer/trial` | B | **console**; `{typed, estimate_id}` → the trial queued; 422 `not_yes`; 409 `estimate_changed`, `running`; 503 `no_brain`, `no_ai` |
 | `PUT /v1/book/writer/pick` | B | **console**; `{brain, caps, auto_update, typed?, terms_id?}`; 422 `bad_cap`, `unknown_brain`, `not_offered` (price unknown, M2), `not_yes`, and `yes_needed` with `{terms_id, words}` when the pick grants more than `confirmed` (the first pick, a cap raised, a paid brain, a training brain, "update by itself" on: H2), nothing saved; 409 `terms_changed`; audited by field names and `yes_confirmed`, never values |
@@ -812,7 +864,7 @@ show-only browser, which the guest lock already refuses). **Owner session** rout
 | `POST /v1/book/writer/stop` | B | **console**; stops the run after the calls in flight (their holds settle); the pages written stay as drafts and are sealed as a partial pages file with `skipped` |
 | `POST /v1/book/writer/step` | B | **console**; one step (D5), ≤ 45 s, at most one at a time (409 `busy`), 6 a minute; → the run's view |
 | `GET /v1/book/writer/trial/pages` · `GET …/trial/pages/{nn}` · `DELETE /v1/book/writer/trial` | B | **console**; the side-by-side list (page, brain, checks, ₹, seconds) · one trial page (sections and meta) · delete the trial |
-| `GET /v1/book/pages?release=` | B | **owner session**; the index: parts → chapters → pages `{id, kind, title, written: meta \| null}` for that kept release |
+| `GET /v1/book/pages?release=` | B | **owner session**; the index: parts → chapters → pages `{id, kind, title, written: meta \| null, changed: bool}` for that kept release, and `limitations {shown, total}` (G4) |
 | `GET /v1/book/pages/{id}?release=` | B | **owner session**; one page (sections, refs, meta), or the generator's text labelled "Not written by AI yet"; 404 `no_page` |
 | `GET /v1/book/show/script` (existing) | D | adds `kind: "tour" \| "show"` and, for a tour, its scenes for the session's audience (owner-only scenes and lines removed for a guest) and `seconds` |
 
@@ -832,7 +884,7 @@ confirm). The writer's brain calls carry `tools=None`.
 | Part | Failure modes and handling | Security and privacy | ₹ a month |
 |---|---|---|---|
 | A · Facts and generator | a fact source missing or not a literal → `GenError` with one plain line (the deploy goes on, as today: `--best-effort`); a card in no module → `GenError`; facts over 1 MiB → `GenError`; the counter meets an unreadable file → counted as "unreadable", never guessed | stdlib only, no network; the scrubber's new kinds guard `book.json` too; the index lists paths and names, never file content | 0 |
-| B · The writer | No-AI → paused, said so; breaker open or 5xx → this page waits (no laptop, no tier change); 429 → the step ends, next tick; a cut stream → settled at the hold, redrafted once; a failed check → redraft once, then the previous text; the cap, the month cap or 80 % → stopped, said so; a lost lease → the step ends; an unreadable ledger or limit → refused (fail closed); an unreadable previous pages file → the update rewrites those pages (with its estimate) | packs from public files only, scrubbed, fenced, same for both brains; no tools; nothing personal read (static guard); page text sealed; logs content-free; console-only consent and spend; the audit by ids and ₹ | trial ≤ ₹60 once; first write ≤ ₹1,500 once; ≤ ₹500 a release, ≤ ₹1,000 a month (Claude); ₹0 (Gemini) |
+| B · The writer | No-AI → paused, said so; breaker open or 5xx → this page waits (no laptop, no tier change); 429 → the step ends, next tick; a cut stream → settled at the hold, redrafted once; a failed check → redraft once, then the previous text; the cap, the month cap or 80 % → stopped, said so; a lost lease → the step ends; an unreadable ledger or limit → refused (fail closed); an unreadable pages index or file → those pages show the generator's text and the next write is `POST …/first` with its own typed YES, never a tap (H3); a new release during a run → stopped, sealed, joined to the new estimate (M5) | packs from public files only, scrubbed, fenced, same for both brains; no tools; nothing personal read (static guard); page text sealed; logs content-free; console-only consent and spend; the audit by ids and ₹ | trial ≤ ₹60 once; first write ≤ ₹1,500 once; ≤ ₹500 a release, ≤ ₹1,000 a month (Claude); ₹0 (Gemini) |
 | C · Console | a route refusal → its `detail` in the line under the button; offline → "Can't reach JARVIS…"; a stale estimate → asks again | `textContent` only; the YES box never pre-filled; no ₹ sent from the page is trusted (the server re-estimates) | 0 |
 | D · The tour | no tour in an older book → today's 11 scenes; a missing fact → the generator refuses (CI) | a guest's tour has no ₹ and no owner-only line, in the served script and in what speak reads (tested through the route, H1); lines served by id only | 0 (browser voice); Cloud voice ≈ ₹27 a tour after the free allowance (owner only; guests free-only) |
 
@@ -863,8 +915,9 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
   inside the free 1 GiB; R14's backups ≈ ₹0.1 a month more. No new Scheduler job, secret or resource.
 - **The tour's voice:** ₹0 with the browser's (the default); with the Cloud voice ≈ 94 tours a month
   free (shared with the console's spoken replies), then ≈ ₹27 a tour; a guest is never charged.
-- **Storage:** one release 10.0 MB + ≈ 0.5 MB of AI pages; three kept ≈ 31.5 MB of 60 (53 %); the 80 %
-  warning at 48 MB (D11). R6.3.1's pictures need its de-duplication to stay under the cap (its section).
+- **Storage** (MiB, as `book_max_total_mb` counts: `sealer.py:86` `limit_mb * MIB`; L9): one release
+  9.54 MiB (10.0 MB) + ≈ 0.48 MiB of AI pages; three kept ≈ 30.1 MiB of 60 (50 %); the 80 % warning
+  at 48 MiB (D11). R6.3.1's pictures need its de-duplication to stay under the cap (its section).
 
 ## The I0 seam list (branch `r6-3-i0`; the integrator owns these files)
 
@@ -877,11 +930,14 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
    change on a transient error, the model reported is `resolve(tier)`, a cut stream reported as cut,
    `BrainOff` under No-AI, prices only through `pricing`) and its fake in `tests/r63_fake_brains.py`.
 3. **Types**: `buildbook/writer/model.py` (pages, sections, meta, pick, caps with defaults and bounds,
-   runs, estimates, views; ≤ 400), `buildbook/tour_model.py` (`TourBeat`, `TourScene`, `Tour`; ≤ 200);
-   `buildbook/model.py` `FileKind` += `"pages"`, `SealedRelease.files` 2–3, `Book.tour: Tour | None =
-   None`, `Release.facts_sha256: str | None = None` (≤ +8 lines; old books and indexes still load: a
-   test on `47ee8fc`'s real `book.json` and a two-file index); `seal_index.py` `ATTACHABLE =
-   ("pages",)` and `CAPS["pages"]`.
+   runs, estimates, views, `PagesFile`, `PagesIndex` and its entry; ≤ 400), `buildbook/tour_model.py`
+   (`TourBeat`, `TourScene`, `TourPicture`, `Tour`; ≤ 200); `buildbook/model.py` `Book.tour: Tour |
+   None = None`, `Release.facts_sha256: str | None = None` (≤ +4 lines; old books still load: a test
+   on `47ee8fc`'s real `book.json`; a newer sealed `book.json` read by an older revision is already
+   409 `unreadable`, never a tamper alarm, `api/book.py:184–188`). **Not edited** (M4, D11):
+   `FileKind`, `SealedRelease`, `seal_index.py`, `seal.py`, `ports.py`, `sealer.py`,
+   `seal_notices.py`, `seal_words.py`, `privacy.py`, `api/book.py`. I0's test: an index written
+   after a pages seal still opens with a copy of `47ee8fc`'s `BookIndex` model (the rollback reader).
 4. **The module map** `buildbook/gen/modules.py` (18 modules, D3; the check "every card in exactly
    one"), read by A and D.
 5. **Generator joins** (`gen/write.py`, `gen/__main__.py`, `gen/runner.py`, `release.py`): `facts =
@@ -935,7 +991,7 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
 14. **The guide** (`docs/architecture/JARVIS-Architecture.md`): C57 ("What it does" with the AI pages
     and the tour; "Outside services": the writer's brain, Anthropic or Gemini (free), only after the
     owner's YES; Google Text-to-Speech and Speech-to-Text only when Cloud voice is chosen; the talk
-    brain; G2), its data (the five new collections), §6.2, §6.5 ("Anthropic or Gemini (free): the
+    brain; G2), its data (the six new collections), §6.2, §6.5 ("Anthropic or Gemini (free): the
     release's public code and facts, for the Book's writer"), the edition line and change log;
     `scripts/arch_coverage.json` if the checker needs it.
 15. **The roadmap (§11)** refreshed with the Workshop's current release rows (R6.3.1, R6.4 and what
@@ -957,13 +1013,17 @@ first; only the planned collections, routes and job; never a wiring or shared fi
   repository after every module.
 - **B · The writer** (D1's use, D4–D8, D10's checks, D11, D12, D13): `buildbook/writer/{packs,
   prompts, checks, fill, caps, consent, estimate, run, job, store, pages, privacy, texts}.py`,
-  `buildbook/seal_attach.py`, `api/book_writer.py`, `api/book_pages.py`, `tests/test_r63_b_*.py`,
+  `buildbook/writer/{vault, carry, sweep}.py` (D11, D12: the pages index, the free carry, the
+  sweep; no R6 sealing file is edited), `api/book_writer.py`, `api/book_pages.py`,
+  `tests/test_r63_b_*.py`,
   `evals/r6_3/writer.py`, INTEGRATION-B.md. `security-reviewer` required (money, consent, the free
   brain's data rule, the checks, sealing).
 - **C · The owner's console** (D6's and D7's screens, D12's Update, D14): `static/console-book-writer.js`
   (Book settings → Writer trial: estimate, what is sent, the YES box, progress with "Step while I
   watch", the side-by-side pages; Writer: the pick, the caps, the server's ₹ words and the YES box
-  for every grant (H2), the first write's YES, Update's YES, Stop; ≤ 400), `static/console-book-pages.js` (Full book, a page, references, continue; ≤ 400), the
+  for every grant (H2), the first write's YES, Update's YES, Stop, and the 80 % storage line at the
+  top of the Book panel from `storage`; ≤ 400), `static/console-book-reader.js` (G4's "+N more in the
+  full book" line under the limitations section; 257 → ≤ 270, H4), `static/console-book-pages.js` (Full book, a page, references, continue; ≤ 400), the
   optional placement CSS (D0), `tests/test_r63_c_*.py`, `tests/browser/test_r63_c_*.py` (against
   `tests/r63_fake_server.py`), screenshots (360 × 800, 1280 × 800, day and night), INTEGRATION-C.md.
   `security-reviewer` for the YES and ₹ dialogs.
@@ -999,9 +1059,12 @@ are written against the code R6.3 leaves). Four parts, ≈ 6.5–7 builder-days.
   further until his YES; a correction is a seed or caption change and a new sheet.
 - **F · De-duplicated storage (§8.4, decision 7, G9, G14).** Sealing v2: every code file and picture
   sealed once per owner as a content-addressed blob (`book_blobs/{uid}_{sha16}`, the `BookCrypto`
-  envelope with a blob AAD), a release = `book.json`, its pages file and a manifest of path → blob; the
-  single-use code download rebuilds the deterministic zip from blobs (`ZIP_STAMP`); the 60 MB cap
-  counts unique blobs; two-file releases stay readable; the 15 MiB snapshot cap becomes a cap on a
+  envelope with a blob AAD), a release = `book.json` and a manifest of path → blob (the AI pages stay
+  in their own index, D11); the single-use code download rebuilds the deterministic zip from blobs
+  (`ZIP_STAMP`); the 60 MiB cap counts unique blobs and the pages files; two-file releases stay
+  readable, and R6.3.1's plan makes the same forward-compatibility choice as M4 (a new index shape a
+  pre-R6.3.1 revision can't read lives beside R6's, or the runbook says "no rollback below v6.3.1");
+  the 15 MiB snapshot cap becomes a cap on a
   release's new bytes. Estimate from the sizes measured on `47ee8fc`: three kept releases with
   pictures and no de-duplication ≈ 59.5 MB (at the cap); with it ≈ 43 MB (72 %), ≈ 34 MB at the
   expected picture use.
@@ -1026,7 +1089,7 @@ clock.
 |---|---|---|
 | `contract` (I0, built) | the parts build through the real wiring and own only their routes, collections and job; the stubs answer `not_built_yet`; `book_write` does nothing without a run; `47ee8fc`'s real `book.json` and a two-file index still load; `console.html`'s hash | the job's "no run, no call" guard removed: `test_nothing_spends_by_itself_after_a_deploy` fails |
 | `facts` (A) | `--check` twice identical with `facts.json`; every tour key known; the module map has all 73 cards once; the index has every tracked path and every `src` top-level symbol; the counter on a fixture equals its hand count; the inventory's Android, home-kit, bridge and dev rows with SPDX names; the scrubber's new kinds found (IPv4, IPv6, PAN, Aadhaar groups, hostnames, project ids) and versions, dates and line numbers left alone; G3's 31, G4's "+N more" | a set iterated unsorted in `facts.py`: `--check` fails; the IP pattern removed: its case fails; C69 removed from the map: the generator does not refuse and the case fails |
-| `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the pages file attached as the third kind, carried forward, and only changed pages rewritten; auto-update only within the cap; the first pick, a cap raised, a paid brain, a training brain and auto-update on each 422 `yes_needed` and nothing saved, then saved on the YES with that `terms_id`, 409 on a stale one, lowering instant (H2); a paid-tier Gemini and an unpriced custom brain listed "not offered" (M2); Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; auto-update accepted without its YES: the H2 case fails; a paid-tier Gemini offered at ₹0: the M2 case fails; `write_text` built on `complete()`: the no-laptop case fails; the reference check off: the fake path is sealed; `.claude/**` in a pack: the never-reads case fails |
+| `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the pages file sealed in its own index (attach, then replace with the old chunk set orphaned), carried forward free at each new release, and only changed pages rewritten; three seals without an Update keep every unchanged AI page; a first write stopped at its cap and continued with a new YES replaces its pages file; an update over the release cap or with nothing to carry is 409 `use_first`; a run across a deploy stops, seals its own release's file and its pages join the new estimate, its YES not carried (M5); an attach in flight when Privacy → Delete lands is refused and its chunks go; R6's index after a pages seal still opens with `47ee8fc`'s `BookIndex` (M4); auto-update only within the cap; the first pick, a cap raised, a paid brain, a training brain and auto-update on each 422 `yes_needed` and nothing saved, then saved on the YES with that `terms_id`, 409 on a stale one, lowering instant (H2); a paid-tier Gemini and an unpriced custom brain listed "not offered" (M2); Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; auto-update accepted without its YES: the H2 case fails; a paid-tier Gemini offered at ₹0: the M2 case fails; `write_text` built on `complete()`: the no-laptop case fails; the carry run only on Update: the three-seal case fails; no replace in the pages vault: the continue case fails; the Privacy hold check off in the pages vault: the delete case fails; a pages entry written into R6's index: the rollback-reader case fails; the run's YES carried to a new release: the M5 case fails; the reference check off: the fake path is sealed; `.claude/**` in a pack: the never-reads case fails |
 | `needles` (I1) | planted in the fakes: the creator name, his e-mail, a vault document's text, a memory fact, a mail subject, a fake secret, the pack's canary — never in a pack, a prompt, a page, a draft, a trial page, a log record, the audit, a notice or the Privacy export; a positive control per sink | the pack builder reading Book settings: the creator-name needle is found |
 | `console` (C, browser) | the trial (estimate → what is sent → the YES box refuses "yes" → progress with "Step while I watch" → side by side with checks); the pick (caps filled with the defaults; the first save, a raise, a paid brain and "update by itself" each show the server's ₹ words and the YES box; "Keep" sends nothing; lowering saves at once); the first write's YES; Update's YES and Stop; the Full book (a written page, a "Not written by AI yet" page, references, an older release); continue; 44 px targets; 360 × 800 and 1280 × 800, day and night; the Book panel's screenshots with the writer off unchanged against `47ee8fc` | the YES box sending "yes": its case fails |
 | `tour` (D) | the filled tour inside both bands; the seven highlights in his order; both running-example lines; a guest's tour has no ₹, no T16, no owner-only line; a guest's `POST /v1/book/show/speak` of every owner-only tour id (`t13b03`, `t16b01`) is 404 `unknown_line`, through the real route; every tour id of the session's audience speaks; the player runs all 17 scenes, Questions and Closing in 2D, in 3D (WebGL2) and under Motion Off; an older book plays today's 11 scenes; "What else" lists the 11 other modules from the map | T13's owner line left in the guest's tour: the no-₹ case fails; `tour_line_text` ignoring the audience: the guest-speak case fails; a highlight dropped: the seven case fails; the pace set to 290 words a minute: the band case fails |
@@ -1048,7 +1111,8 @@ guest's tour; no `$` in owner-facing writer words; no model id, vendor or price 
 
 `api/app.py` 732 (no edit, ≤ 735), `tools/gateway.py` 760 (no edit), `core/brain.py` 713 (no edit),
 `config.py` 789 (no edit, ≤ 790), `console.html` 782 (no edit, hash), `console-book.js` ≤ 390,
-`console-book-show.js` ≤ 370 after the move, `console-book-script.js` ≤ 200, every Book JS ≤ 400 and
+`console-book-show.js` ≤ 370 after the move, `console-book-script.js` ≤ 200,
+`console-book-reader.js` ≤ 270 (C, G4), every Book JS ≤ 400 and
 CSS ≤ 300, `book.html` ≤ 130, `api/console.py` ≤ 473 (pin ≤ 475), `api/r6_wiring.py` ≤ 300,
 `buildbook/model.py` ≤ 420, `buildbook/service.py` 397 (one line changed at I0, H1; ≤ 400), every new Python module ≤ 400
 and function ≤ 50, `llm/write.py` ≤ 160, `facts.json` ≤ 1 MiB, a pages file ≤ 2 MiB gzipped, the
@@ -1078,7 +1142,13 @@ keyring 26. `tests/test_r63_seams.py` pins each.
   minute would make the owner's tour ≈ 11.6 minutes, still inside 10–15); one stopwatch run sets it.
 - The 15 MiB code-zip cap is about 6 feature releases away (fact 2): R6.3.1's de-duplication must land
   before it, or a book stops being written (the deploy itself is never blocked).
-- Hotfixes count as kept releases; each adds a pages file (≈ 0.5 MB) until R6.3.1's blobs.
+- Hotfixes count as kept releases; each gets a pages file (≈ 0.5 MiB, carried free) until R6.3.1's
+  blobs. R6's sealer does not count the pages files (it is not edited, M4), so the stored total can
+  pass 60 MiB by the kept pages files (≈ 1.5 MiB expected, at most 6 MiB); the writer refuses an
+  attach past it and the 80 % line counts both.
+- A rollback to a pre-R6.3 revision keeps working: R6's index is never given a pages entry (M4);
+  the old revision ignores the pages index, and a newer sealed `book.json` reads as 409
+  `unreadable` there, never as a tamper alarm.
 - Pins churn at I0: 10 version, 5 label, 3 tick-list, the static lists.
 - Cloud Run gives CPU only during a request: a step must finish inside its tick's or its own request.
 - The owner's original 557-line prompt is lost; this plan covers what Phase A summarised of it, no

@@ -1,0 +1,34 @@
+{
+  "title": "A Telegram message, from phone to reply",
+  "dir": "down",
+  "nodes": [
+    {"id": "tg", "label": "Telegram delivers it", "kind": "service", "rank": 0, "col": 0},
+    {"id": "secret", "label": "Secret header matches?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/telegram.py"},
+    {"id": "owner", "label": "Paired owner, private chat?", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/telegram/service.py"},
+    {"id": "reject", "label": "No reply, audited", "kind": "step", "rank": 2, "col": 1},
+    {"id": "claim", "label": "Claim the update once", "kind": "store", "rank": 3, "col": 0,
+     "ref": "src/jarvis/telegram/store.py"},
+    {"id": "rules", "label": "Telegram privacy rules", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/telegram/rules.py"},
+    {"id": "brain", "label": "Brain turn", "kind": "service", "rank": 5, "col": 0},
+    {"id": "reply", "label": "Plain-text reply", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/telegram/format.py"},
+    {"id": "card", "label": "Short reversible card?", "kind": "guard", "rank": 6, "col": 1},
+    {"id": "buttons", "label": "Approve or Decline buttons", "kind": "step", "rank": 7, "col": 1},
+    {"id": "console", "label": "Waits in the console", "kind": "person", "rank": 7, "col": 2}
+  ],
+  "edges": [
+    {"from": "tg", "to": "secret"},
+    {"from": "secret", "to": "owner"},
+    {"from": "owner", "to": "reject", "label": "no", "style": "side"},
+    {"from": "owner", "to": "claim", "label": "yes"},
+    {"from": "claim", "to": "rules"},
+    {"from": "rules", "to": "brain"},
+    {"from": "brain", "to": "reply"},
+    {"from": "brain", "to": "card", "label": "a card"},
+    {"from": "card", "to": "buttons", "label": "yes"},
+    {"from": "card", "to": "console", "label": "no", "style": "side"}
+  ]
+}

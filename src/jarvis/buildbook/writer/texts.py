@@ -65,7 +65,8 @@ PICK_WORDS = (
     "write, {release} a release and {month} a month."
 )
 PCT_WORDS = "It stops before your Vitals month passes {pct} % of your monthly limit."
-RAISE_WORDS = "This raises the {what} from {old} to {new}."
+RAISE_WORDS = "This raises {raises}."  # every cap raised, in one sentence (review I1 M-3)
+RAISE_ONE = "the {what} from {old} to {new}"
 PCT_RAISE_WORDS = "This raises the line it stops at from {old} % to {new} % of your monthly limit."
 PAID_WORDS = "{label} is a paid brain: a page costs about {page} and a worst case {hold}."
 TRAINS_WORDS = (
@@ -118,6 +119,11 @@ NOTICE_STORAGE = (
 NOTICE_FAILED = "The AI writer stopped: {why}"
 
 
+def listed(items: list[str]) -> str:
+    """ "a", "a and b", "a, b and c"."""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
 def inr(value: float) -> str:
     """Rupees as the console shows them (two decimals under Rs 100, whole rupees above)."""
     return rupees(value)
@@ -135,6 +141,7 @@ __all__ = [
     "PCT_RAISE_WORDS",
     "PCT_WORDS",
     "PICK_WORDS",
+    "RAISE_ONE",
     "RAISE_WORDS",
     "REFUSED",
     "SENT_WORDS",
@@ -143,4 +150,5 @@ __all__ = [
     "YES_NEEDED",
     "WriterRefused",
     "inr",
+    "listed",
 ]

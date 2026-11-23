@@ -55,8 +55,8 @@ def _cap_words(spec: BrainSpec, caps: Caps, confirmed: Confirmed) -> list[str]:
             month=texts.inr(caps.month),
         )
         return [first, texts.PCT_WORDS.format(pct=caps.limit_pct)]
-    out = [
-        texts.RAISE_WORDS.format(
+    raises = [
+        texts.RAISE_ONE.format(
             what=texts.CAP_NAMES[name],
             old=texts.inr(getattr(old, name)),
             new=texts.inr(getattr(caps, name)),
@@ -64,6 +64,7 @@ def _cap_words(spec: BrainSpec, caps: Caps, confirmed: Confirmed) -> list[str]:
         for name in RUPEE_CAPS
         if getattr(caps, name) > getattr(old, name)
     ]
+    out = [texts.RAISE_WORDS.format(raises=texts.listed(raises))] if raises else []
     if caps.limit_pct > old.limit_pct:
         out.append(texts.PCT_RAISE_WORDS.format(old=old.limit_pct, new=caps.limit_pct))
     return out
@@ -72,7 +73,9 @@ def _cap_words(spec: BrainSpec, caps: Caps, confirmed: Confirmed) -> list[str]:
 def grants(
     *, spec: BrainSpec, caps: Caps, auto: bool, confirmed: Confirmed, rate: float
 ) -> tuple[str, ...]:
-    """The words of what this pick grants beyond `confirmed` (at most six); () grants nothing."""
+    """The words of what this pick grants beyond `confirmed`, every one of them (five lines at
+    most: the brain's two, the caps' one, the % line's one, "update by itself"; never cut, review
+    I1 M-3); () grants nothing."""
     words = _brain_words(spec, confirmed, rate) + _cap_words(spec, caps, confirmed)
     if auto and not confirmed.auto_update:
         words.append(
@@ -80,7 +83,7 @@ def grants(
         )
     if confirmed.brain is not None and not words:
         return ()
-    return tuple(words[:6])
+    return tuple(words)
 
 
 def lowered(caps: Caps, auto: bool, confirmed: Confirmed) -> Confirmed:

@@ -15,9 +15,9 @@ from r63_fakes_b import seal_r6, service
 from jarvis.buildbook.gen.scrub import default_scrubber
 from jarvis.buildbook.gen.snapshot import _zip
 from jarvis.buildbook.ports import VaultTampered
-from jarvis.buildbook.writer import carry, packs, prompts
+from jarvis.buildbook.writer import carry, consent, packs, prompts
 from jarvis.buildbook.writer.caps import CapRefused
-from jarvis.buildbook.writer.model import Run
+from jarvis.buildbook.writer.model import Caps, Confirmed, Run
 from jarvis.buildbook.writer.texts import REFUSED
 from jarvis.config import Settings
 from jarvis.llm.router import ModelTier
@@ -165,3 +165,17 @@ async def test_m2_a_non_llm_error_mid_stream_is_a_cut_call_and_before_any_text_w
             timeout_s=5.0,
         )  # fmt: skip
     assert err.value.why == "no_answer"
+
+
+# ---- M-3: every grant a pick makes is in the words his YES is typed on -------------------------
+def test_m3_the_most_a_pick_grants_is_all_in_its_words_and_never_cut() -> None:
+    held = Confirmed(brain="gemini", caps=Caps(trial=100, first=100, release=100, month=100,
+                                               limit_pct=50), auto_update=False)  # fmt: skip
+    more = Caps(trial=200, first=4_000, release=1_500, month=3_000, limit_pct=90)
+    words = consent.grants(spec=claude_like(), caps=more, auto=True, confirmed=held, rate=95.24)
+    said = " ".join(words)
+    assert len(words) <= 6
+    assert "paid brain" in said and "by itself after each deploy" in said  # the paid line, AUTO
+    for name in ("trial cap", "first full write's cap", "release cap", "monthly cap"):
+        assert name in said, name
+    assert "from 50 % to 90 %" in said

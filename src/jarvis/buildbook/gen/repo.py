@@ -7,6 +7,11 @@ the CLI refuses to WRITE a book for a commit whose tracked files were changed, s
 would then describe code that commit doesn't hold). Never a history walk. A git failure names
 git's first line, paths taken out.
 `Repo.from_dir` builds the same view from a plain folder with a given commit (tests only).
+
+R6.3.1 D5 (docs/plans/r6-3-1-book-at-build.md): the Book's authored pages, flowcharts, their guide
+and module (`BOOK_DIR`) are the book's own text, not the code it documents: both views leave them
+out (no page ref, index entry or "may cite" entry names them), and a page being written never
+makes the checkout `dirty`. `jarvis.buildbook.book.authored` reads them from the folder itself.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ GIT_SAID_MAX = 120
 # a quoted string or an absolute path in git's words (it can name the owner's home folder)
 _PATH = re.compile(r"'[^']*'|\"[^\"]*\"|(?:[A-Za-z]:)?[\\/][^\s:]*")
 TEXT_CAP_BYTES = 4 * BOOK_JSON_CAP_BYTES  # a single file read as text (plans, sources)
+BOOK_DIR = "src/jarvis/buildbook/book/"  # R6.3.1 D5: the authored pages, never documented
 
 
 class GenError(Exception):
@@ -61,6 +67,11 @@ def _git(root: Path, *args: str) -> str:
     return os.fsdecode(done.stdout)
 
 
+def documented(rel: str) -> bool:
+    """Is a tracked file part of the code the book documents (not the book's own text)?"""
+    return not rel.startswith(BOOK_DIR)
+
+
 def _plain_file(top: Path, path: Path) -> bool:
     """A regular file inside the checkout: a symlink is never followed (it could point anywhere,
     and the snapshot must hold only the checkout's own files)."""
@@ -89,16 +100,21 @@ class Repo:
         start = (root or Path.cwd()).resolve()
         top = Path(_git(start, "rev-parse", "--show-toplevel").strip())
         listed = _git(top, "ls-files", "-z").split("\0")
-        files = tuple(sorted({f for f in listed if f and _plain_file(top, top / f)}))
+        kept = (f for f in listed if f and documented(f))
+        files = tuple(sorted({f for f in kept if _plain_file(top, top / f)}))
         sha = _git(top, "rev-parse", "HEAD").strip()
         when = _git(top, "log", "-1", "--format=%cI").strip()
-        changed = _git(top, "--no-optional-locks", "status", "--porcelain", "-uno", "-z")
+        changed = _git(
+            top, "--no-optional-locks", "status", "--porcelain", "-uno", "-z",
+            "--", ".", f":(exclude){BOOK_DIR}",
+        )  # fmt: skip
         return cls(root=top, files=files, sha=sha, committed_at=when, dirty=bool(changed))
 
     @classmethod
     def from_dir(cls, root: Path, *, sha: str, committed_at: str) -> Repo:
         found = (p for p in root.rglob("*") if _plain_file(root, p) and ".git" not in p.parts)
-        files = tuple(sorted(p.relative_to(root).as_posix() for p in found))
+        names = (p.relative_to(root).as_posix() for p in found)
+        files = tuple(sorted(f for f in names if documented(f)))
         return cls(root=root, files=files, sha=sha, committed_at=committed_at)
 
     def has(self, rel: str) -> bool:
@@ -128,4 +144,4 @@ class Repo:
         return frozenset(self.files)
 
 
-__all__ = ["GenError", "Repo"]
+__all__ = ["BOOK_DIR", "GenError", "Repo", "documented"]

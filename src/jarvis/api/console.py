@@ -125,8 +125,8 @@ APP_ASSETS: dict[str, str] = {
     # show page (/book/show, book.html). The 3D files are ES modules; the scene modules are
     # imported by console-book-3d.js, never linked.
     "console-book.js": _JS,  # the Book panel (#p-book): status, open, sections, download
-    "console-book-reader.js": _JS,  # the sections reader
-    "console-book.css": "text/css",
+    "console-book-reader.js": _JS, "console-book-flow.js": _JS,  # the reader; R6.3.1 its flowcharts
+    "console-book.css": "text/css", "console-book-flow-layout.js": _JS,  # R6.3.1: chart geometry
     "console-book-show.js": _JS,  # the show: timeline, controls, captions
     "console-book-voice.js": _JS,  # narration: Web Audio queue, browser-voice fallback
     "console-book-3d.js": _JS,  # the 3D engine and governor (ES module)

@@ -29,6 +29,8 @@ JS = [
     "console-book-tour.js",  # R6.3 D
     "console-book-writer.js",  # R6.3 C
     "console-book-pages.js",  # R6.3 C
+    "console-book-flow.js",  # R6.3.1 F: the Full book's flowcharts
+    "console-book-flow-layout.js",  # R6.3.1 F: their geometry
 ]
 CSS = ["console-book.css", "book.css"]
 SCENE_SPLIT = {

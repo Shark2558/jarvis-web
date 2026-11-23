@@ -128,6 +128,10 @@ APP_ASSETS: dict[str, str] = {
     "console-book-reader.js": _JS,  # the sections reader
     "console-book.css": "text/css",
     "console-book-show.js": _JS,  # the show: timeline, controls, captions
+    "console-book-script.js": _JS,  # R6.3: the show's script reader (the show and the tour)
+    "console-book-tour.js": _JS,  # R6.3 D: the tour's chapters, owner-only scenes, continue
+    "console-book-writer.js": _JS,  # R6.3 C: Book settings -> Writer trial and Writer
+    "console-book-pages.js": _JS,  # R6.3 C: the Full book in the reader
     "console-book-voice.js": _JS,  # narration: Web Audio queue, browser-voice fallback
     "console-book-3d.js": _JS,  # the 3D engine and governor (ES module)
     "console-book-scenes.js": _JS,  # scenes 1, 2, 12, 13 (ES module)

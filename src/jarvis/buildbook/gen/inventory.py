@@ -42,7 +42,8 @@ MARKDY = "tools/markdy/package-lock.json"
 OWN_IMAGE = "jarvis-"  # the home kit's own bridge image, built on the laptop: not a library
 RELEASE_NAMES = {"three": "three.js", "ort": "onnxruntime-web", "oww": "openWakeWord models"}
 Use = Literal["run-time", "build and maintenance"]
-RUN, BUILD = "run-time", "build and maintenance"
+RUN: Use = "run-time"
+BUILD: Use = "build and maintenance"
 # every Stack role and inventory group, and what it is used for (D2b's split)
 USE: dict[str, Use] = {
     "language": RUN,

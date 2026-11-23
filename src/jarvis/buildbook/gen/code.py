@@ -286,7 +286,8 @@ def _universe(table: Mapping[str, Any]) -> set[str]:
 def services_named(rows: Iterable[Service], table: Mapping[str, Any]) -> set[str]:
     """The checker's service names the book's rows stand for: what their settings map to, and
     every name a row's label spells or its id is."""
-    fields, universe, found = tuple(table.get("service_fields", ())), _universe(table), set()
+    fields, universe = tuple(table.get("service_fields", ())), _universe(table)
+    found: set[str] = set()
     for row in rows:
         found.update(o for name in row.settings for o in service_owners(name, fields))
         found.update(n for n in universe if n.lower() in row.label.lower() or slug(n) == row.id)

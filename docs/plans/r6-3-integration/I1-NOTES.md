@@ -1,4 +1,4 @@
-Version v6.3.2 · 23 Nov 2026, 22:10 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
+Version v6.3.3 · 24 Nov 2026, 01:35 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
 
 # R6.3 — I1 notes (the four parts joined)
 
@@ -205,9 +205,25 @@ Pictures (not committed), in `/tmp/r63-review-shots/` at `phone` (360 × 800) an
 set of words on who reads what: the server's), `writer-trial-side-by-side-<size>` (each page by
 its title), `reader-section-counts-<size>` (R6's mock book: "1 plan", "1 service, 1 alert kind").
 
+## Hotfix 1 (`v6.3.1`, 24 Nov 2026): what the owner's first trial found
+
+R6.3 went live on 23 Nov at 23:41 IST (`58ad64d`). The owner's first Writer trial, between 00:37 and
+01:00 IST, found four faults. Each has a test that failed first.
+
+| # | What he saw | Cause | Fix | Test |
+|---|---|---|---|---|
+| 1 | After a refresh, the Book panel came back without its Book writer (no ₹ estimate) | The deck restores an open panel without firing `jarvis:panel`, and the Book's `ready()` loaded the panel but not the writer and full-book modules | `ready()` loads them too (`console-book.js`) | `test_r63_hotfix1_the_writer_is_there_after_a_refresh_with_the_book_open` |
+| 2 | His YES started the trial, and the section still said "Not run yet" | The first step stopped it at the monthly line (JARVIS had used ₹1,404.79 of ₹1,500, past the 80 % line), and the section drew a stopped trial's reason only while it was running | A stopped trial shows how it ended and why, above Start (`console-book-writer.js`) | `test_r63_hotfix1_a_trial_that_stopped_says_why_above_start` |
+| 3 | The saved reason said "10 %" | `finish()` read the unpicked pick's floor; the gate used the default 80 % | Both read `run.limit_pct_of()` | `test_a_trial_stopped_at_the_monthly_line_names_the_line_it_used` |
+| 4 | With the limit raised to ₹3,000, the trial stopped after one page: "billed above its worst case", ₹11.83 spent, nothing kept | The hold read 2.5 bytes a token; Claude (Sonnet 5.5) counted his full pack denser, so the bill passed the hold | `BYTES_PER_TOKEN_WORST` 2.5 → 1.5 (a full pack's hold ₹11.84 → ₹16.71 at ₹95.24); the estimate one notch denser (mid 3.0 → 2.2 bytes a token), as his bill showed; the trial now fits 5 holds in ₹100, not 8 | `test_a_page_counted_denser_than_the_old_worst_case_is_kept_not_stopped`, the trial-cap and hold pins moved |
+
+The owner approved each fix in chat (00:49, 00:53 and 01:06 IST). The checks ran once: ruff, mypy on
+the writer, the R6.3 unit files (522), the version pins, and the Book and trial browser files.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v6.3.3 | 24 Nov 2026, 01:35 IST | R6.3 | Hotfix 1 (`v6.3.1`): the four faults from the owner's first trial, their causes, fixes and tests | 🛠 Mark XXIV |
 | v6.3.2 | 23 Nov 2026, 22:10 IST | R6.3 | "Final checks": the one pass after the combined review (`REVIEW-I1.md` v6.3.2): the whole unit suite with coverage 95.59 %, the Markdy guard (M-6) fixed, ruff, mypy, the mock evals, the docs checks, the generator's check, the R6.3 and touched browser files, the pictures; item 19 now fixed by the review (L-6) | 🛠 Mark XXIV |
 | v6.3.1 | 23 Nov 2026, 20:14 IST | R6.3 | First edition, at the end of I1: the four merges, the join bug, the 2 MiB facts cap with its 80 % warning, A's, B's, C's and D's "Needs I1" (pins, the fixture's sources, the show to the tour, the message type, mypy, ₹ in I0's fake, the redraw fix, the honorific, the place key, D on A's real facts), STUBS_PASS flipped, the console, needles and e2e suites built, I0's stub pins moved, the guide v6.3.2 (C57 built, the roadmap in the owner's order), "1 plans" declined as R6's, the rules bound, the checks once each, the pictures, sizes, what is left | 🛠 Mark XXIV |

@@ -178,6 +178,10 @@ def pages_view(state: FakeWriterC, release: str) -> http.PagesView:
     return http.PagesView(release=release, parts=tuple(parts), limitations=LIMITATIONS)
 
 
+TRIAL_TITLES = dict(zip(TRIAL_PAGES, ("The running example", "Demo router, again", "Wardrobe",
+                                       "Vitals", "Telegram"), strict=True))  # fmt: skip
+
+
 def trial_rows(state: FakeWriterC) -> http.TrialPages:
     rows = []
     for nn in state.trial.results:
@@ -192,6 +196,7 @@ def trial_rows(state: FakeWriterC) -> http.TrialPages:
             http.TrialRow(
                 nn=nn,
                 page=page,
+                title=TRIAL_TITLES[page],
                 brain="anthropic" if claude else "gemini",
                 state=how[0],  # type: ignore[arg-type]
                 checks=how[1],

@@ -118,6 +118,8 @@ def test_r63_c_trial_the_yes_box_refuses_yes_by_the_servers_word(
         box = dialog.locator("#bookYes")
         assert box.input_value() == ""  # never pre-filled
         assert "About ₹40" in dialog.inner_text() and "₹100" in dialog.inner_text()
+        # review I1 L-5: what is sent and who may learn from it are the SERVER's words only
+        assert "may learn from what it reads" not in dialog.inner_text()
         box.fill("yes")
         dialog.get_by_role("button", name="Start").click()
         dialog.get_by_text("Type YES in capitals to go ahead.").wait_for()  # the server's words
@@ -209,10 +211,10 @@ def test_r63_c_trial_side_by_side_with_checks_and_one_sample_page(
     try:
         until(c.page, lambda: "Passed after one redraft" in text(c), "the side by side")
         words = text(c)
-        for title in ("Chapter example", "Card C16", "Module wardrobe", "Screen vitals"):
-            assert title.lower() in words.lower(), (
-                title
-            )  # the headings are upper-cased by the style
+        # review I1 L-4: each page by its title (the server's), never its id's words
+        for title in ("The running example", "Demo router, again", "Wardrobe", "Vitals"):
+            assert title.lower() in words.lower(), title  # upper-cased by the style
+        assert "chapter example" not in words.lower() and "card c16" not in words.lower()
         rows = c.page.locator(f"{WRITER} .bev")
         assert rows.count() == 10
         assert "Claude" in rows.nth(0).inner_text() and "Gemini (free)" in rows.nth(1).inner_text()
@@ -226,6 +228,7 @@ def test_r63_c_trial_side_by_side_with_checks_and_one_sample_page(
             lambda: "Written by Gemini (free) (balanced tier, gemini-3.8-flash)" in text(c),
             "the page",
         )
+        assert "the running example by gemini (free)" in text(c).lower()  # the sample's head
         heads = c.page.locator(
             f"{WRITER} .bk-sec .dl"
         ).all_text_contents()  # as written, not as styled

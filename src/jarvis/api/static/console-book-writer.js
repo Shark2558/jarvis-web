@@ -68,15 +68,16 @@
   }
   function rowOf(v) {
     const r = obj(v);
-    return r && Number.isInteger(r.nn) && PAGE.test(r.page || '') ? { nn: r.nn, page: r.page, brain: txt(r.brain, 40),
+    return r && Number.isInteger(r.nn) && PAGE.test(r.page || '') ? { nn: r.nn, page: r.page, title: txt(r.title, 120), brain: txt(r.brain, 40),
       state: txt(r.state, 20), checks: arr(r.checks).map((c) => txt(c, 20)).filter(Boolean), inr: num(r.inr), seconds: num(r.seconds) } : null;
   }
   const active = (r) => !!r && (r.state === 'queued' || r.state === 'running' || r.state === 'paused');
   const label = (id) => ((V && V.brains.find((b) => b.id === id)) || { label: id }).label;
-  function titleOf(id) {
+  function titleOf(id) { // the id's words: only when the server sent no title (review I1 L-4)
     const m = /^pg_([a-z]+)_(.+)$/.exec(id) || [], name = (m[2] || id).replace(/_/g, ' ');
     return (KINDS[m[1]] || 'Page') + ' ' + (m[1] === 'card' ? name.toUpperCase() : name);
   }
+  const named = (r) => r.title || titleOf(r.page);
   function detailOf(e) {
     if (e && e.name === 'TypeError') return OFFLINE;
     const m = e && typeof e.message === 'string' ? txt(e.message, 300) : '';
@@ -106,11 +107,10 @@
   const isOpen = () => !!head && head.getAttribute('aria-expanded') === 'true';
   function estLines(e, kind) {
     const who = kind === 'trial' ? ' for ' + e.pages + ' sample pages from each brain' : ' for ' + e.pages + ' pages with ' + label(e.brain);
-    const learns = kind === 'trial' ? V.brains.filter((b) => b.trains).map((b) => b.label + ' may learn from what it reads: '
-      + 'both brains are sent only JARVIS\u2019s public code and its facts, never anything of yours.') : [];
+    // what is sent, to whom, and who may learn from it: the server's words only (review I1 L-5)
     return ['About ' + rs(e.mid) + ' (' + rs(e.low) + '\u2013' + fmt(Math.round(e.high)) + ')' + who + '.',
       'It stops at ' + rs(e.cap) + (kind === 'trial' ? ': each page starts only when its worst case still fits.' : '.'),
-      'About ' + minutes(e.lo, e.hi) + ' with Book settings open.', ...e.sent, ...learns, e.gst].filter(Boolean);
+      'About ' + minutes(e.lo, e.hi) + ' with Book settings open.', ...e.sent, e.gst].filter(Boolean);
   }
   // ---- the YES box (a .bdialog, as the panel's confirm): never filled, sends what was typed --------------
   function yes(title, words, okText, keepText, go) {
@@ -280,10 +280,10 @@
   function sideBySide() {
     if (!rows || !rows.length || active(V.run) && V.run.kind === 'trial') return [];
     return [...new Set(rows.map((r) => r.page))].map((page) => {
-      const sec = section(titleOf(page), ''), ul = mk('ul', 'bevents');
+      const title = named(rows.find((r) => r.page === page)), sec = section(title, ''), ul = mk('ul', 'bevents');
       rows.filter((r) => r.page === page).forEach((r) => {
         const li = mk('li', 'bev'), what = mk('div', 'bwhat'), go = button('Read', 'bact', () => readSample(r));
-        go.setAttribute('aria-label', 'Read ' + titleOf(page) + ' by ' + label(r.brain));
+        go.setAttribute('aria-label', 'Read ' + title + ' by ' + label(r.brain));
         what.append(mk('b', '', verdict(r)), mk('small', '', inr(r.inr) + ' \u00b7 ' + Math.round(r.seconds) + ' s'), go);
         li.append(mk('span', 'btime', label(r.brain)), what); ul.append(li);
       });
@@ -299,7 +299,7 @@
   function sampleSec() {
     if (!sample || !rows) return [];
     const sec = section('Sample page', ''), h = mk('div', 'rhead bk-rhead'), box = mk('div', 'bk-sections'), P = window.JarvisBookPages;
-    h.append(mk('span', 'k', titleOf(sample.r.page) + ' by ' + label(sample.r.brain)), button('Close', '', () => { sample = null; draw(); }));
+    h.append(mk('span', 'k', named(sample.r) + ' by ' + label(sample.r.brain)), button('Close', '', () => { sample = null; draw(); }));
     if (!P || typeof P.page !== 'function' || !P.page(box, sample.page)) box.append(mk('p', 'bempty', 'This page can\u2019t be shown here.'));
     sec.append(h, box); return [sec];
   }

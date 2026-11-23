@@ -299,12 +299,21 @@ class WriterService:
         )  # fmt: skip
 
     # ---- the trial's pages (D6) --------------------------------------------------------------
+    def _title(self, page_id: str) -> str:
+        """A page's title from the fact pack ("" when it can't be read: the console says the id)."""
+        try:
+            found = self.ctx.source.facts().page(page_id)
+        except BookError:
+            return ""
+        return found.title[:120] if found is not None else ""
+
     async def trial_rows(self, uid: str) -> h.TrialPages:
         rows = []
         for nn, t in sorted((await self.store.trials(uid)).items()):
             state: Said = "refused" if not t.blob else ("redrafted" if t.attempt == 2 else "first")
-            rows.append(h.TrialRow(nn=nn, page=t.page, brain=t.brain, state=state, checks=t.checks,
-                                   inr=t.inr, seconds=t.seconds))  # fmt: skip
+            rows.append(h.TrialRow(nn=nn, page=t.page, title=self._title(t.page), brain=t.brain,
+                                   state=state, checks=t.checks, inr=t.inr,
+                                   seconds=t.seconds))  # fmt: skip
         return h.TrialPages(rows=tuple(rows))
 
     async def trial_page(self, uid: str, nn: int) -> h.TrialPageView:

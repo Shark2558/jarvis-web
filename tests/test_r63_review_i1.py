@@ -20,7 +20,7 @@ from book_app_fakes import (
 from httpx import AsyncClient
 from r63_fake_brains import GOOD_DRAFT, Step, claude_like, gemini_like, registry
 from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES, RELEASE
-from r63_fakes_b import seal_r6, service
+from r63_fakes_b import TRIAL_FACTS, seal_r6, service
 
 from jarvis.buildbook.gen.scrub import default_scrubber
 from jarvis.buildbook.gen.snapshot import _zip
@@ -247,3 +247,15 @@ def test_l7_the_writers_counts_say_1_page_and_2_pages() -> None:
     assert texts.pages_words(1) == "1 page" and texts.pages_words(2) == "2 pages"
     assert "page(s)" not in " ".join(texts.WHY.values())
     assert "{count} pages" not in texts.NOTICE_PAGES
+
+
+# ---- L-4: the trial's rows carry each page's title from the fact pack --------------------------
+async def test_l4_the_trial_rows_name_each_page_by_its_title() -> None:
+    built = service(brains=registry(claude_like(), gemini_like()))
+    svc, uid = built.service, built.job._ctx.uid
+    est = await svc.estimate(uid, "trial")
+    await svc.start_trial(uid, TrialIn(typed="YES", estimate_id=est.id))
+    await svc.step(uid)
+    rows = (await svc.trial_rows(uid)).rows
+    titles = {p.id: p.title for p in TRIAL_FACTS.pages}
+    assert rows and all(r.title == titles[r.page] for r in rows)

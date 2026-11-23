@@ -158,6 +158,7 @@ class Estimate(Frozen):
 class TrialRow(Frozen):
     nn: int = Field(ge=1, le=10)
     page: str = Field(pattern=PAGE_ID)
+    title: str = Field(default="", max_length=120)  # the page's title (review I1 L-4; "": none)
     brain: str = Field(max_length=40)
     state: Literal["first", "redrafted", "refused"]
     checks: tuple[CheckCode, ...] = ()

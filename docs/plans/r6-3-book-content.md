@@ -63,7 +63,8 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
    write about half a day with the home watchdog running (every 5 minutes), a few days without it (the
    morning clock only). These times are estimates until the trial measures them.
 9. **Voice stays free.** The tour uses the browser's voice by default (₹0), as R6.2 set it; the Cloud
-   voice, if you switch to it, uses the free allowance first, then about ₹27–29 a tour. A guest never
+   voice, if you switch to it, uses the free allowance first (about 94 tours a month, shared with the
+   console's spoken replies), then about ₹27 a tour. A guest never
    costs you anything.
 10. **Storage.** One release's book and code now take **10.0 MB** (measured today; 7.98 MB at Phase A);
     three kept are about 30 MB of the 60 MB cap. The AI pages add about 0.5 MB a release. A warning
@@ -282,6 +283,202 @@ with small standard-library scripts outside the repository.
 | ₹95.24 a dollar (`config.usd_inr_rate`) | unchanged (`billing/fx.py:33`, `config.py:359`, `gen/costs.py:28`) | Cost |
 
 ## The short tour's first script (approval stop 2)
+
+**For the owner.** This is every word the tour says, scene by scene. JARVIS speaks as "I", as the show
+does today; "my owner" is you. A word in `{{…}}` is a number or name that JARVIS's own code fills in at
+every release (the list after the script says where each comes from), so the tour never goes out of
+date and never states a number by hand. Lines marked **You only** are left out of a guest's tour. The
+questions and the closing at the end are today's fixed lines, unchanged. Please answer YES, or tell
+the Workshop what to change; part D is built only after your YES (D9). Nothing here was written by
+AI.
+
+**How it is shown.** Each scene reuses one of today's pictures ("Picture" below: the number of
+today's scene whose picture it borrows) with this scene's own labels; R6.4 gives each scene its own
+picture. Times are the timer's estimate (D9): 145 words a minute, 0.8 s after each line, 1.4 s
+between scenes. Beat ids are `tNNbMM` (today's are `sNNbMM`).
+
+### T01 · What JARVIS is — picture 1 · ≈ 50 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t01b01 | Welcome to the short tour of my build book. I'm JARVIS, a personal assistant that belongs to one person: my owner. This tour is for release {{release.label}}, version {{release.version}}, from {{release.date}}, and it takes about {{tour.minutes}} minutes. | `src/jarvis/__init__.py:3`; `gen/plans.py:78`; `gen/repo.py` (commit date); the tour's timer (`gen/tour.py`, D9) |
+| t01b02 | I run in my owner's own Google Cloud project; my deploy script sets me up in Google's Mumbai region. Only my owner signs in. A guest sees this tour, and nothing of my owner's. | `deploy/cloudrun.sh:48` (From repo configuration); `JARVIS_OWNER_EMAILS` (`config.py`); `api/book_show_access.py`; `show_script.py` (a guest never gets the owner's spend) |
+| t01b03 | I'm made of {{cards.count}} parts in {{modules.count}} modules, about {{loc.python_code}} lines of Python. New in this release: {{release.new}}. | the guide's catalogue (C01–C73); the module map (`gen/modules.py`, D3); the counter (`gen/loc.py`, D2); this release's plan title |
+| t01b04 | In the next few minutes: how I'm built, one request from start to finish, how I keep things private, seven things I do, and what comes next. My owner's full book has a page for every part. | this script; the pages index (D3) |
+
+### T02 · The eight layers — picture 2 · ≈ 70 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t02b01 | I'm built in {{layers.count}} layers, with one band that runs through all of them. Think of a building where each floor has one job: a request goes up through the floors, and the answer comes back down. | `buildbook/sections.py:31` `LAYERS`; the guide §2 |
+| t02b02 | At the top is how you reach me: the web console, the phone app, Telegram and a terminal. Below that, I turn speech, pictures and files into something I can read. Then come the conversation itself, my memory and my clocks. | C01–C04, C62; C05–C08, C63; C09–C12 |
+| t02b03 | In the middle is the brain. It picks a model and works out which tools a request needs. Next are the skills, like the morning brief or the wardrobe, and the tools that reach Google, my owner's home and the web. Every tool call passes one gateway. | C13–C18, C68; C19–C27, C60–C61, C64–C65, C69–C73; C28–C40 (`tools/gateway.py`) |
+| t02b04 | At the bottom is where my data is kept, sealed with my own keys, and how I answer: on screen, out loud, or as an alert. The band through every floor is security, costs, logs, and this book. | C41–C44, C66; C45–C48; C49–C59, C67 |
+
+### T03 · One request: asking — picture 3 · ≈ 70 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t03b01 | Let's follow one request from start to finish. My owner taps the microphone and says: "Add a dentist appointment on Friday at 5 pm." | `console-voice-mic.js`, `console-voice-capture.js` |
+| t03b02 | Google's speech service, or the browser's own, turns the words into text, in Indian English. I show what I heard, and when my free word rules corrected a word, what I understood. | `api/voice.py` → `voice/service.py` (`GoogleSTT`, en-IN) or `console-voice-loop-browser.js`; `POST /v1/input/understand` (`api/fix_files.py`), `understand/rules.py` |
+| t03b03 | The words go to my brain router. It asks the everyday tier of the chosen brain, {{brain.balanced_model}} unless another was picked, with the conversation so far and the memories that matter. | `POST /v1/chat/stream` (`api/routes.py`); `core/brain.py`; `llm/router.py`; `config.py:134`; `JARVIS_DEFAULT_TIER=balanced` (`cloudrun.sh:600`); C10 |
+| t03b04 | The brain doesn't act by itself. It answers with a request to use one tool, create a calendar event, with Friday's date and five o'clock filled in. | `tools/google_calendar.py:557` `calendar_create_event`; `core/brain.py` (tool rounds through the gateway) |
+
+### T04 · One request: the approval — picture 5 · ≈ 60 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t04b01 | Every tool call passes one gateway. It checks the request against my owner's rules, Allow, Ask first or Never, chosen for each group of tools. | `tools/gateway.py`; C52 (`api/permissions.py`) |
+| t04b02 | Because this request was spoken, the gateway is stricter: something that would normally just go ahead must ask first, because someone else in the room might have said it. | `tools/gateway.py:10–17`; `tools/taint.py:82` `spoken_in_context` |
+| t04b03 | So a card appears, written by code, not by the AI, saying exactly what will happen: a new event on Friday at 5 pm. An event with guests would send invitations that can't be taken back, so it would always ask, and can be set to need a passkey. | C18 (`console-approvals.js`); C30 (an event with attendees is irreversible); C52 ("require passkey for irreversible actions") |
+| t04b04 | My owner taps Approve. The event goes into Google Calendar, and the gateway adds the call to an audit trail that can only grow. Then I answer on screen and, for a spoken question, out loud. | `POST /v1/approvals/{id}/approve` (`api/routes.py`); `tools/google_calendar.py`; C28 (append-only, hash-chained audit); `POST /v1/voice/speak`, `console-voice-speech.js` |
+
+### T05 · One request: "Cancel it" — picture 3 · ≈ 50 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t05b01 | Now my owner says: "Cancel it." Deleting the event asks first too, and before I delete it, I keep a copy for {{undo.keep_days}} days. | `tools/google_calendar.py:610` `calendar_delete_event`; `undo/models.py:23` |
+| t05b02 | So the activity log shows the delete with an Undo button: one tap, and the event is back in the calendar. Adding an event has no Undo there, which is why "Cancel it" is the way back. | `tools/calendar_undo.py:244` `CalendarRestorer`; C48; `activity/words.py:74` `NOTE_WRITE` (G15) |
+| t05b03 | Each step, the card, the event and the delete, also appears in my activity log in plain words, so my owner can see later what I did and when. | C48 (`activity/recorder.py`) |
+| t05b04 | When something goes wrong, I say so plainly. A blocked microphone gets the steps to allow it. With my AI switched off, my fixed rules can list events but not add them. At my owner's monthly spending limit, no paid call is made. | `console-voice-capture.js` `JarvisAudio.WORDS` (R6.2); `offline/rules.py:133` (G16); `billing/service.py:222` |
+
+### T06 · Privacy and security — picture 4 · ≈ 70 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t06b01 | I'm private by default. What I keep lives in my own database, in my owner's project. The most private things, like documents, the home link and this book, are sealed with keys only I hold. | C41 (Firestore); C42; C38; C57 (`seal_index.py`) |
+| t06b02 | I have {{keys.purposes}} separate keys, all made from one key in Google's Secret Manager, so the key for notes can never open the vault. | `keyring.py:42–84`; C51 |
+| t06b03 | When text from outside, like an email or a web page, reaches me, I treat it as information, never as orders: anything I would do because of it asks first. | `tools/gateway.py:18–24` (a tainted round never relaxes to Allow); `tools/taint.py` |
+| t06b04 | My owner signs in with Google. Anything that can't be undone always asks first, and can be set to need a passkey on my owner's own device; changing the passkeys always needs one. | C02 (`api/auth.py`); C52 (`permissions/`) |
+| t06b05 | The privacy panel lists everything I keep and for how long, and lets my owner export or delete each kind. I work with {{services.count}} outside services; the full book names every one and what it sees. | C53 (`privacy/`); the guide §5.2, checked by `scripts/arch_coverage.py` |
+
+### T07 · Highlight 1 of 7: Voice — picture 6 · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t07b01 | I can listen and speak. When my owner switches it on, "Hey Jarvis" is recognised on the device itself. | `console-wakeword.js` (openWakeWord port, on-device); C06 |
+| t07b02 | Speech becomes text with Google's speech service or the browser's own, and my replies are read in a British voice, by Google or by the browser. My owner can talk over me to interrupt, and one switch turns the microphone off until it's switched back on. | C05 (`voice/service.py`: en-IN, Chirp 3: HD and Studio, en-GB); `console-voice-barge.js`; `console-voice-micoff.js` |
+| t07b03 | Names I should know, like a friend's or a street's, can be added as words to recognise, so I hear them right. | C05, C06 (`console-voice-phrases.js`, "Words to recognise") |
+| t07b04 | In this book my voice is the browser's unless my owner chooses otherwise, so this tour costs nothing. | `buildbook/owner.py` (`show_voice` browser by default, R6.2 decision 4) |
+
+### T08 · Highlight 2 of 7: Approvals and passkeys — picture 5 · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t08b01 | For each group of tools, my owner chooses Allow, Ask first or Never, and a group whose actions can't be undone can never be set to Allow. | C52 (`api/permissions.py`) |
+| t08b02 | Cards for things that can be undone can also be approved from Telegram; the rest only here, in the console. | C18; C04 (`telegram/`) |
+| t08b03 | One message can propose at most {{approvals.max_new_cards}} new cards, and Approve all clears several low-risk ones with one tap. The first passkey is added after a fresh Google sign-in; after that, every change to the passkeys needs a passkey. | `tools/budget.py:33`; C18; C52; `api/auth.py` `FRESH_SIGN_IN_S` |
+
+### T09 · Highlight 3 of 7: Memory — picture 4 · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t09b01 | I remember facts about my owner, like people, places and preferences. For each reply I bring in at most {{memory.facts_per_turn}} that matter, and show which ones I used. | C10; `recall/models.py:28` |
+| t09b02 | The memory panel shows everything I remember, and my owner can delete any of it. | `console-memory.js` (delete a fact; Forget) |
+| t09b03 | Learning from messages stays off until my owner switches it on. Then it runs in the background on the cheapest tier, at most {{memory.learn_a_day}} times a day, and a filter refuses ID numbers, card numbers and passwords. | C10; `config.py:341` `memory_learn_daily_cap` |
+
+### T10 · Highlight 4 of 7: Vault and documents — picture 4 · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t10b01 | My owner's documents, like ID, insurance and certificates, live in a locked vault. Each file is checked, stored only once, and sealed with its own key. | C42 (`vault/`) |
+| t10b02 | A date I find inside a document, like an expiry, is only a suggestion until my owner confirms it. | C42 (fields found in a PDF are a proposal) |
+| t10b03 | Opening one needs an unlock that lasts {{vault.unlock_minutes}} minutes. Expiry reminders start {{vault.reminder_days_first}} days ahead and come again closer to the date. Documents from DigiLocker arrive through one Drive folder my owner shares with me. | `config.py:247`; `vault/models.py:26`; C43 (`vault_inbox/`) |
+
+### T11 · Highlight 5 of 7: Home bridge and cameras — picture 7 · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t11b01 | At home, a laptop runs a small bridge beside Home Assistant, Frigate for the cameras, and Mosquitto. It's the only thing at home the internet can reach, through Tailscale, and every call each way is signed. | C38, C39 (`homebridge/`, `deploy/home/docker-compose.yml`) |
+| t11b02 | Faces stay on the laptop, and nobody is named without a consent statement. My owner can arm the alarm and get an urgent alert when someone is at the camera; turning it off needs a passkey or a fresh sign-in. If the laptop stops answering for {{home.offline_minutes}} minutes, I say so. | C08; C40 (`camera/alarm.py`); `config.py:265`; `home/watchdog.py` |
+
+### T12 · Highlight 6 of 7: The phone app and SOS — picture 9 · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t12b01 | On Android, my app is the console, full screen, with a few parts of its own: a Talk tile, shortcuts, alerts sorted into Urgent, Alerts and Nudges, and steps, heart rate and sleep from Health Connect. | C62 (`android/`); C64 |
+| t12b02 | In an emergency, hold the SOS button for {{sos.hold_s}} seconds; after a {{sos.countdown_s}}-second countdown I send a fixed message with the location to up to {{sos.max_contacts}} contacts on Telegram, open the phone's text messages filled in for my owner to press Send, and offer to call 112. I'm not an emergency service. | C65; `sos/service.py:68`; `config.py:537` |
+
+### T13 · Highlight 7 of 7: Wardrobe & Try-on — picture 9 · ≈ 40 s · everyone (one line differs)
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t13b01 | I keep a catalogue of every piece of clothing my owner has, down to each sock: where it is, and whether it's ready, in the laundry or away. | C69 (`wardrobe/catalog/`, `wardrobe/states.py`); C70 |
+| t13b02 | Ask "What should I wear tomorrow?" and fixed rules pick an outfit, with their reasons, from the calendar and the weather. A plain grey 3D figure, shaped from {{tryon.measures}} measurements, wears the look on my owner's own phone or laptop, with private pieces always covered. | C71 (`wardrobe/styling/rules.json`); C72 (`wardrobe/tryon/model.py:32`, `console-tryon-3d.js`) |
+| t13b03 · **You only** | "See it on me" is optional and paid: for a garment you're thinking of buying, Google's image model makes one picture of you wearing it, about {{seeme.inr_a_picture}} each, at most {{seeme.month_cap_inr}} a month, and it stays off until you type YES. | C73 (`wardrobe/seeme/`); `llm/tryon.py:75` `TRYON_PRICES`; `config.py:641` |
+| t13b04 · guests | "See it on me", a picture made by Google of a garment my owner is thinking of buying, stays off until my owner says yes. | C73 (`wardrobe/seeme/consent.py`) |
+
+### T14 · What else I can do — picture 9 · ≈ 50 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t14b01 | Beyond these seven, I have {{modules.else_count}} more modules. They're on screen now, and each has its own chapter in my owner's full book. | the module map (D3) |
+| t14b02 | A morning brief. Web search that shows its sources. Gmail, the calendar, to-dos, contacts and Drive. Groceries, parcels, bills and family calendars. WhatsApp drafts that my owner sends. Telegram. Vitals, which shows how I'm running and what I cost. And this book. | C19; C20; C29–C34; C25–C27, C60; C22; C04; C55; C57 |
+| t14b03 | When a new part is built, it joins its module here, and the tour stays the same length. | D9 (the "what else" scene grows on screen, not in time) |
+
+### T15 · How I'm built — picture 9 (today's stack labels) · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t15b01 | I'm written in Python with FastAPI, keep my data in Google's Firestore, and run on Google Cloud Run. My console is plain JavaScript with no build step, and the 3D pictures use three.js. | `pyproject.toml`; C41; `deploy/cloudrun.sh`; `api/console.py` (`THREE_RELEASE`) |
+| t15b02 | I use {{libs.python_pins}} Python packages, each pinned and checked by its hash; their licences are in the full book. Every change passes automated tests first, then rolls out with no traffic, passes a health check, and only then takes over. | `requirements.lock`; `gen/libs.py`; C58 (`.github/workflows/ci.yml` jobs `test`, `deploy`) |
+| t15b03 | And this book is made again from my code at every release; it is built twice and must come out identical, or it isn't used. | `gen/write.py` `check` (`--check`, CI job `test`); C57 |
+
+### T16 · What I cost — picture 10 · ≈ 20 s · **You only**
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t16b01 | This scene is for you only, {h}. The bars are my prices in rupees, at {{costs.rate}} rupees a dollar, from my own price table, and my hosting is set up to fit Google's free allowances. This book's AI writing has its own caps, in Book settings. | `gen/costs.py` (prices, `FREE_TIER`, the rate); `show_script.py` (owner only); D7 |
+
+### T17 · What's planned next — picture 11 · ≈ 40 s · everyone
+
+| Beat | Narration | Traces to |
+|---|---|---|
+| t17b01 | Last, what's planned. None of it is built yet, and plans can change. | the guide §11 (PLANNED) |
+| t17b02 | Next: {{roadmap.next}}. After that: {{roadmap.after}}. The full book's planned chapter lists the rest, and goes deeper into every part you've seen today. | the guide §11's first two rows (I0 refreshes them, seam 15) |
+
+**Then, unchanged:** scene 12 (Questions: "Do you have any questions about how I'm built?", or the
+`ai_off` line) and scene 13 (Closing: `credit`, `sealed_guest` / `sealed_owner`, `thanks_guest` /
+`thanks_owner`), word for word from `buildbook/lines.py`.
+
+**The tour's facts** (computed by `gen/facts.py` at CI from the release's own code; a placeholder
+that is not in this table fails the build, D9):
+
+| Fact | Source (read as code, never typed) | On `47ee8fc` it would read |
+|---|---|---|
+| `release.label`, `release.version`, `release.date` | `gen/plans.py:78`; `src/jarvis/__init__.py:3`; `gen/repo.py` commit date | R6.3, v6.3.0, its day |
+| `release.new` | this release's own plan title, after its em dash | "The Build Book: written by AI, short tour and full book" |
+| `tour.minutes` | the timer over the filled script (`gen/tour.py`), whole minutes | 14 (owner), 13 (guest) |
+| `cards.count`, `modules.count`, `modules.else_count` | the guide's cards; the module map (`gen/modules.py`); modules minus the seven | 73, 18, 11 |
+| `loc.python_code` | the counter (`gen/loc.py`), Python code lines in `src/` | 124,475 (rounded in words: "about 124 thousand") |
+| `layers.count` | `buildbook/sections.py:31` `LAYERS` without the band | 8 |
+| `brain.balanced_model` | `config.py:134` `model_balanced` default, named by `gen/costs.model_label` | Claude Sonnet 5.5 |
+| `undo.keep_days` | `undo/models.py:23` `RETENTION_DAYS` | 30 |
+| `keys.purposes` | `len(keyring.PURPOSES)` (AST of `keyring.py:42–84`) | 26 |
+| `services.count` | rows of the guide's §5.2 (`arch_coverage.py` keeps it equal to the code) | 31 |
+| `approvals.max_new_cards` | `tools/budget.py:33` `MAX_NEW_CARDS` | 5 |
+| `memory.facts_per_turn` | `recall/models.py:28` `MAX_FACTS_PER_TURN` | 12 |
+| `memory.learn_a_day` | `config.py:341` `memory_learn_daily_cap` default | 20 |
+| `vault.unlock_minutes` | `config.py:247` `vault_unlock_minutes` default | 10 |
+| `vault.reminder_days_first` | `vault/models.py:26` `REMINDER_CHOICES[0]` | 180 |
+| `home.offline_minutes` | `config.py:265` `home_offline_after_s` default ÷ 60 | 6 |
+| `sos.hold_s`, `sos.countdown_s` | `sos/service.py:68` `HOLD_S, WEB_COUNTDOWN_S` | 2, 5 |
+| `sos.max_contacts` | `config.py:537` `sos_max_contacts` default | 5 |
+| `tryon.measures` | `len(wardrobe/tryon/model.py:32 MEASURES)` | 6 |
+| `seeme.inr_a_picture` | `llm/tryon.py:75` `TRYON_PRICES` typical × `FALLBACK_RATE` × (1 + `tryon_tax_pct` 18 %), "about ₹N" | about ₹9 |
+| `seeme.month_cap_inr` | `config.py:641` `tryon_month_cap_inr` default | ₹300 |
+| `libs.python_pins` | pins in `requirements.lock` | 67 |
+| `costs.rate` | `gen/costs.py:62` `rate` (`billing/fx.py:33` `DEFAULT_RATE`) | 95.24 |
+| `roadmap.next`, `roadmap.after` | the guide §11 rows 1 and 2, release and content in words | (after I0's refresh, seam 15) |
+
+**Size, measured on the filled script above** (a scratch count with the `47ee8fc` values, at the
+timer's pace): the owner's tour **54 lines, 1,761 words, 9,390 characters, ≈ 796 s**; a guest's 53
+lines, 1,699 words, 9,067 characters, ≈ 768 s. With the unchanged ask line and closing (≈ 15 s, ≈ 180
+characters): **≈ 13.6 minutes for the owner, ≈ 13.0 for a guest**. Every line is under the 400-character
+beat cap (`model.py` `Beat.text`). The cloud voice, if chosen, reads ≈ 9,570 characters: ≈ 94 tours a
+month inside the free 900,000 (`voice_tts_free_chars`, shared with the console), then ≈ ₹27 a tour
+(US$30 a million, `voice_price_chirp3_hd_usd_per_m`); the browser's voice is ₹0, and a guest is
+free-only (R6.2).
 
 ## Decisions (binding)
 

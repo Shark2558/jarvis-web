@@ -131,6 +131,156 @@ gateway, no MCP") stands, and R6.3 adds no tool at all.
 
 ## What the code says today (`main` @ `47ee8fc`)
 
+Measured here with the generator exactly as CI's deploy job runs it (`python -m
+jarvis.buildbook.gen --out <dir> --best-effort`, Python 3.12, a clean checkout of `47ee8fc`) and
+with small standard-library scripts outside the repository.
+
+1. **Version and labels.** `__version__ = "13.1.0"` (`src/jarvis/__init__.py:3`). Exact pins:
+   `test_about.py:25`, `test_r7_seams.py:111`, `test_r11_1_seams.py:74`, `test_r13_seams.py:72`,
+   `test_r14_seams.py:99`, `test_r131_seams.py:36`; a prefix pin `test_r11_seams.py:60`
+   (`startswith("13.")`); `v13.1.0` in `tests/r13_fake_server.py:126`, `test_r13_wiring.py:306`,
+   `test_r131_wiring.py:291`. The release label is read from the version (`gen/plans.py:78`
+   `release_label`) and pinned as `R13.1` at `test_book_gen_determinism.py:212`,
+   `test_r7_seams.py:160`, `test_r14_seams.py:104`, and with its own plan's path at
+   `test_book_gen_plans.py:212` (`docs/plans/r13-1-try-on.md`) and `:218` (the first limitation's
+   release). Plans are ordered by release number (`gen/plans.py:61–68`), so this plan,
+   `r6-3-book-content.md`, is read first only once the version is `6.3.0`; it carries "Risks" and
+   "Needs the owner" lists, which `:218` needs.
+2. **The generator today.** `book.json` **198,076 bytes**, `source.zip` **9,807,662 bytes** (2,670
+   files, 27.3 MB raw), **97** files left out, 4.3 s; total **10.0 MB** a release. The show: 11 scenes,
+   **56 beats, 6,036 characters, 1,047 words**. Sections: 66 packages, 69 fit rows, 85 libraries, 38
+   stack items, 10 workflows, 29 plan decision lists, 25 cost items at ₹95.24 (2026-11-01), **15**
+   integration services, **80** limitations (the cap, `gen/write.py:92` `limits[:MAX_LIMITATIONS]`),
+   26 key purposes, 56 alert kinds. Scene 1 says "about 206,413 lines of code" (raw lines).
+3. **The guide.** `docs/architecture/JARVIS-Architecture.md` v13.1.5 (18 Nov 2026): **73 cards, C01–C73**
+   (C69–C73 are R13's and R13.1's wardrobe and try-on), 14 diagrams (`diagrams/*.markdy`), **0** C-ids in
+   any diagram. `scripts/arch_coverage.py`: OK — **66** packages and modules, **104** console modules,
+   **2** Scheduler jobs, **31** outside services, **120** Firestore collections. C57 still says "Outside
+   services: Anthropic (the talk-through only)" (Phase A G2, open). §11 Roadmap still follows the
+   11 Nov release plan (it lists R13 as "camera life"): stale.
+4. **Sizes and caps.** `buildbook/model.py` (412 lines): `KEEP = 3` (`:65`), `SNAPSHOT_CAP_BYTES = 15
+   MiB` (`:67`), `BOOK_JSON_CAP_BYTES = 2 MiB` (`:68`), `MAX_LIMITATIONS = 80` (`:70`), `FileKind =
+   Literal["book", "source"]` (`:83`), `SHOW_SCENES` 13 (`:84`), `BOOK_SCENES = 11` (`:99`),
+   `SealedRelease.files` exactly 2 (`:277`). `seal_index.py:43–44` `KINDS = ("book", "source")` and
+   their caps; `checked_files` (`:147`) demands exactly those two. `book_max_total_mb` 60
+   (`config.py`); **no 80 % storage warning exists** (searched `buildbook/`): `sealer._room` (`:171`)
+   only prunes oldest-first at seal time.
+5. **The clocks.** `book_seal` is a tick job (`sealer.py:259–264`, `JOB_BUDGET_S = 45.0` at `:51`).
+   `ticks.py:32` `MAX_BUDGET_S = 60.0`, `:35` `TICK_TOTAL_BUDGET_S = 150.0`. The brief clock runs
+   `0,30 4-11 * * *` IST with a 180 s attempt deadline (`deploy/cloudrun.sh:731–734`): 16 ticks a day,
+   04:00–11:30 only. The home watchdog runs `*/5 * * * *` with a 60 s deadline (`:756–759`) and
+   `WATCHDOG_BUDGET_S = 50.0` for all its jobs (`home/watchdog.py:61`); R6's jobs join it only when Home
+   is on (`api/r6_wiring.py:216–218`); `ADVISORY_JOBS` (`home/watchdog.py:81–84`) holds `book_seal`,
+   `book_sweep`. `R6_JOB_NAMES = {"book_seal", "book_sweep"}` (`api/r6_wiring.py:76`, pinned
+   `test_r6_wiring_seams.py:154`); the ordered tick-job list is pinned in `test_r2_wiring.py:258–272`
+   and `test_r6_wiring.py:133–137` (with `len(st.home_watchdog.jobs) == 2`).
+6. **Cloud Run.** 1 CPU, 512 MiB, `--timeout 300`, 0–1 instances (`cloudrun.sh:623–624`); CPU only
+   during a request. **`JARVIS_LLM_TIMEOUT_S=20`** in production (`:600`), handed to the Anthropic
+   client as its timeout (`llm/factory.py:18`, `anthropic_provider.py:110–116`): a non-streamed call
+   that takes longer than 20 s to answer fails. The brain keys are optional secrets:
+   `JARVIS_ANTHROPIC_API_KEY` (`:158`) and `JARVIS_GEMINI_API_KEY` (`:162`), mounted at `:614`.
+   `JARVIS_DEFAULT_TIER=balanced`, `JARVIS_ENV=prod`, `JARVIS_AUTH_MODE=google` (`:600`). Region
+   `asia-south1` (`:48`). `make book` (`:619`).
+7. **The router.** `llm/router.py`: `_DEGRADE_TO` STRONG → BALANCED → FAST (`:73–77`); `complete(…,
+   allow_degrade=True)` (`:192–203`): with `allow_degrade=False` a transient error raises instead of
+   going down a tier (`:262–264`), **but the laptop brain is still asked** on an unreachable cloud, an
+   open breaker or no credit (`:215–222`, `:236–253`). `stream` never changes tier but also hands over
+   to the laptop before its first text (`:272–336`), and does not say which model answered.
+   `Completion` carries `model`, `provider`, `usage`, `cost_usd` and `offline` (set only by the
+   laptop) (`llm/base.py:190–200`); `StreamUsage` counts tokens while streaming (`:138–187`). So Phase
+   A's "Unverified whether the router already has such a switch" resolves to: half of one
+   (`allow_degrade`), no switch for the laptop.
+8. **The brains.** `BrainSpec(id, label, provider, tiers, trains_on_content)` (`llm/brains.py:29–34`);
+   `router_for(id)` (`:82`); the Gemini brain exists only with `JARVIS_GEMINI_API_KEY`, labelled "Gemini
+   (free)" and `trains_on_content = not gemini_paid_tier` (`:128–139`). Tiers: Claude
+   `claude-haiku-5-5` / `claude-sonnet-5-5` / `claude-opus-5-5` (`config.py:133–135`); Gemini
+   `gemini-3.5-flash-lite` / `gemini-3.8-flash` / `gemini-3.8-flash` (`:142–144`). The talk lane picks
+   the default non-training brain (`buildbook/talk.py:145–152`), BALANCED, 400 tokens (`:42`, `:107`).
+9. **Prices and the rate.** `llm/pricing.py:27–34`: Sonnet 5.5 US$2 / 10, Opus 5.5 4 / 20, Haiku 5.5
+   0.10 / 0.50 per million tokens in / out (cache reads 5 % on Sonnet and Opus, writes 1.25×); every
+   Gemini free model $0. `billing/fx.py:33–34` `DEFAULT_RATE = 95.24`, `DEFAULT_AS_OF = "2026-11-01"`
+   (the day's rate from Frankfurter otherwise); `config.py:359` `usd_inr_rate` 95.24;
+   `gen/costs.py:28` `FALLBACK_RATE = (95.24, "2026-11-01")`. Unchanged since Phase A.
+10. **Money.** `billing/service.py:59` `LABELS = {"voice": "Voice", "tryon": "Try-on"}`;
+    `ensure_allowed` (`:222`) refuses a paid brain at `used >= limit`, fail closed; `record` (`:333`)
+    adds a completion to his IST month under the brain's id and never raises; `billing/spend.py`
+    `ensure_spend_allowed` refuses when `used + spend > limit` (R13.1). R13.1's atomic cap with holds is
+    `wardrobe/seeme/cap.py` (`reserve` / `settle` / `release` in one transaction, `busy` while a hold
+    under 10 minutes exists); its typed YES is `wardrobe/seeme/consent.py:96` (`typed.strip() == YES`).
+    R6.2's confirm-before-spend is `confirm_cost: true` (`buildbook/owner.py:80` `CostNotConfirmed`).
+11. **Book settings** (`buildbook/owner.py:4`): `creator_name, show_voice, listening, talk_on,
+    allow_training_brain, voice_rule, updated_at`; `SETTINGS_KEYS` (`api/r6_wiring.py:77`). Both voices
+    default to the browser (R6.2 decision 4).
+12. **The show player.** `book.html` (117 lines) loads `console-fx.js`, `console-permissions.js`,
+    `console-book-show.js`, `console-voice-capture.js`, `console-book-voice.js`, `console-book-2d.js`,
+    `console-book-talk.js` and the module `console-book-3d.js` (`:108–115`); it is not hash-pinned.
+    `console-book-show.js` is **390 lines** of its 400 (`test_book_static.py:55–58`: every Book JS ≤ 400,
+    CSS ≤ 300, ASCII): `normalScene` accepts `n` 1–11 only and `normalScript` sorts by `n` (`:67–90`),
+    `timeline` appends scene 12 and 13 (`:93–99`). Pictures are chosen by scene number:
+    `console-book-scenes.js` {1, 2, 12, 13}, `-flow.js` {3, 5, 6, 8}, `-data.js` {4, 7, 9, 10, 11}
+    (`test_book_static.py:30–33`; `console-book-scenes-data.js:189`): 4 the vault and keyring purposes,
+    7 the home boundary, 9 tags on rings by group, 10 ₹ bars, 11 dimmed "later" nodes, each from the
+    scene's facts. Show lines are never hard-coded in JS (`test_book_static.py:70`).
+13. **The console.** `console.html` 782 lines, hash-pinned (`test_r13_seams.py:559–560`,
+    `test_r131_seams.py:420`); it loads `console-book-reader.js` (`:775`) and `console-book.js`
+    (`:776`); the Book panel `#p-book` (`:614`); 22 panels. `console-book.js` 384 / 400,
+    `console-book-reader.js` 257 / 400, `console-book-talk.js` 371, `console-book-voice.js` 301.
+14. **The routes.** `api/book.py`: `GET /v1/book`, `/sections`, `/releases/{rid}/sections`, `POST
+    /releases/{rid}/ticket`, `GET /download/{ticket}`, `GET|PUT /settings`; `api/book_show.py`: `open`,
+    `show/script`, `show/speak`, `show/ask`, `show/beat`, `close`, `resume`, `show/lock`;
+    `api/book_show_hear.py`: `show/hear`, `show/heard`. `api/book_gate.py:56` `console_only` passes a
+    signed-in browser only (R6.2 G11 closed, no token-mode shortcut). Limits `book_show_wiring.py:41–51`.
+15. **Size guards in force.** `config.py` **789** (≤ 790: `test_r131_seams.py:110`, `:905`; < 800:
+    `test_r13_seams.py:223`, `test_r14_seams.py:480`): **1 line left**. `api/app.py` 732 (≤ 735,
+    `test_r131_seams.py:902`), `tools/gateway.py` 760 (`== 760`, `:903`), `core/brain.py` 713 (≤ 741,
+    `:904`), `api/console.py` 469 (≤ 475, `:917`). C modules of the Book ≤ 400 and functions ≤ 50
+    (`test_book_boundaries.py:19–36`, `:153`), with the lane's import guard `LANE_FORBIDDEN` (`:37–50`).
+16. **Keyring** 26 purposes (`keyring.py:42–84`; pinned `test_r131_seams.py:56`, `test_r13_seams.py:107`,
+    `test_r14_seams.py:261`, `test_r7_seams.py:295`, `test_r11_seams.py:166`; positions
+    `test_r14_seams.py:260`, `test_r7_seams.py:294`). `BookCrypto` (`seal_index.py:59–108`) seals a file
+    under a fresh data key wrapped by the keyring's `vault` cipher with the Book's own AADs, and the index
+    under `book_index`: a new Book file needs no new purpose.
+17. **What the code snapshot holds.** The zip includes **`.claude/**` (46 files)**, `tests/fixtures/**`
+    (106 files), `docs/` (135), `android/` (82), `evals/` (156). Phase A §7.3 says the writer never reads
+    `.claude/**` or fixtures: true only if the reading packs leave them out (D4); they are in the zip.
+18. **The fact sources exist as constants.** `tools/budget.py:33` `MAX_NEW_CARDS = 5`;
+    `undo/models.py:23` `RETENTION_DAYS = 30`; `recall/models.py:28` `MAX_FACTS_PER_TURN = 12`;
+    `sos/service.py:68` `HOLD_S, WEB_COUNTDOWN_S = 2, 5`; `vault/models.py:26` `REMINDER_CHOICES`;
+    `config.py` `memory_learn_daily_cap` (`:341`), `vault_unlock_minutes` (`:247`), `home_heartbeat_s`
+    (`:262`), `home_offline_after_s` (`:265`), `sos_max_contacts` 5 (`:537`), `tryon_month_cap_inr` 300
+    (`:641`); `wardrobe/tryon/model.py:32` `MEASURES`; 179 settings in all.
+19. **The running example still holds** (Phase A §9.1): `tools/google_calendar.py:557` and `:610`
+    (`calendar_create_event`, `calendar_delete_event`), `tools/taint.py:82` `spoken_in_context`,
+    `tools/calendar_undo.py:244` `CalendarRestorer`, `activity/words.py:74` `NOTE_WRITE` (G15: no Undo
+    for a created event), `offline/rules.py:133` "appointments?" (G16: No-AI lists today's events).
+20. **Measured for the estimates.** Cards whose cited files changed: R6.2 **8**, R13 **34**, R13.1 **25**
+    (`git diff --name-only` between the merges against each card's "Where in the code"). Python source
+    by the standard library's `tokenize` (909 files): **124,475** code, **18,290** docstring, **2,785**
+    comment-only, **27,272** blank lines. Tracked files 2,766; top-level functions and classes in
+    `src/` 6,665; a path-and-symbol index of them is 383 KB of JSON (59 KB gzipped).
+
+**Phase A facts corrected here.**
+
+| Phase A said (15 Nov, on `9a8392b`) | On `47ee8fc` | Where it matters |
+|---|---|---|
+| One release 7.98 MB; book.json 182,037; source.zip 7,800,117; 73 left out; 2,277 files, 22.4 MB raw | **10.0 MB**; 198,076; 9,807,662; **97**; 2,670 files, 27.3 MB raw | Storage, D12 |
+| +0.63 MB a feature release; the 15 MiB zip cap in ≈ 12 releases | R13 and R13.1 added ≈ 1 MB each: the cap is ≈ **6 feature releases** away | R6.3.1 de-duplication (G14 is nearer) |
+| 3 kept 23.9 MB, at seal time 31.9 MB | ≈ 30 MB, ≈ 40 MB | Storage |
+| 68 cards C01–C68; 17 modules | **73 cards C01–C73; 18 modules** (Wardrobe & Try-on: C69–C73) | Pages, D3 |
+| 65 packages; 90 console modules; 30 outside services; 106 collections | **66; 104; 31; 120** | Fact pack |
+| 155 settings | **179** | Fact pack |
+| Scenes 1–11: 56 beats, 6,231 characters, 1,084 words; "176,907 lines" in scene 1 | 56 beats, **6,036** characters, **1,047** words; "206,413 lines" | Tour, timer |
+| Python 107,710 code, 15,302 docstring, 2,446 comment, 23,028 blank (772 files) | **124,475; 18,290; 2,785; 27,272 (909 files)** | LOC fact |
+| ≈ 135 pages (68 + 22 + 30 + 15) | **≈ 152** (73 cards + 18 modules + 22 screens + 31 services + 8 chapters) | Estimates |
+| Changed cards a feature release 7–44 | R6.2 8, R13 34, R13.1 25 | Estimates |
+| First write ₹711 / ₹1,027 / ₹1,418 (incl. the AI tour) | **₹766 / ₹1,122 / ₹1,562** (no tour) | Cost |
+| `cloudrun.sh:149` key, `:533` secrets, `:520` prod env, `:542–543` CPU and memory | `:158`, `:614`, `:600`, `:623–624` | Sources |
+| "Unverified whether the router has a no-fallback switch" | `allow_degrade` exists; no laptop switch; production LLM timeout 20 s | D5 |
+| The writer never reads `.claude/**` | `.claude/**` is inside `source.zip` | D4 |
+| Gemini's balanced model (not named) | `gemini-3.8-flash` (`config.py:143`) | Trial |
+| §6 G2, G3, G4, G5, G6, G7, G8, G9, G10, G14 | still open; G11, G12, G13 closed by R6.2; G1 fixed by R6.2 | D10, R6.3.1 |
+| ₹95.24 a dollar (`config.usd_inr_rate`) | unchanged (`billing/fx.py:33`, `config.py:359`, `gen/costs.py:28`) | Cost |
+
 ## The short tour's first script (approval stop 2)
 
 ## Decisions (binding)

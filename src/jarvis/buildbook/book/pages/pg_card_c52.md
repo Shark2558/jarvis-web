@@ -19,7 +19,7 @@ sources:
   "src/jarvis/permissions/store.py": "124f378427b1cfb4"
 ---
 ## In plain words
-This is where you decide how much JARVIS may do without asking. Each group of tools, such as reading your calendar, sending e-mail or getting a bill payment ready, has three choices: Allow, Ask first or Never. A group whose actions can't be undone never offers Allow, so JARVIS always asks or refuses (`src/jarvis/permissions/groups.py`). On top of that you can add a passkey, the fingerprint or face check your phone or laptop already has, so that nothing irreversible happens without your own touch, even if someone gets into your Google sign-in (`src/jarvis/permissions/service.py`).
+This is where you decide how much JARVIS may do without asking. Each group of tools, such as reading your calendar, sending e-mail or getting a bill payment ready, offers a choice of Allow, Ask first or Never. A group whose actions can't be undone never offers Allow, so JARVIS always asks or refuses (`src/jarvis/permissions/groups.py`). On top of that you can add a passkey, the fingerprint or face check your phone or laptop already has, so that nothing irreversible happens without your own touch, even if someone gets into your Google sign-in (`src/jarvis/permissions/service.py`).
 
 ## Example (made up)
 Anil sets "Send e-mail" to Ask first and "Read calendar" to Allow. A minute after signing in with Google again, he registers his laptop's fingerprint reader as a passkey. Next morning JARVIS drafts a reply to his landlord and shows a card. He taps Approve, touches the reader within the 2 minutes the check lasts, and the e-mail goes. That night someone with his stolen Google password asks JARVIS to remove all his passkeys. Nothing happens at once: the reset waits 24 hours, a notice lands in his inbox, and over breakfast Anil cancels it with his fingerprint.
@@ -27,9 +27,9 @@ Anil sets "Send e-mail" to Ask first and "Read calendar" to Allow. A minute afte
 ## How it works
 Each row in Approvals, Permissions is a `PermissionGroup` made of tool-name patterns, so a tool added later lands in the right row by itself (`src/jarvis/permissions/groups.py`).
 `validate_choices` refuses Allow on an irreversible row before anything is saved, and `rules_for` drops such a choice if it was ever hand-edited into storage.
-When one call matches two rows, the strictest choice wins (`src/jarvis/permissions/groups.py`).
+When one call matches more than one row, the strictest choice wins (`src/jarvis/permissions/groups.py`).
 `PermissionsStore` keeps your choices in `permissions`; the tool gateway reads them on every call through a cache of {{fact:src/jarvis/permissions/store.py:CACHE_S}} seconds that a change refreshes at once, so a new Never applies to the very next call.
-Each change is a transaction that bumps a revision number, so two open tabs don't lose each other's edits (`src/jarvis/permissions/store.py`).
+Each change is a transaction that bumps a revision number, so open tabs don't lose each other's edits (`src/jarvis/permissions/store.py`).
 Passkeys use the browser's own support: `registration_options` and `verify_registration` set one up, `authentication_options` and `verify_assertion` check one, and only its public key is kept in `passkeys`.
 Your first passkey needs a fresh Google sign-in in the browser; every later change, adding one, removing one or switching the rule off, needs a passkey check made for exactly that change (`PermissionsService`).
 Each check is a single-use challenge in `webauthn_challenges`, and for an approval `approval_binding` ties it to that card's id, its exact arguments, the conversation and the tool.

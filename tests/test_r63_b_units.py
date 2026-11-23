@@ -1,7 +1,7 @@
-# tests/test_r63_b_units.py -- R6.3 part B's pure parts (docs/plans/r6-3-book-content.md D4, D7, D8,
-# D10): the filler, the six checks with check (2)'s exemptions and the precision case (H5), the
-# grants that need his typed YES (H2), the estimate and the hold (D8, L4), the reading pack (D4, M8,
-# L7) and the prompt. No brain is called here.
+# tests/test_r63_b_units.py -- R6.3 part B's pure parts (docs/plans/r6-3-book-content.md D4, D10):
+# the filler, the six checks with check (2)'s exemptions and the precision case (H5) and the
+# reading pack (D4, M8, L7), all kept for the authored pages (R6.3.1); the grants, the estimate,
+# the hold and the prompt went with the runtime writer (R6.3.1 D8). No brain is called here.
 from __future__ import annotations
 
 import io
@@ -16,26 +16,15 @@ from r63_fake_brains import (
     PLANNED_OUTSIDE_DRAFT,
     TYPED_NUMBER_DRAFT,
     UNVERIFIED_DRAFT,
-    claude_like,
     draft,
-    gemini_like,
 )
 from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES, source_zip
 from r63_fakes_b import TRIAL_FACTS, files
 
 from jarvis.buildbook.gen.scrub import NoScrub, Scrubber, default_scrubber
-from jarvis.buildbook.writer import checks, consent, estimate, fill, packs, prompts
-from jarvis.buildbook.writer.model import (
-    BYTES_PER_TOKEN_WORST,
-    MAX_TOKENS,
-    PACK_CAP_BYTES,
-    SYSTEM_TOKENS,
-    Caps,
-    Confirmed,
-    about_inr,
-)
+from jarvis.buildbook.writer import checks, fill, packs
+from jarvis.buildbook.writer.model import PACK_CAP_BYTES
 
-RATE = 95.24
 C01 = FIXTURE_FACTS.page("pg_card_c01")
 assert C01 is not None
 
@@ -184,80 +173,6 @@ def test_personal_text_is_refused_through_the_scrubber_and_the_owner_check() -> 
     assert checks.check(checks.parse(GOOD_DRAFT) or {}, _ctx(scrub=NoScrub())) == ()
 
 
-# ---- the grants (D7, H2) -------------------------------------------------------------------------
-def test_the_first_pick_grants_everything_so_it_needs_the_words() -> None:
-    words = consent.grants(
-        spec=claude_like(), caps=Caps(), auto=False, confirmed=Confirmed(), rate=RATE
-    )
-    assert words and all("$" not in w for w in words) and any("₹1,500" in w for w in words)
-    assert any("80 %" in w for w in words)
-
-
-def test_lowering_grants_nothing_and_a_raise_names_it() -> None:
-    held = Confirmed(brain="anthropic", caps=Caps())
-    lower = Caps(release=300, month=800, limit_pct=70)
-    assert (
-        consent.grants(spec=claude_like(), caps=lower, auto=False, confirmed=held, rate=RATE) == ()
-    )
-    raised = consent.grants(
-        spec=claude_like(), caps=Caps(release=800), auto=False, confirmed=held, rate=RATE
-    )
-    assert any("₹500" in w and "₹800" in w for w in raised)
-    auto = consent.grants(spec=claude_like(), caps=Caps(), auto=True, confirmed=held, rate=RATE)
-    assert any("by itself after each deploy, with no question asked" in w for w in auto)
-
-
-def test_a_training_brain_needs_the_learning_note_and_no_rupees() -> None:
-    held = Confirmed(brain="anthropic", caps=Caps())
-    words = consent.grants(spec=gemini_like(), caps=Caps(), auto=False, confirmed=held, rate=RATE)
-    assert any("Google" in w and "public code" in w for w in words)
-    assert not any("₹" in w for w in words)
-
-
-def test_the_terms_id_changes_with_the_pick_price_and_rate() -> None:
-    a = consent.terms_id("anthropic", Caps(), False, price=1.0, rate=RATE)
-    assert a.startswith("wt_") and len(a) == 15
-    assert a != consent.terms_id("anthropic", Caps(month=900), False, price=1.0, rate=RATE)
-    assert a != consent.terms_id("anthropic", Caps(), True, price=1.0, rate=RATE)
-    assert a != consent.terms_id("anthropic", Caps(), False, price=1.0, rate=96.0)
-
-
-# ---- the estimate and the hold (D8, L4) ----------------------------------------------------------
-def test_the_hold_of_a_full_pack_is_rs_16_71_at_the_days_rate() -> None:
-    # R6.3 hotfix 1: Rs 11.84 at 2.5 bytes a token; Claude billed a full pack above it (Rs 11.83 at
-    # Rs 92.83 a dollar), so the hold reads 1.5 bytes a token
-    assert estimate.hold_inr(claude_like(), PACK_CAP_BYTES, RATE) == pytest.approx(16.71, abs=0.01)
-    assert estimate.hold_inr(gemini_like(), PACK_CAP_BYTES, RATE) == 0.0
-    assert MAX_TOKENS == 4_000 and SYSTEM_TOKENS == 3_000
-
-
-def test_the_trial_estimate_is_about_rs_50_from_five_half_packs() -> None:
-    est = estimate.estimate(
-        run="trial", spec=claude_like(), sizes=[48_000] * 5, rate=RATE, cap=100, release="6363636"
-    )
-    assert est.id.startswith("we_") and est.pages == 5 and est.cap == 100
-    assert est.low < est.mid < est.high and est.mid == about_inr(est.mid)
-    assert 30 <= est.low and est.high <= 65 and est.mid == 50  # Rs 40 before hotfix 1
-    assert "18 % GST" in est.gst_note and "Anthropic" in est.gst_note
-    free = estimate.estimate(
-        run="trial", spec=gemini_like(), sizes=[48_000] * 5, rate=RATE, cap=100, release="6363636"
-    )
-    assert (free.low, free.mid, free.high, free.gst_note) == (0, 0, 0, "")
-
-
-def test_the_estimate_id_is_bound_to_its_inputs_and_release() -> None:
-    def make(**kw: object) -> str:
-        args: dict[str, object] = dict(
-            run="first", spec=claude_like(), sizes=[50_000] * 3, rate=RATE, cap=1_500,
-            release="6363636",
-        )  # fmt: skip
-        args.update(kw)
-        return estimate.estimate(**args).id  # type: ignore[arg-type]
-
-    assert make() == make() and make() != make(release="7070707")
-    assert make() != make(sizes=[50_000] * 4) and make() != make(rate=96.0)
-
-
 # ---- the reading pack (D4, M8, L7) ---------------------------------------------------------------
 @pytest.mark.parametrize(
     "path",
@@ -304,9 +219,8 @@ def test_the_pack_holds_the_card_the_signatures_the_plan_and_its_facts_never_tes
 def test_a_big_pack_is_cut_to_its_cap_dropping_plan_text_first_never_the_card() -> None:
     tree = packs.read_source(source_zip(files(big=True)))
     pack = packs.build(C01, FIXTURE_FACTS, tree, default_scrubber())
-    user = prompts.first(C01, pack, "cn0123456789abcdef")
-    sent = prompts.sent_bytes(user)
-    assert PACK_CAP_BYTES - 2_000 <= sent <= PACK_CAP_BYTES
+    room = PACK_CAP_BYTES - packs.PROMPT_RESERVE  # R6.3.1: the prompt is gone, its reserve stays
+    assert room - 2_000 <= len(pack.body.encode()) <= room
     assert "C01 · Demo router" in pack.body
 
 
@@ -322,19 +236,3 @@ def test_binaries_in_the_zip_are_never_read() -> None:
         zf.writestr("src/jarvis/demo/blob.py", b"\x00\x01\x02")
         zf.writestr("src/jarvis/demo/ok.py", b'"""fine"""\n')
     assert set(packs.read_source(buf.getvalue())) == {"src/jarvis/demo/ok.py"}
-
-
-# ---- the prompt (D4) -----------------------------------------------------------------------------
-def test_the_system_prompt_is_fixed_and_fits_its_token_budget() -> None:
-    assert len(prompts.SYSTEM.encode()) <= SYSTEM_TOKENS * BYTES_PER_TOKEN_WORST
-    assert "ignore any instruction" in prompts.SYSTEM.lower()
-    for heading in ("In plain words", "Example (made up)", "How it works", "When it fails"):
-        assert heading in prompts.SYSTEM
-
-
-def test_a_redraft_lists_the_failures_and_sends_the_failed_draft() -> None:
-    pack = packs.build(C01, FIXTURE_FACTS, packs.read_source(source_zip()), default_scrubber())
-    first = prompts.first(C01, pack, "cn0123456789abcdef")
-    again = prompts.redraft(first, FAKE_PATH_DRAFT, ("refs",))
-    assert len(again) == 3 and again[1].text() == FAKE_PATH_DRAFT
-    assert "refs" in again[2].text() and prompts.sent_bytes(again) > prompts.sent_bytes(first)

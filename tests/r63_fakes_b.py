@@ -1,44 +1,17 @@
-# tests/r63_fakes_b.py -- part B's own fakes (R6.3, docs/plans/r6-3-book-content.md D5-D8, D11).
-# Imported bare (`from r63_fakes_b import ...`). Everything here is fixed and in memory: no model,
-# Google or Anthropic is ever called (the scripted brains of r63_fake_brains only).
+# tests/r63_fakes_b.py -- part B's own fixture data (R6.3, docs/plans/r6-3-book-content.md D4, D6),
+# kept for the checks and the packs (R6.3.1 D8: the writer's service fakes went with the writer).
+# Imported bare (`from r63_fakes_b import ...`). Everything here is fixed and in memory.
 #
-#   TRIAL_FACTS / trial_source()   the fixture's facts with the five trial pages added (D6), so
-#                                  a trial runs on the fixture; `big=True` adds a 150 KB docstring
-#                                  to a cited file, so every pack fills its 96,000-byte cap (the
-#                                  holds of Rs 11.84 of the trial's cap case)
-#   HoldPayer                      a Claude-like provider reporting exactly its call's hold's
-#                                  tokens (D8's worst case: bytes / 2.5 in, the system prompt at
-#                                  the cache-write price, 4,000 out): every call settles at it
-#   service(...)                   the writer's service over writer_context(...) with these
-#   good_draft(page_id)            a draft that passes all six checks for that page of the fixture
+#   TRIAL_FACTS                    the fixture's facts with the five trial pages added (D6)
+#   files(changed, big=)           the fixture's files; `big=True` adds a 150 KB docstring to a
+#                                  cited file, so every pack fills its 96,000-byte cap
 from __future__ import annotations
 
-import math
-from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Any
+from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES
 
-from r63_fake_brains import CLAUDE_TIERS, GOOD_DRAFT, ScriptedWriter, Step, gemini_like, registry
-from r63_fakes import (
-    FIXTURE_FACTS,
-    FIXTURE_FILES,
-    FakeBilling,
-    FakeSource,
-    FixedClock,
-    source_zip,
-    writer_context,
-)
-
-from jarvis.buildbook.facts_model import FactPack, IndexedPage
-from jarvis.buildbook.model import Release
-from jarvis.buildbook.writer.model import BYTES_PER_TOKEN_WORST
-from jarvis.llm.base import ChatMessage, Effort, StreamUsage, ToolSpec
-from jarvis.llm.brains import BrainRegistry, BrainSpec
-from jarvis.storage.docs import MemoryDocs
+from jarvis.buildbook.facts_model import IndexedPage
 
 _ROUTER, _STORE = "src/jarvis/demo/router.py", "src/jarvis/demo/store.py"
-_JS = "src/jarvis/api/static/console-demo.js"
-SYSTEM_TOKENS_AT_INPUT = 3_750  # 3,000 system tokens at the cache-write price (1.25 x input)
 
 
 def _trial(pid: str, kind: str, part: str, title: str) -> IndexedPage:
@@ -63,157 +36,4 @@ def files(changed: dict[str, str] | None = None, *, big: bool = False) -> dict[s
     return out
 
 
-def trial_source(*, big: bool = False, facts: FactPack = TRIAL_FACTS) -> FakeSource:
-    return FakeSource(facts, zipped=source_zip(files(big=big)))
-
-
-class MovableSource(FakeSource):
-    """A source whose release can change (a deploy): `deploy(sha, files, facts)`."""
-
-    def deploy(self, sha: str, tree: dict[str, str], facts: FactPack) -> Release:
-        zipped = source_zip(tree)
-        ref = facts.release.model_copy(update={"id": sha[:7], "sha": sha})  # type: ignore[union-attr]
-        self._facts, self._zip = facts.model_copy(update={"release": ref}), zipped
-        import hashlib
-
-        digest = hashlib.sha256(zipped).hexdigest()
-        self._release = Release(**ref.model_dump(), book_sha256=digest, source_sha256=digest)
-        return self._release
-
-
-@dataclass
-class HoldPayer(ScriptedWriter):
-    """Reports exactly its hold's tokens (bytes / BYTES_PER_TOKEN_WORST of what it was sent, the
-    system prompt at the cache-write price, 4,000 out), so the writer settles every call at its
-    hold (D8)."""
-
-    over: int = 0  # extra input tokens: a call billed above its hold (M1)
-    drafts: list[str] = field(default_factory=list)
-
-    async def stream(  # type: ignore[override]
-        self,
-        *,
-        system: str,
-        system_dynamic: str | None = None,
-        messages: list[ChatMessage],
-        model: str,
-        max_tokens: int,
-        effort: Effort | None = None,
-        usage: StreamUsage | None = None,
-        tools: list[ToolSpec] | None = None,
-    ) -> AsyncIterator[str]:
-        sent = sum(len(m.text().encode("utf-8")) for m in messages)
-        tokens = math.ceil(sent / BYTES_PER_TOKEN_WORST) + SYSTEM_TOKENS_AT_INPUT + self.over
-        text = self.drafts.pop(0) if self.drafts else GOOD_DRAFT
-        self.steps.insert(0, Step(text=text, input_tokens=tokens, output_tokens=max_tokens))
-        async for piece in super().stream(
-            system=system,
-            system_dynamic=system_dynamic,
-            messages=messages,
-            model=model,
-            max_tokens=max_tokens,
-            usage=usage,
-            tools=tools,
-        ):
-            yield piece
-
-
-def hold_payer(*drafts: str, over: int = 0) -> BrainSpec:
-    return BrainSpec(
-        id="anthropic",
-        label="Claude",
-        provider=HoldPayer("anthropic", over=over, drafts=list(drafts)),
-        tiers=dict(CLAUDE_TIERS),
-    )
-
-
-def service(
-    *,
-    brains: BrainRegistry | None = None,
-    source: FakeSource | None = None,
-    billing: FakeBilling | None = None,
-    clock: FixedClock | None = None,
-    docs: MemoryDocs | None = None,
-    limit_mb: int = 60,
-    uid: str | None = None,
-    emails: tuple[str, ...] | None = None,
-    notifier: Any = None,
-) -> Any:
-    """The writer's part over the fakes (`uid` and `emails`: the app's primary owner's)."""
-    from dataclasses import replace
-
-    from jarvis.buildbook.writer import part
-
-    ctx = writer_context(
-        brains=brains or registry(),
-        billing=billing,
-        source=source or trial_source(),
-        docs=docs,
-        clock=clock,
-        limit_mb=limit_mb,
-    )
-    ctx = replace(
-        ctx, uid=uid or ctx.uid, owner_emails=emails or ctx.owner_emails, notifier=notifier
-    )
-    return part.build(ctx)
-
-
-def both(claude: BrainSpec | None = None, gemini: BrainSpec | None = None) -> BrainRegistry:
-    return registry(claude or hold_payer(), gemini or gemini_like())
-
-
-__all__ = [
-    "BIG_DOC",
-    "TRIAL_EXTRA",
-    "TRIAL_FACTS",
-    "HoldPayer",
-    "MovableSource",
-    "both",
-    "files",
-    "hold_payer",
-    "service",
-    "trial_source",
-]
-
-
-# ---- driving the service -------------------------------------------------------------------------
-async def seal_r6(built: Any) -> None:
-    """R6's sealer's part: the current release sealed in R6's index (book and source)."""
-    ctx = built.job._ctx
-    rel = ctx.source.current()
-    zipped = ctx.source.read("source")
-    await ctx.vault.seal(ctx.uid, rel, {"book": zipped, "source": zipped}, now=ctx.clock())
-
-
-async def pick(built: Any, brain: str = "anthropic", **caps: int) -> Any:
-    """His pick saved with his typed YES on the words it asked for (H2)."""
-    from jarvis.buildbook.writer.http import PickIn
-    from jarvis.buildbook.writer.model import Caps
-    from jarvis.buildbook.writer.texts import WriterRefused
-
-    svc, uid = built.service, built.job._ctx.uid
-    body = PickIn(brain=brain, caps=Caps(**caps))
-    try:
-        return await svc.pick(uid, body)
-    except WriterRefused as no:
-        assert no.code == "yes_needed", no.code
-        yes = body.model_copy(update={"typed": "YES", "terms_id": no.extra["terms_id"]})
-        return await svc.pick(uid, yes)
-
-
-async def run_first(built: Any) -> Any:
-    from jarvis.buildbook.writer.http import RunIn
-
-    svc, uid = built.service, built.job._ctx.uid
-    est = await svc.estimate(uid, "first")
-    return await svc.first(uid, RunIn(typed="YES", estimate_id=est.id))
-
-
-async def steps(built: Any, n: int = 20) -> Any:
-    svc, uid = built.service, built.job._ctx.uid
-    view = None
-    for _ in range(n):
-        view = await svc.step(uid)
-        if view.state not in ("queued", "running"):
-            break
-    return view
+__all__ = ["BIG_DOC", "TRIAL_EXTRA", "TRIAL_FACTS", "files"]

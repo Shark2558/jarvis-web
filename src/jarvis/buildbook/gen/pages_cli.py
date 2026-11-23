@@ -26,7 +26,6 @@ never a personal finding's text.
 from __future__ import annotations
 
 import argparse
-import os
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -39,11 +38,11 @@ from jarvis.buildbook.gen import facts_cache
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.runner import say
 from jarvis.buildbook.gen.scrub import default_scrubber
+from jarvis.buildbook.gen.write import EMAILS_ENV, owner_emails  # one rule (R6.3.1 E)
 from jarvis.buildbook.writer import fill, packs, pages
 from jarvis.buildbook.writer.model import DRAFT_SECTIONS, SECTION_CAPS
 
 PROG = "python -m jarvis.buildbook.gen pages"
-EMAILS_ENV = "JARVIS_OWNER_EMAILS"
 KINDS = ("chapter", "module", "card", "screen", "service")
 STATUSES = ("ok", "stale", "failing", "missing")
 GUIDE_FILE = f"{authored.BOOK_DIR}/AUTHORING.md"
@@ -60,11 +59,6 @@ def _args(argv: Sequence[str] | None) -> argparse.Namespace:
     act.add_argument("--stamp", nargs="+", metavar="ID")
     ap.add_argument("--allow-missing", action="store_true")
     return ap.parse_args(argv)
-
-
-def owner_emails() -> tuple[str, ...]:
-    raw = os.environ.get(EMAILS_ENV, "")
-    return tuple(e.strip() for e in raw.split(",") if "@" in e)
 
 
 def main(argv: Sequence[str] | None = None, *, build: facts_cache.Builder | None = None) -> int:

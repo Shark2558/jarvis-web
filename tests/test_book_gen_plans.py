@@ -210,7 +210,11 @@ def test_the_real_plans_parse(tmp_path: Path) -> None:
     # R7 I0 seam 2: the release is named from the repository's own version (R6.3 I0: 6.3.0 ->
     # R6.3) and its plan comes first, then the rest newest first; R6's own decisions are still read
     assert read[0].path == "docs/plans/r6-3-book-content.md" and read[0].label == "R6.3"
-    assert read[1].path == "docs/plans/r14-hardening.md"
+    # R6.3.1 (I0): its plan is the newest after the release's own (labelled R6.3: two levels only)
+    assert [p.path for p in read[1:3]] == [
+        "docs/plans/r6-3-1-book-at-build.md",
+        "docs/plans/r14-hardening.md",
+    ]
     r6 = next(d for d in plans.decisions(read) if d.plan == "docs/plans/r6-build-book.md")
     assert len(r6.decisions) == 17 and r6.decisions[0].startswith("D1 · Deterministic")
     assert any(f.release == "R6" for f in plans.fit_rows(read))

@@ -100,6 +100,9 @@ def test_every_runtime_data_file_ships_in_the_wheel() -> None:
     cfg = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     data = cfg["tool"]["setuptools"]["package-data"]
     files = [f for f in tracked.stdout.split() if not f.endswith((".py", ".md"))]
+    # R6.3.1 D4: the authored pages and flowcharts are build-time sources, compiled into
+    # `_book/` (pages.json.gz, flows.json: package data) by the generator; never read at run time
+    files = [f for f in files if not f.startswith("src/jarvis/buildbook/book/")]
     assert "src/jarvis/skills/catalogue.json" in files
     assert [f for f in files if not _ships(f, data)] == []
 

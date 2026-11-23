@@ -2,7 +2,8 @@
 """R6 D4 best effort that works when the generator itself can't run: STANDARD LIBRARY ONLY.
 
     clear(out)                      unlink an earlier build's book.json, source.zip, facts.json,
-                                    release.json (and their temp files), so a stale `_book/`
+                                    pages.json.gz, flows.json (R6.3.1), release.json (and their
+                                    temp files), so a stale `_book/`
                                     is never served as this release; nothing else is touched
     error_release(start, out, msg)  a release.json that names the error and no book, from git
                                     alone (no pydantic): the deploy's `pip install` failed, yet the
@@ -29,6 +30,7 @@ from pathlib import Path
 
 BOOK_FILES = ("book.json", "source.zip")
 FACTS_FILE = "facts.json"  # R6.3 D2 (facts_model.FACTS_FILE; this module is stdlib only)
+FULL_BOOK_FILES = ("pages.json.gz", "flows.json")  # R6.3.1 D4 (writer.model PAGES_FILE, FLOWS_FILE)
 RELEASE_FILE = "release.json"
 PLANS = "docs/plans/"
 ERROR_MAX = 200
@@ -43,7 +45,7 @@ _VERSION = re.compile(
 def clear(out: Path) -> None:
     if not out.is_dir():
         return
-    for name in (*BOOK_FILES, FACTS_FILE, RELEASE_FILE):
+    for name in (*BOOK_FILES, FACTS_FILE, *FULL_BOOK_FILES, RELEASE_FILE):
         for path in (out / name, out / f".{name}.tmp"):
             path.unlink(missing_ok=True)
 

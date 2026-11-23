@@ -1,7 +1,8 @@
 # tests/test_r63_console_seams.py -- R6.3 I0 seams 8 and 9 (docs/plans/r6-3-book-content.md D9,
-# D14): the console's joins. console-book.js loads C's `console-book-writer.js` and
-# `console-book-pages.js` ONCE at the Book panel's first open (a script built in JS, never a tag in
-# console.html, which stays byte-identical) and hands them their hosts and deps; the show's script
+# D14): the console's joins. console-book.js loads C's `console-book-pages.js` ONCE at the Book
+# panel's first open (a script built in JS, never a tag in console.html, which stays
+# byte-identical) and hands it its host and deps (R6.3.1 D8: `console-book-writer.js` is gone);
+# the show's script
 # reader moved into `console-book-script.js` unchanged for today's show and reads the tour's shape
 # too (n 1-17, t ids, a picture {visual, facts} per scene): the picture modules get today's picture
 # number and the scene's OWN data, Questions as 12 and Closing as 13. book.html loads it first.
@@ -33,21 +34,19 @@ def test_the_console_sizes_hold() -> None:
     assert _lines(STATIC / "console-book-show.js") <= 370
     assert _lines(STATIC / "console-book-script.js") <= 200
     assert _lines(STATIC / "console-book-tour.js") <= 300
-    assert _lines(STATIC / "console-book-writer.js") <= 400
+    assert not (STATIC / "console-book-writer.js").exists()  # R6.3.1 D8
     assert _lines(STATIC / "console-book-pages.js") <= 400
     assert _lines(STATIC / "console-book-reader.js") <= 270
     assert _lines(STATIC / "book.html") <= 130
     assert _lines(API / "console.py") <= 473
 
 
-def test_the_panel_loads_the_writer_and_the_pages_once_at_its_first_open() -> None:
+def test_the_panel_loads_the_pages_once_at_its_first_open_and_never_the_writer() -> None:
     panel = _read("console-book.js")
-    assert "'console-book-writer.js'" in panel and "'console-book-pages.js'" in panel
-    assert "'JarvisBookWriter'" in panel and "'JarvisBookPages'" in panel
-    assert "if (d.open) { more(); load(); }" in panel and "if (X.top) return;" in panel
-    for name in ("console-book-writer.js", "console-book-pages.js"):
-        assert f"/static/{name}" not in _read("console.html")  # loaded by code, not by the page
-    assert "Object.freeze({ settings })" in _read("console-book-writer.js")  # C's, I1
+    assert "'console-book-pages.js'" in panel and "'JarvisBookPages'" in panel
+    assert "console-book-writer" not in panel and "JarvisBookWriter" not in panel  # R6.3.1 D8
+    assert "if (d.open) { more(); load(); }" in panel and "if (X.pages) return;" in panel
+    assert "/static/console-book-pages.js" not in _read("console.html")  # loaded by code
     assert "Object.freeze({ mount, page, more })" in _read("console-book-pages.js")
 
 

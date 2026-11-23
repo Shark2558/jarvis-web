@@ -27,7 +27,6 @@ JS = [
     "console-book-talk.js",
     "console-book-script.js",  # R6.3 I0 (seam 9): the show's script reader
     "console-book-tour.js",  # R6.3 D
-    "console-book-writer.js",  # R6.3 C
     "console-book-pages.js",  # R6.3 C
     "console-book-flow.js",  # R6.3.1 F: the Full book's flowcharts
     "console-book-flow-layout.js",  # R6.3.1 F: their geometry

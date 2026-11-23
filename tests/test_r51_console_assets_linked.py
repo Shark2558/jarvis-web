@@ -87,7 +87,6 @@ NOT_IN_PAGE = {
     "console-tryon.css": ("console-r7.js", "'/static/console-tryon.css'"),
     "console-tryon-card.js": ("console-r7.js", "import('./console-tryon-card.js')"),  # row 388
     # R6.3 I0 (docs/plans/r6-3-book-content.md seam 8): C's two, at the Book panel's first open
-    "console-book-writer.js": ("console-book.js", "'console-book-writer.js'"),
     "console-book-pages.js": ("console-book.js", "'console-book-pages.js'"),
     # R6.3.1 F: the Full book's flowcharts, imported by the reader at the first Read
     "console-book-flow.js": ("console-book-pages.js", "import('./console-book-flow.js')"),

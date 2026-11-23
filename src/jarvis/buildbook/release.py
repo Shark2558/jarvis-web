@@ -34,6 +34,7 @@ from jarvis.buildbook import owner_id
 from jarvis.buildbook.facts_model import FACTS_FILE, FactPack, load_facts
 from jarvis.buildbook.model import Book, FileKind, Release, load_book
 from jarvis.buildbook.ports import BookUnavailable
+from jarvis.buildbook.seal_index import digest_of, kinds_of
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -41,11 +42,16 @@ log = get_logger(__name__)
 BOOK_DIR: Traversable | Path = files("jarvis.buildbook") / "_book"
 NO_BOOK = "This server has no build book"
 NO_FACTS = "This release has no fact pack"
-FILE_OF: dict[FileKind, str] = {"book": "book.json", "source": "source.zip"}
+FILE_OF: dict[FileKind, str] = {
+    "book": "book.json",
+    "source": "source.zip",
+    "pages": "pages.json.gz",  # R6.3.1 D4 (writer.model.PAGES_FILE)
+    "flows": "flows.json",  # R6.3.1 D4 (writer.model.FLOWS_FILE)
+}
 
 
 def _digest(release: Release, kind: FileKind) -> str | None:
-    return release.book_sha256 if kind == "book" else release.source_sha256
+    return digest_of(release, kind)
 
 
 class ReleaseSource:
@@ -80,7 +86,7 @@ class ReleaseSource:
         except ValidationError:
             log.warning("build book release.json unreadable; the book is off")
             return None
-        if release.ok and any(self._verified(release, k) is None for k in FILE_OF):
+        if release.ok and any(self._verified(release, k) is None for k in kinds_of(release)):
             log.warning("build book files don't match release.json; the book is off")
             return None
         return release

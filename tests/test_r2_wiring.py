@@ -265,8 +265,7 @@ async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> Non
         "vitals_poll",
         "health_check",
         "book_seal",
-        "book_sweep",
-        "book_write",  # R6.3 I0: the Book writer after the sweep (D5)
+        "book_sweep",  # R6.3.1 D8: the Book writer's book_write went with the writer
         *r11,
         *r14,
         *r13,
@@ -358,7 +357,8 @@ async def test_privacy_categories_are_in_panel_order_with_faces_last(on: App) ->
     assert ids.index("activity") < ids.index("vault") < ids.index("notes")
     assert ids.index("notes") < ids.index("belongings") < ids.index("faces")
     body = (await on.client.get("/v1/privacy")).json()
-    assert [c["id"] for c in body["categories"]] == ids
+    leftover = {"book_writer"}  # R6.3.1 D9: the old writer trial's row, listed while not empty
+    assert [c["id"] for c in body["categories"]] == [i for i in ids if i not in leftover]
 
 
 async def test_privacy_lists_the_digilocker_folder_after_the_vault(settings: Settings) -> None:

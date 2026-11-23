@@ -3,10 +3,10 @@
 # - The look does not change: every class C's files put on an element is one the console's own
 #   style sheets already define (or one of I0's three host boxes); no colour, font, radius or
 #   shadow literal; no new style sheet.
-# - The YES box: the page never types YES itself and sends exactly what was typed (one place reads
-#   the box); rupees only (no "$" in a literal).
+# - Rupees only (no "$" in a literal). (R6.3.1 D8: the writer's YES box went with
+#   `console-book-writer.js`.)
 # - Storage: `jarvis_book_place_v1` is the only key C keeps across visits, and never the token; the
-#   full book's routes carry the book session (`booked(...)`), the writer's never do.
+#   full book's routes carry the book session (`booked(...)`).
 from __future__ import annotations
 
 import re
@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
-WRITER, PAGES, READER = "console-book-writer.js", "console-book-pages.js", "console-book-reader.js"
-MINE = (WRITER, PAGES)
-LIMITS = {WRITER: 400, PAGES: 400, READER: 270}
-I0_HOSTS = {"bk-wtop", "bk-writer", "bk-pages"}  # console-book.js makes these boxes (seam 8)
+PAGES, READER = "console-book-pages.js", "console-book-reader.js"
+MINE = (PAGES,)
+LIMITS = {PAGES: 400, READER: 270}
+I0_HOSTS = {"bk-pages"}  # console-book.js makes this box (seam 8; R6.3.1: the writer's went)
 LITERAL = re.compile(r"'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`")
 
 
@@ -84,15 +84,6 @@ def test_rupees_only(name: str) -> None:
         assert "$" not in re.sub(r"\$\{", "", lit), (name, lit[:60])
 
 
-def test_the_yes_box_is_read_in_one_place_and_never_filled_by_the_page() -> None:
-    text = re.sub(r"^\s*//.*$", "", _read(WRITER), flags=re.M)  # the code, not its comments
-    assert text.count("go(inp.value)") == 1  # what he typed, exactly, as typed
-    assert re.findall(r"\btyped:\s*([\w.]+)", text) == ["typed", "typed"]  # the pick and a run
-    assert not re.search(r"['\"`]YES['\"`]", text)  # the page never types YES
-    assert not re.search(r"inp\.value\s*=\s*['\"`][^'\"`]", text)  # never pre-filled
-    assert ".trim()" not in re.sub(r"//.*", "", text.split("go(inp.value)")[0][-400:])
-
-
 def test_the_place_is_the_only_kept_key_and_never_the_token() -> None:
     for name in MINE:
         text = _read(name)
@@ -105,11 +96,9 @@ def test_the_place_is_the_only_kept_key_and_never_the_token() -> None:
                 assert "token" not in line.lower(), (name, line)
 
 
-def test_the_full_book_rides_the_book_session_and_the_writer_never_does() -> None:
-    pages, writer = _read(PAGES), _read(WRITER)
-    calls = re.findall(r"\bD\.api\(([^;]*)", pages)
+def test_the_full_book_rides_the_book_session() -> None:
+    calls = re.findall(r"\bD\.api\(([^;]*)", _read(PAGES))
     assert calls and all("D.booked()" in c for c in calls), calls
-    assert "booked(" not in writer and "X-Jarvis-Book" not in writer
 
 
 def test_the_reader_asks_the_full_book_for_g4_only() -> None:

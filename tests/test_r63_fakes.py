@@ -1,7 +1,8 @@
 # tests/test_r63_fakes.py -- R6.3 I0 seam 12: the shared fakes hold what the parts build on. The
 # fixture's fact pack is a valid pack whose index holds every reference the good draft cites; each
 # bad draft breaks exactly what it is named for; the scripted brains go through the real registry
-# (and its laptop fallback); the fixed clock moves only when told; the context is buildable.
+# (and its laptop fallback); the fixed clock moves only when told. (R6.3.1 D8: the writer's billing
+# fake and context went with the writer.)
 from __future__ import annotations
 
 import re
@@ -23,13 +24,10 @@ from r63_fakes import (
     FIXTURE_FACTS,
     FIXTURE_FILES,
     NOW,
-    UID,
-    FakeBilling,
     FakeSource,
     FixedClock,
     fixture_repo,
     source_zip,
-    writer_context,
 )
 
 from jarvis.buildbook.facts_model import canonical_facts, load_facts
@@ -87,17 +85,12 @@ def test_the_scripted_brains_are_the_real_registrys() -> None:
     assert reg.router_for("anthropic").resolve(ModelTier.BALANCED) == "claude-sonnet-5-5"
 
 
-async def test_the_fakes_billing_and_source() -> None:
-    bill = FakeBilling(limit_inr=1_000)
-    assert await bill.record(UID, "anthropic", 0.1243) == 11.84
-    assert (await bill.usage(UID)).used_inr == 11.84 and (await bill.usage(UID)).limit_inr == 1_000
+async def test_the_fakes_source() -> None:
     src = FakeSource()
     assert src.facts() is FIXTURE_FACTS and src.read("source") == source_zip()
     assert source_zip() == source_zip()  # deterministic
 
 
-def test_the_clock_is_fixed_and_the_context_buildable() -> None:
+def test_the_clock_is_fixed() -> None:
     clock = FixedClock()
     assert clock() == NOW == clock() and clock.advance(minutes=5) > NOW
-    ctx = writer_context(clock=clock)
-    assert ctx.uid == UID and ctx.clock() == clock() and ctx.brains.get("anthropic")

@@ -62,6 +62,12 @@ jobs:
       # the architecture guide covers every package, console module, Scheduler job, outside
       # service and Firestore collection; complete cards and rows; the R6 secret scan
       - run: python scripts/arch_coverage.py
+      # R6.3.1 D6: every indexed page of the full book is written by the Workshop, passes the six
+      # checks and its flowchart's, and is stamped against the code it cites; a missing, stale
+      # or failing page fails the job (one line a problem; the writers' guide is
+      # src/jarvis/buildbook/book/AUTHORING.md)
+      - name: The Build Book's pages are written, current and checked
+        run: PYTHONPATH=src python -m jarvis.buildbook.gen pages --check
 
   # R6.1 D4: a pull request's title reads "v6.1.0 · R6.1 Short name · Mark XIII"
   # (scripts/check_pr_title.py). Pull requests only, Dependabot's exempt, and never a job the
@@ -230,6 +236,9 @@ jobs:
       # R6 D4: this release's build book goes into the image (src/jarvis/buildbook/_book, package
       # data). Best effort: a failed build writes release.json with the error and no book, and the
       # deploy goes on (the app then sends book_seal_failed); the PR's --check makes that rare.
+      # R6.3.1 D4: the same run compiles the Workshop's authored pages into pages.json.gz and
+      # flows.json beside book.json (a missing or failing page is the generator's text, never a
+      # failed deploy); the sealer seals them with the release.
       # Built BEFORE the Google sign-in, so no install-time code runs while credentials exist.
       # The generator runs from the checkout (PYTHONPATH=src): even if an install failed, it
       # still writes an error release.json from git alone.

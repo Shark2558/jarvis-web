@@ -1,8 +1,8 @@
 # tests/test_r63_seams.py -- R6.3 I0 (docs/plans/r6-3-book-content.md "The I0 seam list" 1-17,
 # "Size guards"): the pins of what I0 built and of what R6.3 must leave alone. Each seam's own
-# behaviour is tested in its file (test_r63_write, _types, _modules, _gen_joins, _wiring, _serve,
-# _console_seams, _scrub_kinds, _static, _fakes, _fake_server, _refs_services, _redact); here: the
-# version, the staged eval runner, the files no part edits, the sizes, the keyring and the guide.
+# behaviour is tested in its file (test_r63_types, _modules, _gen_joins, _serve, _console_seams,
+# _scrub_kinds, _static, _fakes, _refs_services, _redact; R6.3.1: test_r631_*); here: the version,
+# the staged eval runner, the files no part edits, the sizes, the keyring and the guide.
 from __future__ import annotations
 
 import hashlib
@@ -36,7 +36,7 @@ def _load(path: Path, name: str) -> ModuleType:
 
 # ---- 1 · the version and the release ------------------------------------------------------------
 def test_the_version_is_six_point_three() -> None:
-    assert jarvis.__version__ == "6.3.1"  # R6.3 I0 (13.1.0 at R13.1); the persona is unchanged
+    assert jarvis.__version__ == "6.3.2"  # R6.3.1 (13.1.0 at R13.1); the persona is unchanged
     repo = Repo.from_git(ROOT)
     assert plans.release_label(repo) == "R6.3"
     assert plans.plan_paths(repo)[0] == "docs/plans/r6-3-book-content.md"
@@ -48,9 +48,7 @@ def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
     assert runner.STUBS_PASS is False  # I1 flipped it: a stub never reads as green
     for part in runner.PARTS:  # and every part is built (I1: console, needles, e2e)
         assert _load(ROOT / "evals" / "r6_3" / f"{part}.py", f"r6_3_{part}_pin").BUILT is True, part
-    assert runner.PARTS == ("facts", "writer", "console", "tour", "needles", "e2e", "contract")
-    contract = _load(ROOT / "evals" / "r6_3" / "contract.py", "r6_3_contract_pin")
-    assert contract.BUILT is True  # I0's own part, with its own control (L12)
+    assert runner.PARTS == ("facts", "tour", "authored")  # R6.3.1 D8: the writer's parts went
     gate = (ROOT / "evals" / "run_all_mock.py").read_text(encoding="utf-8")
     assert (
         '("r6_3 (gated)", [sys.executable, str(HERE / "r6_3" / "run.py"), "--mock"], True)' in gate
@@ -58,12 +56,11 @@ def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
 
 
 # ---- 3, D0, M4 · what R6.3 never edits ----------------------------------------------------------
+# R6.3.1 D7 seals each release's pages and flows with its book and code, so `seal_index.py`,
+# `seal.py` and `sealer.py` changed on purpose (tests/test_r631_e_serve.py); the rest still holds.
 UNTOUCHED = {  # 47ee8fc's SHA-256, under src/jarvis/
     "api/static/console.html": "9f4c0c68f45e46fe150e65e182f4d2ba1132eb556b3ddee0ba3491e4c85450a2",
-    "buildbook/seal_index.py": "7ebe40dc6928429baaf8ea617e2e13aeb7690f874ed8ed50739a8fe15a86deb4",
-    "buildbook/seal.py": "e87770535b78bd3e6e3845ddac4267232d055ba541841980d9300169efe2ac85",
     "buildbook/ports.py": "949354c269f8750488f1662ab6c82dd1b28ee321599563f9a967fa3ec3c3bdbf",
-    "buildbook/sealer.py": "d4345c7c8431fd826ec3e15619a2b1f818fce0bd01e9ce0b533aac67e00a54ff",
     "buildbook/seal_notices.py": "0d9c979d104a180fc9e5a9f838fc00d51ac86e5154dc160d70d378a73b5d3b49",
     "buildbook/seal_words.py": "a7fc7c409ab81af066a905ddf55a2e7fb0fe55a032fe56da3125958a28bd1f27",
     "buildbook/privacy.py": "ddd4fad71ea41c7a7885193fb0722d6180ac85cc0f3a32de92cee7f99a324f73",
@@ -74,8 +71,6 @@ UNTOUCHED = {  # 47ee8fc's SHA-256, under src/jarvis/
 def test_r6s_sealing_files_privacy_rows_routes_and_console_html_are_untouched() -> None:
     for rel, sha in UNTOUCHED.items():
         assert hashlib.sha256((SRC / rel).read_bytes()).hexdigest() == sha, rel
-    evals = _load(ROOT / "evals" / "r6_3" / "contract.py", "r6_3_contract_pin2")
-    assert evals.UNTOUCHED == {f"src/jarvis/{k}": v for k, v in UNTOUCHED.items()}  # one list
 
 
 def test_the_keyring_keeps_its_26_purposes() -> None:
@@ -94,7 +89,6 @@ def test_the_size_guards_hold() -> None:
     assert _lines(SRC / "buildbook" / "model.py") <= 420
     assert _lines(SRC / "buildbook" / "service.py") <= 400
     assert _lines(SRC / "buildbook" / "tour_model.py") <= 200
-    assert _lines(SRC / "llm" / "write.py") <= 160
     for path in [
         *(SRC / "buildbook" / "writer").glob("*.py"),
         SRC / "buildbook" / "facts_model.py",
@@ -104,19 +98,19 @@ def test_the_size_guards_hold() -> None:
         assert _lines(STATIC / name) <= 390
 
 
-def test_the_writers_collections_are_flat_and_the_books_own() -> None:
+def test_the_old_writers_collections_are_flat_and_the_books_own() -> None:
     assert all(c.startswith("book_") for c in COLLECTIONS) and len(set(COLLECTIONS)) == 6
     assert "book" not in COLLECTIONS  # R6's own index is never the writer's
 
 
 # ---- 14, 15 · the guide -------------------------------------------------------------------------
-def test_the_guide_names_the_writer_its_data_and_the_roadmap() -> None:
+def test_the_guide_names_the_full_book_the_old_writers_data_and_the_roadmap() -> None:
     guide = GUIDE.read_text(encoding="utf-8")
     assert guide.splitlines()[0].startswith("Version v6.3.") and "Release R6.3" in guide[:200]
     c57 = guide[guide.index("#### C57 · Build book") : guide.index("#### C58")]
     for name in COLLECTIONS:
         assert f"`{name}/" in c57, name  # each with its document id, as the card names R6's
-    assert "Gemini (free)" in c57 and "only after the owner's typed YES" in c57
-    assert "Outside services | Anthropic (the talk-through only)" not in c57  # G2 closed
+    assert "Book writer (old trial)" in c57 and "`pages.json.gz`" in c57  # R6.3.1 D4, D9
+    assert "Gemini (free)" not in c57 and "`src/jarvis/llm/write.py`" not in c57  # D8
     roadmap = guide[guide.index("## 11. Roadmap") : guide.index("## 12. Glossary")]
     assert "R6.3.1" in roadmap and "R6.4" in roadmap

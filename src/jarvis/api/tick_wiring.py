@@ -8,7 +8,8 @@ line to spare; docs/plans/r14-hardening.md D7, seam 7).
 - `add_clock_job(app, job)`: the 5-minute advisory jobs (the systems check, the helpers' clock,
   R7's clock) register here instead of on the home watchdog, so they also run with Home off.
 - `clock_jobs(app)` / `install_clocks(app)`: `app.state.clock_jobs`, built once: R14's 5-minute
-  jobs FIRST (`selfwatch_clock`), then the registered ones and R13's `outfit_clock`, each run for
+  jobs FIRST (`selfwatch_clock`), then the registered ones and R13's `outfit_clock`, and R6.3's
+  `book_write` LAST (`LAST_CLOCK_JOBS`, M3), each run for
   the brief's owners
   (`BriefService.owners`, read late) whatever owners the caller passes. With Home on, the watchdog
   runs the R14 jobs before its own laptop check and the rest after it; with Home off the
@@ -33,6 +34,9 @@ from jarvis.api.r4_wiring import r4_tick_jobs
 from jarvis.api.r6_wiring import r6_tick_jobs
 from jarvis.api.r11_wiring import r11_tick_jobs
 from jarvis.ticks import TickJob
+
+# R6.3 M3: the Book writer runs on the 5-minute clock LAST, in the time the other jobs leave
+LAST_CLOCK_JOBS = ("book_write",)
 
 
 def tick_jobs(app: FastAPI) -> tuple[Any, ...]:
@@ -86,7 +90,9 @@ def clock_jobs(app: FastAPI) -> tuple[ForOwners, ...]:
         return built
     owners = _brief_owners(app)
     added = tuple(getattr(app.state, "clock_jobs_added", None) or ())
-    later = (*added, *r13.r13_clock_jobs(app))  # R13: C's outfit_clock, after the rest
+    last = tuple(j for j in added if j.name in LAST_CLOCK_JOBS)  # R6.3: book_write
+    added = tuple(j for j in added if j.name not in LAST_CLOCK_JOBS)
+    later = (*added, *r13.r13_clock_jobs(app), *last)  # R13: C's outfit_clock, after the rest
     jobs = tuple(ForOwners(j, owners) for j in (*r14.r14_clock_jobs(app), *later))
     names = [j.name for j in jobs]
     if len(set(names)) != len(names):
@@ -118,6 +124,7 @@ def finish_wiring(app: FastAPI) -> None:
 
 
 __all__ = [
+    "LAST_CLOCK_JOBS",
     "ForOwners",
     "add_clock_job",
     "clock_jobs",

@@ -654,6 +654,10 @@ def test_the_pinned_version_matches_the_dev_tool_lock() -> None:
 
 # ---- dev-only: never in the app image, the console or the build book (plan decision 5) -----------
 TEXT_SUFFIXES = (".py", ".js", ".mjs", ".css", ".html", ".json", ".md", ".txt", ".toml", ".yaml")
+# R6.3 part A: the build book's generator reads the dev tool's lock file as DATA (its packages'
+# licences in the inventory, the page that cites it); it never loads Markdy. Only this exact path,
+# only in the generator's folder, is taken out before the check (review I1 M-6).
+GEN_DIR, LOCK_PATH = "src/jarvis/buildbook/gen/", "tools/markdy/package-lock.json"
 
 
 def test_nothing_the_app_ships_mentions_markdy() -> None:
@@ -666,6 +670,8 @@ def test_nothing_the_app_ships_mentions_markdy() -> None:
             continue
         if path.is_file() and path.suffix in TEXT_SUFFIXES:
             text = path.read_text(encoding="utf-8", errors="replace").lower()
+            if path.relative_to(ROOT).as_posix().startswith(GEN_DIR):
+                text = text.replace(LOCK_PATH, "")
             if "markdy" in text or "esm.sh" in text:
                 hits.append(path.relative_to(ROOT).as_posix())
     assert hits == []

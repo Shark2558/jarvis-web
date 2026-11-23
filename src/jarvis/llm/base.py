@@ -150,6 +150,8 @@ class StreamUsage:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     final: bool = False
+    # R6.3 D1 (L10): why the vendor stopped ("end_turn", "max_tokens", ...), None when not said
+    stop_reason: str | None = None
 
     @property
     def reported(self) -> bool:

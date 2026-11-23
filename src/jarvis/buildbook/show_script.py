@@ -6,6 +6,12 @@ possessive and the creator credit from Book settings. The owner's month spend (â
 owner only: a guest never sees it (D1). Book settings that can't be read mean the defaults (no
 creator name, the browser's voice and listening: R6.2 decision 4, Rs 0). A guest show follows the
 owner's saved choice.
+
+R6.3 I0 seam 10 (docs/plans/r6-3-book-content.md D9, plan review H1): with a tour in the book
+(part D's `tour_serve.tour_lines`), the script is `kind: "tour"`, its scenes for the session's
+audience and their `seconds`, and a guest's carries no costs (no Rs anywhere); else `kind:
+"show"`, today's script. A `tNNbMM` line is read by D's `tour_line_text` for the session's
+audience only (an owner-only line in a guest session is None: 404 `unknown_line`).
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
+from jarvis.buildbook import tour_serve
 from jarvis.buildbook.lines import CLOSING, LINES, credit_by, possessive, render
 from jarvis.buildbook.model import LINE_ID, Audience, SessionView, TalkState
 from jarvis.buildbook.ports import BookSource
@@ -55,10 +62,14 @@ class ShowScript:
             "by": credit_by(name if isinstance(name, str) else None),
         }
 
-    async def line_text(self, uid: str, line_id: str) -> str | None:
-        """What `POST /v1/book/show/speak {line_id}` reads: a beat of this book or a D13 line."""
+    async def line_text(self, uid: str, line_id: str, audience: Audience) -> str | None:
+        """What `POST /v1/book/show/speak {line_id}` reads: a beat of this book, a D13 line, or a
+        tour line of the session's audience (R6.3, H1)."""
         if line_id in LINES:
             return render(line_id, **await self.words(uid))
+        if tour_serve.TOUR_LINE.fullmatch(line_id):
+            book, words = self.source.book(), await self.words(uid)  # I1: the script's own words
+            return tour_serve.tour_line_text(book, line_id, audience, words)
         if not _LINE.fullmatch(line_id):
             return None
         beats = (b for s in self.source.book().show.scenes for b in s.beats)
@@ -90,18 +101,24 @@ class ShowScript:
         return {**costs, **{k: spent.get(k) for k in ("month_inr", "limit_inr")}}
 
     async def build(self, uid: str, session: SessionView, talk: TalkState) -> dict[str, Any]:
-        """`GET /v1/book/show/script` in the shape D's show reads (INTEGRATION-D, I1): {release,
-        audience, scenes (1-11), lines {ask, anything_else, ai_off, hand_back (guest)}, closing
-        [{id, text}] (scene 13), costs, talk, voice, listening (R6.2), until, session}."""
+        """`GET /v1/book/show/script` in the shape D's show reads (INTEGRATION-D, I1): {kind,
+        release, audience, scenes (1-11, or the tour's), seconds (a tour), lines {ask,
+        anything_else, ai_off, hand_back (guest)}, closing [{id, text}] (scene 13), costs, talk,
+        voice, listening (R6.2), until, session}."""
         book, audience = self.source.book(), session.audience
         words = await self.words(uid)
+        tour = tour_serve.tour_lines(book, audience, words)  # R6.3: None -> today's show
+        shown = {"kind": "show", "scenes": [s.model_dump(mode="json") for s in book.show.scenes]}
+        if tour is not None:
+            shown = {"kind": "tour", "scenes": tour["scenes"], "seconds": tour["seconds"]}
+        guest_tour = tour is not None and audience != "owner"
         return {
+            **shown,
             "release": book.release.model_dump(mode="json"),
             "audience": audience,
-            "scenes": [s.model_dump(mode="json") for s in book.show.scenes],
             "lines": self.fixed_lines(audience, words),
             "closing": [{"id": i, "text": render(i, **words)} for i in CLOSING[audience]],
-            "costs": await self.costs(uid, audience),
+            "costs": {} if guest_tour else await self.costs(uid, audience),  # D9: no Rs
             "talk": talk.model_dump(),
             "voice": await self.voice(uid),
             "listening": await self.listening(uid),

@@ -1,8 +1,10 @@
 // src/jarvis/api/static/console-book-show.js -- R6 D15 (book.html): the show's timeline, controls (Space, arrows, PageUp/
 // PageDown, C, M, Q, Esc), captions (aria-live) and the 60-second beat.
 // The page holds no data of its own: GET /v1/book/show/script (header X-Jarvis-Book, the token from THIS tab's
-// sessionStorage) gives scenes 1-11 (book.show), the fixed lines (ask, hand_back, ...) and the closing; the timeline is
-// those beats, then the ask line (scene 12), then the closing lines (scene 13). A beat is one line: the next starts when
+// sessionStorage) gives scenes 1-11 (book.show) or R6.3's short tour (scenes 1-17), the fixed lines (ask, hand_back,
+// ...) and the closing; the timeline is those beats, then the ask line (Questions), then the closing lines (Closing).
+// R6.3: the script is read by console-book-script.js (window.JarvisBookScript); a tour's chapters, continue and
+// owner-only scenes are console-book-tour.js's (window.JarvisBookTour: label, seen, start). A beat is one line: the next starts when
 // the line's audio ends (console-book-voice.js; captions only: 330 ms a word + 800 ms). The 3D engine (console-book-3d.js)
 // or the 2D cards (console-book-2d.js) draw the beat; questions, the hand-back and Resume are console-book-talk.js.
 // At the close (the closing ends, End, expiry) the page clears its DOM, the token and its audio (D14). Only a definitive
@@ -16,14 +18,13 @@
   const TOKEN_KEY = 'jarvis_book_token', SESSION_KEY = 'jarvis_book_session', HEADER = 'X-Jarvis-Book';
   const BEAT_MS = 60 * 1000, READY_WAIT_MS = 6000, FADE_MS = 1400, WORD_MS = 330, TAIL_MS = 800;
   const RETRY_MS = [800, 2000], GONE = new Set([401, 403, 404, 410]); // the script: retried after these waits; GONE wipes
-  const LINE_ID = /^s\d{2}b\d{2}$/, KEY_ID = /^[a-z_]{2,20}$/, RID = /^[0-9a-f]{7}$/, OWN = /^\/(?![/\\])/;
-  const VER = /^v\d{1,3}\.\d{1,3}\.\d{1,4}$/; // R6.1 decision 3: the release's version, next to its id
+  const OWN = /^\/(?![/\\])/;
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
-  const LAST_TITLES = { 12: 'Questions', 13: 'Closing' };
+  const FIXED_TITLES = { questions: 'Questions', closing: 'Closing' };
+  const SC = window.JarvisBookScript; // R6.3 I0: loaded before this file (book.html)
+  const tour = () => (S.script && S.script.kind === 'tour' && window.JarvisBookTour) || null;
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
-  const arr = (v) => (Array.isArray(v) ? v : []);
   const txt = (v, max = 400) => (typeof v === 'string' ? v.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
-  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   const ss = {
     get(k) { try { return sessionStorage.getItem(k) || ''; } catch (_) { return ''; } },
     del(k) { try { sessionStorage.removeItem(k); } catch (_) {} },
@@ -59,67 +60,25 @@
   // JarvisPasskey (console-permissions.js) asks window.JarvisConsole.api at call time: this page has no console.js
   if (!window.JarvisConsole) window.JarvisConsole = Object.freeze({ api, ready: () => null });
 
-  // ---- the script, checked field by field ---------------------------------------------------------
-  function line(v) {
-    const o = obj(v), id = o ? txt(o.id, 40) : '', text = o ? txt(o.text, 1200) : txt(v, 1200);
-    return text ? { id: KEY_ID.test(id) ? id : '', text } : null;
-  }
-  function normalScene(v) {
-    const s = obj(v);
-    if (!s || !Number.isInteger(s.n) || s.n < 1 || s.n > 11) return null;
-    const beats = arr(s.beats).map(obj).filter((b) => b && LINE_ID.test(b.id || '') && txt(b.text))
-      .map((b) => ({ id: b.id, text: txt(b.text), focus: txt(b.focus, 60) }));
-    const facts = arr(s.facts).map(obj).filter(Boolean).slice(0, 60).map((f) => ({ label: txt(f.label, 80), value: txt(f.value, 120),
-      n: num(f.n), group: txt(f.group, 40), flag: txt(f.flag, 20) }));
-    return beats.length ? { n: s.n, id: txt(s.id, 40), title: txt(s.title, 60), beats, facts } : null;
-  }
-  function normalScript(raw, audience) {
-    const d = obj(raw);
-    if (!d) return null;
-    const scenes = arr(d.scenes).map(normalScene).filter(Boolean).sort((a, b) => a.n - b.n);
-    if (!scenes.length) return null;
-    const L = obj(d.lines) || {}, lines = {};
-    ['ask', 'anything_else', 'hand_back', 'ai_off'].forEach((k) => { const l = line(L[k]); if (l) lines[k] = { id: l.id || k, text: l.text }; });
-    const who = d.audience === 'owner' || d.audience === 'guest' ? d.audience : audience;
-    let closing = d.closing;
-    if (obj(closing)) closing = closing[who];
-    const rel = obj(d.release) || {}, talk = obj(d.talk) || {}, costs = obj(d.costs) || {};
-    return { release: { id: RID.test(rel.id || '') ? rel.id : '', label: txt(rel.label, 8), version: VER.test(rel.version || '') ? rel.version : '' },
-      audience: who, scenes, lines,
-      closing: arr(closing).map(line).filter(Boolean).slice(0, 6), costs: { month: num(costs.month_inr), limit: num(costs.limit_inr) },
-      talk: { on: talk.on !== false, why: txt(talk.why, 200) }, until: txt(d.until, 40),
-      voice: d.voice === 'cloud' ? 'cloud' : 'browser', listening: d.listening === 'cloud' ? 'cloud' : 'browser' }; // R6.2 decision 4: Rs 0 unless he chose the cloud
-  }
-  function timeline(sc) {
-    const out = [];
-    sc.scenes.forEach((s) => s.beats.forEach((b, i) => out.push({ scene: s.n, i, id: b.id, text: b.text, focus: b.focus })));
-    const q = sc.talk.on ? sc.lines.ask : sc.lines.ai_off;
-    out.push({ scene: 12, i: 0, id: q ? q.id : '', text: q ? q.text : '', focus: '', ask: true });
-    sc.closing.forEach((l, i) => out.push({ scene: 13, i, id: l.id, text: l.text, focus: '', closing: true }));
-    return out;
-  }
-
   // ---- state and rendering of one beat --------------------------------------------------------------
   const S = { script: null, beats: [], index: 0, playing: false, run: 0, phase: 'loading', audience: 'guest', captions: true,
     sound: true, R: null, rname: '', closing: false, beatTimer: 0, waiters: [], loop: 0, held: false, still: false };
   const voice = () => window.JarvisBookVoice || null;
   const talk = () => window.JarvisBookTalk || null;
-  function sceneData(n) {
-    const sc = S.script;
-    if (n <= 11) return sc.scenes.find((s) => s.n === n) || { n, id: '', title: '', beats: [], facts: [] };
-    return { n, id: n === 12 ? 'questions' : 'closing', title: LAST_TITLES[n], beats: S.beats.filter((b) => b.scene === n), facts: [] };
-  }
-  const sceneTitle = (n) => (n <= 11 ? (S.script.scenes.find((s) => s.n === n) || {}).title || '' : LAST_TITLES[n]);
+  const sceneData = (n) => SC.picture(S.script, n, S.beats); // today's picture numbers, the scene's own data
+  const sceneTitle = (n) => (n === S.script.qn ? FIXED_TITLES.questions : n === S.script.cn ? FIXED_TITLES.closing
+    : (S.script.scenes.find((s) => s.n === n) || {}).title || '');
   function present(i) {
     const b = S.beats[i];
     if (!b) return;
     S.index = i;
     $('shCapText').textContent = b.text;
-    $('shCount').textContent = String(b.scene).padStart(2, '0') + ' / 13';
+    $('shCount').textContent = String(b.scene).padStart(2, '0') + ' / ' + String(S.script.cn).padStart(2, '0');
     $('shScene').textContent = sceneTitle(b.scene);
     const pct = Math.round((i / Math.max(1, S.beats.length - 1)) * 100);
     $('shProg').setAttribute('aria-valuenow', String(pct)); $('shProg').firstElementChild.style.width = pct + '%';
-    if (S.R) S.R.show(sceneData(b.scene), b.i, b, { audience: S.audience, costs: S.script.costs, listening: b.scene === 12 });
+    if (S.R) S.R.show(sceneData(b.scene), b.i, b, { audience: S.audience, costs: S.script.costs, listening: b.scene === S.script.qn });
+    const T = tour(); if (T) T.seen(S.script, b); // R6.3: continue where he left off (D's)
   }
   function sync() {
     const m = $('show');
@@ -184,7 +143,7 @@
   function jump(i) {
     if (!S.beats.length || S.closing) return;
     const to = Math.max(0, Math.min(S.beats.length - 1, i));
-    const T = talk(); if (T && S.phase === 'questions' && S.beats[to].scene !== 12) T.hide();
+    const T = talk(); if (T && S.phase === 'questions' && S.beats[to].scene !== S.script.qn) T.hide();
     S.run += 1; const V = voice(); if (V) V.stop();
     const w = S.waiters; S.waiters = []; w.forEach((r) => r());
     S.phase = 'playing';
@@ -195,7 +154,7 @@
   const sceneStart = (n) => S.beats.findIndex((b) => b.scene === n);
   function stepScene(dir) {
     const cur = S.beats[S.index] ? S.beats[S.index].scene : 1;
-    for (let n = cur + dir; n >= 1 && n <= 13; n += dir) { const i = sceneStart(n); if (i >= 0) { jump(i); return; } }
+    for (let n = cur + dir; n >= 1 && n <= S.script.cn; n += dir) { const i = sceneStart(n); if (i >= 0) { jump(i); return; } }
   }
   function questions() {
     S.held = !S.playing; // reached by playing: the Core listens and moves; by a jump while paused: it stays still
@@ -205,7 +164,7 @@
     if (T) T.open(talkOpts('questions'));
   }
   function toClosing() {
-    const i = sceneStart(13);
+    const i = sceneStart(S.script.cn);
     const T = talk(); if (T) T.hide();
     if (i < 0) { finish(); return; }
     S.run += 1; const V = voice(); if (V) V.stop();
@@ -264,10 +223,11 @@
     const d = $('shChapterList'), list = $('shChapterItems');
     if (!S.script || d.open) return;
     list.textContent = '';
-    for (let n = 1; n <= 13; n += 1) {
+    for (let n = 1; n <= S.script.cn; n += 1) {
       const i = sceneStart(n); if (i < 0) continue;
       const li = document.createElement('li'), b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn lift sh-chapter'; b.textContent = String(n).padStart(2, '0') + ' \u00b7 ' + sceneTitle(n);
+      const T = tour(), title = T ? T.label(S.script, n, sceneTitle(n)) : sceneTitle(n); // R6.3: a tour's chapters (D's)
+      b.type = 'button'; b.className = 'btn lift sh-chapter'; b.textContent = String(n).padStart(2, '0') + ' \u00b7 ' + title;
       b.addEventListener('click', () => { d.close(); jump(i); });
       li.append(b); list.append(li);
     }
@@ -344,7 +304,7 @@
     S.phase = 'playing'; S.playing = true; sync(); // the controls show before focus moves to them
     S.beatTimer = setInterval(beat, BEAT_MS);
     $('shPlay').focus();
-    play(0);
+    const T = tour(); play(T ? Math.max(0, Math.min(S.beats.length - 1, T.start(S.script, S.beats) | 0)) : 0); // R6.3: continue
   }
   async function boot() {
     wire();
@@ -359,7 +319,7 @@
   /** The script: a definitive refusal ends the session here; a blip is retried, then offered as Try again (token kept). */
   async function script() {
     for (let i = 0; ; i += 1) {
-      try { return { sc: normalScript(await api('/v1/book/show/script'), S.audience) }; } catch (e) {
+      try { return { sc: SC.normalScript(await api('/v1/book/show/script'), S.audience) }; } catch (e) {
         if (GONE.has(e.status)) return { gone: true };
         if (i >= RETRY_MS.length) return { offline: true };
         await wait(RETRY_MS[i]);
@@ -372,7 +332,7 @@
     if (got.offline) { S.phase = 'loading'; sync(); if (T) T.offline(load); return; }
     const sc = got.sc;
     if (!sc) { S.phase = 'done'; wipe(); if (T) T.done({ audience, reason: 'error' }); return; }
-    S.script = sc; S.audience = sc.audience; S.beats = timeline(sc);
+    S.script = sc; S.audience = sc.audience; S.beats = SC.timeline(sc);
     S.R = await renderer();
     document.documentElement.dataset.bookRenderer = S.rname;
     present(0);

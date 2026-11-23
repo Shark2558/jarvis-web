@@ -37,6 +37,15 @@ C_MODULES = [
     SRC / "api" / f"{n}.py"
     for n in ("book_show", "book_show_hear", "book_lock", "book_show_access", "book_show_wiring")
 ]
+# R6.3 I0 seam 13 (docs/plans/r6-3-book-content.md D13): the writer's modules (all of them, as B
+# adds them), its routes and its join, and the tour's serve: <= 400 lines, functions <= 50, logs
+# content-free
+C_MODULES += sorted((SRC / "buildbook" / "writer").glob("*.py")) + [
+    SRC / "api" / "book_writer.py",
+    SRC / "api" / "book_pages.py",
+    SRC / "api" / "book_writer_wiring.py",
+    SRC / "buildbook" / "tour_serve.py",
+]
 LANE_FORBIDDEN = (
     "jarvis.core.brain",
     "jarvis.core.persona",
@@ -64,6 +73,11 @@ CONTENT_NAMES = {
     "said",
     "body",
     "heard",
+    "page",  # R6.3: a page's text, a pack, a prompt, a draft
+    "pack",
+    "prompt",
+    "draft",
+    "pages",
 }
 NEEDLE = "NEEDLE5521"
 

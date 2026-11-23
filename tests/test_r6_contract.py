@@ -17,6 +17,7 @@ from pydantic import SecretStr
 import jarvis.api.r6_wiring as r6
 from jarvis.api import create_app
 from jarvis.buildbook.release import ReleaseSource
+from jarvis.buildbook.writer.http import ROUTES as R63_ROUTES
 from jarvis.config import Settings
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.memory.inmemory import InMemorySessionStore
@@ -137,4 +138,5 @@ def test_the_app_has_exactly_the_contract_routes_under_v1_book(settings: Setting
         (m.upper(), path) for path, ops in paths.items() if path.startswith("/v1/book") for m in ops
     }
     want = {(m, p.replace(RID, "{rid}").replace(TICKET, "{ticket}")) for m, p, _ in ROUTES}
+    want |= {(m, p) for m, p, *_ in R63_ROUTES}  # R6.3 I0: the writer's and the pages' 13
     assert mounted == want

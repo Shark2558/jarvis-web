@@ -7,7 +7,8 @@
 // No build step; CSP script-src 'self'; ASCII source; <= 400 lines.
 // R6.2 owner decision 4: Show voice and Listening are each "Browser (free)" (the default, Rs 0) or "Cloud"; a switch to
 // Cloud shows what it uses and costs and asks first (the console's .bdialog), then saves with confirm_cost: true.
-// window.JarvisBookReader = { sections(host, raw) -> count, settings(host, deps) }.
+// window.JarvisBookReader = { sections(host, raw) -> count, settings(host, deps) }. R6.3 G4: under the limitations, the full
+// book's "+N more in the full book" (console-book-pages.js more(body); an owner session only).
 (() => {
   'use strict';
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
@@ -15,6 +16,7 @@
   const arr = (v) => (Array.isArray(v) ? v : []);
   const txt = (v, max = 200) => (typeof v === 'string' ? v.replace(INVISIBLE, '').replace(/\s+/g, ' ').trim().slice(0, max) : '');
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const count = (n, one, many) => n + ' ' + (n === 1 ? one : many || one + 's'); // "1 plan", "2 plans" (R6.3 review I1 L-6)
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
   const SVG = 'http://www.w3.org/2000/svg';
   const fmt = (n) => { try { return new Intl.NumberFormat('en-IN').format(n); } catch (_) { return String(n); } };
@@ -70,7 +72,7 @@
     const layers = Object.keys(LAYER_NAMES);
     const by = (l) => pk.filter((p) => p.layer === l);
     return {
-      sum: pk.length + ' packages in ' + layers.filter((l) => by(l).length).length + ' layers',
+      sum: count(pk.length, 'package') + ' in ' + count(layers.filter((l) => by(l).length).length, 'layer'),
       build(body) {
         layers.forEach((l) => group(body, l + ' \u00b7 ' + LAYER_NAMES[l], by(l).map((p) => row(txt(p.name, 60),
           txt(p.summary, 200) || txt(p.name, 60), [num(p.files) !== null ? fmt(p.files) + ' files' : '', num(p.lines) !== null ? fmt(p.lines) + ' lines' : ''].filter(Boolean).join(' \u00b7 '))), String(by(l).length)));
@@ -82,14 +84,14 @@
   }
   function stack(d) {
     const items = arr(obj(d) ? d.items : d).map(obj).filter(Boolean);
-    return { sum: items.length + ' parts', build(body) {
+    return { sum: count(items.length, 'part'), build(body) {
       group(body, 'What JARVIS runs on', items.map((s) => row(txt(s.role, 40), txt(s.name, 80) + (txt(s.version, 40) ? ' ' + txt(s.version, 40) : ''), txt(s.source, 160))));
       if (!items.length) none(body, 'Nothing listed.');
     } };
   }
   function libraries(d) {
     const libs = arr(d).map(obj).filter(Boolean), flagged = libs.filter((l) => FLAG[l.flag]);
-    return { sum: libs.length + ' libraries' + (flagged.length ? ', ' + flagged.length + ' flagged' : ''), build(body) {
+    return { sum: count(libs.length, 'library', 'libraries') + (flagged.length ? ', ' + flagged.length + ' flagged' : ''), build(body) {
       const r = (l) => row(txt(l.kind, 20), txt(l.name, 80) + (txt(l.version, 40) ? ' ' + txt(l.version, 40) : ''),
         [txt(l.licence, 80) || 'not stated', txt(l.role, 40)].filter(Boolean).join(' \u00b7 '), FLAG[l.flag] || '');
       group(body, 'Flagged licences', flagged.map(r), String(flagged.length));
@@ -100,7 +102,7 @@
   function integrations(d) {
     const sv = arr(d.services).map(obj).filter(Boolean), keys = arr(d.key_purposes).map((k) => txt(k, 60)).filter(Boolean);
     const alerts = arr(d.alert_kinds).map(obj).filter(Boolean);
-    return { sum: sv.length + ' services, ' + alerts.length + ' alert kinds', build(body) {
+    return { sum: count(sv.length, 'service') + ', ' + count(alerts.length, 'alert kind'), build(body) {
       group(body, 'Services', sv.map((s) => row(s.checked === true ? 'checked' : '', txt(s.label, 80), [txt(s.what, 300),
         arr(s.settings).map((x) => txt(x, 60)).filter(Boolean).join(', ')].filter(Boolean).join(' \u00b7 '))));
       if (keys.length) {
@@ -113,7 +115,7 @@
   }
   function workflows(d) {
     const flows = arr(d).map(obj).filter(Boolean);
-    return { sum: flows.length + ' flows', build(body) {
+    return { sum: count(flows.length, 'flow'), build(body) {
       flows.forEach((f) => group(body, txt(f.title, 80), arr(f.steps).map(obj).filter(Boolean).map((s, i) =>
         row(String(i + 1), txt(s.label, 160), txt(s.symbol, 200)))));
       if (!flows.length) none(body, 'No flows listed.');
@@ -125,11 +127,12 @@
       group(body, 'What JARVIS cannot do yet', items.map((l) => row(txt(l.release, 8), txt(l.text, 200),
         [KIND[l.kind] || '', txt(l.source, 160)].filter(Boolean).join(' \u00b7 '))));
       if (!items.length) none(body, 'Nothing listed.');
+      const P = window.JarvisBookPages; if (P && typeof P.more === 'function') P.more(body); // R6.3 G4: "+N more in the full book"
     } };
   }
   function costs(d) {
     const items = arr(d.items).map(obj).filter(Boolean), rate = num(d.usd_inr), date = txt(d.rate_date, 10);
-    return { sum: items.length + ' prices in rupees', build(body) {
+    return { sum: count(items.length, 'price') + ' in rupees', build(body) {
       group(body, 'Each subscription, in rupees', items.map((c) => row(num(c.inr) !== null ? inr(c.inr) : '',
         txt(c.label, 80), ['per ' + txt(c.unit, 60), txt(c.free, 120) && 'free: ' + txt(c.free, 120)].filter(Boolean).join(' \u00b7 '))));
       if (rate) body.append(mk('p', 'bfine', 'At \u20b9' + rate + ' to the US dollar' + (date ? ', ' + date : '') + '.'));
@@ -137,7 +140,7 @@
   }
   function decisions(d) {
     const plans = arr(d).map(obj).filter(Boolean);
-    return { sum: plans.length + ' plans', build(body) {
+    return { sum: count(plans.length, 'plan'), build(body) {
       plans.forEach((p) => {
         const sec = mk('div', 'bsec'), h = mk('h3', '', txt(p.title, 300)), ul = mk('ul', 'blines');
         if (txt(p.release, 8)) h.append(mk('span', 'bcount', txt(p.release, 8)));

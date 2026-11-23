@@ -1,12 +1,17 @@
 # src/jarvis/buildbook/gen/write.py
-"""R6 D2-D5: assemble the book, build its three files, check determinism, write them.
+"""R6 D2-D5: assemble the book, build its files, check determinism, write them.
 
-    build(repo, opts)      -> Built(release, book bytes, source bytes); GenError when the book
-                              can't be built honestly (an unmapped package, a flow naming
+    build(repo, opts)      -> Built(release, book, source and facts bytes); GenError when the
+                              book can't be built honestly (an unmapped package, a flow naming
                               missing code, personal text left, a secret, a file over its cap)
     check(repo, opts)      -> builds twice and refuses if the bytes differ (the CI gate)
-    write(out, built)      -> book.json, source.zip, then release.json (last, so a reader never
-                              sees a release naming files that aren't there yet)
+    write(out, built)      -> book.json, source.zip, facts.json, then release.json (last, so a
+                              reader never sees a release naming files that aren't there yet)
+
+R6.3 I0 seam 5 (docs/plans/r6-3-book-content.md D2, D3, D9): the fact pack is A's `facts.build`
+with A's `pages_index.build` (the join sets its `release` and `pages`), scrubbed (`verify`, H6)
+and capped at 2 MiB (I1; a warning past 80 %); the tour is D's `tour.build` over that pack and
+the show (`Book.tour`, None: no tour).
     write_error(out, repo, message) -> the best-effort release.json: `error`, no book (D4)
 
 `Options` carries what tests replace: the flows, the layer table, the scrubber (the eval's
@@ -25,7 +30,26 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from jarvis.buildbook.gen import code, costs, fallback, flows, libs, licences, plans, snapshot
+from jarvis.buildbook.facts_model import (
+    FACTS_FILE,
+    FACTS_JSON_CAP_BYTES,
+    FACTS_JSON_WARN_BYTES,
+    FactPack,
+    canonical_facts,
+)
+from jarvis.buildbook.gen import (
+    code,
+    costs,
+    facts,
+    fallback,
+    flows,
+    libs,
+    licences,
+    pages_index,
+    plans,
+    snapshot,
+    tour,
+)
 from jarvis.buildbook.gen.chunks import build_digest
 from jarvis.buildbook.gen.code import clip
 from jarvis.buildbook.gen.layers import LAYER_OF
@@ -43,7 +67,7 @@ from jarvis.buildbook.model import (
 )
 from jarvis.buildbook.sections import Architecture
 
-FILES = ("book.json", "source.zip")
+FILES = ("book.json", "source.zip", FACTS_FILE)
 RELEASE_FILE = "release.json"
 
 
@@ -62,6 +86,7 @@ class Built:
     release: Release
     book: bytes
     source: bytes
+    facts: bytes = b""  # R6.3: facts.json
 
 
 def release_version(repo: Repo) -> str | None:
@@ -95,10 +120,24 @@ def _parts(repo: Repo, opts: Options, scrub: Scrubber) -> Parts:
     )
 
 
-def assemble(repo: Repo, opts: Options) -> Book:
+def fact_pack(repo: Repo, release: ReleaseRef, scrub: Scrubber) -> FactPack:
+    """A's pack and pages index, joined (R6.3 D2, D3): scrubbed, under its cap."""
+    pack = facts.build(repo, scrub).model_copy(update={"release": release})
+    pack = pack.model_copy(update={"pages": pages_index.build(repo, pack)})
+    try:
+        pack = FactPack.model_validate(pack.model_dump(mode="json"))
+    except ValidationError as exc:
+        raise GenError(f"facts.json doesn't fit its schema ({exc.error_count()})") from None
+    scrub.verify(pack.model_dump(mode="json"))
+    return pack
+
+
+def assemble(repo: Repo, opts: Options) -> tuple[Book, FactPack]:
     scrub = opts.scrubber or default_scrubber()
     try:
         p = _parts(repo, opts, scrub)
+        pack = fact_pack(repo, p.release, scrub)
+        show = build_show(p)
         book = Book(
             release=p.release,
             architecture=p.architecture,
@@ -109,20 +148,34 @@ def assemble(repo: Repo, opts: Options) -> Book:
             limitations=p.limitations,
             costs=p.costs,
             decisions=p.decisions,
-            show=build_show(p),
+            show=show,
             digest=build_digest(p),
+            tour=tour.build(repo, pack, show=show),  # I1: D's from_show pictures
         )
     except ValidationError as exc:
         where = sorted({".".join(str(x) for x in e["loc"][:2]) for e in exc.errors()})[:5]
         raise GenError(f"the book doesn't fit its schema ({exc.error_count()}): {where}") from None
     scrub.verify(book.model_dump(mode="json"))
-    return book
+    return book, pack
+
+
+_MIB_CAP = f"{FACTS_JSON_CAP_BYTES // (1 << 20)} MiB"
+
+
+def facts_warning(size: int) -> str | None:
+    """The words the generator says when facts.json passes 80 % of its cap (sizes only)."""
+    if size <= FACTS_JSON_WARN_BYTES:
+        return None
+    return f"facts.json is {size:,} bytes, over 80 % of its {_MIB_CAP} cap"
 
 
 def build(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008 - frozen, immutable
-    data = canonical_bytes(assemble(repo, opts))
+    book, pack = assemble(repo, opts)
+    data, fact_bytes = canonical_bytes(book), canonical_facts(pack)
     if len(data) > BOOK_JSON_CAP_BYTES:
         raise GenError(f"book.json is {len(data):,} bytes, over its {BOOK_JSON_CAP_BYTES:,} cap")
+    if len(fact_bytes) > FACTS_JSON_CAP_BYTES:
+        raise GenError(f"facts.json is {len(fact_bytes):,} bytes, over its {_MIB_CAP} cap")
     fakes = opts.fakes if opts.fakes is not None else snapshot.load_fakes()
     snap = snapshot.build(repo, fakes, cap=opts.snapshot_cap)
     release = Release(
@@ -133,10 +186,11 @@ def build(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008 - froze
         version=release_version(repo),
         book_sha256=hashlib.sha256(data).hexdigest(),
         source_sha256=snap.sha256,
+        facts_sha256=hashlib.sha256(fact_bytes).hexdigest(),
         source_bytes=len(snap.data),
         skipped=snap.skipped,
     )
-    return Built(release=release, book=data, source=snap.data)
+    return Built(release=release, book=data, source=snap.data, facts=fact_bytes)
 
 
 def check(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008
@@ -146,6 +200,7 @@ def check(repo: Repo, opts: Options = Options()) -> Built:  # noqa: B008
         for n, a, b in (
             ("book.json", first.book, second.book),
             ("source.zip", first.source, second.source),
+            (FACTS_FILE, first.facts, second.facts),
         )
         if a != b
     ]
@@ -169,6 +224,7 @@ def write(out: Path, built: Built) -> None:
     out.mkdir(parents=True, exist_ok=True)
     _put(out, FILES[0], built.book)
     _put(out, FILES[1], built.source)
+    _put(out, FILES[2], built.facts)
     _put(out, RELEASE_FILE, release_bytes(built.release))
 
 
@@ -198,6 +254,8 @@ __all__ = [
     "assemble",
     "build",
     "check",
+    "fact_pack",
+    "facts_warning",
     "release_bytes",
     "release_version",
     "write",

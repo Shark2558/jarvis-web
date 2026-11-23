@@ -25,6 +25,10 @@ JS = [
     "console-book-scenes-data.js",
     "console-book-2d.js",
     "console-book-talk.js",
+    "console-book-script.js",  # R6.3 I0 (seam 9): the show's script reader
+    "console-book-tour.js",  # R6.3 D
+    "console-book-writer.js",  # R6.3 C
+    "console-book-pages.js",  # R6.3 C
 ]
 CSS = ["console-book.css", "book.css"]
 SCENE_SPLIT = {
@@ -124,7 +128,8 @@ def test_the_token_lives_in_this_tab_and_travels_as_x_jarvis_book() -> None:
     assert "'X-Jarvis-Book'" in show and "'X-Jarvis-Book'" in panel
     for name in JS:
         text = _read(name)
-        assert not re.search(r"localStorage[^;\n]*jarvis_book", text), name
+        # R6.3 D14: only the reader's and the tour's place (ids only) may be kept across visits
+        assert not re.search(r"localStorage[^;\n]*jarvis_book(?!_place_v1\b)", text), name
     assert "sessionStorage" in show and "'jarvis_book_token'" in show
     assert "'jarvis_book_pending'" in panel  # D8: the re-sign-in hop resumes from here
     assert "'/auth/login?reauth=1'" in panel

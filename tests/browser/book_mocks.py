@@ -465,6 +465,13 @@ def j(route: Any, status_code: int, body: Any) -> None:
     )
 
 
+# R6.3 (review I1 M-5): the console now asks for the writer and the full book at the panel's
+# open; R6's mock book is a server whose writer is off, so both draw nothing (C's browser files
+# send those routes on to C's fake server instead, `r63_fakes_c.route_c`).
+WRITER_OFF = {"on": False, "why": "no_key"}
+NO_PAGES = {"release": RELEASE["id"], "parts": [], "limitations": {"shown": 0, "total": 0}}
+
+
 class FakeBook:
     """Every book route of the Contract, stubbed on one page; records (method, path, headers, body)."""
 
@@ -571,6 +578,8 @@ class FakeBook:
         if p == "/v1/book/resume":
             got = self.resume_answers.pop(0) if self.resume_answers else (200, {"resumed": True})
             return self._fail(route, got) if got == "abort" else j(route, *got)
+        if m == "GET" and p in ("/v1/book/writer", "/v1/book/pages"):
+            return j(route, 200, WRITER_OFF if p.endswith("/writer") else NO_PAGES)
         return j(route, 404, {"error": "not_found", "detail": p})
 
     def _settings(self, route: Any, method: str, body: Any) -> None:

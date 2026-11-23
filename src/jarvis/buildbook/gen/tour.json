@@ -1,0 +1,736 @@
+{
+  "scenes": [
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t01b01",
+          "text": "Welcome to the short tour of my build book. I'm JARVIS, a personal assistant that belongs to one person: my owner. This tour is for release {{release.label}}, version {{release.version}}, from {{release.date}}, and it takes about {{tour.minutes}} minutes."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t01b02",
+          "text": "I run in my owner's own Google Cloud project; my deploy script sets me up in Google's Mumbai region. Only my owner signs in. A guest sees this tour, and nothing of my owner's."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t01b03",
+          "text": "I'm made of {{cards.count}} parts in {{modules.count}} modules, about {{loc.python_code}} lines of Python. New in this release: {{release.new}}."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t01b04",
+          "text": "In the next few minutes: how I'm built, one request from start to finish, how I keep things private, seven things I do, and what comes next. My owner's full book has a page for every part."
+        }
+      ],
+      "chapter": "pg_chapter_what",
+      "facts": [
+        "release.label",
+        "release.version",
+        "release.date",
+        "tour.minutes",
+        "cards.count",
+        "modules.count",
+        "loc.python_code",
+        "release.new"
+      ],
+      "id": "what",
+      "n": 1,
+      "picture": {
+        "facts": {
+          "from_show": 1
+        },
+        "visual": 1
+      },
+      "title": "What JARVIS is"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t02b01",
+          "text": "I'm built in {{layers.count}} layers, with one band that runs through all of them. Think of a building where each floor has one job: a request goes up through the floors, and the answer comes back down."
+        },
+        {
+          "audience": "both",
+          "focus": "L1",
+          "id": "t02b02",
+          "text": "At the top is how you reach me: the web console, the phone app, Telegram and a terminal. Below that, I turn speech, pictures and files into something I can read. Then come the conversation itself, my memory and my clocks."
+        },
+        {
+          "audience": "both",
+          "focus": "L4",
+          "id": "t02b03",
+          "text": "In the middle is the brain. It picks a model and works out which tools a request needs. Next are the skills, like the morning brief or the wardrobe, and the tools that reach Google, my owner's home and the web. Every tool call passes one gateway."
+        },
+        {
+          "audience": "both",
+          "focus": "L7",
+          "id": "t02b04",
+          "text": "At the bottom is where my data is kept, sealed with my own keys, and how I answer: on screen, out loud, or as an alert. The band through every floor is security, costs, logs, and this book."
+        }
+      ],
+      "chapter": "pg_chapter_answers",
+      "facts": [
+        "layers.count"
+      ],
+      "id": "layers",
+      "n": 2,
+      "picture": {
+        "facts": {
+          "from_show": 2
+        },
+        "visual": 2
+      },
+      "title": "The eight layers"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "1",
+          "id": "t03b01",
+          "text": "Let's follow one request from start to finish. My owner taps the microphone and says: \"Add a dentist appointment on Friday at 5 pm.\""
+        },
+        {
+          "audience": "both",
+          "focus": "1",
+          "id": "t03b02",
+          "text": "Google's speech service, or the browser's own, turns the words into text, in Indian English. I show what I heard, and when my free word rules corrected a word, what I understood."
+        },
+        {
+          "audience": "both",
+          "focus": "6",
+          "id": "t03b03",
+          "text": "The words go to my brain router. It asks the everyday tier of the chosen brain, {{brain.balanced_model}} unless another was picked, with the conversation so far and the memories that matter."
+        },
+        {
+          "audience": "both",
+          "focus": "gateway",
+          "id": "t03b04",
+          "text": "The brain doesn't act by itself. It answers with a request to use one tool, create a calendar event, with Friday's date and five o'clock filled in."
+        }
+      ],
+      "chapter": "pg_chapter_example",
+      "facts": [
+        "brain.balanced_model"
+      ],
+      "id": "asking",
+      "n": 3,
+      "picture": {
+        "facts": {
+          "from_show": 3
+        },
+        "visual": 3
+      },
+      "title": "One request: asking"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "gateway",
+          "id": "t04b01",
+          "text": "Every tool call passes one gateway. It checks the request against my owner's rules, Allow, Ask first or Never, chosen for each group of tools."
+        },
+        {
+          "audience": "both",
+          "focus": "1",
+          "id": "t04b02",
+          "text": "Because this request was spoken, the gateway is stricter: something that would normally just go ahead must ask first, because someone else in the room might have said it."
+        },
+        {
+          "audience": "both",
+          "focus": "2",
+          "id": "t04b03",
+          "text": "So a card appears, written by code, not by the AI, saying exactly what will happen, here \"add an event: dentist appointment, Friday, 5 pm\". An event with guests would send invitations that can't be taken back, so it would always ask, and can be set to need a passkey."
+        },
+        {
+          "audience": "both",
+          "focus": "3",
+          "id": "t04b04",
+          "text": "My owner taps Approve. The event goes into Google Calendar, and the gateway adds the call to an audit trail that can only grow. Then I answer on screen and, for a spoken question, out loud."
+        }
+      ],
+      "chapter": "pg_chapter_example",
+      "facts": [],
+      "id": "approval",
+      "n": 4,
+      "picture": {
+        "facts": {
+          "from_show": 5
+        },
+        "visual": 5
+      },
+      "title": "One request: the approval"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "1",
+          "id": "t05b01",
+          "text": "Now my owner says: \"Cancel it.\" Deleting the event asks first too, and before I delete it, I keep a copy for {{undo.keep_days}} days."
+        },
+        {
+          "audience": "both",
+          "focus": "gateway",
+          "id": "t05b02",
+          "text": "So the activity log shows the delete with an Undo button: one tap, and the event is back in the calendar. Adding an event has no Undo there, which is why \"Cancel it\" is the way back."
+        },
+        {
+          "audience": "both",
+          "focus": "audit",
+          "id": "t05b03",
+          "text": "Each step, the card, the event and the delete, also appears in my activity log in plain words, so my owner can see later what I did and when."
+        },
+        {
+          "audience": "both",
+          "focus": "5",
+          "id": "t05b04",
+          "text": "When something goes wrong, I say so plainly. A blocked microphone gets the steps to allow it. With my AI switched off, my fixed rules can list events but not add them. At my owner's monthly spending limit, no paid call is made."
+        }
+      ],
+      "chapter": "pg_chapter_example",
+      "facts": [
+        "undo.keep_days"
+      ],
+      "id": "cancel",
+      "n": 5,
+      "picture": {
+        "facts": {
+          "from_show": 3
+        },
+        "visual": 3
+      },
+      "title": "One request: \"Cancel it\""
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "vault",
+          "id": "t06b01",
+          "text": "I'm private by default. What I keep lives in my own database, in my owner's project. The most private things, like documents, the home link and this book, are sealed with keys only I hold."
+        },
+        {
+          "audience": "both",
+          "focus": "purpose",
+          "id": "t06b02",
+          "text": "I have {{keys.purposes}} separate keys, all made from one key in Google's Secret Manager, so the key for notes can never open the vault."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t06b03",
+          "text": "When text from outside, like an email or a web page, reaches me, I treat it as information, never as orders: anything I would do because of it asks first."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t06b04",
+          "text": "My owner signs in with Google. Anything that can't be undone always asks first, and can be set to need a passkey on my owner's own device; changing the passkeys always needs one."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t06b05",
+          "text": "The privacy panel lists everything I keep and for how long, and lets my owner export or delete each kind. I work with {{services.count}} outside services; the full book names every one and what it sees."
+        }
+      ],
+      "chapter": "pg_chapter_data",
+      "facts": [
+        "keys.purposes",
+        "services.count"
+      ],
+      "id": "privacy",
+      "n": 6,
+      "picture": {
+        "facts": {
+          "from_show": 4
+        },
+        "visual": 4
+      },
+      "title": "Privacy and security"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "1",
+          "id": "t07b01",
+          "text": "I can listen and speak. When my owner switches it on, \"Hey Jarvis\" is recognised on the device itself."
+        },
+        {
+          "audience": "both",
+          "focus": "3",
+          "id": "t07b02",
+          "text": "Speech becomes text with Google's speech service or the browser's own, and my replies are read in a British voice, by Google or by the browser. My owner can talk over me to interrupt, and one switch turns the microphone off until it's switched back on."
+        },
+        {
+          "audience": "both",
+          "focus": "3",
+          "id": "t07b03",
+          "text": "Names I should know, like a friend's or a street's, can be added as words to recognise, so I hear them right."
+        },
+        {
+          "audience": "both",
+          "focus": "7",
+          "id": "t07b04",
+          "text": "In this book my voice is the browser's unless my owner chooses otherwise, so this tour costs nothing."
+        }
+      ],
+      "chapter": "pg_module_voice",
+      "facts": [],
+      "id": "voice",
+      "n": 7,
+      "picture": {
+        "facts": {
+          "from_show": 6
+        },
+        "visual": 6
+      },
+      "title": "Highlight 1 of 7: Voice"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "guard",
+          "id": "t08b01",
+          "text": "For each group of tools, my owner chooses Allow, Ask first or Never, and a group whose actions can't be undone can never be set to Allow."
+        },
+        {
+          "audience": "both",
+          "focus": "3",
+          "id": "t08b02",
+          "text": "Cards for things that can be undone can also be approved from Telegram; the rest only here, in the console."
+        },
+        {
+          "audience": "both",
+          "focus": "7",
+          "id": "t08b03",
+          "text": "One message can propose at most {{approvals.max_new_cards}} new cards, and Approve all clears several low-risk ones with one tap. The first passkey is added after a fresh Google sign-in; after that, every change to the passkeys needs a passkey."
+        }
+      ],
+      "chapter": "pg_module_approvals",
+      "facts": [
+        "approvals.max_new_cards"
+      ],
+      "id": "approvals",
+      "n": 8,
+      "picture": {
+        "facts": {
+          "from_show": 5
+        },
+        "visual": 5
+      },
+      "title": "Highlight 2 of 7: Approvals and passkeys"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t09b01",
+          "text": "I remember facts about my owner, like people, places and preferences. For each reply I bring in at most {{memory.facts_per_turn}} that matter, and show which ones I used."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t09b02",
+          "text": "The memory panel shows everything I remember, and my owner can delete any of it."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t09b03",
+          "text": "Learning from messages stays off until my owner switches it on. Then it runs in the background on the cheapest tier, at most {{memory.learn_a_day}} times a day, and a filter refuses ID numbers, card numbers and passwords."
+        }
+      ],
+      "chapter": "pg_module_memory",
+      "facts": [
+        "memory.facts_per_turn",
+        "memory.learn_a_day"
+      ],
+      "id": "memory",
+      "n": 9,
+      "picture": {
+        "facts": {
+          "from_show": 4
+        },
+        "visual": 4
+      },
+      "title": "Highlight 3 of 7: Memory"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "vault",
+          "id": "t10b01",
+          "text": "My owner's documents, like ID, insurance and certificates, live in a locked vault. Each file is checked, stored only once, and sealed with its own key."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t10b02",
+          "text": "A date I find inside a document, like an expiry, is only a suggestion until my owner confirms it."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t10b03",
+          "text": "Opening one needs an unlock that lasts {{vault.unlock_minutes}} minutes. Expiry reminders start {{vault.reminder_days_first}} days ahead and come again closer to the date. Documents from DigiLocker arrive through one Drive folder my owner shares with me."
+        }
+      ],
+      "chapter": "pg_module_vault",
+      "facts": [
+        "vault.unlock_minutes",
+        "vault.reminder_days_first"
+      ],
+      "id": "vault",
+      "n": 10,
+      "picture": {
+        "facts": {
+          "from_show": 4
+        },
+        "visual": 4
+      },
+      "title": "Highlight 4 of 7: Vault and documents"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "edge",
+          "id": "t11b01",
+          "text": "At home, a laptop runs a small bridge beside Home Assistant, Frigate for the cameras, and Mosquitto. It's the only thing at home the internet can reach, through Tailscale, and every call each way is signed."
+        },
+        {
+          "audience": "both",
+          "focus": "recognising faces",
+          "id": "t11b02",
+          "text": "Faces stay on the laptop, and nobody is named without a consent statement. My owner can arm the alarm and get an urgent alert when someone is at the camera; turning it off needs a passkey or a fresh sign-in. If the laptop stops answering for {{home.offline_minutes}} minutes, I say so."
+        }
+      ],
+      "chapter": "pg_module_home",
+      "facts": [
+        "home.offline_minutes"
+      ],
+      "id": "home",
+      "n": 11,
+      "picture": {
+        "facts": {
+          "from_show": 7
+        },
+        "visual": 7
+      },
+      "title": "Highlight 5 of 7: Home bridge and cameras"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "phone app",
+          "id": "t12b01",
+          "text": "On Android, my app is the console, full screen, with a few parts of its own: a Talk tile, shortcuts, alerts sorted into Urgent, Alerts and Nudges, and steps, heart rate and sleep from Health Connect."
+        },
+        {
+          "audience": "both",
+          "focus": "sos",
+          "id": "t12b02",
+          "text": "In an emergency, hold the SOS button for {{sos.hold_s}} seconds; after a {{sos.countdown_s}}-second countdown I send a fixed message with the location to up to {{sos.max_contacts}} contacts on Telegram, open the phone's text messages filled in for my owner to press Send, and offer to call {{sos.emergency}}. I'm not an emergency service."
+        }
+      ],
+      "chapter": "pg_module_android",
+      "facts": [
+        "sos.hold_s",
+        "sos.countdown_s",
+        "sos.max_contacts",
+        "sos.emergency"
+      ],
+      "id": "phone",
+      "n": 12,
+      "picture": {
+        "facts": [
+          {
+            "group": "phone app",
+            "label": "The console",
+            "value": "full screen"
+          },
+          {
+            "group": "phone app",
+            "label": "Talk tile",
+            "value": ""
+          },
+          {
+            "group": "phone app",
+            "label": "Shortcuts",
+            "value": ""
+          },
+          {
+            "group": "phone app",
+            "label": "Alerts",
+            "value": "Urgent, Alerts and Nudges"
+          },
+          {
+            "group": "phone app",
+            "label": "Health Connect",
+            "value": "steps, heart rate and sleep"
+          },
+          {
+            "group": "sos",
+            "label": "Hold SOS",
+            "value": "{{sos.hold_s}} seconds"
+          },
+          {
+            "group": "sos",
+            "label": "Countdown",
+            "value": "{{sos.countdown_s}} seconds"
+          },
+          {
+            "group": "sos",
+            "label": "Telegram contacts",
+            "value": "up to {{sos.max_contacts}}"
+          },
+          {
+            "group": "sos",
+            "label": "Offer to call",
+            "value": "{{sos.emergency}}"
+          }
+        ],
+        "visual": 9
+      },
+      "title": "Highlight 6 of 7: The phone app and SOS"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "catalogue",
+          "id": "t13b01",
+          "text": "I keep a catalogue of every piece of clothing my owner has, down to each sock: where it is, and whether it's ready, in the laundry or away."
+        },
+        {
+          "audience": "both",
+          "focus": "outfits",
+          "id": "t13b02",
+          "text": "Ask \"What should I wear tomorrow?\" and fixed rules pick an outfit, with their reasons, from the calendar and the weather. A plain grey 3D figure, shaped from {{tryon.measures}} measurements, wears the look on my owner's own phone or laptop, with private pieces always covered."
+        },
+        {
+          "audience": "owner",
+          "focus": "see it on me",
+          "id": "t13b03",
+          "text": "\"See it on me\" is optional and paid: for a garment you're thinking of buying, Google's image model makes one picture of you wearing it, about {{seeme.inr_a_picture}} each, at most {{seeme.month_cap_inr}} a month, and it stays off until you type YES."
+        },
+        {
+          "audience": "guest",
+          "focus": "see it on me",
+          "id": "t13b04",
+          "text": "\"See it on me\", a picture made by Google of a garment my owner is thinking of buying, stays off until my owner says yes."
+        }
+      ],
+      "chapter": "pg_module_wardrobe",
+      "facts": [
+        "tryon.measures",
+        "seeme.inr_a_picture",
+        "seeme.month_cap_inr"
+      ],
+      "id": "wardrobe",
+      "n": 13,
+      "picture": {
+        "facts": [
+          {
+            "group": "catalogue",
+            "label": "Every piece of clothing",
+            "value": "down to each sock"
+          },
+          {
+            "group": "catalogue",
+            "label": "Where it is",
+            "value": "ready, in the laundry or away"
+          },
+          {
+            "group": "outfits",
+            "label": "What should I wear tomorrow?",
+            "value": "fixed rules, with their reasons"
+          },
+          {
+            "group": "outfits",
+            "label": "The calendar and the weather",
+            "value": ""
+          },
+          {
+            "group": "try-on",
+            "label": "A plain grey 3D figure",
+            "value": "{{tryon.measures}} measurements"
+          },
+          {
+            "group": "try-on",
+            "label": "Private pieces",
+            "value": "always covered"
+          },
+          {
+            "group": "try-on",
+            "label": "See it on me",
+            "value": "stays off"
+          }
+        ],
+        "visual": 9
+      },
+      "title": "Highlight 7 of 7: Wardrobe & Try-on"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "modules",
+          "id": "t14b01",
+          "text": "Beyond these seven, I have {{modules.else_count}} more modules. They're on screen now, and each has its own chapter in my owner's full book."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t14b02",
+          "text": "A morning brief. Web search that shows its sources. Gmail, the calendar, to-dos, contacts and Drive. Groceries, parcels, bills and family calendars. WhatsApp drafts that my owner sends. Telegram. Vitals, which shows how I'm running and what I cost. And this book."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t14b03",
+          "text": "When a new part is built, it joins its module here, and the tour stays the same length."
+        }
+      ],
+      "chapter": "",
+      "facts": [
+        "modules.else_count",
+        "modules.others"
+      ],
+      "id": "else",
+      "n": 14,
+      "picture": {
+        "facts": [
+          {
+            "group": "modules",
+            "label": "{{modules.others}}",
+            "value": ""
+          }
+        ],
+        "visual": 9
+      },
+      "title": "What else I can do"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "web",
+          "id": "t15b01",
+          "text": "I'm written in Python with FastAPI, keep my data in Google's Firestore, and run on Google Cloud Run. My console is plain JavaScript with no build step, and the 3D pictures use three.js."
+        },
+        {
+          "audience": "both",
+          "focus": "build",
+          "id": "t15b02",
+          "text": "I use {{libs.python_pins}} Python packages, each pinned and checked by its hash; their licences are in the full book. Every change passes automated tests first, then rolls out with no traffic, passes a health check, and only then takes over."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t15b03",
+          "text": "And this book is made again from my code at every release; it is built twice and must come out identical, or it isn't used."
+        }
+      ],
+      "chapter": "pg_chapter_technology",
+      "facts": [
+        "libs.python_pins"
+      ],
+      "id": "built",
+      "n": 15,
+      "picture": {
+        "facts": {
+          "from_show": 9
+        },
+        "visual": 9
+      },
+      "title": "How I'm built"
+    },
+    {
+      "audience": "owner",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t16b01",
+          "text": "This scene is for you only, {h}. The bars are my prices in rupees, at {{costs.rate}} rupees a dollar, from my own price table, and my hosting is set up to fit Google's free allowances. This book's AI writing has its own caps, in Book settings."
+        }
+      ],
+      "chapter": "pg_chapter_costs",
+      "facts": [
+        "costs.rate"
+      ],
+      "id": "costs",
+      "n": 16,
+      "picture": {
+        "facts": {
+          "from_show": 10
+        },
+        "visual": 10
+      },
+      "title": "What I cost"
+    },
+    {
+      "audience": "both",
+      "beats": [
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t17b01",
+          "text": "Last, what's planned. None of it is built yet, and plans can change."
+        },
+        {
+          "audience": "both",
+          "focus": "",
+          "id": "t17b02",
+          "text": "Next: {{roadmap.next}}. After that: {{roadmap.after}}. The full book's planned chapter lists the rest, and goes deeper into every part you've seen today."
+        }
+      ],
+      "chapter": "pg_chapter_planned",
+      "facts": [
+        "roadmap.next",
+        "roadmap.after"
+      ],
+      "id": "planned",
+      "n": 17,
+      "picture": {
+        "facts": {
+          "from_show": 11
+        },
+        "visual": 11
+      },
+      "title": "What's planned next"
+    }
+  ],
+  "v": 1
+}

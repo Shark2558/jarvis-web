@@ -127,6 +127,9 @@ SUITES = [
     # R13.1 I0: "Try-on" -- I0's contract part (built) and the six stubs, STAGED (a stub passes
     # until I1 flips STUBS_PASS); each built part's control must fail it; no real Google call
     ("r13_1 (gated)", [sys.executable, str(HERE / "r13_1" / "run.py"), "--mock"], True),
+    # R6.3 I0: "The Build Book: written by AI" -- I0's contract part (built, with its own controls)
+    # and the six stubs, STAGED (a stub passes until I1 flips STUBS_PASS); no real model call
+    ("r6_3 (gated)", [sys.executable, str(HERE / "r6_3" / "run.py"), "--mock"], True),
 ]
 
 

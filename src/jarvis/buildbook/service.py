@@ -342,7 +342,7 @@ class BookService:
         if REPLY_ID.fullmatch(line_id):
             said = getattr(self.talk, "said", None)
             return None if said is None else await said(uid, session.session_id, line_id)
-        return await self.show.line_text(uid, line_id)
+        return await self.show.line_text(uid, line_id, session.audience)  # R6.3 H1
 
     async def voice(self, uid: str) -> str:
         return await self.show.voice(uid)

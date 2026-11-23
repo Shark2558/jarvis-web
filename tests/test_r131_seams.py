@@ -33,13 +33,13 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name -----------------------------------------------
 def test_the_version_is_thirteen_point_one() -> None:
-    assert jarvis.__version__ == "13.1.0"  # R13.1 I0 (D17); the persona stays p13.0
+    assert jarvis.__version__ == "6.3.0"  # R6.3 I0 (13.1.0 at R13.1); the persona stays p13.0
 
 
 def test_the_real_repository_is_r13_1_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R13.1"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r13-1-try-on.md"
+    assert plans.release_label(repo) == "R6.3"  # R6.3 I0
+    assert plans.plan_paths(repo)[0] == "docs/plans/r6-3-book-content.md"
     assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 
@@ -114,7 +114,7 @@ def test_config_stays_under_its_guard() -> None:
 def test_try_on_has_its_own_usage_label() -> None:
     from jarvis.billing.service import LABELS
 
-    assert LABELS == {"voice": "Voice", "tryon": "Try-on"}
+    assert LABELS == {"voice": "Voice", "tryon": "Try-on", "book": "Book writer"}  # + R6.3 I0
 
 
 @pytest.mark.parametrize(
@@ -875,7 +875,7 @@ def test_the_guide_has_c72_and_c73_with_every_collection_and_console_module() ->
     from jarvis.wardrobe.ports import COLLECTIONS
 
     guide = _text(ROOT / "docs" / "architecture" / "JARVIS-Architecture.md")
-    assert guide.splitlines()[0].startswith("Version v13.1.5 · ") and "Release R13.1" in guide[:200]
+    assert "| v13.1.5 | 18 Nov 2026, 06:15 IST | R13.1 |" in guide  # R6.3 I0: the edition moved on
     for card in ("#### C72 · Try-on figure (R13.1)", "#### C73 · See it on me (R13.1)"):
         assert card in guide, card
     for name in (*COLLECTIONS["tryon"], *COLLECTIONS["seeme"]):

@@ -168,13 +168,13 @@
     }
     function show(scene, beatIndex, beat, ctx) {
       const kind = KIND[scene.n] || 'grid';
-      if (!cur || cur.n !== scene.n) {
+      if (!cur || cur.n !== scene.n || cur.id !== scene.id) { // R6.3: a tour scene may borrow the picture before it
         const built = BUILD[kind](scene, ctx || {});
         const box = mk('div', 'sh2-scene sh2-k-' + kind);
         box.dataset.scene = String(scene.n);
         box.append(built.card);
         host.replaceChildren(box);
-        cur = Object.assign({ n: scene.n, box }, built); // it enters by a CSS animation (none in Calm / Off)
+        cur = Object.assign({ n: scene.n, id: scene.id, box }, built); // it enters by a CSS animation (none in Calm / Off)
       }
       const on = lit(scene.facts, Object.assign({}, beat, { i: beatIndex }), kind);
       cur.items.forEach((el, i) => el.classList.toggle('on', on.has(i)));

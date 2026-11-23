@@ -86,6 +86,9 @@ NOT_IN_PAGE = {
     "console-tryon-cloth.js": ("console-tryon-3d.js", "'./console-tryon-cloth.js'"),
     "console-tryon.css": ("console-r7.js", "'/static/console-tryon.css'"),
     "console-tryon-card.js": ("console-r7.js", "import('./console-tryon-card.js')"),  # row 388
+    # R6.3 I0 (docs/plans/r6-3-book-content.md seam 8): C's two, at the Book panel's first open
+    "console-book-writer.js": ("console-book.js", "'console-book-writer.js'"),
+    "console-book-pages.js": ("console-book.js", "'console-book-pages.js'"),
 }
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {
@@ -94,6 +97,8 @@ ON_BOOK_PAGE = {
     "console-book-3d.js",
     "console-book-2d.js",
     "console-book-talk.js",
+    "console-book-script.js",  # R6.3 I0 (seam 9)
+    "console-book-tour.js",  # R6.3 D
 }
 ASSETS = sorted(p.name for p in [*STATIC.glob("console-*.css"), *STATIC.glob("console-*.js")])
 

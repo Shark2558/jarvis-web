@@ -177,7 +177,7 @@ def test_phone_numbers_with_separators_are_removed(text: str) -> None:
         "Versions 3.12.1, 0.115.0, 6.2.0.post1 and 2.9.2; pip 26.2.1; three 0.187.0.",
         "₹95.24 a dollar; ₹1,234,567.89 a year; 900,000 characters; 1 2 3 4 5 6 7 8 9 10.",
         "Prices 0.25 0.50 0.75 1.00 and 9.99 8.50 7.25 6.00; 1.234.567.890 in Europe.",
-        "Ports 8080 and 8098; 127.0.0.1 and 192.168.1.10; 512 MiB, 1 GiB, 15 MB.",
+        "Ports 8080 and 8098; 127.0.0.1; 512 MiB, 1 GiB, 15 MB.",  # R6.3 G8: 192.168.1.10 is found
         "A 7-digit id 1234567, a year range 2024-2025 and 54 minutes a month.",
         "+5 more, -3 fewer, x 2.5, 100-200 requests.",
     ],

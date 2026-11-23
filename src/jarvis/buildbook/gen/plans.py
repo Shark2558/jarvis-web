@@ -9,7 +9,8 @@
   plans use (`**D1 · Title.**`, `### D1 · Title`, `- **D1 — Title.**`), as "D1 · Title".
 - `fit_rows`: the release plans' "Architecture fit" / "How it fits the architecture" tables.
 - `limitations`: "Not in this plan", Risks, Needs the owner / you first, Open questions,
-  Deferred — the first sentence of each item (<= 200 characters), newest plan first, <= 80.
+  Deferred — the first sentence of each item (<= 200 characters), newest plan first, <= 80
+  (R6.3 G4: `cap=None` gives every one, for the fact pack).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import lru_cache
 
 from jarvis.buildbook.gen.code import clip
 from jarvis.buildbook.gen.fallback import RELEASE_PLAN as _RELEASE
@@ -27,6 +29,7 @@ from jarvis.buildbook.model import MAX_LIMITATIONS
 from jarvis.buildbook.sections import FitRow, Limitation, PlanDecisions
 
 PLANS = "docs/plans/"
+CACHED_PLANS = 512  # every plan of the repository, about 160 today
 TEXT_MAX, TITLE_MAX, DECISION_MAX = 200, 300, 200
 _SLICE = re.compile(r"^phase\d+-slice(\d+)([a-z]?)-")
 _SEP = r"(?:\s*[·—–:-]\s+|\s+)"
@@ -98,10 +101,17 @@ def plain_md(text: str) -> str:
     return " ".join(text.split())
 
 
+@lru_cache(maxsize=CACHED_PLANS)
+def _scrubbed(scrub: Scrubber, text: str) -> str:
+    """A plan's text scrubbed, kept by (scrubber, text): the book, the fact pack (R6.3) and
+    `--check`'s second build read the same plans."""
+    return scrub.clean(text)
+
+
 def read_plans(repo: Repo, scrub: Scrubber) -> tuple[Plan, ...]:
     out = []
     for path in plan_paths(repo):
-        text = scrub.clean(repo.text(path) or "")
+        text = _scrubbed(scrub, repo.text(path) or "")
         lines = tuple(text.splitlines())
         head = next((ln for ln in lines if ln.startswith("# ")), "# " + path)
         out.append(Plan(path, label_of(path), clip(plain_md(head[2:]), TITLE_MAX), lines))
@@ -200,13 +210,17 @@ def _plan_limits(plan: Plan) -> Iterator[Limitation]:
                 yield lim("not_in_plan", m.group(1))
 
 
-def limitations(read: tuple[Plan, ...]) -> tuple[Limitation, ...]:
+def limitations(
+    read: tuple[Plan, ...], cap: int | None = MAX_LIMITATIONS
+) -> tuple[Limitation, ...]:
+    """The plans' limitations in order, at most `cap` (the book's 80); `cap=None`: every one
+    (R6.3 G4: the fact pack keeps them all and the full book's "What's planned" pages them)."""
     out: list[Limitation] = []
     for plan in read:
         out.extend(_plan_limits(plan))
-        if len(out) >= MAX_LIMITATIONS:
+        if cap is not None and len(out) >= cap:
             break
-    return tuple(out[:MAX_LIMITATIONS])
+    return tuple(out if cap is None else out[:cap])
 
 
 # ---- architecture fit ------------------------------------------------------------------------

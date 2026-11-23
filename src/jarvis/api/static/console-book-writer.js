@@ -261,14 +261,18 @@
   // ---- the trial, its pages side by side, one sample page; the full write and Update -------------------
   function trialSec() {
     const r = V.run, t = V.trial, mine = r.kind === 'trial' && active(r);
-    const sec = section('Writer trial', mine ? 'Writing' : t.results.length ? 'Done' : 'Not run yet');
+    const ended = r.kind === 'trial' && r.state === 'stopped';
+    const sec = section('Writer trial', mine ? 'Writing' : t.results.length ? 'Done' : ended ? 'Stopped' : 'Not run yet');
     if (mine) sec.append(progEl = progress(r));
-    else if (t.results.length) sec.append(mk('p', 'snote', 'Both brains wrote the same sample pages from the same code. Compare them, then pick the writer below.'),
-      actions(button('Run another trial', '', () => runYes('trial')), button('Delete the trial pages', '', dropTrial)));
     else {
-      sec.append(mk('p', 'snote', 'Two brains each write the same 5 sample pages, so you can compare them before you pick a writer. '
-        + 'Nothing is spent before your YES.'));
-      sec.append(E ? lines(estLines(E, 'trial')) : mk('p', 'bempty', 'Reading the estimate\u2026'), actions(button('Start the trial', 'primary', () => runYes('trial'))));
+      if (ended && r.why) sec.append(progress(r)); // how the last one ended, and why (R6.3 hotfix 1)
+      if (t.results.length) sec.append(mk('p', 'snote', 'Both brains wrote the same sample pages from the same code. Compare them, then pick the writer below.'),
+        actions(button('Run another trial', '', () => runYes('trial')), button('Delete the trial pages', '', dropTrial)));
+      else {
+        sec.append(mk('p', 'snote', 'Two brains each write the same 5 sample pages, so you can compare them before you pick a writer. '
+          + 'Nothing is spent before your YES.'));
+        sec.append(E ? lines(estLines(E, 'trial')) : mk('p', 'bempty', 'Reading the estimate\u2026'), actions(button('Start the trial', 'primary', () => runYes('trial'))));
+      }
     }
     sec.append(noteEl('trial')); return sec;
   }

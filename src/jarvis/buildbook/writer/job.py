@@ -43,6 +43,7 @@ from jarvis.buildbook.writer.run import (
     Item,
     Out,
     Runner,
+    limit_pct_of,
     run_key,
     trial_items,
 )
@@ -252,7 +253,7 @@ class Steps:
             except BookError as exc:
                 log.error("book writer pages not sealed", extra={"error": type(exc).__name__})
                 state, why = "stopped", "unavailable"
-        pct = doc.pick.confirmed.caps.limit_pct
+        pct = limit_pct_of(doc)  # the line the gate used (hotfix 1: not the unpicked floor)
         left = texts.pages_words(left_pages)
         words = texts.WHY.get(why, texts.WHY["unavailable"]).format(left=left, pct=pct)
         ended = None if state == "paused" else self.ctx.clock().isoformat()

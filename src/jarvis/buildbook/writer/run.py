@@ -100,6 +100,13 @@ def cap_of(run: Run, doc: WriterDoc) -> int:
     return {"trial": Caps().trial, "first": granted.first, "update": granted.release}[run.kind]
 
 
+def limit_pct_of(doc: WriterDoc) -> int:
+    """The share of his monthly limit a run stops before: the confirmed pick's, or the default
+    80 % while no writer is picked (the trial). The gate and the stop's words both read this one
+    (R6.3 hotfix 1: the words read the unpicked pick's floor and said "10 %")."""
+    return doc.pick.confirmed.caps.limit_pct if doc.pick.confirmed.brain else Caps().limit_pct
+
+
 def p90(seconds: tuple[float, ...]) -> float:
     ordered = sorted(seconds)
     return ordered[max(0, math.ceil(0.9 * len(ordered)) - 1)]
@@ -236,9 +243,7 @@ class Runner:
                 if write.paid(spec)
                 else 0.0
             )
-            pct = (
-                doc.pick.confirmed.caps.limit_pct if doc.pick.confirmed.brain else Caps().limit_pct
-            )
+            pct = limit_pct_of(doc)
             month = doc.pick.confirmed.caps.month if run.kind == "update" else None
             held = await self.ledger.reserve(
                 uid, call_id=f"wc_{secrets.token_hex(8)}", page=item.page.id, run=run.kind,
@@ -295,6 +300,7 @@ __all__ = [
     "bill",
     "cap_of",
     "judge",
+    "limit_pct_of",
     "p90",
     "run_key",
     "trial_brains",

@@ -32,9 +32,9 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
 2. **The tour has seven highlights**, as you chose today: Voice; Approvals and passkeys; Memory; Vault
    and documents; Home bridge and cameras; the phone app and SOS; and the new **Wardrobe & Try-on**.
    It follows one request from start to finish: "Add a dentist appointment on Friday at 5 pm", then
-   "Cancel it". Its words are written by the Workshop, not by AI (₹0), and are in this plan for your
-   approval (**approval stop 2**, section "The short tour's first script"). It plays in the show you
-   already know, with its current pictures; new pictures come with R6.4's new look.
+   "Cancel it". Its words are written by the Workshop, not by AI (₹0), and you approved them on
+   23 Nov at 14:53 IST (**approval stop 2**, section "The short tour's first script"). It plays in the
+   show you already know, with its current pictures; new pictures come with R6.4's new look.
 3. **Nothing is written by AI until you try it.** In Book settings, a new **Writer trial** (yours only)
    has two brains write the same **5 sample pages**: Claude on its everyday "balanced" tier (Sonnet 5.5)
    and the free Gemini brain. You first see the estimate (**about ₹40**, ₹25–51 by how long the pages
@@ -74,8 +74,8 @@ plan's edition (v6.3.1); the code's version is `6.3.0`.
     instead of once per release, eight diagrams with part numbers, and a local setup guide that is
     actually run. Why the split: Part 2 measures at about 15 builder-days, not Phase A's 9–10.
 12. **The look does not change.** New parts use the console's and the Book's existing styles.
-13. **Your steps now:** approve or correct the tour's script (stop 2) and answer "Needs the owner"
-    (each has a safe default). After R6.3 is live: run the Writer trial, then pick.
+13. **Your steps now:** the tour's script is approved (stop 2, YES on 23 Nov); answer "Needs the
+    owner" (each has a safe default). After R6.3 is live: run the Writer trial, then pick.
 
 ## What is built: rows 379 and 380, and where each goes
 
@@ -284,6 +284,11 @@ with small standard-library scripts outside the repository.
 
 ## The short tour's first script (approval stop 2)
 
+**Approved: YES, 23 Nov 2026, 14:53 IST** (approval stop 2 passed, on this section's text at
+`ad65e99`; part D starts with A, B and C). Since then no spoken line has changed; plan review 1
+corrected one "Traces to" cell (t06b05, M7) and four rows of the facts table under the script (M7,
+L1, L2), none of which changes a word that is spoken.
+
 **For the owner.** This is every word the tour says, scene by scene. JARVIS speaks as "I", as the show
 does today; "my owner" is you. A word in `{{…}}` is a number or name that JARVIS's own code fills in at
 every release (the list after the script says where each comes from), so the tour never goes out of
@@ -490,7 +495,8 @@ the demo household, a capture run and stop 3), and the content engine is useful 
 So **R6.3** (`v6.3.0`) = I0 + **A · The fact pack and the generator**, **B · The writer**, **C · The
 owner's console**, **D · The short tour**; **R6.3.1** (`v6.3.1`) = the pictures (Phase D, stop 3),
 de-duplicated storage, the eight diagrams with C-ids and the setup guide (section "R6.3.1"). Order:
-I0 → A, B, C in parallel → D after approval stop 2 (his YES on the script) → I1. **Unchanged:**
+I0 → A, B, C and D in parallel (approval stop 2 passed: his YES on the script, 23 Nov, 14:53 IST) →
+I1. **Unchanged:**
 `api/app.py`, `tools/gateway.py`, `core/brain.py`, `config.py` (no edit: 789 of 790), `console.html`
 (byte-identical), the keyring (26), the persona, the permission rows, the tools, Telegram, the
 Scheduler jobs, the guest lock and the talk-through's lane (the guest talk reads `book.digest` as
@@ -903,8 +909,8 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
     follows, as the project's release plan has them; that plan is not in the repository), so the tour's
     `roadmap.next` and `roadmap.after` are true.
 16. `docs/plans/r6-3-integration/BRIEF-COMMON.md` (R13.1's rules plus: ₹ only in owner-facing words;
-    no real model call in any test or eval; a fixed clock; part D starts only after the owner's YES on
-    the script) and `I0-NOTES.md`.
+    no real model call in any test or eval; a fixed clock; part D copies the approved script
+    verbatim, every spoken line as approved on 23 Nov) and `I0-NOTES.md`.
 
 ## Part split (four builders; worktrees; branches `r6-3-a` … `r6-3-d` from `r6-3-i0`; disjoint files)
 
@@ -928,8 +934,8 @@ first; only the planned collections, routes and job; never a wiring or shared fi
   optional placement CSS (D0), `tests/test_r63_c_*.py`, `tests/browser/test_r63_c_*.py` (against
   `tests/r63_fake_server.py`), screenshots (360 × 800, 1280 × 800, day and night), INTEGRATION-C.md.
   `security-reviewer` for the YES and ₹ dialogs.
-- **D · The short tour** (D9; starts after approval stop 2): `gen/tour.json` (the approved script,
-  verbatim), `gen/tour.py` (fill, audiences, timer, bands), `buildbook/tour_serve.py` (`tour_lines`,
+- **D · The short tour** (D9; approval stop 2 passed on 23 Nov, so D starts with the others):
+  `gen/tour.json` (the approved script, verbatim), `gen/tour.py` (fill, audiences, timer, bands), `buildbook/tour_serve.py` (`tour_lines`,
   `tour_line_text`), `static/console-book-tour.js` (the picture per `visual`,
   chapter names, owner-only scenes, continue; ≤ 300), `tests/test_r63_d_*.py`,
   `tests/browser/test_r63_d_*.py` (the tour plays end to end with the browser voice stub and the 2D
@@ -1047,8 +1053,8 @@ keyring 26. `tests/test_r63_seams.py` pins each.
 
 ## Needs the owner (safe defaults; none blocks the build)
 
-1. **Approval stop 2:** the tour's script above, as written (default: D waits for your YES; any
-   change is a Workshop edit, ₹0, shown to you again).
+1. **Approval stop 2 (answered):** the tour's script above: YES, 23 Nov 2026, 14:53 IST, as
+   written; any later change is a Workshop edit, ₹0, shown to you again.
 2. **The tour's length:** about 13–14 minutes at the timer's pace (default); or a shorter 10–11
    minutes (each highlight cut to its first line).
 3. **The trial's five pages:** the running example, the brain router, Wardrobe & Try-on, the Vitals

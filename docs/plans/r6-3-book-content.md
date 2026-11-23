@@ -1,4 +1,4 @@
-Version v6.3.2 · 23 Nov 2026, 15:16 IST · Release R6.3 · Status: Ready · Owner: 🛠 Mark XXIV
+Version v6.3.3 · 23 Nov 2026, 16:45 IST · Release R6.3 · Status: Ready · Owner: 🛠 Mark XXIV
 
 # Release R6.3 — The Build Book: written by AI, short tour and full book (`v6.3.0`)
 
@@ -38,7 +38,7 @@ plan's edition (v6.3.2); the code's version is `6.3.0`.
 3. **Nothing is written by AI until you try it.** In Book settings, a new **Writer trial** (yours only)
    has two brains write the same **5 sample pages**: Claude on its everyday "balanced" tier (Sonnet 5.5)
    and the free Gemini brain. You first see the estimate (**about ₹40**, ₹26–52 by how long the pages
-   come out; Gemini is ₹0), then type **YES**; the trial stops at **₹60**: each page call starts only
+   come out; Gemini is ₹0), then type **YES**; the trial stops at **₹100** (your answer of 23 Nov): each page call starts only
    when its worst case still fits, one at a time. It runs while Book settings is open. The pages
    appear side by side, with which checks each passed. Gemini's free tier may let Google learn from
    what it reads, so both brains are given only JARVIS's public code and the numbers computed from
@@ -98,7 +98,7 @@ case of the same name runs it through the wired app at I1.
 |---|---|---|---|---|
 | 379 | "the Book written by AI with more explanations and examples" | Every full-book page has a plain-words part, at least one worked example marked as made up, a "how it works" part whose every source reference exists, and its numbers from the fact pack; it records the brain and tier that wrote it; a page below BALANCED is refused | A (facts, pages index), B (writer, checks), C (reader) | `test_row379_a_page_is_written_at_balanced_with_an_example_and_every_source_checked`: the fake Claude brain writes `pg_card_c16`; the sealed page has the sections `plain`, `example` (marked "Example (made up)"), `how`, `costs`, `fails`, `code`; every `path`, `path:symbol`, setting and collection in it is in the fact index; every number outside the example is a filled placeholder; its meta says brain `anthropic`, tier `balanced`, model = the registry's balanced model; the same page from a router that answered on FAST, or from the laptop (`offline`), is refused and the generator's text stays |
 | 380 | "two versions: a short 10–15 minute tour and a descriptive full book that grows with JARVIS" | The tour lasts 10–15 minutes by the timer (13–14 aimed), has the seven highlights he chose and the running example; the full book has a page for every catalogue card, module, console screen and outside service, and a new card gets a page at the next release with no hand edit | A (pages index, facts), D (tour), B (update), C (reader) | `test_row380_the_tour_is_ten_to_fifteen_minutes_with_his_seven_highlights` (the filled tour of `47ee8fc` times 780–870 s for the owner and 760–850 s for a guest, inside the hard 600–900 s band; its highlight ids are exactly the seven, in his order; the running example has both lines) and `test_row380_a_new_card_gets_its_own_page_at_the_next_release` (a fixture guide with a C74 card: the pages index gains `pg_card_c74` in its module's chapter, the update's estimate counts it, and after the update the reader lists it) |
-| 23 Nov · trial | "an owner-only Writer trial in Book settings: 5 representative sample pages each by the BALANCED Claude brain and by the free Gemini brain; the ₹ estimate shown first, his typed YES, a hard cap; the pages shown side by side" | As his words; never for a guest; nothing spent before the YES | B, C | `test_the_trial_spends_nothing_before_yes_and_stops_at_its_cap`: zero brain calls before `YES`; "yes", "Yes", "YES!" refused; with the fake brains, 5 + 5 pages; with every Claude call settling at its hold (₹11.84 for a first draft at ₹95.24 a dollar, D8) the cap of ₹60 lets 5 calls through and refuses the 6th before it is sent; a call settled above its hold stops the trial (M1); the side-by-side view lists both brains' pages with their checks; a guest session gets 403 on every trial route |
+| 23 Nov · trial | "an owner-only Writer trial in Book settings: 5 representative sample pages each by the BALANCED Claude brain and by the free Gemini brain; the ₹ estimate shown first, his typed YES, a hard cap; the pages shown side by side" | As his words; never for a guest; nothing spent before the YES | B, C | `test_the_trial_spends_nothing_before_yes_and_stops_at_its_cap`: zero brain calls before `YES`; "yes", "Yes", "YES!" refused; with the fake brains, 5 + 5 pages; with every Claude call settling at its hold (₹11.84 for a first draft at ₹95.24 a dollar, D8) the cap of ₹100 (his answer of 23 Nov 2026) lets 8 calls through and refuses the 9th before it is sent; a call settled above its hold stops the trial (M1); the side-by-side view lists both brains' pages with their checks; a guest session gets 403 on every trial route |
 | 23 Nov · pick | "then he picks the writer and the caps; the full first write starts only after his pick and a second typed YES with its ₹ estimate" | No first write without a pick and a second YES bound to the estimate shown | B, C | `test_the_first_write_needs_the_pick_and_a_second_yes_on_the_estimate_shown`: `POST …/first` before a pick is 409 `pick_needed`; with a pick but a stale `estimate_id` 409 `estimate_changed`; with both, the run starts and its cap is the pick's |
 | 23 Nov · deploy | "nothing spends money by itself after a deploy" | After a new release, zero brain calls until his Update with a typed YES (or "update by itself", itself granted only by a typed YES) | B | `test_nothing_spends_by_itself_after_a_deploy`: a new release id in the fake source, 50 `book_write` ticks: no brain call, the new release's pages file carried for free (H3), one `book_update_ready` state with its estimate; after `POST …/update` with `typed: "YES"`, the changed pages only; and `test_spending_authority_needs_a_typed_yes` (H2): the first pick, a cap raised, a paid brain and "update by itself" on each answer 422 `yes_needed` with the ₹ words and save nothing until the YES on that `terms_id` |
 
@@ -694,10 +694,10 @@ with Book settings open: the trial runs only on the console step, D5), the cap, 
 to whom (both brains, their makers, "Gemini's free tier may let Google use what it reads to improve
 its products: only JARVIS's public code is sent"). **Then his YES:** a box that accepts exactly `YES`
 once trimmed ("yes", "Yes", "YES!" refused, nothing changes), bound to the `estimate_id` he was
-shown (a changed estimate asks again). **Hard cap:** ₹60 for the trial: a call starts only when its
+shown (a changed estimate asks again). **Hard cap:** ₹100 for the trial (his answer of 23 Nov 2026; the plan proposed ₹60): a call starts only when its
 hold, an upper bound of what it can cost (D8), fits under the cap with what is spent and held, and the
 step runs one call at a time; a call billed above its hold (only if the text tokenizes denser than
-2.5 bytes a token) stops the trial at once and says so, so the trial can pass ₹60 by at most that
+2.5 bytes a token) stops the trial at once and says so, so the trial can pass ₹100 by at most that
 one call's excess. **The result:** both brains' five pages side by side (C), each
 with its checks (passed first time, passed after a redraft, refused and why), tokens, seconds and ₹;
 owner only, never in a guest session, never sealed into a release (`book_trial/{uid}_{n}`, kept 30
@@ -994,7 +994,7 @@ confirm). The writer's brain calls carry `tools=None`.
 | Part | Failure modes and handling | Security and privacy | ₹ a month |
 |---|---|---|---|
 | A · Facts and generator | a fact source missing or not a literal → `GenError` with one plain line (the deploy goes on, as today: `--best-effort`); a card in no module → `GenError`; facts over 1 MiB → `GenError`; the counter meets an unreadable file → counted as "unreadable", never guessed | stdlib only, no network; the scrubber's new kinds guard `book.json` too; the index lists paths and names, never file content | 0 |
-| B · The writer | No-AI → paused, said so; breaker open or 5xx → this page waits (no laptop, no tier change); 429 or 529 → released (no retry inside the call), the step ends, next run; a cut stream → settled at its usage plus the margin (D8), redrafted on the step only (H7); no measured call yet, or a page that doesn't fit the clock's time → no clock call, said so (H7); a failed check → redraft once, then the previous text; the cap, the month cap or 80 % → stopped, said so; a lost lease → the step ends; an unreadable ledger or limit → refused (fail closed); an unreadable pages index or file → those pages show the generator's text and the next write is `POST …/first` with its own typed YES, never a tap (H3); a new release during a run → stopped, sealed, joined to the new estimate (M5) | packs from public files only, scrubbed, fenced, same for both brains; no tools; nothing personal read (static guard); page text sealed; logs content-free; console-only consent and spend; the audit by ids and ₹ | trial ≤ ₹60 once; first write ≤ ₹1,500 once; ≤ ₹500 a release, ≤ ₹1,000 a month (Claude); ₹0 (Gemini) |
+| B · The writer | No-AI → paused, said so; breaker open or 5xx → this page waits (no laptop, no tier change); 429 or 529 → released (no retry inside the call), the step ends, next run; a cut stream → settled at its usage plus the margin (D8), redrafted on the step only (H7); no measured call yet, or a page that doesn't fit the clock's time → no clock call, said so (H7); a failed check → redraft once, then the previous text; the cap, the month cap or 80 % → stopped, said so; a lost lease → the step ends; an unreadable ledger or limit → refused (fail closed); an unreadable pages index or file → those pages show the generator's text and the next write is `POST …/first` with its own typed YES, never a tap (H3); a new release during a run → stopped, sealed, joined to the new estimate (M5) | packs from public files only, scrubbed, fenced, same for both brains; no tools; nothing personal read (static guard); page text sealed; logs content-free; console-only consent and spend; the audit by ids and ₹ | trial ≤ ₹100 once; first write ≤ ₹1,500 once; ≤ ₹500 a release, ≤ ₹1,000 a month (Claude); ₹0 (Gemini) |
 | C · Console | a route refusal → its `detail` in the line under the button; offline → "Can't reach JARVIS…"; a stale estimate → asks again | `textContent` only; the YES box never pre-filled; no ₹ sent from the page is trusted (the server re-estimates) | 0 |
 | D · The tour | no tour in an older book → today's 11 scenes; a missing fact → the generator refuses (CI) | a guest's tour has no ₹ and no owner-only line, in the served script and in what speak reads (tested through the route, H1); lines served by id only | 0 (browser voice); Cloud voice ≈ ₹27 a tour after the free allowance (owner only; guests free-only) |
 
@@ -1019,7 +1019,7 @@ rose 1–2 %.
   references expanded), plus their module pages and every screen or service page citing the same
   files; 25 / 40 / 60 pages for low / mid / high stand as that total.
 - **Against the proposed caps** (a call starts only while its hold fits, so the last ≈ ₹12 of a cap
-  stays unused): the trial (₹60) holds even the high case; the first write (₹1,500) holds low and mid;
+  stays unused): the trial (₹100) holds even the high case; the first write (₹1,500) holds low and mid;
   at high it stops ≈ 10 pages short (they keep the generator's text until he goes on with a new YES,
   D7); a release (₹500) holds low and mid, and at high stops ≈ 13 pages short; the month (₹1,000)
   holds three mid releases (₹903), or one high and one mid (₹928). With 18 % GST added by an invoice:
@@ -1308,7 +1308,10 @@ keyring 26. `tests/test_r63_seams.py` pins each.
    minutes (each highlight cut to its first line).
 3. **The trial's five pages:** the running example, the brain router, Wardrobe & Try-on, the Vitals
    screen and Telegram (default); or five you name.
-4. **The trial's cap:** ₹60 (default; the estimate is about ₹40); or ₹50 or ₹100.
+4. **The trial's cap (answered):** **₹100**, 23 Nov 2026, ≈ 15:05 IST (the default was ₹60; the
+   estimate is about ₹40). At ₹11.84 a worst-case hold, 8 calls fit and the 9th is refused before it
+   is sent (5 first drafts and 3 redrafts at the worst case; in practice calls settle below their
+   holds).
 5. **Where the writer runs:** the trial on "Step while I watch" (Book settings open); after it, on
    JARVIS's existing 5-minute clock (Home on or off) and the morning clock when a page fits the time
    they leave, and on the step while Book settings is open (default, decision 3); a Cloud Run Job
@@ -1317,7 +1320,8 @@ keyring 26. `tests/test_r63_seams.py` pins each.
    longer runs on the clocks, and the writer no longer needs Home on.)
 6. **GST:** the caps count JARVIS's metered price, as Vitals does, and each estimate says "your
    Anthropic bill may add 18 % GST" (default); or the caps count 18 % on top.
-7. **Release updates:** ask you each release with its ₹, Update with your typed YES (default); or
+7. **Release updates (answered: the default):** ask you each release with its ₹, Update with your
+   typed YES; "update by itself" stays off (23 Nov 2026, ≈ 15:05 IST). The alternative was
    update by itself within the ₹500 release cap and ₹1,000 month, which you turn on in Book settings
    with your typed YES on those limits (changed by plan review H2: it can no longer be ticked on
    without one).
@@ -1327,7 +1331,12 @@ keyring 26. `tests/test_r63_seams.py` pins each.
 10. **The caps at the pick:** ₹1,500 first write, ₹500 a release, ₹1,000 a month, stop at 80 % of your
     monthly limit (default, Phase A's); yours to change there.
 11. **Trial pages and drafts:** kept 30 days (default).
-12. **The split:** pictures, de-duplication, diagrams and the setup guide as R6.3.1 (default).
+12. **The split (answered):** YES, 23 Nov 2026, ≈ 15:05 IST: R6.3 now (parts A–D), R6.3.1 next
+    (pictures, de-duplication, diagrams and the setup guide).
+13. **Private words (answered, M8):** "Block those" (23 Nov 2026, ≈ 15:05 IST): his city, employer
+    and work project, relayed by the Workshop outside the repository, are in `gen/redact.json` as
+    hashes only (I0: one-word names in `sha256`, several-word names in `phrases`, which part A's
+    scrubber matches whole). Every other question keeps its default.
 
 ## Exit check (before the PR)
 
@@ -1419,3 +1428,4 @@ grant of spending. No spoken line of the approved tour changed (all 55 beats com
 |---|---|---|---|---|
 | v6.3.1 | 23 Nov 2026, 14:28 IST | R6.3 | First edition, from the code at `47ee8fc` and Phase A v6.2.1 (copied unchanged): the owner's summary in ₹; rows 379 and 380 and his 23 Nov decisions as named tests; every Phase A fact re-checked and the moved ones corrected (10.0 MB a release, 97 left out, 73 cards and 18 modules, 31 services, 120 collections, 179 settings, the LOC, ≈ 152 pages, the router's `allow_degrade` but no laptop switch, the 20 s LLM timeout, `.claude/**` in the zip); the short tour's first script for approval stop 2 (17 scenes, seven highlights, ≈ 13.6 min owner, ≈ 13.0 guest, every number a fact); D0–D14 (the split into R6.3 and R6.3.1, the `jarvis.llm` write seam, the fact pack, the pages, the reading packs, the job and the step, the trial, the pick and the second YES, the ledger and holds, the tour, the checks, sealing the pages, release updates, audiences, the reader); the data model, 13 new routes, no new tool, keyring or alert kind; ₹ estimates (trial ≈ ₹37, first write ≈ ₹1,122, a release ≈ ₹295); the I0 seams; parts A–D; R6.3.1 with approval stop 3; suites with controls; size guards; risks; 12 owner questions with defaults; the exit check | 🛠 Mark XXIV |
 | v6.3.2 | 23 Nov 2026, 15:16 IST | R6.3 | Plan review 1 folded in (S8; section "Plan review 1 — how each finding was handled"): 28 of 28 findings taken, H5 in part; the speak route reads tour lines for the session's audience (H1); every grant of spending is a typed YES on the ₹ shown: the first pick, a cap raised, a paid or training brain, "update by itself", Update (H2); the AI pages in their own sealed index beside R6's, carried free at each release, attach or replace, `use_first` past the release cap (H3, H4, M4); runs bound to their release (M5); constants as facts, references resolved by the guide's own rule, check (2)'s exemptions and a precision case (H5); scrubbed paths (H6); the console step's own 150 s and the p90 gate on the clocks (H7); upper-bound holds (₹11.84), one 80 % gate, R13.1's stale-hold rules, no SDK retries (M1); only priced brains offered (M2); the 5-minute clock with Home on or off (M3); the tour scenes' picture data (M6); one services source (M7); no test data and new hashed words for the free brain (M8); the full route scan (M9); L1–L12; costs recomputed with a redraft's input (trial ≈ ₹38, first write ≈ ₹1,144, a release ≈ ₹301); owner questions 5 and 7 reworded; approval stop 2 passed (the owner's YES, 23 Nov, 14:53 IST): no spoken line changed, part D starts with A–C; Status Ready | 🛠 Mark XXIV |
+| v6.3.3 | 23 Nov 2026, 16:45 IST | R6.3 | The owner's answers of 23 Nov 2026 (≈ 15:05 IST, relayed by the Workshop at I0): the split YES (question 12); the Writer trial's cap ₹100, not ₹60 (question 4: summary 3, the trial's row test, D6, per-part B, the cost notes; 8 worst-case calls fit, the 9th is refused); release updates ask him each time (question 7, the default); his private words blocked as hashes (new question 13, M8). No spoken line of the tour changed | 🛠 Mark XXIV |

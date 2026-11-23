@@ -228,6 +228,7 @@ def test_each_scene_draws_todays_picture_with_its_own_data(
                 )
             before = visual
             if SHOTS:
+                c.page.wait_for_timeout(900)  # the card's entry animation
                 Path(SHOTS).mkdir(parents=True, exist_ok=True)
                 name = "phone" if viewport is PHONE else "laptop"
                 c.page.screenshot(

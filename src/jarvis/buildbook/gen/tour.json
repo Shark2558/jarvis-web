@@ -473,8 +473,13 @@
         "facts": [
           {
             "group": "phone app",
-            "label": "Talk tile",
+            "label": "The console",
             "value": "full screen"
+          },
+          {
+            "group": "phone app",
+            "label": "Talk tile",
+            "value": ""
           },
           {
             "group": "phone app",

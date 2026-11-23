@@ -17,10 +17,10 @@ Order, each step test first (run red, then the least code, then green):
    own data written from their own words), the keys it uses. Test: `tests/test_r63_d_script.py`
    (the plan's tables are read by `tests/r63_fakes_d.approved()`; three lines typed by hand guard
    the reader itself).
-2. **The filler** `src/jarvis/buildbook/gen/tour.py` (312 lines): `build(repo, facts, *, show=None,
+2. **The filler** `src/jarvis/buildbook/gen/tour.py` (315 lines): `build(repo, facts, *, show=None,
    script=None) -> Tour | None`, `check_script`, `tour_values`, `picture_problems`. Test:
    `tests/test_r63_d_tour.py`.
-3. **The serve** `src/jarvis/buildbook/tour_serve.py` (79 lines): `tour_lines`, `tour_line_text`
+3. **The serve** `src/jarvis/buildbook/tour_serve.py` (80 lines): `tour_lines`, `tour_line_text`
    (optional `words`), `render`. Test: `tests/test_r63_d_serve.py` (H1 through the real routes).
 4. **The page** `src/jarvis/api/static/console-book-tour.js` (100 lines, ≤ 300): `label`, `seen`,
    `start`. Tests: `tests/test_r63_d_static.py`, `tests/browser/test_r63_d_tour.py`.
@@ -45,7 +45,7 @@ The filled tour passes today's scrubber (`default_scrubber().verify`).
 
 | Check | Result |
 |---|---|
-| `tests/test_r63_d_*.py` | 66 passed, 1 xfailed (pinned for I1, §5.3) |
+| `tests/test_r63_d_*.py` | 51 passed, 1 xfailed (pinned for I1, §5.3) |
 | `tests/test_r63_*.py tests/test_book_*.py` | 1,057 passed, 5 skipped, 9 xfailed, **1 failed: I0's stub pin `test_the_empty_tour_script_is_package_data`** (moves at I1, §5.1) |
 | `tests/browser/test_r63_d_tour.py` (Chromium, WebGL2 present: 3D ran) | 10 passed, 2 xfailed (pinned for I1, §5.2) |
 | `evals/r6_3/run.py --mock --part tour` | 10/10 cases; the control failed the suite (all five controls turned their own case red) |
@@ -186,7 +186,7 @@ before Begin (D14's wording); today continue is automatic for the owner (decisio
 ## 6. What the brief or plan got wrong
 
 - **M6, picture 4 "at least one `purpose` group and one other"**: show scene 4 (which T06, T09 and
-  T10 borrow) has only `purpose` facts (26, in 47ee8fc and on this branch), so the rule can't hold;
+  T10 borrow) has only `purpose` facts (26 in 47ee8fc; `gen/show.py` writes no other), so the rule can't hold;
   `picture_problems` asks for a `purpose` group only.
 - **M6, picture 10 "a number `n` on every fact (≤ 10)"**: enforced as a number on every fact; the
   3D picture draws the first 10, the 2D 12 (show scene 10 has 25).

@@ -674,7 +674,8 @@ scenes for that audience when the book has one; I0's `console-book-script.js` ac
 1–17, ids `t…`) and hands each picture module its `visual` number, so today's 3D and 2D pictures
 draw the tour's own labels; the chapters menu lists the tour's titles, and for the owner each
 scene's full-book chapter by name. The voice is R6.2's (browser by default, ₹0); `POST
-/v1/book/show/speak` reads tour lines by id. **Changing the script later** is a Workshop edit of
+/v1/book/show/speak` reads tour lines by id, only those of the session's audience (a guest's speak
+of an owner-only id is 404 `unknown_line`, seam 10). **Changing the script later** is a Workshop edit of
 `tour.json` with his approval, never the AI writer (₹0).
 
 **D10 · The checks before anything is kept (Phase A §7.5), and the content gaps they close.**
@@ -807,7 +808,7 @@ confirm). The writer's brain calls carry `tools=None`.
 | A · Facts and generator | a fact source missing or not a literal → `GenError` with one plain line (the deploy goes on, as today: `--best-effort`); a card in no module → `GenError`; facts over 1 MiB → `GenError`; the counter meets an unreadable file → counted as "unreadable", never guessed | stdlib only, no network; the scrubber's new kinds guard `book.json` too; the index lists paths and names, never file content | 0 |
 | B · The writer | No-AI → paused, said so; breaker open or 5xx → this page waits (no laptop, no tier change); 429 → the step ends, next tick; a cut stream → settled at the hold, redrafted once; a failed check → redraft once, then the previous text; the cap, the month cap or 80 % → stopped, said so; a lost lease → the step ends; an unreadable ledger or limit → refused (fail closed); an unreadable previous pages file → the update rewrites those pages (with its estimate) | packs from public files only, scrubbed, fenced, same for both brains; no tools; nothing personal read (static guard); page text sealed; logs content-free; console-only consent and spend; the audit by ids and ₹ | trial ≤ ₹60 once; first write ≤ ₹1,500 once; ≤ ₹500 a release, ≤ ₹1,000 a month (Claude); ₹0 (Gemini) |
 | C · Console | a route refusal → its `detail` in the line under the button; offline → "Can't reach JARVIS…"; a stale estimate → asks again | `textContent` only; the YES box never pre-filled; no ₹ sent from the page is trusted (the server re-estimates) | 0 |
-| D · The tour | no tour in an older book → today's 11 scenes; a missing fact → the generator refuses (CI) | a guest's tour has no ₹ and no owner-only line (tested); lines served by id only | 0 (browser voice); Cloud voice ≈ ₹27 a tour after the free allowance (owner only; guests free-only) |
+| D · The tour | no tour in an older book → today's 11 scenes; a missing fact → the generator refuses (CI) | a guest's tour has no ₹ and no owner-only line, in the served script and in what speak reads (tested through the route, H1); lines served by id only | 0 (browser voice); Cloud voice ≈ ₹27 a tour after the free allowance (owner only; guests free-only) |
 
 ## Cost (₹)
 
@@ -882,8 +883,14 @@ per million tokens (`llm/pricing.py:28`), D8's assumptions (12k / 16k / 24k toke
    `console-book-show.js` and loads D's stub `console-book-tour.js`; today's show browser tests must
    stay green on the move alone (the refactor's own check).
 10. **The serve joins** `show_script.py` (I0 only): `build()` asks D's `buildbook/tour_serve.py`
-    `tour_lines(book, audience, words)` (stub: None → `kind: "show"`, as today); `line_text` passes a
-    `^t\d{2}b\d{2}$` id to D's `tour_line_text` (stub: None); `api/book_show.py` unchanged in shape.
+    `tour_lines(book, audience, words)` (stub: None → `kind: "show"`, as today);
+    `ShowScript.line_text(uid, line_id, audience)` gains the audience and passes a `^t\d{2}b\d{2}$`
+    id to D's `tour_line_text(book, line_id, audience)` (stub: None), which answers None for an
+    owner-only beat or scene in a guest session, so the route says 404 `unknown_line`, the same as a
+    made-up id (plan review H1: today `BookService.line_text` calls `self.show.line_text(uid,
+    line_id)` with no audience, `buildbook/service.py:345`, and a guest could have T16 or `t13b03`
+    read out); `service.py:345` passes `session.audience` (one line changed, the file stays 397);
+    `api/book_show.py` unchanged in shape. I0's seam test: the audience reaches `tour_line_text`.
 11. **The scrubber's new kinds** are A's (`gen/scrub.py`); I0 pins the list in a test that A turns
     green (IPv4, IPv6, PAN, Aadhaar groups, hostnames under listed domains, project-id shapes).
 12. **Fakes and evals:** `tests/r63_fake_brains.py` (scripted providers through the real
@@ -996,7 +1003,7 @@ clock.
 | `writer` (B, through `jarvis.llm` with the fake brains) | zero calls before YES; exactly `YES`; a changed estimate asks again; the trial cap (6 calls through, the 7th refused before sending); the first write's, a release's and the month's caps; 80 % of his limit; ten steps at once → one lease holder, the rest `busy`; settle, release and keep-at-hold; no laptop call with a ready fallback; no tier change; meta on every page; a FAST page and an `offline` page refused; each check (fake path, typed number, e-mail, IP, PAN, invented feature, PLANNED outside "Planned", unverified unlabelled) refuses and keeps the previous text after one redraft; the pages file attached as the third kind, carried forward, and only changed pages rewritten; auto-update only within the cap; Gemini gets the same pack and `tools=None`; No-AI pauses; the 80 % storage warning | the hold as read-then-write: two parallel calls pass the cap; the YES check off: zero-calls-before-YES fails; `write_text` built on `complete()`: the no-laptop case fails; the reference check off: the fake path is sealed; `.claude/**` in a pack: the never-reads case fails |
 | `needles` (I1) | planted in the fakes: the creator name, his e-mail, a vault document's text, a memory fact, a mail subject, a fake secret, the pack's canary — never in a pack, a prompt, a page, a draft, a trial page, a log record, the audit, a notice or the Privacy export; a positive control per sink | the pack builder reading Book settings: the creator-name needle is found |
 | `console` (C, browser) | the trial (estimate → what is sent → the YES box refuses "yes" → progress with "Step while I watch" → side by side with checks); the pick (caps filled with the defaults, a raise opens the ₹ dialog, "Keep" sends nothing); the first write's YES; Update and Stop; the Full book (a written page, a "Not written by AI yet" page, references, an older release); continue; 44 px targets; 360 × 800 and 1280 × 800, day and night; the Book panel's screenshots with the writer off unchanged against `47ee8fc` | the YES box sending "yes": its case fails |
-| `tour` (D) | the filled tour inside both bands; the seven highlights in his order; both running-example lines; a guest's tour has no ₹, no T16, no owner-only line; every tour id speaks; the player runs all 17 scenes, Questions and Closing in 2D, in 3D (WebGL2) and under Motion Off; an older book plays today's 11 scenes; "What else" lists the 11 other modules from the map | T13's owner line left in the guest's tour: the no-₹ case fails; a highlight dropped: the seven case fails; the pace set to 290 words a minute: the band case fails |
+| `tour` (D) | the filled tour inside both bands; the seven highlights in his order; both running-example lines; a guest's tour has no ₹, no T16, no owner-only line; a guest's `POST /v1/book/show/speak` of every owner-only tour id (`t13b03`, `t16b01`) is 404 `unknown_line`, through the real route; every tour id of the session's audience speaks; the player runs all 17 scenes, Questions and Closing in 2D, in 3D (WebGL2) and under Motion Off; an older book plays today's 11 scenes; "What else" lists the 11 other modules from the map | T13's owner line left in the guest's tour: the no-₹ case fails; `tour_line_text` ignoring the audience: the guest-speak case fails; a highlight dropped: the seven case fails; the pace set to 290 words a minute: the band case fails |
 | `e2e` (I1) | the trial with the fake brains (estimate, YES, steps, side by side), the pick, the first write's YES, sealing, a page in the reader; a new release id → `update_ready` → Update → only the changed pages; a guest's tour | the update writing every page: the changed-only case fails |
 
 **A control for every row's own case:** row 379 — the tier check off (a FAST page is sealed); row
@@ -1017,7 +1024,7 @@ guest's tour; no `$` in owner-facing writer words; no model id, vendor or price 
 `config.py` 789 (no edit, ≤ 790), `console.html` 782 (no edit, hash), `console-book.js` ≤ 390,
 `console-book-show.js` ≤ 370 after the move, `console-book-script.js` ≤ 200, every Book JS ≤ 400 and
 CSS ≤ 300, `book.html` ≤ 130, `api/console.py` ≤ 473 (pin ≤ 475), `api/r6_wiring.py` ≤ 300,
-`buildbook/model.py` ≤ 420, `buildbook/service.py` 397 (no edit, ≤ 400), every new Python module ≤ 400
+`buildbook/model.py` ≤ 420, `buildbook/service.py` 397 (one line changed at I0, H1; ≤ 400), every new Python module ≤ 400
 and function ≤ 50, `llm/write.py` ≤ 160, `facts.json` ≤ 1 MiB, a pages file ≤ 2 MiB gzipped, the
 keyring 26. `tests/test_r63_seams.py` pins each.
 

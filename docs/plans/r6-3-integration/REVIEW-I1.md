@@ -1,4 +1,4 @@
-Version v6.3.2 · 23 Nov 2026, 20:51 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
+Version v6.3.3 · 23 Nov 2026, 22:10 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
 
 # R6.3 combined review of I1 (fresh context, 23 Nov 2026)
 
@@ -10,9 +10,9 @@ Reviewed: `r6-3-i1` @ `bbb9aa8` (the four parts joined and wired) against `main`
 the reviewer fixes what it finds (section "Fix"). Besides reading, the writer's packs were built on
 this checkout's REAL `source.zip` and fact pack (`gen.write.build`, outside the repository).
 
-**Verdict: BLOCK until fixed** (two HIGH), then approve. CRITICAL 0 · HIGH 2 · MEDIUM 5 · LOW 11
-(M-5 and L-11 were found while fixing; see "Fix"). **After the fixes: APPROVE**: every
-CRITICAL, HIGH and MEDIUM fixed, seven LOW fixed, three declined with their reasons.
+**Verdict: BLOCK until fixed** (two HIGH), then approve. CRITICAL 0 · HIGH 2 · MEDIUM 6 · LOW 11
+(M-5 and L-11 were found while fixing, M-6 in the final check pass; see "Fix"). **After the fixes: APPROVE**: every
+CRITICAL, HIGH and MEDIUM fixed, seven LOW fixed, four declined with their reasons.
 
 What holds, checked route by route: every spending grant is his typed `YES` on the server's ₹ words
 (trial on its `we_` estimate, ₹100 from `Caps().trial`, never the pick's; the pick's grants on a
@@ -137,6 +137,19 @@ C's and D's browser files only.
 with no parts), so both modules draw nothing; C's files still send those routes on to C's fake
 server (`r63_fakes_c.route_c`, registered after the mock).
 
+### M-6 · The Markdy guard is red on the joined branch (found in the final check pass)
+
+**Evidence.** `tests/test_markdy_export.py::test_nothing_the_app_ships_mentions_markdy` reads every
+text file under `src/` for "markdy"; part A's generator names the dev tool's lock file
+(`buildbook/gen/inventory.py:13, :41` as the constant `MARKDY`, `gen/pages_index.py:60`) to list
+its packages' licences in the book. I1 did not run the whole suite.
+
+**Why it matters.** CI's unit job would be red; the guard's purpose (the console and the book never
+LOAD Markdy: esm.sh would break the CSP) is not at stake: the generator reads the lock file as data.
+
+**Fix.** The guard takes out only that exact path, only under `buildbook/gen/`, before its check
+(every other mention, and "esm.sh", still fails it); the constant is `DEV_TOOL_LOCK`.
+
 ## LOW
 
 | Id | Evidence | Why it matters | Fix |
@@ -175,6 +188,7 @@ trial's browser cases in `tests/browser/test_r63_c_trial.py`.
 | L-1, L-2, L-3, L-7 | `860bd9b` | pages: `console_only` after the book session; `_start` refuses `running` inside its transaction; the free work's failure logged (`free_failed`) and the clock step still runs; `texts.pages_words` ("1 page") in the sealed notice and the run's words |
 | L-4, L-5 | `400e4d0` | `TrialRow.title` (a seam addition, default "") filled from the fact pack and shown by the console (the id's words only as a fallback); the console's own "may learn" line removed from the trial's YES box |
 | L-6 | `6b5fdff` | the reader's `count(n, one, many)` for every section summary |
+| M-6 | `2110585`, `650e897` | the guard skips only `tools/markdy/package-lock.json` under `buildbook/gen/`; `inventory.MARKDY` renamed `DEV_TOOL_LOCK` (the guard lowercases what it reads; `2110585`'s own check was misread as green, `650e897` completes it) |
 | M-5 | `eae6683` | `book_mocks.FakeBook` answers `GET /v1/book/writer` and `GET /v1/book/pages` as a server whose writer is off |
 | L-8, L-9, L-10, L-11 | — | declined, the reasons in the table above |
 
@@ -185,5 +199,6 @@ field, `title`; I0's fake server leaves it "", C's fake fills it.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v6.3.3 | 23 Nov 2026, 22:10 IST | R6.3 | M-6 (the Markdy guard, found in the final check pass) and its fix; MEDIUM 6 | 🛠 Mark XXIV |
 | v6.3.2 | 23 Nov 2026, 20:51 IST | R6.3 | The fixes: H-1, H-2, M-1 to M-5 and L-1 to L-7 fixed with their commits; M-5 and L-11 added (found while fixing); L-8 to L-11 declined; verdict after the fixes APPROVE | 🛠 Mark XXIV |
 | v6.3.1 | 23 Nov 2026, 20:36 IST | R6.3 | First edition: the combined security, code and Python review of I1 @ `bbb9aa8`, block until the two HIGH are fixed | 🛠 Mark XXIV |

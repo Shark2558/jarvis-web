@@ -1,4 +1,4 @@
-Version v6.3.1 · 23 Nov 2026, 20:14 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
+Version v6.3.2 · 23 Nov 2026, 22:10 IST · Release R6.3 · Status: Current · Owner: 🛠 Mark XXIV
 
 # R6.3 — I1 notes (the four parts joined)
 
@@ -177,8 +177,37 @@ tour (A's real pack of this checkout, D's filler) on the wired show page:
 `console.html` 782 and byte-identical; `config.py`, `api/app.py`, `tools/gateway.py`,
 `core/brain.py` not edited.
 
+## Final checks (after the combined review, once each)
+
+The combined review `REVIEW-I1.md` v6.3.2 found 2 HIGH, 5 MEDIUM, 11 LOW (+ M-6 below) and fixed
+every HIGH and MEDIUM and seven LOW (item 19, "1 plans", is its L-6, now fixed). These are the one
+final pass, one suite at a time behind `/tmp/jarvis-heavy.lock`, on `r6-3-i1` @ `650e897`.
+
+| Check | Result |
+|---|---|
+| Unit, Python 3.12, the WHOLE suite with coverage (eight chunks of `tests/test_*.py` and `tests/browser`, one coverage file appended) | **19,251 passed, 155 skipped, 1 failed**: `test_markdy_export.py::test_nothing_the_app_ships_mentions_markdy`, red on the joined branch (part A's generator names `tools/markdy/package-lock.json`; the whole suite had not run at I1) — review M-6, fixed in `2110585` and `650e897`, that file and A's inventory tests re-run alone: 84 passed. **Coverage 95.59 %**, floor 95 % (`scripts/coverage_floor.py`: OK) |
+| `ruff check` and `ruff format --check` on `src tests evals scripts` | clean (2,160 files) |
+| `mypy src` | the one baseline error (`memory/redis_store.py:67`) |
+| `evals/run_all_mock.py` | every suite PASS but phase0 smoke (fails by design) and `r6_3` (97/98: `console:browser` needs `JARVIS_BROWSER_PYTHON`). `evals/r6_3/run.py --mock` with it: **140/141**, every part's control red; the one red is C's pick case `…_each_ask`, a 30 s wait for the YES dialog in the suite's child process; `test_r63_c_pick.py` run directly: 10 passed |
+| `scripts/check_doc_versions.py` | 31 documents OK |
+| `scripts/arch_coverage.py` (the guide's coverage) | OK (66, 108, 2, 31, 122) |
+| `python -m jarvis.buildbook.gen --check` | two builds byte-identical: book.json 301,454 bytes, facts.json 1,021,081, source.zip 10,326,859, 98 files left out, 35.1 s |
+| Browser, the R6.3 files (Chromium; `.[dev]` + Playwright, no Pillow) | `test_r63_c_look`, `_c_pages`, `_c_trial`, `_d_tour`: 47 passed; `test_r63_c_pick`: 10 passed |
+| Browser, the files the fixes touched (R6's mock book, `book_mocks.FakeBook`, review M-5) | `test_book_panel` (14, the new plural case included), `test_book_show`, `test_book_show_hold`, `test_book_lock_ui`, `test_r62_book_listen`: 85 passed |
+| Python 3.11, the whole browser suite | **not run** (the owner's rule; CI runs both on the pull request) |
+
+The writer's packs on this checkout's REAL build (outside the repository, after H-1 and M-4):
+2,855 of the 3,032 page references read, the guide and its 73 cards found, no `.claude/**` or
+`tests/**` member readable, 153 packs in 30 s (was 183 s) in a worker thread.
+
+Pictures (not committed), in `/tmp/r63-review-shots/` at `phone` (360 × 800) and `laptop`
+(1280 × 800), each with a `-part` crop, on C's fake server: `writer-trial-yes-box-<size>` (one
+set of words on who reads what: the server's), `writer-trial-side-by-side-<size>` (each page by
+its title), `reader-section-counts-<size>` (R6's mock book: "1 plan", "1 service, 1 alert kind").
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v6.3.2 | 23 Nov 2026, 22:10 IST | R6.3 | "Final checks": the one pass after the combined review (`REVIEW-I1.md` v6.3.2): the whole unit suite with coverage 95.59 %, the Markdy guard (M-6) fixed, ruff, mypy, the mock evals, the docs checks, the generator's check, the R6.3 and touched browser files, the pictures; item 19 now fixed by the review (L-6) | 🛠 Mark XXIV |
 | v6.3.1 | 23 Nov 2026, 20:14 IST | R6.3 | First edition, at the end of I1: the four merges, the join bug, the 2 MiB facts cap with its 80 % warning, A's, B's, C's and D's "Needs I1" (pins, the fixture's sources, the show to the tour, the message type, mypy, ₹ in I0's fake, the redraw fix, the honorific, the place key, D on A's real facts), STUBS_PASS flipped, the console, needles and e2e suites built, I0's stub pins moved, the guide v6.3.2 (C57 built, the roadmap in the owner's order), "1 plans" declined as R6's, the rules bound, the checks once each, the pictures, sizes, what is left | 🛠 Mark XXIV |

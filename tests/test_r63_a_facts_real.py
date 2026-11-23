@@ -75,7 +75,8 @@ def test_row380_every_tour_key_is_known(pack: FactPack, repo: Repo) -> None:
         assert pack.value(key) == want, key
     assert pack.value("loc.python_code") == loc.in_thousands(loc.python_code(pack.loc))
     assert re.fullmatch(r"\d{3} thousand", str(pack.value("loc.python_code")))
-    assert re.fullmatch(r"\d{1,2} [A-Z][a-z]+ 20\d\d", str(pack.value("release.date")))
+    months = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
+    assert re.fullmatch(rf"\d{{1,2}} (?:{months}) 20\d\d", str(pack.value("release.date")))
     pins = [ln for ln in (repo.text("requirements.lock") or "").splitlines() if "==" in ln]
     assert pack.value("libs.python_pins") == len({p.split("==")[0].lower() for p in pins})
 

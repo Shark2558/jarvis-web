@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 from r63_fakes import FIXTURE_FACTS
-from r63_fakes_a import DEMO, a_repo, i0_repo, repo_of
+from r63_fakes_a import DEMO, SHA, a_repo, i0_repo, repo_of, write_files
 
-from jarvis.buildbook.facts_model import FactPack
-from jarvis.buildbook.gen import facts, facts_code, facts_guide, facts_routes
-from jarvis.buildbook.gen.repo import GenError
+from jarvis.buildbook.facts_model import FACT_TOUR_KEYS, FactPack
+from jarvis.buildbook.gen import facts, facts_code, facts_guide, facts_routes, facts_values
+from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import Scrubber, default_scrubber
 
 S = default_scrubber()
@@ -191,14 +191,13 @@ def test_i0s_fixture_pack_where_its_files_allow(tmp_path: Path) -> None:
     fixture's files hold the source (the differences are INTEGRATION-A's "Needs I1")."""
     got, want = facts.build(i0_repo(tmp_path), S, modules=DEMO), FIXTURE_FACTS
     for key in (
-        "cards.count",
-        "modules.count",
         "src/jarvis/demo/router.py:MAX_TRIES",
         "src/jarvis/demo/store.py:KEEP_DAYS",
         "settings.demo_limit",
-        "release.label",
     ):
         assert got.values[key].value == want.values[key].value, key
+    # the tour's keys are all or none: the fixture holds few of their sources (Needs I1)
+    assert not set(FACT_TOUR_KEYS) & set(got.values)
     assert got.index.paths == want.index.paths
     assert got.index.constants == want.index.constants
     assert got.index.settings == want.index.settings
@@ -206,3 +205,47 @@ def test_i0s_fixture_pack_where_its_files_allow(tmp_path: Path) -> None:
     assert got.settings == want.settings and got.modules == want.modules
     assert got.cards == want.cards and got.services == want.services
     assert got.routes == () and want.routes  # the fixture's files hold no router (Needs I1)
+
+
+@pytest.mark.parametrize(
+    ("committed", "day"),
+    [
+        ("2026-11-23T18:00:00+00:00", "23 Nov 2026"),  # 23:30 IST
+        ("2026-11-23T19:00:00+00:00", "24 Nov 2026"),  # 00:30 IST: his next day
+        ("2026-12-31T18:30:00+00:00", "1 Jan 2027"),
+        ("2028-02-28T20:00:00+00:00", "29 Feb 2028"),
+    ],
+)
+def test_the_release_day_is_his_ist_day_in_the_book_s_form(
+    tmp_path: Path, committed: str, day: str
+) -> None:
+    """The tour reads "from 24 Nov 2026" (the show's `human_date` form, D's ask)."""
+    root = write_files(tmp_path, {"src/jarvis/__init__.py": '__version__ = "6.3.0"\n'})
+    repo = Repo.from_dir(root, sha=SHA, committed_at=committed)
+    assert facts_values.release_values(repo, S)["release.date"].value == day
+
+
+def test_the_tour_keys_are_all_or_none(tmp_path: Path) -> None:
+    """A checkout without every source (a fixture) gives none of the 30 keys, so the tour's
+    "some but not all is a GenError" (part D, decision 2) never stops a fixture's book; THIS
+    repository gives all 30 (test_r63_a_facts_real)."""
+    partial = facts_values.tour_values(a_repo(tmp_path), facts_values_context())
+    assert partial and not set(FACT_TOUR_KEYS) <= set(partial)  # some sources are there
+    assert facts.all_or_none(partial) == {}
+    full = {k: partial.get(k) or next(iter(partial.values())) for k in FACT_TOUR_KEYS}
+    assert facts.all_or_none(full) == full
+
+
+def facts_values_context() -> facts_values.Context:
+    return facts_values.Context(
+        scrub=S,
+        constants={},
+        defaults={},
+        cards=3,
+        modules=1,
+        others=0,
+        services=2,
+        python_code="1 thousand",
+        roadmap=("R9",),
+        guide="docs/architecture/JARVIS-Architecture.md",
+    )

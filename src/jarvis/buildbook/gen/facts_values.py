@@ -3,12 +3,12 @@
 the pages quote, each read from the code at CI with the source it was read from, never typed.
 
 `tour_values(repo, ctx)` gives every key of `facts_model.FACT_TOUR_KEYS` whose source the
-checkout holds (a fixture without a source simply lacks the key; the tour's filler refuses an
-unknown key, D9): the release (label, version, IST day, the plan's title), the guide's counts,
-the counter's Python figure in words, the layers, the brain's everyday model in words, the
-constants and settings the table names, the keyring's purposes, the services, the try-on's
-measures and its price a picture in ₹ (`llm/tryon.py` at the configured model and location,
-x the book's rate x (1 + GST)), the lock's pins, the rate, the roadmap's next two rows.
+checkout holds (`facts.all_or_none` then keeps all 30 or none): the release (label, version,
+its IST day as "24 Nov 2026", the plan's title), the guide's counts, the counter's Python figure
+in words, the layers, the brain's everyday model in words, the constants and settings the table
+names, the keyring's purposes, the services, the try-on's measures and its price a picture in ₹
+(`llm/tryon.py` at the configured model and location, x the book's rate x (1 + GST)), the lock's
+pins, the rate, the roadmap's next two rows.
 `hosting_values(repo)`: the deploy script's region, size and instances, `verified=False` (D2:
 a hosting fact stays Unverified until a live check sets it).
 """
@@ -29,12 +29,9 @@ from jarvis.buildbook.gen.facts_code import number
 from jarvis.buildbook.gen.fallback import VERSION_FILE, version_of
 from jarvis.buildbook.gen.repo import Repo
 from jarvis.buildbook.gen.scrub import Scrubber
+from jarvis.buildbook.gen.show import human_date
 
 IST = timezone(timedelta(hours=5, minutes=30))
-MONTHS = (
-    "January", "February", "March", "April", "May", "June", "July", "August", "September",
-    "October", "November", "December",
-)  # fmt: skip
 CONFIG = "src/jarvis/config.py"
 SECTIONS = "src/jarvis/buildbook/sections.py"
 KEYRING = "src/jarvis/keyring.py"
@@ -108,11 +105,12 @@ def release_values(repo: Repo, scrub: Scrubber) -> dict[str, FactValue]:
 
 
 def _ist_day(stamp: str) -> str:
+    """The commit's day in IST, as the book writes a day ("24 Nov 2026", `show.human_date`)."""
     try:
         when = datetime.fromisoformat(stamp).astimezone(IST)
     except ValueError:
         return ""
-    return f"{when.day} {MONTHS[when.month - 1]} {when.year}"
+    return human_date(when.date().isoformat())
 
 
 def _plan_title(text: str) -> str:

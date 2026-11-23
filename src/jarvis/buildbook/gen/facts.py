@@ -6,9 +6,10 @@ handle; the join's `Scrubber.verify` refuses the pack otherwise).
 
 `build(repo, scrub, *, modules=MODULES, services_table=None) -> FactPack`:
 
-    values       the tour's keys (`gen/facts_values.py`), every literal module constant as
-                 `path:NAME` (H5), every setting's default as `settings.<name>`, A's own counts,
-                 and the hosting facts with `verified=False` (D2)
+    values       the tour's keys, all 30 or none (`gen/facts_values.py`, `all_or_none`),
+                 every literal module constant as `path:NAME` (H5), every setting's default as
+                 `settings.<name>`, A's own counts, and the hosting facts with `verified=False`
+                 (D2)
     index        every tracked path, every top-level function and class of `src/` as
                  `path:symbol`, every constant, setting, collection and route
     routes       every router's routes by AST (M9, `gen/facts_routes.py`)
@@ -33,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from jarvis.buildbook.facts_model import (
+    FACT_TOUR_KEYS,
     CardFact,
     FactIndex,
     FactPack,
@@ -191,7 +193,14 @@ def _tour(
         roadmap=facts_guide.roadmap(text),
         guide=facts_guide.GUIDE if repo.has(facts_guide.GUIDE) else "",
     )
-    return facts_values.tour_values(repo, ctx)
+    return all_or_none(facts_values.tour_values(repo, ctx))
+
+
+def all_or_none(tour: dict[str, FactValue]) -> dict[str, FactValue]:
+    """The tour's 30 keys, every one or none: a checkout without every source (a fixture) gives
+    none, so it builds no tour (part D: some but not all is a GenError); a key whose source this
+    repository lost drops the tour, never the book, and test_r63_a_facts_real fails in CI."""
+    return tour if set(FACT_TOUR_KEYS) <= set(tour) else {}
 
 
 def _index(
@@ -208,4 +217,4 @@ def _index(
     )
 
 
-__all__ = ["build", "limitations"]
+__all__ = ["all_or_none", "build", "limitations"]

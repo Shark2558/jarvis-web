@@ -1,0 +1,34 @@
+{
+  "title": "Opening the Book panel",
+  "dir": "down",
+  "nodes": [
+    {"id": "tap", "label": "Open for me or a guest", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-book.js"},
+    {"id": "fresh", "label": "Sign-in in the last minutes?", "kind": "guard", "rank": 1, "col": 0},
+    {"id": "google", "label": "Google sign-in again", "kind": "service", "rank": 1, "col": 1},
+    {"id": "passkey", "label": "Your passkey", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/book_show.py"},
+    {"id": "guest", "label": "Guest: the show page", "kind": "step", "rank": 3, "col": 1,
+     "ref": "src/jarvis/api/static/console-book-show.js"},
+    {"id": "mine", "label": "Your session opens", "kind": "step", "rank": 3, "col": 0},
+    {"id": "sections", "label": "The book's sections", "kind": "step", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console-book-reader.js"},
+    {"id": "full", "label": "Full book and flowcharts", "kind": "step", "rank": 4, "col": 1,
+     "ref": "src/jarvis/api/static/console-book-pages.js"},
+    {"id": "code", "label": "Sealed code download", "kind": "store", "rank": 4, "col": 2,
+     "ref": "src/jarvis/api/book.py"},
+    {"id": "end", "label": "End session: deleted", "kind": "step", "rank": 5, "col": 0}
+  ],
+  "edges": [
+    {"from": "tap", "to": "fresh"},
+    {"from": "fresh", "to": "google", "label": "too old", "style": "side"},
+    {"from": "google", "to": "passkey", "style": "side"},
+    {"from": "fresh", "to": "passkey", "label": "yes"},
+    {"from": "passkey", "to": "guest", "label": "a guest", "style": "side"},
+    {"from": "passkey", "to": "mine"},
+    {"from": "mine", "to": "sections"},
+    {"from": "mine", "to": "full"},
+    {"from": "mine", "to": "code", "style": "side"},
+    {"from": "sections", "to": "end"}
+  ]
+}

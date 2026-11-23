@@ -20,12 +20,11 @@ from typing import Any
 from jarvis.buildbook.facts_model import FactPack
 from jarvis.buildbook.model import MIB
 from jarvis.buildbook.ports import BookError
-from jarvis.buildbook.writer import carry, pages, sweep, texts
+from jarvis.buildbook.writer import carry, model, pages, sweep, texts
 from jarvis.buildbook.writer.model import (
     DRAFTS,
     JOB_BUDGET_S,
     JOB_NAME,
-    STEP_BUDGET_S,
     Draft,
     Page,
     PageMeta,
@@ -86,13 +85,17 @@ class Steps:
         found = [facts.page(i) for i in ids if i not in done]
         return [Item(ip, brain) for ip in found if ip is not None]
 
+    def same_release(self, run: Run) -> bool:
+        """A run is bound to its release: a new current release stops it (M5)."""
+        current = self.ctx.source.current()
+        return current is not None and current.id == run.release
+
     async def step(self, uid: str, *, on_clock: bool) -> WriterDoc:
         doc = await self.store.doc(uid)
         run = doc.run
         if run is None or run.state not in ACTIVE:
             return doc
-        current = self.ctx.source.current()
-        if current is None or current.id != run.release:
+        if not self.same_release(run):
             await self.finish(uid, "stopped", "new_release")  # M5: a YES never carries
             return await self.store.doc(uid)
         holder = await self.runner.lease(uid, on_clock)
@@ -113,7 +116,7 @@ class Steps:
             return
         await self.mark(uid, state="running", why="")
         start, calls = self.runner.now_s(), 0
-        budget = JOB_BUDGET_S if on_clock else STEP_BUDGET_S
+        budget = JOB_BUDGET_S if on_clock else model.STEP_BUDGET_S
 
         def left() -> float:
             return self.runner.left(start, budget, on_clock)

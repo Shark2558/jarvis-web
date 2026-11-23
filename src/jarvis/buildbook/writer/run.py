@@ -147,6 +147,7 @@ class Runner:
         self.ctx, self.store, self.ledger, self.scrub = ctx, store, ledger, scrub
         self._timer = timer
         self._trees: dict[str, dict[str, str]] = {}
+        self._packs: dict[tuple[str, str], packs.Pack] = {}  # this release's packs, built once
 
     def now_s(self) -> float:
         return self._timer() if self._timer is not None else asyncio.get_running_loop().time()
@@ -155,6 +156,7 @@ class Runner:
         """The current release's readable source files (cached by release)."""
         if rid not in self._trees:
             self._trees = {rid: packs.read_source(self.ctx.source.read("source"))}
+            self._packs = {}
         return self._trees[rid]
 
     def left(self, start: float, budget: float, on_clock: bool) -> float:
@@ -181,8 +183,10 @@ class Runner:
     def first_turn(self, ip: IndexedPage, facts: FactPack, rid: str) -> tuple[list[Any], str]:
         canary = "cn" + hashlib.sha256(f"{rid}:{ip.id}".encode()).hexdigest()[:16]
         reserve = len(prompts.head(ip, canary).encode("utf-8"))
-        pack = packs.build(ip, facts, self.tree(rid), self.scrub, reserve=reserve)
-        return prompts.first(ip, pack, canary), canary
+        tree = self.tree(rid)
+        if (rid, ip.id) not in self._packs:
+            self._packs[(rid, ip.id)] = packs.build(ip, facts, tree, self.scrub, reserve=reserve)
+        return prompts.first(ip, self._packs[(rid, ip.id)], canary), canary
 
     async def page(
         self, uid: str, run: Run, doc: WriterDoc, item: Item, facts: FactPack,

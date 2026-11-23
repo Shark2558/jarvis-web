@@ -133,7 +133,13 @@ def service(
     clock: FixedClock | None = None,
     docs: MemoryDocs | None = None,
     limit_mb: int = 60,
+    uid: str | None = None,
+    emails: tuple[str, ...] | None = None,
+    notifier: Any = None,
 ) -> Any:
+    """The writer's part over the fakes (`uid` and `emails`: the app's primary owner's)."""
+    from dataclasses import replace
+
     from jarvis.buildbook.writer import part
 
     ctx = writer_context(
@@ -143,6 +149,9 @@ def service(
         docs=docs,
         clock=clock,
         limit_mb=limit_mb,
+    )
+    ctx = replace(
+        ctx, uid=uid or ctx.uid, owner_emails=emails or ctx.owner_emails, notifier=notifier
     )
     return part.build(ctx)
 

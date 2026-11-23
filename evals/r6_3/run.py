@@ -12,7 +12,7 @@ only its own:
                     iterated unsorted; the IP pattern removed; C69 out of the map; a raw path; a
                     router name dropped
     writer.py    B  through jarvis.llm with the fake brains: zero calls before YES, exactly YES, the
-                    trial cap (Rs 100: 8 holds of Rs 11.84 through, the 9th refused before it is
+                    trial cap (Rs 100: 5 holds of Rs 16.71 through, the 6th refused before it is
                     sent), holds, the 80 % gate, the clocks (H7, M3), the checks and the precision
                     case (H5), the pages vault and the free carry (H3, M4, M5), the grants (H2), the
                     offer (M2). Controls: the plan's `writer` row

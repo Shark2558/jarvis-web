@@ -31,6 +31,7 @@ from r63_fakes import (
 
 from jarvis.buildbook.facts_model import FactPack, IndexedPage
 from jarvis.buildbook.model import Release
+from jarvis.buildbook.writer.model import BYTES_PER_TOKEN_WORST
 from jarvis.llm.base import ChatMessage, Effort, StreamUsage, ToolSpec
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.storage.docs import MemoryDocs
@@ -82,8 +83,9 @@ class MovableSource(FakeSource):
 
 @dataclass
 class HoldPayer(ScriptedWriter):
-    """Reports exactly its hold's tokens (bytes / 2.5 of what it was sent, the system prompt at the
-    cache-write price, 4,000 out), so the writer settles every call at its hold (D8)."""
+    """Reports exactly its hold's tokens (bytes / BYTES_PER_TOKEN_WORST of what it was sent, the
+    system prompt at the cache-write price, 4,000 out), so the writer settles every call at its
+    hold (D8)."""
 
     over: int = 0  # extra input tokens: a call billed above its hold (M1)
     drafts: list[str] = field(default_factory=list)
@@ -101,7 +103,7 @@ class HoldPayer(ScriptedWriter):
         tools: list[ToolSpec] | None = None,
     ) -> AsyncIterator[str]:
         sent = sum(len(m.text().encode("utf-8")) for m in messages)
-        tokens = math.ceil(sent / 2.5) + SYSTEM_TOKENS_AT_INPUT + self.over
+        tokens = math.ceil(sent / BYTES_PER_TOKEN_WORST) + SYSTEM_TOKENS_AT_INPUT + self.over
         text = self.drafts.pop(0) if self.drafts else GOOD_DRAFT
         self.steps.insert(0, Step(text=text, input_tokens=tokens, output_tokens=max_tokens))
         async for piece in super().stream(

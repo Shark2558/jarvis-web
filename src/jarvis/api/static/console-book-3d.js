@@ -237,13 +237,14 @@ function engineOn(THREE, builders, createCore, o, renderer) {
   }
   function enter(sc, ctx) {
     if (cur) cur.root.visible = false;
-    if (!built.has(sc.n)) {
+    const key = sc.n + ':' + (sc.id || ''); // R6.3: tour scenes share today's pictures, each with its own data
+    if (!built.has(key)) {
       const make = builders[sc.n];
       if (!make) return false;
       const kit = { THREE, K, scene: sc, facts: sc.facts, ctx: ctx || {}, motion: fullMotion, core, level };
-      const s = make(kit); scene.add(s.root); built.set(sc.n, s);
+      const s = make(kit); scene.add(s.root); built.set(key, s);
     }
-    cur = built.get(sc.n); curN = sc.n; cur.root.visible = true; stats.scene = sc.n;
+    cur = built.get(key); curN = key; cur.root.visible = true; stats.scene = sc.n;
     if (cur.reset) cur.reset(fullMotion());
     labels.set(cur.labels || []);
     if (fullMotion()) { zFrom = zBase * 1.22; dollyT = 0; } else dollyT = 1;
@@ -251,7 +252,7 @@ function engineOn(THREE, builders, createCore, o, renderer) {
   }
   function show(sc, i, beat, ctx) {
     if (disposed) return;
-    if (sc.n !== curN && !enter(sc, ctx)) return;
+    if (sc.n + ':' + (sc.id || '') !== curN && !enter(sc, ctx)) return;
     const lit = litSet(sc.facts, Object.assign({}, beat, { i }), KIND[sc.n]);
     if (cur.enter) cur.enter(i, lit, beat || {}, ctx || {});
     labels.light(lit);

@@ -68,7 +68,8 @@ class ShowScript:
         if line_id in LINES:
             return render(line_id, **await self.words(uid))
         if tour_serve.TOUR_LINE.fullmatch(line_id):
-            return tour_serve.tour_line_text(self.source.book(), line_id, audience)
+            book, words = self.source.book(), await self.words(uid)  # I1: the script's own words
+            return tour_serve.tour_line_text(book, line_id, audience, words)
         if not _LINE.fullmatch(line_id):
             return None
         beats = (b for s in self.source.book().show.scenes for b in s.beats)

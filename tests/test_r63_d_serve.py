@@ -120,10 +120,6 @@ async def test_every_line_of_the_owners_tour_speaks_for_the_owner(settings: Sett
     assert got["script"]["kind"] == "tour" and len(got["script"]["scenes"]) == 17
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Needs I1 (INTEGRATION-D): show_script.line_text passes the show's words to the tour",
-)
 async def test_the_owners_spoken_t16_line_has_his_honorific() -> None:
     script = show_script.ShowScript(TourSource(TOUR), honorific="Sir")
     said = await script.line_text("u1", "t16b01", "owner")

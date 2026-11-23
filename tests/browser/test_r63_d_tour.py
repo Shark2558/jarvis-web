@@ -239,11 +239,6 @@ def test_each_scene_draws_todays_picture_with_its_own_data(
         c.close()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Needs I1 (INTEGRATION-D): the 2D and 3D pictures redraw only when today's picture "
-    "number changes, so T13-T15 (picture 9 after T12) keep T12's data",
-)
 @pytest.mark.parametrize("viewport", [PHONE, LAPTOP], ids=["phone", "laptop"])
 def test_a_scene_after_one_with_the_same_picture_draws_its_own_data(
     browser: Any, server_url: str, token: str, viewport: dict[str, int]
@@ -341,6 +336,24 @@ def test_reaching_questions_forgets_the_scene_but_keeps_the_readers_page(
         c.page.locator("#shTalk").wait_for(state="visible", timeout=60000)
         place = c.page.evaluate(f"JSON.parse(localStorage.getItem('{PLACE}'))")
         assert place == {"release": REL["id"], "page": "pg_module_voice"}
+    finally:
+        c.close()
+
+
+def test_playing_the_tour_leaves_another_releases_reader_place_alone(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """I1 (INTEGRATION-C 5.4): the tour keeps the reader's rule from its side; the reader's
+    place of an older release stays exactly as the reader wrote it."""
+    c, _ = _open(browser, server_url, token)
+    try:
+        c.page.evaluate(
+            f"localStorage.setItem('{PLACE}', JSON.stringify({{release: 'aebff3a', page: 'pg_module_voice'}}))"
+        )
+        _begin(c, paused=True)
+        _goto(c, 7)
+        place = c.page.evaluate(f"JSON.parse(localStorage.getItem('{PLACE}'))")
+        assert place == {"release": "aebff3a", "page": "pg_module_voice"}
     finally:
         c.close()
 

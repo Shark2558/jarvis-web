@@ -3,7 +3,8 @@
 //   label(script, n, title) -> the chapters menu's words for scene n: its title; for the owner also "You only" on his
 //                              own scenes (T16) and the scene's full-book chapter by name ("Full book: Costs")
 //   seen(script, beat)       -> remembers the owner's place once the tour plays: localStorage jarvis_book_place_v1
-//                              {release, scene} (ids only; the reader's {page} of the same release is kept beside it);
+//                              {release, scene} (ids only; the reader's {page} of the same release is kept beside it,
+//                              and the reader's place of ANOTHER release is left as it is: C's rule, I1);
 //                              Questions or the closing reached: the tour is done and its scene is forgotten
 //   start(script, beats)     -> the beat index to begin at: the FIRST line of the remembered scene of this release
 //                              ("continue where I left off" restarts the scene, never the middle of a line), else 0
@@ -84,7 +85,10 @@
     const done = beat.scene > LAST;
     if (beat.scene === last && !done) return;
     last = beat.scene;
-    const p = place(releaseOf(sc));
+    const rid = releaseOf(sc), old = store.get();
+    const readers = old ? Object.keys(old).filter((k) => k !== 'scene' && k !== 'release') : [];
+    if (readers.length && old.release !== rid) return; // the reader's place of another release stays as it is
+    const p = place(rid);
     if (done) delete p.scene; else p.scene = beat.scene;
     store.put(p.scene || p.page ? p : null);
   }

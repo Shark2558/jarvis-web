@@ -116,7 +116,7 @@ folder.
 12. **Fakes and evals:** `tests/r63_fakes.py`, `r63_fake_brains.py`, `r63_fake_server.py`;
     `evals/r6_3/run.py` (staged, `STUBS_PASS = True`), I0's `contract` part BUILT with its own
     controls (L12: the stub job calling the fake brain once; a stray route), five stubs, gated in
-    `evals/run_all_mock.py`; `tests/test_r63_*.py` (13 files).
+    `evals/run_all_mock.py`; `tests/test_r63_*.py` (14 files).
 13. **The Book's static guards:** `test_book_boundaries.py` extended; `tests/test_r63_static.py`
     (imports, no model id / vendor / price literal, no real clock).
 14. **The guide** v6.3.1: C57 (what it does, the new modules, the six collections, the writer's
@@ -163,7 +163,25 @@ folder.
 
 ## 6. The checks (one at a time, behind `/tmp/jarvis-heavy.lock`)
 
-(filled in below at the end of I0)
+On `d25dbcc` (the builders' base). The owner asked (17:42 IST) for no further whole-suite runs:
+the Python 3.11 whole suite is GitHub CI's on the PR.
+
+| Check | Result |
+|---|---|
+| Python 3.12, `tests/test_[a-h]*` | 4,670 passed, 7 skipped |
+| Python 3.12, `tests/test_[i-q]*`, `test_r1_*`, `test_r1[0-2]*` | 5,055 passed, 1 skipped |
+| Python 3.12, `tests/test_r13*`, `test_r14*` | 3,349 passed, 2 skipped |
+| Python 3.12, the rest (`test_r[2-9]*`, `test_r[a-z]*`, `test_[s-z]*`) | 5,805 passed, 42 skipped, 8 xfailed (A's pinned kinds) on `fa12a33`, after its one failure (the allow-list order) was fixed and its files re-run (1,453 passed) |
+| Python 3.11 whole suite | not run (the owner's instruction; CI) |
+| `ruff check src tests evals scripts`, `ruff format --check` | clean |
+| `mypy` on every changed module | the baseline error only (`memory/redis_store.py:67`) |
+| `evals/r6_3/run.py --mock` | 11/11; I0's control failed the suite (both its cases) |
+| Book browser tests after the script reader's move | 128 passed (8 files) |
+| `scripts/check_doc_versions.py` | 31 documents OK |
+| `scripts/arch_coverage.py` | OK (66, 108 console modules, 2, 31, 120) |
+| `python -m jarvis.buildbook.gen --check` | byte-identical (book.json 204,818, facts.json 395, source.zip 10.0 MB) |
+
+`tests/test_r63_*.py`: 14 files.
 
 ## Change log
 

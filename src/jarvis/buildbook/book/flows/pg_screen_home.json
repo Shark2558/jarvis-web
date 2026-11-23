@@ -1,0 +1,24 @@
+{
+  "title": "Arming and disarming the alarm",
+  "dir": "down",
+  "nodes": [
+    {"id": "arm", "label": "You press Arm", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-home-panel.js"},
+    {"id": "arming", "label": "Panel shows Arming", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/camera.py"},
+    {"id": "laptop", "label": "Home laptop confirms", "kind": "service", "rank": 2, "col": 0},
+    {"id": "armed", "label": "Panel shows Armed", "kind": "step", "rank": 3, "col": 0},
+    {"id": "disarm", "label": "You press Disarm", "kind": "person", "rank": 4, "col": 0},
+    {"id": "proof", "label": "Passkey or fresh sign-in", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/camera.py"},
+    {"id": "off", "label": "The alarm is off", "kind": "step", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "arm", "to": "arming"},
+    {"from": "arming", "to": "laptop"},
+    {"from": "laptop", "to": "armed"},
+    {"from": "armed", "to": "disarm"},
+    {"from": "disarm", "to": "proof"},
+    {"from": "proof", "to": "off"}
+  ]
+}

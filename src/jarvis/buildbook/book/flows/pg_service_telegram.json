@@ -1,0 +1,25 @@
+{
+  "title": "A Telegram message, there and back",
+  "dir": "down",
+  "nodes": [
+    {"id": "you", "label": "You write to the bot", "kind": "person", "rank": 0, "col": 0},
+    {"id": "telegram", "label": "Telegram's servers", "kind": "service", "rank": 1, "col": 0},
+    {"id": "secret", "label": "Secret header check", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/telegram.py"},
+    {"id": "away", "label": "Turned away unread", "kind": "step", "rank": 2, "col": 1},
+    {"id": "paired", "label": "Paired account only", "kind": "guard", "rank": 3, "col": 0},
+    {"id": "brain", "label": "JARVIS answers", "kind": "step", "rank": 4, "col": 0},
+    {"id": "client", "label": "Bot API send", "kind": "step", "rank": 5, "col": 0,
+     "ref": "src/jarvis/telegram/client.py"},
+    {"id": "phone", "label": "Reply on your phone", "kind": "person", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "you", "to": "telegram"},
+    {"from": "telegram", "to": "secret", "label": "webhook"},
+    {"from": "secret", "to": "away", "label": "wrong secret", "style": "side"},
+    {"from": "secret", "to": "paired"},
+    {"from": "paired", "to": "brain"},
+    {"from": "brain", "to": "client"},
+    {"from": "client", "to": "phone"}
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "title": "A reply from Claude, and what happens on trouble",
+  "dir": "down",
+  "nodes": [
+    {"id": "ask", "label": "You send a message", "kind": "person", "rank": 0, "col": 0},
+    {"id": "switch", "label": "No-AI switch off?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/llm/router.py"},
+    {"id": "refuse", "label": "No call: fixed line", "kind": "step", "rank": 1, "col": 1},
+    {"id": "tier", "label": "Tier picks the model", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/llm/router.py"},
+    {"id": "claude", "label": "Anthropic: Claude", "kind": "service", "rank": 3, "col": 0,
+     "ref": "src/jarvis/llm/factory.py"},
+    {"id": "lower", "label": "Busy: a lower tier", "kind": "step", "rank": 3, "col": 1},
+    {"id": "laptop", "label": "Unreachable: laptop", "kind": "service", "rank": 3, "col": 2},
+    {"id": "health", "label": "Last call noted", "kind": "store", "rank": 4, "col": 1,
+     "ref": "src/jarvis/vitals/own.py"},
+    {"id": "reply", "label": "Your reply", "kind": "step", "rank": 5, "col": 0}
+  ],
+  "edges": [
+    {"from": "ask", "to": "switch"},
+    {"from": "switch", "to": "refuse", "label": "AI off", "style": "side"},
+    {"from": "switch", "to": "tier", "label": "AI on"},
+    {"from": "tier", "to": "claude"},
+    {"from": "claude", "to": "reply", "label": "answer"},
+    {"from": "claude", "to": "lower", "label": "busy", "style": "side"},
+    {"from": "claude", "to": "laptop", "label": "unreachable", "style": "side"},
+    {"from": "lower", "to": "reply", "style": "side"},
+    {"from": "laptop", "to": "reply", "style": "side"},
+    {"from": "claude", "to": "health", "style": "side"}
+  ]
+}

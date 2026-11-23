@@ -72,7 +72,9 @@ def _tour_scene(n: int, beats: int = 3) -> dict[str, Any]:
 
 def _tour() -> dict[str, Any]:
     timing = {"seconds": 800.0, "words": 1700, "chars": 9000, "lines": 54}
-    return {"scenes": [_tour_scene(n) for n in range(1, 18)], "owner": timing, "guest": timing}
+    owner = {"scenes": [_tour_scene(n) for n in range(1, 18)], **timing}
+    guest = {"scenes": [_tour_scene(n) for n in range(1, 18) if n != 16], **timing}
+    return {"owner": owner, "guest": guest}
 
 
 def test_a_book_with_a_tour_writes_it_and_reads_it_back() -> None:
@@ -118,16 +120,34 @@ def test_a_scene_that_is_not_the_approved_one_is_refused(change: dict[str, Any])
         tm.TourScene.model_validate({**_tour_scene(1), **change})
 
 
-def test_the_tour_is_seventeen_scenes_inside_the_hard_band() -> None:
-    assert len(tm.Tour.model_validate(_tour()).scenes) == 17
+def test_the_tour_is_filled_per_audience_inside_the_hard_band() -> None:
+    tour = tm.Tour.model_validate(_tour())
+    assert len(tour.owner.scenes) == 17 and [s.n for s in tour.guest.scenes] == [
+        *range(1, 16),
+        17,
+    ]
     for bad in (599.0, 900.5):
         t = _tour()
         t["owner"] = {**t["owner"], "seconds": bad}
         with pytest.raises(ValidationError):
             tm.Tour.model_validate(t)
-    short = {**_tour(), "scenes": _tour()["scenes"][:16]}
+    short = _tour()
+    short["owner"] = {**short["owner"], "scenes": short["owner"]["scenes"][:16]}
     with pytest.raises(ValidationError):
         tm.Tour.model_validate(short)
+
+
+def test_a_guests_tour_has_no_owner_scene_and_no_owner_line() -> None:
+    with_costs = _tour()
+    with_costs["guest"] = {**with_costs["guest"], "scenes": [_tour_scene(n) for n in range(1, 18)]}
+    with pytest.raises(ValidationError):
+        tm.Tour.model_validate(with_costs)  # T16 is the owner's
+    owner_line = _tour()
+    scene13 = _tour_scene(13)
+    scene13["beats"][2] = {**scene13["beats"][2], "audience": "owner"}
+    owner_line["guest"]["scenes"][12] = scene13
+    with pytest.raises(ValidationError):
+        tm.Tour.model_validate(owner_line)  # t13b03 is his
 
 
 def test_the_timer_gives_the_plans_figures() -> None:

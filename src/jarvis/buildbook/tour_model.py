@@ -6,8 +6,9 @@ short tour's two shapes. Pure data, frozen, extra fields refused, no I/O.
   (part D copies its spoken words VERBATIM): 17 scenes, beats with `{{key}}` placeholders, each
   scene's picture (`visual`, one of today's 11, and its data: `{"from_show": n}` or its own list,
   M6). An empty script is I0's stub (no tour is built).
-- `Tour` = `book.json`'s `tour`, filled at CI (D's `gen/tour.py`), each audience's timing by the
-  timer (`seconds`: 145 words a minute, 0.8 s a line, 1.4 s a scene; hard band 600-900 s).
+- `Tour` = `book.json`'s `tour`, filled at CI (D's `gen/tour.py`) once per audience (`owner`,
+  `guest`: each its own lines and minutes), timed (`seconds`: 145 words a minute, 0.8 s a line,
+  1.4 s a scene; hard band 600-900 s).
 `TOUR_SCENES` pins each scene as approved; `HIGHLIGHTS` are his seven, in his order.
 """
 
@@ -147,54 +148,38 @@ class TourScene(Frozen):
         return self
 
 
-class Timing(Frozen):
-    """One audience's filled tour: the timer's seconds, and what it counted."""
+class AudienceTour(Frozen):
+    """One audience's filled tour (each fills its own `{{tour.minutes}}`): its scenes in order (a
+    guest's without owner-only scenes and lines) and what the timer counted."""
 
+    scenes: tuple[TourScene, ...]
     seconds: float = Field(ge=HARD_BAND_S[0], le=HARD_BAND_S[1])  # the generator refuses outside
     words: int = Field(ge=0)
     chars: int = Field(ge=0)
     lines: int = Field(ge=0)
 
-
-class Tour(Frozen):
-    v: Literal[1] = 1
-    scenes: tuple[TourScene, ...]
-    owner: Timing
-    guest: Timing
-
     @model_validator(mode="after")
-    def _whole(self) -> Tour:
-        if [s.n for s in self.scenes] != list(range(1, TOUR_SCENE_COUNT + 1)):
-            raise ValueError("the tour is all 17 scenes, in order")
+    def _ordered(self) -> AudienceTour:
+        ns = [s.n for s in self.scenes]
         ids = [b.id for s in self.scenes for b in s.beats]
-        if len(ids) != len(set(ids)):
-            raise ValueError("a tour line id is used twice")
+        if ns != sorted(set(ns)) or len(ids) != len(set(ids)):
+            raise ValueError("a tour's scenes are in order and its line ids used once")
         return self
 
 
-__all__ = [
-    "AIMED_S",
-    "HARD_BAND_S",
-    "HIGHLIGHTS",
-    "LINE_PAUSE_S",
-    "OWN_PICTURE_DATA",
-    "PACE_WPM",
-    "SCENE_PAUSE_S",
-    "TOUR_LINE_ID",
-    "TOUR_SCENES",
-    "TOUR_SCENE_COUNT",
-    "FromShow",
-    "LineAudience",
-    "SceneAudience",
-    "ScriptBeat",
-    "ScriptPicture",
-    "ScriptScene",
-    "Timing",
-    "Tour",
-    "TourBeat",
-    "TourFact",
-    "TourPicture",
-    "TourScene",
-    "TourScript",
-    "seconds",
-]
+class Tour(Frozen):
+    v: Literal[1] = 1
+    owner: AudienceTour
+    guest: AudienceTour
+
+    @model_validator(mode="after")
+    def _whole(self) -> Tour:
+        if [s.n for s in self.owner.scenes] != list(range(1, TOUR_SCENE_COUNT + 1)):
+            raise ValueError("the owner's tour is all 17 scenes, in order")
+        mine = {s[0] for s in TOUR_SCENES if s[4] == "owner"}
+        guest = self.guest.scenes
+        if [s.n for s in guest] != [n for n in range(1, TOUR_SCENE_COUNT + 1) if n not in mine]:
+            raise ValueError("a guest's tour is every scene but the owner's, in order")
+        if any(b.audience == "owner" for s in guest for b in s.beats):
+            raise ValueError("a guest's tour has no owner-only line")
+        return self

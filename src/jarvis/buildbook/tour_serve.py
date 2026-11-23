@@ -2,10 +2,10 @@
 """R6.3 D9 (docs/plans/r6-3-book-content.md; review H1): what the show serves of the short tour.
 PART D builds this module; I0's stubs answer None (no tour: today's 11-scene show).
 
-- `tour_lines(book, audience, words) -> {"scenes": [...], "seconds": float} | None`: the filled
-  tour of `book.tour` for ONE audience (a guest's without T16 and without any owner-only line or
-  Rs), each scene as `tour_model.TourScene` dumps it (JSON), `{h}` and its kin filled by
-  `lines.render`'s `words`; `seconds` that audience's timer. None: the book has no tour.
+- `tour_lines(book, audience, words) -> {"scenes": [...], "seconds": float} | None`: that
+  audience's filled tour, `book.tour.owner` or `book.tour.guest` (a guest's has no T16, no
+  owner-only line and no Rs), each scene as `tour_model.TourScene` dumps it (JSON), `{h}` and
+  its kin filled by `lines.render`'s `words`; `seconds` its timer. None: the book has no tour.
 - `tour_line_text(book, line_id, audience) -> str | None`: the text `POST /v1/book/show/speak`
   reads for a `tNNbMM` id, ONLY when that line and its scene are the session's audience's; an
   owner-only line in a guest session is None (the route says 404 `unknown_line`, H1).

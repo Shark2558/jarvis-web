@@ -164,6 +164,7 @@ _DOTTED = re.compile(
 )
 _PHRASE_GAP = re.compile(r"[\s\u00a0]*[-_.,&/'\u2019]?[\s\u00a0]*")
 PHRASE_WORDS = (2, 8)  # the shortest and longest phrase looked for, in words
+FOLDED_WORDS = 65_536  # distinct words kept folded (the repository's plans hold about 40,000)
 _V6_GROUPS, _V6_HEAD = 4, 3  # an IPv6 address: 4+ groups, or a first group of 3+ hex digits
 _PROJECT_DIGITS = re.compile(r"\d{4,}")
 
@@ -214,6 +215,12 @@ def _plain(word: str) -> str:
     folded (case kept, for the camel-case split)."""
     kept = (c for c in unicodedata.normalize("NFKD", word) if unicodedata.category(c) not in _DROP)
     return "".join(kept).translate(_CONFUSABLES)
+
+
+@lru_cache(maxsize=FOLDED_WORDS)
+def _folded(word: str) -> str:
+    """A word as a phrase is hashed (scripts/redact_add.py `key_of`)."""
+    return _plain(word).casefold()
 
 
 def name_keys(word: str) -> frozenset[str]:
@@ -271,7 +278,7 @@ class Scrubber:
     def _phrase_spans(self, text: str) -> list[tuple[int, int]]:
         """(start, end) of every listed phrase: consecutive words, any gap `_PHRASE_GAP` allows."""
         words = list(_WORD.finditer(text))
-        keys = [_plain(w.group(0)).casefold() for w in words]
+        keys = [_folded(w.group(0)) for w in words]
         spans: list[tuple[int, int]] = []
         low, high = PHRASE_WORDS
         for i in range(len(words)):
@@ -285,7 +292,8 @@ class Scrubber:
     def _without_phrases(self, text: str, found: set[str]) -> str:
         if not self._phrases:
             return text
-        out, last = [], 0
+        out: list[str] = []
+        last = 0
         for start, end in self._phrase_spans(text):
             if start < last:  # inside a phrase already removed
                 continue

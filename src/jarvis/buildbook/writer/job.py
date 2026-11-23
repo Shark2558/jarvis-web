@@ -253,7 +253,8 @@ class Steps:
                 log.error("book writer pages not sealed", extra={"error": type(exc).__name__})
                 state, why = "stopped", "unavailable"
         pct = doc.pick.confirmed.caps.limit_pct
-        words = texts.WHY.get(why, texts.WHY["unavailable"]).format(left=left_pages, pct=pct)
+        left = texts.pages_words(left_pages)
+        words = texts.WHY.get(why, texts.WHY["unavailable"]).format(left=left, pct=pct)
         ended = None if state == "paused" else self.ctx.clock().isoformat()
 
         def fn(d: WriterDoc) -> tuple[WriterDoc | None, None]:
@@ -274,7 +275,8 @@ class Steps:
         if written:
             label = getattr(self.ctx.source.current(), "label", None) or rid
             inr = await self.runner.ledger.run_spent(uid, run_key(run), run.kind)
-            text = texts.NOTICE_PAGES.format(label=label, count=written, inr=texts.inr(inr))
+            count = texts.pages_words(written)
+            text = texts.NOTICE_PAGES.format(label=label, count=count, inr=texts.inr(inr))
             await sweep.tell(self.ctx, self.store, uid, rid, "pages", text)
         if why in ("over_hold", "unreadable", "unavailable"):
             await sweep.tell(

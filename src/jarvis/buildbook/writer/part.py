@@ -17,6 +17,7 @@ from typing import Any, Literal
 import jarvis.llm.write as write
 from jarvis.buildbook.gen.scrub import default_scrubber
 from jarvis.buildbook.model import MIB
+from jarvis.buildbook.ports import BookError
 from jarvis.buildbook.writer import consent, estimate, pages, texts
 from jarvis.buildbook.writer import http as h
 from jarvis.buildbook.writer.caps import CapRefused, WriterCaps, money
@@ -95,6 +96,8 @@ class WriterService:
         run = Run(kind=kind, release=rid, estimate_id=est.id, total=total, started_at=now)
 
         def fn(doc: WriterDoc) -> tuple[WriterDoc, None]:
+            if doc.run is not None and doc.run.state in ACTIVE:
+                raise refuse("running")  # two YES at once: one run (review I1 L-2)
             consents = dict(doc.consents)
             if kind != "update":
                 consents[kind] = Consent(at=now, estimate_id=est.id, release=rid)
@@ -164,8 +167,13 @@ class WriterService:
         return await self._run_view(uid, doc)
 
     async def tick(self, uid: str) -> dict[str, int]:
-        """`book_write`: the free work, the opt-in update, then one clock step (D5)."""
-        out = await self.free.run(uid)
+        """`book_write`: the free work, the opt-in update, then one clock step (D5). The free
+        work's failure is logged and never stops an approved run's step (review I1 L-3)."""
+        try:
+            out = await self.free.run(uid)
+        except (BookError, CapRefused, texts.WriterRefused) as exc:
+            log.error("book writer free work failed", extra={"error": type(exc).__name__})
+            out = {"free_failed": 1}
         await self._auto_update(uid)
         doc = await self.store.doc(uid)
         if doc.run is not None and doc.run.state in ACTIVE:

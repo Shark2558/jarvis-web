@@ -3,7 +3,8 @@
 under `/v1/book/pages`, exactly `buildbook/writer/http.ROUTES` (gate "session").
 
 Signed in (`require_auth`), the PRIMARY owner only (403 `not_primary`, L11), an OWNER book
-session's `X-Jarvis-Book` (a guest's is 403 `owner_only`), `no-store`, 60 a minute. A kept
+session's `X-Jarvis-Book` (a guest's is 403 `owner_only`), in the console only as R6's sections
+(a bearer script with a book token is 403 `console_only`, G11), `no-store`, 60 a minute. A kept
 release's pages index (parts -> chapters -> pages, `limitations {shown, total}`) and one page
 (written, or the generator's text "Not written by AI yet"; 404 `no_page`). A pages file whose
 release R6's index doesn't keep is never served.
@@ -20,7 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from jarvis.api.auth import require_auth
-from jarvis.api.book_gate import BookRefused, owner_session
+from jarvis.api.book_gate import BookRefused, console_only, owner_session
 from jarvis.api.book_http import TOKEN_HEADER
 from jarvis.api.book_writer import answered, limited, primary, service_of
 from jarvis.buildbook.facts_model import PAGE_ID
@@ -47,6 +48,7 @@ def route(act: Act) -> Callable[[Request], Awaitable[JSONResponse]]:
         svc = service_of(request)
         uid = primary(request, svc)
         await owner_session(request, uid, request.headers.get(TOKEN_HEADER))
+        console_only(request)  # after the session: an unsigned script stays 401 (review I1 L-1)
         limited(request, "pages", uid)
         return await answered(act(svc, uid, release_of(request), request))
 

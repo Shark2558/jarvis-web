@@ -7,18 +7,29 @@ import threading
 from typing import Any
 
 import pytest
-from book_app_fakes import OWNER, book, book_app, open_book, owner_uid, register_passkey, sign_in
+from book_app_fakes import (
+    BEARER,
+    OWNER,
+    book,
+    book_app,
+    open_book,
+    owner_uid,
+    register_passkey,
+    sign_in,
+)
+from httpx import AsyncClient
 from r63_fake_brains import GOOD_DRAFT, Step, claude_like, gemini_like, registry
 from r63_fakes import FIXTURE_FACTS, FIXTURE_FILES, RELEASE
 from r63_fakes_b import seal_r6, service
 
 from jarvis.buildbook.gen.scrub import default_scrubber
 from jarvis.buildbook.gen.snapshot import _zip
-from jarvis.buildbook.ports import VaultTampered
-from jarvis.buildbook.writer import carry, consent, packs, prompts
+from jarvis.buildbook.ports import BookError, VaultTampered
+from jarvis.buildbook.writer import carry, consent, packs, prompts, texts
 from jarvis.buildbook.writer.caps import CapRefused
+from jarvis.buildbook.writer.http import TrialIn
 from jarvis.buildbook.writer.model import Caps, Confirmed, Run
-from jarvis.buildbook.writer.texts import REFUSED
+from jarvis.buildbook.writer.texts import REFUSED, WriterRefused
 from jarvis.config import Settings
 from jarvis.llm.router import ModelTier
 from jarvis.llm.write import WriterUnavailable, write_text
@@ -179,3 +190,60 @@ def test_m3_the_most_a_pick_grants_is_all_in_its_words_and_never_cut() -> None:
     for name in ("trial cap", "first full write's cap", "release cap", "monthly cap"):
         assert name in said, name
     assert "from 50 % to 90 %" in said
+
+
+# ---- L-1: the full book opens in the console only, as R6's sections do (G11) -------------------
+async def test_l1_a_bearer_script_with_an_owner_book_token_never_reads_the_full_book(
+    settings: Settings,
+) -> None:
+    async for app in book_app(settings):
+        built = service(brains=registry(claude_like(), gemini_like()), uid=owner_uid(OWNER),
+                        emails=(OWNER,))  # fmt: skip
+        app.state.book_writer = built.service
+        await seal_r6(built)
+        async with sign_in(app) as c:
+            owner = await open_book(c, await register_passkey(c), "owner")
+            assert (await c.get("/v1/book/pages", headers=book(owner["token"]))).status_code == 200
+        async with AsyncClient(transport=app.transport, base_url="http://test") as bare:
+            assert (await bare.get("/v1/book/pages", headers=BEARER)).status_code == 401
+            r = await bare.get("/v1/book/pages", headers={**BEARER, **book(owner["token"])})
+            assert r.status_code == 403 and r.json()["error"] == "console_only"
+
+
+# ---- L-2: a start looks again inside its own write ---------------------------------------------
+async def test_l2_a_second_start_while_a_run_is_active_is_refused_in_the_same_write() -> None:
+    built = service()
+    svc, uid = built.service, built.job._ctx.uid
+    est = await svc.estimate(uid, "trial")
+    await svc.start_trial(uid, TrialIn(typed="YES", estimate_id=est.id))
+    first = (await svc.store.doc(uid)).run
+    with pytest.raises(WriterRefused) as no:
+        await svc._start(uid, "trial", est, 10)  # the second of two YES sent at once
+    assert no.value.code == "running" and (await svc.store.doc(uid)).run == first
+
+
+# ---- L-3: the free work's failure never stops an approved run's clock step ----------------------
+async def test_l3_a_free_work_failure_is_logged_and_the_clock_step_still_runs() -> None:
+    built = service()
+    svc, uid = built.service, built.job._ctx.uid
+    est = await svc.estimate(uid, "trial")
+    await svc.start_trial(uid, TrialIn(typed="YES", estimate_id=est.id))
+    stepped: list[bool] = []
+
+    async def broken(uid_: str) -> dict[str, int]:
+        raise BookError("The vault can't be reached right now.")
+
+    async def step(uid_: str, *, on_clock: bool) -> Any:
+        stepped.append(on_clock)
+        return await svc.store.doc(uid_)
+
+    svc.free.run, svc.steps.step = broken, step
+    out = await svc.tick(uid)
+    assert stepped == [True] and out.get("free_failed") == 1
+
+
+# ---- L-7: counts in the writer's words are pluralised -------------------------------------------
+def test_l7_the_writers_counts_say_1_page_and_2_pages() -> None:
+    assert texts.pages_words(1) == "1 page" and texts.pages_words(2) == "2 pages"
+    assert "page(s)" not in " ".join(texts.WHY.values())
+    assert "{count} pages" not in texts.NOTICE_PAGES

@@ -93,9 +93,9 @@ SENT_WORDS = (
 
 # ---- runs (D5-D7, D12) ---------------------------------------------------------------------------
 WHY = {
-    "cap": "The cap is reached: {left} page(s) keep the generated text. Go on with a new YES.",
-    "month": "This month's cap is reached: {left} page(s) wait for next month or a raise.",
-    "limit": "It would pass {pct} % of your monthly limit: {left} page(s) wait.",
+    "cap": "The cap is reached: the rest ({left}) keeps the generated text. Go on with a new YES.",
+    "month": "This month's cap is reached: the rest ({left}) waits for next month or a raise.",
+    "limit": "It would pass {pct} % of your monthly limit: the rest ({left}) waits.",
     "over_hold": "A page was billed above its worst case, so the run stopped to be safe.",
     "unreadable": "The writer's money records can't be read, so it stopped. Nothing was spent.",
     "new_release": "A new release came: what was written is kept, and the rest joins its update.",
@@ -110,13 +110,18 @@ WHY = {
 }
 
 # ---- notices (D11): R6's kinds, the writer's own words, ids, counts and rupees only -------------
-NOTICE_PAGES = "The AI-written pages for {label} are sealed ({count} pages, about {inr})."
+NOTICE_PAGES = "The AI-written pages for {label} are sealed ({count}, about {inr})."  # pages_words
 NOTICE_UPDATE = "The AI pages wait for your Update (about {inr})."
 NOTICE_STORAGE = (
     "The build books use {used} of {limit} MiB ({pct} %): an older release goes first when a new "
     "one needs the room."
 )
 NOTICE_FAILED = "The AI writer stopped: {why}"
+
+
+def pages_words(n: int) -> str:
+    """ "1 page", "2 pages" (review I1 L-7)."""
+    return f"{n} page" if n == 1 else f"{n} pages"
 
 
 def listed(items: list[str]) -> str:
@@ -151,4 +156,5 @@ __all__ = [
     "WriterRefused",
     "inr",
     "listed",
+    "pages_words",
 ]

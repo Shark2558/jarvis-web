@@ -1,0 +1,33 @@
+{
+  "title": "An SOS from the phone",
+  "dir": "down",
+  "nodes": [
+    {"id": "hold", "label": "You hold SOS", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-r7-sos.js"},
+    {"id": "countdown", "label": "Countdown, then send", "kind": "guard", "rank": 1, "col": 0},
+    {"id": "cancel", "label": "Left the screen: cancelled", "kind": "step", "rank": 1, "col": 1},
+    {"id": "door", "label": "Signed phone door", "kind": "guard", "rank": 2, "col": 1,
+     "ref": "src/jarvis/phone/door.py"},
+    {"id": "limits", "label": "Real SOS budget", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/sos/service.py"},
+    {"id": "message", "label": "Message written by code", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/sos/message.py"},
+    {"id": "telegram", "label": "Contacts on Telegram", "kind": "service", "rank": 4, "col": 0},
+    {"id": "sms", "label": "SMS app and dialler", "kind": "step", "rank": 4, "col": 1},
+    {"id": "notice", "label": "You're told on every channel", "kind": "step", "rank": 5, "col": 0},
+    {"id": "audit", "label": "Audited, no location", "kind": "store", "rank": 6, "col": 0,
+     "ref": "src/jarvis/sos/store.py"}
+  ],
+  "edges": [
+    {"from": "hold", "to": "countdown"},
+    {"from": "countdown", "to": "cancel", "style": "side"},
+    {"from": "countdown", "to": "door", "label": "from the app", "style": "side"},
+    {"from": "countdown", "to": "limits"},
+    {"from": "door", "to": "limits", "style": "side"},
+    {"from": "limits", "to": "message"},
+    {"from": "message", "to": "telegram"},
+    {"from": "message", "to": "sms", "label": "always offered", "style": "side"},
+    {"from": "telegram", "to": "notice"},
+    {"from": "notice", "to": "audit"}
+  ]
+}

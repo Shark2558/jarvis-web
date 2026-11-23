@@ -38,7 +38,7 @@ ANDROID = "android/gradle/libs.versions.toml"
 COMPOSE = "deploy/home/docker-compose.yml"
 BRIDGE = "deploy/home/bridge-requirements.txt"
 PYPROJECT = "pyproject.toml"
-MARKDY = "tools/markdy/package-lock.json"
+DEV_TOOL_LOCK = "tools/markdy/package-lock.json"
 OWN_IMAGE = "jarvis-"  # the home kit's own bridge image, built on the laptop: not a library
 RELEASE_NAMES = {"three": "three.js", "ort": "onnxruntime-web", "oww": "openWakeWord models"}
 Use = Literal["run-time", "build and maintenance"]
@@ -180,7 +180,7 @@ def _dev(repo: Repo) -> list[Item]:
 
 def _npm(repo: Repo) -> list[Item]:
     try:
-        packages = json.loads(repo.text(MARKDY) or "{}").get("packages", {})
+        packages = json.loads(repo.text(DEV_TOOL_LOCK) or "{}").get("packages", {})
     except (ValueError, AttributeError):
         return []
     root = packages.get("", {}) if isinstance(packages, dict) else {}
@@ -189,7 +189,7 @@ def _npm(repo: Repo) -> list[Item]:
     for name in direct:
         pkg = packages.get(f"node_modules/{name}", {})
         licence = pkg.get("license") if isinstance(pkg.get("license"), str) else NOT_STATED
-        out.append(_item("dev tool", name, str(pkg.get("version", "")), licence, MARKDY))
+        out.append(_item("dev tool", name, str(pkg.get("version", "")), licence, DEV_TOOL_LOCK))
     return out
 
 

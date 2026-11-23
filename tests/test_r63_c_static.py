@@ -85,7 +85,7 @@ def test_rupees_only(name: str) -> None:
 
 
 def test_the_yes_box_is_read_in_one_place_and_never_filled_by_the_page() -> None:
-    text = _read(WRITER)
+    text = re.sub(r"^\s*//.*$", "", _read(WRITER), flags=re.M)  # the code, not its comments
     assert text.count("go(inp.value)") == 1  # what he typed, exactly, as typed
     assert re.findall(r"\btyped:\s*([\w.]+)", text) == ["typed", "typed"]  # the pick and a run
     assert not re.search(r"['\"`]YES['\"`]", text)  # the page never types YES
@@ -107,8 +107,8 @@ def test_the_place_is_the_only_kept_key_and_never_the_token() -> None:
 
 def test_the_full_book_rides_the_book_session_and_the_writer_never_does() -> None:
     pages, writer = _read(PAGES), _read(WRITER)
-    calls = re.findall(r"deps\.api\(([^;]*)", pages)
-    assert calls and all("deps.booked(" in c for c in calls), calls
+    calls = re.findall(r"\bD\.api\(([^;]*)", pages)
+    assert calls and all("D.booked()" in c for c in calls), calls
     assert "booked(" not in writer and "X-Jarvis-Book" not in writer
 
 

@@ -172,7 +172,7 @@ def test_r63_c_look_the_side_by_side_the_pick_update_and_the_storage_line(
         gate(c, WRITER, size, f"sample page {size} {surface}", f"trial-sample-{size}-{surface}")
         scrolled(c, "#bkWriterBrain")
         gate(c, WRITER, size, f"pick {size} {surface}", f"pick-{size}-{surface}")
-        c.page.locator(WRITER).get_by_role("button", name="Update").click()
+        c.page.locator(WRITER).get_by_role("button", name="Update", exact=True).click()
         c.page.locator(DIALOG).get_by_text("About ₹300").wait_for()
         gate(c, DIALOG, size, f"update yes {size} {surface}", f"update-yes-{size}-{surface}")
         assert c.errors == [] and c.csp_violations() == []

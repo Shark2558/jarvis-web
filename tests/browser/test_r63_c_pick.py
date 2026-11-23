@@ -125,7 +125,9 @@ def test_r63_c_pick_the_caps_are_filled_with_the_defaults(
         assert c.page.locator("#bkWriterAuto").get_attribute("aria-pressed") == "false"
         words = text(c)
         assert "Balanced tier, always" in words  # the tier is never offered
-        assert "its own choice" in words  # the Gemini pick is the writer's own consent (L8)
+        assert (
+            "the writer\u2019s own choice" in words
+        )  # the Gemini pick is the writer's own consent (L8)
         options = c.page.locator("#bkWriterBrain option").all_inner_texts()
         assert options == ["Claude", "Gemini (free)"]
         assert sent == []
@@ -289,7 +291,7 @@ def test_r63_c_pick_update_asks_its_yes_and_stop_stops(
     try:
         confirmed_pick(c)
         assert "The AI pages wait for your Update (about ₹300)" in text(c)
-        c.page.locator(WRITER).get_by_role("button", name="Update").click()
+        c.page.locator(WRITER).get_by_role("button", name="Update", exact=True).click()
         dialog = c.page.locator("#bookYesDialog")
         dialog.get_by_text("About ₹300").wait_for()
         dialog.locator("#bookYes").fill("YES")

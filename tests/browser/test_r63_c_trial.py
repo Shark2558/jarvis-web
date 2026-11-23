@@ -210,7 +210,9 @@ def test_r63_c_trial_side_by_side_with_checks_and_one_sample_page(
         until(c.page, lambda: "Passed after one redraft" in text(c), "the side by side")
         words = text(c)
         for title in ("Chapter example", "Card C16", "Module wardrobe", "Screen vitals"):
-            assert title in words, title
+            assert title.lower() in words.lower(), (
+                title
+            )  # the headings are upper-cased by the style
         rows = c.page.locator(f"{WRITER} .bev")
         assert rows.count() == 10
         assert "Claude" in rows.nth(0).inner_text() and "Gemini (free)" in rows.nth(1).inner_text()
@@ -224,7 +226,10 @@ def test_r63_c_trial_side_by_side_with_checks_and_one_sample_page(
             lambda: "Written by Gemini (free) (balanced tier, gemini-3.8-flash)" in text(c),
             "the page",
         )
-        assert "In plain words" in text(c) and "Example (made up)" in text(c)
+        heads = c.page.locator(
+            f"{WRITER} .bk-sec .dl"
+        ).all_text_contents()  # as written, not as styled
+        assert "In plain words" in heads and "Example (made up)" in heads
         clean(c)
     finally:
         c.close()

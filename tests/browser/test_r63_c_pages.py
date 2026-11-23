@@ -69,7 +69,9 @@ def owner(
 
 
 def text(c: Console) -> str:
-    return str(c.page.locator(PAGES).inner_text())
+    return str(
+        c.page.locator(PAGES).text_content()
+    )  # as written (the heads are upper-cased by style)
 
 
 def part(c: Console, title: str) -> Any:
@@ -98,7 +100,7 @@ def test_r63_c_pages_the_full_book_lists_parts_chapters_and_who_wrote_each(
     c, asked = owner(browser, c_url, token)
     try:
         until(c.page, lambda: "Full book" in text(c), "the full book")
-        heads = c.page.locator(f"{PAGES} .dsc .dl").all_inner_texts()
+        heads = c.page.locator(f"{PAGES} .dsc .dl").all_text_contents()  # as written, not as styled
         assert heads == ["JARVIS in plain words", "Modules", "Parts", "Outside services"]
         part(c, "Parts")
         until(c.page, lambda: "The demo" in text(c), "the chapter")
@@ -126,7 +128,7 @@ def test_r63_c_pages_a_written_page_its_sections_and_references(
             in words
         )
         sections = c.page.locator(f"{PAGES} .bk-sec > .dsc")
-        labels = [s.inner_text().split("\n")[0] for s in sections.all()]
+        labels = [s.locator(".dl").text_content() for s in sections.all()]
         assert labels == [
             "In plain words", "Example (made up)", "How it works", "What it costs", "When it fails",
             "Where in the code",
@@ -228,6 +230,7 @@ def test_r63_c_pages_a_guest_session_gets_nothing(browser: Any, c_url: str, toke
     c = Console(browser, c_url, token, LAPTOP)
     try:
         FakeBook(c.page)
+        route_c(c.page)
         refusal = json.dumps({"error": "owner_only", "detail": "The full book is the owner's."})
         for pattern in ("**/v1/book/pages", "**/v1/book/pages?*", "**/v1/book/pages/**"):
             c.page.route(

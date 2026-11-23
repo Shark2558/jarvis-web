@@ -1,0 +1,30 @@
+{
+  "title": "Where a brain call goes",
+  "dir": "down",
+  "nodes": [
+    {"id": "ask", "label": "A tier is asked for", "kind": "step", "rank": 0, "col": 0,
+     "ref": "src/jarvis/llm/router.py"},
+    {"id": "noai", "label": "No-AI switch", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/llm/router.py"},
+    {"id": "refused", "label": "Refused, nothing spent", "kind": "step", "rank": 1, "col": 1},
+    {"id": "cloud", "label": "Cloud model for the tier", "kind": "service", "rank": 2, "col": 0,
+     "ref": "src/jarvis/llm/brains.py"},
+    {"id": "lower", "label": "One tier down", "kind": "step", "rank": 3, "col": 1},
+    {"id": "laptop", "label": "Laptop brain", "kind": "service", "rank": 3, "col": 2,
+     "ref": "src/jarvis/llm/fallback.py"},
+    {"id": "price", "label": "Price the tokens", "kind": "step", "rank": 4, "col": 0,
+     "ref": "src/jarvis/llm/pricing.py"},
+    {"id": "answer", "label": "Answer to the caller", "kind": "person", "rank": 5, "col": 0}
+  ],
+  "edges": [
+    {"from": "ask", "to": "noai"},
+    {"from": "noai", "to": "refused", "label": "AI off", "style": "side"},
+    {"from": "noai", "to": "cloud", "label": "AI on"},
+    {"from": "cloud", "to": "lower", "label": "busy", "style": "side"},
+    {"from": "lower", "to": "cloud", "style": "side"},
+    {"from": "cloud", "to": "laptop", "label": "unreachable", "style": "side"},
+    {"from": "cloud", "to": "price", "label": "answered"},
+    {"from": "laptop", "to": "answer", "style": "side"},
+    {"from": "price", "to": "answer"}
+  ]
+}

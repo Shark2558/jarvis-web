@@ -115,3 +115,33 @@ def test_a_card_number_in_groups_of_four_is_digits_not_aadhaar() -> None:
     for text in ("4111 1111 1111 1111", "9999 2345 6789 0123"):
         assert default_scrubber().findings(text) == ("digits",), text
         assert default_scrubber().clean(text) == REMOVED
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "4.12.0.88",  # a whole field: a Stack row's version
+        "home bridge: opencv-python-headless 4.12.0.88 (deploy/home/bridge-requirements.txt).",
+        "opencv-python-headless==4.12.0.88",
+        "pinned at v4.12.0.88 and @4.12.0.88",
+    ],
+)
+def test_a_four_part_version_is_not_an_address(text: str) -> None:
+    """Versions stay as they are (BRIEF-A): a global dotted quad that reads as a version, after
+    a pin's `==`, an `@` or a package name, or as a whole field, is left alone (after a letter,
+    "v4.12.0.88", the address pattern never matches)."""
+    assert default_scrubber().findings(text) == ()
+    assert default_scrubber().clean(text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "192.168.1.20",  # a whole field, but private: always an address
+        "jarvis-home 192.168.1.5 on the laptop",
+        "the tailnet gives it 100.101.102.103",
+        "the box answers on 4.12.0.88 at home",  # a global address after a plain word
+    ],
+)
+def test_a_private_address_is_always_found_and_a_global_one_outside_a_version(text: str) -> None:
+    assert "ipv4" in default_scrubber().findings(text)

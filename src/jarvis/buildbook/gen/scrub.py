@@ -1,40 +1,38 @@
 # src/jarvis/buildbook/gen/scrub.py
 """R6 D3: no personal data in the book. Every text the generator takes from the repository (plan
-lines, docstrings, setting descriptions) passes `Scrubber.clean`, which replaces with "[removed]":
+lines, docstrings, setting descriptions) passes `Scrubber.clean`, which puts "[removed]" for:
 
-    url     a URL (any case; `http(s)://`, `gs://`, `s3://`, `ftp://` or a bare `www.`) unless it
-            is http(s) on the public-docs allow list (`PUBLIC_DOCS`) with no user part and, once
-            percent-decoded, no e-mail address or secret in it
+    url     a URL (any case; http(s), gs, s3, ftp or a bare `www.`) unless it is http(s) on the
+            public-docs allow list (`PUBLIC_DOCS`) with no user part and, percent-decoded, no
+            e-mail address or secret in it
     host    a `*.run.app`, `*.ts.net` or other project-id-like host (`PRIVATE_HOSTS`), and an
             Artifact Registry / Container Registry / Cloud Storage address with its path
     email   an e-mail address
-    phone   an Indian mobile number, with or without +91 / 0091 / 0 and any single spaces,
-            hyphens or dots between its digits ("98765 43210", "987 654 3210"); an 11-digit
-            number starting with 0 (a landline with its STD code); a number written with "+"
-            and 8-15 digits
-    digits  any run of 10 or more digits (account and project numbers), also when written in
-            groups of 3 or more digits split by single spaces or hyphens ("1234 5678 9012");
-            dates (2-digit groups), versions, decimals and IP addresses are left alone
-    secret  a secret-shaped string (the same shapes the snapshot scan refuses, `SECRET_SHAPES`;
-            a private key as its whole block)
-    name    any word whose SHA-256 is in gen/redact.json (hashes only: no one named), matched on
-            its NFKD form with accents, zero-width and other format characters removed, Cyrillic /
-            Greek look-alikes folded and case folded; also its camel-case parts and the word
-            without leading or trailing digits ("NameSurname", "name2558"); and (R6.3 M8) a
-            several-word name from redact.json's `phrases`: 2-8 consecutive words folded the same
-            way and joined by one space (`scripts/redact_add.py`), whatever the case, accents or
-            spacing between them (a line wrap or one `-`, `.`, `,` too); its words alone stay
+    phone   an Indian mobile number, with or without +91 / 0091 / 0 and single spaces, hyphens or
+            dots between its digits; an 11-digit number starting with 0 (a landline with its
+            STD code); a number written with "+" and 8-15 digits
+    digits  a run of 10+ digits, also in groups of 3+ split by single spaces or hyphens; dates,
+            versions, decimals and IP addresses are left alone
+    secret  a secret-shaped string (the snapshot scan's `SECRET_SHAPES`; a private key whole)
+    name    a word whose SHA-256 is in gen/redact.json (hashes only), matched on its NFKD form
+            without accents and format characters, look-alikes folded, case folded; also its
+            camel-case parts and the word without leading or trailing digits; and (R6.3 M8) a
+            several-word name from redact.json's `phrases`: 2-8 consecutive words folded the
+            same way and joined by one space (`scripts/redact_add.py`), whatever the case,
+            accents or spacing (a line wrap or one `-`, `.`, `,` too); its words alone stay
 
 R6.3 D10 G8 adds (each found before the digits rules, so it is named for what it is):
 
-    ipv4        a dotted IPv4 address (not 127.x loopback, 0.0.0.0 or 255.255.255.255)
+    ipv4        a dotted IPv4 address (not loopback, 0.0.0.0 or 255.255.255.255); a global one in
+                a version's place (after `==`, `@` or a package name and a space, or a whole
+                field: "opencv-python-headless 4.12.0.88") is a version and stays
     ipv6        an IPv6 address with 4+ groups, or 2+ with a first group of 3+ hex digits (not
                 ::1 or ::; times, slices and MAC addresses are not addresses)
     pan         an Indian PAN, [A-Z]{5}[0-9]{4}[A-Z] standing alone
     aadhaar     12 digits in groups of four ("2345 6789 0123", "2345-6789-0123")
     host        a hostname under a domain whose SHA-256 is in redact.json's `domains`
     project_id  a Google Cloud project-id shape: 6-30 lower-case letters, digits and hyphens, a
-                letter first, with a hyphen and a run of 4+ digits ("my-proj-123456")
+                letter first, a hyphen and a run of 4+ digits ("my-proj-123456")
 
 `verify` walks the finished book and raises `ScrubLeak` (paths and kinds, never the text) if any
 of these is left anywhere but a commit id or a code symbol. `NoScrub` is the eval's negative
@@ -63,29 +61,13 @@ REMOVED = "[removed]"
 REDACT_FILE: Traversable | Path = files("jarvis.buildbook.gen") / "redact.json"
 SKIP_KEYS = frozenset({"sha", "symbol"})  # a commit id, a code symbol: never personal
 
-PUBLIC_DOCS = frozenset(
-    {
-        "ai.google.dev",
-        "cloud.google.com",
-        "core.telegram.org",
-        "developer.mozilla.org",
-        "developers.google.com",
-        "docs.anthropic.com",
-        "docs.claude.com",
-        "docs.github.com",
-        "docs.pydantic.dev",
-        "docs.python.org",
-        "fastapi.tiangolo.com",
-        "firebase.google.com",
-        "platform.claude.com",
-        "pypi.org",
-        "spdx.org",
-        "support.google.com",
-        "threejs.org",
-        "www.home-assistant.io",
-        "www.w3.org",
-    }
-)
+PUBLIC_DOCS = frozenset({
+    "ai.google.dev", "cloud.google.com", "core.telegram.org", "developer.mozilla.org",
+    "developers.google.com", "docs.anthropic.com", "docs.claude.com", "docs.github.com",
+    "docs.pydantic.dev", "docs.python.org", "fastapi.tiangolo.com", "firebase.google.com",
+    "platform.claude.com", "pypi.org", "spdx.org", "support.google.com", "threejs.org",
+    "www.home-assistant.io", "www.w3.org",
+})  # fmt: skip
 PRIVATE_HOSTS = (
     "run.app",
     "appspot.com",
@@ -175,6 +157,17 @@ def _not_ipv4(text: str) -> bool:
     except ValueError:
         return True  # 999.1.1.1 is not an address
     return addr.is_loopback or addr.is_unspecified or text == "255.255.255.255"
+
+
+_VERSIONED = re.compile(r"(?:==|@|[A-Za-z][\w.]*[-_.][\w.-]* )$")
+
+
+def _a_version(m: re.Match[str]) -> bool:
+    """A global dotted quad in a version's place (versions stay as they are, BRIEF-A)."""
+    if not ipaddress.IPv4Address(m.group(0)).is_global:
+        return False  # a private, shared or link-local address is always an address
+    before = m.string[: m.start()]
+    return (not before and m.end() == len(m.string)) or bool(_VERSIONED.search(before))
 
 
 def _not_ipv6(text: str) -> bool:
@@ -309,7 +302,7 @@ class Scrubber:
         for kind, pattern, keep in self._rules():
 
             def swap(m: re.Match[str], k: Callable[[str], bool] = keep, kd: str = kind) -> str:
-                if k(m.group(0)):
+                if k(m.group(0)) or (kd == "ipv4" and _a_version(m)):
                     return m.group(0)
                 found.add("secret" if kd in _SECRET_KINDS else kd)
                 return REMOVED

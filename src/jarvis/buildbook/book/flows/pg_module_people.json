@@ -1,0 +1,36 @@
+{
+  "title": "A face at the door, with consent",
+  "dir": "down",
+  "nodes": [
+    {"id": "add", "label": "You add a person", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-faces.js"},
+    {"id": "consent", "label": "Consent statement given?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/faces.py"},
+    {"id": "refuse", "label": "Refused: no consent", "kind": "step", "rank": 1, "col": 1},
+    {"id": "record", "label": "Name and consent record", "kind": "store", "rank": 2, "col": 0},
+    {"id": "photos", "label": "Photos on the home laptop", "kind": "store", "rank": 3, "col": 0,
+     "ref": "src/jarvis/homebridge/faces.py"},
+    {"id": "camera", "label": "Camera sees a face", "kind": "service", "rank": 4, "col": 0},
+    {"id": "match", "label": "Consented and sure enough?", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/homebridge/faces.py"},
+    {"id": "unknown", "label": "Not recognised: no guess", "kind": "step", "rank": 5, "col": 1},
+    {"id": "greet", "label": "Greeted by name", "kind": "step", "rank": 6, "col": 0},
+    {"id": "picture", "label": "A photo in chat", "kind": "person", "rank": 4, "col": 2},
+    {"id": "guard", "label": "Only names you typed", "kind": "guard", "rank": 5, "col": 2,
+     "ref": "src/jarvis/picture/turnguard.py"},
+    {"id": "lookup", "label": "Look up card you press", "kind": "step", "rank": 6, "col": 2,
+     "ref": "src/jarvis/people/offer.py"}
+  ],
+  "edges": [
+    {"from": "add", "to": "consent"},
+    {"from": "consent", "to": "refuse", "style": "side"},
+    {"from": "consent", "to": "record"},
+    {"from": "record", "to": "photos"},
+    {"from": "photos", "to": "camera"},
+    {"from": "camera", "to": "match"},
+    {"from": "match", "to": "unknown", "style": "side"},
+    {"from": "match", "to": "greet"},
+    {"from": "picture", "to": "guard", "style": "side"},
+    {"from": "guard", "to": "lookup", "label": "name in caption", "style": "side"}
+  ]
+}

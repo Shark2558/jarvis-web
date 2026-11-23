@@ -1,0 +1,32 @@
+{
+  "title": "A request that reaches an outside service",
+  "dir": "down",
+  "nodes": [
+    {"id": "you", "label": "You ask, console or Telegram", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/telegram.py"},
+    {"id": "gateway", "label": "Gateway and your rules", "kind": "guard", "rank": 1, "col": 0},
+    {"id": "telegramoff", "label": "Private reads off on phone", "kind": "guard", "rank": 1, "col": 1},
+    {"id": "link", "label": "Linked Google account", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/integrations/google.py"},
+    {"id": "reconnect", "label": "Reconnect Google", "kind": "step", "rank": 2, "col": 1},
+    {"id": "google", "label": "Calendar, Gmail, Tasks", "kind": "service", "rank": 3, "col": 0,
+     "ref": "src/jarvis/tools/google_calendar.py"},
+    {"id": "key", "label": "Maps and YouTube key", "kind": "service", "rank": 3, "col": 2,
+     "ref": "src/jarvis/integrations/google_key.py"},
+    {"id": "fence", "label": "Outside words fenced", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/tools/gmail.py"},
+    {"id": "card", "label": "Card for a send", "kind": "person", "rank": 5, "col": 1},
+    {"id": "reply", "label": "Answer or card", "kind": "step", "rank": 5, "col": 0}
+  ],
+  "edges": [
+    {"from": "you", "to": "gateway"},
+    {"from": "gateway", "to": "telegramoff", "label": "on Telegram", "style": "side"},
+    {"from": "gateway", "to": "link"},
+    {"from": "link", "to": "reconnect", "label": "expired", "style": "side"},
+    {"from": "link", "to": "google"},
+    {"from": "gateway", "to": "key", "label": "places, videos", "style": "side"},
+    {"from": "google", "to": "fence"},
+    {"from": "fence", "to": "reply"},
+    {"from": "fence", "to": "card", "label": "send mail", "style": "side"}
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "title": "From a paid call to the rupees you see",
+  "dir": "down",
+  "nodes": [
+    {"id": "call", "label": "A paid AI or voice call", "kind": "step", "rank": 0, "col": 0},
+    {"id": "limit", "label": "Under your monthly limit?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/usage.py"},
+    {"id": "stop", "label": "No paid call made", "kind": "step", "rank": 1, "col": 1},
+    {"id": "meter", "label": "Tokens times the price", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/llm/pricing.py"},
+    {"id": "fx", "label": "Day's dollar rate", "kind": "service", "rank": 3, "col": 1,
+     "ref": "src/jarvis/billing/fx.py"},
+    {"id": "inr", "label": "Rupees for this month", "kind": "store", "rank": 3, "col": 0},
+    {"id": "view", "label": "This month, in Vitals", "kind": "person", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console-usage.js"},
+    {"id": "vitals", "label": "Allowances, keys, bills", "kind": "step", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/static/console-vitals.js"},
+    {"id": "about", "label": "About JARVIS line", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/about.py"}
+  ],
+  "edges": [
+    {"from": "call", "to": "limit"},
+    {"from": "limit", "to": "stop", "label": "limit reached", "style": "side"},
+    {"from": "limit", "to": "meter"},
+    {"from": "meter", "to": "inr"},
+    {"from": "fx", "to": "inr", "label": "rate", "style": "side"},
+    {"from": "inr", "to": "view"},
+    {"from": "view", "to": "vitals"},
+    {"from": "vitals", "to": "about"}
+  ]
+}

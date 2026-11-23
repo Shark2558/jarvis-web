@@ -1,0 +1,36 @@
+{
+  "title": "From a piece in the drawer to tomorrow's look",
+  "dir": "down",
+  "nodes": [
+    {"id": "event", "label": "A tap, scan or sentence", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/wardrobe.py"},
+    {"id": "ledger", "label": "Append-only piece history", "kind": "store", "rank": 1, "col": 0,
+     "ref": "src/jarvis/wardrobe/states.py"},
+    {"id": "review", "label": "Unclear: a check for you", "kind": "guard", "rank": 1, "col": 1,
+     "ref": "src/jarvis/api/laundry.py"},
+    {"id": "ready", "label": "Only ready pieces", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/wardrobe/styling/ready.py"},
+    {"id": "rules", "label": "Fixed rules: day, weather", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/wardrobe/styling/rules.json"},
+    {"id": "figure", "label": "Look on your 3D figure", "kind": "step", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console-tryon-3d.js"},
+    {"id": "plan", "label": "Use this look: a plan", "kind": "person", "rank": 5, "col": 0},
+    {"id": "seeme", "label": "See it on me: typed YES", "kind": "guard", "rank": 4, "col": 2,
+     "ref": "src/jarvis/wardrobe/seeme/consent.py"},
+    {"id": "cap", "label": "Price shown, cap held", "kind": "guard", "rank": 5, "col": 2,
+     "ref": "src/jarvis/wardrobe/seeme/make.py"},
+    {"id": "picture", "label": "One AI preview picture", "kind": "service", "rank": 6, "col": 2,
+     "ref": "src/jarvis/llm/tryon_gemini.py"}
+  ],
+  "edges": [
+    {"from": "event", "to": "ledger"},
+    {"from": "ledger", "to": "review", "label": "ambiguous", "style": "side"},
+    {"from": "ledger", "to": "ready"},
+    {"from": "ready", "to": "rules"},
+    {"from": "rules", "to": "figure"},
+    {"from": "figure", "to": "plan"},
+    {"from": "figure", "to": "seeme", "label": "a garment to buy", "style": "side"},
+    {"from": "seeme", "to": "cap", "style": "side"},
+    {"from": "cap", "to": "picture", "style": "side"}
+  ]
+}

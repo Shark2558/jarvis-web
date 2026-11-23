@@ -1,0 +1,36 @@
+{
+  "title": "One action through the gateway",
+  "dir": "down",
+  "nodes": [
+    {"id": "call", "label": "The brain wants a tool", "kind": "step", "rank": 0, "col": 0},
+    {"id": "gateway", "label": "Gateway: your rules", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/tools/gateway.py"},
+    {"id": "never", "label": "Never: refused", "kind": "step", "rank": 1, "col": 1},
+    {"id": "allow", "label": "Allow: runs, audited", "kind": "step", "rank": 2, "col": 2,
+     "ref": "src/jarvis/tools/policy.py"},
+    {"id": "card", "label": "A card written by code", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/tools/calendar_cards.py"},
+    {"id": "you", "label": "You approve", "kind": "person", "rank": 3, "col": 0,
+     "ref": "src/jarvis/api/static/console-approvals.js"},
+    {"id": "again", "label": "Still as the card said?", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/core/brain_decisions.py"},
+    {"id": "newcard", "label": "Withdrawn, new card", "kind": "step", "rank": 4, "col": 1},
+    {"id": "passkey", "label": "Passkey if final", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/permissions.py"},
+    {"id": "audit", "label": "Audit entry first", "kind": "store", "rank": 6, "col": 0,
+     "ref": "src/jarvis/tools/audit.py"},
+    {"id": "run", "label": "The action runs", "kind": "step", "rank": 7, "col": 0}
+  ],
+  "edges": [
+    {"from": "call", "to": "gateway"},
+    {"from": "gateway", "to": "never", "label": "Never", "style": "side"},
+    {"from": "gateway", "to": "allow", "label": "Allow", "style": "side"},
+    {"from": "gateway", "to": "card", "label": "Ask first"},
+    {"from": "card", "to": "you"},
+    {"from": "you", "to": "again"},
+    {"from": "again", "to": "newcard", "label": "it changed", "style": "side"},
+    {"from": "again", "to": "passkey"},
+    {"from": "passkey", "to": "audit"},
+    {"from": "audit", "to": "run"}
+  ]
+}

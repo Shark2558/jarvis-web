@@ -1,0 +1,32 @@
+{
+  "title": "From a feature to your phone",
+  "dir": "down",
+  "nodes": [
+    {"id": "feature", "label": "A feature has news", "kind": "step", "rank": 0, "col": 0},
+    {"id": "port", "label": "One fixed sentence", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/alerts.py"},
+    {"id": "policy", "label": "Ring, hold or drop?", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/static/console-alerts.js"},
+    {"id": "held", "label": "Held for the summary", "kind": "store", "rank": 2, "col": 1},
+    {"id": "cap", "label": "Within the hourly cap?", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/telegram/alerts.py"},
+    {"id": "limit", "label": "Not sent: limit reached", "kind": "step", "rank": 3, "col": 1},
+    {"id": "telegram", "label": "Telegram message", "kind": "service", "rank": 4, "col": 0},
+    {"id": "push", "label": "Browser notification", "kind": "service", "rank": 4, "col": 1,
+     "ref": "src/jarvis/api/static/console-sw.js"},
+    {"id": "you", "label": "You tap it", "kind": "person", "rank": 5, "col": 0},
+    {"id": "panel", "label": "The right panel opens", "kind": "step", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "feature", "to": "port"},
+    {"from": "port", "to": "policy"},
+    {"from": "policy", "to": "held", "label": "quiet hours", "style": "side"},
+    {"from": "policy", "to": "cap", "label": "ring"},
+    {"from": "cap", "to": "limit", "style": "side"},
+    {"from": "cap", "to": "telegram"},
+    {"from": "policy", "to": "push", "label": "ring"},
+    {"from": "telegram", "to": "you"},
+    {"from": "push", "to": "you"},
+    {"from": "you", "to": "panel"}
+  ]
+}

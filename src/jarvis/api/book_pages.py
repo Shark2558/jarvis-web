@@ -25,11 +25,11 @@ from jarvis.api.book_http import TOKEN_HEADER
 from jarvis.api.book_writer import answer, limited, primary, refused, service_of
 from jarvis.buildbook.facts_model import PAGE_ID
 from jarvis.buildbook.model import RELEASE_ID
-from jarvis.buildbook.writer import http
+from jarvis.buildbook.writer.http import PAGES_PREFIX, ROUTES  # by name: A's route scan (M9)
 from jarvis.buildbook.writer.texts import REFUSED, WriterRefused
 
 NOT_BUILT_WORDS = "The full book isn't built on this server yet."
-router = APIRouter(prefix=http.PAGES_PREFIX, dependencies=[Depends(require_auth)])
+router = APIRouter(prefix=PAGES_PREFIX, dependencies=[Depends(require_auth)])
 Act = Callable[[Any, str, str | None, Request], Awaitable[BaseModel]]
 
 
@@ -67,9 +67,9 @@ async def _page(svc: Any, uid: str, rid: str | None, request: Request) -> BaseMo
     return await svc.page(uid, page_id, rid)  # type: ignore[no-any-return]
 
 
-P = http.PAGES_PREFIX
+P = PAGES_PREFIX
 ACTS: dict[tuple[str, str], Act] = {("GET", P): _index, ("GET", f"{P}/{{page_id}}"): _page}
-for _method, _path, _part, _req, _reply, _codes, _gate in http.ROUTES:
+for _method, _path, _part, _req, _reply, _codes, _gate in ROUTES:
     if _path.startswith(P):
         router.add_api_route(
             _path.removeprefix(P), route(ACTS[(_method, _path)]), methods=[_method], name=_path

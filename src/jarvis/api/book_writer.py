@@ -25,12 +25,13 @@ from jarvis.api.auth import require_auth, session_email
 from jarvis.api.book_gate import BookRefused, console_only, need, now, owner_session
 from jarvis.api.book_http import TOKEN_HEADER, book_json
 from jarvis.buildbook.writer import http
+from jarvis.buildbook.writer.http import ROUTES, WRITER_PREFIX  # by name: A's route scan (M9)
 from jarvis.buildbook.writer.texts import REFUSED, WriterRefused
 
 NOT_BUILT_WORDS = "The Book's writer isn't built on this server yet."
 BODY_MAX = 4_096
 MINUTE_S = 60.0
-router = APIRouter(prefix=http.WRITER_PREFIX, dependencies=[Depends(require_auth)])
+router = APIRouter(prefix=WRITER_PREFIX, dependencies=[Depends(require_auth)])
 Handler = Callable[[Request], Awaitable[JSONResponse]]
 
 
@@ -169,7 +170,7 @@ async def _delete(svc: Any, uid: str, request: Request) -> BaseModel:
     return await svc.delete_trial(uid)  # type: ignore[no-any-return]
 
 
-W = http.WRITER_PREFIX
+W = WRITER_PREFIX
 ACTS: dict[tuple[str, str], tuple[str, Callable[[Any, str, Request], Awaitable[BaseModel]]]] = {
     ("GET", W): ("reads", _view),
     ("GET", f"{W}/estimate"): ("reads", _estimate),
@@ -183,7 +184,7 @@ ACTS: dict[tuple[str, str], tuple[str, Callable[[Any, str, Request], Awaitable[B
     ("GET", f"{W}/trial/pages/{{nn}}"): ("reads", _one),
     ("DELETE", f"{W}/trial"): ("writes", _delete),
 }
-for _method, _path, _part, _req, _reply, _codes, _gate in http.ROUTES:
+for _method, _path, _part, _req, _reply, _codes, _gate in ROUTES:
     if _path.startswith(W):
         _kind, _act = ACTS[(_method, _path)]
         router.add_api_route(

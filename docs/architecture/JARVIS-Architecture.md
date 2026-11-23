@@ -1,4 +1,4 @@
-Version v6.3.3 · 24 Nov 2026, 04:15 IST · Release R6.3.1 · Status: Current · Owner: 🛠 Mark XXIV
+Version v6.3.4 · 24 Nov 2026, 06:30 IST · Release R6.3.1 · Status: Current · Owner: 🛠 Mark XXIV
 
 # JARVIS Architecture & Technology Guide
 
@@ -2019,15 +2019,16 @@ the Cloud project.
 
 ## 11. Roadmap (PLANNED)
 
-Nothing in this section is built. The first two rows are the plan `docs/plans/r6-3-book-content.md`'s
-(section "R6.3.1", and its "Not in scope"); the rows after them follow the owner's order after R6.3,
-relayed by the Workshop on 23 Nov 2026 (the project's release plan, with each release's full content, is
-not in this repository). The short tour reads its "next" and "after that" from the first two rows.
+Nothing in this section is built. The first row is the plan `docs/plans/r6-3-book-content.md`'s "Not
+in scope" with the owner's ask of 23 Nov 2026 (the full book narrated in chapters); R6.3.1's pictures
+and storage were replaced on 24 Nov 2026 by the full book written at build time with its flowcharts
+(`docs/plans/r6-3-1-book-at-build.md`, built). The rows after it follow the owner's order, relayed by the
+Workshop on 23 Nov 2026 (the project's release plan, with each release's full content, is not in this
+repository). The short tour reads its "next" and "after that" from the first two rows.
 
 | Release | PLANNED content |
 |---|---|
-| R6.3.1 The Build Book's pictures and storage | Pictures of every module from a made-up demo household (a contact sheet approved by the owner first), the code and pictures stored once instead of once per release, eight diagrams with part numbers, and a local setup guide that is actually run |
-| R6.4 The Book's new look | The Build Book's new look, a guest-safe full book, search and print |
+| R6.4 The Book's new look | The Build Book's new look (mockups first), the full book narrated chapter by chapter like the tour, a guest-safe full book, search and print |
 | Calls | JARVIS making and answering phone calls from the owner's laptop |
 | R5.2 Voice | The voice build: the microphone and listening fixes the owner asked for |
 | R8 Home cameras | The home cameras' setup and the first home vision use cases on R7's on-device engine, each starting after the owner confirms its cameras |
@@ -2297,3 +2298,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v6.3.1 | 23 Nov 2026, 16:34 IST | R6.3 | R6.3 I0 (the joins for 'The Build Book: written by AI, short tour and full book'): C57 (PLANNED parts, with what I0 built: the writer's one call by tier `llm/write.py`, the writer's data model and HTTP contract, the tour's and the fact pack's types, the module map, the generator's joins and `facts.json`, the writer's join, job and routes as stubs, the show's script reader and the tour's joins, the console's loader; G2: the writer's brain, Gemini (free) and the Cloud voice in its Outside services), its six collections in 6.2, the writer's brains in 6.5, the roadmap refreshed (R6.3.1, R6.4, then the Workshop's order) | 🛠 Mark XXIV |
 | v6.3.2 | 23 Nov 2026, 19:25 IST | R6.3 | R6.3 I1 (the four parts merged and joined): C57's R6.3 sentences from PLANNED to built and joined (not yet deployed), its module list filled (the writer's modules, the fact pack's helpers, the counter and the inventory); the roadmap's rows after the first two in the owner's order after R6.3 (calls from his laptop, R5.2, R8, R8.1, R9, then later) | 🛠 Mark XXIV |
 | v6.3.3 | 24 Nov 2026, 04:15 IST | R6.3.1 | R6.3.1 E (the Build Book written at build time): C57's full book is the Workshop's, compiled by the generator into each release and sealed with it, ₹0, nothing to approve; the runtime writer's modules, routes, clock job, console module, outside services and costs taken out; its old collections kept as the "Book writer (old trial)" Privacy row; the writer's row in 6.5 taken out | 🛠 Mark XXIV |
+| v6.3.4 | 24 Nov 2026, 06:30 IST | R6.3.1 | R6.3.1 I1: C57 names F's flowchart modules (`console-book-flow.js`, `console-book-flow-layout.js`); the roadmap's R6.3.1 row (pictures and storage) removed, replaced by this release, and R6.4 now names the full book narrated in chapters | 🛠 Mark XXIV |

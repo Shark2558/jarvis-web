@@ -19,6 +19,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import zlib
 from collections.abc import Mapping
 from typing import Any
 
@@ -109,7 +110,7 @@ def unzipped(data: bytes) -> bytes:
     try:
         with gzip.GzipFile(fileobj=io.BytesIO(data)) as gz:
             raw = gz.read(FILE_CAP_PLAIN + 1)
-    except (OSError, EOFError):
+    except (OSError, EOFError, zlib.error):  # review I1 L-1: a bad deflate block is zlib's own
         raise ValueError("a pages file is not gzip") from None
     if len(raw) > FILE_CAP_PLAIN:
         raise ValueError("a pages file is too big")
@@ -144,7 +145,7 @@ def decode_flows(data: bytes) -> dict[str, dict[str, Any]]:
         if not isinstance(raw, dict):
             raise ValueError("a flows file is an object")
         specs = {str(k): FlowSpec.model_validate(v) for k, v in raw.items()}
-    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError):
+    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError, RecursionError):
         raise ValueError("a flows file is not a flows file") from None
     return {k: _flow_json(s) for k, s in specs.items()}
 

@@ -11,7 +11,8 @@ fact pack) and gives `Compiled`:
   gate for staleness, D6) is served written: its five sections filled from the pack, the
   generated "Where in the code", and `PageMeta {written_by, written_on, release, version}`. A
   page that is `missing` or `failing`, or that can't be filled within its caps, is the
-  generator's plain text (`pages.generator_page`): a page never breaks the build or the deploy.
+  generator's plain text (`pages.generator_page`): a page never breaks the build or the deploy
+  (review I1 M-2: not even one whose files or checks raise an error nobody foresaw).
 - `flows`: the flowcharts of the pages served written, by page id (`pages.encode_flows`).
 - `counts`: {"written": n, "generator": n}, for the generator's summary (no text).
 
@@ -63,6 +64,19 @@ def _written(ip: IndexedPage, page: PageFile, pack: FactPack) -> Page | None:
         return None
 
 
+def _served(ip: IndexedPage, env: Env, pack: FactPack) -> Page | None:
+    """The page as written, or None for the generator's text. Review I1 M-2: a page whose files
+    or checks break in a way nobody foresaw is that page's problem alone (`pages --check`, the
+    strict gate, still stops on it), never the whole book's."""
+    try:
+        verdict = authored.judge(env.repo.root, ip, env)
+    except Exception:  # noqa: BLE001 - D4: one page never breaks the build
+        return None
+    if verdict.page is None or verdict.status not in SERVED:
+        return None
+    return _written(ip, verdict.page, pack)
+
+
 def compile_pages(
     repo: Repo, pack: FactPack, *, scrub: Scrubber, emails: tuple[str, ...] = ()
 ) -> Compiled:
@@ -71,10 +85,7 @@ def compile_pages(
     out: list[Page] = []
     charts: dict[str, FlowSpec] = {}
     for ip in pack.pages:
-        verdict = authored.judge(repo.root, ip, env)
-        page = None
-        if verdict.page is not None and verdict.status in SERVED:
-            page = _written(ip, verdict.page, pack)
+        page = _served(ip, env, pack)
         if page is None:
             out.append(pages.generator_page(ip, pack))
             continue

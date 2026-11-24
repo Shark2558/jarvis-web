@@ -64,10 +64,8 @@ SECTION_CAPS: dict[SectionId, int] = {
     "code": 2_400,
 }
 FACT_PLACEHOLDER = re.compile(r"\{\{fact:([A-Za-z0-9_\[][A-Za-z0-9_./:\[\]-]{0,199})\}\}")
-CheckCode = Literal[
-    "incomplete", "empty", "tier", "model", "refs", "numbers", "personal", "unverified",
-    "invented", "planned", "shape",
-]  # fmt: skip
+# review I1 L-5: R6.3's writer-only codes (incomplete, empty, tier, model) went with the writer
+CheckCode = Literal["refs", "numbers", "personal", "unverified", "invented", "planned", "shape"]
 
 
 class PageMeta(Frozen):

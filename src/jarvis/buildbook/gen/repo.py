@@ -12,6 +12,8 @@ R6.3.1 D5 (docs/plans/r6-3-1-book-at-build.md): the Book's authored pages, flowc
 and module (`BOOK_DIR`) are the book's own text, not the code it documents: both views leave them
 out (no page ref, index entry or "may cite" entry names them), and a page being written never
 makes the checkout `dirty`. `jarvis.buildbook.book.authored` reads them from the folder itself.
+They are still the release's code: `book_files` lists them for the sealed source snapshot only
+(review I1 M-3), so the code download holds `jarvis.buildbook.book` and the pages it compiled.
 """
 
 from __future__ import annotations
@@ -80,6 +82,12 @@ def _plain_file(top: Path, path: Path) -> bool:
     return path.resolve().is_relative_to(top.resolve())
 
 
+def _split(names: set[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(the documented files, the Book folder's files), each sorted."""
+    return (tuple(sorted(f for f in names if documented(f))),
+            tuple(sorted(f for f in names if not documented(f))))  # fmt: skip
+
+
 @dataclass(frozen=True)
 class Repo:
     """A checkout: `files` are POSIX paths relative to `root`, sorted, as they are on disk (the
@@ -90,6 +98,7 @@ class Repo:
     sha: str
     committed_at: str
     dirty: bool = False  # tracked files differ from the commit (staged or not)
+    book_files: tuple[str, ...] = ()  # BOOK_DIR's tracked files: the snapshot's, never the index's
 
     @property
     def id(self) -> str:
@@ -100,22 +109,22 @@ class Repo:
         start = (root or Path.cwd()).resolve()
         top = Path(_git(start, "rev-parse", "--show-toplevel").strip())
         listed = _git(top, "ls-files", "-z").split("\0")
-        kept = (f for f in listed if f and documented(f))
-        files = tuple(sorted({f for f in kept if _plain_file(top, top / f)}))
+        plain = {f for f in listed if f and _plain_file(top, top / f)}
+        files, book = _split(plain)
         sha = _git(top, "rev-parse", "HEAD").strip()
         when = _git(top, "log", "-1", "--format=%cI").strip()
         changed = _git(
             top, "--no-optional-locks", "status", "--porcelain", "-uno", "-z",
             "--", ".", f":(exclude){BOOK_DIR}",
         )  # fmt: skip
-        return cls(root=top, files=files, sha=sha, committed_at=when, dirty=bool(changed))
+        return cls(root=top, files=files, sha=sha, committed_at=when, dirty=bool(changed),
+                   book_files=book)  # fmt: skip
 
     @classmethod
     def from_dir(cls, root: Path, *, sha: str, committed_at: str) -> Repo:
         found = (p for p in root.rglob("*") if _plain_file(root, p) and ".git" not in p.parts)
-        names = (p.relative_to(root).as_posix() for p in found)
-        files = tuple(sorted(f for f in names if documented(f)))
-        return cls(root=root, files=files, sha=sha, committed_at=committed_at)
+        files, book = _split({p.relative_to(root).as_posix() for p in found})
+        return cls(root=root, files=files, sha=sha, committed_at=committed_at, book_files=book)
 
     def has(self, rel: str) -> bool:
         return rel in self._index

@@ -105,6 +105,8 @@ def _read(path: Path, cap: int, suffix: str) -> str:
     where = _where(path)
     if path.suffix != suffix or not re.fullmatch(PAGE_ID, path.stem):
         raise AuthoredError(f"{where}: the file name is not a page id (pg_<kind>_<id>{suffix})")
+    if path.is_symlink():  # review I1 M-1: never followed, by id as by folder (`_all`)
+        raise AuthoredError(f"{where}: is a link; write the file itself here")
     try:
         with path.open("rb") as handle:
             data = handle.read(cap + 1)
@@ -151,6 +153,8 @@ def _yaml(raw: str, where: str) -> dict[str, object]:
         data: object = yaml.safe_load(raw)
     except yaml.YAMLError:
         raise AuthoredError(f"{where}: the front matter is not YAML") from None
+    except RecursionError:  # review I1 M-2: nesting past the interpreter's limit
+        raise AuthoredError(f"{where}: the front matter nests too deeply") from None
     if not isinstance(data, dict):
         raise AuthoredError(f"{where}: the front matter must be a mapping of its fields")
     return data
@@ -197,6 +201,8 @@ def load_flow(path: Path) -> FlowSpec:
         raise AuthoredError(f"{where}: a key appears twice in one object") from None
     except json.JSONDecodeError as exc:
         raise AuthoredError(f"{where}: not JSON (line {exc.lineno}, column {exc.colno})") from None
+    except RecursionError:  # review I1 M-2: nesting past the interpreter's limit
+        raise AuthoredError(f"{where}: nests too deeply for a flowchart") from None
     if not isinstance(data, dict):
         raise AuthoredError(f"{where}: a flowchart is an object (title, dir, nodes, edges)")
     try:

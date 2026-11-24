@@ -216,7 +216,7 @@ INVENTORY_FILES: dict[str, str] = {
 TOUR = {
     "release.label": "R6.3",
     "release.version": "v6.3.2",  # R6.3.1 (v6.3.1 at R6.3 hotfix 1, v6.3.0 at R6.3)
-    "release.new": "The Build Book: written by AI, short tour and full book",
+    "release.new": "The Build Book written at build time",  # R6.3.1: its own plan (by version)
     "cards.count": 73,
     "modules.count": 18,
     "modules.else_count": 11,
@@ -239,8 +239,9 @@ TOUR = {
     "seeme.inr_a_picture": "₹9",
     "seeme.month_cap_inr": "₹300",
     "costs.rate": 95.24,
-    "roadmap.next": "R6.3.1, the Build Book's pictures and storage",
-    "roadmap.after": "R6.4, the Book's new look",
+    # R6.3.1: the guide's roadmap after this release (its R6.3.1 row went: built instead)
+    "roadmap.next": "R6.4, the Book's new look",
+    "roadmap.after": "Calls",
 }
 
 

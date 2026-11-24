@@ -15,7 +15,7 @@
     {"id": "alert", "label": "Urgent alert rings", "kind": "step", "rank": 5, "col": 0},
     {"id": "watchdog", "label": "No heartbeat: told once", "kind": "guard", "rank": 2, "col": 2,
      "ref": "src/jarvis/home/watchdog.py"},
-    {"id": "disarm", "label": "Disarm: passkey first", "kind": "guard", "rank": 6, "col": 0,
+    {"id": "disarm", "label": "Disarm: passkey or sign-in", "kind": "guard", "rank": 6, "col": 0,
      "ref": "src/jarvis/api/camera.py"}
   ],
   "edges": [

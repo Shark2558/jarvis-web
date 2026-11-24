@@ -13,7 +13,7 @@
      "ref": "src/jarvis/api/vault.py"},
     {"id": "inbox", "label": "DigiLocker Drive folder", "kind": "service", "rank": 1, "col": 2,
      "ref": "src/jarvis/api/vault_inbox.py"},
-    {"id": "confirm", "label": "You confirm the expiry", "kind": "person", "rank": 3, "col": 2,
+    {"id": "confirm", "label": "You confirm the expiry", "kind": "person", "rank": 3, "col": 3,
      "ref": "src/jarvis/api/static/console-vault-add.js"},
     {"id": "unlock", "label": "Passkey or fresh sign-in", "kind": "guard", "rank": 4, "col": 2,
      "ref": "src/jarvis/api/static/console-vault.js"},
@@ -27,8 +27,8 @@
     {"from": "read", "to": "chat"},
     {"from": "kind", "to": "vault", "label": "keep"},
     {"from": "inbox", "to": "vault", "style": "side"},
-    {"from": "vault", "to": "confirm"},
-    {"from": "confirm", "to": "unlock"},
+    {"from": "vault", "to": "confirm", "label": "expiry found", "style": "side"},
+    {"from": "vault", "to": "unlock", "label": "open"},
     {"from": "unlock", "to": "audit"},
     {"from": "audit", "to": "open"}
   ]

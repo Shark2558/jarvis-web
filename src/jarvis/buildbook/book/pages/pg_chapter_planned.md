@@ -3,7 +3,7 @@ page: pg_chapter_planned
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "docs/architecture/JARVIS-Architecture.md": "d527cfaf9bd64e63"
+  "docs/architecture/JARVIS-Architecture.md": "50bdd97ec3a555ff"
   "docs/plans/r6-3-book-content.md": "88de5316dd8af32f"
 ---
 ## In plain words

@@ -1,4 +1,4 @@
-Version v6.3.1 · 24 Nov 2026, 04:00 IST · Release R6.3.1 · Status: Ready · Owner: 🛠 Mark XXIV
+Version v6.3.2 · 24 Nov 2026, 05:55 IST · Release R6.3.1 · Status: Ready · Owner: 🛠 Mark XXIV
 
 # Release R6.3.1 — The Build Book written at build time (`v6.3.2`)
 
@@ -141,14 +141,25 @@ names; British spelling, short sentences, "JARVIS" for the assistant, "you" for 
   words file never enters the repository.
 - **Merge friction:** every PR that changes a cited file must refresh its pages; the `--list` status
   and a clear CI message keep that quick.
+- **Rollback below v6.3.2 (review of I1, M-4):** a release sealed by v6.3.2 or later holds four
+  files (book, source, pages, flows). Code before v6.3.2 reads exactly two in R6's vault index, so
+  after a rollback to v6.3.1 the whole index fails its check: the Book opens no kept release and the
+  sealer sends one "your sealed build books failed their integrity check" notice. Nothing is
+  rewritten or deleted by itself (an index that won't open is never overwritten), and rolling
+  forward again opens every release as before. After such a rollback, don't press Privacy →
+  Delete on the sealed build books (it deletes an index it can't open), and don't take that
+  notice for tampering.
 
 ## Owner's steps after merge
 
 Ctrl+F5; About reads v6.3.2; Book → Full book shows written pages with flowcharts; the Writer trial
 is gone; optionally Privacy → "Book writer (old trial)" → Delete. Nothing to pay, nothing to approve.
+A rollback to v6.3.1 or earlier, once v6.3.2 has sealed a release, makes the Book read the vault as
+failing its check until you roll forward again (see Risks): nothing is lost.
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.3.1 | 24 Nov 2026, 04:00 IST | R6.3.1 | First edition: the owner's instruction of 03:12 IST; decisions D1–D10; builders I0, E, F, W1–W6; writing rules; checks; risks | 🛠 Mark XXIV |
+| v6.3.2 | 24 Nov 2026, 05:55 IST | R6.3.1 | Review of I1: the rollback note (a four-file sealed release is unreadable below v6.3.2; nothing lost, roll forward) in Risks and in the owner's steps | 🛠 Mark XXIV |

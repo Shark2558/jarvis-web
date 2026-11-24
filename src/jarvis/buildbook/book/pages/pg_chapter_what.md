@@ -15,7 +15,7 @@ sources:
   "src/jarvis/api/static/console-book-2d.js": "2200336e767fc26b"
   "src/jarvis/api/static/console-book-3d.js": "5aa19146aa15abe2"
   "src/jarvis/api/static/console-book-flow-layout.js": "e82ff4390e084ac2"
-  "src/jarvis/api/static/console-book-flow.js": "10a12ad9ebb804be"
+  "src/jarvis/api/static/console-book-flow.js": "40c9366f3318a186"
   "src/jarvis/api/static/console-book-pages.js": "c36a106d91b3e8a0"
   "src/jarvis/api/static/console-book-reader.js": "38e4025b70a98cba"
   "src/jarvis/api/static/console-book-scenes-data.js": "c981408bacaff280"

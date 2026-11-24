@@ -1,5 +1,5 @@
 // src/jarvis/api/static/console-book-flow.js -- R6.3.1 D3, D10 (docs/plans/r6-3-1-book-at-build.md): the Full book's
-// flowcharts in the console's own look (no Markdy, no library). figure(raw) -> a framed <figure> (the flow's title as its
+// flowcharts in the console's own look (no diagram tool, no library). figure(raw) -> a framed <figure> (the flow's title as its
 // caption) or null; renderFlow(spec, host) draws a checked FlowSpec into `host`: an inline SVG placed by
 // console-book-flow-layout.js (rank and col, no layout engine: the same spec and room, the same chart), orthogonal
 // connectors with rounded corners and arrowheads, labels on pills, a key of the shapes, and the steps in order as a text

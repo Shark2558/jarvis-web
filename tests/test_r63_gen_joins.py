@@ -136,7 +136,8 @@ def test_write_puts_facts_json_before_the_release(fx: Repo, tmp_path: Path) -> N
     out = tmp_path / "out"
     write.write(out, built)
     names = sorted(p.name for p in out.iterdir())
-    assert names == ["book.json", FACTS_FILE, "release.json", "source.zip"]
+    full = ["flows.json", "pages.json.gz"]  # R6.3.1 D4: the full book's two files
+    assert names == ["book.json", FACTS_FILE, *full, "release.json", "source.zip"]
     assert (out / FACTS_FILE).read_bytes() == built.facts
     rel = Release.model_validate_json((out / "release.json").read_bytes())
     assert rel.facts_sha256 == hashlib.sha256(built.facts).hexdigest()

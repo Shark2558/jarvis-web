@@ -1,0 +1,36 @@
+{
+  "title": "From a change to a running JARVIS",
+  "dir": "down",
+  "nodes": [
+    {"id": "change", "label": "A pull request", "kind": "person", "rank": 0, "col": 0,
+     "ref": ".github/pull_request_template.md"},
+    {"id": "ci", "label": "Tests and checks", "kind": "guard", "rank": 1, "col": 0,
+     "ref": ".github/workflows/ci.yml"},
+    {"id": "fix", "label": "Fix and push again", "kind": "step", "rank": 1, "col": 1},
+    {"id": "lock", "label": "Exact hashes from the lock", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "requirements.lock"},
+    {"id": "image", "label": "One Python container", "kind": "step", "rank": 3, "col": 0,
+     "ref": "Dockerfile"},
+    {"id": "cloud", "label": "Cloud Run, no traffic yet", "kind": "service", "rank": 4, "col": 0,
+     "ref": "deploy/cloudrun.sh"},
+    {"id": "health", "label": "Healthy?", "kind": "guard", "rank": 5, "col": 0},
+    {"id": "old", "label": "Old version keeps running", "kind": "step", "rank": 5, "col": 1},
+    {"id": "live", "label": "Traffic switches over", "kind": "step", "rank": 6, "col": 0},
+    {"id": "home", "label": "Home kit on your laptop", "kind": "service", "rank": 2, "col": 2,
+     "ref": "deploy/home/docker-compose.yml"},
+    {"id": "android", "label": "Android app pins", "kind": "step", "rank": 3, "col": 2,
+     "ref": "android/gradle/libs.versions.toml"}
+  ],
+  "edges": [
+    {"from": "change", "to": "ci"},
+    {"from": "ci", "to": "fix", "label": "a check fails", "style": "side"},
+    {"from": "ci", "to": "lock", "label": "merged to main"},
+    {"from": "lock", "to": "image"},
+    {"from": "image", "to": "cloud"},
+    {"from": "cloud", "to": "health"},
+    {"from": "health", "to": "old", "label": "no", "style": "side"},
+    {"from": "health", "to": "live"},
+    {"from": "change", "to": "home", "label": "home kit", "style": "side"},
+    {"from": "change", "to": "android", "label": "phone app", "style": "side"}
+  ]
+}

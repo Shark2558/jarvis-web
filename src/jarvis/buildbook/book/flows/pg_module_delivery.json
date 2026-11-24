@@ -1,0 +1,37 @@
+{
+  "title": "Shipping a change, and proving the backups",
+  "dir": "down",
+  "nodes": [
+    {"id": "pr", "label": "A pull request", "kind": "person", "rank": 0, "col": 0,
+     "ref": ".github/pull_request_template.md"},
+    {"id": "tests", "label": "Tests, evals, visual gate", "kind": "guard", "rank": 1, "col": 0,
+     "ref": ".github/workflows/ci.yml"},
+    {"id": "blocked", "label": "Merge blocked", "kind": "step", "rank": 1, "col": 1},
+    {"id": "build", "label": "Image from the lock", "kind": "step", "rank": 2, "col": 0,
+     "ref": "requirements.lock"},
+    {"id": "health", "label": "Healthy with no traffic?", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "deploy/cloudrun.sh"},
+    {"id": "keep", "label": "Old version keeps going", "kind": "step", "rank": 3, "col": 1},
+    {"id": "live", "label": "Traffic switches", "kind": "step", "rank": 4, "col": 0},
+    {"id": "copy", "label": "Daily database copy", "kind": "store", "rank": 5, "col": 0,
+     "ref": "deploy/backup_setup.sh"},
+    {"id": "drill", "label": "Monthly restore drill", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/backup/drill.py"},
+    {"id": "verify", "label": "Counts, canary, vault", "kind": "guard", "rank": 7, "col": 0,
+     "ref": "src/jarvis/backup/verify.py"},
+    {"id": "clean", "label": "Copy deleted, result kept", "kind": "store", "rank": 8, "col": 0,
+     "ref": "src/jarvis/backup/drill_end.py"}
+  ],
+  "edges": [
+    {"from": "pr", "to": "tests"},
+    {"from": "tests", "to": "blocked", "label": "a check fails", "style": "side"},
+    {"from": "tests", "to": "build", "label": "merged"},
+    {"from": "build", "to": "health"},
+    {"from": "health", "to": "keep", "label": "no", "style": "side"},
+    {"from": "health", "to": "live"},
+    {"from": "live", "to": "copy"},
+    {"from": "copy", "to": "drill"},
+    {"from": "drill", "to": "verify"},
+    {"from": "verify", "to": "clean"}
+  ]
+}

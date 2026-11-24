@@ -1,9 +1,9 @@
 # evals/r6_3/run.py
-"""R6.3 eval -- "The Build Book: written by AI, short tour and full book" (plan
-docs/plans/r6-3-book-content.md "Tests and evals"), one suite file per part so each builder fills
-only its own:
+"""R6.3 eval -- "The Build Book: short tour and full book" (plan docs/plans/r6-3-book-content.md
+"Tests and evals"; R6.3.1, docs/plans/r6-3-1-book-at-build.md: the full book is written at build
+time, so the runtime writer's parts are gone), one suite file per part:
 
-    python evals/r6_3/run.py --mock [--part facts --part writer ...]
+    python evals/r6_3/run.py --mock [--part facts --part authored ...]
 
     facts.py     A  --check twice identical with facts.json; every tour key known; the module map
                     has all 73 cards once; the index (paths, symbols, constants); the counter on a
@@ -11,41 +11,25 @@ only its own:
                     services (M7); the route list against the built app (M9). Controls: a set
                     iterated unsorted; the IP pattern removed; C69 out of the map; a raw path; a
                     router name dropped
-    writer.py    B  through jarvis.llm with the fake brains: zero calls before YES, exactly YES, the
-                    trial cap (Rs 100: 5 holds of Rs 16.71 through, the 6th refused before it is
-                    sent), holds, the 80 % gate, the clocks (H7, M3), the checks and the precision
-                    case (H5), the pages vault and the free carry (H3, M4, M5), the grants (H2), the
-                    offer (M2). Controls: the plan's `writer` row
-    console.py   C  the trial, the pick's YES boxes, the first write's YES, Update, Stop, the Full
-                    book, continue, 44 px, both widths, day and night. Control: the YES box sending
-                    "yes"
     tour.py      D  both bands, his seven highlights, both running-example lines, no doubled word,
                     the approved words byte for byte, a guest's tour with no Rs, no T16 and no
                     owner-only line (speak through the real route: 404), 17 scenes in 2D, 3D and
                     Motion Off, each picture's data (M6). Controls: T13's owner line in a guest's
                     tour, the audience ignored, a highlight dropped, 290 words a minute, T12's facts
                     without a group
-    needles.py   I1 the creator name, his e-mail, a vault text, a memory fact, a mail subject, a
-                    fake secret, the canary, the handle in a path, a stand-in for each hashed word:
-                    never in a pack, prompt, page, draft, trial page, facts.json, log, audit, notice
-                    or export
-    e2e.py       I1 the trial, the pick, the first write, a page in the reader; a new release ->
-                    update_ready -> Update -> only the changed pages; a guest's tour
-    contract.py  I0 (BUILT) the writer builds through its one join, owns only its 13 routes (503
-                    not_built_yet until B), `book_write` rides the clocks and does nothing without a
-                    run; 47ee8fc's book loads unchanged; R6's sealing files untouched (M4). Controls
-                    (I0's own, L12): the stub job calling the fake brain once; a stray route
+    authored.py  E  (R6.3.1) the authored pages compile and pass the checks: a fixture's written,
+                    failing and missing pages, each check named, and this checkout's written pages
+                    compiled with its own fact pack. Control: the six checks switched off
 
 Every part file exposes PART, BUILT, `async def cases() -> list[dict]` (each {"id":
 "<part>:<case>", "passed", "failures"}) and `async def control() -> dict` ({"name",
 "suite_failed", "failed_cases"}: its cases re-run with its negative control applied). Each row's
 own control (the plan's "A control for every row's own case") is a case of its part's control run.
 
-STAGED (plan seam 12): until I1 an unbuilt part reports "<part>:not_built_yet" and PASSES
-(`STUBS_PASS = True`), so `make eval-mock` stays green on every part branch; I1 sets
-`STUBS_PASS = False` (a stub never reads as green) and `tests/test_r63_seams.py` pins the flip
-from then on. The suite passes when every case passes AND every BUILT part's control made that
-part fail (a suite that cannot fail proves nothing). Gated in `evals/run_all_mock.py` after R13.1.
+STAGED (plan seam 12): an unbuilt part would report "<part>:not_built_yet"; since I1
+`STUBS_PASS = False` (a stub never reads as green) and `tests/test_r63_seams.py` pins it. The
+suite passes when every case passes AND every BUILT part's control made that part fail (a suite
+that cannot fail proves nothing). Gated in `evals/run_all_mock.py` after R13.1.
 No real model is ever called here.
 """
 
@@ -67,7 +51,7 @@ for _p in (HERE.parent, ROOT / "tests", ROOT / "src"):  # appended: no evals/r6_
         sys.path.append(str(_p))
 from r1d_common import finish  # noqa: E402
 
-PARTS = ("facts", "writer", "console", "tour", "needles", "e2e", "contract")
+PARTS = ("facts", "tour", "authored")  # R6.3.1 D8: the writer's five parts went with it
 STUBS_PASS = False  # I1: every part is built; a stub never reads as green (pinned)
 
 

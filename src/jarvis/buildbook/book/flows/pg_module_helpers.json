@@ -1,0 +1,35 @@
+{
+  "title": "A helper reminder, from clock to phone",
+  "dir": "down",
+  "nodes": [
+    {"id": "scheduler", "label": "Cloud Scheduler wakes it", "kind": "service", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/scheduler_auth.py"},
+    {"id": "clock", "label": "Helpers' jobs run", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/helpers/clock.py"},
+    {"id": "rows", "label": "Your rows allow the read?", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/tools/background.py"},
+    {"id": "paused", "label": "Paused: one fixed line", "kind": "step", "rank": 2, "col": 1,
+     "ref": "src/jarvis/helpers/paused.py"},
+    {"id": "sources", "label": "Mail, weather, SACHET", "kind": "service", "rank": 3, "col": 0,
+     "ref": "src/jarvis/helpers/sources.py"},
+    {"id": "gate", "label": "Your caps and switches", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/helpers/gate.py"},
+    {"id": "nonudge", "label": "No nudge sent", "kind": "step", "rank": 4, "col": 1},
+    {"id": "policy", "label": "Quiet hours, then ring", "kind": "guard", "rank": 5, "col": 0},
+    {"id": "you", "label": "You tap Pay or Snooze", "kind": "person", "rank": 6, "col": 0,
+     "ref": "src/jarvis/api/static/console-helpers-today.js"},
+    {"id": "brief", "label": "Morning brief", "kind": "step", "rank": 1, "col": 2,
+     "ref": "src/jarvis/api/brief.py"}
+  ],
+  "edges": [
+    {"from": "scheduler", "to": "clock"},
+    {"from": "scheduler", "to": "brief", "label": "brief due", "style": "side"},
+    {"from": "clock", "to": "rows"},
+    {"from": "rows", "to": "paused", "label": "Ask first or Never", "style": "side"},
+    {"from": "rows", "to": "sources"},
+    {"from": "sources", "to": "gate"},
+    {"from": "gate", "to": "nonudge", "label": "over a cap", "style": "side"},
+    {"from": "gate", "to": "policy"},
+    {"from": "policy", "to": "you"}
+  ]
+}

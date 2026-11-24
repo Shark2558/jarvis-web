@@ -1,0 +1,31 @@
+{
+  "title": "JARVIS on your own computer",
+  "dir": "down",
+  "nodes": [
+    {"id": "install", "label": "Install from the project", "kind": "person", "rank": 0, "col": 0,
+     "ref": "pyproject.toml"},
+    {"id": "settings", "label": "Settings in a .env file", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/config.py"},
+    {"id": "check", "label": "Start-up checks", "kind": "guard", "rank": 2, "col": 0},
+    {"id": "stop", "label": "Stops, names the setting", "kind": "step", "rank": 2, "col": 1},
+    {"id": "brain", "label": "Mock or Claude brain", "kind": "service", "rank": 3, "col": 1},
+    {"id": "store", "label": "Memory or Redis", "kind": "store", "rank": 3, "col": 2,
+     "ref": "docker-compose.yml"},
+    {"id": "server", "label": "The same server starts", "kind": "step", "rank": 3, "col": 0,
+     "ref": "src/jarvis/api/app.py"},
+    {"id": "console", "label": "Console in your browser", "kind": "person", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console.html"},
+    {"id": "cli", "label": "Or chat in a terminal", "kind": "person", "rank": 4, "col": 1,
+     "ref": "src/jarvis/cli.py"}
+  ],
+  "edges": [
+    {"from": "install", "to": "settings"},
+    {"from": "settings", "to": "check"},
+    {"from": "check", "to": "stop", "label": "key missing", "style": "side"},
+    {"from": "check", "to": "server"},
+    {"from": "server", "to": "brain", "style": "side"},
+    {"from": "server", "to": "store", "style": "side"},
+    {"from": "server", "to": "console"},
+    {"from": "settings", "to": "cli", "label": "jarvis chat", "style": "side"}
+  ]
+}

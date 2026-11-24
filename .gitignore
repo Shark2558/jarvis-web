@@ -9,6 +9,8 @@ __pycache__/
 evals/**/report.json
 # R6 D4: the build book CI generates before `docker build` (python -m jarvis.buildbook.gen)
 src/jarvis/buildbook/_book/
+# R6.3.1 D5: the fact pack `python -m jarvis.buildbook.gen pages` caches per tree (build/book-cache/)
+/build/
 # R6.1 D4: the build time the Dockerfile stamps into the image (jarvis.about); never committed
 src/jarvis/BUILD_DATE
 # R6.1 D2: the dev-only Markdy CLI (npm ci --prefix tools/markdy)

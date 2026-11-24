@@ -1,13 +1,11 @@
 # src/jarvis/buildbook/writer/carry.py
-"""R6.3 D11, D12 (plan review H3): which pages a new release changed, and the free carry.
+"""R6.3 D11 (plan review H3); R6.3.1 D8: which pages a new release changed, by content. The free
+carry of AI pages is gone with the runtime writer; the hashing stays (the basis of the authored
+pages' staleness, `book/authored.source_hashes`).
 
 A page is CHANGED when a file it cites changed content (by SHA-256 inside the two releases'
 `source.zip`s; a directory reference is already expanded to its files, D3), its card's text in
-the guide changed, or it is new; otherwise it is carried. `carry` builds the new release's pages
-file with NO brain call: every unchanged AI page from its template, refilled from the new
-release's facts (a template whose fact is gone counts as changed), every changed one as the
-generator's text labelled "Changed in this release: waiting for your Update". So a release sealed
-without an Update loses no AI page, and the newest pages file always carries the rest.
+the guide changed, or it is new.
 """
 
 from __future__ import annotations
@@ -19,8 +17,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 
 from jarvis.buildbook.facts_model import FactPack, IndexedPage
-from jarvis.buildbook.writer import fill, packs, pages
-from jarvis.buildbook.writer.model import Page, PagesFile, Skipped
+from jarvis.buildbook.writer import packs
 
 
 @dataclass(frozen=True)
@@ -61,57 +58,4 @@ def changed_ids(
     return tuple(ip.id for ip in new_facts.pages if ip.id not in known or is_changed(ip, old, new))
 
 
-def _refilled(template: Page, facts: FactPack) -> Page | None:
-    texts = [s.text for s in template.sections]
-    if any(fill.unknown_keys(t, facts) for t in texts):
-        return None
-    try:
-        return pages.fill_page(template, facts)
-    except ValueError:
-        return None
-
-
-def carry(rid: str, facts: FactPack, old: PagesFile | None, changed: Collection[str]) -> PagesFile:
-    """The new release's pages file from the newest one, free: no brain is called."""
-    templates = {t.id: t for t in (old.templates if old is not None else ())}
-    written = pages.ai_written(old)
-    out_pages: list[Page] = []
-    out_templates: list[Page] = []
-    for ip in facts.pages:
-        if ip.id not in written and ip.id not in templates:
-            continue  # never written by AI: the reader shows the generator's text
-        template = templates.get(ip.id)
-        filled = None if ip.id in changed or template is None else _refilled(template, facts)
-        if filled is not None and template is not None:
-            out_pages.append(filled)
-            out_templates.append(template)
-        else:
-            out_pages.append(pages.generator_page(ip, facts, changed=True))
-    return PagesFile(release=rid, pages=tuple(out_pages), templates=tuple(out_templates))
-
-
-def merge(
-    rid: str,
-    base: PagesFile | None,
-    new: dict[str, tuple[Page, Page]],
-    skipped: tuple[Skipped, ...],
-) -> PagesFile:
-    """A release's fuller pages file: its current one with the pages written now on top (the
-    newest text of a page wins, D11 "Continuing"); `new` is page id -> (filled, template)."""
-    old_pages = base.pages if base is not None else ()
-    old_templates = base.templates if base is not None else ()
-    return PagesFile(
-        release=rid,
-        pages=(*(p for p in old_pages if p.id not in new), *(f for f, _ in new.values())),
-        templates=(*(t for t in old_templates if t.id not in new), *(t for _, t in new.values())),
-        skipped=tuple(s for s in skipped if s.page not in new),
-    )
-
-
-def to_write(facts: FactPack, carried: PagesFile | None) -> tuple[str, ...]:
-    """The pages an update writes: every page without carried AI text (changed, new or left)."""
-    have = {p.id for p in (carried.pages if carried is not None else ()) if p.meta is not None}
-    return tuple(ip.id for ip in facts.pages if ip.id not in have)
-
-
-__all__ = ["Tree", "carry", "changed_ids", "is_changed", "merge", "to_write", "tree_of"]
+__all__ = ["Tree", "changed_ids", "is_changed", "tree_of"]

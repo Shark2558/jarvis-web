@@ -10,10 +10,8 @@
 #   FIXTURE_FACTS                    the fact pack part A must compute for that repository (what B's
 #                                    packs, checks and filler and r63_fake_brains' drafts use)
 #   source_zip(files)                a deterministic zip of the fixture (R6's ZIP_STAMP)
-#   FakeBilling                      `record` and `usage` with a monthly limit (fail-closed switch)
 #   FakeSource                       R6's `BookSource` + `facts()` over in-memory bytes
-#   writer_context(...)              a `WriterContext` over MemoryDocs, the real R6 vault, the
-#                                    scripted brains of r63_fake_brains and the fixed clock
+# (R6.3.1 D8: the runtime writer's context and billing fakes went with the writer.)
 from __future__ import annotations
 
 import hashlib
@@ -24,8 +22,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
-
-from r63_fake_brains import registry
 
 from jarvis.buildbook.facts_model import (
     CardFact,
@@ -39,11 +35,7 @@ from jarvis.buildbook.facts_model import (
 )
 from jarvis.buildbook.model import ZIP_STAMP, Book, FileKind, Release, ReleaseRef
 from jarvis.buildbook.ports import BookUnavailable
-from jarvis.buildbook.seal import DocsBookVault
-from jarvis.buildbook.writer.ports import WriterContext
 from jarvis.keyring import Keyring
-from jarvis.llm.brains import BrainRegistry
-from jarvis.storage.docs import MemoryDocs
 
 IST = ZoneInfo("Asia/Kolkata")
 UID = "owner-r63"
@@ -261,28 +253,7 @@ FIXTURE_FACTS = FactPack(
 )
 
 
-# ---- money and the release ----------------------------------------------------------------------
-class FakeBilling:
-    """`record(uid, brain, usd)` adds to the month; `usage(uid)` answers his limit (None: none).
-    `broken = True` makes both raise (an unreadable meter: the writer refuses, fail closed)."""
-
-    def __init__(self, limit_inr: int | None = 3_000, rate: float = 95.24) -> None:
-        self.limit_inr, self.rate, self.broken = limit_inr, rate, False
-        self.recorded: list[tuple[str, str, float]] = []
-
-    async def record(self, uid: str, brain_id: str, cost_usd: float) -> float:
-        if self.broken:
-            raise RuntimeError("meter unreadable")
-        self.recorded.append((uid, brain_id, cost_usd))
-        return round(cost_usd * self.rate, 2)
-
-    async def usage(self, uid: str) -> Any:
-        if self.broken:
-            raise RuntimeError("meter unreadable")
-        used = round(sum(c for u, _, c in self.recorded if u == uid) * self.rate, 2)
-        return type("Usage", (), {"used_inr": used, "limit_inr": self.limit_inr})()
-
-
+# ---- the release ---------------------------------------------------------------------------
 class FakeSource:
     """R6's `BookSource` plus `facts()` (R6.3) over in-memory bytes; `book()` is not needed by the
     writer's tests and raises unless a book is given."""
@@ -315,35 +286,6 @@ class FakeSource:
         return self._facts
 
 
-def writer_context(
-    *,
-    brains: BrainRegistry | None = None,
-    billing: FakeBilling | None = None,
-    source: FakeSource | None = None,
-    docs: MemoryDocs | None = None,
-    clock: FixedClock | None = None,
-    limit_mb: int = 60,
-) -> WriterContext:
-    store = docs or MemoryDocs()
-    return WriterContext(
-        docs=store,
-        keyring=RING,
-        brains=brains or registry(),
-        billing=billing or FakeBilling(),
-        source=source or FakeSource(),
-        vault=DocsBookVault(store, RING, prefix="jarvis_", limit_mb=limit_mb),
-        notifier=None,
-        audit=None,
-        prefix="jarvis_",
-        limit_mb=limit_mb,
-        uid=UID,
-        owner_emails=("owner@example.com",),
-        honorific="Sir",
-        timezone="Asia/Kolkata",
-        clock=clock or FixedClock(),
-    )
-
-
 __all__ = [
     "FIXTURE_FACTS",
     "FIXTURE_FILES",
@@ -353,11 +295,9 @@ __all__ = [
     "RELEASE",
     "RING",
     "UID",
-    "FakeBilling",
     "FakeSource",
     "FixedClock",
     "fixture_repo",
     "ist",
     "source_zip",
-    "writer_context",
 ]

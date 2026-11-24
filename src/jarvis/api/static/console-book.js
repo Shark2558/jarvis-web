@@ -178,10 +178,10 @@
     const b = [...host.querySelectorAll('button')].filter((x) => x.textContent === k.text)[k.n];
     if (b && !b.disabled) b.focus(); else if (b) S.focus = k; // disabled while busy: the next render puts it back
   }
-  // R6.3 I0 (seam 8): C's writer and full-book modules, loaded ONCE at the panel's first open, each handed its host and deps
+  // R6.3 I0 (seam 8): C's full-book module, loaded ONCE at the panel's first open, handed its host and deps (R6.3.1: the writer is gone)
   const X = {}, deps = () => ({ api, booked, ask, say, render, token: () => S.token, release: () => S.reading || ((S.data && S.data.release) || {}).id || '' });
-  function more() { if (X.top) return; [X.top, X.set, X.pages] = [mk('div', 'bk-wtop'), mk('div', 'bk-writer'), mk('div', 'bk-pages')]; [['console-book-writer.js', 'JarvisBookWriter', (W) => W.settings(X.set, Object.assign(deps(), { top: X.top }))],
-    ['console-book-pages.js', 'JarvisBookPages', (P) => P.mount(X.pages, deps())]].forEach(([f, name, go]) => { const t = document.createElement('script'); t.src = '/static/' + f; t.defer = true; t.addEventListener('load', () => { if (window[name]) go(window[name]); }); document.head.append(t); }); }
+  function more() { if (X.pages) return; X.pages = mk('div', 'bk-pages'); [['console-book-pages.js', 'JarvisBookPages', (P) => P.mount(X.pages, deps())]]
+    .forEach(([f, name, go]) => { const t = document.createElement('script'); t.src = '/static/' + f; t.defer = true; t.addEventListener('load', () => { if (window[name]) go(window[name]); }); document.head.append(t); }); }
   function render() {
     const keep = focusKey();
     paint();
@@ -192,7 +192,7 @@
     noteEl = noteEl || mk('p', 'bnote bk-note'); noteEl.setAttribute('role', 'status');
     const d = S.data;
     if (!d) { host.append(noteEl); if (!noteEl.textContent) say('', S.error || 'Reading the build book\u2026'); return; }
-    host.append(...[X.top].filter(Boolean), releaseCard(d)); // R6.3: the writer's storage line on top (C's)
+    host.append(releaseCard(d));
     if (d.lock) {
       const l = mk('div', 'iopt bk-lock'); l.append(mk('span', '', 'A guest show is holding your consoles. Resume it from the show with your passkey.'),
         button('Go to the show', '', () => window.location.assign('/book/show')));
@@ -206,7 +206,7 @@
     const R = window.JarvisBookReader;
     if (R && !setBox) setBox = R.settings(mk('div'), { load: () => api('/v1/book/settings'), ask,
       save: (patch) => api('/v1/book/settings', { method: 'PUT', body: patch }).catch((e) => { throw new Error(detailOf(e) || 'Couldn\u2019t save.'); }) });
-    host.append(...[setBox, X.set].filter(Boolean)); // R6.3: Book settings, then the writer (C's)
+    host.append(...[setBox].filter(Boolean)); // R6.3.1: Book settings (the writer's sections are gone)
   }
   /** The reader keeps its element (and what is expanded) until the session or the release read changes. */
   function reader() {

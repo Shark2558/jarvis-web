@@ -1,7 +1,8 @@
 # src/jarvis/buildbook/gen/snapshot.py
 """R6 D5: the source snapshot sealed with each release (`source.zip`).
 
-Git-tracked files only. Left out, but listed in the zip's THIRD_PARTY.json with their bytes,
+Git-tracked files only (R6.3.1: the Book's own folder too, `Repo.book_files`, though the index
+never documents it). Left out, but listed in the zip's THIRD_PARTY.json with their bytes,
 SHA-256 and licence: `static/vendor/**` and `static/wakeword/**` (vendored), binaries
 (`*.onnx|wasm|wav|woff2|png|jpg|pdf|zip`), files over 1 MB and the home kit's skip rules. The
 zip is built as home/kit.py builds the kit: names sorted and NFC under `JARVIS-source-<id>/`, every
@@ -181,7 +182,7 @@ def _zip(root: str, entries: dict[str, bytes]) -> bytes:
 
 def build(repo: Repo, fakes: Fakes, *, cap: int = SNAPSHOT_CAP_BYTES) -> Snapshot:
     kept, skipped = [], []
-    for rel in repo.files:
+    for rel in sorted({*repo.files, *repo.book_files}):  # review I1 M-3: the Book's own folder too
         why = left_out(repo, rel)
         (skipped.append((rel, why)) if why else kept.append(rel))
     hits = secret_hits(repo, tuple(kept), fakes)

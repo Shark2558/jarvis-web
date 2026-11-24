@@ -1,0 +1,34 @@
+{
+  "title": "From signing in to a reply on screen",
+  "dir": "down",
+  "nodes": [
+    {"id": "you", "label": "You open the console", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console.html"},
+    {"id": "google", "label": "Google sign-in", "kind": "service", "rank": 1, "col": 0},
+    {"id": "owner", "label": "On the owner list?", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/auth.py"},
+    {"id": "refused", "label": "Someone else's JARVIS", "kind": "step", "rank": 2, "col": 1},
+    {"id": "cookie", "label": "Signed session cookie", "kind": "step", "rank": 3, "col": 0},
+    {"id": "cli", "label": "Terminal: bearer token", "kind": "person", "rank": 3, "col": 2,
+     "ref": "src/jarvis/cli.py"},
+    {"id": "limits", "label": "Rate and size limits", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/ratelimit.py"},
+    {"id": "routes", "label": "Chat and approval routes", "kind": "step", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/routes.py"},
+    {"id": "store", "label": "Firestore: chats, cards", "kind": "store", "rank": 5, "col": 1,
+     "ref": "src/jarvis/storage/docs.py"},
+    {"id": "page", "label": "Shown as plain text", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/api/static/console.js"}
+  ],
+  "edges": [
+    {"from": "you", "to": "google"},
+    {"from": "google", "to": "owner"},
+    {"from": "owner", "to": "refused", "label": "not an owner", "style": "side"},
+    {"from": "owner", "to": "cookie"},
+    {"from": "cookie", "to": "limits"},
+    {"from": "cli", "to": "limits", "style": "side"},
+    {"from": "limits", "to": "routes"},
+    {"from": "routes", "to": "store", "label": "kept", "style": "side"},
+    {"from": "routes", "to": "page"}
+  ]
+}

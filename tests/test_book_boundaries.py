@@ -37,14 +37,14 @@ C_MODULES = [
     SRC / "api" / f"{n}.py"
     for n in ("book_show", "book_show_hear", "book_lock", "book_show_access", "book_show_wiring")
 ]
-# R6.3 I0 seam 13 (docs/plans/r6-3-book-content.md D13): the writer's modules (all of them, as B
-# adds them), its routes and its join, and the tour's serve: <= 400 lines, functions <= 50, logs
+# R6.3 I0 seam 13 (docs/plans/r6-3-book-content.md D13): the full book's modules (all of them; the
+# runtime writer's went in R6.3.1 D8), its routes, and the tour's serve; R6.3.1 D4, D7: the
+# authored pages' modules and the generator's compile: <= 400 lines, functions <= 50, logs
 # content-free
 C_MODULES += sorted((SRC / "buildbook" / "writer").glob("*.py")) + [
-    SRC / "api" / "book_writer.py",
     SRC / "api" / "book_pages.py",
-    SRC / "api" / "book_writer_wiring.py",
     SRC / "buildbook" / "tour_serve.py",
+    SRC / "buildbook" / "gen" / "compile_pages.py",
 ]
 LANE_FORBIDDEN = (
     "jarvis.core.brain",

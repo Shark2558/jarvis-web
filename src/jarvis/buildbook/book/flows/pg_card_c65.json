@@ -1,0 +1,29 @@
+{
+  "title": "One SOS press",
+  "dir": "down",
+  "nodes": [
+    {"id": "hold", "label": "You hold SOS", "kind": "person", "rank": 0, "col": 0},
+    {"id": "countdown", "label": "Countdown runs", "kind": "step", "rank": 1, "col": 0},
+    {"id": "send", "label": "Send route or phone door", "kind": "service", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/sos.py"},
+    {"id": "limits", "label": "Take a slot", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/sos/limits.py"},
+    {"id": "message", "label": "Fixed message", "kind": "step", "rank": 4, "col": 0,
+     "ref": "src/jarvis/sos/message.py"},
+    {"id": "telegram", "label": "Contacts on Telegram", "kind": "service", "rank": 5, "col": 0,
+     "ref": "src/jarvis/telegram/client.py"},
+    {"id": "after", "label": "Log, audit, your notice", "kind": "store", "rank": 6, "col": 0,
+     "ref": "src/jarvis/sos/after.py"},
+    {"id": "sms", "label": "SMS screen and dialler", "kind": "step", "rank": 6, "col": 1}
+  ],
+  "edges": [
+    {"from": "hold", "to": "countdown"},
+    {"from": "countdown", "to": "send"},
+    {"from": "send", "to": "limits"},
+    {"from": "limits", "to": "message", "label": "slot free"},
+    {"from": "limits", "to": "sms", "label": "refused", "style": "side"},
+    {"from": "message", "to": "telegram"},
+    {"from": "telegram", "to": "after"},
+    {"from": "telegram", "to": "sms", "style": "side"}
+  ]
+}

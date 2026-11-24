@@ -1,0 +1,32 @@
+{
+  "title": "A person at the camera while armed",
+  "dir": "down",
+  "nodes": [
+    {"id": "arm", "label": "You arm the alarm", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-home-panel.js"},
+    {"id": "frigate", "label": "Frigate sees a person", "kind": "service", "rank": 1, "col": 0},
+    {"id": "bridge", "label": "Bridge filters at home", "kind": "step", "rank": 2, "col": 0},
+    {"id": "sign", "label": "Signed, sent to the cloud", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/home/signing.py"},
+    {"id": "webhook", "label": "Signature and replay check", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/home/webhook.py"},
+    {"id": "refused", "label": "Refused silently", "kind": "step", "rank": 4, "col": 1},
+    {"id": "feed", "label": "Home feed, sealed", "kind": "store", "rank": 5, "col": 1},
+    {"id": "alert", "label": "Urgent alert rings", "kind": "step", "rank": 5, "col": 0},
+    {"id": "watchdog", "label": "No heartbeat: told once", "kind": "guard", "rank": 2, "col": 2,
+     "ref": "src/jarvis/home/watchdog.py"},
+    {"id": "disarm", "label": "Disarm: passkey or sign-in", "kind": "guard", "rank": 6, "col": 0,
+     "ref": "src/jarvis/api/camera.py"}
+  ],
+  "edges": [
+    {"from": "arm", "to": "frigate"},
+    {"from": "frigate", "to": "bridge"},
+    {"from": "bridge", "to": "sign"},
+    {"from": "sign", "to": "webhook"},
+    {"from": "webhook", "to": "refused", "label": "bad signature", "style": "side"},
+    {"from": "webhook", "to": "alert"},
+    {"from": "webhook", "to": "feed", "style": "side"},
+    {"from": "bridge", "to": "watchdog", "style": "side"},
+    {"from": "alert", "to": "disarm"}
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "title": "Remembering, and finding it again",
+  "dir": "down",
+  "nodes": [
+    {"id": "say", "label": "You tell JARVIS something", "kind": "person", "rank": 0, "col": 1},
+    {"id": "filter", "label": "No ID, card or password", "kind": "guard", "rank": 1, "col": 1,
+     "ref": "src/jarvis/api/memory.py"},
+    {"id": "refused", "label": "Refused: sensitive", "kind": "step", "rank": 1, "col": 2},
+    {"id": "fact", "label": "A fact in Memory", "kind": "store", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/static/console-memory.js"},
+    {"id": "note", "label": "A note, memo or link", "kind": "store", "rank": 2, "col": 1,
+     "ref": "src/jarvis/api/notes.py"},
+    {"id": "thing", "label": "A thing and its place", "kind": "store", "rank": 2, "col": 2,
+     "ref": "src/jarvis/api/belongings.py"},
+    {"id": "ask", "label": "Later you ask", "kind": "person", "rank": 3, "col": 1},
+    {"id": "search", "label": "Searched by code", "kind": "step", "rank": 4, "col": 1},
+    {"id": "answer", "label": "Answer shows what it used", "kind": "step", "rank": 5, "col": 1},
+    {"id": "delete", "label": "Delete: Recently deleted", "kind": "store", "rank": 4, "col": 2,
+     "ref": "src/jarvis/api/static/console-things.js"}
+  ],
+  "edges": [
+    {"from": "say", "to": "filter"},
+    {"from": "filter", "to": "refused", "style": "side"},
+    {"from": "filter", "to": "fact"},
+    {"from": "filter", "to": "note"},
+    {"from": "filter", "to": "thing"},
+    {"from": "fact", "to": "ask"},
+    {"from": "note", "to": "ask"},
+    {"from": "thing", "to": "ask"},
+    {"from": "ask", "to": "search"},
+    {"from": "search", "to": "answer"},
+    {"from": "thing", "to": "delete", "label": "you delete", "style": "side"}
+  ]
+}

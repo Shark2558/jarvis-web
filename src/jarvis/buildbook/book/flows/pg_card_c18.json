@@ -1,0 +1,30 @@
+{
+  "title": "An approval card, from proposal to one run",
+  "dir": "down",
+  "nodes": [
+    {"id": "ask", "label": "An action must ask first", "kind": "step", "rank": 0, "col": 0},
+    {"id": "words", "label": "Card words written by code", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/tools/card.py"},
+    {"id": "kept", "label": "Card kept, waiting", "kind": "store", "rank": 2, "col": 0,
+     "ref": "src/jarvis/storage/approvals.py"},
+    {"id": "you", "label": "You approve or decline", "kind": "person", "rank": 3, "col": 0},
+    {"id": "all", "label": "Approve all: undoable only", "kind": "guard", "rank": 3, "col": 1,
+     "ref": "src/jarvis/core/approve_all.py"},
+    {"id": "passkey", "label": "Passkey if irreversible", "kind": "guard", "rank": 4, "col": 0},
+    {"id": "again", "label": "Action changed since?", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/core/brain_decisions.py"},
+    {"id": "redo", "label": "New card proposed", "kind": "step", "rank": 5, "col": 1},
+    {"id": "run", "label": "Runs once, token spent", "kind": "step", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "ask", "to": "words"},
+    {"from": "words", "to": "kept"},
+    {"from": "kept", "to": "you"},
+    {"from": "kept", "to": "all", "style": "side"},
+    {"from": "you", "to": "passkey", "label": "approve"},
+    {"from": "all", "to": "again"},
+    {"from": "passkey", "to": "again"},
+    {"from": "again", "to": "redo", "label": "yes", "style": "side"},
+    {"from": "again", "to": "run", "label": "no"}
+  ]
+}

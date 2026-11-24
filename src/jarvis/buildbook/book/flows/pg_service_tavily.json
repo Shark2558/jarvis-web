@@ -1,0 +1,24 @@
+{
+  "title": "A web search, there and back",
+  "dir": "down",
+  "nodes": [
+    {"id": "ask", "label": "You ask a question", "kind": "person", "rank": 0, "col": 0},
+    {"id": "guard", "label": "Private-words guard", "kind": "guard", "rank": 1, "col": 0},
+    {"id": "count", "label": "Month's credit count", "kind": "store", "rank": 2, "col": 0,
+     "ref": "src/jarvis/web/service.py"},
+    {"id": "stop", "label": "Used up: say so", "kind": "step", "rank": 2, "col": 1},
+    {"id": "tavily", "label": "Tavily search or read", "kind": "service", "rank": 3, "col": 0,
+     "ref": "src/jarvis/web/tavily.py"},
+    {"id": "check", "label": "Check each result", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/web/tavily.py"},
+    {"id": "answer", "label": "Answer with sources", "kind": "step", "rank": 5, "col": 0}
+  ],
+  "edges": [
+    {"from": "ask", "to": "guard"},
+    {"from": "guard", "to": "count", "label": "words only"},
+    {"from": "count", "to": "tavily", "label": "credits left"},
+    {"from": "count", "to": "stop", "label": "none left", "style": "side"},
+    {"from": "tavily", "to": "check"},
+    {"from": "check", "to": "answer"}
+  ]
+}

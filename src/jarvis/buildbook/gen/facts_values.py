@@ -97,11 +97,22 @@ def release_values(repo: Repo, scrub: Scrubber) -> dict[str, FactValue]:
     day = _ist_day(repo.committed_at)
     if day:
         out["release.date"] = _v(day, "the commit's date")
-    own = plans.plan_paths(repo)[:1]
+    exact = _plan_with_version(repo, version) if version else None
+    own = (exact,) if exact else plans.plan_paths(repo)[:1]
     title = _plan_title(repo.text(own[0]) or "") if own else ""
-    if own and title and plans.label_of(own[0]) == out["release.label"].value:
+    if own and title and (exact or plans.label_of(own[0]) == out["release.label"].value):
         out["release.new"] = _v(scrub.clean(title), own[0])
     return out
+
+
+def _plan_with_version(repo: Repo, version: str) -> str | None:
+    """R6.3.1: the plan whose title names this exact version (`v6.3.2`), so a follow-up release
+    the version labels with its parent ("R6.3") is told by its own plan, not the parent's."""
+    for path in plans.plan_paths(repo):
+        head = next((ln for ln in (repo.text(path) or "").splitlines() if ln.startswith("# ")), "")
+        if f"`{version}`" in head or f"({version})" in head:
+            return path
+    return None
 
 
 def _ist_day(stamp: str) -> str:

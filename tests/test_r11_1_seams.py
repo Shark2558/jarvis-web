@@ -71,7 +71,7 @@ def _lines(path: Path) -> int:
 
 def test_the_version_is_eleven_point_one() -> None:
     # R6.3 I0 (13.1.0 at R13.1, 13.0.0 at R13, 6.2.0 at R6.2; nothing compares it)
-    assert jarvis.__version__ == "6.3.1"
+    assert jarvis.__version__ == "6.3.2"
 
 
 # ---- settings -----------------------------------------------------------------------------------

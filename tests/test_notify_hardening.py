@@ -347,6 +347,7 @@ async def test_alerts_held_during_the_send_are_not_lost() -> None:
 IMPORT_TO_DIST = {
     "google": "google-cloud-firestore",
     "docx": "python-docx",
+    "yaml": "pyyaml",  # R6.3.1 D2: the Build Book's page front matter
     # always installed with a declared package (fastapi / httpx); not part of this review
     "starlette": "fastapi",
     "anyio": "httpx",

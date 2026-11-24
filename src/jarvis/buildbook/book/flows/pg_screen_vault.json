@@ -1,0 +1,23 @@
+{
+  "title": "Opening a document in Vault",
+  "dir": "down",
+  "nodes": [
+    {"id": "open", "label": "You press Open", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-vault.js"},
+    {"id": "unlocked", "label": "Unlocked in this tab?", "kind": "guard", "rank": 1, "col": 0},
+    {"id": "prove", "label": "Passkey or fresh sign-in", "kind": "guard", "rank": 1, "col": 1,
+     "ref": "src/jarvis/api/vault.py"},
+    {"id": "ticket", "label": "Single-use ticket", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/vault.py"},
+    {"id": "audit", "label": "Written to the audit log", "kind": "store", "rank": 3, "col": 0},
+    {"id": "file", "label": "File downloads", "kind": "step", "rank": 4, "col": 0}
+  ],
+  "edges": [
+    {"from": "open", "to": "unlocked"},
+    {"from": "unlocked", "to": "ticket", "label": "yes"},
+    {"from": "unlocked", "to": "prove", "label": "no", "style": "side"},
+    {"from": "prove", "to": "ticket", "style": "side"},
+    {"from": "ticket", "to": "audit"},
+    {"from": "audit", "to": "file"}
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "title": "JARVIS watching itself",
+  "dir": "down",
+  "nodes": [
+    {"id": "clock", "label": "A background clock runs", "kind": "step", "rank": 0, "col": 0,
+     "ref": "src/jarvis/ticks.py"},
+    {"id": "jobs", "label": "Each job, its own budget", "kind": "step", "rank": 1, "col": 0},
+    {"id": "watch", "label": "Watch hears every outcome", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/selfwatch/part.py"},
+    {"id": "ledger", "label": "Streaks remembered", "kind": "store", "rank": 2, "col": 1,
+     "ref": "src/jarvis/selfwatch/ledger.py"},
+    {"id": "rule", "label": "A rule crossed?", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/selfwatch/jobs.py"},
+    {"id": "quiet", "label": "Nothing to say", "kind": "step", "rank": 3, "col": 1},
+    {"id": "storm", "label": "Within the alert cap?", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/notify/storm.py"},
+    {"id": "held", "label": "Held for the morning", "kind": "store", "rank": 4, "col": 1,
+     "ref": "src/jarvis/notify/store.py"},
+    {"id": "told", "label": "Told once, in words", "kind": "person", "rank": 5, "col": 0},
+    {"id": "board", "label": "Vitals board shows it", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/api/static/console-vitals.js"},
+    {"id": "check", "label": "Systems check on request", "kind": "person", "rank": 5, "col": 2,
+     "ref": "src/jarvis/api/static/console-systems.js"}
+  ],
+  "edges": [
+    {"from": "clock", "to": "jobs"},
+    {"from": "jobs", "to": "watch"},
+    {"from": "watch", "to": "ledger", "style": "side"},
+    {"from": "watch", "to": "rule"},
+    {"from": "rule", "to": "quiet", "label": "all fine", "style": "side"},
+    {"from": "rule", "to": "storm"},
+    {"from": "storm", "to": "held", "label": "quiet hours", "style": "side"},
+    {"from": "storm", "to": "told"},
+    {"from": "told", "to": "board"},
+    {"from": "check", "to": "board", "style": "side"}
+  ]
+}

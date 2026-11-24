@@ -1,0 +1,42 @@
+{
+  "title": "One spoken question and its spoken answer",
+  "dir": "down",
+  "nodes": [
+    {"id": "you", "label": "You say Hey Jarvis", "kind": "person", "rank": 0, "col": 0},
+    {"id": "wake", "label": "Wake word on your device", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/static/console-wakeword.js"},
+    {"id": "micoff", "label": "Mic off: nothing heard", "kind": "guard", "rank": 1, "col": 1,
+     "ref": "src/jarvis/api/static/console-voice-micoff.js"},
+    {"id": "capture", "label": "Record what you say", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/static/console-voice-capture.js"},
+    {"id": "stt", "label": "Google turns it into text", "kind": "service", "rank": 3, "col": 0,
+     "ref": "src/jarvis/voice/google_cloud.py"},
+    {"id": "browser", "label": "Browser's own recogniser", "kind": "service", "rank": 3, "col": 1},
+    {"id": "cmd", "label": "A local command?", "kind": "guard", "rank": 4, "col": 0,
+     "ref": "src/jarvis/api/static/console-voice-commands.js"},
+    {"id": "local", "label": "Done on the device", "kind": "step", "rank": 4, "col": 1},
+    {"id": "chat", "label": "JARVIS writes the reply", "kind": "step", "rank": 5, "col": 0},
+    {"id": "clean", "label": "Made fit to read aloud", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/voice/speakable.py"},
+    {"id": "gate", "label": "Free allowance or limit", "kind": "guard", "rank": 7, "col": 0,
+     "ref": "src/jarvis/voice/service.py"},
+    {"id": "tts", "label": "A Google voice speaks", "kind": "service", "rank": 8, "col": 0},
+    {"id": "barge", "label": "You talk over it: stop", "kind": "person", "rank": 8, "col": 1,
+     "ref": "src/jarvis/api/static/console-voice-barge.js"}
+  ],
+  "edges": [
+    {"from": "you", "to": "wake"},
+    {"from": "you", "to": "micoff", "label": "mic locked", "style": "side"},
+    {"from": "wake", "to": "capture"},
+    {"from": "capture", "to": "stt"},
+    {"from": "capture", "to": "browser", "label": "Google off", "style": "side"},
+    {"from": "stt", "to": "cmd"},
+    {"from": "browser", "to": "cmd", "style": "side"},
+    {"from": "cmd", "to": "local", "label": "mic off, stop", "style": "side"},
+    {"from": "cmd", "to": "chat"},
+    {"from": "chat", "to": "clean"},
+    {"from": "clean", "to": "gate"},
+    {"from": "gate", "to": "tts"},
+    {"from": "tts", "to": "barge", "style": "side"}
+  ]
+}

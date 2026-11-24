@@ -3,7 +3,7 @@
 # (tests/r63_fakes_c.py), the R6 routes from book_mocks.FakeBook:
 #   - the Full book under the owner's reader: parts as disclosures, chapters as rows, a page's six
 #     sections (plain and example open, the rest closed), who wrote it, its references as chips;
-#     a page not written by AI says so, a changed one waits for the Update
+#     a page not written yet says so (R6.3.1: "Written by the Workshop", no changed label)
 #   - every request carries the owner's book session (X-Jarvis-Book); an older kept release reads
 #     its own pages; a 403 (a guest's session) draws nothing at all
 #   - continue where I left off: `jarvis_book_place_v1` {release, page}, ids only; reopening offers
@@ -106,9 +106,9 @@ def test_r63_c_pages_the_full_book_lists_parts_chapters_and_who_wrote_each(
         part(c, "Parts")
         until(c.page, lambda: "The demo" in text(c), "the chapter")
         words = text(c)
-        assert "Demo router" in words and "Written by Claude" in words
-        assert "Changed in this release: waiting for your Update" in words  # Demo store
-        assert "Not written by AI yet" in words  # Demo console
+        assert "Demo router" in words and "Written by the Workshop" in words
+        assert "Changed in this release" not in words  # R6.3.1: no Update to wait for
+        assert "Not written yet" in words  # Demo store, Demo console
         assert all(r.headers.get("x-jarvis-book") == TOKEN for r in asked)
         assert asked and all("release=3f2a1c9" in r.url for r in asked)
         clean(c)
@@ -124,10 +124,7 @@ def test_r63_c_pages_a_written_page_its_sections_and_references(
         part(c, "Parts")
         read(c, "Demo router")
         words = text(c)
-        assert (
-            "Written by Claude (balanced tier, claude-sonnet-5-5) for v6.3.0 on 24 Nov 2026"
-            in words
-        )
+        assert "Written by the Workshop \u00b7 24 Nov 2026" in words  # R6.3.1 D8: plain
         sections = c.page.locator(f"{PAGES} .bk-sec > .dsc")
         labels = [s.locator(".dl").text_content() for s in sections.all()]
         assert labels == [
@@ -154,7 +151,7 @@ def test_r63_c_pages_a_page_not_written_by_ai_says_so(browser: Any, c_url: str, 
     try:
         part(c, "Parts")
         read(c, "Demo console")
-        assert "Not written by AI yet" in text(c) and "Written by" not in text(c)
+        assert "Not written yet" in text(c) and "Written by" not in text(c)
         clean(c)
     finally:
         c.close()
@@ -294,7 +291,7 @@ def test_r63_c_a_new_card_is_listed(browser: Any, c_url: str, token: str) -> Non
         part(c, "Parts")
         until(c.page, lambda: "A new card" in text(c), "C74's page")
         read(c, "A new card")
-        assert "Not written by AI yet" in text(c)
+        assert "Not written yet" in text(c)
         clean(c)
     finally:
         c.close()

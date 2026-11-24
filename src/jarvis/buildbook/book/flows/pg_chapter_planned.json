@@ -1,0 +1,29 @@
+{
+  "title": "The roadmap, in your order",
+  "dir": "down",
+  "nodes": [
+    {"id": "guide", "label": "The guide's roadmap", "kind": "store", "rank": 0, "col": 0,
+     "ref": "docs/architecture/JARVIS-Architecture.md"},
+    {"id": "tour", "label": "Tour reads the first rows", "kind": "step", "rank": 0, "col": 1,
+     "ref": "docs/plans/r6-3-book-content.md"},
+    {"id": "look", "label": "R6.4 The Book's new look", "kind": "step", "rank": 1, "col": 0},
+    {"id": "calls", "label": "Calls from your laptop", "kind": "step", "rank": 2, "col": 0},
+    {"id": "voice", "label": "R5.2 Voice fixes", "kind": "step", "rank": 3, "col": 0},
+    {"id": "cams", "label": "R8 Home cameras", "kind": "step", "rank": 4, "col": 0},
+    {"id": "confirm", "label": "You confirm the cameras", "kind": "person", "rank": 4, "col": 1},
+    {"id": "next", "label": "R8.1 next in your order", "kind": "step", "rank": 5, "col": 0},
+    {"id": "kitchen", "label": "R9 Kitchen vision", "kind": "step", "rank": 6, "col": 0},
+    {"id": "later", "label": "Later: care, fitness, more", "kind": "step", "rank": 7, "col": 0}
+  ],
+  "edges": [
+    {"from": "guide", "to": "tour", "label": "next two", "style": "side"},
+    {"from": "guide", "to": "look"},
+    {"from": "look", "to": "calls"},
+    {"from": "calls", "to": "voice"},
+    {"from": "voice", "to": "cams"},
+    {"from": "confirm", "to": "cams", "style": "side"},
+    {"from": "cams", "to": "next"},
+    {"from": "next", "to": "kitchen"},
+    {"from": "kitchen", "to": "later"}
+  ]
+}

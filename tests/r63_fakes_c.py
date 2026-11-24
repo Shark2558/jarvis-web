@@ -1,21 +1,18 @@
-# tests/r63_fakes_c.py -- R6.3 Part C (docs/plans/r6-3-book-content.md D6, D7, D11, D12, D14):
-# I0's fake server (tests/r63_fake_server.py) with what the console's tests also need, in the
-# contract's own models (buildbook/writer/http.py). Imported bare (`from r63_fakes_c import ...`);
-# no Playwright here.
+# tests/r63_fakes_c.py -- R6.3 Part C (docs/plans/r6-3-book-content.md D14), R6.3.1 E (D7, D8): the
+# full book's two routes answered from an in-memory fake, in the contract's own models
+# (buildbook/writer/http.py, the page JSON with its `flow`), for the console's reader tests. The
+# runtime writer's routes and states went with the writer (R6.3.1 D8). Imported bare
+# (`from r63_fakes_c import ...`); no Playwright here.
 #
-# - `FakeWriterC`: I0's `FakeWriter` plus the writer OFF (`off = "no_key"`: `{on: false, why}`),
-#   stale estimates handed out first (`stale = {"trial": 1}`: the next estimate has another id, so
-#   the run's POST is 409 `estimate_changed` and the console must ask again), a refusal for one
-#   route (`refuse = {"first": (409, "already_written", words)}`), and C74 (`new_card`: a card the
-#   index gains at the next release, row 380 "grows").
-# - The full book: parts -> chapters (a card under its module's chapter) -> pages, one written page
-#   (`pg_card_c01`, made-up demo words in the six sections), one changed page waiting for Update,
-#   the rest the generator's text; an older kept release (`OLDER`) reads with nothing written.
-#   The trial's side by side has a redraft and a refusal with their checks.
+# - The full book: parts -> chapters (a card under its module's chapter) -> pages, one written
+#   page (`pg_card_c01`, made-up demo words in the six sections, "Written by the Workshop"), the
+#   rest the generator's text; an older kept release (`OLDER`) reads with nothing written; C74
+#   (`new_card`: a card the index gains at the next release, row 380 "grows").
 # - `/v1/test/r63-c` (test only): POST sets or resets the state; GET answers what the fake saw.
 # - `serve_c(token)`: this app in a child process for a browser test module: (url, stop); and the
 #   browser tests' helpers (`set_state`, `seen`, `route_c`, `until`).
-# Made-up demo data only: no person, no place, no key.
+# The fake does NOT check console-only or the primary owner: the wired app tests those
+# (tests/test_r631_e_serve.py). Made-up demo data only: no person, no place, no key.
 from __future__ import annotations
 
 import json
@@ -31,43 +28,33 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Header, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 
 from jarvis.buildbook.facts_model import PARTS
-from jarvis.buildbook.writer import http
+from jarvis.buildbook.writer import http, pages
 from jarvis.buildbook.writer.model import (
     HEADINGS,
     NOT_WRITTEN,
     SECTION_IDS,
-    TRIAL_PAGES,
     Page,
+    PageMeta,
     PageSection,
-    Pick,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from r63_fake_server import (  # noqa: E402
-    CLAUDE_META,
-    GUEST_BOOK,
-    OWNER_BOOK,
-    FakeWriter,
-    fake_app,
-)
 from r63_fakes import FIXTURE_FACTS, RELEASE  # noqa: E402
 
 NO_STORE = {"Cache-Control": "no-store"}
 CONTROL = "/v1/test/r63-c"
-# evals/r6_3/console.py's negative control, in this server's child process only: a changed COPY of
-# C's module is served (the YES box sends "yes" whatever was typed); the file on disk is untouched
-CONTROL_ENV = "R63C_CONTROL"
-YES_LINE = "const got = await go(inp.value);"
-YES_SENT_YES = "const got = await go('yes');"
-STALE_ESTIMATE = "we_" + "9" * 12
-WRITTEN, CHANGED = "pg_card_c01", "pg_card_c02"
+OWNER_BOOK = "bk-token-not-a-secret-0123456789abcdef"  # book_mocks.TOKEN: an owner session
+GUEST_BOOK = "bk-guest-not-a-secret-0123456789abcdef"
+WRITTEN = "pg_card_c01"
 NEW_CARD = "pg_card_c74"
 OLDER = ("aebff3a", "9b97eab")  # book_mocks.SEALED's older kept releases: nothing written there
 LIMITATIONS = http.Shown(shown=80, total=112)  # G4: "+32 more in the full book"
 CHAPTER_TITLES = {"demo": "The demo"}
+WORKSHOP = PageMeta(written_by="Workshop · Mark XXIV", written_on="2026-11-24",
+                    release=RELEASE.id, version="v6.3.2")  # fmt: skip
 WORDS: dict[str, str] = {
     "plain": "The demo router picks one tier for each request, so a quick question stays cheap.\n\n"
     "It never changes tier halfway through an answer.",
@@ -82,42 +69,27 @@ WORDS: dict[str, str] = {
 
 
 @dataclass
-class FakeWriterC(FakeWriter):
-    off: str | None = None  # "no_key" | "no_ai" | "no_brain": GET /v1/book/writer {on: false}
-    stale: dict[str, int] = field(default_factory=dict)  # run -> stale estimates still to hand out
-    refuse: dict[str, tuple[int, str, str]] = field(default_factory=dict)  # route -> its refusal
+class FakePagesC:
     new_card: bool = False
-    asked: list[str] = field(
-        default_factory=list
-    )  # "METHOD path?query" the writer/pages routes saw
-
-    def view(self) -> http.WriterView:
-        if self.off:
-            return http.WriterView.model_validate({"on": False, "why": self.off})
-        return super().view()
-
-    def estimate(self, run: str) -> http.Estimate | None:
-        got = super().estimate(run)
-        if got is not None and self.stale.get(run, 0) > 0:
-            self.stale[run] -= 1
-            return got.model_copy(update={"id": STALE_ESTIMATE})
-        return got
+    flows: dict[str, dict[str, Any]] = field(default_factory=dict)  # page id -> its chart's JSON
+    asked: list[str] = field(default_factory=list)  # "METHOD path?query" the pages routes saw
 
     def reset(self) -> None:
-        fresh = FakeWriterC()
+        fresh = FakePagesC()
         for f in fields(fresh):
             setattr(self, f.name, getattr(fresh, f.name))
 
 
-def _ok(model: Any, status: int = 200) -> JSONResponse:
-    return JSONResponse(model.model_dump(mode="json"), status_code=status, headers=NO_STORE)
+def _ok(body: Any, status: int = 200) -> JSONResponse:
+    data = body.model_dump(mode="json") if hasattr(body, "model_dump") else body
+    return JSONResponse(data, status_code=status, headers=NO_STORE)
 
 
 def _no(status: int, code: str, words: str) -> JSONResponse:
     return JSONResponse({"error": code, "detail": words}, status_code=status, headers=NO_STORE)
 
 
-def written_page(page_id: str, *, written: bool, changed: bool = False) -> Page:
+def written_page(page_id: str, *, written: bool) -> Page:
     """A page in its six sections: the made-up demo words with a meta, or the generator's text."""
     entry = FIXTURE_FACTS.page(page_id)
     title = entry.title if entry else "A new card"
@@ -138,15 +110,13 @@ def written_page(page_id: str, *, written: bool, changed: bool = False) -> Page:
         part=entry.part if entry else "parts",
         chapter=entry.chapter if entry else "demo",
         sections=sections,
-        meta=CLAUDE_META if written else None,
-        changed=changed,
+        meta=WORKSHOP if written else None,
     )
 
 
-def pages_view(state: FakeWriterC, release: str) -> http.PagesView:
+def pages_view(state: FakePagesC, release: str) -> http.PagesView:
     current = release not in OLDER
-    entries = list(FIXTURE_FACTS.pages)
-    ids = [p.id for p in entries] + ([NEW_CARD] if state.new_card and current else [])
+    ids = [p.id for p in FIXTURE_FACTS.pages] + ([NEW_CARD] if state.new_card and current else [])
     parts = []
     for pid, title in PARTS:
         chapters: dict[str, list[http.PageRow]] = {}
@@ -154,13 +124,7 @@ def pages_view(state: FakeWriterC, release: str) -> http.PagesView:
             page = written_page(page_id, written=current and page_id == WRITTEN)
             if page.part != pid:
                 continue
-            row = http.PageRow(
-                id=page.id,
-                kind=page.kind,
-                title=page.title,
-                written=page.meta,
-                changed=current and page_id == CHANGED,
-            )
+            row = http.PageRow(id=page.id, kind=page.kind, title=page.title, written=page.meta)
             chapters.setdefault(page.chapter or pid, []).append(row)
         if chapters:
             parts.append(
@@ -178,35 +142,6 @@ def pages_view(state: FakeWriterC, release: str) -> http.PagesView:
     return http.PagesView(release=release, parts=tuple(parts), limitations=LIMITATIONS)
 
 
-TRIAL_TITLES = dict(zip(TRIAL_PAGES, ("The running example", "Demo router, again", "Wardrobe",
-                                       "Vitals", "Telegram"), strict=True))  # fmt: skip
-
-
-def trial_rows(state: FakeWriterC) -> http.TrialPages:
-    rows = []
-    for nn in state.trial.results:
-        claude = nn <= 5
-        page = TRIAL_PAGES[(nn - 1) % 5]
-        how: tuple[str, tuple[Any, ...]] = ("first", ())
-        if nn == 4:
-            how = ("redrafted", ("numbers",))
-        if nn == 9:
-            how = ("refused", ("refs", "planned"))
-        rows.append(
-            http.TrialRow(
-                nn=nn,
-                page=page,
-                title=TRIAL_TITLES[page],
-                brain="anthropic" if claude else "gemini",
-                state=how[0],  # type: ignore[arg-type]
-                checks=how[1],
-                inr=7.6 if claude else 0.0,
-                seconds=38.0 if claude else 41.5,
-            )
-        )
-    return http.TrialPages(rows=tuple(rows))
-
-
 def _session(book: str | None) -> JSONResponse | None:
     if book == GUEST_BOOK:
         return _no(403, "owner_only", "The full book is the owner's.")
@@ -219,10 +154,8 @@ def _release_of(release: str | None) -> str:
     return release if release and len(release) == 7 and release.isalnum() else RELEASE.id
 
 
-def c_routes(state: FakeWriterC) -> APIRouter:  # noqa: C901 - one table of routes
-    """C's routes, ahead of I0's fake ones: they shadow the rows they answer differently."""
+def c_routes(state: FakePagesC) -> APIRouter:
     r = APIRouter()
-    w = http.WRITER_PREFIX
 
     @r.get(http.PAGES_PREFIX)
     async def index(release: str | None = None, x_jarvis_book: str | None = Header(None)) -> Any:
@@ -240,18 +173,13 @@ def c_routes(state: FakeWriterC) -> APIRouter:  # noqa: C901 - one table of rout
         known = FIXTURE_FACTS.page(page_id) is not None or (page_id == NEW_CARD and state.new_card)
         if not known:
             return _no(404, "no_page", "That page isn't in this release.")
-        current = rid not in OLDER
-        page = written_page(page_id, written=current and page_id == WRITTEN)
-        return _ok(page.model_copy(update={"changed": current and page_id == CHANGED}))
-
-    @r.get(f"{w}/trial/pages")
-    async def side_by_side() -> Any:
-        return _ok(trial_rows(state))
+        page = written_page(page_id, written=rid not in OLDER and page_id == WRITTEN)
+        return _ok(pages.served(page, state.flows if rid not in OLDER else {}))
 
     return r
 
 
-def control_routes(state: FakeWriterC) -> APIRouter:
+def control_routes(state: FakePagesC) -> APIRouter:
     r = APIRouter()
 
     @r.post(CONTROL)
@@ -259,65 +187,31 @@ def control_routes(state: FakeWriterC) -> APIRouter:
         body = await request.json()
         if body.pop("reset", False):
             state.reset()
-        if body.pop("trial_done", False):
-            state.trial = http.TrialView(
-                state="done", done=10, total=10, inr=38.0, results=tuple(range(1, 11))
-            )
-            state.run = http.RunView(kind="trial", state="done", done=10, total=10, inr=38.0)
-        models = {"pick": Pick, "run": http.RunView, "trial": http.TrialView}
         for key, value in body.items():
-            if key == "refuse":
-                value = {k: tuple(v) for k, v in value.items()}
-            if key in models:
-                value = models[key].model_validate(value)
             setattr(state, key, value)
         return {"ok": True}
 
     @r.get(CONTROL)
     async def seen() -> Any:
-        return {
-            "calls": state.calls,
-            "asked": state.asked,
-            "pick": state.pick.model_dump(mode="json"),
-            "run": state.run.model_dump(mode="json"),
-            "trial": state.trial.model_dump(mode="json"),
-        }
+        return {"asked": state.asked}
 
     return r
 
 
-def yes_box_sends_yes() -> APIRouter:
-    """The control's route: console-book-writer.js with its YES box sending "yes"."""
-    static = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
-    text = (static / "console-book-writer.js").read_text(encoding="utf-8")
-    if text.count(YES_LINE) != 1:
-        raise RuntimeError("the console control's line moved in console-book-writer.js")
-    r = APIRouter()
+def c_app(state: FakePagesC | None = None) -> FastAPI:
+    """The real app (mock brain, token mode) with the fake pages routes ahead of its own."""
+    from jarvis.api import create_app
+    from jarvis.llm.mock_provider import MockProvider
 
-    @r.get("/static/console-book-writer.js")
-    async def changed() -> Response:
-        return Response(text.replace(YES_LINE, YES_SENT_YES), media_type="text/javascript")
-
-    return r
-
-
-def c_app(state: FakeWriterC | None = None) -> FastAPI:
-    st = state or FakeWriterC()
-    app = fake_app(st)
+    st = state or FakePagesC()
+    app = create_app(provider=MockProvider())
     app.router.routes[:0] = [*control_routes(st).routes, *c_routes(st).routes]
-    if os.environ.get(CONTROL_ENV) == "yes_box_sends_yes":
-        app.router.routes[:0] = list(yes_box_sends_yes().routes)
 
     @app.middleware("http")
-    async def seen_and_refused(request: Request, call_next: Any) -> Any:
-        """Every writer and pages request is noted; a refusal the test set answers first."""
-        path = request.url.path
-        if path.startswith(("/v1/book/writer", "/v1/book/pages")):
-            st.asked.append(f"{request.method} {path}?{request.url.query}")
-            name = path.removeprefix(http.WRITER_PREFIX + "/")
-            if path.startswith(http.WRITER_PREFIX + "/") and name in st.refuse:
-                code, err, words = st.refuse[name]
-                return _no(code, err, words)
+    async def noted(request: Request, call_next: Any) -> Any:
+        """Every pages request is noted."""
+        if request.url.path.startswith(http.PAGES_PREFIX):
+            st.asked.append(f"{request.method} {request.url.path}?{request.url.query}")
         return await call_next(request)
 
     return app
@@ -377,7 +271,7 @@ def serve_c(token: str) -> tuple[str, Callable[[], None]]:
 
 # ---- for the browser tests (duck-typed Playwright objects: nothing imported here) --------------
 def set_state(url: str, **state: Any) -> None:
-    """POST the test-only state route: `reset=True` first, then any FakeWriterC field."""
+    """POST the test-only state route: `reset=True` first, then any FakePagesC field."""
     req = urllib.request.Request(
         url + CONTROL,
         data=json.dumps(state).encode(),
@@ -395,15 +289,9 @@ def seen(url: str) -> dict[str, Any]:
 
 
 def route_c(page: Any) -> None:
-    """After `book_mocks.FakeBook(page)`: the writer's and the full book's routes go on to C's
-    fake server (Playwright tries the routes registered last first)."""
-    for pattern in (
-        "**/v1/book/writer",
-        "**/v1/book/writer/**",
-        "**/v1/book/pages",
-        "**/v1/book/pages?*",
-        "**/v1/book/pages/**",
-    ):
+    """After `book_mocks.FakeBook(page)`: the full book's routes go on to C's fake server
+    (Playwright tries the routes registered last first)."""
+    for pattern in ("**/v1/book/pages", "**/v1/book/pages?*", "**/v1/book/pages/**"):
         page.route(pattern, lambda route: route.continue_())
 
 
@@ -417,16 +305,13 @@ def until(page: Any, check: Callable[[], bool], what: str, timeout_s: float = 20
 
 
 __all__ = [
-    "CHANGED",
     "CONTROL",
-    "CONTROL_ENV",
     "GUEST_BOOK",
     "NEW_CARD",
     "OLDER",
     "OWNER_BOOK",
-    "STALE_ESTIMATE",
     "WRITTEN",
-    "FakeWriterC",
+    "FakePagesC",
     "c_app",
     "pages_view",
     "route_c",

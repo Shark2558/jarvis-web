@@ -1,0 +1,35 @@
+{
+  "title": "Ring, hold or drop: one alert's path",
+  "dir": "down",
+  "nodes": [
+    {"id": "signal", "label": "A feature sends an alert", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/notify/sink.py"},
+    {"id": "switch", "label": "Kind switched off?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/notify/service.py"},
+    {"id": "rules", "label": "Fixed rules decide", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/notify/policy.py"},
+    {"id": "storm", "label": "Storm control", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/notify/storm.py"},
+    {"id": "hold", "label": "Held: kind and time", "kind": "store", "rank": 3, "col": 1,
+     "ref": "src/jarvis/notify/store.py"},
+    {"id": "feed", "label": "Console feed only", "kind": "step", "rank": 3, "col": 2},
+    {"id": "summary", "label": "One morning summary", "kind": "step", "rank": 4, "col": 1,
+     "ref": "src/jarvis/notify/held.py"},
+    {"id": "telegram", "label": "Telegram", "kind": "service", "rank": 5, "col": 0,
+     "ref": "src/jarvis/notify/telegram_out.py"},
+    {"id": "push", "label": "Web Push", "kind": "service", "rank": 5, "col": 1}
+  ],
+  "edges": [
+    {"from": "signal", "to": "switch"},
+    {"from": "switch", "to": "rules", "label": "on"},
+    {"from": "switch", "to": "feed", "label": "off", "style": "side"},
+    {"from": "rules", "to": "storm", "label": "ring or silent"},
+    {"from": "rules", "to": "hold", "label": "quiet hours"},
+    {"from": "rules", "to": "feed", "label": "info at night", "style": "side"},
+    {"from": "hold", "to": "summary", "label": "quiet hours end"},
+    {"from": "storm", "to": "telegram"},
+    {"from": "storm", "to": "push"},
+    {"from": "summary", "to": "telegram", "style": "side"},
+    {"from": "summary", "to": "push", "style": "side"}
+  ]
+}

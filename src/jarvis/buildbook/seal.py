@@ -35,6 +35,7 @@ from jarvis.buildbook.seal_index import (
     Part,
     age,
     checked_files,
+    has_file,
     parts_of,
 )
 from jarvis.buildbook.seal_state import SealHeld, held_of, lease_path
@@ -199,7 +200,7 @@ class DocsBookVault:
             return found
         if index.size() + sum(len(b) for b in data.values()) > self._limit:
             raise BookOff("Sealing this release would pass the build book's storage limit.")
-        sealed = [self._seal_file(uid, release.id, kind, data[kind]) for kind in KINDS]
+        sealed = [self._seal_file(uid, release.id, kind, body) for kind, body in data.items()]
         entry = SealedRelease(
             **release.ref().model_dump(),
             sealed_at=now.isoformat(),
@@ -296,6 +297,8 @@ class DocsBookVault:
         found = (await self._load(uid)).find(rid)
         if found is None:
             raise LookupError("That release isn't sealed in your vault.")
+        if not has_file(found, kind):  # R6.3.1: sealed before v6.3.2: no pages or flows file
+            raise LookupError("That release was sealed without this file.")
         f = found.file(kind)
         try:
             dek = self._c.unwrap(uid, rid, f.fid, f.dek)

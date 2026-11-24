@@ -1,0 +1,33 @@
+{
+  "title": "One tool call through the gate",
+  "dir": "down",
+  "nodes": [
+    {"id": "call", "label": "The brain asks for a tool", "kind": "step", "rank": 0, "col": 0},
+    {"id": "args", "label": "Arguments checked", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/tools/gateway.py"},
+    {"id": "policy", "label": "Rules and your Permissions", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/tools/policy.py"},
+    {"id": "taint", "label": "Spoken or outside text?", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/tools/taint.py"},
+    {"id": "deny", "label": "Refused, said plainly", "kind": "step", "rank": 3, "col": 2},
+    {"id": "card", "label": "Approval card waits", "kind": "person", "rank": 4, "col": 1},
+    {"id": "run", "label": "Tool runs", "kind": "service", "rank": 4, "col": 0},
+    {"id": "fence", "label": "Outside text fenced", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/tools/external.py"},
+    {"id": "audit", "label": "Hash-chained diary line", "kind": "store", "rank": 6, "col": 0,
+     "ref": "src/jarvis/storage/audit.py"}
+  ],
+  "edges": [
+    {"from": "call", "to": "args"},
+    {"from": "args", "to": "policy"},
+    {"from": "policy", "to": "deny", "label": "deny", "style": "side"},
+    {"from": "policy", "to": "taint", "label": "allow"},
+    {"from": "policy", "to": "card", "label": "ask", "style": "side"},
+    {"from": "taint", "to": "card", "label": "yes, a write"},
+    {"from": "taint", "to": "run", "label": "no"},
+    {"from": "card", "to": "run", "label": "you approve", "style": "side"},
+    {"from": "run", "to": "fence"},
+    {"from": "fence", "to": "audit"},
+    {"from": "deny", "to": "audit", "style": "side"}
+  ]
+}

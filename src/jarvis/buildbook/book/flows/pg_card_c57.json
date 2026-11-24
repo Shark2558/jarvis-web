@@ -1,0 +1,36 @@
+{
+  "title": "From the Workshop's page to your reader",
+  "dir": "down",
+  "nodes": [
+    {"id": "workshop", "label": "Workshop writes a page", "kind": "person", "rank": 0, "col": 0},
+    {"id": "check", "label": "CI checks every page", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/buildbook/gen/pages_cli.py"},
+    {"id": "refused", "label": "Out of date: not merged", "kind": "step", "rank": 1, "col": 1},
+    {"id": "compile", "label": "Generator compiles it", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/buildbook/gen/compile_pages.py"},
+    {"id": "plain", "label": "Missing: plain text", "kind": "step", "rank": 2, "col": 1,
+     "ref": "src/jarvis/buildbook/writer/pages.py"},
+    {"id": "release", "label": "Into the release", "kind": "store", "rank": 3, "col": 0,
+     "ref": "src/jarvis/buildbook/gen/write.py"},
+    {"id": "seal", "label": "Sealed in your vault", "kind": "store", "rank": 4, "col": 0,
+     "ref": "src/jarvis/buildbook/sealer.py"},
+    {"id": "open", "label": "Passkey, fresh sign-in", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/book_show_access.py"},
+    {"id": "serve", "label": "Kept release's pages", "kind": "step", "rank": 6, "col": 0,
+     "ref": "src/jarvis/buildbook/writer/serve.py"},
+    {"id": "reader", "label": "Page and its flowchart", "kind": "person", "rank": 7, "col": 0,
+     "ref": "src/jarvis/api/static/console-book-flow.js"}
+  ],
+  "edges": [
+    {"from": "workshop", "to": "check"},
+    {"from": "check", "to": "refused", "label": "stale or failing", "style": "side"},
+    {"from": "check", "to": "compile", "label": "merged"},
+    {"from": "compile", "to": "plain", "label": "missing", "style": "side"},
+    {"from": "compile", "to": "release"},
+    {"from": "plain", "to": "release", "style": "side"},
+    {"from": "release", "to": "seal"},
+    {"from": "seal", "to": "open"},
+    {"from": "open", "to": "serve"},
+    {"from": "serve", "to": "reader"}
+  ]
+}

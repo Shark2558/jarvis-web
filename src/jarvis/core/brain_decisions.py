@@ -23,7 +23,15 @@ from dataclasses import dataclass, field
 
 from jarvis.core.channel import answered_offline
 from jarvis.core.guardrails import PendingAction
-from jarvis.core.models import ChatResponse, PendingApproval, Session, Turn, UndoRef
+from jarvis.core.models import (
+    ChatResponse,
+    PendingApproval,
+    Session,
+    Turn,
+    UndoRef,
+    unpriced,
+    unpriced_calls,
+)
 from jarvis.core.rounds import undo_refs
 from jarvis.llm.base import Completion, Role, TextBlock, ToolCall, Usage
 from jarvis.logging import get_logger
@@ -82,6 +90,7 @@ def narration(reply: str, completion: Completion | None, trace_id: str) -> Turn:
         usage=completion.usage if completion else None,
         cost_usd=completion.cost_usd if completion else 0.0,
         tool_derived=True,
+        unpriced=unpriced(completion),
     )
 
 
@@ -108,6 +117,8 @@ def response(
         cost_inr=cost_inr,
         total_cost_usd=session.total_cost_usd,
         total_cost_inr=total_inr,
+        unpriced=unpriced(completion),
+        unpriced_calls=unpriced_calls(session.turns),
         latency_ms=0,
         turn_count=len(session.turns),
         tool_calls=out.tool_calls,

@@ -257,7 +257,7 @@ class Brain:
         cost: float,
     ) -> None:
         """Store the streamed reply, then schedule the background follow-up."""
-        session.append(reply.model_copy(update={"model": model, "cost_usd": cost}))
+        session.append(finish.streamed(reply, spec, model=model, cost=cost))  # R6.4 D9
         await self.store.save(session)
         self._after_turn(user_id, session, spec, rec)
 

@@ -31,6 +31,10 @@ READ_ASSETS: dict[str, str] = {
     "console-book-read-search.js": JS,  # A: the search box and its results (D4)
     "console-book-chapter.js": JS,  # B: the chapter player (ES module)
     "console-book-fx.js": JS,  # B: the effects engine, D11 (ES module, imported by the player)
+    "console-book-chapter-view.js": JS,  # B: the player's DOM, controls and lit captions (imported)
+    "console-book-fx-plan.js": JS,  # B: the scene at each line and the variation picker (pure)
+    "console-book-fx-chart.js": JS,  # B: the flowchart's lit boxes, tracing, entrances, camera
+    "console-book-fx-cards.js": JS,  # B: section cards, storyboard, count-up, failure frame
 }
 router = APIRouter()
 

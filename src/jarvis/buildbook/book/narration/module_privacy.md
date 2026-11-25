@@ -1,0 +1,84 @@
+---
+chapter: module_privacy
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_privacy": "94d87fe277d78e11"
+  "pg_card_c53": "909359e8f682a430"
+  "pg_screen_privacy": "02f740526eda5bbe"
+---
+- [page:pg_module_privacy] [show:title] This chapter is about the privacy panel: the one place that shows everything JARVIS keeps about you and your family.
+- [show:plain] The panel is one screen in the console, listing every kind of data JARVIS keeps.
+- For each kind, it shows what it is, how many items there are, how long they are kept, where they live, and whether JARVIS encrypts them itself.
+- Each kind has an Export button, and a Delete button wherever removing it makes sense.
+- Nothing JARVIS remembers is hidden from you, and whatever you want gone leaves from this one place.
+- For anything that would be gone for good, your passkey is asked first.
+- [show:overview] Here is what happens when you export or delete from the panel.
+- [node:open] It starts with you, opening Privacy.
+- [edge:open>list] The panel asks JARVIS for the list.
+- [node:list] JARVIS reads each feature's own store, and answers only you, the signed-in owner.
+- The panel checks every field before it draws a card, and drops anything of the wrong type.
+- [count:{{fact:src/jarvis/api/privacy.py:VIEW_PER_MINUTE}}] Every call has a limit for you alone: {{fact:src/jarvis/api/privacy.py:VIEW_PER_MINUTE}} looks a minute, and {{fact:src/jarvis/api/privacy.py:CHANGE_PER_MINUTE}} exports or deletes.
+- [edge:list>choose] With the list in front of you, you choose.
+- [node:choose] You pick Export, or Delete.
+- [edge:choose>console] Either one meets a guard first.
+- [node:console] JARVIS asks: is this the console, in your own browser?
+- [edge:console>refused] A caller holding only a bearer token takes the side path.
+- [node:refused] It is refused: only the console in your own browser takes data out or removes it.
+- [edge:console>proof] From your console, the request moves on to the proof.
+- [node:proof] For data that would be gone for good, the panel asks for your passkey, bound to that kind of data and to what you saw.
+- With no passkey set up yet, it asks for the word DELETE, typed out, and a fresh Google sign-in instead.
+- [edge:proof>file] An export goes one way.
+- [node:file] It comes back as a file, named after the kind of data and today's date, and never cached.
+- Download everything gathers every exportable kind into one file, and leaves the vault files out.
+- [edge:proof>same] A delete goes the other way.
+- [node:same] The delete carries a fingerprint of what you saw, and JARVIS asks: is it unchanged since you looked?
+- [edge:same>changed] If it changed, the path turns aside.
+- [node:changed] You see a note that this changed, the list reloads, and your passkey check is not used up.
+- [edge:same>gone] If it is unchanged, the delete goes ahead.
+- [node:gone] The data is removed from its own store.
+- [show:example] In the made-up example, Nandini opens Privacy on her laptop one Sunday evening.
+- The top line tells her how many kinds of data JARVIS keeps about her family.
+- Under Memory she sees her facts, kept until she deletes them.
+- She taps Export, her phone asks for her fingerprint, and a file named after Memory and the day lands in her downloads.
+- Next, she decides last week's morning briefs should go.
+- She taps Delete, the dialog says how many briefs it removes and warns that they won't come back, and her phone asks for her fingerprint again.
+- A moment later, the note under the button tells her the briefs were deleted.
+- [show:costs] It costs nothing: the panel makes no AI call and uses no outside service. It only reads and removes what JARVIS already keeps.
+- [show:fails] A kind of data that can't be read keeps its card and says it couldn't check right now, so the rest of the list still shows.
+- Too many requests in a minute get a short wait.
+- A delete that left items behind says how many are still there, and one your home laptop finishes later says so in the note.
+- And a Google sign-in that is too old for a delete shows a button to sign in with Google again.
+- [page:pg_card_c53] [show:title] The first part is the privacy dashboard behind the panel.
+- [show:plain] It lists everything JARVIS keeps about you, one row per kind, each with Export and, where it makes sense, Delete.
+- Deleting something gone for good, like conversations or memories, needs your passkey, so a stolen phone with an open console is not enough.
+- Download everything gives you one file with all of it, and never a secret.
+- [show:how] Every feature that keeps something about you signs up as a source for the dashboard.
+- [count:{{fact:src/jarvis/privacy/ports.py:SOURCE_BUDGET_S}}] The dashboard asks them all at once, each within {{fact:src/jarvis/privacy/ports.py:SOURCE_BUDGET_S}} seconds, and a slow or failing one still keeps its row.
+- The one exception is a retired feature's leftover row, such as the Book's old writer trial: it leaves the list once a check finds it empty.
+- Each row carries a delete class, which decides what you must prove first.
+- None means it is explained, but not deletable here. Simple means a setting you can make again.
+- Confirm means a dialog listing what goes. And passkey means content that can't be brought back.
+- Each row also gets a short revision from what you were shown, so a delete is refused if the data changed, and no proof is spent.
+- Every export is scrubbed as a second line of defence: anything named like a token, key, password or encrypted blob is dropped, at any depth.
+- Every export and delete is audited with the row and a count, never the content.
+- The sources cover conversations, memories, approvals, the audit, briefs, Google, Drive, places, faces, Telegram and more.
+- [show:example] In the made-up example, on a quiet evening, you open Privacy and see your conversations and memories counted.
+- You export your memories as a small file, then delete your conversations: JARVIS lists what goes, asks for your passkey, and the row empties.
+- Your laptop is off just then, so the Face groups row says its delete will finish when the laptop is back on.
+- [show:costs] It costs nothing: no rupees, no AI and no outside service, and it keeps nothing of its own.
+- [show:fails] A row whose source fails keeps its place and says it couldn't check right now; it never disappears.
+- A delete that partly fails says how many are still there, and one the home laptop must finish stays pending until the laptop is back on.
+- [page:pg_screen_privacy] [show:title] Last, the Privacy screen in your console.
+- [show:plain] There is a card for each kind of data: what it is, how many, how long it is kept, where it is stored, and whether JARVIS encrypts it.
+- [show:how] A card shows an Encrypted by JARVIS badge when that is so.
+- Export on a simple card downloads straight away; for private content, it first needs your passkey, or a Google sign-in from the last few minutes.
+- Download everything leaves out vault files, which the Vault exports on its own.
+- The Delete button opens a box that says what will go, and the delete travels with the version of the card you saw.
+- [show:example] In the made-up example, you decide to clear out the list of what JARVIS did this week.
+- [count:{{fact:settings.activity_retention_days}}] You scroll to the Activity card, whose rows are kept for {{fact:settings.activity_retention_days}} days.
+- You press Export first and keep the file, then Delete, read what will go, and use your passkey.
+- The card now tells you its rows were deleted, and shows none left.
+- [show:costs] Looking, exporting and deleting cost nothing: they read and write JARVIS's own records, with no AI.
+- [show:fails] [count:{{fact:src/jarvis/api/privacy.py:CHANGE_PER_MINUTE}}] If part of a delete fails, the card suggests trying again in a moment, and changes are limited to {{fact:src/jarvis/api/privacy.py:CHANGE_PER_MINUTE}} a minute.
+- That is the privacy panel: everything JARVIS keeps, in plain sight, yours to take away or to delete, with your passkey guarding what can't come back.

@@ -18,6 +18,10 @@ The steps
     allow the Bluetooth pairing on both the laptop and the phone. Make one short test call from
     Phone Link to be sure it works. If Phone Link says your laptop's Bluetooth cannot do calls,
     stop here and tell Claude: that is the test's first answer.
+    If Phone Link says "Calls using Bluetooth headsets are not supported": a Bluetooth headset or
+    earbuds are connected to the LAPTOP. Turn them off, or Settings -> Bluetooth & devices -> the
+    headset -> Disconnect. Phone Link calls use the laptop's own speaker and microphone (or a
+    wired or USB headset), and so does this test.
 
  2. VB-CABLE (a free virtual microphone cable, from VB-Audio).
     Open https://vb-audio.com/Cable/ -> download "VBCABLE_Driver_Pack" (Windows) -> right-click

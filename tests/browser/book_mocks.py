@@ -469,6 +469,17 @@ def j(route: Any, status_code: int, body: Any) -> None:
 # a server with no full book, so it draws nothing (C's browser files send those routes on to C's
 # fake server instead, `r63_fakes_c.route_c`). R6.3.1 D8: the writer's route is gone.
 NO_PAGES = {"release": RELEASE["id"], "parts": [], "limitations": {"shown": 0, "total": 0}}
+# R6.4 D5: GET /v1/book/chapters as I0 shapes it (docs/plans/r6-4-integration/I0-NOTES.md)
+CHAPTERS = {
+    "release": RELEASE["id"],
+    "chapters": [
+        {"id": "story_what", "title": "What JARVIS is", "kind": "story",
+         "pages": ["pg_chapter_what"], "minutes": 0, "narrated": False},
+        {"id": "module_vault", "title": "Vault and documents", "kind": "module",
+         "pages": ["pg_module_vault", "pg_card_c07", "pg_card_c42", "pg_card_c43",
+                   "pg_screen_vault"], "minutes": 7, "narrated": True},
+    ],
+}  # fmt: skip
 
 
 class FakeBook:
@@ -490,6 +501,7 @@ class FakeBook:
         self.speak_status = 200
         self.ask_answers: list[dict[str, Any]] = []
         self.lock: dict[str, Any] | None = {"on": False}  # None: a server without the lock route
+        self.chapters_answer: tuple[int, Any] = (200, CHAPTERS)  # R6.4: the reader's first call
         self.resume_answers: list[
             Any
         ] = []  # consumed in order ("abort" or (code, body)); then resumed
@@ -579,6 +591,9 @@ class FakeBook:
             return self._fail(route, got) if got == "abort" else j(route, *got)
         if m == "GET" and p == "/v1/book/pages":
             return j(route, 200, NO_PAGES)
+        if m == "GET" and p == "/v1/book/chapters":  # R6.4 D5
+            code, body = self.chapters_answer
+            return j(route, code, body)
         return j(route, 404, {"error": "not_found", "detail": p})
 
     def _settings(self, route: Any, method: str, body: Any) -> None:

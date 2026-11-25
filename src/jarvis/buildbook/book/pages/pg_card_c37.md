@@ -28,7 +28,7 @@ On a rainy Sunday you press Import in Connectors and pick 600 family photos in G
 ## How it works
 `PhotosService` opens a picker session for up to `photos_max_picked` photos ({{fact:settings.photos_max_picked}}), and `Importer` then runs the import in steps that save after every photo, so a restart or a sleeping laptop loses nothing (`src/jarvis/photos/imports.py`).
 Each step asks the laptop first, keeps only the picked item ids, and reads at least `photos_import_batch` photos ({{fact:settings.photos_import_batch}}) when time allows, at most {{fact:src/jarvis/photos/imports.py:STEP_MAX_PHOTOS}}.
-`PickerClient` downloads each photo, and `sanitise_jpeg` keeps only what a decoder needs, dropping location, camera data and anything wider than {{fact:src/jarvis/photos/imaging.py:MAX_IMAGE_SIDE}} pixels (`src/jarvis/photos/imaging.py`).
+`PickerClient` downloads each photo, and `sanitise_jpeg` keeps only what a decoder needs, dropping location and camera data, and refuses a picture wider or taller than {{fact:src/jarvis/photos/imaging.py:MAX_IMAGE_SIDE}} pixels (`src/jarvis/photos/imaging.py`).
 `BridgeHomeEdge` sends the picture to your laptop over the signed home link and accepts only ids and counts back; one extra field and the whole answer is refused (`src/jarvis/photos/edge.py`).
 The progress lives in `photo_imports` as counts and ids only (`ImportStore`), and a photo Google won't hand over is retried, counted as unreadable only after {{fact:src/jarvis/photos/imports.py:MAX_STUCK_STEPS}} stuck steps.
 Naming a face group runs the faces registry's consent check first, and a child is only ever "a child from your family" (`src/jarvis/photos/tools.py`).

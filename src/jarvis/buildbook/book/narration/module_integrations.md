@@ -3,7 +3,7 @@ chapter: module_integrations
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_module_integrations": "715099197d80e9fa"
+  "pg_module_integrations": "e8592d04e7c04dd9"
   "pg_card_c04": "83314f69de55b394"
   "pg_card_c20": "f3c2b7750c25dcf6"
   "pg_card_c22": "48c312e679640db7"
@@ -15,7 +15,7 @@ pages:
   "pg_card_c34": "4bd1adbd50ab4fc1"
   "pg_card_c35": "510bfae537fa2f78"
   "pg_card_c36": "2f31e3b0d7e8550b"
-  "pg_card_c37": "4ddd90bb8812b0c8"
+  "pg_card_c37": "8e6749bd292733bd"
   "pg_screen_integrations": "38a09462ca7c3064"
   "pg_screen_media": "91a2f6aa9f6828f4"
   "pg_screen_connectors": "c7e8150fdec90f7e"
@@ -32,7 +32,8 @@ pages:
   "pg_service_youtube_data_api": "eb72ed99358008f7"
 ---
 - [page:pg_module_integrations] [show:title] This chapter is about how JARVIS reaches the services you already use: Google, Telegram, the web and more.
-- [show:plain] Through Google, JARVIS reads your calendar and mail, manages your to-dos, looks up contacts, reads chosen Drive folders, and uses Maps and YouTube.
+- [show:plain] Linking your Google account lets JARVIS read your calendar and mail, manage your to-dos, look up contacts and, once granted, read your own YouTube channel.
+- Drive folders you share with JARVIS's own Google account are read with that account, and places, routes and YouTube searches use JARVIS's own server key.
 - Telegram is a second front door on your phone, and WhatsApp drafts are sent by you.
 - [show:overview] Here is how a request reaches an outside service.
 - [node:you] [edge:you>gateway] [node:gateway] You ask, in the console or on Telegram, and every request passes the same gateway and your rules.
@@ -122,7 +123,7 @@ pages:
 - [show:overview] Here is one photo's trip from the picker to your laptop.
 - [node:pick] [edge:pick>ids] [count:{{fact:settings.photos_max_picked}}] You pick up to {{fact:settings.photos_max_picked}} photos, and JARVIS keeps only their ids.
 - [edge:ids>laptop] [node:laptop] [edge:laptop>paused] Each step asks the laptop first, and when it is asleep, the import pauses and says why.
-- [edge:laptop>download] [edge:download>strip] [count:{{fact:src/jarvis/photos/imaging.py:MAX_IMAGE_SIDE}}] A photo is downloaded and stripped of location and camera data, and one wider than {{fact:src/jarvis/photos/imaging.py:MAX_IMAGE_SIDE}} pixels is refused.
+- [edge:laptop>download] [edge:download>strip] [count:{{fact:src/jarvis/photos/imaging.py:MAX_IMAGE_SIDE}}] A photo is downloaded and stripped of location and camera data, and one wider or taller than {{fact:src/jarvis/photos/imaging.py:MAX_IMAGE_SIDE}} pixels is refused.
 - [edge:strip>edge] [edge:edge>back] It travels over the signed home link, and only ids and counts come back.
 - [edge:back>save] [node:save] [edge:save>laptop] Progress is saved and the photo dropped, then the next one goes the same way.
 - Naming a face group runs the consent check first.

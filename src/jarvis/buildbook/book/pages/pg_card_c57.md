@@ -7,7 +7,8 @@ sources:
   "src/jarvis/api/book_gate.py": "b1bf38575b990d23"
   "src/jarvis/api/book_http.py": "58ffea121e68de1e"
   "src/jarvis/api/book_lock.py": "1994399efbb17bc3"
-  "src/jarvis/api/book_pages.py": "a66e5b4cc11e391e"
+  "src/jarvis/api/book_pages.py": "8ab07f57314892fd"
+  "src/jarvis/api/book_read.py": "678194bf5e580b86"
   "src/jarvis/api/book_show.py": "79493ebecfd85611"
   "src/jarvis/api/book_show_access.py": "4614f0f3a33e1f1c"
   "src/jarvis/api/book_show_auth.py": "578d1d8bcfefe4cf"
@@ -15,12 +16,17 @@ sources:
   "src/jarvis/api/book_show_wiring.py": "41f136cc471cf3a2"
   "src/jarvis/api/book_status.py": "1de1a7bf97cd4303"
   "src/jarvis/api/r6_wiring.py": "a7a1861afa933ec1"
+  "src/jarvis/api/static/book-read.css": "8b86412e7507ffeb"
+  "src/jarvis/api/static/book-read.html": "267810770fdbee5b"
   "src/jarvis/api/static/book.html": "6850d85fff7da878"
   "src/jarvis/api/static/console-book-2d.js": "2200336e767fc26b"
   "src/jarvis/api/static/console-book-3d.js": "5aa19146aa15abe2"
+  "src/jarvis/api/static/console-book-chapter.js": "db9d56272432c663"
   "src/jarvis/api/static/console-book-flow-layout.js": "e82ff4390e084ac2"
   "src/jarvis/api/static/console-book-flow.js": "40c9366f3318a186"
+  "src/jarvis/api/static/console-book-fx.js": "7fdbbab5a80efb91"
   "src/jarvis/api/static/console-book-pages.js": "c36a106d91b3e8a0"
+  "src/jarvis/api/static/console-book-read.js": "37720b98debc1790"
   "src/jarvis/api/static/console-book-reader.js": "38e4025b70a98cba"
   "src/jarvis/api/static/console-book-scenes-data.js": "c981408bacaff280"
   "src/jarvis/api/static/console-book-scenes-flow.js": "1e4ad251df6d3b9b"
@@ -30,7 +36,7 @@ sources:
   "src/jarvis/api/static/console-book-talk.js": "17d0515bfbb34ddf"
   "src/jarvis/api/static/console-book-tour.js": "658a1caa6aace0a0"
   "src/jarvis/api/static/console-book-voice.js": "a66b7196d43b5663"
-  "src/jarvis/api/static/console-book.js": "53d54d63c90501c5"
+  "src/jarvis/api/static/console-book.js": "bfe93540e7151263"
   "src/jarvis/buildbook/INTEGRATION-A.md": "76357770f284cb54"
   "src/jarvis/buildbook/INTEGRATION-B.md": "ecf20c0bd5fb2e9d"
   "src/jarvis/buildbook/INTEGRATION-C.md": "94a89b2869fe2cca"
@@ -42,7 +48,8 @@ sources:
   "src/jarvis/buildbook/gen/__main__.py": "e0f9717b90280f80"
   "src/jarvis/buildbook/gen/chunks.py": "4361a99c81e89721"
   "src/jarvis/buildbook/gen/code.py": "74c368cefabd28ff"
-  "src/jarvis/buildbook/gen/compile_pages.py": "3e0ee27256d71703"
+  "src/jarvis/buildbook/gen/compile_narration.py": "e37073158afa808c"
+  "src/jarvis/buildbook/gen/compile_pages.py": "90eb61f2a1dde943"
   "src/jarvis/buildbook/gen/costs.py": "bab8c2735c437938"
   "src/jarvis/buildbook/gen/facts.py": "25ec594fecdba061"
   "src/jarvis/buildbook/gen/facts_cache.py": "bd6bf85ae50fed31"
@@ -59,7 +66,8 @@ sources:
   "src/jarvis/buildbook/gen/licences.py": "70f05682c097905b"
   "src/jarvis/buildbook/gen/loc.py": "72deb29b5ea46235"
   "src/jarvis/buildbook/gen/modules.py": "91d1d05ab6410b2e"
-  "src/jarvis/buildbook/gen/pages_cli.py": "e7f2e404261ef95c"
+  "src/jarvis/buildbook/gen/narration_cli.py": "391a57476632a8d1"
+  "src/jarvis/buildbook/gen/pages_cli.py": "396d8bacb1a01500"
   "src/jarvis/buildbook/gen/pages_index.py": "94f193a0b07136a3"
   "src/jarvis/buildbook/gen/plans.py": "d173ea7786b4b45d"
   "src/jarvis/buildbook/gen/redact.json": "0fbb9a5800d1b025"
@@ -104,28 +112,30 @@ sources:
   "src/jarvis/buildbook/unlock.py": "a8cc9e601703c920"
   "src/jarvis/buildbook/writer/__init__.py": "cbf8badf2e2309ad"
   "src/jarvis/buildbook/writer/carry.py": "d88742644ccf35e0"
+  "src/jarvis/buildbook/writer/chapters.py": "d17d36a5df9667ee"
   "src/jarvis/buildbook/writer/checks.py": "e753b27107a46f37"
   "src/jarvis/buildbook/writer/fill.py": "15da9b37dca0161e"
-  "src/jarvis/buildbook/writer/http.py": "a8ac9b7f1281fa7d"
-  "src/jarvis/buildbook/writer/model.py": "d6871549c1709801"
+  "src/jarvis/buildbook/writer/http.py": "0e10b5c1ac97dc97"
+  "src/jarvis/buildbook/writer/model.py": "3b4a5d458ccc6e43"
   "src/jarvis/buildbook/writer/packs.py": "f44cc6f5287a2673"
   "src/jarvis/buildbook/writer/pages.py": "ceb29fdba977b643"
   "src/jarvis/buildbook/writer/ports.py": "38f1d0d949120987"
   "src/jarvis/buildbook/writer/privacy.py": "d4078ad08f78acf1"
-  "src/jarvis/buildbook/writer/serve.py": "c6115dc83f8a168c"
-  "src/jarvis/buildbook/writer/texts.py": "38f334fe9cc95de9"
+  "src/jarvis/buildbook/writer/search.py": "bab272bfc2a715fb"
+  "src/jarvis/buildbook/writer/serve.py": "fd1317ec69c29b9f"
+  "src/jarvis/buildbook/writer/texts.py": "6f3404fa209040d2"
 ---
 ## In plain words
-The Build Book is JARVIS's own record of how it is built. With every release it writes down its parts, the technology and libraries it uses, how they fit together, what each costs and where it falls short, then seals that book and the release's code in your vault, so you keep a true copy of every version you ran. You open it from the Book panel with your passkey and a fresh Google sign-in. Inside are the book's sections, a short narrated tour, a show you give a guest, and the full book: a page for every part, module, screen and outside service, written by the Workshop while it builds JARVIS and checked against the code. JARVIS calls no AI to write any of it, so the book is ₹0 and there is nothing for you to approve.
+The Build Book is JARVIS's own record of how it is built. With every release it writes down its parts, the technology and libraries it uses, how they fit together, what each costs and where it falls short, then seals that book and the release's code in your vault, so you keep a true copy of every version you ran. You open it from the Book panel with your passkey and a fresh Google sign-in. Inside are the book's sections, a short narrated tour, a show you give a guest, and the full book: a page for every part, module, screen and outside service, written by the Workshop while it builds JARVIS and checked against the code. JARVIS calls no AI to write any of it, so the book is ₹0 and there is nothing for you to approve. From R6.4 its pages are grouped into chapters, each with a spoken script the Workshop writes, and the full book opens on a page of its own.
 
 ## Example (made up)
 On a Sunday a new version of JARVIS goes live. Within minutes its book is sealed, and the Book panel's release card turns to Sealed; Kept releases lists three versions. You open the book for yourself with your fingerprint, tap Full book, then Read beside "Vault". The page says "Written by the Workshop · 24 Nov 2026", and a flowchart sits above How it works. Later you show a friend, Neha, the short tour as a guest. Your other console tabs lock while it plays, and at the end you lift the lock with your passkey.
 
 ## How it works
-At each release the generator builds the book from the code itself, with no AI: its sections, a copy of the source, the fact pack and the full book (`src/jarvis/buildbook/gen/write.py`). The full book's pages are written by the Workshop during development, and `compile_pages` checks each one against this release's facts and fills in its numbers. A page that is missing or fails a check goes in as the generator's plain text instead, so a page never breaks a build (`generator_page`). On every pull request CI runs the Workshop's page check from `src/jarvis/buildbook/gen/pages_cli.py`, which refuses a page that is missing, failing, or older than the code it describes. Once the release is live, `BookSealer` seals its book, code, pages and flowcharts in your vault, keeping the newest {{fact:src/jarvis/buildbook/model.py:KEEP}} releases within {{fact:settings.book_max_total_mb}} MB (`src/jarvis/buildbook/seal.py`). It runs from `BookSealJob` on the existing clocks and when the Book panel asks, never at start-up, so a version that never went live is never sealed (`src/jarvis/buildbook/sealer.py`). `open_flow` opens the book only with passkeys in force and a fresh Google sign-in, with the passkey proof bound to whether the session is yours or a guest's (`src/jarvis/api/book_show_access.py`). A session lasts at most {{fact:settings.book_session_minutes}} minutes and ends after {{fact:settings.book_idle_minutes}} idle ones (`src/jarvis/buildbook/sessions.py`). During a guest's show, `ShowLockMiddleware` holds your other consoles to the show's own routes until your passkey lifts the lock (`resume_flow`). The talk-through, `BookTalk`, answers up to {{fact:settings.book_talk_questions}} questions a session from the book alone, with no tools, after `src/jarvis/buildbook/guard.py` has turned away anything about your data or asking for an action. `BookPages` reads a kept release's full book from its sealed files for `GET /v1/book/pages`, for the main owner's own session only (`src/jarvis/api/book_pages.py`). `src/jarvis/api/static/console-book-pages.js` shows each page, and `src/jarvis/api/static/console-book-flow.js` draws its flowchart in the console's Night and Day colours. What the earlier writer trial stored keeps a Privacy row, "Book writer (old trial)", until you delete it with your passkey (`OldWriterSource`).
+At each release the generator builds the book from the code itself, with no AI: its sections, a copy of the source, the fact pack and the full book (`src/jarvis/buildbook/gen/write.py`). The full book's pages are written by the Workshop during development, and `compile_pages` checks each one against this release's facts and fills in its numbers. A page that is missing or fails a check goes in as the generator's plain text instead, so a page never breaks a build (`generator_page`). `compile_narration` adds the chapters to the same pages file, with the lines of each chapter whose spoken script passes its checks. On every pull request CI runs the Workshop's checks from `src/jarvis/buildbook/gen/pages_cli.py`, which refuse a page or a script that is missing, failing, or older than what it describes. Once the release is live, `BookSealer` seals its book, code, pages and flowcharts in your vault, keeping the newest {{fact:src/jarvis/buildbook/model.py:KEEP}} releases within {{fact:settings.book_max_total_mb}} MB, never at start-up, so a version that never went live is never sealed (`src/jarvis/buildbook/sealer.py`). `open_flow` opens the book only with passkeys in force and a fresh Google sign-in, the proof bound to whether the session is yours or a guest's (`src/jarvis/api/book_show_access.py`). A session lasts at most {{fact:settings.book_session_minutes}} minutes and ends after {{fact:settings.book_idle_minutes}} idle ones (`src/jarvis/buildbook/sessions.py`). During a guest's show, `ShowLockMiddleware` holds your other consoles to the show's own routes until your passkey lifts the lock (`resume_flow`). `BookTalk` answers up to {{fact:settings.book_talk_questions}} questions a session from the book alone, after `src/jarvis/buildbook/guard.py` has turned away anything about your data or an action. `BookPages` reads a kept release's pages, its chapters and a word search of them from its sealed files, for the main owner's own session only (`src/jarvis/api/book_pages.py`). Read the full book opens them on a page of their own, `src/jarvis/api/static/book-read.html`, with the session's token kept in that tab alone (`src/jarvis/api/static/console-book-read.js`). What the earlier writer trial stored keeps a Privacy row, "Book writer (old trial)", until you delete it with your passkey (`OldWriterSource`).
 
 ## What it costs
-₹0 for the book, its sealing, the full book, the show and the tour: the generator and the compile make no AI call (`src/jarvis/buildbook/gen/compile_pages.py`), and the show speaks in the browser's own voice unless you switch to the cloud voice in Book settings. A question in the talk-through is one ordinary paid AI reply, counted against your monthly limit (`BookTalk`). The sealed books share your vault's space, at most {{fact:settings.book_max_total_mb}} MB in all.
+₹0 for the book, its sealing, the full book and its chapters' scripts, the show and the tour: the generator and the compile make no AI call (`src/jarvis/buildbook/gen/compile_pages.py`), and the show speaks in the browser's own voice unless you switch to the cloud voice in Book settings. A question in the talk-through is one ordinary paid AI reply, counted against your monthly limit (`BookTalk`). The sealed books share your vault's space, at most {{fact:settings.book_max_total_mb}} MB in all.
 
 ## When it fails
-A book that can't be built never stops a deploy: the release goes live without it, and you get one notice (`src/jarvis/buildbook/gen/runner.py`). A page that is missing or fails a check reads "Not written yet" with the generator's plain text, and every other page still opens. A release sealed before v6.3.2 has no full book, and the reader says it was sealed before its full book was written (`src/jarvis/buildbook/writer/texts.py`). When the vault can't be read, the full book asks you to try again in a moment (`BookPages`). A passkey lost during a guest show is recovered only by the emergency unlock, run with the server's own Google Cloud access (`src/jarvis/buildbook/unlock.py`). With No-AI on, or at the monthly limit, a question gets a fixed line and no call.
+A book that can't be built never stops a deploy: the release goes live without it, and you get one notice (`src/jarvis/buildbook/gen/runner.py`). A page that is missing or fails a check reads "Not written yet" with the generator's plain text, and every other page still opens. A release sealed before v6.3.2 has no full book, and the reader says it was sealed before its full book was written (`src/jarvis/buildbook/writer/texts.py`). When the vault can't be read, the full book asks you to try again in a moment (`BookPages`). A chapter whose script is missing or fails a check is listed without its lines (`compile_narration`). A passkey lost during a guest show is recovered only by the emergency unlock, run with the server's own Google Cloud access (`src/jarvis/buildbook/unlock.py`). With No-AI on, or at the monthly limit, a question gets a fixed line and no call.

@@ -3,7 +3,7 @@ chapter: story_costs
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_chapter_costs": "9c6c02f46264ad8d"
+  "pg_chapter_costs": "dc9213e929de159e"
 ---
 - [show:title] This chapter is about money: what JARVIS costs you, and how it keeps that number small and in plain sight.
 - [show:plain] Most of JARVIS runs on free allowances and free services.
@@ -24,6 +24,7 @@ pages:
 - Gemini is priced at zero while its paid tier is {{fact:settings.gemini_paid_tier}}, and at Google's paid prices once you turn it on.
 - A model missing from the price list is shown as price unknown, never as free.
 - Its replies and tokens are shown apart, and the limit counts them at the dearest known price.
+- And a background call of that kind, with no token counts reported, is counted as one call of a generous size at that dearest price, never as nothing.
 - [count:{{fact:src/jarvis/llm/pricing.py:CHARS_PER_TOKEN}}] When a brain reports no token counts, JARVIS works them out from the text, at about {{fact:src/jarvis/llm/pricing.py:CHARS_PER_TOKEN}} characters a token.
 - So a paid call is never metered as free.
 - [edge:meter>inr] The cost, worked out in dollars, travels on to become rupees.

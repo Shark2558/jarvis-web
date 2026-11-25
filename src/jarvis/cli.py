@@ -12,7 +12,7 @@ from jarvis.api.identity import primary_user_id
 from jarvis.billing import BudgetError, build_billing, fx_client
 from jarvis.config import get_settings
 from jarvis.core.brain import Brain
-from jarvis.core.models import ChatRequest
+from jarvis.core.models import ChatRequest, ChatResponse
 from jarvis.llm.base import LLMError
 from jarvis.llm.brains import BrainRegistry
 from jarvis.llm.router import NO_AI_REFUSAL, BrainOff
@@ -31,6 +31,13 @@ def _resolve_brain(brain: Brain, brain_id: str | None) -> str | None:
         known = ", ".join(b.id for b in brain.brains.list())
         sys.exit(f"jarvis chat: unknown brain {brain_id!r}. Configured brains: {known}")
     return spec.id
+
+
+def reply_meta(resp: ChatResponse) -> str:
+    """The line under a reply: model, tokens, cost, time. R6.4 D9: a reply whose model has no
+    known price says "price unknown", never "≈ ₹0.00"."""
+    cost = "price unknown" if resp.unpriced else f"≈ ₹{resp.cost_inr:.2f}"
+    return f"[{resp.model} · {resp.usage.total_tokens} tok · {cost} · {resp.latency_ms} ms]"
 
 
 async def _repl(stream: bool, brain_id: str | None = None) -> None:
@@ -80,10 +87,7 @@ async def _repl(stream: bool, brain_id: str | None = None) -> None:
                     resp = await brain.chat(req)
                     session_id = resp.session_id
                     print(f"jarvis> {resp.reply}")
-                    print(
-                        f"        [{resp.model} · {resp.usage.total_tokens} tok · "
-                        f"≈ ₹{resp.cost_inr:.2f} · {resp.latency_ms} ms]"
-                    )
+                    print(f"        {reply_meta(resp)}")
             except BudgetError as exc:  # the monthly limit: said plainly, the REPL goes on
                 print(f"(jarvis: {exc})", file=sys.stderr)
             except BrainOff:

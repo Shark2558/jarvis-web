@@ -10,7 +10,10 @@
                                  and the reply still goes out. Shielded from cancellation (a
                                  client that disconnects mid-stream cancels the response task;
                                  the provider still bills what it wrote). Given the reply's model
-                                 and usage, a reply whose price is unknown is counted as such.
+                                 and usage, a reply whose price is unknown is counted as such;
+                                 given a cost only (R6.4 I1: the background callers), a brain
+                                 with a model of no known price counts one call at
+                                 `pricing.UNREPORTED_CALL`.
     usage(uid) / set_limit()   ─ GET /v1/usage, PUT /v1/usage/budget.
     ensure_units_allowed /     ─ slice 9 voice: usage free up to a monthly allowance, priced
     record_units                 above it. The allowance is the deployment's (one counter,
@@ -54,7 +57,14 @@ from jarvis.billing.meter import (
 from jarvis.config import Settings
 from jarvis.llm.base import Usage
 from jarvis.llm.brains import BrainRegistry, BrainSpec
-from jarvis.llm.pricing import dearest, is_paid, is_priced, price_unknown, priced_at
+from jarvis.llm.pricing import (
+    UNREPORTED_CALL,
+    dearest,
+    is_paid,
+    is_priced,
+    price_unknown,
+    priced_at,
+)
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, MemoryDocs
 
@@ -225,10 +235,15 @@ def paid_brain(spec: BrainSpec) -> bool:
     return any(is_paid(m) for m in spec.tiers.values())
 
 
+def unpriced_brain(spec: BrainSpec) -> bool:
+    """A model of the brain has no known price (R6.4 D9): a cost of 0 from it says nothing."""
+    name = getattr(spec.provider, "name", "")
+    return any(price_unknown(m, name) for m in spec.tiers.values())
+
+
 def metered_brain(spec: BrainSpec) -> bool:
     """The monthly limit applies: a model is priced above zero, or its price is unknown."""
-    name = getattr(spec.provider, "name", "")
-    return paid_brain(spec) or any(price_unknown(m, name) for m in spec.tiers.values())
+    return paid_brain(spec) or unpriced_brain(spec)
 
 
 def _tokens(usage: Usage) -> int:
@@ -392,10 +407,11 @@ class Billing:
     ) -> float:
         """Add one completion to this month. Returns its rupee estimate. Never raises, and is
         not cut short by the caller's cancellation (bounded by METER_GRACE_S). `used`: the reply
-        (its model and usage); with no cost and no known price it is counted as "price unknown"."""
+        (its model and usage); with no cost and no known price it is counted as "price unknown".
+        R6.4 I1: a caller that passes a cost only (the background callers) on a brain with a
+        model of no known price is counted the same way, as one call at `UNREPORTED_CALL`."""
         if not isinstance(cost_usd, int | float) or not math.isfinite(cost_usd) or cost_usd <= 0:
-            if used is not None and used.usage is not None and self._unknown(brain_id, used):
-                await self._record_unpriced(uid, brain_id, used.model, used.usage)
+            await self._no_cost(uid, brain_id, used)
             return 0.0
         inr = 0.0
         with anyio.move_on_after(METER_GRACE_S, shield=True) as scope:
@@ -429,14 +445,32 @@ class Billing:
                 provider = ""
         return price_unknown(used.model, provider)
 
-    async def _record_unpriced(self, uid: str, brain_id: str, model: str, usage: Usage) -> None:
-        """One "price unknown" reply: its tokens, and them at the dearest known price for the
-        limit. Never raises; not cut short by cancellation (like `record`)."""
-        tokens = _tokens(usage)
-        if tokens <= 0:
+    async def _no_cost(self, uid: str, brain_id: str, used: Used | None) -> None:
+        """A call that came with no cost: "price unknown" when its price can't be told (never
+        ₹0), with its tokens when they were reported, else as one call at `UNREPORTED_CALL`. A
+        brain priced at ₹0, a paid one with nothing spent and a label naming no brain are not."""
+        if used is not None:
+            if not self._unknown(brain_id, used):
+                return
+            await self._record_unpriced(uid, brain_id, used.model, used.usage)
             return
+        try:
+            spec = self.brains.get(brain_id)
+        except LookupError:
+            return  # a meter label ("memory", "voice"), not a brain: nothing to judge it by
+        if unpriced_brain(spec):
+            await self._record_unpriced(uid, brain_id, "", None)
+
+    async def _record_unpriced(
+        self, uid: str, brain_id: str, model: str, usage: Usage | None
+    ) -> None:
+        """One "price unknown" reply: its tokens, and them at the dearest known price for the
+        limit; with no tokens reported, no tokens and one call at `UNREPORTED_CALL`. Never
+        raises; not cut short by cancellation (like `record`)."""
+        tokens = _tokens(usage) if usage is not None else 0
+        priced = usage if usage is not None and tokens > 0 else UNREPORTED_CALL
         with anyio.move_on_after(METER_GRACE_S, shield=True) as scope:
-            inr = await self.inr(priced_at(dearest(), usage))
+            inr = await self.inr(priced_at(dearest(), priced))
             try:
                 await self.meter.add_unpriced(uid, tokens=tokens, inr=inr, now=self.clock())
             except Exception as exc:  # noqa: BLE001 — the reply matters more than the counter

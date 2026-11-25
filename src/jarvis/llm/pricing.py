@@ -98,6 +98,14 @@ def price_unknown(model: str, provider: str = "") -> bool:
     return not is_priced(model) and provider not in FREE_PROVIDERS
 
 
+# R6.4 I1: one call with no known price whose tokens nobody reported (a background caller passes
+# billing a cost only; a vendor that reports no usage) is counted for the limit as this many
+# tokens at the dearest known price, an upper estimate and never ₹0. JARVIS's own background
+# prompts are capped at 12,000 characters (about 3,000 tokens; a picture or the Book's context
+# adds some) and ask for at most 700 tokens back.
+UNREPORTED_CALL = Usage(input_tokens=8_000, output_tokens=1_000)
+
+
 def dearest() -> Price:
     """The dearest known price of each kind of token in the table in force: what the owner's limit
     counts a "price unknown" reply at (an upper estimate, never ₹0; a vendor dearer than every

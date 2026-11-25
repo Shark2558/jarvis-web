@@ -76,8 +76,10 @@ class BrainPeopleModel:
         return ModelReply(done.text, done.cost_usd or cost_usd(done.model, done.usage))
 
     async def record(self, uid: str, cost: float) -> None:
+        """One entry for a dossier's calls. R6.4 I1: a cost of 0 goes to billing too, which counts
+        it as "price unknown" on a brain with no known price (and as nothing on a free one)."""
         spec = choose_brain(self._brains)
-        if spec is not None and cost > 0:
+        if spec is not None:
             await self._billing.record(uid, spec.id, cost)
 
 

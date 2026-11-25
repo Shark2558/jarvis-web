@@ -29,7 +29,7 @@ pages:
 - [edge:storm>told] [node:told] Otherwise you are told once, in words.
 - [edge:told>board] [node:board] And the Vitals board shows it too.
 - [node:check] [edge:check>board] Whenever you ask for a systems check, its result reaches the board as well.
-- [show:how] The board is filled with no model call, from records JARVIS already keeps: the brains' last call, the Google link, web usage and the home link among them.
+- [show:how] The board is filled with no model call: the brains' last call, the Google link, the last systems check, the web search vendor's usage and the home link, among others.
 - [count:{{fact:settings.selfwatch_brief_grace_min}}] The watch notices a brief more than {{fact:settings.selfwatch_brief_grace_min}} minutes late, and more than {{fact:settings.selfwatch_errors_per_hour}} error lines in an hour.
 - [count:₹{{fact:settings.selfwatch_spike_min_inr}}] It warns when a day's AI spend is over {{fact:settings.selfwatch_spike_factor}} times the recent daily average, and at least ₹{{fact:settings.selfwatch_spike_min_inr}}.
 - The About line at the board's foot shows the running version and its build day.

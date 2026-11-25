@@ -3,7 +3,7 @@ chapter: story_answers
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_chapter_answers": "b720f30ff32a6ffb"
+  "pg_chapter_answers": "52e4600761daf554"
 ---
 - [show:title] This chapter follows one message, from the moment you send it to the reply you read or hear.
 - [show:plain] On the way, JARVIS gathers the conversation so far, and what it remembers about you.
@@ -45,7 +45,8 @@ pages:
 - Later, home at his laptop, he approves the card in the console, and the to-do appears for Saturday.
 - [show:costs] An answer costs the model's tokens.
 - That is nothing on Gemini's free tier, on the laptop brain, or with the AI switched off.
-- Otherwise it is Claude's price per million tokens, counted in rupees against your monthly limit.
+- Otherwise it is Claude's price per million tokens, or Google's paid-tier price once your Gemini key has billing, counted in rupees against your monthly limit.
+- A model with no known price is marked price unknown, never free, and your limit counts it at the dearest price JARVIS knows.
 - Offering only the tools a message needs keeps each call smaller, and so cheaper.
 - [show:fails] A brain failure becomes a short, plain message, never the vendor's own words.
 - When trust is unclear, the call asks you first.

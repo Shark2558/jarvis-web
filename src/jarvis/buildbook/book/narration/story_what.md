@@ -3,7 +3,7 @@ chapter: story_what
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_chapter_what": "524a6f09bd9ceb3d"
+  "pg_chapter_what": "dc31618b1b1048ff"
 ---
 - [show:title] This first chapter is about what JARVIS is, told in one picture.
 - [show:plain] JARVIS is your own personal assistant, running on a server of its own in the cloud, and answering only to you.
@@ -12,7 +12,7 @@ pages:
 - It works out what you need, and asks for tools such as your calendar or your e-mail.
 - Anything that would change something waits for your approval, on a card.
 - And each release comes with the Build Book, JARVIS's own record of how it is built, sealed in your vault.
-- This book you are hearing now is part of it.
+- This book you are hearing now is part of it, and each of its chapters is told aloud, like this one.
 - [show:how] Now let's see how the pieces fit.
 - [show:overview] Here is JARVIS in one picture, from the moment you speak to the moment your reply is saved.
 - [node:you] It starts with you, typing or speaking.
@@ -37,7 +37,8 @@ pages:
 - [edge:console>book] Off to one side, the console also opens the Build Book panel.
 - [node:book] The panel opens the book only behind your passkey and a fresh Google sign-in.
 - [edge:book>pages] Along this path travels the story of how JARVIS is built.
-- [node:pages] The full book is shown a page at a time, with a flowchart for each chapter, and it can open on a page of its own.
+- [node:pages] The full book opens on a page of its own, with its contents, a search box, and a flowchart for each chapter and module.
+- From any page, Play tells that page's chapter aloud while its flowchart lights up.
 - The Build Book is JARVIS describing itself: the generator builds it from the code at each release.
 - Its full pages are written by the Workshop while it builds JARVIS, then checked and compiled in.
 - [show:example] In the made-up example, Leela opens JARVIS on her phone early on a Monday morning.
@@ -49,6 +50,7 @@ pages:
 - [show:costs] The console and the Build Book cost nothing to use, and JARVIS calls no AI to write the book.
 - Each reply does use paid AI time, counted in rupees against the monthly limit you set.
 - With the AI switched off, nothing is spent at all.
+- And a reply from a model whose price JARVIS doesn't know is marked price unknown, never shown as free.
 - [show:fails] When the brain hits an error, you get a short, friendly message, never the vendor's own words.
 - At your monthly limit no paid call is made, and the reply tells you so.
 - A message that clashes with one sent from another window is not stored, and you are asked to send it again.

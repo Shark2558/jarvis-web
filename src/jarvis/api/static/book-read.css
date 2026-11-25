@@ -144,6 +144,8 @@ html[data-book] .bk-mini[hidden]{display:none}
 /* ==== builder A (R6.4 D3, D4): the reader's own parts, on the tokens above; the approved mockup's look ================== */
 /* top bar */
 html[data-book] .bk-search input::-webkit-search-cancel-button{cursor:pointer}
+html[data-book] .bk-kbd{pointer-events:none}
+html[data-book] .bk-search input:focus ~ .bk-kbd,html[data-book] .bk-search input:not(:placeholder-shown) ~ .bk-kbd{display:none}
 html[data-book] .bk-chip{white-space:nowrap}
 /* contents rail: the four groups (each a button that opens and closes), chapters that open to their pages */
 html[data-book] .bk-wait{margin:8px;color:var(--ink-2);font:400 14px/1.5 var(--font)}
@@ -238,7 +240,7 @@ html[data-book] .bk-none{padding:12px 10px;font:400 14px/1.5 var(--font);color:v
 html[data-book] .bk-none b{display:block;font-weight:500;color:var(--ink)}
 /* the phone's Play bar and contents sheet */
 html[data-book] .bk-mini{z-index:4}
-html[data-book] .bk-app[data-mode="player"] .bk-mini{display:none}
+html[data-book] .bk-app[data-mode="player"] .bk-mini,html[data-book] .bk-app:has(#brSheet[open]) .bk-mini{display:none}
 html[data-book] .bk-mini .pbtn{flex:none;width:var(--bk-tap);height:var(--bk-tap);border-radius:50%;border:0;background:var(--accent);color:var(--on-accent);
   display:grid;place-items:center;box-shadow:var(--glow);cursor:pointer}
 html[data-book] .bk-mini .pbtn svg{width:18px;height:18px;margin-left:2px}

@@ -199,9 +199,7 @@ function openSheet(toSearch) {
   if (!d || !R.book) return;
   buildSheet(); marks();
   if (!d.open) { try { d.showModal(); } catch (_) { d.setAttribute('open', ''); } }
-  const now = $('brSheetNav').querySelector('a.now');
-  if (toSearch) $('brSheetSearch').focus();
-  else if (now) { now.focus({ preventScroll: true }); now.scrollIntoView({ block: 'center' }); }
+  if (toSearch) $('brSheetSearch').focus(); // otherwise the dialog's own first control (its close button) has the focus
 }
 
 // ---- keys ----------------------------------------------------------------------------------------------------------------

@@ -23,6 +23,8 @@ import pytest
 from book_mocks import PASSKEY_STUB, TOKEN, FakeBook
 from r64_a_book import PAGES, RID, install
 from test_console import DESKTOP, PHONE, Console
+from test_ui_audit import NAMELESS_JS, WRAP_JS, _assert_clean
+from ui_checks import DOM_CHECKS_JS, FINISH_ANIMATIONS_JS
 
 _pw = pytest.importorskip("playwright.sync_api")
 pytestmark = pytest.mark.browser
@@ -435,6 +437,49 @@ def test_every_small_book_page_opens_cleanly(browser: Any, server_url: str, toke
             c.page.evaluate(f"location.hash = '{pid}'")
             wait_title(c, pg["title"])
             assert c.page.locator("#brPage .bk-sec").count() >= 4, pid
+        clean(c)
+    finally:
+        c.close()
+
+
+def gate(c: Console, sel: str, vp: str, what: str) -> None:
+    """The console's visual gate (tests/test_ui_audit.py) on one part of the reader. The search
+    box's "/" hint sits in the box's own right padding (aria-hidden, no pointer events, gone once
+    the box has focus or words): the generic overlap probe's one known false positive here."""
+    c.page.evaluate("() => document.fonts.ready.then(() => true)")
+    c.page.evaluate(FINISH_ANIMATIONS_JS)
+    res = c.page.evaluate(DOM_CHECKS_JS, sel)
+    assert not res.get("missing"), what
+    res["overlaps"] = [o for o in res["overlaps"] if "bk-kbd" not in o["a"] + o["b"]]
+    _assert_clean(res, c.page.evaluate(NAMELESS_JS, sel), c.page.evaluate(WRAP_JS, sel), vp, what)
+
+
+@pytest.mark.parametrize(("size", "surface"), [(s, f) for s in ("laptop", "phone") for f in ("night", "day")])
+def test_the_reader_passes_the_consoles_visual_gate(
+    browser: Any, server_url: str, token: str, size: str, surface: str
+) -> None:
+    phone = size == "phone"
+    c, _ = reader(browser, server_url, token, at="pg_module_vault", viewport=PHONE if phone else DESKTOP,
+                  script=f"localStorage.setItem('jarvis_surface', '{surface}');")  # fmt: skip
+    vp = "phone" if phone else "desktop"
+    try:
+        p = c.page
+        assert p.locator("html").get_attribute("data-surface") == surface
+        p.locator("#brPage svg.fl-svg").wait_for()
+        gate(c, "#bookRead", vp, f"reader top {size} {surface}")
+        p.evaluate("document.getElementById('brMain').scrollTop = document.getElementById('brSec-how').offsetTop")
+        gate(c, "#bookRead", vp, f"reader at the flowchart {size} {surface}")
+        if phone:
+            p.locator("#brFind").click()
+            p.keyboard.type("expiry")
+            p.locator("#brSheet [role=option]").first.wait_for()
+            gate(c, "#brSheet", vp, f"contents sheet and search {size} {surface}")
+        else:
+            p.locator("#brSearch").click()
+            p.keyboard.type("expiry")
+            p.locator("#brResults [role=option]").first.wait_for()
+            gate(c, "#brResults", vp, f"search results {size} {surface}")
+            gate(c, "#brTop", vp, f"top bar while searching {size} {surface}")
         clean(c)
     finally:
         c.close()

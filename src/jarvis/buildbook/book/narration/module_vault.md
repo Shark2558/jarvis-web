@@ -1,0 +1,91 @@
+---
+chapter: module_vault
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_vault": "4f44b2dd6332ee71"
+  "pg_card_c07": "64cebfd50bf1bebd"
+  "pg_card_c42": "cd8479299af1a6b5"
+  "pg_card_c43": "c7b9233945118be8"
+  "pg_screen_vault": "e4c3ce7e56d64343"
+---
+- [page:pg_module_vault] [show:title] This chapter is about how your documents reach JARVIS, and how the important ones are kept safe.
+- [show:plain] There are two ways in: you attach files to a message, or you keep a paper in the vault.
+- Attached files are read with you for that conversation, and then the file itself is thrown away.
+- The vault is different: a locked cupboard for the papers you keep, such as your ID, insurance and certificates.
+- [show:overview] Here is the whole journey of a document, from the moment you add it to the moment it opens again.
+- [node:file] It starts with you, adding a file to a message or to the vault.
+- [node:kind] First, JARVIS checks the file's kind and size, by its name and its bytes together, never by what the browser claims.
+- [edge:kind>refused] A file that is too big, unreadable, password-protected or of the wrong kind is refused in plain words.
+- [count:{{fact:settings.attach_max_files}}] A message carries at most {{fact:settings.attach_max_files}} files, and {{fact:settings.attach_total_mb}} megabytes together.
+- [edge:kind>read] When you attach a file, its text is taken out by a separate, limited helper, one file at a time.
+- [node:chat] Only that text stays with the conversation, so JARVIS can read and search it as it answers you.
+- [edge:kind>vault] When you keep a file instead, it goes into the vault, sealed with a key of its own.
+- [node:inbox] Papers can also arrive from a Google Drive folder that you share documents into from the DigiLocker app.
+- [edge:vault>confirm] When the vault finds an expiry date in a PDF, it asks you to confirm it first.
+- [edge:vault>unlock] Opening a kept file needs your passkey, or a fresh Google sign-in when you have none.
+- [node:audit] Before a single byte goes out, the opening is written to the audit trail.
+- [edge:audit>open] Only then does the file download, through a link that works once.
+- [show:example] In the made-up example, Lakshmi asks what her car insurance covers, and attaches the policy with photos of a dented bumper.
+- JARVIS reads them all, strips the camera and location details from the photos, and answers her.
+- She then keeps the policy in the vault, and a month before it ends, a reminder tells her so.
+- [show:costs] Taking text out of a file and keeping the vault cost nothing, because both run on JARVIS's own server.
+- Reading a long file into a reply costs the brain's usual price, and the console shows a rupee estimate first.
+- [show:fails] When the reader is busy with another file, an upload is turned away, with a request to try again after {{fact:src/jarvis/api/documents.py:BUSY_RETRY_S}} seconds.
+- And if an unlock or a download can't be written to the audit trail, nothing opens at all.
+- [page:pg_card_c07] [show:title] Now the first part: attached documents.
+- [show:plain] You attach files with the paperclip, or by dragging them in, and JARVIS reads them with you.
+- It reads PDF, Word, text, spreadsheets, slides, pictures, a zip, and even a whole folder.
+- [show:how] Each upload is checked by its name and its first bytes, and you can send at most {{fact:src/jarvis/api/documents.py:UPLOADS_PER_MINUTE}} a minute.
+- The reading happens in a fresh helper process with no secrets in it, and with caps on its time and memory.
+- [count:{{fact:src/jarvis/documents/service.py:QUEUE_WAIT_S}}] Only one runs at a time, and the others wait in a queue for up to {{fact:src/jarvis/documents/service.py:QUEUE_WAIT_S}} seconds.
+- Spreadsheets give their values only, never formulas or macros, and slides give their text and their notes.
+- A zip with a password, a hidden bomb or a path pointing outside is refused before anything is unpacked.
+- [count:{{fact:src/jarvis/documents/limits.py:PICTURE_MAX_SIDE}}] A picture is cleaned of its camera and location data, and one wider than {{fact:src/jarvis/documents/limits.py:PICTURE_MAX_SIDE}} pixels is refused.
+- The text is cut into chunks and kept with the conversation, and the file itself is dropped.
+- The brain then reads one part, or the best passages, at a time, fenced off as outside text.
+- [show:example] In the example, you drag in a long maintenance agreement and a photo of a broken tap, and ask whether the repair is covered.
+- JARVIS searches the agreement for plumbing, reads the right pages, looks at the photo, and quotes the clause.
+- [show:costs] Taking the text out costs nothing, and reading it costs the brain's normal price, kept small because it reads parts, never the whole file.
+- [show:fails] A brain that may learn from what it is sent never gets your files.
+- [page:pg_card_c42] [show:title] The second part is the document vault itself.
+- [show:plain] The vault is a locked drawer for your important papers, and every file in it is sealed with its own key.
+- The brain only ever sees a document's type, title and dates, never the file or a full number.
+- [show:how] Each file is cut into chunks, and each chunk is sealed so that one moved or cut short will not open.
+- That file's key is itself locked by the vault's own key, and nothing readable is kept in the clear.
+- Dates and the last few characters of an ID number are read from a PDF by fixed labels, with no AI at all.
+- They stay a proposal until you confirm them.
+- [count:{{fact:settings.vault_unlock_minutes}}] An unlock lasts {{fact:settings.vault_unlock_minutes}} minutes, and it works only from the console, never from a script.
+- [count:{{fact:src/jarvis/vault/unlock.py:TICKET_S}}] Each opening takes a single-use ticket that lives {{fact:src/jarvis/vault/unlock.py:TICKET_S}} seconds.
+- Reminders check your confirmed papers once a day, and send at most {{fact:src/jarvis/vault/reminders.py:MAX_ALERTS}} alerts in a run.
+- The brain's vault tools can list papers and change their dates on a card, but they can't read, add or delete a file.
+- [show:example] In the example, you upload a scan of your passport, JARVIS finds its expiry date, and you tap Confirm.
+- [show:costs] [count:{{fact:settings.vault_max_total_mb}}] It costs nothing, with your files in the document store, up to {{fact:settings.vault_max_total_mb}} megabytes in all.
+- [show:fails] Reads fail closed: a record that can't be decrypted is refused, never shown in part.
+- Removing a document for good deletes the entry that holds its key first, so the file can never be opened again.
+- [page:pg_card_c43] [show:title] The third part is the DigiLocker import folder.
+- [show:plain] DigiLocker only lets registered organisations use its partner service, so JARVIS takes a simpler path.
+- You share a document from the DigiLocker app into one Google Drive folder, and JARVIS brings the new files into your vault.
+- JARVIS only reads that folder, your copies stay in Drive, and nothing is imported twice.
+- [show:how] The check rides the scheduler's regular tick, and an owner with no folder costs just one storage read.
+- [count:{{fact:src/jarvis/vault_inbox/service.py:MAX_PER_RUN}}] A PDF, JPEG or PNG within the vault's size limit is handed to the vault, at most {{fact:src/jarvis/vault_inbox/service.py:MAX_PER_RUN}} in a run.
+- Other files are skipped with a reason, and not looked at again until they change.
+- Before every run the folder is checked again, and if it is no longer shared or yours, imports stop and you are told why.
+- [show:example] In the example, you share your driving licence and your insurance into the folder, plus a Word file by mistake.
+- The two PDFs arrive in the vault, ready for you to confirm their dates, and the Word file is listed as skipped.
+- [show:costs] It costs nothing: reading the folder and sealing the files involve no AI and no paid service.
+- [show:fails] [count:{{fact:src/jarvis/vault_inbox/service.py:RUN_BUDGET_S}}] A run stops at its time budget of {{fact:src/jarvis/vault_inbox/service.py:RUN_BUDGET_S}} seconds, and carries on the next time.
+- [page:pg_screen_vault] [show:title] Last, the Vault screen in your console.
+- [show:plain] It lists your papers by person, each with its expiry and the time left.
+- [show:overview] Here is what happens when you open one of them.
+- [node:open] You press Open on a document.
+- [node:unlocked] JARVIS first asks whether this tab is already unlocked.
+- [edge:unlocked>prove] If it isn't, the panel asks for your passkey, or a recent Google sign-in.
+- The unlock lives only in this tab's memory, and is forgotten when the panel closes or the tab is hidden.
+- [edge:unlocked>ticket] Once unlocked, the panel asks for a single-use ticket.
+- [node:audit] The opening is written to the audit log first.
+- [edge:audit>file] And only then does the file download.
+- [show:example] In the example, you photograph your new car insurance, press Add, and confirm the expiry JARVIS found.
+- [show:costs] The vault keeps your files in JARVIS's own database, with no outside service, so it costs nothing.
+- [show:fails] [count:{{fact:src/jarvis/api/vault.py:UNLOCKS_PER_MINUTE}}] Unlocks are limited to {{fact:src/jarvis/api/vault.py:UNLOCKS_PER_MINUTE}} a minute, and a file that isn't a PDF, JPEG or PNG is refused.
+- That is the Vault chapter: documents read with you, papers kept sealed, and nothing opened without you.

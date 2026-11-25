@@ -1,0 +1,62 @@
+---
+chapter: story_example
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_chapter_example": "8693debfa8ef5509"
+---
+- [show:title] This chapter follows one everyday request through the whole of JARVIS, so you can see how the parts fit together.
+- [show:plain] You tap the microphone and ask for a dentist appointment on Friday evening.
+- Seconds later, once you approve, the event is in your calendar.
+- Then you say: cancel it. The event goes, and a copy is kept, so one tap brings it back.
+- On the way, the request passes the voice, the brain, the tool gateway, an approval card, Google Calendar and the activity log.
+- Each of those has its own page with the details; here we simply follow the thread.
+- [show:example] In the made-up example, Meera taps the mic on a Tuesday evening.
+- She says: add a dentist appointment on Friday at five in the afternoon.
+- The console shows her what it heard, and a card appears: add event, dentist appointment, Friday, for one hour.
+- She taps Approve, and JARVIS answers aloud: done, Ma'am, dentist on Friday at five.
+- A little later the clinic rings to move it, so she says: cancel it.
+- A second card asks first, and she approves.
+- [count:{{fact:undo.keep_days}}] Activity then shows the delete, with an Undo button for the next {{fact:undo.keep_days}} days.
+- [show:how] Now let's follow her request, step by step.
+- [show:overview] Here is the whole thread: add a dentist appointment, then cancel it.
+- [node:say] It begins with Meera's voice, captured in the console when she taps the mic.
+- [edge:say>stt] The recording travels to be turned into words.
+- [node:stt] Google's speech service turns it into text, in the language set for it, {{fact:settings.voice_language}}.
+- Without Google's voice, the browser's own recogniser does the same job.
+- [edge:stt>brain] The text then reaches the brain.
+- [node:brain] The brain loads the conversation, and adds what JARVIS remembers about you.
+- It asks the router for the {{fact:settings.default_tier}} tier, which is {{fact:brain.balanced_model}} unless you picked another brain.
+- The brain doesn't act by itself. It answers with a request to use the calendar tool, with the day and the time filled in.
+- [edge:brain>gateway] That request goes to the gateway, as every tool call does.
+- [node:gateway] The gateway checks your rules for that group of tools.
+- Because the request was spoken, it asks first, even where your rule says Allow, since someone else in the room might have said it.
+- [edge:gateway>card] So the gateway has a card made.
+- [node:card] The card's words are written by code, never by the AI, so what you read is exactly what will happen.
+- An event with guests would send invitations that can't be called back, so it always asks, and needs your passkey when that rule is on.
+- [edge:card>approve] The console shows the card, with Approve and Decline.
+- [node:approve] Meera taps Approve.
+- [edge:approve>calendar] Her approval sends the event on its way.
+- [node:calendar] The event goes into Google Calendar.
+- [edge:calendar>audit] At the same moment, the call is written to the audit trail, which can only ever be added to.
+- [node:audit] The activity log shows each step in plain words.
+- The reply is shown, and because she spoke, it is read aloud once it has been cleaned for speech.
+- [edge:calendar>cancel] Later comes the second request.
+- [node:cancel] Meera says: cancel it.
+- JARVIS finds that this delete can be undone.
+- [edge:cancel>copy] Because the request was spoken, the delete card asks first.
+- [node:copy] Once she approves, a copy of the event is kept, and only then does Google delete it.
+- [edge:copy>undo] From that copy, one tap is all it takes.
+- [node:undo] The Undo button in the activity log brings the event back.
+- [count:{{fact:src/jarvis/tools/budget.py:MAX_NEW_CARDS}}] One message may propose at most {{fact:src/jarvis/tools/budget.py:MAX_NEW_CARDS}} new cards.
+- [count:{{fact:src/jarvis/tools/budget.py:MAX_FREE_DELETES}}] It may make at most {{fact:src/jarvis/tools/budget.py:MAX_FREE_DELETES}} undoable deletes without a card; after that, each delete waits for your approval.
+- [show:costs] The whole thread costs a couple of brain replies at the {{fact:settings.default_tier}} tier, counted in rupees against your monthly limit.
+- [count:{{fact:settings.voice_stt_free_seconds}}] Add a few seconds of listening and speech, inside the free voice allowance of {{fact:settings.voice_stt_free_seconds}} seconds of listening a month.
+- Had you picked a brain whose model has no known price, each reply would say price unknown, and count against your limit at the dearest price JARVIS knows.
+- The calendar, the cards, the audit trail and the activity log cost nothing.
+- [show:fails] If the microphone is blocked, a plain line tells you how to allow it, and typed chat still works.
+- If Google's speech is off, the browser's own voice and recogniser take over.
+- At your monthly limit no paid call is made, and the reply says so.
+- If the event changed after its card was shown, for instance it gained guests, the card is withdrawn and a new one proposed.
+- And if the copy can't be kept, the event is not deleted at all.
+- That is one request, start to finish: heard, reasoned, guarded, approved, done, and undoable.

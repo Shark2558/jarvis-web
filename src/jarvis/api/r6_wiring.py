@@ -207,8 +207,9 @@ def install_r6_routes(app: FastAPI) -> None:
     install_book(app)
     install_book_show(app)
     install_book_hear(app)
-    app.state.book_limits["pages"] = RateLimiter(PAGES_LIMITS["pages"])  # R6.3.1 D7: 60 a minute
-    install_book_pages(app)  # the full book's two routes (after install_book)
+    for name, per_minute in PAGES_LIMITS.items():  # R6.3.1 D7 pages, R6.4 D4 search: 60 a minute
+        app.state.book_limits[name] = RateLimiter(per_minute)
+    install_book_pages(app)  # the full book's routes and its page (after install_book)
 
 
 def install_show_lock(app: FastAPI, s: Settings) -> None:

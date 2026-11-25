@@ -1,0 +1,128 @@
+---
+chapter: module_memory
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_memory": "545ef9ddc9a2ebfd"
+  "pg_card_c10": "7844fbd1696c60a5"
+  "pg_card_c23": "d4d52961acc41b12"
+  "pg_card_c24": "f576964b8f9676df"
+  "pg_screen_memory": "af573610489fa149"
+  "pg_screen_things": "35d912613f1b1353"
+  "pg_screen_notes": "4c83c8ba1ddd312d"
+---
+- [page:pg_module_memory] [show:title] This chapter is about memory: JARVIS's notebook about you.
+- [show:plain] It has three parts, and all of it is yours to see, correct, export and delete.
+- Memory holds short facts about the people, places and things you like, and brings the relevant ones into a reply, showing which it used.
+- Notes keep your own notes, voice-memo transcripts and saved web links.
+- And Things answers "where did I keep it?": tell JARVIS the passport is in the blue suitcase, and ask months later.
+- [show:example] In the made-up example, Divya tells JARVIS one Saturday that the spare car key is in the top drawer of the study desk.
+- Months later she asks where it is, and JARVIS answers with the drawer, and the day she said so.
+- She moves it to the key box by the door and says so, and the history keeps both places.
+- In Memory she once added that Tara is allergic to peanuts.
+- So when she asks for a snack list for Tara's birthday party, the reply leaves peanuts out, and shows that fact under "what I used".
+- [show:how] Here is how it works.
+- [show:overview] This is the path of something you tell JARVIS, and of finding it again.
+- [node:say] It starts with you, telling JARVIS something.
+- [edge:say>filter] [node:filter] Before anything is kept, your words pass a filter that refuses ID numbers, card numbers and passwords.
+- [edge:filter>refused] [node:refused] Anything like that is refused as sensitive, and nothing is stored.
+- [edge:filter>fact] [node:fact] A short fact about you goes into Memory, where you can edit it, pin it or delete it.
+- [edge:filter>note] [node:note] A note, a voice memo or a saved link goes into Notes.
+- [edge:filter>thing] [node:thing] And a thing you put away is kept with its place, remembering where it was before.
+- [node:ask] [edge:fact>ask] [edge:note>ask] [edge:thing>ask] Later you ask, and all three can answer: a fact, a note, or a thing and its place.
+- [edge:ask>search] [node:search] Your question is searched by plain code, with no AI call.
+- [edge:search>answer] [node:answer] The answer comes back, and shows what it used.
+- [edge:thing>delete] [node:delete] When you delete something, it goes to Recently deleted first.
+- Learning from your messages stays off until you switch it on and confirm the spend.
+- Export downloads everything with its history, and "Forget everything" wipes your facts and profile only after you type FORGET, keeping your settings.
+- [show:costs] Notes and Things cost nothing, because they are your own records, searched by code.
+- Memory costs nothing while learning is off.
+- With learning on, each background run is a small call to the cheapest brain tier, and the panel shows the rupee estimate before you agree.
+- [show:fails] A memory outage gives a reply without its notes, never a failed reply.
+- A brain that may train on what it is sent never sees your memory.
+- Without JARVIS's encryption key, Notes and Things stay switched off and say so, so nothing is stored in clear.
+- An import over the size cap is refused before it is read, and a full memory says so.
+- [page:pg_card_c10] [show:title] Now the first part: long-term memory.
+- [show:plain] It is what JARVIS knows about you beyond a single chat, shown in the Memory panel as "About you".
+- With each message it brings only the facts that matter, and shows which it used.
+- With learning on, it also picks up new facts from what you type, in the background.
+- [show:example] In the example, you tell JARVIS in March that Ravi's birthday is in June, and that he hates surprises.
+- In June you ask what to get Ravi, and JARVIS sends only the few facts about Ravi, with a chip that says how many memories it used.
+- Later you mention you have moved to the night shift, and with learning on, a cheap background call adds that fact a few minutes later.
+- When you type your bank account number, nothing is saved, and the reason names only the kind of data.
+- [show:how] The memory service does three jobs: recall for each reply, learning after it, and the changes you make in the panel.
+- Recall first asks whether this brain may train on what it sees; if it may, it never gets your facts.
+- [count:{{fact:src/jarvis/recall/models.py:SEND_ALL_UNDER}}] A small memory, at most {{fact:src/jarvis/recall/models.py:SEND_ALL_UNDER}} facts that fit in {{fact:src/jarvis/recall/models.py:FACTS_BLOCK_CAP}} characters, is sent whole.
+- [count:{{fact:src/jarvis/recall/models.py:MAX_FACTS_PER_TURN}}] Otherwise facts are ranked by your message's words, lifting pinned, recent and often used ones, and at most {{fact:src/jarvis/recall/models.py:MAX_FACTS_PER_TURN}} are sent.
+- Two facts that disagree are both sent, dated and marked, never quietly merged.
+- The facts go in under a heading that calls them data, not instructions.
+- [count:{{fact:src/jarvis/recall/learning.py:BATCH}}] Learning waits for {{fact:src/jarvis/recall/learning.py:BATCH}} new messages, and reads only what you typed yourself, never pasted text, spoken messages or tool results.
+- It makes one fast-tier call, under a lease, so two servers never learn the same messages twice.
+- It checks your monthly limit first, and only adds or replaces learned facts, never deletes.
+- A learned fact about health, religion, caste, politics or sexuality is dropped.
+- [count:{{fact:src/jarvis/recall/models.py:MAX_ACTIVE}}] Facts are kept in shards of {{fact:src/jarvis/recall/models.py:SHARD_SIZE}}, up to {{fact:src/jarvis/recall/models.py:MAX_ACTIVE}} active facts.
+- The brain can save a fact, but it becomes a card when outside text was in view, and forgetting one always asks you.
+- [show:costs] With learning off, recall costs nothing: it is a database read and a little sorting.
+- [count:{{fact:src/jarvis/recall/extract.py:MAX_TOKENS}}] With learning on, each run is one small call of at most {{fact:src/jarvis/recall/extract.py:MAX_TOKENS}} tokens out, metered as memory, with a cap on runs a day.
+- A run on a model with no known price is still counted, as price unknown, never as nothing.
+- [show:fails] At your monthly limit learning is skipped, and nothing is counted.
+- [count:{{fact:src/jarvis/recall/lease.py:MAX_ATTEMPTS}}] A run that stops midway is picked up again, and a batch that fails {{fact:src/jarvis/recall/lease.py:MAX_ATTEMPTS}} times is skipped.
+- A memory record that can't be read is never overwritten.
+- Your facts are kept until you delete them, as plain records in the database, rather than sealed with a key of JARVIS's own.
+- [page:pg_card_c23] [show:title] The second part is your notes, memos and links.
+- [show:plain] This is your notebook inside JARVIS: notes you type, voice memos kept as text, and web links you want to keep.
+- JARVIS finds them by plain search code, with no AI call, and seals them with its own encryption before they are stored.
+- Other people's words in a saved page are always kept apart from yours.
+- [show:example] In the example, on Sunday you save a recipe link for appam, with a line to try it with coconut milk.
+- On Tuesday you record a memo about the plumber's quote, and only the transcript is kept, after you check it and tap Save.
+- On Friday you ask what you noted about the plumber, and JARVIS finds the memo at once, with a short snippet.
+- You click Fetch on the recipe link, and its page text is saved under your note, using one web credit.
+- [show:how] Each stored piece is sealed under the notes key and bound to you and its place, and the header holds only ids, hashes and counts.
+- [count:{{fact:src/jarvis/kb/models.py:MAX_HITS}}] Search scores the words of the title and tags, the text and the saved page, and returns at most {{fact:src/jarvis/kb/models.py:MAX_HITS}} hits with short snippets.
+- Saving a link makes no network call; only Fetch, your click, gets the page text through the web search provider.
+- [count:{{fact:src/jarvis/kb/service.py:FETCH_PER_HOUR}}] Fetch runs at most {{fact:src/jarvis/kb/service.py:FETCH_PER_HOUR}} times an hour, and never sends a link that carries an e-mail, a phone number or another private part.
+- Each note records where its words came from, and only your own words count as trusted when read back.
+- On a spoken or Telegram turn the result is masked, so a code in a note is never read aloud.
+- [show:costs] It costs nothing, because search is code; only Fetch uses a credit of the web search allowance, one a page.
+- [show:fails] Without the key, or with notes switched off, the feature stays off, so notes are never stored in clear.
+- A record that can't be read or decrypted fails closed, and is never overwritten.
+- [count:{{fact:src/jarvis/kb/models.py:MAX_LIVE}}] Removing a note puts it in Recently deleted first, and past {{fact:src/jarvis/kb/models.py:MAX_LIVE}} live notes, a new one is refused.
+- [page:pg_card_c24] [show:title] The third part is Things.
+- [show:plain] Things answers "where did I keep it?", and a move keeps the old place in the thing's history.
+- It is sealed with JARVIS's own encryption, and ID numbers or passwords are refused, since those belong in the Vault.
+- [show:example] In the example, you tell JARVIS in May that the spare scooter keys are in the kitchen drawer.
+- In August you move them to the hall cabinet, and JARVIS answers that they were in the kitchen drawer.
+- In December you ask where your scooter key is, and JARVIS finds the spare scooter keys in the hall cabinet, with the day they moved.
+- [show:how] [count:{{fact:src/jarvis/belongings/models.py:MAX_HISTORY}}] A thing whose name matches one you have is moved, and its old place goes into its history, up to {{fact:src/jarvis/belongings/models.py:MAX_HISTORY}} moves.
+- Names are matched kindly: "My passport" matches "Passport", simple plurals are dropped, and specs, spectacles and glasses are the same.
+- [count:{{fact:src/jarvis/belongings/service.py:CANDIDATES}}] To answer "where", JARVIS tries the exact name first, then ranks your words, and offers at most {{fact:src/jarvis/belongings/service.py:CANDIDATES}} candidates.
+- A move keeps the less trusted origin of the two, so a later move never vouches for someone else's words.
+- Read aloud or sent to Telegram, the answer is masked, so a long number or an address is never spoken.
+- [show:costs] It costs nothing: it is code and a few small records, with no AI call and no outside service.
+- [show:fails] When the name isn't exact, you get the best matches to choose from, not a guess.
+- [count:{{fact:src/jarvis/belongings/models.py:MAX_LIVE}}] Removing a thing keeps a copy in Recently deleted first, and past {{fact:src/jarvis/belongings/models.py:MAX_LIVE}} things, a new one is refused.
+- [page:pg_screen_memory] [show:title] Now the screens, starting with the Memory panel.
+- [show:plain] "About you" holds short notes you write yourself: You, Preferences, People and Work.
+- Two switches decide whether memory is used in replies, and whether JARVIS may learn facts from your messages.
+- [show:example] In the example, you add a fact that Meera prefers calls in the evening, choose People, and pin it so it is picked first.
+- [show:how] Switching on learning first opens a window saying it uses Claude, the paid AI, and that only your own words are sent; nothing changes until you agree.
+- "Forget everything" needs you to type FORGET, then deletes every fact and note, but keeps your switches.
+- [show:costs] Keeping memory costs nothing, using it in replies adds a little to each reply, and learning shows its monthly rupee estimate first.
+- [show:fails] Something that looks like an ID, a card or account number, a password or a health detail gets "JARVIS doesn't keep that".
+- [page:pg_screen_things] [show:title] Next, the Things panel.
+- [show:plain] You note what you put away and where, and later a word in the search box shows the place, and when you noted it.
+- [show:example] In the example, before a trip you put the spare car key in the red tin on the kitchen shelf, and save it.
+- Later you move it to the hall drawer with "Moved", and the panel tells you where it was before, and History keeps both.
+- [show:how] Each row shows the place, who it is for, when it was updated, and whether it was said by voice or came from someone else's words.
+- A thing JARVIS noted from a chat or by voice shows up here too, since the list reloads after a reply.
+- [show:costs] Things uses no AI and no outside service, so it costs nothing.
+- [show:fails] [count:{{fact:src/jarvis/api/belongings.py:CHANGES_PER_MINUTE}}] Without an encryption key the list says it isn't available, and changes are limited to {{fact:src/jarvis/api/belongings.py:CHANGES_PER_MINUTE}} a minute.
+- [page:pg_screen_notes] [show:title] Last, the Notes panel.
+- [show:plain] It holds notes you type, voice memos you read through before saving, and links with a line on why you kept them.
+- [show:example] In the example, after a call you press Record memo and speak about the plumber's quote.
+- The words appear in a box to edit, so you fix "tap", which was heard as "top", and press Save memo; a week later, "plumber" finds it first.
+- [show:how] Record memo records in pieces, turns each into words in an editable box, and keeps nothing until you press Save memo.
+- The audio stays only in the page's memory, and is dropped once it has been turned into words.
+- [show:costs] Typing, saving, searching and exporting notes costs nothing, and a voice memo uses the same speech-to-words service as the microphone.
+- [show:fails] Something that looks like an ID, a card number or a password is not stored, and without an encryption key, Notes say they aren't available.
+- That is the Memory chapter: facts you can see, notes sealed and searched by code, and the place of every thing you put away.

@@ -36,10 +36,11 @@ def _load(path: Path, name: str) -> ModuleType:
 
 # ---- 1 · the version and the release ------------------------------------------------------------
 def test_the_version_is_six_point_three() -> None:
-    assert jarvis.__version__ == "6.3.2"  # R6.3.1 (13.1.0 at R13.1); the persona is unchanged
+    # R6.4 (6.3.2 at R6.3.1, 13.1.0 at R13.1); the persona is unchanged
+    assert jarvis.__version__ == "6.4.0"
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R6.3"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-3-book-content.md"
+    assert plans.release_label(repo) == "R6.4"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"
 
 
 # ---- 12 · the staged eval runner ----------------------------------------------------------------
@@ -48,7 +49,8 @@ def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
     assert runner.STUBS_PASS is False  # I1 flipped it: a stub never reads as green
     for part in runner.PARTS:  # and every part is built (I1: console, needles, e2e)
         assert _load(ROOT / "evals" / "r6_3" / f"{part}.py", f"r6_3_{part}_pin").BUILT is True, part
-    assert runner.PARTS == ("facts", "tour", "authored")  # R6.3.1 D8: the writer's parts went
+    # R6.3.1 D8: the writer's parts went; R6.4 review M-3: the narration scripts (plan section 5)
+    assert runner.PARTS == ("facts", "tour", "authored", "narration")
     gate = (ROOT / "evals" / "run_all_mock.py").read_text(encoding="utf-8")
     assert (
         '("r6_3 (gated)", [sys.executable, str(HERE / "r6_3" / "run.py"), "--mock"], True)' in gate
@@ -106,11 +108,16 @@ def test_the_old_writers_collections_are_flat_and_the_books_own() -> None:
 # ---- 14, 15 · the guide -------------------------------------------------------------------------
 def test_the_guide_names_the_full_book_the_old_writers_data_and_the_roadmap() -> None:
     guide = GUIDE.read_text(encoding="utf-8")
-    assert guide.splitlines()[0].startswith("Version v6.3.") and "Release R6.3" in guide[:200]
+    # the guide moves forward with each release (v6.3.x / R6.3 at R6.3, v6.4.x / R6.4 at R6.4)
+    now = ".".join(jarvis.__version__.split(".")[:2])
+    assert guide.splitlines()[0].startswith(f"Version v{now}.") and f"Release R{now}" in guide[:200]
     c57 = guide[guide.index("#### C57 · Build book") : guide.index("#### C58")]
     for name in COLLECTIONS:
         assert f"`{name}/" in c57, name  # each with its document id, as the card names R6's
     assert "Book writer (old trial)" in c57 and "`pages.json.gz`" in c57  # R6.3.1 D4, D9
     assert "Gemini (free)" not in c57 and "`src/jarvis/llm/write.py`" not in c57  # D8
     roadmap = guide[guide.index("## 11. Roadmap") : guide.index("## 12. Glossary")]
-    assert "R6.3.1" in roadmap and "R6.4" in roadmap
+    assert "R6.3.1" in roadmap and "R6.4" in roadmap  # both named as built in its opening
+    rows = [ln for ln in roadmap.splitlines() if ln.startswith("| ")]
+    # R6.4 review: a built release is no PLANNED row (the tour's "next" reads the first two)
+    assert not any(ln.startswith(("| R6.3.1 ", "| R6.4 ")) for ln in rows), rows

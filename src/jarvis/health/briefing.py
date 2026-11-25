@@ -28,6 +28,7 @@ from jarvis.billing.service import rupees
 from jarvis.health.models import HealthReport, ProbeResult
 from jarvis.health.probes import BRAIN_NO_CREDIT
 from jarvis.health.report import spoken_label
+from jarvis.vitals.auto import unpriced_words
 from jarvis.vitals.models import Board, ProviderView
 
 Severity = Literal["down", "degraded", "amber", "red"]
@@ -230,19 +231,27 @@ def _allowance_high(v: ProviderView) -> bool:
 def _spend_part(board: Board) -> tuple[list[_Part], list[Concern]]:
     """The spend sentence (R5.1 V1): "AI spend is ₹412.50 of ₹500 this month (82 percent)." and,
     from `SPEND_WARN_PERCENT` on, its own second sentence about the limit. Said once; a hot spend
-    item still joins the concerns (its impact is for the card, not for this sentence)."""
+    item still joins the concerns (its impact is for the card, not for this sentence). R6.4 D9:
+    replies with no known price are said ("plus up to ₹30 for 3 replies with no known price") and
+    the percent counts them at that upper estimate, as the limit does."""
     spend = board.spend
     if spend is None:
         return [], []
     used, limit = spend.used_inr, spend.limit_inr
-    text = f"AI spend is {rupees(used)} this month, no limit set."
+    extra, counted = (
+        unpriced_words(spend.unpriced_calls, spend.unpriced_inr),
+        used + spend.unpriced_inr,
+    )
+    text = f"AI spend is {rupees(used)} this month{extra}, no limit set."
     if limit is not None and limit > 0:
-        percent = round(used / limit * 100)
-        text = f"AI spend is {rupees(used)} of {rupees(limit)} this month ({percent} percent)."
-        if used / limit * 100 >= SPEND_WARN_PERCENT:
+        percent = round(counted / limit * 100)
+        text = (
+            f"AI spend is {rupees(used)} of {rupees(limit)} this month{extra} ({percent} percent)."
+        )
+        if counted / limit * 100 >= SPEND_WARN_PERCENT:
             text += f" {SPEND_LIMIT_SENTENCE}"
     elif limit is not None:
-        text = f"AI spend is {rupees(used)} of {rupees(limit)} this month."
+        text = f"AI spend is {rupees(used)} of {rupees(limit)} this month{extra}."
     item = next((v for v in board.items if v.provider.id == SPEND_ID and _hot(v)), None)
     return [_Part(text, 0)], ([_concern(item)] if item is not None else [])
 

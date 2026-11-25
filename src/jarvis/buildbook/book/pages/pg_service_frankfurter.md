@@ -5,8 +5,8 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/backup/part.py": "acc12e13dbcb26b4"
   "src/jarvis/billing/fx.py": "a1f636e96ac588a7"
-  "src/jarvis/billing/service.py": "039c8bb79d44cdf4"
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/billing/service.py": "f8cd9507563514e1"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/wardrobe/catalog/part.py": "107e069a8eb76134"
   "src/jarvis/wardrobe/seeme/make.py": "5f40b732edadfa8a"
   "src/jarvis/wardrobe/seeme/part.py": "414e788c2a14b47d"

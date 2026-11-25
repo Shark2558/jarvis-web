@@ -94,7 +94,8 @@ def fixture() -> list[str]:
     out += _need("{{fact:" not in how and "3 times" in how, "the module page isn't filled")
     out += _need(card is not None and card.meta is None, "a page with a typed number is served")
     out += _need(set(flows) == {MODULE} and "from" in flows[MODULE]["edges"][0], "the charts")
-    out += _need(one.counts == {"written": 1, "generator": len(PACK.pages) - 1}, "the counts")
+    counts = {"written": 1, "generator": len(PACK.pages) - 1, "narrated": 0}  # R6.4: no script
+    out += _need(one.counts == counts, "the counts")
     return out + _need((one.pages, one.flows) == (two.pages, two.flows), "two compiles differ")
 
 

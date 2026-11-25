@@ -235,5 +235,8 @@ async def test_a_release_s_files_are_opened_once_and_read_again_after_a_change()
 def test_the_contract_is_the_two_pages_routes_only(tmp_path: Path) -> None:
     assert [(m, p) for m, p, *_ in ROUTES] == [
         ("GET", "/v1/book/pages"),
+        ("GET", "/v1/book/pages/search"),  # R6.4 D4 (before a page id)
         ("GET", "/v1/book/pages/{page_id}"),
+        ("GET", "/v1/book/chapters"),  # R6.4 D5, D6
+        ("GET", "/v1/book/chapters/{chapter_id}"),
     ]

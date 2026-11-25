@@ -214,9 +214,10 @@ INVENTORY_FILES: dict[str, str] = {
 
 # the plan's "The tour's facts" table, on this branch (the release's own values)
 TOUR = {
-    "release.label": "R6.3",
-    "release.version": "v6.3.2",  # R6.3.1 (v6.3.1 at R6.3 hotfix 1, v6.3.0 at R6.3)
-    "release.new": "The Build Book written at build time",  # R6.3.1: its own plan (by version)
+    "release.label": "R6.4",
+    "release.version": "v6.4.0",  # R6.4 (v6.3.2 at R6.3.1, v6.3.1 at R6.3 hotfix 1, v6.3.0 at R6.3)
+    # R6.4: its own plan (by version)
+    "release.new": "Build Book Part 3: the Book's own look and the full book in narrated chapters",
     "cards.count": 73,
     "modules.count": 18,
     "modules.else_count": 11,
@@ -239,9 +240,9 @@ TOUR = {
     "seeme.inr_a_picture": "₹9",
     "seeme.month_cap_inr": "₹300",
     "costs.rate": 95.24,
-    # R6.3.1: the guide's roadmap after this release (its R6.3.1 row went: built instead)
-    "roadmap.next": "R6.4, the Book's new look",
-    "roadmap.after": "Calls",
+    # the guide's roadmap after this release (R6.3.1's row went at R6.3.1, R6.4's at R6.4: built)
+    "roadmap.next": "Phone calls",
+    "roadmap.after": "R5.2, Voice",
 }
 
 

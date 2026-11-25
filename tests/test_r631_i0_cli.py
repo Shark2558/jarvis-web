@@ -75,9 +75,10 @@ def test_check_fails_on_missing_pages_unless_they_are_allowed(
     root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     code, lines = _run(root, capsys, "--check")
-    assert code == 1 and [ln for ln in lines if ln.endswith(": missing")] == [
+    assert code == 1 and [ln for ln in lines if ln.endswith(": missing") and ln[:3] == "pg_"] == [
         f"{pid}: missing" for pid in IDS
     ]
+    assert "module_demo: missing" in lines  # R6.4 D6: the strict check covers the narration too
     _stamped(root, "pg_card_c01")
     code, lines = _run(root, capsys, "--check", "--allow-missing")
     assert code == 0 and not [ln for ln in lines if ln.endswith(": missing")]

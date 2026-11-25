@@ -14,7 +14,10 @@ fact pack) and gives `Compiled`:
   generator's plain text (`pages.generator_page`): a page never breaks the build or the deploy
   (review I1 M-2: not even one whose files or checks raise an error nobody foresaw).
 - `flows`: the flowcharts of the pages served written, by page id (`pages.encode_flows`).
-- `counts`: {"written": n, "generator": n}, for the generator's summary (no text).
+- `counts`: {"written": n, "generator": n, "narrated": n}, for the generator's summary (no text).
+- R6.4 D6 (docs/plans/r6-4-book-look.md): the pages file also carries the chapters' narration
+  (`compile_narration`: every chapter, and the lines of each narrated one), so it is sealed with
+  the release in the same file.
 
 The owner-address check runs when JARVIS_OWNER_EMAILS names them (`pages_cli.owner_emails`).
 The same files and pack always give the same bytes.
@@ -30,6 +33,7 @@ from jarvis.buildbook.book import authored
 from jarvis.buildbook.book.authored import Env, PageFile
 from jarvis.buildbook.book.flow import FlowSpec
 from jarvis.buildbook.facts_model import FactPack, IndexedPage
+from jarvis.buildbook.gen.compile_narration import compile_narration
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.scrub import Scrubber
 from jarvis.buildbook.writer import fill, pages
@@ -93,17 +97,20 @@ def compile_pages(
         if ip.id in flows:
             charts[ip.id] = flows[ip.id]
     written = sum(p.meta is not None for p in out)
+    told, narrated = compile_narration(env, frozenset(p.id for p in out if p.meta is not None))
     f = PagesFile(
         release=pack.release.id if pack.release is not None else "0000000",
         pages=tuple(out),
         modules={m.id: m.title for m in pack.modules},
         limitations=len(pack.limitations),
+        narration=told,
     )
     try:
         data, chart_bytes = pages.encode_file(f), pages.encode_flows(charts)
     except ValueError as exc:
         raise GenError(f"the full book can't be written: {exc}") from None
-    return Compiled(data, chart_bytes, {"written": written, "generator": len(out) - written})
+    counts = {"written": written, "generator": len(out) - written, "narrated": narrated}
+    return Compiled(data, chart_bytes, counts)
 
 
 __all__ = ["SERVED", "Compiled", "compile_pages"]

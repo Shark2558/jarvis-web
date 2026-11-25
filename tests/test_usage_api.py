@@ -32,6 +32,9 @@ USAGE_KEYS = {
     "by_brain",
     "rate",
     "limit_unreadable",
+    "unpriced_calls",  # R6.4 D9: "price unknown" replies, not in used_inr
+    "unpriced_tokens",
+    "unpriced_inr",
 }
 
 
@@ -84,6 +87,7 @@ async def test_usage_shape_with_nothing_spent(api: AsyncClient) -> None:
     assert j["limit_inr"] is None and j["remaining_inr"] is None and j["percent"] is None
     assert j["warn"] is False and j["reached"] is False and j["limit_unreadable"] is False
     assert j["rate"] == {"inr_per_usd": 95.24, "as_of": "2026-11-01", "source": "default"}
+    assert (j["unpriced_calls"], j["unpriced_tokens"], j["unpriced_inr"]) == (0, 0, 0)
 
 
 async def test_usage_with_spend_and_a_limit(api: AsyncClient) -> None:

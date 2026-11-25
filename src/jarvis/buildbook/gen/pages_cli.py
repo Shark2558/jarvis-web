@@ -13,6 +13,10 @@ book's pages, `python -m jarvis.buildbook.gen pages ...` (one of these four):
     --stamp ID ...      rewrites only the `sources` block of each page from its refs' tracked
                         files now; refuses (exit 1) a page with any problem but staleness
 
+R6.4 D6 (docs/plans/r6-4-book-look.md): the chapters' narration scripts, `gen/narration_cli.py`:
+--narration-list, --narration-pack ID, --narration-check [ID ...], --narration-stamp ID ...; and
+`--check` with no ids checks every narration script too (`--allow-missing` covers both).
+
     --repo DIR          the checkout (default: the git checkout around the working folder)
     --allow-missing     with --check: a page not written yet is no problem (a writer checks
                         only the pages written so far)
@@ -34,7 +38,7 @@ from jarvis.buildbook.book import authored
 from jarvis.buildbook.book.authored import STALE, Env, judge
 from jarvis.buildbook.book.flow import REQUIRED_FOR
 from jarvis.buildbook.facts_model import IndexedPage
-from jarvis.buildbook.gen import facts_cache
+from jarvis.buildbook.gen import facts_cache, narration_cli
 from jarvis.buildbook.gen.repo import GenError, Repo
 from jarvis.buildbook.gen.runner import say
 from jarvis.buildbook.gen.scrub import default_scrubber
@@ -57,6 +61,10 @@ def _args(argv: Sequence[str] | None) -> argparse.Namespace:
     act.add_argument("--pack", metavar="ID")
     act.add_argument("--check", nargs="*", metavar="ID")
     act.add_argument("--stamp", nargs="+", metavar="ID")
+    act.add_argument("--narration-list", action="store_true")  # R6.4 D6
+    act.add_argument("--narration-pack", metavar="ID")
+    act.add_argument("--narration-check", nargs="*", metavar="ID")
+    act.add_argument("--narration-stamp", nargs="+", metavar="ID")
     ap.add_argument("--allow-missing", action="store_true")
     return ap.parse_args(argv)
 
@@ -77,7 +85,20 @@ def main(argv: Sequence[str] | None = None, *, build: facts_cache.Builder | None
         return _pack(env, args.pack)
     if args.check is not None:
         return _check(env, args.check, allow_missing=args.allow_missing)
-    return _stamp(env, args.stamp)
+    if args.stamp is not None:
+        return _stamp(env, args.stamp)
+    return _narration(env, args)
+
+
+def _narration(env: Env, args: argparse.Namespace) -> int:
+    """R6.4 D6: the narration flags (`gen/narration_cli.py`)."""
+    if args.narration_list:
+        return narration_cli.list_all(env)
+    if args.narration_pack is not None:
+        return narration_cli.pack(env, args.narration_pack)
+    if args.narration_check is not None:
+        return narration_cli.check(env, args.narration_check, allow_missing=args.allow_missing)
+    return narration_cli.stamp(env, args.narration_stamp)
 
 
 # ---- --list -------------------------------------------------------------------------------------
@@ -132,7 +153,14 @@ def _check(env: Env, ids: Sequence[str], *, allow_missing: bool) -> int:
         problems += 1
     checked = sum(counts.values())
     tail = " (allowed)" if allow_missing and counts["missing"] else ""
-    say(_totals(checked, counts, head="checked ") + tail + f"; {problems} problems")
+    told = ""
+    if not ids:  # R6.4 D6: the strict check covers every chapter's narration script too
+        lines, by_status, n = narration_cli.check_all(env, allow_missing=allow_missing)
+        for line in lines:
+            say(line)
+        problems += len(lines)
+        told = "; " + narration_cli.totals(n, by_status, allow_missing)
+    say(_totals(checked, counts, head="checked ") + tail + told + f"; {problems} problems")
     return 1 if problems else 0
 
 

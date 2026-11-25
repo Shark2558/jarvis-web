@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jarvis
+
 GUIDE = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "JARVIS-Architecture.md"
 
 
@@ -16,10 +18,12 @@ def _card(text: str, title: str) -> str:
 
 def test_the_guide_is_v13_1_5_with_its_change_log_row() -> None:
     text = GUIDE.read_text(encoding="utf-8")
-    # R6.3 I0: the guide moved on (v6.3.1, tests/test_r63_seams.py); R13.1's row stays in its log
-    assert text.splitlines()[0].startswith("Version v6.3.")
+    # the guide moves on with each release (R6.3 I0: v6.3.x, R6.4: v6.4.x, tests/test_r63_seams.py);
+    # R13.1's row stays in its log
+    now = ".".join(jarvis.__version__.split(".")[:2])
+    assert text.splitlines()[0].startswith(f"Version v{now}.")
     assert "| v13.1.5 | 18 Nov 2026, 06:15 IST | R13.1 |" in text
-    assert "| v6.3." in text.splitlines()[-1]
+    assert f"| v{now}." in text.splitlines()[-1]
 
 
 def test_c73_says_the_role_fails_closed_and_the_risk_it_leaves() -> None:

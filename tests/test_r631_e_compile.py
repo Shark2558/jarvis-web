@@ -70,7 +70,7 @@ def test_a_written_page_is_filled_with_its_meta_and_flow(root: Path) -> None:
     flows = pages.decode_flows(got.flows)
     assert set(flows) == {MODULE} and flows[MODULE]["edges"][0]["from"] == "ask"
     assert "from_" not in json.dumps(flows) and "ref" in flows[MODULE]["nodes"][1]
-    assert got.counts == {"written": 1, "generator": len(PACK.pages) - 1}
+    assert got.counts == {"written": 1, "generator": len(PACK.pages) - 1, "narrated": 0}  # R6.4
 
 
 def test_missing_and_failing_pages_are_the_generator_text(root: Path) -> None:

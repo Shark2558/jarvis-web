@@ -1,0 +1,59 @@
+---
+chapter: story_costs
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_chapter_costs": "dc9213e929de159e"
+---
+- [show:title] This chapter is about money: what JARVIS costs you, and how it keeps that number small and in plain sight.
+- [show:plain] Most of JARVIS runs on free allowances and free services.
+- What does cost money, mainly the paid AI brains and Google's voices beyond their free share, is metered in rupees.
+- You may set a monthly limit, and once it is reached, no paid call is made.
+- The Vitals board watches everything else that has a limit or a renewal date, so nothing runs out or renews by surprise.
+- The Voice and Vitals pages tell the detail; this chapter is the overview.
+- [show:how] Here is how a single paid call turns into the rupees you see.
+- [show:overview] This is the road from a paid call to the rupees on your screen.
+- [node:call] It starts with a paid AI call, or a paid voice call.
+- [edge:call>limit] Before it is made, the call meets your limit.
+- [node:limit] JARVIS asks one question first: are you still under your monthly limit?
+- [edge:limit>stop] If the limit is reached, the path turns aside.
+- [node:stop] No paid call is made, and the reply tells you so.
+- [edge:limit>meter] Under the limit, the call goes ahead, and it is metered.
+- [node:meter] The meter multiplies the tokens a brain reports by JARVIS's price list.
+- Models priced above zero count against your limit.
+- Gemini is priced at zero while its paid tier is {{fact:settings.gemini_paid_tier}}, and at Google's paid prices once you turn it on.
+- A model missing from the price list is shown as price unknown, never as free.
+- Its replies and tokens are shown apart, and the limit counts them at the dearest known price.
+- And a background call of that kind, with no token counts reported, is counted as one call of a generous size at that dearest price, never as nothing.
+- [count:{{fact:src/jarvis/llm/pricing.py:CHARS_PER_TOKEN}}] When a brain reports no token counts, JARVIS works them out from the text, at about {{fact:src/jarvis/llm/pricing.py:CHARS_PER_TOKEN}} characters a token.
+- So a paid call is never metered as free.
+- [edge:meter>inr] The cost, worked out in dollars, travels on to become rupees.
+- [node:fx] The day's dollar rate comes from the free Frankfurter service, fetched at most once a day.
+- [count:{{fact:src/jarvis/billing/fx.py:FETCH_TIMEOUT_S}}] Each fetch has a deadline of {{fact:src/jarvis/billing/fx.py:FETCH_TIMEOUT_S}} seconds.
+- [edge:fx>inr] [count:{{fact:src/jarvis/billing/fx.py:RATE_MAX}}] The rate is used only when it lies between {{fact:src/jarvis/billing/fx.py:RATE_MIN}} and {{fact:src/jarvis/billing/fx.py:RATE_MAX}} rupees to the dollar.
+- [node:inr] The month's rupees are kept in a few small records, in JARVIS's own store.
+- [edge:inr>view] From there, they come to your screen.
+- [node:view] In Vitals, This month shows the month's rupees, the share of your limit, the number of calls, and the spend for each brain.
+- It speaks in rupees only.
+- You set the limit there too, and raising or removing it needs an explicit confirmation, because it lets JARVIS spend more.
+- [edge:view>vitals] Beside it, the board watches everything else.
+- [node:vitals] The Vitals board tracks every other limit and renewal: JARVIS's keys and connections, free allowances, quotas, and the bills you add yourself.
+- Each one carries its status in words.
+- [edge:vitals>about] And at the foot of the board sits one more line.
+- [node:about] The About JARVIS line gives the running version, and the day its image was built, written in your own time zone.
+- [show:example] In the made-up example, Farhan sets a monthly limit in Vitals.
+- Partway through November, This month shows most of it used, the strong brain taking the largest share, and the rest spread over voice and quick answers.
+- The rate line shows the day's rupees to the dollar, fetched that morning.
+- As the month draws near its limit, the bar turns amber.
+- Near the month's end, a long research reply takes the month right up to the limit.
+- The next request that needs a paid brain gets a short note: the limit is reached, and it can be raised in Vitals.
+- He raises it, confirms the raise, and carries on.
+- [show:costs] Keeping the books costs nothing: Frankfurter needs no key and no payment, and the meters are a few small records.
+- What you pay for is the paid brains' tokens, at the prices in the price list, and speech beyond the free voice allowance.
+- Every rupee figure is an estimate, because your card is charged at your bank's rate.
+- [show:fails] [count:{{fact:src/jarvis/billing/fx.py:DEFAULT_RATE}}] If the day's rate can't be fetched, the last stored rate is used, or else the built-in {{fact:src/jarvis/billing/fx.py:DEFAULT_RATE}} rupees to the dollar.
+- And that check never holds up a reply.
+- If the stored limit can't be read, paid replies pause, and any new limit asks first.
+- A missing figure shows a dash, rather than a guess.
+- A build date that can't be read shows build date unknown, and it never stops the board loading.
+- That is the money side: free where it can be, metered in rupees where it can't, and never past your limit.

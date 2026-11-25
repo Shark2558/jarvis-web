@@ -7,7 +7,7 @@ sources:
   ".github/workflows/ci.yml": "9a6b5662e765a438"
   "Dockerfile": "ec8c53957aaefd1a"
   "Makefile": "3c446b64c5b9cb98"
-  "deploy/cloudrun.sh": "291d919ed466219d"
+  "deploy/cloudrun.sh": "8fd20146ba1568b4"
   "deploy/run-real-evals.sh": "3e7d08fb0a07cf43"
   "docs/github-backfill.tsv": "08260a54febc5a52"
   "render.yaml": "f4d4dcab2c0f7920"

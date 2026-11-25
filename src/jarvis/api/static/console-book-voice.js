@@ -1,6 +1,8 @@
 // src/jarvis/api/static/console-book-voice.js -- R6 D15 (book.html): narration -- POST /v1/book/show/speak, one beat
 // prefetched, a Web Audio queue, the browser voice on 402/503/a decode error, level() for the Core.
-// say(lineId, text) resolves when the line's audio ends: the cloud voice (the server speaks ITS text for that line id,
+// say(lineId, text, opts) resolves when the line's audio ends (R6.4 D7, D11: opts, optional, for the chapter player --
+// opts.onWord(charIndex, charLength) on each spoken word's boundary, browser voice only; opts.rate 0.5-2 for the browser
+// voice and the captions' time; the show passes none): the cloud voice (the server speaks ITS text for that line id,
 // a beat id, a fixed line's key or a reply id; decoded by Web Audio, so no media element and no CSP change), else the
 // browser's speechSynthesis (R6.2 decision 4: the default, Rs 0; with the cloud voice, from the first 402 / 503 / decode
 // error on, for the rest of the show), else -- sound off,
@@ -23,6 +25,8 @@
   const S = { ctx: null, gain: null, an: null, data: null, mode: 'cloud', muted: false, closed: false, seq: 0, cur: null,
     cache: new Map(), pulse: 0, lv: 0, paused: false };
   const captionMs = (text) => (String(text || '').split(/\s+/).filter(Boolean).length * WORD_MS) + TAIL_MS;
+  const rateOf = (opts) => { const r = Number(opts && opts.rate); return Number.isFinite(r) ? Math.min(2, Math.max(0.5, r)) : 1; };
+  const lineMs = (cur) => captionMs(cur.text) / (cur.rate || 1); // a line's captions time at its speed
   const B = () => window.JarvisBook;
   const synth = () => { try { return window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function' ? window.speechSynthesis : null; } catch (_) { return null; } };
 
@@ -80,14 +84,18 @@
   }
 
   // ---- the browser voice -------------------------------------------------------------------------
-  function speakBrowser(text, my) {
+  function speakBrowser(text, my, opts) {
     const sp = synth();
     return new Promise((resolve) => {
       if (!sp || my !== S.seq) { resolve('stopped'); return; }
-      const u = new SpeechSynthesisUtterance(text), cur = { kind: 'speech', u, resolve, text, at: performance.now(), started: false };
-      u.lang = 'en-GB'; u.rate = 1;
+      const rate = rateOf(opts), onWord = opts && typeof opts.onWord === 'function' ? opts.onWord : null;
+      const u = new SpeechSynthesisUtterance(text), cur = { kind: 'speech', u, resolve, text, rate, at: performance.now(), started: false };
+      u.lang = 'en-GB'; u.rate = rate;
       u.onstart = () => { cur.started = true; };
-      u.onboundary = () => { S.pulse = 1; };
+      u.onboundary = (e) => { // R6.4: a word's boundary lights the chapter's caption (opts.onWord); the show passes none
+        S.pulse = 1;
+        if (onWord && e && e.name === 'word' && S.cur === cur) { try { onWord(e.charIndex | 0, e.charLength | 0); } catch (_) { /* the caller's */ } }
+      };
       u.onend = () => end(cur, 'ended');
       u.onerror = () => failed(cur);
       S.cur = cur;
@@ -100,15 +108,14 @@
   function failed(cur) {
     if (cur.kind !== 'speech') return;
     if (cur.started || S.cur !== cur) { end(cur, 'ended'); return; }
-    S.mode = 'captions'; toTimer(cur, captionMs(cur.text));
+    S.mode = 'captions'; toTimer(cur, lineMs(cur));
   }
   function utter(cur, sp) {
-    const text = cur.text;
     cur.at = performance.now();
     // no voice in this browser (it never starts): captions set the pace from here on
-    cur.watch = setTimeout(() => { if (!cur.started && S.cur === cur) { S.mode = 'captions'; try { sp.cancel(); } catch (_) {} toTimer(cur, captionMs(text)); } }, START_MS);
-    cur.cap = setTimeout(() => end(cur, 'ended'), captionMs(text) * 2 + 4000);
-    try { sp.resume(); sp.speak(cur.u); } catch (_) { toTimer(cur, captionMs(text)); }
+    cur.watch = setTimeout(() => { if (!cur.started && S.cur === cur) { S.mode = 'captions'; try { sp.cancel(); } catch (_) {} toTimer(cur, lineMs(cur)); } }, START_MS);
+    cur.cap = setTimeout(() => end(cur, 'ended'), lineMs(cur) * 2 + 4000);
+    try { sp.resume(); sp.speak(cur.u); } catch (_) { toTimer(cur, lineMs(cur)); }
   }
 
   // ---- captions only: a pausable timer -------------------------------------------------------------
@@ -134,7 +141,7 @@
     cur.resolve(how);
   }
 
-  async function say(id, text) {
+  async function say(id, text, opts) {
     stop();
     const my = ++S.seq;
     S.paused = false; // a new line is meant to be heard; a Pause while its audio loads holds it (held())
@@ -151,8 +158,8 @@
         S.mode = 'browser'; // 402 (allowance), 503 (no cloud voice), a decode error: the browser voice from here on
       }
     }
-    if (!S.muted && S.mode === 'browser' && synth()) return speakBrowser(text, my);
-    return timed(captionMs(text), my);
+    if (!S.muted && S.mode === 'browser' && synth()) return speakBrowser(text, my, opts);
+    return timed(captionMs(text) / rateOf(opts), my);
   }
   function stop() {
     S.seq += 1;
@@ -178,7 +185,7 @@
     if (!cur || !cur.paused) return;
     cur.paused = false;
     if (cur.waiting) { cur.waiting = false; if (cur.kind === 'audio') { cur.at = performance.now(); cur.src.start(); } else utter(cur, synth()); return; }
-    if (cur.kind === 'speech') { const sp = synth(); try { if (sp) sp.resume(); } catch (_) {} cur.cap = setTimeout(() => end(cur, 'ended'), captionMs(cur.text) + 4000); }
+    if (cur.kind === 'speech') { const sp = synth(); try { if (sp) sp.resume(); } catch (_) {} cur.cap = setTimeout(() => end(cur, 'ended'), lineMs(cur) + 4000); }
     else if (cur.kind === 'timer') { cur.at = performance.now(); cur.timer = setTimeout(() => end(cur, 'ended'), cur.left); }
   }
   /** M: sound off -> the line playing now ends on its caption time; sound on -> the next line speaks. */
@@ -188,7 +195,7 @@
     if (!S.muted || !cur || cur.kind === 'timer') return;
     const spent = performance.now() - cur.at;
     if (cur.kind === 'audio') { try { cur.src.onended = null; cur.src.stop(); } catch (_) {} toTimer(cur, Math.max(cur.ms || 0, 1200) - spent); }
-    else { const sp = synth(); try { if (sp) sp.cancel(); } catch (_) {} toTimer(cur, captionMs(cur.text) - spent); }
+    else { const sp = synth(); try { if (sp) sp.cancel(); } catch (_) {} toTimer(cur, lineMs(cur) - spent); }
   }
   /** 0..1, smoothed: the playback level (cloud), a pulse per spoken word (browser), else 0. */
   function level() {

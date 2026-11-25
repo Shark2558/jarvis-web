@@ -6,7 +6,8 @@
 // audience (JarvisPasskey.prove('book_open', audience)). No passkey in force -> the server refuses; the panel never
 // falls back to the sign-in alone. A guest open goes straight to the show (/book/show) with the token in THIS tab's
 // sessionStorage only; an owner open keeps the token in memory for the reader (sections of each kept release, the code
-// download by a 60 s single-use ticket) and the show. Every book route gets the token as X-Jarvis-Book.
+// download by a 60 s single-use ticket), Read the full book (/book/read, R6.4 D1) and the Short tour (/book/show): both
+// pages get the token the same way, in THIS tab's sessionStorage. Every book route gets the token as X-Jarvis-Book.
 // Transport: window.JarvisConsole.api (cookie + X-Requested-With, or the bearer token); bytes by JarvisChat.raw.
 // Server text reaches the page through textContent only. No build step; CSP script-src 'self'; ASCII source; <= 400 lines.
 // API: GET /v1/book; POST /v1/book/open {proof?, audience}; GET /v1/book/sections; GET /v1/book/releases/{rid}/sections;
@@ -162,7 +163,8 @@
   }
   function sessionBar() {
     const acts = mk('div', 'actions bk-session');
-    acts.append(button('Start the show', 'primary', () => toShow(S.token, S.session)), button('End session', '', () => end(true)));
+    acts.append(button('Read the full book', 'primary', () => toShow(S.token, S.session, '/book/read')), // R6.4 D1
+      button('Short tour', '', () => toShow(S.token, S.session)), button('End session', '', () => end(true)));
     return acts;
   }
   /** The focused control as text + its place among controls with the same text (a re-render rebuilds them). */
@@ -178,10 +180,6 @@
     const b = [...host.querySelectorAll('button')].filter((x) => x.textContent === k.text)[k.n];
     if (b && !b.disabled) b.focus(); else if (b) S.focus = k; // disabled while busy: the next render puts it back
   }
-  // R6.3 I0 (seam 8): C's full-book module, loaded ONCE at the panel's first open, handed its host and deps (R6.3.1: the writer is gone)
-  const X = {}, deps = () => ({ api, booked, ask, say, render, token: () => S.token, release: () => S.reading || ((S.data && S.data.release) || {}).id || '' });
-  function more() { if (X.pages) return; X.pages = mk('div', 'bk-pages'); [['console-book-pages.js', 'JarvisBookPages', (P) => P.mount(X.pages, deps())]]
-    .forEach(([f, name, go]) => { const t = document.createElement('script'); t.src = '/static/' + f; t.defer = true; t.addEventListener('load', () => { if (window[name]) go(window[name]); }); document.head.append(t); }); }
   function render() {
     const keep = focusKey();
     paint();
@@ -199,7 +197,7 @@
       host.append(l);
     }
     host.append(S.token ? sessionBar() : opens(d), noteEl);
-    if (S.token) host.append(reader(), ...[X.pages].filter(Boolean)); // R6.3: the full book (C's)
+    if (S.token) host.append(reader()); // R6.4 D1: the full book reads on its own page (Read the full book)
     host.append(sealedList(d), tiles(d));
     if (d.last) host.append(mk('p', 'bnote bk-last', 'Last session closed ' + d.last.at + '; its conversation was deleted'
       + (d.last.told ? ' and you were told.' : '.')));
@@ -278,7 +276,7 @@
     const session = { session_id: txt(r.session_id, 40), until: txt(r.until, 40), audience: r.audience === 'guest' ? 'guest' : 'owner' };
     if (session.audience === 'guest') { toShow(r.token, session); return; }
     S.token = r.token; S.session = session; S.reading = '';
-    say('ok', 'Open. Read it here or start the show.');
+    say('ok', 'Open. Read the full book, or take the short tour.');
     clearInterval(beatTimer); beatTimer = setInterval(beat, BEAT_MS);
     armEnd(Date.parse(session.until));
   }
@@ -291,12 +289,13 @@
     endTimer = left > MAX_TIMER_MS ? setTimeout(() => armEnd(until), MAX_TIMER_MS)
       : setTimeout(() => forget('The session reached its time limit and closed.'), left);
   }
-  /** The show runs in this tab: the token moves to this tab's sessionStorage, nowhere else. A guest's show replaces
-   *  the console page, so it is no Back entry (a back/forward-cache view would skip the lock). */
-  function toShow(token, session) {
+  /** The show (or, R6.4, the full book's page) runs in this tab: the token moves to this tab's sessionStorage, nowhere
+   *  else. A guest's show replaces the console page, so it is no Back entry (a back/forward-cache view would skip the
+   *  lock); a guest only ever goes to the show. */
+  function toShow(token, session, page = '/book/show') {
     ss.set(SHOW_TOKEN, token); ss.set(SHOW_SESSION, JSON.stringify(session || {}));
     S.token = ''; clearInterval(beatTimer); clearTimeout(endTimer);
-    if (!session || session.audience !== 'guest') { window.location.assign('/book/show'); return; }
+    if (!session || session.audience !== 'guest') { window.location.assign(page === '/book/read' ? page : '/book/show'); return; }
     try { const ch = new BroadcastChannel('jarvis-book'); ch.postMessage({ type: 'guest-show' }); ch.close(); } catch (_) {} // D10: open console tabs hop now
     window.location.replace('/book/show');
   }
@@ -369,7 +368,7 @@
   }
   function ready() {
     const p = pending();
-    if (!p) { ss.del(PENDING); if (Deck.isOpen('book')) { more(); load(); } return; } // a restored panel fires no jarvis:panel (R6.3 hotfix 1)
+    if (!p) { ss.del(PENDING); if (Deck.isOpen('book')) load(); return; } // a restored panel fires no jarvis:panel (R6.3 hotfix 1)
     if (back === 'done') S.resume = p;
     else { ss.del(PENDING); if (back === 'stale') say('bad', 'Google didn\u2019t confirm a fresh sign-in, so the book did not open. Sign out of Google in this browser, then try again. If it happens every time, Google isn\u2019t sending the sign-in time: switch on Session age claims in Google Auth Platform, or switch reauth_requires_auth_time off.'); }
     if (!back) return;
@@ -379,7 +378,7 @@
   document.addEventListener('jarvis:panel', (e) => {
     const d = e.detail || {};
     if (d.id !== 'book') return;
-    if (d.open) { more(); load(); } else if (S.token) end(false);
+    if (d.open) load(); else if (S.token) end(false);
   });
   document.addEventListener('jarvis:ready', ready);
   const JC = window.JarvisConsole;

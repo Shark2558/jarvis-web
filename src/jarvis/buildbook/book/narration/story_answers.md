@@ -1,0 +1,56 @@
+---
+chapter: story_answers
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_chapter_answers": "52e4600761daf554"
+---
+- [show:title] This chapter follows one message, from the moment you send it to the reply you read or hear.
+- [show:plain] On the way, JARVIS gathers the conversation so far, and what it remembers about you.
+- It chooses which tools the model may see, and asks a model at the level of effort the job needs.
+- It lets the model act only through the tool gateway, and checks each step against your rules and your monthly limit.
+- The pages on the brain, approvals, memory, voice and costs each tell one part of this journey in detail; this chapter is the whole road.
+- [show:how] Let's walk that road.
+- [show:overview] Here is one message, from you to the reply.
+- [node:you] A message arrives from the console, from your voice, or from Telegram.
+- JARVIS notes which surface it came from, so that surface's own rules apply.
+- [edge:you>guard] First, the message meets a guard.
+- [node:guard] [count:{{fact:settings.max_input_chars}}] Its size is capped at {{fact:settings.max_input_chars}} characters, and any control characters are stripped out.
+- [edge:guard>context] A clean message then gathers its context.
+- [node:context] JARVIS adds the recent conversation, and the persona: its manner and its hard rules.
+- One of those rules matters a great deal: outside text is data, never orders.
+- [edge:context>offer] Next comes the choice of tools.
+- [node:offer] JARVIS narrows the tools to the groups this message needs, from a catalogue of skills.
+- [edge:offer>model] The message, its context and those tools go to the model.
+- [node:model] The router sends the call to a brain at the right tier.
+- On a passing error it drops a tier, and when the cloud can't be reached, it hands the call to the laptop's own brain.
+- [edge:model>gateway] When the model wants a tool, the call goes to the gateway.
+- [node:gateway] [count:{{fact:settings.tool_max_rounds}}] The gateway handles every call, for up to {{fact:settings.tool_max_rounds}} rounds of tools in one message.
+- [edge:gateway>outside] When a tool brings back mail, a web page or a document, it comes back fenced off as outside text.
+- [node:outside] From then on, in that turn, every write turns into a card, because outside words must never give JARVIS orders.
+- But a result made only of your own words, such as an event you created alone, is trusted, so changing it needs no card.
+- [edge:outside>card] So the write travels on as a card.
+- [node:card] The card waits for you, and nothing changes until you approve it.
+- [edge:gateway>mask] When the model is done, its answer heads towards you.
+- [node:mask] On a voice or Telegram turn, links, addresses, amounts and long numbers from mail are masked before they are spoken or sent.
+- [edge:mask>saved] Then the reply is saved.
+- [node:saved] The reply is the model's own words, or, if it wrote none, a fixed, honest line chosen by code.
+- Every model call is admitted against your monthly limit first, and metered afterwards, counting where the tokens went.
+- With the AI switched off, fixed phrase routers answer instead, through the very same gateway.
+- One of them prepares a home-service request from a template, and it never books or pays.
+- [show:example] In the made-up example, one evening Sanjay writes on Telegram.
+- He asks: did the electricity bill mail come? Add paying it to my to-dos for Saturday.
+- JARVIS reads his recent mail. That mail is someone else's words, so the to-do no longer happens at once: it becomes a card.
+- The reply on his phone says the bill came, and reads the amount as just an amount, because mail sent to a phone is masked.
+- Later, home at his laptop, he approves the card in the console, and the to-do appears for Saturday.
+- [show:costs] An answer costs the model's tokens.
+- That is nothing on Gemini's free tier, on the laptop brain, or with the AI switched off.
+- Otherwise it is Claude's price per million tokens, or Google's paid-tier price once your Gemini key has billing, counted in rupees against your monthly limit.
+- A model with no known price is marked price unknown, never free, and your limit counts it at the dearest price JARVIS knows.
+- Offering only the tools a message needs keeps each call smaller, and so cheaper.
+- [show:fails] A brain failure becomes a short, plain message, never the vendor's own words.
+- When trust is unclear, the call asks you first.
+- If a turn clashes with another window, your message is not stored, and no model is called.
+- But after an approved action, the save never fails, so nothing runs twice.
+- An answer cut short is asked for once more, and its half-written tool calls never run.
+- That is the whole road: checked, given context, offered tools, guarded, masked where needed, and saved.

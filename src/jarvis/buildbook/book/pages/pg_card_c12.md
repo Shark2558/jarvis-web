@@ -15,7 +15,7 @@ sources:
   "src/jarvis/undo/tools.py": "5539430e590f183e"
 ---
 ## In plain words
-Before JARVIS deletes one of your own calendar events, to-dos, notes, things or vault files, it keeps a copy for {{fact:src/jarvis/undo/models.py:RETENTION_DAYS}} days. If you change your mind, you bring it back from Recently deleted under Approvals, or just ask "bring back the dentist appointment". After that time the copy is cleared away. Because of this safety net, deleting your own things is undoable rather than a passkey-only step.
+Before JARVIS deletes one of your own calendar events, to-dos, notes, things, vault files or wardrobe pieces, it keeps a copy for {{fact:src/jarvis/undo/models.py:RETENTION_DAYS}} days. If you change your mind, you bring it back from Recently deleted under Approvals, or just ask "bring back the dentist appointment". After that time the copy is cleared away. Because of this safety net, deleting your own things is undoable rather than a passkey-only step.
 
 ## Example (made up)
 On Friday you tell JARVIS "delete Saturday's badminton". It keeps a copy, then removes the event from your calendar. On Saturday morning the game is back on, so you open Recently deleted and press Restore: the event returns as a new event, at the same time and with the same notes. Pressing Restore again just says "already restored".
@@ -24,11 +24,12 @@ On Friday you tell JARVIS "delete Saturday's badminton". It keeps a copy, then r
 Before an undoable delete, `keep_copy` stores the item's snapshot in Recently deleted, with the conversation and request it came from, and if the copy can't be stored, nothing is deleted (`src/jarvis/tools/undo_delete.py`).
 `delete_after_keep` then deletes; if Google's answer is lost, it reads the item again: gone means done, still there means not deleted, and if even that read fails the copy stays, since a spare copy is better than lost data.
 `UndoBin` keeps each copy in `deleted_items` per owner, written create-only, with an expiry date (`src/jarvis/undo/service.py`).
-A restore is first claimed in a transaction, so two clicks never make two copies, and the restorer for that kind rebuilds it: `CalendarRestorer` for events, `TaskRestorer` for to-dos with their subtasks, and vault documents, notes and things in place (`src/jarvis/undo/service.py`).
+A restore is first claimed in a transaction, so two clicks never make two copies, and the restorer for that kind rebuilds it: `CalendarRestorer` for events, `TaskRestorer` for to-dos with their subtasks, and vault documents, notes, things and wardrobe pieces in place (`src/jarvis/undo/service.py`).
+A wardrobe piece comes back under "Missing or in review", and its photos and history go only when its copy is removed for good (`src/jarvis/undo/models.py`).
 A restorer that finds the original still there makes nothing and says so (`StillThere`), and one that finds it removed for good drops the entry (`Gone`).
 An event comes back without its guests, so restoring never sends anyone an invitation (`restore_body`).
 Your list shows the newest {{fact:src/jarvis/undo/store.py:PANEL_LISTED}} items, and the brain's look-up sees the newest {{fact:src/jarvis/undo/store.py:MAX_LISTED}}, with titles fenced as outside text (`undo_tools`).
-"Remove now" deletes a copy at once; for vault documents, notes and things that is final, so it needs your passkey when passkeys are on (`src/jarvis/api/deleted.py`).
+"Remove now" deletes a copy at once; for vault documents, notes, things and wardrobe pieces that is final, so it needs your passkey when passkeys are on (`src/jarvis/api/deleted.py`).
 The scheduler's tick sweeps away expired copies (`UndoBin`), and `src/jarvis/api/static/console-deleted.js` lists them from `GET /v1/deleted` and restores through `POST /v1/deleted/{undo_id}/restore`.
 
 ## What it costs

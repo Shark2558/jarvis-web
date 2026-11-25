@@ -32,6 +32,7 @@ from jarvis.belongings.text import looks_like_storage
 from jarvis.billing import Billing, BudgetError
 from jarvis.core.guardrails import ActionRisk
 from jarvis.core.models import Session
+from jarvis.llm.base import Usage
 from jarvis.llm.brains import BrainSpec
 from jarvis.logging import get_logger
 from jarvis.recall import gate
@@ -176,6 +177,16 @@ class _Tally:
     ids: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _Called:
+    """A learning call as billing judges its price (R6.4 I1): it meters as "memory", not under
+    its brain's id, so it names its model and its brain's provider. No tokens come with it."""
+
+    model: str
+    provider: str
+    usage: Usage | None = None
+
+
 @dataclass
 class _Run:
     """One claimed run as the call, the apply and the `finally` see it."""
@@ -203,6 +214,13 @@ class _Run:
         if self.out is not None:
             return self.out.cost_usd
         return estimate_cost(self.prep.model, self.prep.prompt) if self.started else 0.0
+
+    def called(self) -> _Called | None:
+        """The call, once it was made: a model with no known price is never metered as ₹0."""
+        if not self.started:
+            return None
+        model = self.out.model if self.out is not None else self.prep.model
+        return _Called(model, getattr(self.prep.brain.provider, "name", ""))
 
 
 def _items(ext: Extraction | None) -> int:
@@ -367,7 +385,7 @@ class Learner:
         with anyio.move_on_after(SETTLE_GRACE_S, shield=True):
             cost = run.cost()
             if self._billing is not None:
-                await self._billing.record(run.uid, METER_LABEL, cost)  # never raises
+                await self._billing.record(run.uid, METER_LABEL, cost, used=run.called())
             if not run.applied:
                 await self._mark_failed(run)
             await self._log(run.args(), run.outcome, f"{run.detail} cost_usd={cost:.6f}")

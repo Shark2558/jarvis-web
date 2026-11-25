@@ -184,9 +184,13 @@ class Spend(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    used_inr: float
+    used_inr: float  # the priced rupees
     limit_inr: int | None
-    text: str  # "₹120 of ₹500 this month"
+    text: str  # "₹120 of ₹500 this month" (+ ", plus up to ₹30 for 3 replies with no known price")
+    # R6.4 D9: replies with no known price, not in used_inr; unpriced_inr is them at the dearest
+    # known price, which the owner's limit counts too
+    unpriced_calls: int = Field(default=0, ge=0)
+    unpriced_inr: float = Field(default=0.0, ge=0)
 
 
 class Board(BaseModel):

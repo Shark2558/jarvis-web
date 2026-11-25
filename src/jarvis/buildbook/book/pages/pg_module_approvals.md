@@ -10,7 +10,7 @@ sources:
   "src/jarvis/api/static/console-approve-all.js": "1cd7335bb2a31ec1"
   "src/jarvis/api/static/console-permissions.js": "eb3446689d3bd5f1"
   "src/jarvis/core/approve_all.py": "59f16ea07d5207c5"
-  "src/jarvis/core/brain_decisions.py": "c952c68c5f5ad1d6"
+  "src/jarvis/core/brain_decisions.py": "01cc210182d5e7a3"
   "src/jarvis/integrations/vault.py": "b766226c56672432"
   "src/jarvis/keyring.py": "78e7ac914cd81e85"
   "src/jarvis/storage/approvals.py": "0091801c464bb3d8"

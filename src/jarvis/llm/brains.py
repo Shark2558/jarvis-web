@@ -17,6 +17,7 @@ from jarvis.llm.fallback import FallbackBrain
 from jarvis.llm.gemini_provider import GeminiProvider
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.openai_compat_provider import OpenAICompatProvider
+from jarvis.llm.pricing import use_gemini_paid_tier
 from jarvis.llm.router import ModelRouter, ModelTier, tiers_for
 
 TRAINING_WARNING = (
@@ -96,6 +97,7 @@ class BrainRegistry:
         """Build every brain that has credentials. `provider` (tests) replaces the default
         brain's provider and skips the credential check for it. `local` (R1): the fallback brain
         on the owner's laptop, shared by every router."""
+        use_gemini_paid_tier(s.gemini_paid_tier)  # R6.4 D9: the price table follows the key
         brains: list[BrainSpec] = []
         default = s.llm_backend.value
 

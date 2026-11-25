@@ -27,11 +27,17 @@ JS = [
     "console-book-talk.js",
     "console-book-script.js",  # R6.3 I0 (seam 9): the show's script reader
     "console-book-tour.js",  # R6.3 D
-    "console-book-pages.js",  # R6.3 C
     "console-book-flow.js",  # R6.3.1 F: the Full book's flowcharts
     "console-book-flow-layout.js",  # R6.3.1 F: their geometry
+    # R6.4 A: the full book's own page, /book/read (R6.4 D1: console-book-pages.js went)
+    "console-book-read.js",
+    "console-book-read-app.js",
+    "console-book-read-data.js",
+    "console-book-read-page.js",
+    "console-book-read-rail.js",
+    "console-book-read-search.js",
 ]
-CSS = ["console-book.css", "book.css"]
+CSS = ["console-book.css", "book.css", "book-read.css", "book-read-reader.css"]
 SCENE_SPLIT = {
     "console-book-scenes.js": {1, 2, 12, 13},
     "console-book-scenes-flow.js": {3, 5, 6, 8},
@@ -50,6 +56,7 @@ SINKS = (
     "new Function",
 )
 OLDER_CSS = ["console.css", "console-deck.css", "console-systems.css", "console-vitals.css"]
+TAB_KEYS = {"jarvis_book_token", "jarvis_book_session", "jarvis_book_pending"}  # this tab only
 
 
 def _read(name: str) -> str:
@@ -131,6 +138,12 @@ def test_the_token_lives_in_this_tab_and_travels_as_x_jarvis_book() -> None:
         text = _read(name)
         # R6.3 D14: only the reader's and the tour's place (ids only) may be kept across visits
         assert not re.search(r"localStorage[^;\n]*jarvis_book(?!_place_v1\b)", text), name
+        # R6.4 A: the one other key kept across visits is the reader's read dots (page ids per
+        # release); the token and the session stay in this tab's sessionStorage only
+        keys = set(re.findall(r"'(jarvis_book_[a-z0-9_]+)'", text))
+        assert keys <= {*TAB_KEYS, "jarvis_book_place_v1", "jarvis_book_read_v1"}, (name, keys)
+    data = _read("console-book-read-data.js")
+    assert "READ_KEY = 'jarvis_book_read_v1'" in data and "sessionStorage" not in data
     assert "sessionStorage" in show and "'jarvis_book_token'" in show
     assert "'jarvis_book_pending'" in panel  # D8: the re-sign-in hop resumes from here
     assert "'/auth/login?reauth=1'" in panel
@@ -170,8 +183,12 @@ def test_no_new_colours_fonts_radii_or_shadows(name: str) -> None:
     assert not re.search(r"\b(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklch)\(", css), name
     for fam in re.findall(r"font-family\s*:\s*([^;}]+)", css):
         assert re.fullmatch(r"var\(--(?:font|tech|hud|disp|mono)\)", fam.strip()), (name, fam)
+    # R6.4 D2: book-read.css's own type tokens (--bk-body, --bk-h1, ...) are the console's fonts
+    for tok, val in re.findall(r"(--bk-(?:body|lead|h1|h2|label))\s*:\s*([^;]+);", css):
+        assert re.search(r"var\(--(?:font|tech|hud|disp|mono)\)", val), (name, tok)
     for font in re.findall(r"(?<![-\w])font\s*:\s*([^;}]+)", css):
-        assert re.search(r"var\(--(?:font|tech|hud|disp|mono)\)|inherit", font), (name, font)
+        ours = r"var\(--(?:font|tech|hud|disp|mono)\)|inherit|var\(--bk-(?:body|lead|h1|h2|label)\)"
+        assert re.search(ours, font), (name, font)
     radii = set(re.findall(r"border-radius\s*:\s*([^;}]+)", older))
     for rad in re.findall(r"border-radius\s*:\s*([^;}]+)", css):
         assert rad.strip().lower() in radii, (name, rad)

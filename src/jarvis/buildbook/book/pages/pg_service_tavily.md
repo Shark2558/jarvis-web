@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/r4_wiring.py": "379192618b74836f"
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/web/service.py": "15e1408e1103720f"
   "src/jarvis/web/tavily.py": "c7d6fb49c2d660e0"
 ---

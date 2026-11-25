@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 from jarvis.core.window import block_chars, message_chars
 from jarvis.llm.base import ChatMessage, ToolResultBlock
-from jarvis.llm.pricing import PRICES
+from jarvis.llm.pricing import price_of
 from jarvis.recall.retrieval import HEADING
 from jarvis.storage.docs import Delete, Docs, DocTx, Query
 from jarvis.storage.sessions import safe_id
@@ -123,7 +123,7 @@ def counts_of(call: LedgerCall) -> CallCounts:
         raise ValueError("no completion to count")
     u = done.usage
     chars = _chars(call)
-    price = PRICES.get(done.model)
+    price = price_of(done.model)
     output_usd = u.output_tokens * price.output_per_mtok / _MTOK if price else 0.0
     return CallCounts(
         calls=1,

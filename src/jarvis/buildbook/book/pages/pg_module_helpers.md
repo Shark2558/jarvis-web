@@ -3,7 +3,7 @@ page: pg_module_helpers
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "291d919ed466219d"
+  "deploy/cloudrun.sh": "8fd20146ba1568b4"
   "scripts/kitchen_fdc_subset.py": "62953434b4fe4ce4"
   "src/jarvis/api/brief.py": "384e3c31e281a98b"
   "src/jarvis/api/family.py": "f4a89f9e2a51c31d"
@@ -34,7 +34,7 @@ sources:
   "src/jarvis/api/static/console-r111-plan.js": "178fbfafb7013161"
   "src/jarvis/api/static/console-r111.js": "b3f2ca825fde8788"
   "src/jarvis/brief/deliveries.py": "efe59bc1f029c5aa"
-  "src/jarvis/core/finish.py": "76f1255343c6e042"
+  "src/jarvis/core/finish.py": "29da647acc47e7e7"
   "src/jarvis/core/fixed_lines.py": "f7628651dff9b5b5"
   "src/jarvis/documents/archive.py": "0bb8bc3b96dff9ae"
   "src/jarvis/documents/imagecheck.py": "c9493d6db166cb83"

@@ -3,8 +3,8 @@
 
 The owner types this URL into the console and the server then calls it with a bearer key, so it must
 not be able to point JARVIS at an internal service (metadata server, a private network) or leak the
-key to someone else. The rule is much stricter than `config._is_private_host` (which lets `.ts.net`
-use plain http):
+key to someone else. The rule is much stricter than `config._is_private_host` (which lets local
+addresses use plain http):
 
 - only `https://<machine>.<tailnet>.ts.net`, port 443 (default), 8443 or 10000 (Tailscale Funnel's),
   path nothing, `/` or `/v1`; a trailing slash is fine

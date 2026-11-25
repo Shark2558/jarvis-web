@@ -13,7 +13,7 @@ sources:
   "src/jarvis/api/static/console-r111-photos.js": "869e8a071dd20025"
   "src/jarvis/api/static/console-r111-plan.js": "178fbfafb7013161"
   "src/jarvis/api/static/console-r111.js": "b3f2ca825fde8788"
-  "src/jarvis/core/finish.py": "76f1255343c6e042"
+  "src/jarvis/core/finish.py": "29da647acc47e7e7"
   "src/jarvis/core/fixed_lines.py": "f7628651dff9b5b5"
   "src/jarvis/documents/__init__.py": "3c737b537755af62"
   "src/jarvis/documents/archive.py": "0bb8bc3b96dff9ae"

@@ -2,8 +2,9 @@
 # the Full book's flowcharts (console-book-flow.js) in a real Chromium, against the real app (mock
 # brain) with the book routes stubbed (book_mocks.FakeBook) and the full book's two routes answered
 # here: an index of three pages, a chapter with an 8-node "one conversation turn" flow, a module
-# with a small "right" flow, and a card with no flow.
-#   - a page with a flow: a framed figure above "How it works", the title as its caption, an SVG
+# with a small "right" flow, and a card with no flow. R6.4 D1: the full book reads on its own page,
+# /book/read (console-book-read-*.js), so these open it there, the owner's token in this tab.
+#   - a page with a flow: a framed figure at the top of "How it works", the title as its caption, an SVG
 #     (role="img", <title>, aria-describedby -> the steps list) with one card per node and one
 #     connector and arrowhead per edge, each kind by its shape, pills off the cards
 #   - the steps list: visually hidden, in order; "Show steps as a list" opens and closes it from
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from book_mocks import PASSKEY_STUB, RELEASE, FakeBook, j
+from book_mocks import RELEASE, TOKEN, FakeBook, j
 from test_console import Console
 from test_ui_audit import NAMELESS_JS, WRAP_JS, _assert_clean
 from ui_checks import DOM_CHECKS_JS, FINISH_ANIMATIONS_JS
@@ -32,7 +33,11 @@ _pw = pytest.importorskip("playwright.sync_api")
 pytestmark = pytest.mark.browser
 SHOTS = os.environ.get("R631F_SHOTS", "")  # pictures only when asked for
 SIZES = {"desktop": {"width": 1280, "height": 900}, "phone": {"width": 390, "height": 844}}
-PAGES, FIG = "#p-book .bk-pages", "#p-book .bk-pages .bk-flow"
+PAGES, FIG = "#brPage", "#brPage .bk-flow"  # R6.4 D1: the full book's own page
+SEED = (
+    "if (!sessionStorage.getItem('__seeded')) { sessionStorage.setItem('__seeded', '1');"
+    f" sessionStorage.setItem('jarvis_book_token', '{TOKEN}'); }}"
+)
 CHAPTER, MODULE, CARD = "pg_chapter_turn", "pg_module_router", "pg_card_c01"
 HEADINGS = [
     ("plain", "In plain words"), ("example", "Example (made up)"), ("how", "How it works"),
@@ -179,27 +184,23 @@ def browser() -> Iterator[Any]:
 def reader(
     browser: Any, url: str, token: str, size: str = "desktop", surface: str = "night", **flows: Any
 ) -> Console:
-    """An owner's book session open, the Full book's part "Parts" opened."""
+    """The full book's page (/book/read) with an owner's book token in this tab."""
     c = Console(browser, url, token, SIZES[size])
+    c.page.add_init_script(SEED)
+    c.page.add_init_script(f"localStorage.setItem('jarvis_surface', '{surface}');")
     FakeBook(c.page)
     route_pages(c.page, book(**flows))
-    c.open()
-    c.page.evaluate(PASSKEY_STUB)
-    if surface == "day":
-        c.choose_day()
-    c.open_panel("book")
-    c.page.get_by_role("button", name="Open for me").click()
-    head = c.page.locator(f"{PAGES} .dsc", has_text="Parts").first
-    head.wait_for()
-    head.click()
+    c.page.goto(url + "/book/read")
+    c.page.locator("#brTitle").wait_for()
     return c
 
 
+IDS = {"One conversation turn": CHAPTER, "The router module": MODULE, "Demo router": CARD}
+
+
 def read(c: Console, title: str) -> None:
-    c.page.locator(f"{PAGES} .bk-row", has_text=title).first.get_by_role(
-        "button", name="Read"
-    ).click()
-    c.page.locator(f"{PAGES} .bk-rhead", has_text="Reading " + title).wait_for()
+    c.page.evaluate(f"location.hash = '{IDS[title]}'")
+    c.page.locator("#brTitle", has_text=title).wait_for()
 
 
 STABLE_JS = """(sel) => new Promise((ok) => {
@@ -248,11 +249,11 @@ def test_r631_f_a_chapter_with_a_flow_shows_its_chart_above_how_it_works(
         svg = chart(c)
         fig = c.page.locator(FIG)
         assert fig.locator("figcaption").inner_text().lower() == "one conversation turn"
-        after = fig.evaluate("(f) => f.nextElementSibling.querySelector('.dsc .dl').textContent")
-        before = fig.evaluate(
-            "(f) => f.previousElementSibling.querySelector('.dsc .dl').textContent"
+        where = fig.evaluate(
+            "(f) => [f.closest('.bk-sec').id, f.parentElement.previousElementSibling.textContent,"
+            " f.parentElement.nextElementSibling.tagName]"
         )
-        assert (before, after) == ("Example (made up)", "How it works")
+        assert where == ["brSec-how", "How it works", "UL"]  # under its heading, above its words
         assert svg.get_attribute("role") == "img" and svg.get_attribute("data-dir") == "down"
         named = svg.evaluate(
             "(s) => document.getElementById(s.getAttribute('aria-labelledby')).textContent"
@@ -309,10 +310,8 @@ def test_r631_f_the_steps_list_opens_and_closes_from_the_keyboard(
         assert steps.locator(".bk-flowsteps-h").text_content() == "Steps in order"
         btn = c.page.locator(FIG).get_by_role("button", name="Show steps as a list")
         assert btn.get_attribute("aria-controls") == steps.get_attribute("id")
-        c.page.locator(f"{PAGES} .dsc", has_text="Example (made up)").focus()
-        c.page.keyboard.press(
-            "Tab"
-        )  # the example's body has no control: the next stop is the toggle
+        c.page.locator("#brSec-how h2").evaluate("(h) => { h.tabIndex = -1; h.focus(); }")
+        c.page.keyboard.press("Tab")  # the chart draws no stop of its own: the next is the toggle
         assert btn.evaluate("(b) => b === document.activeElement && b.matches(':focus-visible')")
         ring = btn.evaluate(
             "(b) => [getComputedStyle(b).outlineStyle, getComputedStyle(b).outlineWidth]"
@@ -337,31 +336,40 @@ def test_r631_f_a_page_without_a_flow_reads_as_before(
     c = reader(browser, server_url, token)
     try:
         read(c, "Demo router")
-        c.page.locator(f"{PAGES} .bk-sec .dsc", has_text="Where in the code").wait_for()
+        c.page.locator(f"{PAGES} details.bk-more", has_text="Where in the code").wait_for()
         c.page.wait_for_timeout(300)  # the module would have answered by now
-        labels = c.page.locator(f"{PAGES} .bk-sec > .dsc .dl").all_text_contents()
-        assert labels == [h for _, h in HEADINGS]
-        assert (
-            c.page.locator(f"{PAGES} .bk-flow, {PAGES} .bk-flowslot, {PAGES} svg.fl-svg").count()
-            == 0
-        )
+        labels = c.page.locator(f"{PAGES} .bk-sec > .bk-h2").all_text_contents()
+        assert labels == [
+            "In plain words",
+            "Example",
+            "How it works",
+            "What it costs",
+            "When it fails",
+        ]
+        assert c.page.locator(f"{PAGES} .bk-flow, {PAGES} .bk-fig, {PAGES} svg.fl-svg").count() == 0
         clean(c)
     finally:
         c.close()
 
 
-def test_r631_f_right_in_a_wide_panel_down_in_a_narrow_one(
+def test_r631_f_right_in_a_wide_page_down_in_a_narrow_one(
     browser: Any, server_url: str, token: str
 ) -> None:
-    """The deck's Book panel is narrow (about 360 px of chart): "down". Widened by its resize
-    handle, the chart lays itself out again in the flow's own direction (ResizeObserver)."""
+    """R6.4: the full book's page column (about 650 px of chart at 1280 px) lays this flow out
+    "down"; given the whole window (rail and "On this page" put away), the chart lays itself out
+    again in the flow's own direction, "right" (ResizeObserver), and back "down" when narrow."""
+    wide = (
+        "() => { for (const id of ['brRail', 'brToc']) document.getElementById(id).style.display = 'none';"
+        " document.getElementById('brBody').style.gridTemplateColumns = '1fr';"
+        " document.getElementById('brPage').style.maxWidth = 'none'; }"
+    )
     c = reader(browser, server_url, token)
     try:
         read(c, "The router module")
         assert chart(c).get_attribute("data-dir") == "down"
-        c.page.evaluate("() => { document.getElementById('p-book').style.width = '1200px'; }")
+        c.page.evaluate(wide)
         c.page.wait_for_function(
-            "() => document.querySelector('#p-book .bk-flow svg.fl-svg').dataset.dir === 'right'"
+            "() => document.querySelector('#brPage .bk-flow svg.fl-svg').dataset.dir === 'right'"
         )
         geo = c.page.locator(FIG).evaluate(GEOMETRY_JS)
         assert geo["inHost"] and geo["scale"] >= 0.999 and geo["cardOverlaps"] == 0, geo
@@ -369,9 +377,9 @@ def test_r631_f_right_in_a_wide_panel_down_in_a_narrow_one(
         if SHOTS:
             Path(SHOTS).mkdir(parents=True, exist_ok=True)
             c.page.locator(FIG).screenshot(path=str(Path(SHOTS) / "flow-wide-panel-right.png"))
-        c.page.evaluate("() => { document.getElementById('p-book').style.width = '420px'; }")
+        c.page.evaluate("() => { document.getElementById('brPage').style.maxWidth = '420px'; }")
         c.page.wait_for_function(
-            "() => document.querySelector('#p-book .bk-flow svg.fl-svg').dataset.dir === 'down'"
+            "() => document.querySelector('#brPage .bk-flow svg.fl-svg').dataset.dir === 'down'"
         )
         assert c.page.locator(f"{FIG} svg.fl-svg").count() == 1  # drawn again, not added to
         clean(c)
@@ -396,7 +404,7 @@ def test_r631_f_the_phone_lays_it_down_1_to_1_with_no_sideways_scroll(
         )
         assert min(sizes) >= 12  # drawn 1:1, so 12 px is 12 px on the screen
         wide = c.page.evaluate(
-            """() => { const b = document.querySelector('#p-book .pbody');
+            """() => { const b = document.getElementById('brMain');
               return [document.documentElement.scrollWidth - innerWidth, b.scrollWidth - b.clientWidth]; }"""
         )
         assert wide[0] <= 0 and wide[1] <= 1, wide
@@ -441,15 +449,11 @@ def test_r631_f_night_and_day_on_the_consoles_tokens_and_its_visual_gate(
         _assert_clean(
             res, c.page.evaluate(NAMELESS_JS, FIG), c.page.evaluate(WRAP_JS, FIG), vp, what
         )
-        if SHOTS:  # the panel in the deck, then the whole figure (a taller window, the same width)
+        if SHOTS:  # the page, then the whole figure (a taller window, the same width)
             folder = Path(SHOTS)
             folder.mkdir(parents=True, exist_ok=True)
             c.page.screenshot(path=str(folder / f"flow-{size}-{surface}.png"))
             c.page.set_viewport_size({"width": SIZES[size]["width"], "height": 1900})
-            c.page.wait_for_timeout(400)  # the deck fits its panels to the new window first
-            c.page.evaluate(  # as if the owner dragged the panel taller (its resize handle)
-                "() => { const p = document.getElementById('p-book'); p.style.maxHeight = 'none'; p.style.height = '1780px'; }"
-            )
             chart(c)
             fig.scroll_into_view_if_needed()
             fig.screenshot(path=str(folder / f"flow-{size}-{surface}-figure.png"))
@@ -478,10 +482,9 @@ def test_r631_f_text_stays_text_and_a_flow_with_nothing_to_draw_draws_nothing(
         assert svg.locator(".fl-node").count() == 8 and svg.locator(".fl-edge").count() == 8
         assert "<script>" in (svg.locator('.fl-node[data-id="owner"]').text_content() or "")
         assert c.page.locator(f"{PAGES} img, {PAGES} script").count() == 0
-        c.page.locator(PAGES).get_by_role("button", name="Back to the contents").click()
         read(c, "The router module")
         c.page.wait_for_timeout(300)
-        assert c.page.locator(f"{PAGES} .bk-flow, {PAGES} .bk-flowslot").count() == 0
+        assert c.page.locator(f"{PAGES} .bk-flow, {PAGES} .bk-fig").count() == 0
         clean(c)
     finally:
         c.close()

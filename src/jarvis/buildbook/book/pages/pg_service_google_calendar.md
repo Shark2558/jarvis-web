@@ -3,7 +3,7 @@ page: pg_service_google_calendar
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/integrations/google.py": "5e687c47689b959b"
 ---
 ## In plain words

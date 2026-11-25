@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from jarvis.core.guardrails import ActionRisk
-from jarvis.core.models import PendingApproval, Session, Turn, UndoRef
+from jarvis.core.models import PendingApproval, Session, Turn, UndoRef, unpriced
 from jarvis.core.saving import not_recorded_note, record_after_action
 from jarvis.llm.base import Completion, ContentBlock, Role, TextBlock, ToolCall, Usage
 from jarvis.memory.base import SessionStore
@@ -41,6 +41,7 @@ def request_turn(completion: Completion) -> tuple[Turn, list[ContentBlock]]:
         usage=completion.usage,
         cost_usd=completion.cost_usd,
         latency_ms=completion.latency_ms,
+        unpriced=unpriced(completion),  # R6.4 D9: a tool request is a model call too
     )
     return turn, blocks
 

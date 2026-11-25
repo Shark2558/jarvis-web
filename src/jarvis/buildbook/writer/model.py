@@ -14,16 +14,22 @@ Pure data: frozen pydantic models (extra fields refused), no I/O, nothing from t
   release (D7).
 - The runtime writer's old Firestore collections (R6.3, removed in R6.3.1 D8): named here only
   for the Privacy row that lets the owner delete what they still hold (D9).
+- R6.4 D5, D6 (docs/plans/r6-4-book-look.md): `Narration`, the full book's chapters as compiled
+  with the pages: each chapter's id, title, kind and pages, and for a narrated one its spoken
+  lines (facts filled, cues kept), minutes and who wrote the script. It rides INSIDE the pages
+  file as its optional `narration` field, left out when absent, so a pages file without it keeps
+  v6.3.2's exact bytes (the sealing choice: docs/plans/r6-4-integration/I0-NOTES.md).
 """
 
 from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
+from jarvis.buildbook.book.chapters import CHAPTER_ID, ChapterKind
 from jarvis.buildbook.facts_model import PAGE_ID, PageKind, PartId
 from jarvis.buildbook.model import MIB, RELEASE_ID, VERSION
 from jarvis.buildbook.sections import Frozen
@@ -107,25 +113,115 @@ class Page(Frozen):
         return self
 
 
+# ---- the narrated chapters (R6.4 D5, D6) ---------------------------------------------------------
+CueKind = Literal["page", "show", "node", "edge", "count"]
+LINE_MAX, LINES_MAX, CUES_MAX, CHAPTER_PAGES_MAX = 240, 400, 6, 60
+PageId = Annotated[str, Field(pattern=PAGE_ID)]
+
+
+class ChapterCue(Frozen):
+    """What the stage shows with a line (book/narration.py): `page` a page id, `show` a section
+    or `overview`, `node` a box id, `edge` `<from>><to>`, `count` the filled amount ("₹2.9")."""
+
+    kind: CueKind
+    target: str = Field(min_length=1, max_length=120)
+
+
+class ChapterLine(Frozen):
+    n: int = Field(ge=1, le=LINES_MAX)  # its place in the chapter, from 1
+    page: PageId  # the page it is told on
+    text: str = Field(min_length=1, max_length=LINE_MAX)  # the spoken words, facts filled
+    cues: tuple[ChapterCue, ...] = Field(default=(), max_length=CUES_MAX)
+
+
+class ScriptMeta(Frozen):
+    written_by: str = Field(min_length=1, max_length=WRITTEN_BY_MAX)
+    written_on: date
+
+
+class BookChapter(Frozen):
+    """One chapter of a release: narrated (lines, minutes, written) or not (none of them)."""
+
+    id: str = Field(pattern=CHAPTER_ID)
+    title: str = Field(min_length=1, max_length=120)
+    kind: ChapterKind
+    pages: tuple[PageId, ...] = Field(min_length=1, max_length=CHAPTER_PAGES_MAX)
+    minutes: int = Field(default=0, ge=0, le=120)
+    lines: tuple[ChapterLine, ...] = Field(default=(), max_length=LINES_MAX)
+    written: ScriptMeta | None = None
+
+    @property
+    def narrated(self) -> bool:
+        return bool(self.lines)
+
+    @model_validator(mode="after")
+    def _whole(self) -> BookChapter:
+        if len(set(self.pages)) != len(self.pages):
+            raise ValueError("a page is in a chapter once")
+        if [ln.n for ln in self.lines] != list(range(1, len(self.lines) + 1)):
+            raise ValueError("a chapter's lines are numbered from 1, in order")
+        if any(ln.page not in self.pages for ln in self.lines):
+            raise ValueError("a line is told on a page of its chapter")
+        if bool(self.lines) != (self.written is not None) or bool(self.lines) != (self.minutes > 0):
+            raise ValueError("a narrated chapter has its lines, minutes and writer; others none")
+        return self
+
+
+class Narration(Frozen):
+    v: Literal[1] = 1
+    chapters: tuple[BookChapter, ...] = Field(default=(), max_length=CHAPTER_PAGES_MAX)
+
+    @model_validator(mode="after")
+    def _once(self) -> Narration:
+        ids = [c.id for c in self.chapters]
+        told = [p for c in self.chapters for p in c.pages]
+        if len(ids) != len(set(ids)) or len(told) != len(set(told)):
+            raise ValueError("a chapter, and a page, is in the narration once")
+        return self
+
+
 # ---- one release's full book (R6.3.1 D4) ---------------------------------------------------------
 class PagesFile(Frozen):
-    """Every indexed page of one release, in the index's order, gzipped JSON <= 2 MiB."""
+    """Every indexed page of one release, in the index's order, gzipped JSON <= 2 MiB. R6.4: with
+    its chapters (`narration`, absent from a file compiled before v6.4.0)."""
 
     v: Literal[2] = 2
     release: str = Field(pattern=RELEASE_ID)
     pages: tuple[Page, ...] = ()
     modules: dict[str, str] = Field(default_factory=dict)  # module id -> its title (chapters)
     limitations: int = Field(default=0, ge=0)  # the fact pack's count (the reader's "+N more")
+    narration: Narration | None = None  # R6.4 D6: left out of the bytes when None
 
     @model_validator(mode="after")
     def _once(self) -> PagesFile:
         ids = [p.id for p in self.pages]
         if len(ids) != len(set(ids)):
             raise ValueError("a page is in the pages file once")
+        if self.narration is not None:
+            known = set(ids)
+            if any(p not in known for c in self.narration.chapters for p in c.pages):
+                raise ValueError("a chapter names a page that isn't in the pages file")
         return self
+
+    @model_serializer(mode="wrap")
+    def _as_written(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """No narration: the v6.3.2 shape exactly (the same bytes, and a v6.3.2 server reads it)."""
+        data: dict[str, Any] = handler(self)
+        if data.get("narration") is None:
+            data.pop("narration", None)
+        return data
 
 
 __all__ = [
+    "CUES_MAX",
+    "LINES_MAX",
+    "LINE_MAX",
+    "BookChapter",
+    "ChapterCue",
+    "ChapterLine",
+    "CueKind",
+    "Narration",
+    "ScriptMeta",
     "COLLECTIONS",
     "DRAFTS",
     "DRAFT_SECTIONS",

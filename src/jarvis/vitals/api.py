@@ -4,8 +4,10 @@ never taken from the client; a browser write needs `X-Requested-With: JARVIS`, e
 require_auth).
 
 GET    /v1/vitals              {overall, items: [ProviderView json],
-                                spend: {used_inr, limit_inr, text}|null, manual_unavailable,
-                                manual_note, version, build_date}
+                                spend: {used_inr, limit_inr, text, unpriced_calls,
+                                unpriced_inr}|null, manual_unavailable, manual_note, version,
+                                build_date} (R6.4 D9: unpriced_* are the month's replies with no
+                                known price, at the dearest known price; not in used_inr)
                                 (R6.1 D4: `version` "v6.1.0" and `build_date` "11 Nov 2026" or
                                 "unknown" feed the read-only "About JARVIS" line; `jarvis.about`)
 PUT    /v1/vitals/keys         Provider body (manual) -> {saved}; 422 plain `detail`;

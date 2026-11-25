@@ -2,7 +2,7 @@
 // Talks to the API (chat, brains, approvals, audit, conversations) and renders the panels' content.
 // All server text reaches the DOM via textContent or esc(); never raw innerHTML.
 // The Command Deck (console-deck.js) shows vitals from the events this file fires:
-//   jarvis:vitals {turns, brain, model, cost (₹, this conversation), rttMs?}
+//   jarvis:vitals {turns, brain, model, cost (₹, this conversation), unpriced (its replies with no known price: R6.4 D9), rttMs?}
 //   jarvis:approvals {count, fresh}                    jarvis:audit {verified, count}
 //   jarvis:event {kind, text, at, live?}               jarvis:integrations {google, email}
 //   jarvis:ready {returning} (signed in, booting)      jarvis:reply {refused?} (spend may have
@@ -305,7 +305,8 @@
   function brainLabel(id) { const b = state.brains.find(x => x.id === id); return b ? b.label : id; }
   function renderStats(r, rttMs) {
     const d = { brain: r.brain ? brainLabel(r.brain) : (currentBrain() ? currentBrain().label : null), model: r.model || null,
-      turns: Number.isFinite(r.turn_count) ? r.turn_count : 0, cost: Number.isFinite(r.total_cost_inr) ? r.total_cost_inr : 0 };
+      turns: Number.isFinite(r.turn_count) ? r.turn_count : 0, cost: Number.isFinite(r.total_cost_inr) ? r.total_cost_inr : 0,
+      unpriced: Number.isInteger(r.unpriced_calls) && r.unpriced_calls > 0 ? r.unpriced_calls : 0 }; // R6.4 D9: never shown as ₹0
     if (Number.isFinite(rttMs)) d.rttMs = rttMs;
     emit('jarvis:vitals', d);
   }
@@ -437,7 +438,7 @@
     if (shown) { addMsg('sys', 'Earlier conversation restored.'); note('info', 'Conversation restored'); }
     else renderWelcome();
     renderStats({ brain: (sess.metadata || {}).brain, model: last ? last.model : null,
-      turn_count: sess.turns.length, total_cost_inr: sess.total_cost_inr, latency_ms: null });
+      turn_count: sess.turns.length, total_cost_inr: sess.total_cost_inr, unpriced_calls: sess.unpriced_calls, latency_ms: null });
     const b = (sess.metadata || {}).brain;
     if (b && state.brains.some(x => x.id === b) && b !== state.brain) { state.brain = b; renderBrains(); }
   }
@@ -522,7 +523,7 @@
     setSession(r.session_id);
     if (r.brain && r.brain !== state.brain && state.brains.some(b => b.id === r.brain)) { state.brain = r.brain; renderBrains(); }
     const meta = [r.brain ? brainLabel(r.brain) : null, r.model, (r.latency_ms / 1000).toFixed(1) + ' s',
-      r.cost_inr > 0 ? rupees(r.cost_inr) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
+      r.unpriced === true ? 'price unknown' : r.cost_inr > 0 ? rupees(r.cost_inr) : null, r.tool_calls ? `${r.tool_calls} tool ${r.tool_calls === 1 ? 'call' : 'calls'}` : null];
     const row = addMsg('jarvis', r.reply, meta);
     const used = memoriesUsed(r.memory_used);
     if (used.length) memoryChip(row, used);

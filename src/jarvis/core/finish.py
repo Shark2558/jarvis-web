@@ -28,6 +28,8 @@ What the Brain does with a model's answer lives here, outside `brain.py` (near i
   model may report it (No-AI mode, the monthly limit, an outage, a brain that may train): a
   batch that added 58 of 60 is never reported as "Done, Sir: Add 60 events".
 - `chat_response`, `log_turn`: the response and the turn's log line.
+- `streamed` (R6.4 D9): a streamed reply as stored, flagged `unpriced` when its model has no known
+  price (the response and every stored reply carry the flag: the console says "price unknown").
 
 """
 
@@ -42,11 +44,11 @@ from jarvis.config import Settings
 from jarvis.core.brain_types import _ReplyMeta
 from jarvis.core.channel import answered_offline
 from jarvis.core.fixed_lines import CUT_OFF, EMPTY, OLD_FILLER, is_fixed, no_words
-from jarvis.core.models import ChatResponse, Session, Turn
+from jarvis.core.models import ChatResponse, Session, Turn, unpriced, unpriced_calls
 from jarvis.llm.base import ChatMessage, Completion, LLMError, Role, StreamUsage, Usage
 from jarvis.llm.brains import BrainSpec
 from jarvis.llm.pricing import cost_usd as priced_cost
-from jarvis.llm.pricing import stream_usage
+from jarvis.llm.pricing import price_unknown, stream_usage
 from jarvis.logging import get_logger
 from jarvis.tools.gateway import GatewayOutcome, GatewayResult
 from jarvis.web.ledger import cited_sources
@@ -213,6 +215,12 @@ class StreamMeter:
     cost: float = 0.0
     usage: Usage | None = None
 
+    @property
+    def offline(self) -> bool:
+        """The laptop answered this request, as its stored turn says (`stream_turn`): no vendor
+        was called, so billing never counts it as "price unknown" (R6.4 review L-1)."""
+        return answered_offline()
+
     def close(self) -> bool:
         """Price what the stream read and wrote; True when there is something to record (a
         finished stream, and one cut short after the vendor read the prompt)."""
@@ -252,6 +260,14 @@ def stream_turn(text: str, trace_id: str | None, usage: Usage | None) -> Turn:
     )
 
 
+def streamed(reply: Turn, spec: BrainSpec, *, model: str, cost: float) -> Turn:
+    """The streamed reply as stored: its model and cost, and `unpriced` when that model has no
+    known price on this brain's provider (never the laptop's offline answer; R6.4 D9)."""
+    provider = getattr(spec.provider, "name", "")
+    unknown = not reply.offline and price_unknown(model, provider)
+    return reply.model_copy(update={"model": model, "cost_usd": cost, "unpriced": unknown})
+
+
 # ---- the reply's words (D2.1, D2.3) and their marking (D3) ---------------------------------------
 
 
@@ -289,6 +305,7 @@ def reply_turn(
         tool_derived=after_tools or is_fixed(reply),
         offline=completion.offline or answered_offline(),
         sources=cited_sources(reply, session, enabled=spec.tools_allowed),
+        unpriced=unpriced(completion),
     )
 
 
@@ -313,6 +330,8 @@ def chat_response(
         cost_inr=cost_inr,
         total_cost_usd=session.total_cost_usd,
         total_cost_inr=total_inr,
+        unpriced=unpriced(completion),
+        unpriced_calls=unpriced_calls(session.turns),
         latency_ms=meta.total_ms,
         turn_count=len(session.turns),
         tool_calls=meta.rounds,
@@ -376,6 +395,7 @@ __all__ = [
     "stream_cap",
     "stream_end",
     "stream_turn",
+    "streamed",
     "unfinished",
     "working_turn",
 ]

@@ -1,0 +1,90 @@
+---
+chapter: module_activity
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_activity": "3db017a8e0ea33a8"
+  "pg_card_c12": "4736d32de39979b6"
+  "pg_card_c48": "f6e79c1219e4e0ff"
+  "pg_screen_activity": "fc492fc77b8c17d9"
+---
+- [page:pg_module_activity] [show:title] This chapter is about the activity log and undo: nothing JARVIS does happens out of sight, and most deletes are not final.
+- [show:plain] Activity is JARVIS's diary of the day, in plain words: what it did for you, what waits for your approval, what it blocked and what failed.
+- Recently deleted is its safety net.
+- Before JARVIS deletes one of your own calendar events, to-dos, notes, things, vault files or wardrobe pieces, it keeps a copy first.
+- So a slip of the tongue is one Undo away.
+- [show:example] In the made-up example, Arjun tells JARVIS by voice one morning to delete Friday's dentist appointment.
+- Only Arjun is on that event, and he made it, so JARVIS deletes it straight away, and keeps a copy.
+- At lunch he opens Activity, and sees the row for the deleted event, with an Undo button beside it.
+- He remembers the dentist moved, not cancelled, so he taps Undo.
+- The event is back on Friday with its reminder, and a new row says he restored it.
+- [show:how] Here is how it works.
+- [show:overview] This is the path of a delete you can undo.
+- [node:ask] It starts when you ask for a delete.
+- [edge:ask>risk] [node:risk] JARVIS first decides whether it really is undoable, which means it is only yours.
+- An event qualifies when only you are on it, you organise it, it is of the ordinary kind, and it doesn't repeat.
+- A to-do of your own qualifies too, but one assigned from a Google Doc or a Chat space doesn't.
+- [edge:risk>card] [node:card] An event with guests, or one that repeats, needs an approval card first, because Google e-mails its guests.
+- [edge:risk>copy] [node:copy] An undoable delete keeps a copy first, with the conversation and the request it came from.
+- [count:{{fact:src/jarvis/tools/calendar_undo.py:MAX_ATTACHMENTS}}] An event's copy keeps its title, times, place, reminders and up to {{fact:src/jarvis/tools/calendar_undo.py:MAX_ATTACHMENTS}} attached files, but never the guests.
+- A to-do's copy keeps its title, notes, due date, list, its place among its neighbours, and every subtask.
+- [edge:copy>nocopy] [node:nocopy] If the copy can't be stored, nothing is deleted.
+- [edge:copy>delete] [node:delete] Only with the copy safe is the item deleted in Google.
+- If Google's answer is lost, JARVIS reads the item again, and keeps the copy when the item is gone or the check fails.
+- [edge:delete>row] [node:row] The delete becomes a row in Activity, with where you asked from: the console, voice or Telegram.
+- [edge:row>undo] [node:undo] Later, you press Undo.
+- [edge:undo>gone] [node:gone] JARVIS first checks that the original is really gone.
+- [edge:gone>still] [node:still] If it is still there, the restore is refused, because there is nothing to bring back.
+- [edge:gone>back] [node:back] Otherwise it is put back in Google with an id chosen in advance, so a retried restore finds the first copy instead of making two.
+- A restore writes an audit line, and a "You restored" row in Activity.
+- [count:{{fact:src/jarvis/api/activity.py:AUDIT_WINDOW}}] The panel also checks the newest {{fact:src/jarvis/api/activity.py:AUDIT_WINDOW}} entries of the audit trail, and shows "Log verified" while they still check out.
+- "Remove now" drops a copy at once, and for a vault file, a note, a thing or a wardrobe piece, it first asks for your passkey or a fresh Google sign-in.
+- [show:costs] It costs nothing in rupees: both lists live in JARVIS's own document store, and a restore is one ordinary call to Google.
+- [show:fails] An Undo pressed twice says "already restored", and an expired copy gets a plain answer.
+- When Google isn't linked, the restore says so in plain words, and any other failure asks you to try again in a moment.
+- A Meet link comes back as a new link, and the note under the row says so.
+- If Activity's own store is down, the panel says JARVIS isn't recording here, and the full log below still shows.
+- [page:pg_card_c12] [show:title] Now the first part: Recently deleted.
+- [show:plain] [count:{{fact:src/jarvis/undo/models.py:RETENTION_DAYS}}] Before JARVIS deletes one of your own things, it keeps a copy for {{fact:src/jarvis/undo/models.py:RETENTION_DAYS}} days.
+- If you change your mind, you bring it back from Recently deleted under Approvals, or just ask JARVIS to bring it back.
+- After that time the copy is cleared away, and because of this safety net, deleting your own things is undoable, rather than a passkey step.
+- [show:example] In the example, on Friday you tell JARVIS to delete Saturday's badminton.
+- On Saturday morning the game is back on, so you press Restore, and the event returns as a new event, at the same time and with the same notes.
+- Pressing Restore again just says "already restored".
+- [show:how] Each copy is kept per owner, written once and never changed, with an expiry date.
+- A restore is first claimed in a single transaction, so two clicks never make two copies.
+- Then the restorer for that kind rebuilds it: events and to-dos with their subtasks go back to Google, and vault documents, notes, things and wardrobe pieces return in place.
+- A wardrobe piece comes back under "Missing or in review", and its photos and history go only when its copy is removed for good.
+- A restorer that finds the original still there makes nothing, and says so.
+- An event comes back without its guests, so restoring never sends anyone an invitation.
+- [count:{{fact:src/jarvis/undo/store.py:PANEL_LISTED}}] Your list shows the newest {{fact:src/jarvis/undo/store.py:PANEL_LISTED}} items, and the brain's look-up sees the newest {{fact:src/jarvis/undo/store.py:MAX_LISTED}}, with titles fenced as outside text.
+- The scheduler's regular tick sweeps the expired copies away.
+- [show:costs] It costs nothing: no rupees and no AI.
+- [show:fails] A restore that fails releases its claim, so you can try again.
+- With Google unlinked, events and to-dos can't be restored until you reconnect.
+- [page:pg_card_c48] [show:title] The second part is the activity log.
+- [show:plain] It is a plain-words diary of what JARVIS did for you today and yesterday, such as looking at your calendar or saving a draft.
+- Each row says whether it was done, is waiting, was refused or failed, and where you asked from.
+- Where Recently deleted really holds a copy, the row has an Undo button; anywhere else, it says why there is none.
+- [show:example] In the example, you open Activity at lunch: your calendar was looked at a few times by voice, a task was added, and a team lunch was deleted.
+- The lunch is back on, so you press Undo, the row now reads "restored", and the event is back on your calendar.
+- [show:how] The recorder listens to the tool gateway, and after each call's audit entry, it writes one row.
+- A change reads as its own approval-card line, and a read as a fixed verb with no search words, so a note's text never lands here.
+- [count:{{fact:src/jarvis/activity/store.py:MAX_PER_DAY}}] Rows are kept per owner and per local day, at most {{fact:src/jarvis/activity/store.py:MAX_PER_DAY}} a day, and old days are swept away.
+- Reads of one tool in one request become one row with a count, and a waiting row is hidden once the call has finished.
+- [show:costs] It costs nothing: a few days of rows, each holding plain words, and no message text.
+- [show:fails] If a row can't be written, the tool call still completes, and the audit trail stays the full record.
+- An item no longer in Recently deleted shows no Undo and says so, instead of offering a button that would fail.
+- [page:pg_screen_activity] [show:title] Last, the Activity screen.
+- [show:plain] Each line says when, what, and how it ended: Done, Waiting for you, Blocked, Failed or Declined.
+- Lines from Telegram or your voice carry a small tag, and the badge in the title bar says whether the tamper-proof log still checks out.
+- [show:example] In the example, you wonder whether JARVIS really moved the dentist booking, so you open Activity.
+- You see the voice line that moved it, and below it a deleted note with an Undo button, which you press.
+- It reads "Undoing" for a moment, then Restored, and the badge at the top still reads "Log verified".
+- [show:how] The Today and Yesterday buttons pick the day, and you see your own lines only.
+- "Show full log" opens the raw tool log beneath, the same list the badge is checked against.
+- The list refreshes by itself after a reply that used tools.
+- [show:costs] Reading Activity costs no AI and no money, and the panel reloads only when something in it may have changed.
+- [show:fails] If the audit chain no longer checks out, the badge reads "Log tampered" instead of "Log verified".
+- If an undo fails, the line asks you to try again in a moment.
+- That is the Activity chapter: a plain diary of everything JARVIS did, and a copy kept before every delete of your own.

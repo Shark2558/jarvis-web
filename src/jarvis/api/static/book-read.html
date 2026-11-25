@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="workshop" data-surface="night" data-book="r64">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#04070D">
+<title>JARVIS &middot; Build book</title>
+<style>
+/* Self-hosted OFL fonts (static/fonts, licences beside them). Styles: console.css + console-book.css + book-read.css + book-read-reader.css */
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/orbitron-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Orbitron";font-style:normal;font-weight:700;font-display:swap;src:url(/static/fonts/orbitron-latin-700-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:500;font-display:swap;src:url(/static/fonts/rajdhani-latin-500-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Rajdhani";font-style:normal;font-weight:600;font-display:swap;src:url(/static/fonts/rajdhani-latin-600-normal.woff2?v=1) format("woff2")}
+@font-face{font-family:"Share Tech Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/static/fonts/share-tech-mono-latin-400-normal.woff2?v=1) format("woff2")}
+</style>
+<link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/console-book.css">
+<link rel="stylesheet" href="/static/book-read.css">
+<link rel="stylesheet" href="/static/book-read-reader.css">
+</head>
+<body>
+<!-- R6.4 D1-D3 (docs/plans/r6-4-book-look.md): the full book's own page, served at /book/read with the console's CSP.
+     The page holds no data: console-book-read.js takes the owner's book token from THIS tab's sessionStorage (the Book
+     panel's "Read the full book" puts it there), asks /v1/book/chapters and /v1/book/pages... with it, and clears it at
+     Close. Ids: I0 made this skeleton; builder A owns the reader's parts (top bar, rail, page, "On this page", the phone
+     sheet and Play bar), builder B the player (#brPlayer). Every word from the server goes in by textContent. -->
+<div class="bk-app" id="bookRead" data-state="loading" aria-busy="true">
+  <header class="bk-top" id="brTop">
+    <button class="bk-btn icon bk-only-phone" id="brMenu" type="button" aria-label="Contents" aria-haspopup="dialog" aria-controls="brSheet"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13"/></svg></button>
+    <div class="bk-brand"><span class="bk-word">JARVIS</span><span class="k bk-sub">Build book</span></div>
+    <div class="bk-search" id="brSearchBox" role="search">
+      <svg class="ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.2 13.2 3.8 3.8"/></svg>
+      <label class="sr-only" for="brSearch">Search the book</label>
+      <input id="brSearch" type="search" role="combobox" autocomplete="off" spellcheck="false" maxlength="60" placeholder="Search the book" aria-autocomplete="list" aria-expanded="false" aria-controls="brResults">
+      <span class="bk-kbd" aria-hidden="true">/</span>
+      <div class="bk-results" id="brResults" role="listbox" aria-label="Search results" hidden></div>
+    </div>
+    <div class="bk-tright">
+      <button class="bk-btn icon bk-only-phone" id="brFind" type="button" aria-label="Search the book" aria-haspopup="dialog" aria-controls="brSheet"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.2 13.2 3.8 3.8"/></svg></button>
+      <span class="bk-chip" id="brRelease"></span>
+      <button class="bk-btn" id="brTour" type="button">Short tour</button>
+      <button class="bk-btn icon" id="brClose" type="button" aria-label="Close the book"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button>
+    </div>
+  </header>
+
+  <div class="bk-body" id="brBody">
+    <nav class="bk-rail" id="brRail" aria-label="Contents">
+      <a class="bk-cont" id="brContinue" href="#" hidden></a>
+      <div id="brContents"></div>
+    </nav>
+    <main class="bk-main" id="brMain" tabindex="-1">
+      <article class="bk-page" id="brPage"></article>
+    </main>
+    <aside class="bk-toc" id="brToc" aria-label="On this page"></aside>
+  </div>
+
+  <section class="bk-player" id="brPlayer" aria-label="Chapter player" hidden></section>
+  <div class="bk-mini" id="brMini" hidden></div>
+  <div class="bk-scrim" id="brScrim" hidden></div>
+  <dialog class="bk-sheet" id="brSheet" aria-label="Contents"></dialog>
+
+  <div class="bk-gate" id="brGate" hidden>
+    <section class="gate-card card bk-gatecard" aria-labelledby="brGateTitle">
+      <span class="core lg" aria-hidden="true"></span>
+      <h1 id="brGateTitle">Build book</h1>
+      <p id="brGateText" role="status"></p>
+      <a class="bk-btn cta" id="brBack" href="/">Back to the console</a>
+    </section>
+  </div>
+  <p class="sr-only" id="brNote" role="status" aria-live="polite"></p>
+</div>
+<script src="/static/console-fx.js" defer></script>
+<script src="/static/console-book-voice.js" defer></script>
+<script type="module" src="/static/console-book-read.js"></script>
+<script type="module" src="/static/console-book-chapter.js"></script>
+</body>
+</html>

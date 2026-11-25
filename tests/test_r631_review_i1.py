@@ -123,7 +123,7 @@ def test_m2_a_page_whose_checks_break_is_the_generator_text(
     assert module is not None and module.meta is None  # the generator's text
     assert card is not None and card.meta is not None  # the rest of the book is still written
     assert pages.decode_flows(got.flows) == {}
-    assert got.counts == {"written": 1, "generator": len(PACK.pages) - 1}
+    assert got.counts == {"written": 1, "generator": len(PACK.pages) - 1, "narrated": 0}  # R6.4
 
 
 # ---- M-3 ----------------------------------------------------------------------------------------

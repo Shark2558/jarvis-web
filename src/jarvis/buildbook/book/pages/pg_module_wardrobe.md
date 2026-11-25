@@ -3,7 +3,7 @@ page: pg_module_wardrobe
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "291d919ed466219d"
+  "deploy/cloudrun.sh": "8fd20146ba1568b4"
   "evals/r13/catalog.py": "92b1fd8103cefadc"
   "evals/r13/contract.py": "6a2865d32c4f53f2"
   "evals/r13/e2e.py": "4674cf168867869c"
@@ -52,7 +52,7 @@ sources:
   "src/jarvis/api/tryon_wiring.py": "47536713ac1021b3"
   "src/jarvis/api/wardrobe.py": "dd3ee504e11c74fa"
   "src/jarvis/api/wardrobe_settings.py": "e522957690813455"
-  "src/jarvis/billing/spend.py": "3761764d204d7a7e"
+  "src/jarvis/billing/spend.py": "fad90ef7371200bc"
   "src/jarvis/llm/tryon.py": "839f8746d75d6c7d"
   "src/jarvis/llm/tryon_gemini.py": "3e233dc06019ff0c"
   "src/jarvis/offline/phrases_r13.py": "2fbd4988328c6be8"

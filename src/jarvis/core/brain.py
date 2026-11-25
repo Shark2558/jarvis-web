@@ -257,7 +257,7 @@ class Brain:
         cost: float,
     ) -> None:
         """Store the streamed reply, then schedule the background follow-up."""
-        session.append(reply.model_copy(update={"model": model, "cost_usd": cost}))
+        session.append(finish.streamed(reply, spec, model=model, cost=cost))  # R6.4 D9
         await self.store.save(session)
         self._after_turn(user_id, session, spec, rec)
 
@@ -436,7 +436,7 @@ class Brain:
             effort=self._effort(),
             tools=tools,
         )
-        await self.billing.record(req.user_id, spec.id, completion.cost_usd)
+        await self.billing.record(req.user_id, spec.id, completion.cost_usd, used=completion)
         call = (req.user_id, spec.id, prompt.system, prompt.trailer, messages, tools or ())
         await self.slots.record(LedgerCall(*call, completion=completion))
         return completion
@@ -703,7 +703,7 @@ class Brain:
             meter.finished = True
         finally:  # metered once, finished or cut short (the provider bills what it read and wrote)
             if meter.close():  # `record` is shielded: a disconnected response can't skip it
-                await self.billing.record(req.user_id, spec.id, meter.cost)
+                await self.billing.record(req.user_id, spec.id, meter.cost, used=meter)
         ask = self._asker(prompt, req, spec, with_tools=False)
         tries = finish.Tries(self.s.empty_reply_retries, boost=spec.tools_allowed)
         reply, unsaid = await finish.stream_end(meter, ask, messages, tries)  # R11.1 D2

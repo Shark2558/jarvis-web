@@ -13,8 +13,10 @@
     {"id": "mine", "label": "Your session opens", "kind": "step", "rank": 3, "col": 0},
     {"id": "sections", "label": "The book's sections", "kind": "step", "rank": 4, "col": 0,
      "ref": "src/jarvis/api/static/console-book-reader.js"},
-    {"id": "full", "label": "Full book and flowcharts", "kind": "step", "rank": 4, "col": 1,
-     "ref": "src/jarvis/api/static/console-book-pages.js"},
+    {"id": "full", "label": "Full book: pages, search", "kind": "step", "rank": 4, "col": 1,
+     "ref": "src/jarvis/api/static/console-book-read-app.js"},
+    {"id": "play", "label": "A chapter told aloud", "kind": "step", "rank": 5, "col": 1,
+     "ref": "src/jarvis/api/static/console-book-chapter.js"},
     {"id": "code", "label": "Sealed code download", "kind": "store", "rank": 4, "col": 2,
      "ref": "src/jarvis/api/book.py"},
     {"id": "end", "label": "End session: deleted", "kind": "step", "rank": 5, "col": 0}
@@ -29,6 +31,7 @@
     {"from": "mine", "to": "sections"},
     {"from": "mine", "to": "full"},
     {"from": "mine", "to": "code", "style": "side"},
+    {"from": "full", "to": "play", "label": "Play"},
     {"from": "sections", "to": "end"}
   ]
 }

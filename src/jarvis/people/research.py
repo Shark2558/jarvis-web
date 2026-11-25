@@ -346,6 +346,9 @@ class PeopleService:
             log.warning("people: classifier failed", extra={"error": type(exc).__name__})
             raise await self._refuse(uid, name, ctx, Scope.CLASSIFIER) from exc
         if label not in (Subject.PUBLIC_FIGURE, Subject.DUE_DILIGENCE):
+            # R6.4 review M-2: the call was made (and charged) though it refuses: billed first,
+            # a ₹0 one judged by billing ("price unknown" on a brain with no known price)
+            await self._model.record(uid, reply.cost_usd)
             raise await self._refuse(uid, name, ctx, Scope.CLASSIFIER)
         return (Subject.DUE_DILIGENCE if label is Subject.DUE_DILIGENCE else subject), (
             reply.cost_usd
@@ -366,15 +369,18 @@ class PeopleService:
             subject = verify(name, ctx, hits, strict=not model_ok)
             if subject is Subject.UNCLEAR:
                 raise await self._refuse(uid, name, ctx, Scope.UNVERIFIED)
-        cost = 0.0
+        cost, asked = 0.0, self._gate and model_ok  # asked: a model call was made (R6.4 I1)
         if self._gate and model_ok:
             subject, cost = await self._classified(uid, name, ctx, hits, subject)
         hits += await self._more_hits(name, ctx, subject, ai)
         dossier = _dossier_from(name, ctx, hits, subject)
+        asked = asked or self._asks_summary(dossier, model_ok)
         dossier, summary_cost = await self._summarise(uid, dossier, model_ok)
         dossier = replace(dossier, spoken=_spoken(dossier), cost_usd=cost + summary_cost)
-        if self._model is not None and dossier.cost_usd > 0:
-            await self._model.record(uid, dossier.cost_usd)  # ONE billing entry per dossier
+        if self._model is not None and (dossier.cost_usd > 0 or asked):
+            # ONE billing entry per dossier; a ₹0 one on a brain with no known price is counted
+            # by billing as "price unknown" (never ₹0)
+            await self._model.record(uid, dossier.cost_usd)
         await self._cache.put(uid, name, ctx, dossier)
         return dossier
 
@@ -388,10 +394,13 @@ class PeopleService:
                 break
         return more
 
+    def _asks_summary(self, d: Dossier, model_ok: bool) -> bool:
+        return self._model is not None and model_ok and not d.ambiguous and bool(d.findings)
+
     async def _summarise(self, uid: str, d: Dossier, model_ok: bool) -> tuple[Dossier, float]:
         """The one summary call, when a model may be used. An ambiguous dossier, no findings, a
         failure or no model: links only, with a note. Returns the dossier and the call's cost."""
-        if self._model is None or not model_ok or d.ambiguous or not d.findings:
+        if self._model is None or not self._asks_summary(d, model_ok):
             return replace(d, no_ai=True, note=d.note or NO_SUMMARY_NOTE), 0.0
         try:
             reply = await self._model.complete(uid, SYSTEM, _prompt(d), max_tokens=SUMMARY_TOKENS)

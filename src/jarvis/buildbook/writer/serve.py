@@ -9,6 +9,9 @@ per-owner pages store: every page was compiled at build time, so serving one cal
   read, or a file that fails its check, is `unavailable` (logged by type only).
 - The two files are opened once per release and kept in a small cache keyed by their SHA-256,
   so a Privacy delete (the release leaves R6's index, read on every call) is never outlived.
+- R6.4 D4-D6 (docs/plans/r6-4-book-look.md): the same release's chapters (`writer/chapters.py`)
+  and its search (`writer/search.py`; the searchable words built once per release, beside its
+  files in the same cache).
 """
 
 from __future__ import annotations
@@ -18,8 +21,8 @@ from typing import Any
 
 from jarvis.buildbook.ports import BookError, BookSource, BookVault
 from jarvis.buildbook.seal_index import has_file
-from jarvis.buildbook.writer import pages
-from jarvis.buildbook.writer.http import PagesView
+from jarvis.buildbook.writer import chapters, pages, search
+from jarvis.buildbook.writer.http import ChaptersView, ChapterView, PagesView, SearchView
 from jarvis.buildbook.writer.model import PagesFile
 from jarvis.buildbook.writer.texts import PagesRefused
 from jarvis.logging import get_logger
@@ -35,6 +38,7 @@ class BookPages:
     def __init__(self, source: BookSource, vault: BookVault, *, uid: str) -> None:
         self._source, self._vault, self.uid = source, vault, uid  # uid: the primary owner (L11)
         self._open: OrderedDict[tuple[str, ...], tuple[PagesFile, Flows]] = OrderedDict()
+        self._found: dict[tuple[str, ...], tuple[search.Doc, ...]] = {}  # R6.4: search's words
 
     async def _kept(self, uid: str, rid: str | None) -> Any:
         current = self._source.current()
@@ -64,7 +68,14 @@ class BookPages:
             raise PagesRefused("unavailable")
         return f, flows
 
-    async def files(self, uid: str, rid: str | None) -> tuple[PagesFile, Flows]:
+    async def _opened(self, uid: str, rid: str | None) -> tuple[tuple[str, ...], PagesFile, Flows]:
+        _, key, f, flows = await self._sealed_files(uid, rid)
+        return key, f, flows
+
+    async def _sealed_files(
+        self, uid: str, rid: str | None
+    ) -> tuple[Any, tuple[str, ...], PagesFile, Flows]:
+        """The kept release (its index row) and its opened files."""
         sealed = await self._kept(uid, rid)
         has_flows = has_file(sealed, "flows")
         key = (uid, sealed.id, sealed.file("pages").sha256,
@@ -72,9 +83,14 @@ class BookPages:
         if key not in self._open:
             self._open[key] = await self._read(uid, sealed.id, has_flows)
             while len(self._open) > CACHED:
-                self._open.popitem(last=False)
+                gone, _ = self._open.popitem(last=False)
+                self._found.pop(gone, None)
         self._open.move_to_end(key)
-        return self._open[key]
+        return (sealed, key, *self._open[key])
+
+    async def files(self, uid: str, rid: str | None) -> tuple[PagesFile, Flows]:
+        _, f, flows = await self._opened(uid, rid)
+        return f, flows
 
     async def index(self, uid: str, rid: str | None) -> PagesView:
         f, _ = await self.files(uid, rid)
@@ -86,6 +102,26 @@ class BookPages:
         if found is None:
             raise PagesRefused("no_page")
         return pages.served(found, flows)
+
+    # ---- R6.4 D4-D6 ------------------------------------------------------------------------
+    async def chapters(self, uid: str, rid: str | None) -> ChaptersView:
+        sealed, _, f, _ = await self._sealed_files(uid, rid)
+        return chapters.view(f, label=sealed.label)  # R6.4 I1: the chip's "R6.4"
+
+    async def chapter(self, uid: str, chapter_id: str, rid: str | None) -> ChapterView:
+        f, _ = await self.files(uid, rid)
+        found = chapters.one(f, chapter_id)
+        if found is None:
+            raise PagesRefused("no_chapter")
+        return found
+
+    async def search(self, uid: str, q: str, rid: str | None) -> SearchView:
+        """`q` already `search.normal_query`'d (the route's 422 is its own)."""
+        key, f, flows = await self._opened(uid, rid)
+        docs = self._found.get(key)
+        if docs is None:
+            docs = self._found[key] = search.corpus(f, flows)
+        return search.find(docs, f.release, q)
 
 
 __all__ = ["CACHED", "BookPages"]

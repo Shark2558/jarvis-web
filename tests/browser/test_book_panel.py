@@ -124,10 +124,37 @@ def test_the_owner_goes_on_to_the_show_with_the_token_in_this_tab(
         fake.script_answer = (200, script("owner"))
         c.page.get_by_role("button", name="Open for me").click()
         c.page.locator("#p-book .bk-reader").wait_for()
-        c.page.get_by_role("button", name="Start the show").click()
+        c.page.get_by_role("button", name="Short tour").click()  # R6.4 D1: was "Start the show"
         c.page.wait_for_url("**/book/show")
         c.page.locator("#shStart").wait_for()
         assert c.page.evaluate("sessionStorage.getItem('jarvis_book_token')") == TOKEN
+        _clean(c)
+    finally:
+        c.close()
+
+
+def test_the_owner_reads_the_full_book_on_its_own_page_then_closes_it(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R6.4 D1: Read the full book opens /book/read in this tab, the token in THIS tab's
+    sessionStorage only; Close asks first (R6.4 A), then ends the session, clears the token and
+    goes back to the console."""
+    c, fake = _panel(browser, server_url, token)
+    try:
+        c.page.get_by_role("button", name="Open for me").click()
+        c.page.locator("#p-book .bk-reader").wait_for()
+        c.page.get_by_role("button", name="Read the full book").click()
+        c.page.wait_for_url("**/book/read")
+        c.page.locator("#bookRead[data-state=ready]").wait_for()
+        assert c.page.evaluate("sessionStorage.getItem('jarvis_book_token')") == TOKEN
+        (got,) = fake.to("GET", "/v1/book/chapters")
+        assert got["headers"]["x-jarvis-book"] == TOKEN
+        c.page.locator("#brClose").click()
+        c.page.locator("#brCloseNow").click()  # "Close the book?" -> Close
+        c.page.wait_for_url(lambda u: u.rstrip("/").endswith(server_url.rstrip("/")))
+        (closed,) = fake.to("POST", "/v1/book/close")
+        assert closed["headers"]["x-jarvis-book"] == TOKEN
+        assert c.page.evaluate("sessionStorage.getItem('jarvis_book_token')") is None
         _clean(c)
     finally:
         c.close()

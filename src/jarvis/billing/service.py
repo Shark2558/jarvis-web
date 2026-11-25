@@ -1,14 +1,16 @@
 # src/jarvis/billing/service.py
 """Billing: the one spending gate, the meter hook and the owner's usage view (slice 7b).
 
-    ensure_allowed(uid, brain) ─ before EVERY model call on a paid brain (chat, stream, tool
-                                 rounds, approval narration, the brief's AI lines): this month's
-                                 rupees ≥ the owner's limit → BudgetReached, no call.
+    ensure_allowed(uid, brain) ─ before EVERY model call on a paid or unpriced brain (chat,
+                                 stream, tool rounds, approval narration, the brief's AI lines):
+                                 this month's counted rupees ≥ the owner's limit → BudgetReached,
+                                 no call.
     record(uid, brain, usd)    ─ after every completion with a cost: transactional increment at
                                  the rate of the moment. Never raises: a failed write is logged
                                  and the reply still goes out. Shielded from cancellation (a
                                  client that disconnects mid-stream cancels the response task;
-                                 the provider still bills what it wrote).
+                                 the provider still bills what it wrote). Given the reply's model
+                                 and usage, a reply whose price is unknown is counted as such.
     usage(uid) / set_limit()   ─ GET /v1/usage, PUT /v1/usage/budget.
     ensure_units_allowed /     ─ slice 9 voice: usage free up to a monthly allowance, priced
     record_units                 above it. The allowance is the deployment's (one counter,
@@ -17,11 +19,15 @@
                                  would be priced (free calls still work at the limit); the
                                  recorder counts and prices in one transaction, never raises.
 
-A brain is "paid" when any of its models is in the price table above zero; free (Gemini free
-tier) and unpriced (custom) brains are never blocked. The check reads two documents (limit,
-then this month) and only when a limit is set; it happens BEFORE the call, so one reply can go
-over by its own cost. If those documents cannot be read — or hold a value that isn't a valid
-limit / month total — no paid call is made (fail closed), and the usage view says so.
+A brain is "paid" when any of its models is in the price table above zero; free brains (Gemini
+free tier) are never blocked. R6.4 D9: a model with no known price (a custom vendor) is never
+₹0. Its reply is counted as "price unknown" (replies and tokens) and, for the limit only, at the
+dearest price JARVIS knows (`pricing.dearest`); the limit compares the priced rupees plus that
+upper estimate (`MonthUsage.counted_inr`), so a brain without a price list stops at the owner's
+limit, never past it, unless it costs more than the dearest known model. The check reads two
+documents (limit, then this month) and only when a limit is set; it happens BEFORE the call, so
+one reply can go over by its own cost. If those documents cannot be read — or hold a value that
+isn't a valid limit / month total — no paid call is made (fail closed), and the usage view says so.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, Protocol
 
 import anyio
 import httpx
@@ -46,8 +52,9 @@ from jarvis.billing.meter import (
     UsageUnreadable,
 )
 from jarvis.config import Settings
+from jarvis.llm.base import Usage
 from jarvis.llm.brains import BrainRegistry, BrainSpec
-from jarvis.llm.pricing import is_paid, is_priced
+from jarvis.llm.pricing import dearest, is_paid, is_priced, price_unknown, priced_at
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs, MemoryDocs
 
@@ -57,6 +64,16 @@ WARN_AT = 0.8  # the console turns amber at 80 % of the limit
 METER_GRACE_S = 10.0  # how long a cancelled request still waits for its meter write
 # Meter labels that are not brains (shown in GET /v1/usage by_brain).
 LABELS = {"voice": "Voice", "tryon": "Try-on", "book": "Book writer"}  # R13.1 "Try-on", R6.3
+
+
+class Used(Protocol):
+    """What a reply used: a `Completion`, or a stream's meter (`core.finish.StreamMeter`)."""
+
+    @property
+    def model(self) -> str: ...
+
+    @property
+    def usage(self) -> Usage | None: ...
 
 
 def utcnow() -> datetime:
@@ -89,26 +106,44 @@ class BudgetError(RuntimeError):
     """No paid model call was made because of the owner's monthly limit."""
 
 
+def _spent(used_inr: float, unpriced_inr: float) -> str:
+    """ "₹120 spent", plus the "price unknown" replies' upper estimate when there are any."""
+    if unpriced_inr <= 0:
+        return f"{rupees(used_inr)} spent"
+    return (
+        f"{rupees(used_inr)} spent, plus up to {rupees(unpriced_inr)} counted for replies whose "
+        "price JARVIS doesn't know"
+    )
+
+
 class BudgetReached(BudgetError):
     """This month's limit is used up (→ 402 {"error": "budget_reached", "detail": …})."""
 
     def __init__(
-        self, *, limit_inr: int, used_inr: float, free_brain: bool, detail: str | None = None
+        self,
+        *,
+        limit_inr: int,
+        used_inr: float,
+        free_brain: bool,
+        detail: str | None = None,
+        unpriced_inr: float = 0.0,
     ) -> None:
         self.limit_inr = limit_inr
         self.used_inr = used_inr
+        self.unpriced_inr = unpriced_inr
         tail = ", or switch to the free brain." if free_brain else "."
         super().__init__(
             detail
-            or f"This month's limit of {rupees(limit_inr)} is used up ({rupees(used_inr)} spent). "
-            f"Raise it in Vitals{tail}"
+            or f"This month's limit of {rupees(limit_inr)} is used up "
+            f"({_spent(used_inr, unpriced_inr)}). Raise it in Vitals{tail}"
         )
 
     @property
     def brief_note(self) -> str:
         return (
             f"No AI summary: this month's limit of {rupees(self.limit_inr)} is used up "
-            f"({rupees(self.used_inr)} spent). Raise it in Vitals; the facts above are complete."
+            f"({_spent(self.used_inr, self.unpriced_inr)}). Raise it in Vitals; the facts above "
+            "are complete."
         )
 
 
@@ -179,10 +214,26 @@ class UsageView(BaseModel):
     # The stored limit can't be read: paid brains are paused (fail closed) and any new limit
     # needs confirm_raise. limit_inr is None, but this is NOT "no limit".
     limit_unreadable: bool = False
+    # R6.4 D9: replies whose price is unknown, not in used_inr; unpriced_inr is them at the
+    # dearest known price, which remaining_inr, percent, warn and reached count (as the gate does).
+    unpriced_calls: int = 0
+    unpriced_tokens: int = 0
+    unpriced_inr: float = 0.0
 
 
 def paid_brain(spec: BrainSpec) -> bool:
     return any(is_paid(m) for m in spec.tiers.values())
+
+
+def metered_brain(spec: BrainSpec) -> bool:
+    """The monthly limit applies: a model is priced above zero, or its price is unknown."""
+    name = getattr(spec.provider, "name", "")
+    return paid_brain(spec) or any(price_unknown(m, name) for m in spec.tiers.values())
+
+
+def _tokens(usage: Usage) -> int:
+    parts = (usage.input_tokens, usage.output_tokens, usage.cache_read_tokens)
+    return sum(max(0, n) for n in (*parts, usage.cache_write_tokens))
 
 
 def free_brain(spec: BrainSpec) -> bool:
@@ -222,25 +273,30 @@ class Billing:
     async def ensure_allowed(self, uid: str, spec: BrainSpec) -> None:
         """The spending gate. Raises BudgetReached / BudgetUnavailable; returns when a call on
         `spec` may go ahead."""
-        if not paid_brain(spec):
+        if not metered_brain(spec):
             return
         try:
             limit = await self.budgets.get(uid)
             if limit is None:
                 return
-            used = (await self.meter.get(uid, self.meter.month_of(self.clock()))).inr_total
+            m = await self.meter.get(uid, self.meter.month_of(self.clock()))
         except Exception as exc:  # noqa: BLE001 — fail closed: no paid call we can't account for
             log.error(
                 "LIMIT CHECK FAILED; no paid call made",
                 extra={"brain": spec.id, "reason": type(exc).__name__},
             )
             raise BudgetUnavailable() from None
-        if used >= limit:
+        if m.counted_inr >= limit:
             log.info(
                 "monthly limit reached; paid call refused",
-                extra={"brain": spec.id, "limit_inr": limit, "used_inr": round(used, 2)},
+                extra={"brain": spec.id, "limit_inr": limit, "used_inr": round(m.counted_inr, 2)},
             )
-            raise BudgetReached(limit_inr=limit, used_inr=used, free_brain=self._has_free())
+            raise BudgetReached(
+                limit_inr=limit,
+                used_inr=m.inr_total,
+                free_brain=self._has_free(),
+                unpriced_inr=m.unpriced_inr,
+            )
 
     def _has_free(self) -> bool:
         return any(free_brain(b) for b in self.brains.list())
@@ -280,20 +336,21 @@ class Billing:
         except Exception:  # noqa: BLE001 — fail closed
             log.error("MONTH UNREADABLE; no priced voice call", extra={"month": month})
             raise BudgetUnavailable() from None
-        if m.inr_total >= limit:
+        if m.counted_inr >= limit:
             log.info(
                 "monthly limit reached; priced voice call refused",
-                extra={"limit_inr": limit, "used_inr": round(m.inr_total, 2)},
+                extra={"limit_inr": limit, "used_inr": round(m.counted_inr, 2)},
             )
             raise BudgetReached(
                 limit_inr=limit,
                 used_inr=m.inr_total,
                 free_brain=False,
+                unpriced_inr=m.unpriced_inr,
                 detail=(
-                    f"This month's limit of {rupees(limit)} is used up ({rupees(m.inr_total)} "
-                    "spent) and the free cloud-voice allowance is too. The browser's own voice "
-                    "and speech recognition still work; raise the limit in Vitals for the cloud "
-                    "voice."
+                    f"This month's limit of {rupees(limit)} is used up "
+                    f"({_spent(m.inr_total, m.unpriced_inr)}) and the free cloud-voice allowance "
+                    "is too. The browser's own voice and speech recognition still work; raise "
+                    "the limit in Vitals for the cloud voice."
                 ),
             )
 
@@ -330,10 +387,15 @@ class Billing:
 
     # ---- metering ------------------------------------------------------------------------------
 
-    async def record(self, uid: str, brain_id: str, cost_usd: float) -> float:
+    async def record(
+        self, uid: str, brain_id: str, cost_usd: float, *, used: Used | None = None
+    ) -> float:
         """Add one completion to this month. Returns its rupee estimate. Never raises, and is
-        not cut short by the caller's cancellation (bounded by METER_GRACE_S)."""
+        not cut short by the caller's cancellation (bounded by METER_GRACE_S). `used`: the reply
+        (its model and usage); with no cost and no known price it is counted as "price unknown"."""
         if not isinstance(cost_usd, int | float) or not math.isfinite(cost_usd) or cost_usd <= 0:
+            if used is not None and used.usage is not None and self._unknown(brain_id, used):
+                await self._record_unpriced(uid, brain_id, used.model, used.usage)
             return 0.0
         inr = 0.0
         with anyio.move_on_after(METER_GRACE_S, shield=True) as scope:
@@ -353,6 +415,43 @@ class Billing:
                 extra={"brain": brain_id, "cost_usd": cost_usd},
             )
         return inr
+
+    def _unknown(self, brain_id: str, used: Used) -> bool:
+        """No price for the reply's model, and not the laptop's offline answer nor a provider that
+        calls no vendor. A stream's meter names no provider: the brain's own is used."""
+        if getattr(used, "offline", False):
+            return False
+        provider = getattr(used, "provider", "")
+        if not provider:
+            try:
+                provider = getattr(self.brains.get(brain_id).provider, "name", "")
+            except LookupError:
+                provider = ""
+        return price_unknown(used.model, provider)
+
+    async def _record_unpriced(self, uid: str, brain_id: str, model: str, usage: Usage) -> None:
+        """One "price unknown" reply: its tokens, and them at the dearest known price for the
+        limit. Never raises; not cut short by cancellation (like `record`)."""
+        tokens = _tokens(usage)
+        if tokens <= 0:
+            return
+        with anyio.move_on_after(METER_GRACE_S, shield=True) as scope:
+            inr = await self.inr(priced_at(dearest(), usage))
+            try:
+                await self.meter.add_unpriced(uid, tokens=tokens, inr=inr, now=self.clock())
+            except Exception as exc:  # noqa: BLE001 — the reply matters more than the counter
+                log.error(
+                    "USAGE METER WRITE FAILED (price unknown); reply still sent",
+                    extra={"brain": brain_id, "model": model, "reason": type(exc).__name__},
+                )
+                return
+        if scope.cancelled_caught:
+            log.error("USAGE METER WRITE TIMED OUT (price unknown)", extra={"brain": brain_id})
+            return
+        log.warning(
+            "reply with no known price; counted at the dearest known price",
+            extra={"brain": brain_id, "model": model, "tokens": tokens},
+        )
 
     async def record_units(
         self,
@@ -448,7 +547,7 @@ class Billing:
         rate = await self.fx.refresh()
         month = self.meter.month_of(self.clock())
         limit, unreadable, m = await self._read(uid, month)
-        used = round(m.inr_total, 2)
+        used, counted = round(m.inr_total, 2), m.counted_inr
         labels = {**LABELS, **{b.id: b.label for b in self.brains.list()}}
         by_brain = sorted(
             (
@@ -461,14 +560,17 @@ class Billing:
             month=month,
             used_inr=used,
             limit_inr=limit,
-            remaining_inr=None if limit is None else round(max(0.0, limit - m.inr_total), 2),
-            percent=None if limit is None else round(m.inr_total / limit * 100, 2),
-            warn=limit is not None and m.inr_total >= WARN_AT * limit,
-            reached=limit is not None and m.inr_total >= limit,
+            remaining_inr=None if limit is None else round(max(0.0, limit - counted), 2),
+            percent=None if limit is None else round(counted / limit * 100, 2),
+            warn=limit is not None and counted >= WARN_AT * limit,
+            reached=limit is not None and counted >= limit,
             calls=m.calls,
             by_brain=by_brain,
             rate=RateView(inr_per_usd=rate.inr_per_usd, as_of=rate.as_of, source=rate.source),
             limit_unreadable=unreadable,
+            unpriced_calls=m.unpriced_calls,
+            unpriced_tokens=m.unpriced_tokens,
+            unpriced_inr=round(m.unpriced_inr, 2),
         )
 
     async def set_limit(self, uid: str, patch: BudgetPatch) -> UsageView:
@@ -502,10 +604,12 @@ __all__ = [
     "BudgetUnavailable",
     "FreeAllowanceUsed",
     "RateView",
+    "Used",
     "UsageView",
     "build_billing",
     "free_brain",
     "fx_client",
+    "metered_brain",
     "paid_brain",
     "rupees",
 ]

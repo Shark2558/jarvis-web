@@ -10,6 +10,9 @@
 // {monthly_limit_inr, confirm_raise?} → UsageView (422 carries a plain `detail`; after one the
 // month is reloaded, so a page that was stale asks before its next save). `limit_unreadable`:
 // the server can't read the stored limit (paid replies paused), so ANY new limit asks first.
+// R6.4 D9: `unpriced_calls` / `unpriced_tokens` / `unpriced_inr` are this month's replies whose price
+// is unknown (a model with no price list): never shown as ₹0, but as "Price unknown" on their own
+// line, with the upper estimate the limit counts them at (the bar and "Limit reached" include it).
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -20,6 +23,9 @@
   const btn = $('limitBtn'), form = $('limitForm'), input = $('limitIn'), errEl = $('limitErr');
   const removeBtn = $('limitRemove'), cancelBtn = $('limitCancel'), okEl = $('limitNote');
   const dlg = $('limitDialog');
+  const unpricedEl = document.createElement('p'); // "Price unknown" (R6.4 D9), under the brains line
+  unpricedEl.className = 'sfine'; unpricedEl.id = 'sUnpriced'; unpricedEl.hidden = true;
+  if (brainsEl) brainsEl.after(unpricedEl);
   const Deck = window.JarvisDeck || {};
   const emit = (name, detail) => { try { document.dispatchEvent(new CustomEvent(name, { detail })); } catch (_) {} };
   const log = (kind, text) => emit('jarvis:event', { kind, text, at: Date.now(), live: true });
@@ -62,6 +68,7 @@
     if (!o) return null;
     const limit = Number.isInteger(o.limit_inr) && o.limit_inr > 0 ? o.limit_inr : null;
     const rate = obj(o.rate);
+    const count = (v) => (Number.isInteger(v) && v > 0 ? v : 0);
     return {
       month: /^\d{4}-\d{2}$/.test(txt(o.month, 7)) ? txt(o.month, 7) : '',
       used: Math.max(0, num(o.used_inr) ?? 0),
@@ -74,6 +81,7 @@
         .map(b => ({ label: txt(b.label, 40) || txt(b.brain, 40), used: num(b.used_inr) }))
         .filter(b => b.label && b.used !== null && b.used > 0),
       rate: rate && num(rate.inr_per_usd) ? { value: rate.inr_per_usd, asOf: txt(rate.as_of, 10), source: txt(rate.source, 12) } : null,
+      unpriced: { calls: count(o.unpriced_calls), tokens: count(o.unpriced_tokens), inr: Math.max(0, num(o.unpriced_inr) ?? 0) },
     };
   }
 
@@ -140,6 +148,8 @@
     }
     setText(noteEl, noteFor(st, d));
     setText(brainsEl, d && d.brains.length ? d.brains.map(b => `${b.label} ${rupees(b.used)}`).join(' · ') : '');
+    setText(unpricedEl, unpricedLine(d));
+    unpricedEl.hidden = !unpricedEl.textContent;
     setText(rateEl, rateLine(d && d.rate));
     retry.hidden = st !== 'error';
     const ready = !!d && !S.saving;
@@ -156,6 +166,16 @@
     }
     if (st === 'warn') return 'Over 80% of this month\'s limit is used.';
     return '';
+  }
+  function unpricedLine(d) { // never "₹0": what JARVIS can't price is said so, with its upper estimate
+    const u = d && d.unpriced;
+    if (!u || !u.calls) return '';
+    let tokens;
+    try { tokens = u.tokens.toLocaleString('en-IN'); } catch (_) { tokens = String(u.tokens); }
+    const one = u.calls === 1;
+    const line = `Price unknown: ${u.calls} ${one ? 'reply' : 'replies'} (${tokens} tokens) this month, not in the total above.`;
+    if (d.limit === null || !u.inr) return line;
+    return `${line} The limit counts ${one ? 'it' : 'them'} at the dearest known price, up to ${rupees(u.inr)}.`;
   }
   function rateLine(r) {
     if (!r) return '';

@@ -26,7 +26,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from jarvis.llm.base import ImageBlock
-from jarvis.llm.pricing import PRICES
+from jarvis.llm.pricing import is_priced, price_of
 from jarvis.llm.router import ModelTier
 from jarvis.picture.eyes import CantLook
 from jarvis.storage.docs import DocTx, Op
@@ -154,7 +154,7 @@ class Tagging:
         return await self._estimate_inr()
 
     async def _estimate_inr(self) -> float:
-        price = PRICES.get(self._model() or "")
+        price = price_of(self._model() or "")
         if price is None:
             return 0.0
         usd = (IN_TOKENS * price.input_per_mtok + OUT_TOKENS * price.output_per_mtok) / 1e6
@@ -180,7 +180,7 @@ class Tagging:
         """No price for the answering brain: fail closed (the estimate would be 0 and the ₹ cap
         would never move, security review L1). No brain at all is `BrainEyes`' own refusal."""
         model = self._model()
-        if model is not None and model not in PRICES:
+        if model is not None and not is_priced(model):
             raise TagRefused(UNPRICED, 503)
 
     def _room(self, so_far: float, inr: float) -> None:

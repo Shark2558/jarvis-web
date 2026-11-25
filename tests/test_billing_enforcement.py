@@ -1,6 +1,7 @@
 # tests/test_billing_enforcement.py — slice 7b: the monthly limit is checked BEFORE every paid model
-# call (chat, stream, tool rounds, approval narration, the brief's AI lines); free and unpriced
-# brains are never blocked; metering never makes a reply fail.
+# call (chat, stream, tool rounds, approval narration, the brief's AI lines); free brains are never
+# blocked (an unpriced brain is, since R6.4 D9: tests/test_r64_c_costs.py); metering never makes a
+# reply fail.
 from __future__ import annotations
 
 import logging
@@ -72,7 +73,7 @@ def test_only_models_with_a_price_above_zero_cost_money() -> None:
     assert is_paid("claude-sonnet-5-5") and is_paid("claude-haiku-5-5")
     assert not is_paid("gemini-3.8-flash")  # priced at ₹0 in the table
     assert not is_paid("mock")
-    assert not is_paid("llama-local-70b")  # not in the table: cost unknown, never blocked
+    assert not is_paid("llama-local-70b")  # not in the table: "price unknown" (R6.4 D9), not paid
 
 
 # ---- chat ---------------------------------------------------------------------------------------
@@ -131,15 +132,23 @@ async def test_an_existing_conversation_keeps_no_unanswered_turn(
     assert s is not None and len(s.turns) == 2  # the refused message was not stored
 
 
-@pytest.mark.parametrize("brain_id", ["gemini", "custom"])
-async def test_free_and_unpriced_brains_are_never_blocked(
-    settings: Settings, gateway: Gateway, brain_id: str
-) -> None:
+async def test_a_free_brain_is_never_blocked(settings: Settings, gateway: Gateway) -> None:
     brain, bill, paid, _, _ = _brain(settings, gateway)
     await _limit(bill, 1, spent_inr=500.0)
-    r = await brain.chat(_req(brain=brain_id))
-    assert r.brain == brain_id and r.reply and paid.calls == []
+    r = await brain.chat(_req(brain="gemini"))
+    assert r.brain == "gemini" and r.reply and paid.calls == []
     assert (await bill.meter.get(UID, "2026-11")).calls == 1  # only the seeded spend
+
+
+async def test_an_unpriced_brain_is_blocked_at_the_limit(
+    settings: Settings, gateway: Gateway
+) -> None:
+    # R6.4 D9 (row 393): a model with no known price is never "free"; at the limit it stops too
+    brain, bill, paid, _, _ = _brain(settings, gateway)
+    await _limit(bill, 1, spent_inr=500.0)
+    with pytest.raises(BudgetReached):
+        await brain.chat(_req(brain="custom"))
+    assert paid.calls == []
 
 
 async def test_no_limit_set_means_no_jarvis_limit(settings: Settings, gateway: Gateway) -> None:

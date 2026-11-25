@@ -7,12 +7,12 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from billing_fakes import NOW, RATE, UID, PricedMock, billing, put_raw, registry
+from billing_fakes import NOW, RATE, UID, UNPRICED_TIERS, PricedMock, billing, put_raw, registry
 from pydantic import SecretStr
 
 from jarvis.billing import Billing, BudgetPatch, BudgetReached
@@ -21,9 +21,10 @@ from jarvis.billing.meter import MonthUsage, UsageUnreadable, decode, encode
 from jarvis.billing.service import metered_brain
 from jarvis.config import LLMBackend, Settings
 from jarvis.core.brain import Brain
+from jarvis.core.channel import mark_offline
 from jarvis.core.models import ChatRequest
 from jarvis.llm.base import Completion, Usage
-from jarvis.llm.brains import BrainRegistry
+from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.pricing import (
     GEMINI_PAID_PRICES,
@@ -242,6 +243,29 @@ async def test_an_unpriced_stream_is_counted_as_price_unknown(settings: Settings
     assert "".join([d async for d in brain.chat_stream(_req("custom", "stream please"))])
     m = await bill.meter.get(UID, MONTH)
     assert m.unpriced_calls == 1 and m.unpriced_tokens > 0 and m.calls == 0
+
+
+@dataclass
+class _LaptopStream(PricedMock):
+    """An unpriced brain whose stream the laptop answers (the fallback marks the request so)."""
+
+    async def stream(self, **kw: object) -> AsyncIterator[str]:  # type: ignore[override]
+        mark_offline()
+        async for chunk in super().stream(**kw):  # type: ignore[arg-type]
+            yield chunk
+
+
+async def test_a_stream_the_laptop_answered_is_not_price_unknown(settings: Settings) -> None:
+    """R6.4 review L-1: no vendor was called, so the stream's meter is not "price unknown" (as
+    its stored reply isn't)."""
+    spec = BrainSpec(id="custom", label="Local", provider=_LaptopStream(), tiers=UNPRICED_TIERS)
+    reg = BrainRegistry([spec], default_id="custom")
+    bill = billing(reg)
+    store = InMemorySessionStore(ttl_s=3600)
+    brain = Brain(brains=reg, store=store, settings=settings, billing=bill)
+    assert "".join([d async for d in brain.chat_stream(_req("custom", "stream please"))])
+    m = await bill.meter.get(UID, MONTH)
+    assert m.unpriced_calls == 0 and m.calls == 0
 
 
 async def test_the_free_providers_are_never_counted(settings: Settings) -> None:

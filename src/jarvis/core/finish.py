@@ -215,6 +215,12 @@ class StreamMeter:
     cost: float = 0.0
     usage: Usage | None = None
 
+    @property
+    def offline(self) -> bool:
+        """The laptop answered this request, as its stored turn says (`stream_turn`): no vendor
+        was called, so billing never counts it as "price unknown" (R6.4 review L-1)."""
+        return answered_offline()
+
     def close(self) -> bool:
         """Price what the stream read and wrote; True when there is something to record (a
         finished stream, and one cut short after the vendor read the prompt)."""

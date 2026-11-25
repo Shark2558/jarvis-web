@@ -9,7 +9,7 @@ sources:
   "src/jarvis/core/brain_decisions.py": "01cc210182d5e7a3"
   "src/jarvis/core/brain_types.py": "fa3d9df28ac632ba"
   "src/jarvis/core/channel.py": "0c46ee25a780e41b"
-  "src/jarvis/core/finish.py": "a5f2f201ead235f7"
+  "src/jarvis/core/finish.py": "29da647acc47e7e7"
   "src/jarvis/core/fixed_lines.py": "f7628651dff9b5b5"
   "src/jarvis/core/guardrails.py": "906dc22e6f5c1678"
   "src/jarvis/core/models.py": "b81cc65f474ac5d8"

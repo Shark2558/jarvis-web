@@ -5,7 +5,7 @@ written_on: 2026-11-25
 pages:
   "pg_module_people": "54518f2f80c2bdf8"
   "pg_card_c08": "8da523065bf676a6"
-  "pg_card_c21": "af299e77e9931aa1"
+  "pg_card_c21": "45e36a0996a16ea8"
   "pg_screen_faces": "3771e47d14401807"
   "pg_screen_people": "5fdbcbabf6fabdb5"
 ---
@@ -82,7 +82,7 @@ pages:
 - [count:{{fact:src/jarvis/people/research.py:RATE_BURST}}] Requests are limited per owner, a burst of {{fact:src/jarvis/people/research.py:RATE_BURST}} at a time.
 - [show:costs] Each research spends search credits one call at a time, so a refusal costs at most one.
 - With the AI on, it adds a small check and an optional summary, both fast-tier calls, metered against your monthly limit.
-- They go in as one entry a profile, and on a brain with no known price that entry counts as price unknown, never as free.
+- They go in as one entry a profile, or one for a check that refuses, and on a brain with no known price that entry counts as price unknown, never as free.
 - [show:fails] A subject that can't be verified gets a fixed refusal, with no links, and a classifier error is a refusal too, never a guess.
 - A follow-up is checked together with the request before it, so "what about her home?" can't slip through on its own.
 - [page:pg_screen_faces] [show:title] Now the screens, starting with Faces.

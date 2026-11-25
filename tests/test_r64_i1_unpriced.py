@@ -22,7 +22,7 @@ from jarvis.core.models import ChatResponse
 from jarvis.llm.base import Usage
 from jarvis.llm.pricing import UNREPORTED_CALL, dearest, priced_at
 from jarvis.people.model import BrainPeopleModel
-from jarvis.people.research import PeopleService
+from jarvis.people.research import PeopleService, ScopeRefused
 from jarvis.recall.learning import LearnStatus
 from jarvis.recall.models import SettingsPatch
 
@@ -135,6 +135,26 @@ async def test_research_that_asked_the_model_records_its_dossier_even_at_zero() 
     svc = PeopleService(FakeSearcher(), model, mode=fixed_mode("ai"))
     await svc.research(UID, "Satya Nadella", "Microsoft")
     assert len(model.classifier_calls) == 1 and model.records == [(UID, 0.0)]
+
+
+@pytest.mark.parametrize(("label", "cost"), [("private", 0.002), ("unclear", 0.0)])
+async def test_a_classifier_that_refuses_is_still_billed_once(label: str, cost: float) -> None:
+    """R6.4 review M-2: the classifier's call was made (and charged) even when it refuses: its
+    cost, or a ₹0 entry billing judges as "price unknown", is recorded before the refusal."""
+    model = FakeModel(label=label, cost=cost)
+    svc = PeopleService(FakeSearcher(), model, mode=fixed_mode("ai"))
+    with pytest.raises(ScopeRefused):
+        await svc.research(UID, "Satya Nadella", "Microsoft")
+    assert len(model.classifier_calls) == 1 and model.composer_calls == []
+    assert model.records == [(UID, pytest.approx(cost))]
+
+
+async def test_a_classifier_that_fails_records_nothing() -> None:
+    model = FakeModel(classifier_raises=True)  # no reply came back: nothing to bill
+    svc = PeopleService(FakeSearcher(), model, mode=fixed_mode("ai"))
+    with pytest.raises(ScopeRefused):
+        await svc.research(UID, "Satya Nadella", "Microsoft")
+    assert model.records == []
 
 
 async def test_research_with_no_model_call_records_nothing() -> None:

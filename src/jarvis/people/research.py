@@ -346,6 +346,9 @@ class PeopleService:
             log.warning("people: classifier failed", extra={"error": type(exc).__name__})
             raise await self._refuse(uid, name, ctx, Scope.CLASSIFIER) from exc
         if label not in (Subject.PUBLIC_FIGURE, Subject.DUE_DILIGENCE):
+            # R6.4 review M-2: the call was made (and charged) though it refuses: billed first,
+            # a ₹0 one judged by billing ("price unknown" on a brain with no known price)
+            await self._model.record(uid, reply.cost_usd)
             raise await self._refuse(uid, name, ctx, Scope.CLASSIFIER)
         return (Subject.DUE_DILIGENCE if label is Subject.DUE_DILIGENCE else subject), (
             reply.cost_usd

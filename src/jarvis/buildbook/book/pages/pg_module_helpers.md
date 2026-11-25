@@ -3,7 +3,7 @@ page: pg_module_helpers
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "291d919ed466219d"
+  "deploy/cloudrun.sh": "8fd20146ba1568b4"
   "scripts/kitchen_fdc_subset.py": "62953434b4fe4ce4"
   "src/jarvis/api/brief.py": "384e3c31e281a98b"
   "src/jarvis/api/family.py": "f4a89f9e2a51c31d"

@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "deploy/backup_setup.sh": "354cd02d8afbcc3f"
-  "deploy/cloudrun.sh": "291d919ed466219d"
+  "deploy/cloudrun.sh": "8fd20146ba1568b4"
   "evals/r14/backup.py": "163e8845efbe7c01"
   "src/jarvis/api/backup.py": "d9e1d0f24f8d2498"
   "src/jarvis/api/privacy.py": "26b8bb3f25b86ee7"
@@ -31,7 +31,7 @@ sources:
   "src/jarvis/backup/verify.py": "98381e6ba5786d43"
   "src/jarvis/backup/vitals.py": "9e8fb47f5bdbeba9"
   "src/jarvis/backup/walk_checks.py": "e4f0a11c2664ebe0"
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/config.py": "8c6265f13d09201d"
   "src/jarvis/core/guardrails.py": "906dc22e6f5c1678"
   "src/jarvis/integrations/vault.py": "b766226c56672432"
   "src/jarvis/keyring.py": "78e7ac914cd81e85"

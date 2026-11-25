@@ -10,7 +10,7 @@ sources:
   "src/jarvis/api/offline.py": "5b454d255da1ba33"
   "src/jarvis/api/static/console-offline.js": "395fb571a35cce6f"
   "src/jarvis/offline/__init__.py": "99415c62dd88febf"
-  "src/jarvis/offline/config.py": "4942186039a6b5ab"
+  "src/jarvis/offline/config.py": "6cda05fc59cc7037"
   "src/jarvis/offline/mode.py": "711b71d3578892a6"
   "src/jarvis/offline/no_ai.py": "adc9f42a1f93fa67"
   "src/jarvis/offline/phrases_r13.py": "2fbd4988328c6be8"

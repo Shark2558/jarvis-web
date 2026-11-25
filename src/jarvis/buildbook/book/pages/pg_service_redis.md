@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/selfcheck_wiring.py": "fb7336391ffa3727"
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/config.py": "8c6265f13d09201d"
   "src/jarvis/memory/__init__.py": "b201fcff1ddce9e7"
 ---
 ## In plain words

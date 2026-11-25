@@ -3,7 +3,7 @@ page: pg_service_gemini
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/config.py": "8c6265f13d09201d"
   "src/jarvis/llm/brains.py": "926e3ef2f35fcb02"
   "src/jarvis/llm/gemini_provider.py": "46855ef23dd8aabb"
   "src/jarvis/llm/router.py": "c72db7b28cbba849"

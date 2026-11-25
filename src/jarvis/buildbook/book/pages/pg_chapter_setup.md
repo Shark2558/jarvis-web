@@ -32,7 +32,7 @@ sources:
   "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
   "src/jarvis/api/static/console.js": "351db845674caa00"
   "src/jarvis/cli.py": "ba5cceebcf16d9d0"
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/config.py": "8c6265f13d09201d"
 ---
 ## In plain words
 This chapter is about running JARVIS on a computer of your own, to try something out or for an engineer to work on it, without touching the live JARVIS. You install it from the project folder, give it settings in a small file, and start it; the same console then opens in a browser on that machine. Set the brain to the built-in test brain and it answers without any AI key, so you see every screen without spending a rupee. With a Claude key it thinks just as the live one does.

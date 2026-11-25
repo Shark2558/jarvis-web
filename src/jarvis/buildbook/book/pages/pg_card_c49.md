@@ -3,7 +3,7 @@ page: pg_card_c49
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "0f90cbe2c5f58fde"
+  "src/jarvis/config.py": "8c6265f13d09201d"
 ---
 ## In plain words
 Every knob that changes how JARVIS behaves lives in one place: which AI to use, your time zone, how long the app lock waits, how many SOS contacts you may have, which features are switched on, and the secret keys it needs. They are read from the server's environment when JARVIS starts, so changing one means a redeploy, not editing code (`src/jarvis/config.py`). Secret values are held in a special type that never prints them in a log or an error message. Before it starts on the cloud, JARVIS also refuses settings that would be unsafe there (`Settings`).
@@ -15,7 +15,7 @@ Imran deploys JARVIS but forgets to set the long random session secret. When the
 `Settings` reads every setting from an environment variable whose name starts with JARVIS and an underscore, or from a local file on a laptop, and ignores anything it doesn't know (`src/jarvis/config.py`).
 Keys and passwords, such as the `api_token`, the `session_secret` and the `token_key`, are typed as secret strings, so printing the settings shows stars instead of their values.
 `get_settings` builds them once and every part of JARVIS shares the same copy.
-Checks run as the settings load: the environment must be dev, staging or prod, the home laptop's offline time must allow for one late heartbeat, and a custom AI address must use https unless it is a private host (`_is_private_host`).
+Checks run as the settings load: the environment must be dev, staging or prod, the home laptop's offline time must allow for one late heartbeat, and a custom AI address must use https unless it is a private host (`_is_private_host`), and a Tailscale name never counts as one.
 At start-up `Settings` also refuses dev mode or token sign-in on Cloud Run, a missing API token outside dev, an AI choice in `llm_backend` without its key, and Google sign-in in `auth_mode` without its client, web address, owner list or a session secret of at least {{fact:src/jarvis/config.py:MIN_SESSION_SECRET_LEN}} characters.
 A token key that is present but malformed or weak stops start-up; a missing one only leaves the sealed features off (`src/jarvis/config.py`).
 `LLMBackend`, `SessionBackend` and `AuthMode` list the only choices each of those settings accepts.

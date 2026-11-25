@@ -69,13 +69,13 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name ------------------------------------------------
 def test_the_version_is_thirteen() -> None:
-    assert jarvis.__version__ == "6.3.2"  # R6.3 I0 (13.1.0 at R13.1; nothing compares it)
+    assert jarvis.__version__ == "6.4.0"  # R6.4 (6.3.2 at R6.3.1; nothing compares it)
 
 
 def test_the_real_repository_is_r13_and_its_plan_comes_first() -> None:
-    repo = Repo.from_git(ROOT)  # R6.3 I0: the release is now R6.3 (tests/test_r63_seams.py)
-    assert plans.release_label(repo) == "R6.3"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-3-book-content.md"
+    repo = Repo.from_git(ROOT)  # R6.4: the release is now R6.4 (tests/test_r63_seams.py)
+    assert plans.release_label(repo) == "R6.4"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"
     assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 

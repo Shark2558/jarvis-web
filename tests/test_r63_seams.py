@@ -36,10 +36,11 @@ def _load(path: Path, name: str) -> ModuleType:
 
 # ---- 1 · the version and the release ------------------------------------------------------------
 def test_the_version_is_six_point_three() -> None:
-    assert jarvis.__version__ == "6.3.2"  # R6.3.1 (13.1.0 at R13.1); the persona is unchanged
+    # R6.4 (6.3.2 at R6.3.1, 13.1.0 at R13.1); the persona is unchanged
+    assert jarvis.__version__ == "6.4.0"
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R6.3"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-3-book-content.md"
+    assert plans.release_label(repo) == "R6.4"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"
 
 
 # ---- 12 · the staged eval runner ----------------------------------------------------------------
@@ -106,7 +107,9 @@ def test_the_old_writers_collections_are_flat_and_the_books_own() -> None:
 # ---- 14, 15 · the guide -------------------------------------------------------------------------
 def test_the_guide_names_the_full_book_the_old_writers_data_and_the_roadmap() -> None:
     guide = GUIDE.read_text(encoding="utf-8")
-    assert guide.splitlines()[0].startswith("Version v6.3.") and "Release R6.3" in guide[:200]
+    # the guide moves forward with each release (v6.3.x / R6.3 at R6.3, v6.4.x / R6.4 at R6.4)
+    now = ".".join(jarvis.__version__.split(".")[:2])
+    assert guide.splitlines()[0].startswith(f"Version v{now}.") and f"Release R{now}" in guide[:200]
     c57 = guide[guide.index("#### C57 · Build book") : guide.index("#### C58")]
     for name in COLLECTIONS:
         assert f"`{name}/" in c57, name  # each with its document id, as the card names R6's

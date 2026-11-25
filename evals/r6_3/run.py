@@ -3,7 +3,7 @@
 "Tests and evals"; R6.3.1, docs/plans/r6-3-1-book-at-build.md: the full book is written at build
 time, so the runtime writer's parts are gone), one suite file per part:
 
-    python evals/r6_3/run.py --mock [--part facts --part authored ...]
+    python evals/r6_3/run.py --mock [--part facts --part authored --part narration ...]
 
     facts.py     A  --check twice identical with facts.json; every tour key known; the module map
                     has all 73 cards once; the index (paths, symbols, constants); the counter on a
@@ -20,6 +20,10 @@ time, so the runtime writer's parts are gone), one suite file per part:
     authored.py  E  (R6.3.1) the authored pages compile and pass the checks: a fixture's written,
                     failing and missing pages, each check named, and this checkout's written pages
                     compiled with its own fact pack. Control: the six checks switched off
+    narration.py    (R6.4 D6) the narration scripts compile and pass the checks: a fixture's
+                    script compiled narrated (facts filled) and one with a typed number not, each
+                    line check named, and this checkout's 26 scripts compiled narrated. Control:
+                    the line checks switched off
 
 Every part file exposes PART, BUILT, `async def cases() -> list[dict]` (each {"id":
 "<part>:<case>", "passed", "failures"}) and `async def control() -> dict` ({"name",
@@ -51,7 +55,7 @@ for _p in (HERE.parent, ROOT / "tests", ROOT / "src"):  # appended: no evals/r6_
         sys.path.append(str(_p))
 from r1d_common import finish  # noqa: E402
 
-PARTS = ("facts", "tour", "authored")  # R6.3.1 D8: the writer's five parts went with it
+PARTS = ("facts", "tour", "authored", "narration")  # R6.3.1 D8: the writer's five went; R6.4
 STUBS_PASS = False  # I1: every part is built; a stub never reads as green (pinned)
 
 

@@ -49,7 +49,8 @@ def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
     assert runner.STUBS_PASS is False  # I1 flipped it: a stub never reads as green
     for part in runner.PARTS:  # and every part is built (I1: console, needles, e2e)
         assert _load(ROOT / "evals" / "r6_3" / f"{part}.py", f"r6_3_{part}_pin").BUILT is True, part
-    assert runner.PARTS == ("facts", "tour", "authored")  # R6.3.1 D8: the writer's parts went
+    # R6.3.1 D8: the writer's parts went; R6.4 review M-3: the narration scripts (plan section 5)
+    assert runner.PARTS == ("facts", "tour", "authored", "narration")
     gate = (ROOT / "evals" / "run_all_mock.py").read_text(encoding="utf-8")
     assert (
         '("r6_3 (gated)", [sys.executable, str(HERE / "r6_3" / "run.py"), "--mock"], True)' in gate

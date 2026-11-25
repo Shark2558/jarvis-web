@@ -1,0 +1,122 @@
+---
+chapter: module_alerts
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_alerts": "c4de2f0d49fd9474"
+  "pg_card_c45": "acfb6b5bd948298a"
+  "pg_card_c46": "81d0198d69d77a2a"
+  "pg_card_c47": "dbf64a48366605fd"
+  "pg_service_web_push": "18d33fd4669f3e8f"
+---
+- [page:pg_module_alerts] [show:title] This chapter is about alerts: how JARVIS taps you on the shoulder when you aren't looking at the console.
+- [show:plain] An alert is a Telegram message, or a notification on your browser or phone, and every feature uses the same door.
+- The words are always JARVIS's own fixed sentences, never AI text, and never someone else's message.
+- You decide what rings: quiet hours for the night, "only urgent things ring", a switch for each kind, and a short VIP list.
+- [show:example] In the made-up example, Rohan keeps quiet hours through the night.
+- In the small hours his home laptop stops answering while the alarm is off: important, but not urgent.
+- So JARVIS holds it, and his morning summary on Telegram mentions it.
+- The next night the kitchen smoke alarm goes off, and a hazard is an emergency.
+- Telegram and the browser on his phone both ring at once, quiet hours or not, and his tap opens the Home panel.
+- [show:how] Here is how it works.
+- [show:overview] This is the journey of one alert, from a feature to your phone.
+- [node:feature] It starts when a feature has news for you.
+- [edge:feature>port] [node:port] It hands over one fixed sentence, with a kind of alert from a closed list.
+- What comes back is sent, not sent with a short reason, or queued for later, so a failed send is never an error.
+- [edge:port>policy] [node:policy] The alert policy then decides whether it rings, rings silently, waits or is dropped, by fixed rules and your settings.
+- [edge:policy>held] [node:held] In quiet hours, an important alert is held for the morning summary.
+- [edge:policy>cap] [node:cap] An alert that rings on Telegram must first fit within the caps.
+- [count:{{fact:src/jarvis/telegram/alerts.py:MAX_PER_HOUR}}] The Telegram sender allows at most {{fact:src/jarvis/telegram/alerts.py:MAX_PER_HOUR}} alerts an hour, and {{fact:src/jarvis/telegram/alerts.py:MAX_PER_DAY}} a day.
+- [edge:cap>limit] [node:limit] Over the cap, the alert is not sent, and the reason is "alert limit reached for now".
+- [edge:cap>telegram] [node:telegram] [count:{{fact:src/jarvis/telegram/alerts.py:MAX_ALERT_CHARS}}] Within it, one clean line of at most {{fact:src/jarvis/telegram/alerts.py:MAX_ALERT_CHARS}} characters goes out on Telegram, and the send is written to the audit trail.
+- [edge:policy>push] [node:push] At the same time, a ringing alert goes to your browsers as a standard notification.
+- [edge:telegram>you] [edge:push>you] [node:you] Either way the alert reaches you, and you tap it.
+- [edge:you>panel] [node:panel] The tap opens the panel the alert is about, and its Talk button opens JARVIS with the mic ready, but not switched on.
+- A VIP is a phone number or an e-mail address, and the list only ever shows a hint of it, never the number or address itself.
+- A kind that must always ring, such as an SOS, can't be switched off.
+- [count:{{fact:src/jarvis/api/notify.py:CHANGES_PER_MINUTE}}] A test sends through every channel and reports which delivered it, and settings changes are limited to {{fact:src/jarvis/api/notify.py:CHANGES_PER_MINUTE}} a minute.
+- [show:costs] It costs nothing: an alert is a Telegram bot message or a standard Web Push, and deciding what rings is fixed rules, with no AI.
+- [show:fails] Each channel fails alone, so a browser that can't be reached never stops the Telegram message.
+- If Telegram's settings or its counter can't be read, the alert is not sent, rather than risking a flood.
+- A test that no channel delivers says so, and a server without alerts set up says that too.
+- [page:pg_card_c45] [show:title] Now the first part: the alerts port, the one door every alert knocks on.
+- [show:plain] An approval waiting, your morning brief ready, trouble at home: each one comes through this door.
+- Because the words are JARVIS's own fixed sentence, nobody's e-mail and no model's guess ever reaches your phone as an alert.
+- And when an alert doesn't go out, the part that asked is told why, instead of crashing.
+- [show:example] In the example, one Sunday morning JARVIS finishes your brief, and the door sends its fixed line: your brief is ready in the console.
+- Your Telegram is paired, the brief's switch is on, and the hour's allowance has room, so your phone buzzes once.
+- Later, a burst of approval requests uses up the hour, and the next one comes back "alert limit reached for now", and simply waits in the console.
+- [show:how] Every sender keeps one promise: a single send, with your account, the text, the kind, and options for a silent delivery and one small photo.
+- When nothing is set up to deliver, a stand-in sends nothing, and gives its reason.
+- The Telegram sender first reads your Telegram link, and with none it answers that Telegram isn't paired.
+- Then it checks the switch for that kind, and a kind with no switch here is refused as switched off.
+- Next it takes one from your hourly and daily allowance, and cleans the text into one line, cut with an ellipsis.
+- Finally it sends, and the audit trail records the kind and whether it went, never the text.
+- Day to day, alerts go through the alert policy first, and this plain Telegram sender is the fallback when that policy isn't set up.
+- [show:costs] It costs nothing, not a single rupee: the only thing kept is the day's alert counter.
+- [show:fails] If your settings or the counter can't be read, it refuses to send rather than guess, so a broken counter never floods your phone.
+- If Telegram doesn't answer, there is no buzz, and the audit records the failure.
+- [page:pg_card_c46] [show:title] The second part is the alert policy, which decides what deserves to wake you.
+- [show:plain] For each alert, it decides whether your phone rings, buzzes silently, keeps it for one morning summary, or only lists it in the console.
+- Its rules are fixed, and you tune them in the console: smoke or a burglar always rings, and a routine notice at night waits until you are up.
+- [show:example] In the example, the nightly backup check fails in the small hours, an important alert, so it is held, and so is a broadband bill reminder.
+- Then the kitchen smoke sensor fires, and a hazard rings straight through quiet hours.
+- When quiet hours end, one Telegram message lists what was held while you were resting: a backup problem and a bill reminder.
+- [show:how] The rules run in order, and the first match wins.
+- [show:overview] Here is one alert's path: ring, hold or drop.
+- [node:signal] It starts when a feature sends an alert.
+- [edge:signal>switch] [node:switch] First, the policy asks whether you switched that kind off.
+- [edge:switch>feed] [node:feed] A kind you switched off is dropped, or only kept for the console feed.
+- [edge:switch>rules] [node:rules] A kind that is on goes to the fixed rules.
+- A test always rings, and so do a hazard, an emergency word, and an urgent kind such as a burglar.
+- Emergency words are known in English, Hindi, Malayalam and Odia, and a doubtful match errs on the side of ringing.
+- A nudge at night is dropped, and a VIP rings.
+- [edge:rules>hold] [node:hold] In quiet hours, an important alert is held, kept as its kind and time only.
+- [edge:rules>feed] At night, an info alert only reaches the console feed.
+- Quiet hours follow your time zone, and may cross midnight.
+- By default only urgent alerts ring, but a few important ones, such as a laptop gone quiet, still ring in waking hours.
+- [edge:rules>storm] [node:storm] An alert that rings, or arrives silently, passes storm control next.
+- [count:{{fact:src/jarvis/notify/storm.py:MAX_URGENT_IN_WINDOW}}] Burglar rings stop at {{fact:src/jarvis/notify/storm.py:MAX_URGENT_IN_WINDOW}} in a short window, {{fact:src/jarvis/notify/storm.py:MAX_INTRUDER_PER_HOUR}} an hour and {{fact:src/jarvis/notify/storm.py:MAX_INTRUDER_PER_DAY}} a day, and the rest become one summary.
+- [count:{{fact:src/jarvis/notify/storm.py:MAX_NUDGES_PER_HOUR}}] Nudges stop at {{fact:src/jarvis/notify/storm.py:MAX_NUDGES_PER_HOUR}} an hour, JARVIS's own health rings at {{fact:src/jarvis/notify/storm.py:MAX_SELF_PER_HOUR}}, and a hazard is never capped.
+- [edge:storm>telegram] [edge:storm>push] [node:telegram] [node:push] Then Telegram and Web Push are tried side by side.
+- [count:{{fact:src/jarvis/notify/service.py:PUSH_PER_HOUR}}] Normal alerts share {{fact:src/jarvis/notify/service.py:PUSH_PER_HOUR}} pushes an hour.
+- [count:{{fact:src/jarvis/notify/telegram_out.py:URGENT_PER_HOUR}}] Urgent kinds get their own Telegram bucket: {{fact:src/jarvis/notify/telegram_out.py:URGENT_PER_HOUR}} an hour and {{fact:src/jarvis/notify/telegram_out.py:URGENT_PER_DAY}} a day.
+- [edge:hold>summary] [node:summary] [count:{{fact:src/jarvis/notify/store.py:MAX_HELD}}] When quiet hours end, up to {{fact:src/jarvis/notify/store.py:MAX_HELD}} held alerts become one summary.
+- [edge:summary>telegram] [edge:summary>push] The summary goes out by Telegram and Web Push, and the held alerts are removed only after one of them took it.
+- Each decision writes one audit line, with kinds and counts, never words.
+- [show:costs] It costs nothing, no rupees and no AI call, because the decision is plain rules.
+- Your alert settings and VIP list are kept encrypted, and the storm counters are short-lived.
+- [show:fails] Unreadable settings fall back to the defaults, so burglar and smoke alerts still ring.
+- A hold that can't be saved rings instead of being lost.
+- A burglar ring that reached nobody gives its storm slot back, so the retry is not swallowed.
+- [page:pg_card_c47] [show:title] The third part is Web Push: JARVIS's browser notifications.
+- [show:plain] Besides Telegram, alerts appear as ordinary notifications on the browsers you allowed, on your laptop or your phone.
+- Each message is locked so only that browser reads it, carries only the fixed sentence, never a picture, and a tap opens the right panel.
+- [show:example] In the example, you allow notifications on your phone's browser, and name it "Phone in the kitchen".
+- One afternoon a courier leaves a parcel at the gate, the phone shows it, and a tap opens the Home panel.
+- Months later you reset that phone, the push service answers that the browser is gone, and JARVIS quietly takes it off your list.
+- [show:how] [count:{{fact:src/jarvis/webpush/ece.py:AUTH_BYTES}}] Switching notifications on hands JARVIS an address and two keys, and the secret must be {{fact:src/jarvis/webpush/ece.py:AUTH_BYTES}} bytes.
+- [count:{{fact:src/jarvis/webpush/service.py:NAME_MAX}}] The key must be a real point on the curve, and the name is cleaned to at most {{fact:src/jarvis/webpush/service.py:NAME_MAX}} characters.
+- The address is treated as untrusted: secure connections only, no bare IP address, a known browser push service, and only public destinations.
+- Your list of browsers is stored encrypted, with a fixed size, so one browser too many is refused.
+- [count:{{fact:src/jarvis/webpush/service.py:MAX_PAYLOAD_BYTES}}] A message holds the kind, the fixed text cut to {{fact:src/jarvis/webpush/service.py:MAX_TEXT_CHARS}} characters and the panel to open, at most {{fact:src/jarvis/webpush/service.py:MAX_PAYLOAD_BYTES}} bytes.
+- It is locked for each browser with that browser's own keys, the standard Web Push encryption.
+- Each request is signed so the push service knows it comes from JARVIS, with a key worked out each time and never stored.
+- [count:{{fact:src/jarvis/webpush/service.py:TIMEOUT_S}}] All your browsers are tried at once, each with a {{fact:src/jarvis/webpush/service.py:TIMEOUT_S}}-second limit, and a silent alert goes with low urgency.
+- [count:{{fact:src/jarvis/webpush/service.py:TTL_INTRUDER_S}}] An undelivered burglar alert expires after {{fact:src/jarvis/webpush/service.py:TTL_INTRUDER_S}} seconds, and any other after {{fact:src/jarvis/webpush/service.py:TTL_DEFAULT_S}} seconds.
+- In the browser, the service worker only shows the notification and handles the tap, and it caches no pages.
+- [show:costs] It costs nothing: messages go straight to the browsers' own push services.
+- [show:fails] A browser that has gone away is taken off your list, and a timeout counts as not delivered, for that browser only.
+- If your list can't be read or unlocked, nothing is sent, and the list is never overwritten.
+- A message that arrives garbled shows "JARVIS has something for you." instead.
+- [page:pg_service_web_push] [show:title] Last, the outside service itself: Web Push.
+- [show:plain] It is the standard way a website sends notifications to your browser, even when its tab is closed.
+- Each browser maker runs its own push service, which carries JARVIS's messages without being able to read them.
+- [show:example] In the example, a vault document is a month from expiry, and the notification pops up on your laptop and on Telegram; a click opens the vault.
+- [show:how] Browser notifications are set up only when switched on, and when JARVIS has its public address, or an owner e-mail, to name as the sender.
+- [count:{{fact:src/jarvis/api/home_wiring.py:VAPID_BYTES}}] The signing key is made from the server's token key, {{fact:src/jarvis/api/home_wiring.py:VAPID_BYTES}} bytes for that purpose, so there is no extra secret to keep.
+- Web Push and Telegram sit behind the one alert policy, so quiet hours and storm control are the same on both.
+- Nothing is pushed while a guest show of the Build Book is running, and the Privacy panel lists your browsers, with delete.
+- [show:costs] It costs nothing in rupees: the push services are free, run by the browser makers.
+- [show:fails] If Web Push fails to set up, alerts still go to Telegram, and the rest of JARVIS keeps running.
+- That is the Alerts chapter: fixed words, one door, rules you tune, and a smoke alarm that always gets through.

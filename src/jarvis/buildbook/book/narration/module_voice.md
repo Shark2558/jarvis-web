@@ -1,0 +1,123 @@
+---
+chapter: module_voice
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_voice": "303373d01cc439ca"
+  "pg_card_c05": "6f1e9f1eae6e0f4c"
+  "pg_card_c06": "0c93fd63672dc89d"
+  "pg_screen_voice": "3cd7f21a82067368"
+  "pg_service_google_cloud_speech_to_text": "941502246658e464"
+  "pg_service_google_cloud_text_to_speech": "604ca9bd152c73c3"
+---
+- [page:pg_module_voice] [show:title] This chapter is about voice: how you talk to JARVIS, and how JARVIS talks back.
+- [show:plain] Voice works in the console, on your laptop or on your phone.
+- Say "Hey Jarvis" and it listens, and the wake word is spotted on your own device, so no sound leaves it before then.
+- You can interrupt JARVIS by speaking, and switch the microphone off with one click, or by saying "mic off".
+- Your words become text, and its replies become speech, through Google's cloud voices, inside their free allowance.
+- Whenever Google's voice is off, the browser's own voice stands in.
+- [show:example] In the made-up example, Meenu is cooking with flour on her hands, and asks what is on her calendar this afternoon.
+- Her laptop chimes, records a few seconds, and the console shows the words it heard.
+- JARVIS answers in a calm British voice, and when she says "stop" halfway through its next sentence, it goes quiet at once.
+- Later she says "mic off", the mic button turns grey, and nothing is captured until she taps it again.
+- [show:how] Now, how it works.
+- [show:overview] Here is the whole path of one spoken question and its spoken answer.
+- [node:you] It starts with you, saying "Hey Jarvis".
+- [edge:you>wake] [node:wake] Your voice reaches a small wake-word model that runs inside your browser, so the phrase never leaves your device.
+- [edge:you>micoff] [node:micoff] If you have locked the microphone off, nothing is heard at all, until your own click, tap or key press unlocks it.
+- [edge:wake>capture] Once the wake word is heard, the console records what you say next.
+- [node:capture] The microphone is opened once, and its sound is shared with everything that listens.
+- [edge:capture>stt] The spoken clip travels to JARVIS's server, which hands it to Google to turn into text.
+- [count:{{fact:src/jarvis/voice/wav.py:MAX_SECONDS}}] Only mono sound is accepted, from {{fact:src/jarvis/voice/wav.py:MIN_SECONDS}} to {{fact:src/jarvis/voice/wav.py:MAX_SECONDS}} seconds long.
+- [node:stt] Google is asked for up to {{fact:src/jarvis/voice/google_cloud.py:MAX_ALTERNATIVES}} guesses, with hints such as your attached files' names and nouns from your own messages.
+- [edge:capture>browser] [node:browser] When Google's voice is off, the clip goes to the browser's own recogniser instead.
+- [edge:stt>cmd] [edge:browser>cmd] Either way, the words that come back are checked first for a local command.
+- [node:cmd] [edge:cmd>local] "Mic off", "stop" and "switch to my earphones" are done right there on the device, with or without the AI.
+- [edge:cmd>chat] [node:chat] Everything else goes to the chat like typed text, and JARVIS writes the reply.
+- [edge:chat>clean] The written reply then travels to a step that makes it fit to read aloud.
+- [node:clean] Formatting, code and tables are stripped out, and a web address becomes "the link on screen".
+- [count:{{fact:src/jarvis/voice/speakable.py:MAX_SPEAK_CHARS}}] The reply is cut into pieces, and each piece stops at {{fact:src/jarvis/voice/speakable.py:MAX_SPEAK_CHARS}} characters.
+- [edge:clean>gate] [node:gate] Before any priced call, JARVIS checks the free allowance and your monthly limit, then meters what Google bills.
+- [edge:gate>tts] [node:tts] Then a Google voice speaks the reply, in the voice you chose.
+- [count:{{fact:src/jarvis/voice/catalogue.py:RATE_MAX}}] You can set its speed anywhere between {{fact:src/jarvis/voice/catalogue.py:RATE_MIN}} and {{fact:src/jarvis/voice/catalogue.py:RATE_MAX}} times normal.
+- [edge:tts>barge] [node:barge] And you can talk over it: with earphones any speech stops it, on speakers you say its name, or you simply tap.
+- [show:costs] [count:{{fact:settings.voice_tts_free_chars}}] Inside the free allowance it costs nothing: {{fact:settings.voice_tts_free_chars}} characters of speech a month for each voice type.
+- [count:{{fact:settings.voice_stt_free_seconds}}] And {{fact:settings.voice_stt_free_seconds}} seconds of listening a month.
+- Above it, speech costs {{fact:settings.voice_price_chirp3_hd_usd_per_m}} US dollars a million characters for the HD voices, or {{fact:settings.voice_price_studio_usd_per_m}} for the Studio voices.
+- [count:{{fact:settings.voice_price_stt_usd_per_min}}] Listening costs {{fact:settings.voice_price_stt_usd_per_min}} dollars a minute, shown in rupees against your monthly limit, while the wake word and local commands are free.
+- [show:fails] If Google's speech can't be reached or isn't switched on, the console uses the browser's own voice and recognition.
+- [count:{{fact:src/jarvis/voice/service.py:DOWN_TTL_S}}] A refusal from Google, or missing credentials, marks that service off for {{fact:src/jarvis/voice/service.py:DOWN_TTL_S}} seconds, so JARVIS stops retrying.
+- At your monthly limit a priced call is refused, and nothing is spent.
+- A clip that isn't valid audio is refused, and a blocked microphone gets a plain line on how to allow it, while typed chat still works.
+- [page:pg_card_c05] [show:title] Now the first part: the voice service, on JARVIS's server.
+- [show:plain] It turns replies into a British voice, and your recorded speech into text, both with Google, in Indian English.
+- It decides what is fit to be read aloud, keeps to the free allowance where it can, and asks your monthly limit before any paid call.
+- No recording is ever stored.
+- [show:example] In the example, you hold the mic button and ask what's on your calendar tomorrow.
+- Google returns its guesses, and the best one is shown as what JARVIS heard.
+- The reply held a link and a small table, so the voice says "the link on screen" and skips the table.
+- [show:how] [count:{{fact:src/jarvis/voice/wav.py:SAMPLE_RATE}}] A recording must be plain {{fact:src/jarvis/voice/wav.py:BITS}}-bit mono sound at {{fact:src/jarvis/voice/wav.py:SAMPLE_RATE}} samples a second, or it is refused before any cloud call.
+- The hints go in a fixed order: JARVIS's names and command phrases, this turn's file names and nouns, then your own words to recognise.
+- Calls of one kind run one after another for each owner, so two at the edge of the allowance never both slip through.
+- [count:{{fact:src/jarvis/api/voice.py:TRANSCRIBE_PER_MINUTE}}] Each route has its own limit, such as {{fact:src/jarvis/api/voice.py:TRANSCRIBE_PER_MINUTE}} recordings a minute.
+- [show:costs] Beyond the free allowance, the same dollar prices apply, counted in rupees against your monthly limit.
+- [show:fails] When speech isn't switched on, or there are no credentials, that half of voice is marked unavailable for a while.
+- A recording in the wrong format is refused with a plain line before any cost, and a reply with nothing speakable answers "nothing to say".
+- [count:{{fact:src/jarvis/voice/service.py:SETTINGS_READ_S}}] If your settings can't be read within {{fact:src/jarvis/voice/service.py:SETTINGS_READ_S}} second, the defaults are used.
+- A call that may have reached Google before failing is metered on its estimate, so the meter never under-counts.
+- [page:pg_card_c06] [show:title] The second part is the voice loop: everything that listens and speaks inside the console, on your own device.
+- [show:plain] Say "Hey Jarvis" and the console wakes, because a small model in the browser spots the phrase.
+- You can talk over JARVIS, lock the microphone hard off, give simple spoken commands with the AI off, and choose your speaker and microphone.
+- [show:example] In the example, while cooking one evening, you ask JARVIS to remind you to switch off the rice in ten minutes.
+- JARVIS answers aloud, and when you say "stop" halfway through its next reply, it stops at once.
+- Your earphones run flat, so you say "switch to the speakers", and JARVIS moves its voice there without asking the AI.
+- When guests arrive you press Control, Shift and Space, hear "Microphone off", and nothing is captured until you tap the mic again.
+- [show:how] The microphone opens with echo cancellation and noise suppression, and its sound becomes small frames that every listener shares, storing nothing.
+- The wake word pauses while JARVIS listens or speaks, and asks for a stricter score during JARVIS's own voice.
+- The wake-word models are for personal, non-commercial use only, and each file is pinned by its checksum.
+- A conversation has a follow-up window, then a standby, before it hands back to the keyboard.
+- On speakers, an echo guard ignores JARVIS's own words, so it never interrupts itself.
+- A reply is split into speakable pieces and played in order, and a sound device is named aloud only by its kind.
+- [show:costs] All of this runs in your browser, so it costs nothing; only speech sent to Google is counted.
+- [show:fails] Without microphone permission the console says so in a plain line, and typing still works.
+- A wake-word module that reports an error is switched off with a plain line, and an unplugged microphone ends the capture cleanly.
+- [page:pg_screen_voice] [show:title] Next, the Voice panel in your console.
+- [show:plain] You talk with the microphone button beside the message box, and the Voice panel holds the choices.
+- There you pick which British voice JARVIS uses, how fast he speaks, and how much dry wit he allows himself.
+- For this device, you also choose the speech engine, when replies are spoken, how you interrupt him, your sound devices and the words he should know.
+- "Hey Jarvis" is a separate switch, off until you turn it on, and the panel shows this month's voice use.
+- [show:example] In the example, hands full in the kitchen, you tap the microphone and ask what's on today.
+- JARVIS reads out your meetings and keeps listening, and after a stretch of silence he says he is switching to the keyboard.
+- Later you add "Tanvir" to the words to recognise, because he heard the name wrongly last week.
+- [show:how] Voice, speed and wit are yours on every device, and Preview plays a short line in the chosen voice.
+- The "On this device" choices, such as the speech engine and the waiting times, stay in this browser only.
+- With the cloud engine, your speech is cut into a short clip and turned into words on the server; with the browser engine, words appear as you speak.
+- [show:costs] The cloud voice uses Google's speech service in your own Google Cloud project, and the panel shows the allowance used, with a rupee estimate beyond it.
+- The browser's own recognition and voice cost nothing, though your audio then goes to the browser's maker.
+- [show:fails] [count:{{fact:src/jarvis/api/voice.py:MAX_AUDIO_BYTES}}] A clip larger than {{fact:src/jarvis/api/voice.py:MAX_AUDIO_BYTES}} bytes is refused.
+- Too many requests in a minute get a polite line, and JARVIS asks again in a few seconds.
+- [page:pg_service_google_cloud_speech_to_text] [show:title] Now the two outside services, starting with Google Cloud Speech-to-Text.
+- [show:plain] It is how JARVIS listens: after the wake word, that one short clip goes to Google, which sends back the words.
+- Google gets the audio of that turn and a short list of hint words, and JARVIS stores no audio and never logs what you said.
+- [show:example] In the example, you ask JARVIS to add oat milk to groceries, Google returns the words and other guesses, and the item is added.
+- [show:how] Cloud listening is switched on only with the cloud voice, and JARVIS signs in as its own Google service account, with no extra key.
+- [count:{{fact:src/jarvis/voice/google_cloud.py:SHORT_CLIP_S}}] Your language is {{fact:settings.voice_language}}, with automatic punctuation, and the short-clip model handles clips up to {{fact:src/jarvis/voice/google_cloud.py:SHORT_CLIP_S}} seconds.
+- The extra guesses cost nothing, and they help the "understood as" check.
+- [count:{{fact:settings.voice_hint_words}}] This turn's hints are capped at {{fact:settings.voice_hint_words}} words, after the base list and the honorific, and before your own words.
+- If Google refuses a request that carried your own words, JARVIS tries once more with the base list alone, so one bad word never stops listening.
+- [count:{{fact:src/jarvis/voice/google_cloud.py:DEADLINE_S}}] Each call has {{fact:src/jarvis/voice/google_cloud.py:DEADLINE_S}} seconds in all, sign-in included, and is never retried for being slow.
+- [show:costs] JARVIS claims only {{fact:settings.voice_stt_free_seconds}} seconds of listening a month, a margin below Google's own free amount.
+- Google may bill a short clip in whole steps, so the counter can move on a little more than the clip.
+- [show:fails] When Google is slow, busy or unreachable, the console falls back to the browser's own recognition.
+- A clip with no speech is reported as "no speech", and at your monthly limit a priced call is refused before it is made.
+- [page:pg_service_google_cloud_text_to_speech] [show:title] Last, Google Cloud Text-to-Speech: JARVIS's voice.
+- [show:plain] The reply is sent to Google, which returns it as sound, in one of the British voices you choose.
+- Only the text to be spoken goes to Google, and JARVIS stores no audio and never logs the text.
+- [show:example] In the example, you ask aloud for your first meeting, and the short answer comes back in your chosen HD voice in under a second.
+- [show:how] Google is asked for compressed sound at your chosen speed, with no retry, because a late voice is worse than the browser's voice now.
+- [count:{{fact:src/jarvis/voice/service.py:MAX_TEXT_IN}}] A reply of at most {{fact:src/jarvis/voice/service.py:MAX_TEXT_IN}} characters is accepted, then shortened to what is worth speaking.
+- [count:{{fact:src/jarvis/voice/google_cloud.py:VOICES_TTL_S}}] The list of voices is kept for {{fact:src/jarvis/voice/google_cloud.py:VOICES_TTL_S}} seconds, and a failed list isn't asked for again for {{fact:src/jarvis/voice/google_cloud.py:VOICES_FAIL_TTL_S}} seconds.
+- [show:costs] Inside the free allowance it costs nothing, and Google's allowance resets on Pacific-time months, shared across your billing account.
+- [show:fails] When Google is slow, busy or down, the console speaks the reply in your browser's own voice.
+- A voice or text that Google rejects gives a plain line, and at your monthly limit, calls inside the free allowance still go on.
+- That is the Voice chapter: a wake word that stays on your device, a microphone you can lock, and a voice that keeps to its allowance.

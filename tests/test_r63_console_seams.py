@@ -1,7 +1,7 @@
 # tests/test_r63_console_seams.py -- R6.3 I0 seams 8 and 9 (docs/plans/r6-3-book-content.md D9,
-# D14): the console's joins. console-book.js loads C's `console-book-pages.js` ONCE at the Book
-# panel's first open (a script built in JS, never a tag in console.html, which stays
-# byte-identical) and hands it its host and deps (R6.3.1 D8: `console-book-writer.js` is gone);
+# D14): the console's joins. R6.4 D1: the Book panel no longer loads C's `console-book-pages.js`
+# (the full book reads on its own page, /book/read; the file is gone), and console.html stays
+# byte-identical (R6.3.1 D8: `console-book-writer.js` is gone too);
 # the show's script
 # reader moved into `console-book-script.js` unchanged for today's show and reads the tour's shape
 # too (n 1-17, t ids, a picture {visual, facts} per scene): the picture modules get today's picture
@@ -35,19 +35,18 @@ def test_the_console_sizes_hold() -> None:
     assert _lines(STATIC / "console-book-script.js") <= 200
     assert _lines(STATIC / "console-book-tour.js") <= 300
     assert not (STATIC / "console-book-writer.js").exists()  # R6.3.1 D8
-    assert _lines(STATIC / "console-book-pages.js") <= 400
+    assert not (STATIC / "console-book-pages.js").exists()  # R6.4 D1
     assert _lines(STATIC / "console-book-reader.js") <= 270
     assert _lines(STATIC / "book.html") <= 130
     assert _lines(API / "console.py") <= 473
 
 
-def test_the_panel_loads_the_pages_once_at_its_first_open_and_never_the_writer() -> None:
+def test_the_panel_loads_neither_the_old_full_book_nor_the_writer() -> None:
     panel = _read("console-book.js")
-    assert "'console-book-pages.js'" in panel and "'JarvisBookPages'" in panel
+    assert "console-book-pages" not in panel and "JarvisBookPages" not in panel  # R6.4 D1
     assert "console-book-writer" not in panel and "JarvisBookWriter" not in panel  # R6.3.1 D8
-    assert "if (d.open) { more(); load(); }" in panel and "if (X.pages) return;" in panel
-    assert "/static/console-book-pages.js" not in _read("console.html")  # loaded by code
-    assert "Object.freeze({ mount, page, more })" in _read("console-book-pages.js")
+    assert "if (d.open) load();" in panel and "'/book/read'" in panel  # Read the full book
+    assert "console-book-pages" not in _read("console.html")
 
 
 def test_the_show_page_loads_the_script_reader_before_the_show() -> None:

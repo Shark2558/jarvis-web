@@ -9,11 +9,13 @@ from pathlib import Path
 
 import pytest
 
+from jarvis.api.book_read import READ_ASSETS
 from jarvis.api.console import APP_ASSETS
 
 STATIC = Path(__file__).resolve().parents[1] / "src" / "jarvis" / "api" / "static"
 HTML = (STATIC / "console.html").read_text(encoding="utf-8")
 BOOK_HTML = (STATIC / "book.html").read_text(encoding="utf-8")  # R6: the show page, /book/show
+READ_HTML = (STATIC / "book-read.html").read_text(encoding="utf-8")  # R6.4: the full book's page
 # Loaded by other code, never by a tag in the page (each still has to be allow-listed):
 NOT_IN_PAGE = {
     "console-3d-scenes.js": ("console-3d.js", "import('./console-3d-scenes.js')"),
@@ -86,12 +88,23 @@ NOT_IN_PAGE = {
     "console-tryon-cloth.js": ("console-tryon-3d.js", "'./console-tryon-cloth.js'"),
     "console-tryon.css": ("console-r7.js", "'/static/console-tryon.css'"),
     "console-tryon-card.js": ("console-r7.js", "import('./console-tryon-card.js')"),  # row 388
-    # R6.3 I0 (docs/plans/r6-3-book-content.md seam 8): C's two, at the Book panel's first open
-    "console-book-pages.js": ("console-book.js", "'console-book-pages.js'"),
-    # R6.3.1 F: the Full book's flowcharts, imported by the reader at the first Read
-    "console-book-flow.js": ("console-book-pages.js", "import('./console-book-flow.js')"),
+    # R6.3.1 F: the Full book's flowcharts; R6.4 A: imported by the full book's page (/book/read)
+    "console-book-flow.js": ("console-book-read-page.js", "from './console-book-flow.js'"),
     "console-book-flow-layout.js": ("console-book-flow.js", "'./console-book-flow-layout.js'"),
+    # R6.4 (docs/plans/r6-4-integration/I0-NOTES.md section 7): the reader's modules (A) and the
+    # player's effects (B), imported by the two modules book-read.html loads
+    "console-book-read-app.js": ("console-book-read.js", "from './console-book-read-app.js'"),
+    "console-book-read-data.js": ("console-book-read-app.js", "from './console-book-read-data.js'"),
+    "console-book-read-page.js": ("console-book-read-app.js", "from './console-book-read-page.js'"),
+    "console-book-read-rail.js": ("console-book-read-app.js", "from './console-book-read-rail.js'"),
+    "console-book-read-search.js": (
+        "console-book-read-app.js",
+        "from './console-book-read-search.js'",
+    ),
+    "console-book-fx.js": ("console-book-chapter.js", "from './console-book-fx.js'"),
 }
+# R6.4: linked from the full book's page (book-read.html), served by api/book_read.READ_ASSETS
+ON_READ_PAGE = {"console-book-read.js", "console-book-chapter.js"}
 # R6: linked from the show page (book.html), not the deck
 ON_BOOK_PAGE = {
     "console-book-show.js",
@@ -121,13 +134,17 @@ def test_the_folder_has_the_r51_files() -> None:  # a sanity floor: the glob fou
 
 @pytest.mark.parametrize("name", ASSETS)
 def test_every_console_asset_is_allow_listed(name: str) -> None:
-    assert name in APP_ASSETS, f"{name} is in static/ but /static/{name} would 404"
+    # R6.4: the full book's page serves its own (READ_ASSETS); the flowcharts stay the console's
+    assert name in APP_ASSETS or name in READ_ASSETS, f"{name} is in static/ but would 404"
 
 
 @pytest.mark.parametrize("name", [n for n in ASSETS if n not in NOT_IN_PAGE])
 def test_every_console_asset_is_linked_from_the_page(name: str) -> None:
     if name in ON_BOOK_PAGE:  # R6: the show page loads it, the deck never does
         assert _linked(name, BOOK_HTML) and not _linked(name), name
+        return
+    if name in ON_READ_PAGE:  # R6.4: the full book's page loads it, the deck never does
+        assert _linked(name, READ_HTML) and not _linked(name), name
         return
     assert _linked(name), f"{name} is in static/ but console.html does not load it"
 
@@ -136,7 +153,7 @@ def test_every_console_asset_is_linked_from_the_page(name: str) -> None:
 def test_the_assets_loaded_by_code_are_really_loaded_there(name: str) -> None:
     owner, needle = NOT_IN_PAGE[name]
     assert needle in (STATIC / owner).read_text(encoding="utf-8")
-    assert not _linked(name) and not _linked(name, BOOK_HTML)
+    assert not _linked(name) and not _linked(name, BOOK_HTML) and not _linked(name, READ_HTML)
 
 
 def test_new_stylesheets_come_after_the_older_ones() -> None:

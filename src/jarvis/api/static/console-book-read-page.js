@@ -2,12 +2,12 @@
 // /book/read, an ES module. drawPage(host, page, ctx) draws the approved mockup's page: the breadcrumb, the title, who
 // wrote it and when with its reading time (words / 200), the chapter's Play card (only when the page's chapter is
 // narrated), the sections (In plain words as the lead, the made-up Example in its callout with its tag, How it works with
-// the flowchart (console-book-flow.js figure()) and `backticked` words as code, What it costs with a rupee figure only
+// the flowchart (console-book-flow.js, as its figure()) and `backticked` words as code, What it costs with a rupee figure only
 // when the text opens with a plain amount, When it fails as the amber list, the code's files in a closed "Where in the
 // code"), then the previous and next page (the next chapter at a chapter's end). drawToc(host, ...) fills "On this page"
 // and "In this chapter"; follow(main, toc, drawn) keeps the reader's section lit as the page scrolls (IntersectionObserver).
 // Server words go in through textContent only. No build step; CSP script-src 'self'; ASCII source; <= 400 lines.
-import { figure } from './console-book-flow.js';
+import { normalFlow, renderFlow } from './console-book-flow.js';
 import { PARTS, amount, blocks, day, icon, inline, items, minutesOf, mk, whereIs } from './console-book-read-data.js';
 
 const NOT_WRITTEN = 'Not written yet', BY = 'Written by the Workshop', TAG = 'Made-up example';
@@ -59,13 +59,21 @@ function codeRefs(code) {
   d.append(sum, ul);
   return d;
 }
+/** The chart's frame now; the chart once the page is in place: figure()'s own figure (caption, chart, key, steps), but
+ *  put in the page first, so renderFlow lays it out once in its real width and its one fade runs. */
 function flowchart(raw) {
   if (!raw) return null;
-  let fig = null;
-  try { fig = figure(raw); } catch (_) { fig = null; } // a chart never breaks a page
-  if (!fig) return null;
   const box = mk('div', 'bk-fig');
-  box.append(fig);
+  box.fill = () => {
+    try {
+      const spec = normalFlow(raw);
+      if (!spec) { box.remove(); return; }
+      const fig = mk('figure', 'bk-flow');
+      fig.append(mk('figcaption', 'bk-flowcap', spec.title));
+      box.append(fig);
+      renderFlow(spec, fig);
+    } catch (_) { box.remove(); } // a chart never breaks a page
+  };
   return box;
 }
 function costs(s) {
@@ -184,6 +192,7 @@ export function drawPage(host, page, ctx) {
   const drawn = sections(page);
   out.push(...drawn, prevNext(ctx.book, at));
   host.replaceChildren(...out);
+  host.querySelectorAll('.bk-fig').forEach((box) => { if (box.fill) box.fill(); });
   host.setAttribute('aria-labelledby', 'brTitle');
   return { sections: drawn, play: play ? play.firstChild : null, chapter: ch, at };
 }

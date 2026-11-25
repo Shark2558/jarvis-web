@@ -189,8 +189,8 @@ APP_ASSETS: dict[str, str] = {
     "console-tryon.css": "text/css",  # D: the section's places only (loaded by console-r7.js)
     "console-book-script.js": _JS,  # R6.3: the show's script reader (the show and the tour)
     "console-book-tour.js": _JS,  # R6.3 D: the tour's chapters, owner-only scenes, continue
-    "console-book-pages.js": _JS,  # R6.3 C: the Full book in the reader
-    "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS,  # R6.3.1 F: its flowcharts
+    # R6.3.1 F: the full book's flowcharts (R6.4: /book/read, imported by console-book-read-page.js)
+    "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS,
 }
 
 # Self-hosted OFL fonts (licences beside them).

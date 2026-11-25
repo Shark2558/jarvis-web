@@ -137,7 +137,8 @@ def test_the_owner_reads_the_full_book_on_its_own_page_then_closes_it(
     browser: Any, server_url: str, token: str
 ) -> None:
     """R6.4 D1: Read the full book opens /book/read in this tab, the token in THIS tab's
-    sessionStorage only; Close ends the session, clears the token and goes back to the console."""
+    sessionStorage only; Close asks first (R6.4 A), then ends the session, clears the token and
+    goes back to the console."""
     c, fake = _panel(browser, server_url, token)
     try:
         c.page.get_by_role("button", name="Open for me").click()
@@ -149,6 +150,7 @@ def test_the_owner_reads_the_full_book_on_its_own_page_then_closes_it(
         (got,) = fake.to("GET", "/v1/book/chapters")
         assert got["headers"]["x-jarvis-book"] == TOKEN
         c.page.locator("#brClose").click()
+        c.page.locator("#brCloseNow").click()  # "Close the book?" -> Close
         c.page.wait_for_url(lambda u: u.rstrip("/").endswith(server_url.rstrip("/")))
         (closed,) = fake.to("POST", "/v1/book/close")
         assert closed["headers"]["x-jarvis-book"] == TOKEN

@@ -467,9 +467,8 @@ def j(route: Any, status_code: int, body: Any) -> None:
     )
 
 
-# R6.3 (review I1 M-5): the console asks for the full book at the panel's open; R6's mock book is
-# a server with no full book, so it draws nothing (C's browser files send those routes on to C's
-# fake server instead, `r63_fakes_c.route_c`). R6.3.1 D8: the writer's route is gone.
+# R6's mock book is a server with no full book (R6.4 D1: the panel no longer asks for it; the full
+# book's page /book/read does, and its tests hand FakeBook a book: tests/browser/r64_a_book.py).
 NO_PAGES = {"release": RELEASE["id"], "parts": [], "limitations": {"shown": 0, "total": 0}}
 # R6.4 D5: GET /v1/book/chapters as I0 shapes it (docs/plans/r6-4-integration/I0-NOTES.md)
 CHAPTERS = {

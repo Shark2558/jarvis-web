@@ -10,7 +10,7 @@ applying `CLAUDE.md` and `.claude/rules/ecc/common` + `python`, security first. 
 of 23 Nov this is the release's only review: the reviewer fixed what it found on `r6-4-review`
 (each finding names its commit) and ran the one final check pass.
 
-**Verdict: APPROVE** (after the fixes below). CRITICAL 0 · HIGH 0 · MEDIUM 3 (fixed) · LOW 8 (five
+**Verdict: APPROVE** (after the fixes below). CRITICAL 0 · HIGH 0 · MEDIUM 4 (fixed) · LOW 8 (five
 fixed, three declined with their reasons).
 
 ## What holds (checked)
@@ -68,6 +68,7 @@ fixed, three declined with their reasons).
 | M-1 | `docs/architecture/JARVIS-Architecture.md:2031` (§11), `:1343` (C57) | The roadmap still listed "R6.4 The Book's new look" as the first PLANNED row, so the short tour's "Next:" (`roadmap.next`) named the release being read, and the What's planned page and script ("phone calls at the top of the list") contradicted the table: an untrue spoken line. C57 said "being built" | Row removed; §11's opening says R6.4 is built and its "Not in R6.4" items wait for the owner (no row); the first row reads "Phone calls"; C57 says built, not yet deployed; guide v6.4.2 (`37c137e`) | `test_r63_seams`: a built release is never a planned row (red, then green) |
 | M-2 | `src/jarvis/people/research.py:348-350` | A classifier call that refused (a non-public label) raised before its cost was recorded: a paid call outside the monthly limit, and an unpriced one never counted (I1's note) | The reply's cost is recorded before the refusal (a ₹0 entry judged by billing as before); a classifier that raised records nothing; `pg_card_c21` and the `module_people` script say so (`2cbc607`) | `test_r64_i1_unpriced`: refusing classifier billed once (priced and ₹0), a failing one not |
 | M-3 | `evals/r6_3/run.py:54` | The plan's mock eval "narration scripts compile and pass the checks" (section 5) was never written ("evals before ship") | `evals/r6_3/narration.py`: a fixture compiled narrated with facts filled and a typed-number script not; each line check named; this checkout's 26 scripts; its control switches the line checks off (`cefad43`) | the part's own control fails it; `test_r63_seams` pins the four parts |
+| M-4 | `tests/r63_fakes_a.py:216-245`, `tests/test_r631_review_i1.py:126`, `tests/test_r63_types.py:250`, `evals/r6_3/authored.py:97`, `src/jarvis/api/book_pages.py:33,133-135` | The joined branch failed CI's test job and the r6_3 gated eval: the tour's pinned facts were R6.3.1's (label, version, plan title, roadmap), the compile's counts gained `narrated` (I0), the contract gained three routes, and the route file imported `jarvis.api.ratelimit` (refused by `test_r63_static`: a route file reads only the app's auth and book gate) | Pins brought to R6.4; `r6_wiring` installs every `http.LIMITS` entry (pages and search, 60 a minute) as it did the pages', and `book_pages.py` builds no limiter (`f9a093e`) | the four tests and `evals/r6_3` (30/30) green |
 
 ## LOW
 
@@ -115,4 +116,4 @@ off-theme font after L-8 (the camera's crop of a tall chart is by design).
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v6.4.0 | 25 Nov 2026, 16:10 IST | R6.4 | First edition: the combined security and code review of I1 @ `61b0a41`, its fixes (M-1 to M-3, L-1 to L-4 and L-8), the sample, the final pass and the verdict APPROVE | 🛠 Mark XXIV |
+| v6.4.0 | 25 Nov 2026, 16:10 IST | R6.4 | First edition: the combined security and code review of I1 @ `61b0a41`, its fixes (M-1 to M-4, L-1 to L-4 and L-8), the sample, the final pass and the verdict APPROVE | 🛠 Mark XXIV |

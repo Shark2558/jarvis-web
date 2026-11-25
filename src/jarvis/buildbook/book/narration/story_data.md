@@ -1,0 +1,60 @@
+---
+chapter: story_data
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_chapter_data": "7d182c14a4c6bfee"
+---
+- [show:title] This chapter is about where your data lives, how it is kept safe, and how it comes back if something goes wrong.
+- [show:plain] JARVIS runs on Google Cloud Run, and keeps its records in Google's Firestore database, in the Mumbai region.
+- Its secrets live in Google's Secret Manager, never in the code.
+- The most private things, such as the vault, your notes, your things and your Google tokens, are sealed again by JARVIS with keys of its own.
+- There is a separate key for each kind of data.
+- The privacy panel shows everything that is kept, with Export and Delete.
+- Once you switch backups on, Google copies the database every day, and JARVIS proves each month that a copy really restores.
+- The Vault, Privacy, Approvals and Delivery pages give the details.
+- [show:how] JARVIS is set up on Cloud Run, which lets it sleep when idle, with Firestore as its database in the same project.
+- Every setting is read from the environment, and secrets are kept in a form that never reaches a log.
+- In production, JARVIS refuses to start with unsafe settings, such as a missing API token or a laptop-only mode.
+- [show:overview] This picture shows where your data lives, and how it comes back.
+- [node:you] It starts when you save something.
+- [edge:you>key] What you save first meets its key.
+- [node:key] If it is private, it is sealed with a key of its own: the one token key is turned into a separate key for each kind of data.
+- So the key for your notes can never open the vault.
+- [node:secrets] Secret Manager holds every secret JARVIS uses, outside the code.
+- [edge:secrets>key] Along this connector travels the token key, from Secret Manager to the keyring.
+- Sealing uses AES-256-GCM, a well-known standard that also notices tampering.
+- [edge:key>off] If there is no token key, the path turns aside.
+- [node:off] The vault, notes, things and the other sealed features simply stay off, rather than store anything in the clear.
+- [edge:key>store] With its key, a record goes on to the store.
+- [node:store] Every store in JARVIS speaks one small, shared port, and only one part of the code talks to the database.
+- Conversations, approval cards and the audit chain each have a store, and the audit chain can only ever be added to.
+- [edge:store>firestore] From that port, records travel into the database.
+- [node:firestore] Firestore keeps them all, under JARVIS's own name prefix.
+- The vault seals each file under its own key, and opens one only after an unlock in the console.
+- [count:{{fact:settings.vault_unlock_minutes}}] That unlock lasts {{fact:settings.vault_unlock_minutes}} minutes.
+- [edge:firestore>privacy] Everything kept stays visible to you.
+- [node:privacy] The privacy panel lists every kind of data kept, with Export and Delete, and asks for your passkey before anything goes for good.
+- [edge:firestore>copy] When backups are on, the database is copied every day.
+- [node:copy] Backups begin with a one-time setup that you run yourself.
+- [count:{{fact:src/jarvis/backup/status.py:RETENTION_DAYS}}] Each daily copy is kept {{fact:src/jarvis/backup/status.py:RETENTION_DAYS}} days, and the live database gets delete protection.
+- A small canary is written every day as well, sealed with that day's key.
+- [edge:copy>drill] Once a month, a copy goes to the drill.
+- [node:drill] The monthly drill restores a copy into a throw-away database, and checks it.
+- It reaches Google through one narrow helper only, and reads both databases through read-only views.
+- [edge:drill>proven] When the checks pass, the copy has proven itself.
+- [node:proven] The copy is proven, and then removed.
+- [show:example] In the made-up example, one Friday, Ritu wonders what JARVIS keeps about her family.
+- The privacy panel lists every kind of data: her vault documents, encrypted by JARVIS, and the facts in Memory.
+- She downloads everything except the vault files, as one file for her own records.
+- That night Google copies the whole database, as it has every night since she ran the backup setup.
+- And at the start of the next month, the drill proves that a copy restores, and opens with today's key.
+- [show:costs] Keeping your data costs nothing while it stays inside Firestore's free tier.
+- The keyring and the vault use no outside service at all.
+- Secret Manager is free for the first few secret versions, with a small monthly charge for each one beyond them.
+- Backups add a few rupees a month for a small database, and only once you switch them on.
+- [show:fails] A wrong key or a tampered record is refused, never guessed at.
+- A malformed or weak token key stops JARVIS from starting, while a missing optional key just leaves its own feature off.
+- Data that changed since you looked is refused at delete time.
+- A drill that fails records its reason, and still deletes its copy.
+- That is your data: in one database, sealed where it matters, visible to you, and proven to come back.

@@ -116,4 +116,7 @@ def test_the_guide_names_the_full_book_the_old_writers_data_and_the_roadmap() ->
     assert "Book writer (old trial)" in c57 and "`pages.json.gz`" in c57  # R6.3.1 D4, D9
     assert "Gemini (free)" not in c57 and "`src/jarvis/llm/write.py`" not in c57  # D8
     roadmap = guide[guide.index("## 11. Roadmap") : guide.index("## 12. Glossary")]
-    assert "R6.3.1" in roadmap and "R6.4" in roadmap
+    assert "R6.3.1" in roadmap and "R6.4" in roadmap  # both named as built in its opening
+    rows = [ln for ln in roadmap.splitlines() if ln.startswith("| ")]
+    # R6.4 review: a built release is no PLANNED row (the tour's "next" reads the first two)
+    assert not any(ln.startswith(("| R6.3.1 ", "| R6.4 ")) for ln in rows), rows

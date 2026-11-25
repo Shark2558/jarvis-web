@@ -1,0 +1,123 @@
+---
+chapter: module_vitals
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_vitals": "9f38958fd42a1f97"
+  "pg_card_c44": "82626a80cc75e907"
+  "pg_card_c54": "1d8a71db60e5e8a9"
+  "pg_card_c55": "acabb33de1f8d805"
+  "pg_card_c56": "71d81afe8cf66ed4"
+  "pg_card_c67": "d886a2ba380e16b0"
+  "pg_screen_vitals": "d096e373d8bbdc99"
+  "pg_service_frankfurter": "572319c24dce3f86"
+---
+- [page:pg_module_vitals] [show:title] This chapter is about JARVIS keeping an eye on itself, and on everything that has a limit.
+- [show:plain] The Vitals board shows in one place your AI spend this month, the free allowances JARVIS uses, its own keys and connections, and bills you add yourself.
+- The systems check tests every connection when you ask, and works even with the AI off.
+- And a self-health watch notices when something inside JARVIS goes wrong, and tells you once, in plain words.
+- [show:overview] Here is how JARVIS watches itself.
+- [node:clock] It starts with a background clock, ticking on its schedule.
+- [edge:clock>jobs] [node:jobs] The clock runs each background job in turn, each with its own time budget, so one that fails or runs late never stops the rest.
+- [edge:jobs>watch] [node:watch] The watch hears every job's outcome.
+- [edge:watch>ledger] [node:ledger] [count:{{fact:settings.selfwatch_fail_streak}}] It remembers streaks, and {{fact:settings.selfwatch_fail_streak}} failures in a row raise a "job failing" alert that names the job.
+- [edge:watch>rule] [node:rule] Then it asks whether a rule was crossed: a stopped clock, a missed brief, a pile of errors, a jump in spending, or a new version.
+- [edge:rule>quiet] [node:quiet] When all is fine, there is nothing to say, and JARVIS stays quiet.
+- [edge:rule>storm] [node:storm] [count:{{fact:src/jarvis/notify/storm.py:MAX_SELF_PER_HOUR}}] When a rule is crossed, the alert cap is checked: JARVIS's own health alerts are capped at {{fact:src/jarvis/notify/storm.py:MAX_SELF_PER_HOUR}} an hour.
+- A hazard or an emergency is never capped.
+- [edge:storm>held] [node:held] [count:{{fact:src/jarvis/notify/store.py:MAX_HELD}}] In quiet hours the alert is held for the morning summary, with at most {{fact:src/jarvis/notify/store.py:MAX_HELD}} waiting.
+- [edge:storm>told] [node:told] Otherwise you are told once, in words.
+- [edge:told>board] [node:board] And the Vitals board shows it too.
+- [node:check] [edge:check>board] Whenever you ask for a systems check, its result reaches the board as well.
+- [show:how] The board is filled with no model call: the brains' last call, the Google link, the last systems check, the web search vendor's usage and the home link, among others.
+- [count:{{fact:settings.selfwatch_brief_grace_min}}] The watch notices a brief more than {{fact:settings.selfwatch_brief_grace_min}} minutes late, and more than {{fact:settings.selfwatch_errors_per_hour}} error lines in an hour.
+- [count:₹{{fact:settings.selfwatch_spike_min_inr}}] It warns when a day's AI spend is over {{fact:settings.selfwatch_spike_factor}} times the recent daily average, and at least ₹{{fact:settings.selfwatch_spike_min_inr}}.
+- The About line at the board's foot shows the running version and its build day.
+- [show:example] In the made-up example, Joseph's board shows the web-search line amber one Tuesday, with most of its credits used.
+- That night the vault-reminder job fails again and again, because a Google service is down.
+- The watch holds its "job failing" alert through quiet hours, and in the morning his phone shows it, with the job's name.
+- [show:costs] It all costs nothing: plain code on JARVIS's existing clocks, with no model call, inside the database's free daily allowance.
+- [show:fails] A record that can't be read shows "unavailable", and never hides the rest of the board.
+- Each watch job's own failures are reported by the other one, never by itself, and an alert that reached nobody is raised again on the next run.
+- [page:pg_card_c44] [show:title] Now the first part: the free allowance ledger.
+- [show:plain] Google gives a free monthly allowance of Maps searches and routes, and a free daily allowance of YouTube look-ups.
+- [count:{{fact:src/jarvis/quota/ledger.py:STOP_PERCENT}}] JARVIS counts every call before it is made, and stops at {{fact:src/jarvis/quota/ledger.py:STOP_PERCENT}} per cent of the free amount, so Maps and YouTube never become a bill.
+- [show:how] There is one counter for each kind of call and each period, by the month for Maps and by the day for YouTube, in Pacific time, as Google resets them.
+- Before a call, a unit is reserved in one transaction, so two calls never both take the last one, and it is given back only when Google clearly never got the call.
+- [count:{{fact:src/jarvis/quota/ledger.py:HOUR_S}}] A per-person hourly limit sits on top, counting over {{fact:src/jarvis/quota/ledger.py:HOUR_S}} seconds.
+- [show:example] In the made-up example, late in the month, the two-wheeler routes counter reaches its stop.
+- You ask how long to the station by bike, and JARVIS says two-wheeler routes are paused until next month, while a car route still works.
+- [show:costs] It costs nothing: its whole job is keeping Maps and YouTube at no rupees.
+- [show:fails] A counter that can't be read stops the call, rather than risk paid use, and nothing is sent to Google.
+- [page:pg_card_c54] [show:title] The second part: costs in rupees, and the monthly limit.
+- [show:plain] Paid AI replies and paid cloud voice are billed in US dollars; this part turns every such call into rupees, and holds to the monthly limit you set.
+- Once the limit is reached, JARVIS makes no more paid calls that month, while free brains keep answering.
+- [show:how] Before every call to a paid brain, or to one whose price is unknown, this month's rupees are checked against your limit.
+- A reply from a model with no price is never counted as nothing: the limit counts it at the dearest known price, an upper estimate.
+- [count:{{fact:src/jarvis/billing/fx.py:RATE_MAX}}] The day's dollar rate comes from Frankfurter, and only a rate between {{fact:src/jarvis/billing/fx.py:RATE_MIN}} and {{fact:src/jarvis/billing/fx.py:RATE_MAX}} rupees is accepted.
+- [count:₹{{fact:src/jarvis/billing/budget.py:LIMIT_MAX}}] Your limit is a whole number of rupees, from {{fact:src/jarvis/billing/budget.py:LIMIT_MIN}} to {{fact:src/jarvis/billing/budget.py:LIMIT_MAX}}; lowering it is immediate, and raising or removing it asks you first.
+- [count:{{fact:src/jarvis/billing/ledger.py:LEDGER_DAYS}}] A daily ledger keeps counts only, calls, tokens and characters, for {{fact:src/jarvis/billing/ledger.py:LEDGER_DAYS}} days, and never a word of a message.
+- [show:example] In the example, a long research question near the month's end takes you just past your limit, because the check happens before each call.
+- Your next question is told the limit is used up, and that you can raise it in Vitals or switch to the free brain.
+- [show:costs] The meter itself costs nothing: Frankfurter needs no key and makes no charge.
+- [show:fails] [count:₹{{fact:src/jarvis/billing/fx.py:DEFAULT_RATE}}] If the day's rate can't be fetched, the last stored rate is used, or else the built-in one of ₹{{fact:src/jarvis/billing/fx.py:DEFAULT_RATE}}.
+- If your limit or the month's total can't be read, no paid call is made, and a damaged total never reads as nothing spent.
+- [page:pg_card_c55] [show:title] The third part is the Vitals board itself.
+- [show:plain] It is one board for everything with a limit or a renewal date, each line green, amber or red, and JARVIS tells you once when a line gets worse.
+- You only ever type a key's name, limit and expiry, never the key itself.
+- [show:how] [count:{{fact:settings.vitals_expiry_amber_days}}] A line turns amber at {{fact:settings.vitals_amber_fraction}} of its limit, or within {{fact:settings.vitals_expiry_amber_days}} days of its expiry, and red at the limit or once expired.
+- [count:{{fact:src/jarvis/vitals/own.py:SOURCE_TIMEOUT_S}}] Each of JARVIS's own sources gets {{fact:src/jarvis/vitals/own.py:SOURCE_TIMEOUT_S}} seconds, so a slow one turns only its own line "unknown", and never slows the board.
+- [count:{{fact:src/jarvis/vitals/models.py:MAX_MANUAL}}] You can add up to {{fact:src/jarvis/vitals/models.py:MAX_MANUAL}} lines of your own, and anything that looks like a credential is refused, on every way in.
+- [count:{{fact:src/jarvis/vitals/job.py:POLL_EVERY_S}}] A background job looks at most every {{fact:src/jarvis/vitals/job.py:POLL_EVERY_S}} seconds, and alerts only when a line crosses upwards.
+- [count:{{fact:src/jarvis/vitals/brief.py:MAX_LINES}}] The morning brief names at most {{fact:src/jarvis/vitals/brief.py:MAX_LINES}} amber or red lines, and you can ask about them by voice.
+- [show:example] In the example, a domain renewal you added turns amber within the warning days, with one alert, and red with one more on the day it expires.
+- [show:costs] It costs nothing: only meters, arithmetic and fixed words.
+- [show:fails] A meter that can't be read makes its line "unknown", which never alerts, and a failed alert is tried again on the next tick.
+- [page:pg_card_c56] [show:title] The fourth part is the systems check.
+- [show:plain] Say "Jarvis, run a systems check", and a pop-up ticks through each part JARVIS depends on, then speaks a short report.
+- It says what works, what is broken, and what that breaks for you, all from fixed sentences, so it works even with the AI switched off.
+- [show:overview] Here is a systems check, from the probes to what you hear.
+- [node:ask] It starts when you ask, or when the background tick runs it.
+- [edge:ask>probes] [node:probes] [count:{{fact:src/jarvis/health/probes.py:PROBE_TIMEOUT_S}}] One probe per system runs side by side, read-only, each with its own limit of {{fact:src/jarvis/health/probes.py:PROBE_TIMEOUT_S}} seconds.
+- The brain's probe never calls a model; it only reads how the last real reply ended.
+- [count:{{fact:src/jarvis/health/service.py:CHECK_DEADLINE_S}}] A whole run has {{fact:src/jarvis/health/service.py:CHECK_DEADLINE_S}} seconds, and a probe still unfinished then counts as down, because it did not answer in time.
+- [edge:probes>rollup] [node:rollup] The results are rolled up into one overall status.
+- [edge:rollup>store] [node:store] The last report is kept.
+- [edge:rollup>brief] [node:brief] [count:{{fact:src/jarvis/health/briefing.py:MAX_SPOKEN}}] A briefing is built from fixed sentences, with the month's AI spend, and cut short past {{fact:src/jarvis/health/briefing.py:MAX_SPOKEN}} characters.
+- [edge:brief>speak] [node:speak] The pop-up speaks it to you.
+- [edge:rollup>debounce] [node:debounce] When the status changes, JARVIS asks whether the problem lasts: {{fact:src/jarvis/health/changes.py:DEBOUNCE_CHECKS}} checks, at least {{fact:src/jarvis/health/changes.py:DEBOUNCE_GAP_S}} seconds apart.
+- [edge:debounce>alert] [node:alert] If it does, an alert goes through the alert policy; only "down" rings, and "degraded" is a silent note.
+- [count:{{fact:src/jarvis/health/changes.py:RECOVERY_CHECKS}}] A recovery needs {{fact:src/jarvis/health/changes.py:RECOVERY_CHECKS}} clear checks.
+- [show:how] [count:{{fact:src/jarvis/health/tick.py:CHECK_EVERY_S}}] In the background, the check runs at most every {{fact:src/jarvis/health/tick.py:CHECK_EVERY_S}} seconds for an owner with a linked home, and on the morning tick for everyone.
+- [show:example] In the example, you ask for a check one evening, and every system turns green except Telegram.
+- JARVIS says alerts and Telegram chat won't reach you, offers a reminder to fix it, and you pick tomorrow morning for your calendar.
+- [show:costs] It costs nothing: the brain probe only reads what JARVIS already knows.
+- [show:fails] A probe that crashes or times out shows as down, with JARVIS's own reason, never a vendor's text.
+- A store that is down never fails the check, and asking for a check while one is running joins it, rather than starting another.
+- [page:pg_card_c67] [show:title] The fifth part is the self-health watch.
+- [show:plain] If jobs keep failing, a clock stops, your brief isn't made, errors pile up, spending jumps or a new version goes live, JARVIS tells you once.
+- These alerts ring only in waking hours, and when the trouble ends, a quiet note says so.
+- [show:how] A job skipped for lack of time never counts towards a streak, and one alert names every failing job, at most once an hour.
+- Two jobs do the watching, one on the frequent clock and one on the morning tick, and each reports the other's streak, never its own.
+- The two clocks watch each other, so a clock that stops, or never starts after a deploy, is said once an outage.
+- [count:{{fact:src/jarvis/selfwatch/spend.py:HISTORY_DAYS}}] The spend watch compares a day with the average of up to {{fact:src/jarvis/selfwatch/spend.py:HISTORY_DAYS}} days, and never speaks before {{fact:src/jarvis/selfwatch/spend.py:HISTORY_MIN}} days of history.
+- [count:{{fact:src/jarvis/selfwatch/texts.py:MAX_TRIES}}] Each alert is claimed once before it is sent, given back when no channel took it, and tried at most {{fact:src/jarvis/selfwatch/texts.py:MAX_TRIES}} times.
+- [show:example] In the example, the bills helper fails {{fact:settings.selfwatch_fail_streak}} times in a row one morning, and your phone shows that one job is failing.
+- It keeps failing, but you hear nothing more; once a fix is live, you are told of the new version, and a note says the helper works again.
+- [show:costs] It costs nothing: a few small records of names, counts and times, and never a log message.
+- [show:fails] If both clocks stop, nothing can speak up, but the Vitals item for the clocks shows when they stopped, the moment you look.
+- [page:pg_screen_vitals] [show:title] Now the Vitals screen in your console.
+- [show:plain] At the top it shows how quickly replies arrive, then "This month": the paid AI's cost so far in rupees, and your monthly limit.
+- Below is the board, each line with a plain status: OK, Watch, Act now or Unknown.
+- [show:how] The board groups keys and connections, allowances and quotas, and bills, with the worst first, in words, never colour alone.
+- "Track something JARVIS can't see" adds your own item; it never asks for a key's value, and refuses one if pasted.
+- [show:example] In the example, late in the month, you see a domain renewal marked Act now, and raise your limit, confirming it before it is saved.
+- [show:costs] The rupee figures are estimates, because Anthropic bills in US dollars and your bank converts.
+- [show:fails] [count:{{fact:src/jarvis/vitals/api.py:GET_PER_MINUTE}}] If an outside service doesn't answer, its chip says Unknown, and reading the board is limited to {{fact:src/jarvis/vitals/api.py:GET_PER_MINUTE}} times a minute.
+- [page:pg_service_frankfurter] [show:title] Last, Frankfurter.
+- [show:plain] It is a free service that publishes daily exchange rates, with no account and no key, and JARVIS asks it once a day for one number.
+- Nothing about you goes there: the request is the same for everybody.
+- [show:how] [count:{{fact:src/jarvis/billing/fx.py:FETCH_TIMEOUT_S}}] It is asked at most once a day, with a deadline of {{fact:src/jarvis/billing/fx.py:FETCH_TIMEOUT_S}} seconds and no retries, and a reply never waits for it.
+- [show:example] In the example, the Costs panel shows this month's Claude use in rupees, marked as an estimate, with the rate and its date beside it.
+- [show:fails] If Frankfurter doesn't answer, JARVIS keeps the last good rate, or else the default, and tries again the next day.
+- That is the Vitals chapter: every limit in one place, every cost in rupees, and a JARVIS that tells you once when something is wrong.

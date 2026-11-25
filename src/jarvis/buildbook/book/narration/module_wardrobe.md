@@ -1,0 +1,119 @@
+---
+chapter: module_wardrobe
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_wardrobe": "987f65c80f28f4fc"
+  "pg_card_c69": "9775643b22514a19"
+  "pg_card_c70": "963714a3c60d82d3"
+  "pg_card_c71": "7a750822969d10a3"
+  "pg_card_c72": "fd7afee853fc7e57"
+  "pg_card_c73": "87f2b2d657c2d3e9"
+  "pg_service_google_agent_platform": "eb4721a8ea3ad4b3"
+---
+- [page:pg_module_wardrobe] [show:title] This chapter is about your wardrobe in JARVIS, from a sock in the drawer to tomorrow's look.
+- [show:plain] Every piece you own gets its own record, with where it is kept and whether it is ready to wear.
+- Laundry follows the basket, the wash, drying, pressing and the dhobi, and asks you when something doesn't add up.
+- Ask what to wear tomorrow, and JARVIS picks a look by fixed rules from your calendar and the weather, then shows it on a plain 3D figure.
+- See it on me is an optional paid extra: one AI picture of you in a garment you might buy, after you agree to its price.
+- [show:overview] Here is the whole path, from a piece in the drawer to tomorrow's look.
+- [node:event] It starts with you: a tap in the panel, a scan from the phone's wardrobe camera, or a sentence.
+- [edge:event>ledger] Each one travels as an event into the piece's history, with the device's clock corrected and a retry applied only once.
+- [node:ledger] That history is only ever added to: a repeat of the same move changes nothing, and an older event never undoes a newer one.
+- [edge:ledger>review] When an event is ambiguous, it becomes a check for you instead of a guess.
+- [edge:ledger>ready] Otherwise the piece's state is settled: ready, in the laundry, or out at the dry-cleaner.
+- [node:ready] Only a ready piece may go into an outfit.
+- [edge:ready>rules] The ready pieces are handed to the outfit rules.
+- [node:rules] Those fixed rules weigh slots, dress codes, festivals such as Diwali or Holi, colours and rewear, against your day and the weather.
+- [edge:rules>figure] The chosen look travels to a try-on card beside the answer, holding only piece ids, which the AI never sees.
+- [node:figure] Your own device draws the look on your figure, from checked files, and nothing about it is sent.
+- [edge:figure>plan] [node:plan] When you tap Use this look, the look becomes a plan.
+- [edge:figure>seeme] For a garment you are thinking of buying, a side path leads to See it on me.
+- [node:seeme] It starts only after your typed YES, bound to the provider, the model, and where it runs.
+- [edge:seeme>cap] Each press passes every gate before spending: your consent, the AI on, the price you saw, and your monthly limit.
+- [node:cap] The cost is held in one step against your try-on cap, so two presses at once can't slip past it.
+- [edge:cap>picture] [node:picture] Only then do the photos go to Google's image model, and one picture comes back, labelled a generated preview.
+- [show:example] In the made-up example, Varun asks on Wednesday evening what to wear tomorrow, with a client meeting and rain forecast.
+- JARVIS suggests navy trousers, a white shirt and brown shoes, notes that the shirt needs pressing, and opens the figure already dressed.
+- On Friday he tries a green kurta from a shop photo, confirms the price, and gets a picture marked not a photo.
+- [show:costs] The catalogue, laundry, outfits and figure cost nothing: they are JARVIS's own code and records, and your device draws the figure.
+- [count:₹{{fact:settings.wardrobe_ai_tag_month_inr}}] Optional AI tagging of a piece's photo is capped at ₹{{fact:settings.wardrobe_ai_tag_month_inr}} a month.
+- [count:₹{{fact:settings.tryon_month_cap_inr}}] See it on me is paid per picture, price shown first, and capped at ₹{{fact:settings.tryon_month_cap_inr}} a month inside your overall limit.
+- [show:fails] Without JARVIS's encryption key, the wardrobe and try-on stay off, and nothing is stored in clear.
+- A device that can't draw the figure shows a plain checklist instead, and a retried picture never charges twice.
+- [page:pg_card_c69] [show:title] The first part is the wardrobe catalogue, and the ledger behind it.
+- [show:plain] It lists every piece you own, where it is kept, and its state: ready, in use, in the laundry, away for repair.
+- You ask where your black belt is, and JARVIS answers from the catalogue, which is sealed with its own key.
+- [show:how] [count:{{fact:settings.wardrobe_max_pieces}}] The catalogue is one sealed index of up to {{fact:settings.wardrobe_max_pieces}} pieces, each with a sealed history that is only added to.
+- Every change is one transaction, and the piece's whole history is replayed in time order.
+- An old unconfirmed event can't undo a newer confirmed one; if it would change availability, the piece is held for your review.
+- Search finds a piece by your words with no AI: type, colour, pattern and place words narrow the list.
+- Numbered QR labels carry codes only you can produce, and a scanned code counts only when it is one of yours.
+- [show:example] In the made-up example, Gautam's navy kurta and pyjama become pieces of their own, plus a set, kept in a drawer.
+- When an old message says his white shirt was clean, JARVIS ignores it, because Monday's confirmed basket scan is newer.
+- [show:costs] The catalogue costs nothing; only the optional AI tagging costs money, its price shown first.
+- [show:fails] An index that can't be read is never overwritten, and a restore whose seal fails writes nothing.
+- [page:pg_card_c70] [show:title] The second part is laundry.
+- [show:plain] It follows your clothes from the basket through washing, drying and pressing, back to ready.
+- It tracks what you send to a dry-cleaner too: the shop's name in your words, the bag, the pieces and the day they're due.
+- It prepares and reminds you, but never orders, pays, calls or messages a shop: no laundry tool has a way to.
+- [show:how] Every laundry change is one commit of the wardrobe's store, so a piece's state and the laundry records never disagree.
+- Your words count only when every word fits one piece; more than one match becomes a question, never a guess.
+- A doubtful piece is held, kept out of outfits, and its question is written in the same commit as the hold.
+- [count:{{fact:src/jarvis/wardrobe/laundry/loads.py:MAX_PIECES}}] A load holds at most {{fact:src/jarvis/wardrobe/laundry/loads.py:MAX_PIECES}} confirmed pieces, and a step on a piece outside that load is refused.
+- A shop's name that looks like a phone number or an address is refused, and returned pieces are checked in one by one.
+- [show:example] In the made-up example, Pooja puts the blue shirt in the laundry, but she owns more than one, so JARVIS asks which.
+- Later, when only some of her sarees come back from Lakshmi Dry Cleaners, the batch shows short until the last one returns.
+- [show:costs] Laundry costs nothing: plain code on JARVIS's own server, with no outside service and no AI call.
+- [show:fails] [count:{{fact:src/jarvis/wardrobe/laundry/review.py:MAX_OPEN}}] The review list keeps at most {{fact:src/jarvis/wardrobe/laundry/review.py:MAX_OPEN}} open checks, folding old ones together, but never dropping a hold.
+- A batch with no due date never sends an overdue alert.
+- [page:pg_card_c71] [show:title] The third part is outfits.
+- [show:plain] JARVIS picks an outfit from clothes that are actually clean and ready, for your calendar's occasion and tomorrow's weather.
+- It explains each choice, and when a look can't be completed, it says what to do, such as press the white shirt.
+- It works by fixed, readable rules, not by AI, so it works with the AI switched off too.
+- [show:how] Each slot is filled after fixed exclusions: formality, your never rules, rain, ready pieces only, and pieces another plan holds.
+- [count:{{fact:src/jarvis/wardrobe/styling/engine.py:MAX_ALTERNATIVES}}] What is left is ranked into a main look and up to {{fact:src/jarvis/wardrobe/styling/engine.py:MAX_ALTERNATIVES}} alternatives, each with reasons naming the pieces.
+- A plan's picks are its reservations, so the same shirt is never picked for two events on one day.
+- JARVIS reads only the one calendar you pick, only its times and the fields you allow, and never stores a title.
+- [count:{{fact:settings.wardrobe_calendar_refresh_min}}] It reads that calendar about every {{fact:settings.wardrobe_calendar_refresh_min}} minutes, and sends the ready note from {{fact:settings.wardrobe_plan_evening}} the evening before.
+- [show:example] In the made-up example, Rahul's board review tomorrow reads as business formal, so the evening note offers a light blue shirt and charcoal trousers.
+- When he drops that shirt in the basket by mistake, JARVIS marks the plan, suggests the white one, and tells him once.
+- [show:costs] Outfits cost nothing: plain rules, your calendar read about hourly, and the free Open-Meteo forecast.
+- [show:fails] With no weather, the look says weather unknown, assumed indoors; with no complete look, you get the gap and a next action.
+- [page:pg_card_c72] [show:title] The fourth part is the try-on figure.
+- [show:plain] Try it on shows a plain grey 3D figure, shaped from the measurements you type: height, shoulders, chest, waist, hips and inseam.
+- Each piece is a ready-made shape in its own colour, marked Approximate, with its real photo beside it.
+- The figure is drawn on your own phone or laptop, and nothing about it is sent anywhere.
+- [show:how] [count:{{fact:src/jarvis/wardrobe/tryon/model.py:EARLIER_MAX}}] Your measurements are kept sealed: the current set, one draft, and up to {{fact:src/jarvis/wardrobe/tryon/model.py:EARLIER_MAX}} earlier versions.
+- Every look is read fresh from the outfit rules and your wardrobe, and a private piece is never drawn.
+- The figure's files are served only when their fingerprints match the release's list.
+- Use this look re-checks every piece on the server, then locks every slot in one step.
+- [show:example] In the made-up example, Ananya types only her height and waist, and the figure fills in the rest, marked estimated.
+- A kurta still in the laundry shows only as a draft she can't confirm, so she swaps back and presses Use this look.
+- [show:costs] It costs nothing: your device draws the figure from files JARVIS serves itself, with no outside service and no AI.
+- [show:fails] With no 3D graphics, or a device too slow, the figure gives way to a checklist of photos, which still confirms the outfit.
+- [page:pg_card_c73] [show:title] The fifth part is See it on me.
+- [show:plain] When you are thinking of buying something, you give JARVIS the garment's photo, from a shop or a website screenshot.
+- It suggests pieces you already own to go with it, and Google's image model draws one picture of you in the combination.
+- It stays off until you type YES to a card that says exactly what is sent, to whom and where.
+- [show:how] Your one full-length photo is kept sealed, and the shop photo is kept as untrusted bytes, with no text ever read from it.
+- Each press checks every gate: pictures on, your YES current, only non-private pieces, and a price no higher than the one shown.
+- [count:₹{{fact:settings.tryon_month_cap_inr}}] Then the cost is reserved in one transaction against your try-on cap of ₹{{fact:settings.tryon_month_cap_inr}} a month, GST included.
+- [count:{{fact:settings.tryon_keep_days}}] A retry gets its first answer, so it never charges twice, and each picture is kept sealed for {{fact:settings.tryon_keep_days}} days unless you keep it.
+- Only the console can start a picture: no tool, chat, voice or Telegram message can.
+- [show:example] In the made-up example, Divya uploads a screenshot of a mustard kurta, and JARVIS suggests her white palazzo and tan sandals.
+- She presses the button showing the price, and one picture appears, marked as a generated preview, not a photo.
+- [show:costs] Each picture is priced from Google's token prices plus {{fact:settings.tryon_tax_pct}} per cent GST, in rupees, before you press.
+- [show:fails] If Google answers with an error, nothing is charged; a timeout after sending is treated as may be charged.
+- [page:pg_service_google_agent_platform] [show:title] Last, the outside service behind it: Google Agent Platform.
+- [show:plain] It is Google Cloud's paid service for running Google's AI models inside your own Google project.
+- [count:{{fact:src/jarvis/wardrobe/tryon/model.py:PAIR_MAX}}] JARVIS uses one of its image models for a preview of you in a new garment, with up to {{fact:src/jarvis/wardrobe/tryon/model.py:PAIR_MAX}} pieces you own.
+- What goes out: your full-length photo, the garment's photo, crops of your pieces, and an instruction of fixed words only.
+- By default Google processes it in its United States region, and as a paid Cloud service, it does not train on it.
+- [show:how] JARVIS signs in as its own Google service account, never with a developer key, which may train on content.
+- Before sending, a request with too many garments, words that aren't fixed, or an image that isn't a JPEG or PNG is refused.
+- [count:{{fact:src/jarvis/llm/tryon_gemini.py:CALL_S}}] A call gets {{fact:src/jarvis/llm/tryon_gemini.py:CALL_S}} seconds in all, and only the picture is taken; every text part is thrown away unread.
+- [show:example] In the made-up example, you photograph a navy linen shirt in a shop window, and JARVIS suggests your grey chinos with it.
+- [show:costs] Each picture is paid, shown in rupees with GST before you confirm, and both the monthly cap and your overall limit apply.
+- [show:fails] A refusal from Google charges nothing, but a picture Google blocks is billed, and named in a fixed word.
+- That is the Wardrobe chapter: every piece tracked, every look by fixed rules, and every paid picture only after your YES.

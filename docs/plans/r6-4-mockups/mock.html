@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en" data-theme="workshop" data-surface="night" data-book="r64">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JARVIS · Build book (R6.4 mockup)</title>
+<link rel="stylesheet" href="/static/console.css">
+<link rel="stylesheet" href="/static/console-book.css">
+<link rel="stylesheet" href="/book-r64.css">
+</head>
+<body>
+<div class="bk-app" id="app"></div>
+<script type="module">
+const q = new URLSearchParams(location.search);
+const surface = q.get('s') || 'night', view = q.get('v') || 'reader', phone = q.get('p') === '1';
+document.documentElement.dataset.surface = surface;
+const app = document.getElementById('app');
+if (phone) app.classList.add('bk-phone');
+const I = {
+  search: '<svg class="ic" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/><path d="m13.2 13.2 3.8 3.8"/></svg>',
+  play: '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 4.2v11.6L15.5 10z"/></svg>',
+  pause: '<svg viewBox="0 0 20 20" fill="currentColor"><rect x="5" y="4" width="3.4" height="12" rx="1"/><rect x="11.6" y="4" width="3.4" height="12" rx="1"/></svg>',
+  close: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m5 5 10 10M15 5 5 15"/></svg>',
+  menu: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3.5 6h13M3.5 10h13M3.5 14h13"/></svg>',
+  chev: '<svg class="bk-chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m8 6 4 4-4 4"/></svg>',
+  chevd: '<svg class="bk-chev" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 8 4 4 4-4"/></svg>',
+  resume: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10a6 6 0 1 0 2-4.5M4 4v3h3"/></svg>',
+  warn: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.1"/></svg>',
+  prev: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12.5 4-6 6 6 6"/></svg>',
+  next: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4 6 6-6 6"/></svg>',
+  prevp: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4v12M15 4l-7 6 7 6"/></svg>',
+  nextp: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4v12M5 4l7 6-7 6"/></svg>',
+  book: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h5a2 2 0 0 1 2 2V16a1.6 1.6 0 0 0-1.6-1.6H3zM17 4.5h-5a2 2 0 0 0-2 2V16a1.6 1.6 0 0 1 1.6-1.6H17z"/></svg>',
+};
+const code = (s) => s.replace(/`([^`]+)`/g, '<code>$1</code>');
+const top = () => `
+<header class="bk-top">
+  ${phone ? `<button class="bk-btn icon" aria-label="Contents">${I.menu}</button>` : ''}
+  <div class="bk-brand"><span class="bk-word">JARVIS</span>${phone ? '' : '<span class="k">Build book</span>'}</div>
+  ${phone ? '<span style="flex:1"></span>' : `<div class="bk-search">${I.search}<input type="search" aria-label="Search the book" placeholder="Search 153 pages" value="${view === 'search' ? 'expiry' : ''}"><span class="bk-kbd">/</span>${view === 'search' ? results() : ''}</div>`}
+  <div class="bk-tright">
+    ${phone ? `<button class="bk-btn icon" aria-label="Search">${I.search.replace('class="ic"', '')}</button>` : `<span class="bk-chip">R6.4 · v6.4.0 · 3f2a1c9</span><button class="bk-btn">Short tour</button>`}
+    <button class="bk-btn icon" aria-label="Close the book">${I.close}</button>
+  </div>
+</header>`;
+function results() {
+  const r = [
+    ['Vault and documents', 'Module', '…it finds an <mark>expiry</mark> date of 31 March 2027 in the PDF and asks her to confirm it.', true],
+    ['Document vault', 'Part', 'Fields found in a PDF, such as an <mark>expiry</mark> date, come back as a proposal you confirm.'],
+    ['Alerts and notifications', 'Module', 'Documents <mark>expiring</mark> soon reach the morning brief 30 days before.'],
+    ['Vitals, costs and the systems check', 'Module', 'A key 20 days from its <mark>expiry</mark> turns amber; the day before, red.'],
+    ['Vault', 'Screen', 'Each document shows its <mark>expiry</mark> and the last 4 of its number.'],
+  ];
+  return `<div class="bk-results" role="listbox" aria-label="Search results">
+    <div class="head"><span class="k">12 pages mention “expiry”</span><span class="k">↑↓ Enter</span></div>
+    ${r.map(([t, k, p, on]) => `<a class="bk-res${on ? ' on' : ''}" role="option" href="#"><span class="tt">${t}<span class="kind">${k}</span></span><p>${p}</p></a>`).join('')}
+    <div class="foot">Showing 5 of 12 · Enter opens the first · Esc closes</div></div>`;
+}
+const rail = () => `
+<nav class="bk-rail" aria-label="Contents">
+  <a class="bk-cont" href="#">${I.resume}<span><b>Continue: Document vault</b><small>Vault chapter · page 3 of 5</small></span></a>
+  <div class="bk-part"><span class="k">The story</span><span class="k">8</span></div>
+  <ul class="bk-nav">
+    ${['What JARVIS is', 'The running example', 'Data, hosting, security', 'How answers are made', 'Costs'].map((t, i) => `<li><a href="#"><span class="bk-dot${i < 2 ? ' read' : ''}"></span><span class="t">${t}</span><span class="m">${[6, 9, 7, 8, 4][i]} min</span></a></li>`).join('')}
+    <li><a href="#"><span class="bk-dot"></span><span class="t" style="color:var(--ink-3)">+3 more</span></a></li>
+  </ul>
+  <div class="bk-part"><span class="k">Modules</span><span class="k">18</span></div>
+  <ul class="bk-nav">
+    ${['Console and API', 'Chat and the brain router', 'Voice', 'Memory and knowledge'].map((t, i) => `<li><a href="#">${I.chev}<span class="t">${t}</span><span class="m">${[8, 14, 6, 7][i]} min</span></a></li>`).join('')}
+    <li><a class="open" href="#">${I.chevd}<span class="t">Vault and documents</span><span class="m">9 min</span></a>
+      <ul>
+        <li><a class="now" href="#"><span class="bk-dot read"></span><span class="t">Vault and documents</span></a></li>
+        <li><a href="#"><span class="bk-dot read"></span><span class="t">Attached documents</span></a></li>
+        <li><a href="#"><span class="bk-dot"></span><span class="t">Document vault</span></a></li>
+        <li><a href="#"><span class="bk-dot"></span><span class="t">DigiLocker import folder</span></a></li>
+        <li><a href="#"><span class="bk-dot"></span><span class="t">The Vault screen</span></a></li>
+      </ul></li>
+    ${['People and faces', 'Home bridge and cameras', 'Alerts and notifications', 'Approvals and passkeys'].map((t, i) => `<li><a href="#">${I.chev}<span class="t">${t}</span><span class="m">${[6, 10, 7, 9][i]} min</span></a></li>`).join('')}
+    <li><a href="#">${I.chev}<span class="t" style="color:var(--ink-3)">+10 more modules</span></a></li>
+  </ul>
+  <div class="bk-part"><span class="k">Screens</span><span class="k">23</span></div>
+  <div class="bk-part"><span class="k">Outside services</span><span class="k">31</span></div>
+</nav>`;
+const T = {
+  plain: 'This module is how documents reach JARVIS. Attaching files to a message (a PDF, a Word file, a spreadsheet, slides, a photo, a zip or a whole folder) lets JARVIS read them for that conversation; each file itself is thrown away and only its text stays with the chat. The vault is different: a locked cupboard for papers you keep, such as ID, insurance and certificates. Each file is sealed with its own key, JARVIS reminds you before something expires, and nothing opens until you prove it’s you.',
+  ex: 'Lakshmi drags her car insurance PDF and 2 photos of a dented bumper onto a message and asks what the policy covers. JARVIS reads all 3, strips the camera and location details from the photos, and answers. She then adds the policy to the vault; it finds an expiry date of 31 March 2027 in the PDF and asks her to confirm it. On 1 March 2027 a reminder says the policy expires in 30 days.',
+  how1: 'The paperclip and drag-and-drop in `console-attach.js` send each file to `POST /v1/attachments`, where `upload` judges its kind by its name and its bytes together, never by what the browser claims. A message carries at most 10 files, 40 MB together and 4 pictures.',
+  how2: 'The text is taken out by a limited child process, one file at a time: `read_workbook` reads only an Excel file’s values, never formulas or macros. Opening a vault file needs `unlock`: your passkey when you have one, otherwise a fresh Google sign-in — and `download` sends the file only after its audit line is written.',
+};
+const page = () => `
+<main class="bk-main" id="main"><article class="bk-page">
+  <div class="bk-crumb"><span class="k">Modules</span><span class="sep">›</span><span class="k">Vault and documents</span><span class="sep">›</span><span class="k">Page 1 of 5</span></div>
+  <h1 class="bk-h1">Vault and documents</h1>
+  <div class="bk-meta"><span>Written by the Workshop · 24 Nov 2026</span><span class="sep">·</span><span>4 min read</span>${phone ? '' : '<span class="sep">·</span><span>13 files of code</span>'}</div>
+  <div class="bk-play"><button class="pbtn" aria-label="Play the Vault chapter">${I.play}</button>
+    <span><b>Play the Vault chapter</b><small>5 pages, about 9 minutes · narrated with captions · your browser’s voice, ₹0</small></span>
+    <button class="bk-btn">Chapter list</button></div>
+  <section class="bk-sec"><h2 class="bk-h2">In plain words</h2><p class="bk-p bk-lead">${T.plain}</p></section>
+  <section class="bk-sec"><h2 class="bk-h2">Example</h2><div class="bk-ex"><span class="bk-tag">Made-up example</span><p>${T.ex}</p></div></section>
+  <section class="bk-sec"><h2 class="bk-h2">How it works</h2>
+    <div class="bk-fig" id="figHost"></div>
+    <p class="bk-p">${code(T.how1)}</p><p class="bk-p">${code(T.how2)}</p>
+    <span class="bk-more">${I.chevd} Where in the code · 13 files</span></section>
+  <section class="bk-sec"><h2 class="bk-h2">What it costs</h2>
+    <div class="bk-cost"><span class="n"><b>₹0</b><small>a month</small></span><p class="bk-p" style="margin:0">Taking text out of a file and keeping the vault cost nothing: both run on JARVIS’s own server with no outside service. Reading a long file into a reply costs the brain’s usual price, and the console shows a ₹ estimate before a costly send.</p></div></section>
+  <section class="bk-sec"><h2 class="bk-h2">When it fails</h2><ul class="bk-fails">
+    <li>${I.warn}<span>A file that is too big, unreadable, password-protected or of the wrong kind is refused in plain words.</span></li>
+    <li>${I.warn}<span>When the reader is busy, the upload is refused with a retry after 30 seconds.</span></li>
+    <li>${I.warn}<span>If the vault’s unlock can’t be written to the audit trail, nothing opens.</span></li></ul></section>
+  <nav class="bk-pn"><a href="#"><span class="k">‹ Previous chapter</span><b>Memory and knowledge</b></a><a class="next" href="#"><span class="k">Next page ›</span><b>Attached documents</b></a></nav>
+</article></main>`;
+const toc = () => `
+<aside class="bk-toc" aria-label="On this page"><span class="k">On this page</span>
+  <ol><li><a class="on" href="#">In plain words</a></li><li><a href="#">Example</a></li><li><a href="#">How it works</a></li><li><a href="#">What it costs</a></li><li><a href="#">When it fails</a></li></ol>
+  <span class="k">In this chapter</span>
+  <ol class="bk-chap"><li><a class="on" href="#">Vault and documents</a></li><li><a href="#">Attached documents</a></li><li><a href="#">Document vault</a></li><li><a href="#">DigiLocker import folder</a></li><li><a href="#">The Vault screen</a></li></ol>
+</aside>`;
+const player = () => `
+<div class="bk-player">
+  <div class="bk-stage"><div class="bk-fig" id="figHost"></div></div>
+  <aside class="bk-side" aria-label="This chapter">
+    <span class="k">${phone ? 'Vault chapter · page 1 of 5' : 'Chapter · narrated'}</span>
+    <h2>${phone ? 'Vault and documents' : 'Vault and documents'}</h2>
+    <p class="sub">${phone ? 'How it works · line 6 of 14' : '5 pages · about 9 minutes · your browser’s voice, ₹0'}</p>
+    ${phone ? '' : `<ol class="bk-steps">
+      <li class="now"><span class="no">1</span><span><b>Vault and documents</b><small>How it works · line 6 of 14</small></span></li>
+      <li><span class="no">2</span><span><b>Attached documents</b><small>2 min</small></span></li>
+      <li><span class="no">3</span><span><b>Document vault</b><small>2 min</small></span></li>
+      <li><span class="no">4</span><span><b>DigiLocker import folder</b><small>1 min</small></span></li>
+      <li><span class="no">5</span><span><b>The Vault screen</b><small>2 min</small></span></li></ol>`}
+  </aside>
+  <div class="bk-cap" aria-live="polite"><p>When you add a file, JARVIS first checks its kind and its size — <span class="said">by its name and its bytes together, never by what the browser claims.</span></p></div>
+  <nav class="bk-ctl" aria-label="Chapter controls">
+    <div class="grp">${phone ? '' : `<button class="bk-btn icon" aria-label="Previous page">${I.prevp}</button>`}<button class="bk-btn icon" aria-label="Previous line">${I.prev}</button></div>
+    <div class="grp main"><button class="play" aria-label="Pause (Space)">${I.pause}</button></div>
+    <div class="grp"><button class="bk-btn icon" aria-label="Next line">${I.next}</button>${phone ? '' : `<button class="bk-btn icon" aria-label="Next page">${I.nextp}</button>`}</div>
+    <div class="bk-prog"><div class="bk-segs" aria-hidden="true"><i class="now" style="--p:45%"></i><i></i><i></i><i></i><i></i></div><div class="bk-time"><span>1:08 / 9:05</span><span>Page 1 of 5</span></div></div>
+    <div class="grp"><button class="bk-btn" aria-pressed="true">CC</button><button class="bk-btn" aria-pressed="true">Sound</button>${phone ? '' : '<button class="bk-btn">1×</button>'}<button class="bk-btn">${phone ? 'Stop' : 'Stop · read'}</button></div>
+  </nav>
+</div>`;
+const sheet = () => `<div class="bk-scrim"></div><div class="bk-sheet" role="dialog" aria-label="Contents"><div class="bk-grab"></div>
+  <div class="bk-search" style="margin:0 0 14px">${I.search}<input type="search" aria-label="Search the book" placeholder="Search 153 pages"></div>
+  ${rail().replace('<nav class="bk-rail" aria-label="Contents">', '<nav aria-label="Contents">')}</div>`;
+const mini = () => `<div class="bk-mini"><button class="pbtn" aria-label="Play the Vault chapter">${I.play}</button><span><b>Play the Vault chapter</b><small>5 pages · about 9 min · ₹0</small></span></div>`;
+
+app.innerHTML = top() + (view === 'player'
+  ? player()
+  : `<div class="bk-body">${phone ? '' : rail()}${page()}${phone ? '' : toc()}</div>${phone ? (view === 'sheet' ? sheet() : (q.get('at') === 'how' ? mini() : '')) : ''}`);
+
+const flow = await (await fetch('/flow-vault.json')).json();
+const F = await import('/static/console-book-flow.js');
+const host = document.getElementById('figHost');
+const fig = F.figure(flow);
+if (fig && host) {
+  host.append(fig);
+  if (view === 'player') {
+    await new Promise((r) => setTimeout(r, 250));
+    const svg = host.querySelector('svg.fl-svg');
+    if (svg) {
+      svg.classList.add('fl-told');
+      svg.querySelector('[data-id="file"]')?.classList.add('fl-done');
+      const now = svg.querySelector('[data-id="kind"]'); now?.classList.add('fl-now');
+      const st = document.querySelector('.bk-stage'), b = now?.getBoundingClientRect(), sb = st?.getBoundingClientRect();
+      if (st && b && sb) st.scrollTop += (b.top + b.height / 2) - (sb.top + sb.height / 2);
+    }
+    host.querySelectorAll('.bk-flowfoot').forEach((n) => n.remove());
+  }
+}
+if (q.get('at') === 'how') { const m = document.getElementById('main'), h = [...document.querySelectorAll('.bk-h2')][2]; m.scrollTop = h.offsetTop - 24; }
+document.documentElement.dataset.ready = '1';
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "title": "A document, attached or kept in the vault",
+  "dir": "down",
+  "nodes": [
+    {"id": "file", "label": "You add a file", "kind": "person", "rank": 0, "col": 0},
+    {"id": "kind", "label": "Right kind and size?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/documents/limits.py"},
+    {"id": "refused", "label": "Refused in plain words", "kind": "step", "rank": 1, "col": 1},
+    {"id": "read", "label": "Text taken out apart", "kind": "step", "rank": 2, "col": 0,
+     "ref": "src/jarvis/api/documents.py"},
+    {"id": "chat", "label": "Text kept with the chat", "kind": "store", "rank": 3, "col": 0},
+    {"id": "vault", "label": "Sealed in the vault", "kind": "store", "rank": 2, "col": 2,
+     "ref": "src/jarvis/api/vault.py"},
+    {"id": "inbox", "label": "DigiLocker Drive folder", "kind": "service", "rank": 1, "col": 2,
+     "ref": "src/jarvis/api/vault_inbox.py"},
+    {"id": "confirm", "label": "You confirm the expiry", "kind": "person", "rank": 3, "col": 3,
+     "ref": "src/jarvis/api/static/console-vault-add.js"},
+    {"id": "unlock", "label": "Passkey or fresh sign-in", "kind": "guard", "rank": 4, "col": 2,
+     "ref": "src/jarvis/api/static/console-vault.js"},
+    {"id": "audit", "label": "Audit line written", "kind": "guard", "rank": 5, "col": 2},
+    {"id": "open", "label": "One-time download", "kind": "step", "rank": 6, "col": 2}
+  ],
+  "edges": [
+    {"from": "file", "to": "kind"},
+    {"from": "kind", "to": "refused", "style": "side"},
+    {"from": "kind", "to": "read", "label": "attach"},
+    {"from": "read", "to": "chat"},
+    {"from": "kind", "to": "vault", "label": "keep"},
+    {"from": "inbox", "to": "vault", "style": "side"},
+    {"from": "vault", "to": "confirm", "label": "expiry found", "style": "side"},
+    {"from": "vault", "to": "unlock", "label": "open"},
+    {"from": "unlock", "to": "audit"},
+    {"from": "audit", "to": "open"}
+  ]
+}

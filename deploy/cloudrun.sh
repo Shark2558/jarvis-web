@@ -173,7 +173,8 @@ if [ "${ADD_CUSTOM:-n}" = "y" ] || [ "${ADD_CUSTOM:-n}" = "Y" ]; then
   [ -n "$C_URL" ] && [ -n "$C_MODEL" ] || die "Base URL and model id are required for the custom brain."
   case "$C_URL" in
     https://*) ;;
-    http://localhost*|http://127.0.0.1*|http://*.internal*|http://*.ts.net*) ;;
+    http://*.ts.net|http://*.ts.net[:/.]*) die "A Tailscale address needs https:// (Serve and Funnel give it a certificate): from the cloud, plain http would send the key in clear text." ;;
+    http://localhost*|http://127.0.0.1*|http://*.internal*) ;;
     *) die "Base URL must start with https:// (plain http is only allowed for local addresses)." ;;
   esac
   # The saved key belongs to ONE vendor. If the URL changed, do not reuse it against the new host.

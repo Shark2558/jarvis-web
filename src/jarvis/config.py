@@ -37,12 +37,22 @@ ENVS = frozenset({"dev", "staging", "prod"})  # JARVIS_ENV (R6.2 L3: nothing els
 _HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"  # R13
 
 
+def _is_tailnet_name(host: str) -> bool:
+    """A Tailscale MagicDNS / Funnel name: `ts.net` or anything under it (a trailing dot too)."""
+    h = host.lower().rstrip(".")
+    return h == "ts.net" or h.endswith(".ts.net")
+
+
 def _is_private_host(host: str) -> bool:
-    """Loopback, RFC1918/ULA, link-local, or a bare/local name — plain http is tolerable there."""
+    """Loopback, RFC1918/ULA, link-local, or a bare/local name — plain http is tolerable there.
+    A Tailscale name (`*.ts.net`) is NOT (R6.4 D8): seen from Cloud Run it resolves through public
+    DNS to Tailscale's relays (Funnel), so plain http would send the key across the Internet."""
     import ipaddress
 
     h = host.lower()
-    if h in ("localhost", "host.docker.internal") or h.endswith((".local", ".internal", ".ts.net")):
+    if _is_tailnet_name(h):
+        return False
+    if h in ("localhost", "host.docker.internal") or h.endswith((".local", ".internal")):
         return True
     try:
         ip = ipaddress.ip_address(h)
@@ -759,6 +769,12 @@ class Settings(BaseSettings):
         u = urlsplit(v.strip())
         if u.scheme not in ("http", "https") or not u.hostname:
             raise ValueError("JARVIS_OPENAI_COMPAT_BASE_URL must be an http(s) URL with a host")
+        if u.scheme == "http" and _is_tailnet_name(u.hostname):
+            raise ValueError(
+                "JARVIS_OPENAI_COMPAT_BASE_URL uses http:// to a Tailscale name; use https:// "
+                "(Tailscale Serve and Funnel give it a certificate). From the cloud the API key "
+                "would cross the Internet in clear text"
+            )
         if u.scheme == "http" and not _is_private_host(u.hostname):
             raise ValueError(
                 "JARVIS_OPENAI_COMPAT_BASE_URL uses http:// to a non-local host; use https:// "

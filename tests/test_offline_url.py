@@ -1,7 +1,7 @@
 # tests/test_offline_url.py -- R1 C (D10): the SSRF-safe rule for the laptop's tunnel URL.
 # Only https://<machine>.<tailnet>.ts.net[:443|:8443|:10000][/v1]; no IP literal, userinfo, query or
-# fragment; every resolved address must be public. Settings' _is_private_host lets .ts.net use plain
-# http, so this is a separate, stricter rule.
+# fragment; every resolved address must be public. Settings' _is_private_host lets local addresses
+# use plain http, so this is a separate, stricter rule.
 from __future__ import annotations
 
 import pytest

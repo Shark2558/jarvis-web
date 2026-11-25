@@ -97,7 +97,8 @@ def price_unknown(model: str, provider: str = "") -> bool:
 
 def dearest() -> Price:
     """The dearest known price of each kind of token in the table in force: what the owner's limit
-    counts a "price unknown" reply at (an upper estimate, never ₹0)."""
+    counts a "price unknown" reply at (an upper estimate, never ₹0; a vendor dearer than every
+    model here would still be counted low)."""
     table = _table.values()
     return Price(
         input_per_mtok=max(p.input_per_mtok for p in table),

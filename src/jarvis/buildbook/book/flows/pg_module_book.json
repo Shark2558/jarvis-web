@@ -5,7 +5,7 @@
     {"id": "code", "label": "The release's code", "kind": "store", "rank": 0, "col": 0},
     {"id": "facts", "label": "Fact pack from the code", "kind": "step", "rank": 1, "col": 0,
      "ref": "src/jarvis/buildbook/gen/facts.py"},
-    {"id": "pages", "label": "Workshop's pages, checked", "kind": "guard", "rank": 1, "col": 1,
+    {"id": "pages", "label": "Pages and scripts, checked", "kind": "guard", "rank": 1, "col": 1,
      "ref": "src/jarvis/buildbook/gen/pages_cli.py"},
     {"id": "tour", "label": "Tour script filled in", "kind": "step", "rank": 2, "col": 0,
      "ref": "src/jarvis/buildbook/gen/tour.py"},
@@ -19,8 +19,10 @@
      "ref": "src/jarvis/api/static/console-book-reader.js"},
     {"id": "show", "label": "Tour or guest show", "kind": "step", "rank": 5, "col": 1,
      "ref": "src/jarvis/api/static/console-book-show.js"},
-    {"id": "full", "label": "Full book, flowcharts", "kind": "step", "rank": 5, "col": 2,
-     "ref": "src/jarvis/api/static/console-book-pages.js"}
+    {"id": "full", "label": "Full book, search", "kind": "step", "rank": 5, "col": 2,
+     "ref": "src/jarvis/api/static/console-book-read-app.js"},
+    {"id": "chapter", "label": "A chapter told aloud", "kind": "step", "rank": 6, "col": 2,
+     "ref": "src/jarvis/api/static/console-book-chapter.js"}
   ],
   "edges": [
     {"from": "code", "to": "facts"},
@@ -33,6 +35,7 @@
     {"from": "vault", "to": "open"},
     {"from": "open", "to": "sections"},
     {"from": "open", "to": "show"},
-    {"from": "open", "to": "full"}
+    {"from": "open", "to": "full"},
+    {"from": "full", "to": "chapter", "label": "Play"}
   ]
 }

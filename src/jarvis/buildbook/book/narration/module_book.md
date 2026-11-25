@@ -1,0 +1,117 @@
+---
+chapter: module_book
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_book": "0126027ebd171eac"
+  "pg_card_c57": "c07c58ce443b201f"
+  "pg_screen_book": "a071d2cf60254aa1"
+  "pg_screen_show": "fd9ff66c66749d3a"
+---
+- [show:title] This chapter is about the Build Book: the book JARVIS keeps about itself, one for every release.
+- [show:plain] Each release's book is sealed in your vault, so you keep a true copy of every version you ran.
+- You open it in the Book panel with your passkey, and you can read it in several ways.
+- There are short sections on its architecture, its technology and libraries, its connections, workflows, limits, costs and decisions.
+- There is a narrated short tour, and a show you give a guest.
+- And there is the full book, on a page of its own, with contents, search, and a page for every part, module, screen and outside service.
+- Each chapter of the full book is told aloud too, line by line, while its flowchart lights up, just as you are hearing now.
+- [show:overview] Here is the journey of a release's book, from the code to you.
+- [node:code] It starts with the release's code.
+- [edge:code>facts] From the code, JARVIS builds a fact pack: every setting, route, limit and count a page may quote.
+- So no number in the book is typed by hand; each one is filled in from the code.
+- [edge:code>pages] Beside the code, the Workshop writes each page, its flowchart and each chapter's spoken script, while it builds JARVIS.
+- [node:pages] Every page and every script is checked before it is accepted.
+- A check turns away a page that names a file or a setting that doesn't exist, types a number, or holds anything personal or invented.
+- [edge:facts>tour] The fact pack also fills in the Workshop's fixed tour script, and times it.
+- [count:{{fact:src/jarvis/buildbook/tour_model.py:PACE_WPM}}] The tour is timed at {{fact:src/jarvis/buildbook/tour_model.py:PACE_WPM}} words a minute, and a guest's copy names no rupees.
+- [edge:facts>compile] The facts fill in every number on the pages too.
+- [edge:pages>compile] Then the written pages and the chapters' scripts are compiled into the release's full book.
+- A page that is missing, or fails a check, goes in as the generator's own plain text, so the book never breaks a build.
+- [edge:compile>vault] The finished book is sealed in your vault, beside the release's code.
+- [edge:vault>open] To open it, you need your passkey and a fresh Google sign-in.
+- [edge:open>sections] Then you read the book's short sections in the Book panel.
+- [edge:open>show] Or you play the tour, or give a guest the show.
+- [edge:open>full] Or you open the full book, with its contents and its search.
+- [edge:full>chapter] And from any page, Play tells that page's chapter aloud.
+- [show:example] In the made-up example, Ravi's JARVIS gets a new version on a Wednesday evening, and its book is sealed that night.
+- On Thursday he plays the short tour on his phone, as flat cards, because the screen is narrow.
+- On Friday he searches the full book for costs, opens the Costs page, and plays its chapter for a few minutes.
+- On Saturday, the Continue card takes him back to the very line where he stopped.
+- [show:costs] All of this costs nothing: the fact pack, the checks and the compile make no AI call.
+- JARVIS never asks an AI to write a page or a script, and search reads the sealed pages with no AI either.
+- A chapter is always told in your browser's own free voice.
+- Only a question you ask after a show is a paid AI reply.
+- [count:{{fact:settings.book_max_total_mb}}] The sealed books share your vault's space, at most {{fact:settings.book_max_total_mb}} megabytes in all.
+- [show:fails] A page that is missing or fails a check reads "Not written yet", and every other page still opens.
+- A chapter whose script is missing or fails a check has no Play button, and its pages still read.
+- And too many reads or searches in a minute are refused for a moment.
+- [page:pg_card_c57] [show:title] Now the part itself: the build book, and how a page reaches you.
+- [show:plain] With every release, JARVIS writes down its parts, the technology it uses, how they fit together, what each costs and where it falls short.
+- It seals that book and the release's code in your vault; no AI writes any of it, so there is nothing for you to approve.
+- [show:overview] Here is the road a single page takes, from the Workshop to your reader.
+- [node:workshop] The Workshop writes a page while it builds JARVIS.
+- [node:check] On every proposed change, the checks run against the page and the code it describes.
+- [edge:check>refused] A page that is out of date, or fails a check, is never merged.
+- [edge:check>compile] Once merged, the generator compiles the page, and fills in its numbers from this release's facts.
+- [edge:compile>plain] If a page is missing, its place is taken by the generator's plain text.
+- [edge:compile>release] The chapters go into the same pages file, each with the lines of its spoken script.
+- [edge:release>seal] Once the release is live, its book, code, pages and flowcharts are sealed in your vault.
+- [count:{{fact:src/jarvis/buildbook/model.py:KEEP}}] The vault keeps the newest {{fact:src/jarvis/buildbook/model.py:KEEP}} releases, and never seals at start-up.
+- [edge:seal>open] The book opens only with passkeys in force and a fresh Google sign-in.
+- [count:{{fact:settings.book_session_minutes}}] A reading session lasts at most {{fact:settings.book_session_minutes}} minutes, and ends after {{fact:settings.book_idle_minutes}} idle ones.
+- [edge:open>serve] Your session reads a kept release's pages, chapters and search straight from its sealed files.
+- [node:reader] And the full book shows you the page, with its flowchart.
+- [count:{{fact:src/jarvis/buildbook/writer/search.py:RESULTS_MAX}}] Search finds the pages that hold every word you type, at most {{fact:src/jarvis/buildbook/writer/search.py:RESULTS_MAX}} of them.
+- Play tells a chapter in the browser's voice, and lights each box and connector as it is told.
+- During a guest's show, your other consoles are held to the show until your passkey lifts the lock.
+- [count:{{fact:settings.book_talk_questions}}] The talk-through answers up to {{fact:settings.book_talk_questions}} questions a session, from the book alone.
+- [show:example] In the example, a new version goes live on a Sunday, and within minutes its book is sealed.
+- You open it with your fingerprint, tap Read the full book, then Vault, and press Play.
+- JARVIS tells the chapter while the boxes light up; later, you give a friend the short tour as a guest.
+- [show:costs] The book, its sealing, the full book, its search, its chapters, the show and the tour all cost nothing.
+- A question in the talk-through is one ordinary paid reply, counted against your monthly limit.
+- [show:fails] A book that can't be built never stops a deploy: the release goes live without it, and you get one notice.
+- A release sealed before its full book existed says so, and when the vault can't be read, the book asks you to try again in a moment.
+- A passkey lost during a guest show is recovered only by the emergency unlock, with the server's own Google Cloud access.
+- [page:pg_screen_book] [show:title] Next, the Book screen: the console's panel for the Build Book.
+- [show:plain] It shows whether this release's book is sealed, which releases are kept, and how much room they use.
+- [show:overview] Here is what happens when you open the book from it.
+- [node:tap] You choose Open for me, or Show a guest.
+- [node:fresh] JARVIS first asks whether your Google sign-in is from the last few minutes.
+- [edge:fresh>google] If it is older, the panel sends you to Google to sign in again, and picks up where it left off.
+- [edge:fresh>passkey] Then you touch your passkey; the book never settles for a sign-in alone.
+- [edge:passkey>guest] A guest's session goes straight to the show page, and holds nothing of yours.
+- [edge:passkey>mine] Your own session opens in the panel.
+- [edge:mine>sections] You read the book's sections, for this release or an older kept one.
+- [edge:mine>code] You download the sealed code of any kept release, through a ticket that works once.
+- Once it is in your Downloads, that zip is no longer encrypted.
+- [edge:mine>full] Read the full book moves your session to the full book's own page, in the same tab.
+- There, the contents, the page you read with its flowchart, and the search box are all to hand.
+- [edge:full>play] And a chapter's Play button starts a narrated chapter, like this one.
+- Short tour does the same for the show page, and a guest only ever reaches the show.
+- [edge:sections>end] When you are done, End session asks first, then ends the session and deletes its conversation.
+- [show:example] In the example, your sign-in is an hour old, so Google asks again, and then you touch your passkey.
+- You tap Read the full book, search for a meter, and follow the Vitals flowchart from a meter to an alert.
+- [show:costs] Reading the panel, the sections and the full book costs nothing, and a chapter is told in your browser's free voice.
+- [show:fails] While this release is still being sealed, the card says so, and the panel asks again by itself.
+- When the session runs out, the full book's page says the session ended, and to open the book again from the Book panel.
+- [page:pg_screen_show] [show:title] Last, the Build Book show, on a full-screen page of its own.
+- [show:plain] JARVIS speaks each line while a moving picture, or flat cards on a phone, shows what the line is about, with captions underneath.
+- You play, pause, step a line or a scene, jump to a chapter of the tour, and ask questions at the end.
+- [show:overview] Here is a guest's show, from start to finish.
+- [node:open] You open it for a guest from the Book panel.
+- [edge:open>passkey] And you confirm with your passkey.
+- [edge:passkey>lock] Your other consoles lock while the show plays.
+- [edge:passkey>show] The guest watches the narrated scenes, in the browser's own voice unless you chose the cloud voice.
+- [edge:show>ask] At the end, the guest asks questions, typed or spoken, about how JARVIS is built.
+- [count:{{fact:src/jarvis/api/book_show.py:QUESTION_MAX}}] A question may run to {{fact:src/jarvis/api/book_show.py:QUESTION_MAX}} characters, and anything that isn't about how JARVIS is built is refused.
+- [edge:ask>close] Then the closing plays, and the session's conversation is deleted.
+- [edge:close>resume] The page asks for your passkey.
+- [edge:resume>back] And with it, your console is back.
+- Your own tour remembers the scene you reached in this browser, and starts that scene again next time.
+- [show:example] In the example, a friend presses Begin the show, asks how JARVIS keeps data private, and gets a short answer.
+- [show:costs] Watching costs nothing, and a spoken question heard by the browser is free too.
+- Each question JARVIS answers is a short paid AI reply that counts towards your monthly limit.
+- [show:fails] If the cloud voice fails, the show carries on in the browser's voice, or with captions only.
+- If the connection drops, it says it can't reach JARVIS.
+- That is the Build Book: written while JARVIS is built, checked against the code, sealed with each release, and told to you aloud.

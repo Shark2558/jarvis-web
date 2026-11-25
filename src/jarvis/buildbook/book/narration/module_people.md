@@ -1,0 +1,107 @@
+---
+chapter: module_people
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_module_people": "54518f2f80c2bdf8"
+  "pg_card_c08": "8da523065bf676a6"
+  "pg_card_c21": "511926500fbfdfd0"
+  "pg_screen_faces": "3771e47d14401807"
+  "pg_screen_people": "5fdbcbabf6fabdb5"
+---
+- [page:pg_module_people] [show:title] This chapter is about people: who JARVIS may recognise at your door, and how it looks up a public figure.
+- [show:plain] Faces is the list of people JARVIS may recognise at your door, and greet or name in an alert.
+- Nobody is on it until you add them with a consent statement.
+- Their face pictures stay on your home laptop, and the cloud keeps only names, relations and consent records.
+- People research gives you a short profile of a public figure, or of someone you are checking for work, from public sources only.
+- In both, JARVIS never turns a face in a picture into a name.
+- [show:example] In the made-up example, Sunil adds his mother to Faces as family, and with her agreement he ticks the adult consent statement.
+- On the home laptop's own Faces page, he adds a few photos of her under the code the panel shows.
+- One morning the doorbell camera sees her, the match is sure enough, and his alert says she has arrived.
+- That evening he sends JARVIS a photo of a conference poster, and asks who the speaker is.
+- JARVIS says it doesn't identify people from pictures, but the poster's caption names Prof. Vasanth Iyer, so a "Look up" card appears.
+- Sunil presses it, and the People panel shows a short public profile, with links to the speaker's university page.
+- [show:how] Here is how it works.
+- [show:overview] This is the path of a face at the door, with consent, and beside it, a photo sent in chat.
+- [node:add] It starts when you add a person: a name, a relation, and whether it is a child.
+- [edge:add>consent] [node:consent] Your yes to the fixed consent statement travels with it: an adult's own, or a parent's or guardian's.
+- [edge:consent>refuse] [node:refuse] Without that yes, the person is refused.
+- [edge:consent>record] [node:record] With it, the cloud keeps a name and consent record, and it never receives or returns a picture.
+- [edge:record>photos] [node:photos] At home, the pictures go into the face library on your laptop, under a code, never a name.
+- The cloud only tells the laptop which codes have consent.
+- [count:{{fact:src/jarvis/homebridge/faces.py:MAX_PER_PERSON}}] A picture is refused for a code without consent, if it isn't a JPEG or PNG, or beyond {{fact:src/jarvis/homebridge/faces.py:MAX_PER_PERSON}} pictures a person.
+- [edge:photos>camera] [node:camera] Later, a camera at home sees a face, and the laptop compares it with that library.
+- [edge:camera>match] [node:match] [count:{{fact:src/jarvis/homebridge/faces.py:RECOGNITION_THRESHOLD}}] A match counts only for a consented person, at a score of at least {{fact:src/jarvis/homebridge/faces.py:RECOGNITION_THRESHOLD}}.
+- [edge:match>unknown] [node:unknown] Anyone else gives no match, so the cloud never hears a guess.
+- [edge:match>greet] [node:greet] A sure match for a consented person is greeted by name.
+- [node:picture] The other path starts with a photo you send in chat.
+- [edge:picture>guard] [node:guard] On that turn, a person's name is accepted only when you typed every word of it in your message.
+- [edge:guard>lookup] [node:lookup] A name printed in the picture, such as a caption, becomes a "Look up" card, and nothing is researched until you press it.
+- Anything else is refused in fixed words, and a web search on that turn carries only your words, the picture's words and plain search words.
+- Deleting someone asks for your passkey, or a fresh Google sign-in, from the console in your browser only.
+- [count:{{fact:src/jarvis/homebridge/faces.py:RETRY_S}}] A delete removes the library entry and every saved crop, and the laptop retries every {{fact:src/jarvis/homebridge/faces.py:RETRY_S}} seconds until nothing of that person is left.
+- People research takes a name and an optional role, and each profile comes back as a card with its own link, one tab a press.
+- [show:costs] Faces costs nothing: matching runs on your own laptop, and the cloud keeps only a small record.
+- People research uses web-search credits from the free allowance and, with the AI on, small checks by the fast brain.
+- [show:fails] With the laptop asleep, a delete waits, and the panel shows the person as "deleting" until the laptop is back.
+- [count:{{fact:src/jarvis/homebridge/faces.py:FRIGATE_TIMEOUT_S}}] If Frigate, the camera software, doesn't answer within {{fact:src/jarvis/homebridge/faces.py:FRIGATE_TIMEOUT_S}} seconds, the laptop page asks you to check it is running.
+- [count:{{fact:src/jarvis/api/faces.py:CHANGES_PER_MINUTE}}] More than {{fact:src/jarvis/api/faces.py:CHANGES_PER_MINUTE}} changes a minute get a short wait.
+- And when the "Look up" card can't be shown with a reply, JARVIS says so, and asks you to type the name yourself.
+- [page:pg_card_c08] [show:title] Now the first part: faces with consent.
+- [show:plain] It is the short list of people the camera at home may recognise and greet by name.
+- A child needs a parent's or guardian's yes, and the cloud's records are sealed with JARVIS's own encryption.
+- [show:example] In the example, your friend Meera agrees to be recognised, so you add her, tick the consent statement, and add her photos on the laptop.
+- That evening the gate camera sees her, and your console's feed says Meera arrived at the gate.
+- She leaves and comes back soon after, and there is no second greeting.
+- A delivery rider at the gate is "someone JARVIS didn't recognise", never a guess.
+- When Meera later asks to be removed, you delete her with your passkey, and her name stops being used at once.
+- [show:how] A person starts as consented, and moves to enrolled when the laptop reports how many pictures it holds.
+- The cloud sends the laptop ids only, never names, and the laptop sends back counts only.
+- [count:{{fact:src/jarvis/faces/ports.py:RECOGNITION_THRESHOLD}}] An id becomes a name only when the person is enrolled, not being deleted, has consent on record, and scores at least {{fact:src/jarvis/faces/ports.py:RECOGNITION_THRESHOLD}}.
+- [count:{{fact:src/jarvis/faces/greeting.py:GREETING_GAP_S}}] One person is greeted at most once in {{fact:src/jarvis/faces/greeting.py:GREETING_GAP_S}} seconds, and a greeting never replaces or lowers an alarm.
+- Off the console, in Telegram, a notification or speech, a child is never named, and an adult only if you switched names in alerts on.
+- Consent older than a year brings a gentle question, without stopping anything.
+- The brain's only tool lists who is on the registry; it can't add, enrol or delete anyone.
+- [show:costs] It costs nothing: matching runs on your own laptop, never in a cloud vision service.
+- [show:fails] A low score, a name typed straight into the camera software, or a registry that can't be read, all give "someone JARVIS didn't recognise".
+- A deleted name stops resolving at once, and a registry that can't be decrypted is never overwritten.
+- [page:pg_card_c21] [show:title] The second part is people research.
+- [show:plain] It gives you a short, sourced profile of a public figure, or of someone you are meeting for work, from public sources only.
+- It is built not to become a tool for snooping: a check must prove a public or professional role before any link comes out.
+- [show:example] In the example, before a meeting on Monday, you ask about Ishaan Varma, founder of Tealeaf Robotics.
+- JARVIS runs one search, finds the company's own site and a news story naming him as founder, and returns his company page and a professional profile.
+- Later you ask where a neighbour lives, and JARVIS refuses in fixed words, before any search is spent.
+- [show:how] Your request is read first, with no AI, and private phrasing about homes, movements or relationships is refused.
+- Tricks like spaced letters or look-alike characters don't hide a word.
+- [count:{{fact:src/jarvis/people/gate.py:NEWS_MIN_SITES}}] A public figure must be shown by an encyclopaedia page or, with the AI on, by news on {{fact:src/jarvis/people/gate.py:NEWS_MIN_SITES}} different sites naming a public role.
+- A work subject must be tied to the organisation by a page the person didn't write themselves.
+- With the AI on, one fast check can only refuse, never upgrade, and any error fails closed.
+- Links are limited by kind, and never include personal social accounts.
+- Everything found is treated as untrusted, fenced before a model reads it, and nothing is written to memory.
+- [count:{{fact:src/jarvis/people/cache.py:TTL_S}}] Your last research is kept for {{fact:src/jarvis/people/cache.py:TTL_S}} seconds, and a refused name is never stored.
+- [count:{{fact:src/jarvis/people/research.py:RATE_BURST}}] Requests are limited per owner, a burst of {{fact:src/jarvis/people/research.py:RATE_BURST}} at a time.
+- [show:costs] Each research spends search credits one call at a time, so a refusal costs at most one.
+- With the AI on, it adds a small check and an optional summary, both fast-tier calls, metered against your monthly limit.
+- [show:fails] A subject that can't be verified gets a fixed refusal, with no links, and a classifier error is a refusal too, never a guess.
+- A follow-up is checked together with the request before it, so "what about her home?" can't slip through on its own.
+- [page:pg_screen_faces] [show:title] Now the screens, starting with Faces.
+- [show:plain] Here you keep only names, how you know them and the consent record; the pictures are added on your home laptop and never leave it.
+- [show:example] In the example, your friend Kiran visits on Sundays and is happy to be greeted.
+- You add Kiran as a friend, tick VIP so that their arrival is always worth a ring, and confirm they agreed.
+- The next Sunday, the feed in Home says Kiran arrived at the gate, and your phone rings with the alert.
+- [show:how] Each row shows the relation, whether it is a VIP, when consent was given, and how many pictures the laptop holds.
+- Under the list is the way to the laptop's own page for pictures, which works only on your home laptop, with a note on whether it is online.
+- When consent is due for renewal, a "Yes, still OK" button confirms it again.
+- [show:costs] It costs nothing, because matching runs on your own laptop.
+- [show:fails] If the passkey check is cancelled or fails, nothing is deleted, and the panel says the check didn't finish.
+- [page:pg_screen_people] [show:title] Last, the People panel.
+- [show:plain] You type a name, and a role or organisation if the name is common, and JARVIS returns a short dossier, with a card for each public profile.
+- Nothing is saved, and the same panel holds the Brain mode switch, AI or No-AI.
+- [show:example] In the example, before tomorrow's meeting with Dr Farida Rahman, you type her name and her hospital, and press Research.
+- The panel shows a short summary and cards for her public profiles, and each press of "Open next" opens one of them.
+- You press Speak to hear the summary while you get ready.
+- [show:how] The dossier holds the public profiles, short findings with their sites, a summary when the AI is on, and a note when several people share the name.
+- The last dossier of this session comes back when the console starts again, and switching the AI back on asks you first.
+- [show:costs] A search uses web search credits, and the summary is written by the paid AI; in No-AI mode, the dossier is links only.
+- [show:fails] With no name, the panel asks for one, and when several people share it, it asks you to add a role or organisation.
+- That is the People chapter: faces only with consent and kept at home, and profiles only of public lives.

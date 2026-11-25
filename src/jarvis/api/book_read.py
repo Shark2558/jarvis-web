@@ -24,6 +24,11 @@ JS = "application/javascript"
 READ_ASSETS: dict[str, str] = {
     "book-read.css": "text/css",  # I0: the Book-only tokens and the page's layout (D2, D3)
     "console-book-read.js": JS,  # A: contents, page, search, continue (I0: the token hand-off)
+    "console-book-read-app.js": JS,  # A: the reader (contents, the page, keys, the phone's sheet)
+    "console-book-read-data.js": JS,  # A: the routes' shapes checked, the places kept, helpers
+    "console-book-read-page.js": JS,  # A: one page, "On this page", "In this chapter"
+    "console-book-read-rail.js": JS,  # A: the contents rail and the Continue card
+    "console-book-read-search.js": JS,  # A: the search box and its results (D4)
     "console-book-chapter.js": JS,  # B: the chapter player (ES module)
     "console-book-fx.js": JS,  # B: the effects engine, D11 (ES module, imported by the player)
 }

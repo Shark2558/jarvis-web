@@ -11,7 +11,7 @@ sources:
   "src/jarvis/health/INTEGRATION.md": "9643d8c66c61a9e9"
   "src/jarvis/health/__init__.py": "b6edf4d454fb6f65"
   "src/jarvis/health/api.py": "79f1e040aff58027"
-  "src/jarvis/health/briefing.py": "327ad9bf679ee17f"
+  "src/jarvis/health/briefing.py": "3a504f8ef1da25b4"
   "src/jarvis/health/changes.py": "903ed18e4b71bff0"
   "src/jarvis/health/models.py": "5adc114e38fff732"
   "src/jarvis/health/probes.py": "f43d09526ba73748"
@@ -34,7 +34,7 @@ At 9 pm you say "Jarvis, run a systems check". The pop-up lists seven systems; s
 `brain_probe` never calls a model: it only reads how the router's last real reply ended, so the check costs nothing and works with the brain off.
 A whole run has {{fact:src/jarvis/health/service.py:CHECK_DEADLINE_S}} seconds; a probe still unfinished then counts as down, "did not answer in time", and the report still arrives (`HealthService`).
 `rollup` turns the results into one overall status, and `HealthStore` keeps the last report in `health_last` (`src/jarvis/health/report.py`).
-`compose_briefing` builds the spoken report from fixed sentences, adding the month's AI spend and any allowance at {{fact:src/jarvis/health/briefing.py:ALLOWANCE_WARN_PERCENT}} per cent or more, cut short past {{fact:src/jarvis/health/briefing.py:MAX_SPOKEN}} characters (`src/jarvis/health/briefing.py`).
+`compose_briefing` builds the spoken report from fixed sentences, adding the month's AI spend (with replies of no known price said as "plus up to" their upper estimate, which its percentage counts too) and any allowance at {{fact:src/jarvis/health/briefing.py:ALLOWANCE_WARN_PERCENT}} per cent or more, cut short past {{fact:src/jarvis/health/briefing.py:MAX_SPOKEN}} characters (`src/jarvis/health/briefing.py`).
 `plan` decides what to tell you: a fault must hold for {{fact:src/jarvis/health/changes.py:DEBOUNCE_CHECKS}} checks at least {{fact:src/jarvis/health/changes.py:DEBOUNCE_GAP_S}} seconds apart, a recovery needs {{fact:src/jarvis/health/changes.py:RECOVERY_CHECKS}} clear checks, only "down" rings, and "degraded" is a silent note (`src/jarvis/health/changes.py`).
 `HealthTickJob` runs the check in the background at most every {{fact:src/jarvis/health/tick.py:CHECK_EVERY_S}} seconds per owner with a linked home, and on the morning tick for everyone (`src/jarvis/health/tick.py`).
 `set_reminder` turns a concern into a calendar reminder with fixed words at one of three fixed times, through the tool gateway like any other call (`src/jarvis/health/remind.py`).

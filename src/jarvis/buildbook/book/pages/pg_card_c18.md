@@ -6,7 +6,7 @@ sources:
   "src/jarvis/api/static/console-approvals.js": "78988c35de701d28"
   "src/jarvis/api/static/console-approve-all.js": "1cd7335bb2a31ec1"
   "src/jarvis/core/approve_all.py": "59f16ea07d5207c5"
-  "src/jarvis/core/brain_decisions.py": "c952c68c5f5ad1d6"
+  "src/jarvis/core/brain_decisions.py": "01cc210182d5e7a3"
   "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
   "src/jarvis/tools/calendar_cards.py": "d85a1179488c9292"
   "src/jarvis/tools/card.py": "5a9985efcfe0b89a"
@@ -30,7 +30,7 @@ One card failing never stops the others, and the reply names each result in fixe
 `src/jarvis/api/static/console-approve-all.js` freezes the batch shown on the button, so a tap never lands on cards you haven't seen.
 
 ## What it costs
-The cards themselves cost nothing: they are written by code, not AI (`src/jarvis/tools/card.py`). After a decision, one ordinary brain reply tells you the outcome, or fixed words when no AI is available (`narration`).
+The cards themselves cost nothing: they are written by code, not AI (`src/jarvis/tools/card.py`). After a decision, one ordinary brain reply tells you the outcome, or fixed words when no AI is available (`narration`). That reply is priced like any other, and one from a model with no known price is marked "price unknown", never ₹0 (`response`).
 
 ## When it fails
 A card whose action changed since you saw it is withdrawn, not run (`approved`). An irreversible card with passkeys in force needs your passkey and never runs through Approve all (`src/jarvis/core/approve_all.py`). A card already decided or expired answers that it was already handled (`DocApprovalStore`). When no AI can describe a batch, you get the cards' own results in plain words, never "Done" for something half done (`response`).

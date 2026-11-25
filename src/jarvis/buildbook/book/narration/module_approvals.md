@@ -4,11 +4,11 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
   "pg_module_approvals": "178743f9bda25535"
-  "pg_card_c18": "8f43acbd09433697"
+  "pg_card_c18": "d6c001daf7baf35a"
   "pg_card_c28": "6d86fa4ce30366a8"
   "pg_card_c51": "d6b728ee331b13d5"
   "pg_card_c52": "1d94e343328a1fef"
-  "pg_screen_approvals": "e1a13e4e891f0782"
+  "pg_screen_approvals": "86326e0b75ab9329"
 ---
 - [page:pg_module_approvals] [show:title] This chapter is about JARVIS's conscience: how it asks before it acts, and how you say yes.
 - [show:plain] Every action JARVIS takes for you passes one door, the tool gateway, which may do it, ask you first, or refuse.
@@ -49,6 +49,7 @@ pages:
 - [show:example] In the example, three events from a school circular become three cards, and Approve all adds two while Google is busy for the third.
 - The reply says so plainly, and that card waits with its own Approve, for another try.
 - [show:costs] The cards themselves cost nothing, because code writes them.
+- The one reply after a decision is priced like any other, and one from a model with no known price is marked price unknown, never as free.
 - [show:fails] When no AI can describe a batch, you get each card's result in plain words, never "Done" for something half done.
 - [page:pg_card_c28] [show:title] The second part is the tool gateway, and its audit trail.
 - [show:plain] Every request passes one gate, and every tool carries a risk class: read-only, reversible or irreversible.
@@ -106,7 +107,7 @@ pages:
 - [edge:chat>list] [node:list] And the card leaves the list.
 - [show:example] In the example, a card to e-mail Meera the agenda has a typo, so you press Decline and ask JARVIS to fix it.
 - The new card looks right, you press Approve, and Chat confirms the mail went.
-- [show:costs] Approving costs nothing by itself, and a paid reply after it shows its rupees in Chat.
+- [show:costs] Approving costs nothing by itself, and a paid reply after it shows its rupees in Chat, or price unknown when its model has no known price.
 - [show:fails] If the list fails to load, the count shows a dash, never a made-up zero.
 - If a passkey check is cancelled, the card says so, and nothing runs.
 - That is the Approvals chapter: one gate for every action, cards written by code, and nothing final without your own touch.

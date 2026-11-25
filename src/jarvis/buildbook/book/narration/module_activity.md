@@ -3,8 +3,8 @@ chapter: module_activity
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_module_activity": "eb08eda1beee7130"
-  "pg_card_c12": "e0735532b4fcd6df"
+  "pg_module_activity": "3db017a8e0ea33a8"
+  "pg_card_c12": "4736d32de39979b6"
   "pg_card_c48": "f6e79c1219e4e0ff"
   "pg_screen_activity": "fc492fc77b8c17d9"
 ---
@@ -38,7 +38,7 @@ pages:
 - [edge:gone>back] [node:back] Otherwise it is put back in Google with an id chosen in advance, so a retried restore finds the first copy instead of making two.
 - A restore writes an audit line, and a "You restored" row in Activity.
 - [count:{{fact:src/jarvis/api/activity.py:AUDIT_WINDOW}}] The panel also checks the newest {{fact:src/jarvis/api/activity.py:AUDIT_WINDOW}} entries of the audit trail, and shows "Log verified" while they still check out.
-- "Remove now" drops a copy at once, and for a kept item such as a vault file, a note or a thing, it first asks for your passkey or a fresh Google sign-in.
+- "Remove now" drops a copy at once, and for a vault file, a note, a thing or a wardrobe piece, it first asks for your passkey or a fresh Google sign-in.
 - [show:costs] It costs nothing in rupees: both lists live in JARVIS's own document store, and a restore is one ordinary call to Google.
 - [show:fails] An Undo pressed twice says "already restored", and an expired copy gets a plain answer.
 - When Google isn't linked, the restore says so in plain words, and any other failure asks you to try again in a moment.
@@ -53,7 +53,8 @@ pages:
 - Pressing Restore again just says "already restored".
 - [show:how] Each copy is kept per owner, written once and never changed, with an expiry date.
 - A restore is first claimed in a single transaction, so two clicks never make two copies.
-- Then the restorer for that kind rebuilds it: events and to-dos with their subtasks go back to Google, and vault documents, notes and things return in place.
+- Then the restorer for that kind rebuilds it: events and to-dos with their subtasks go back to Google, and vault documents, notes, things and wardrobe pieces return in place.
+- A wardrobe piece comes back under "Missing or in review", and its photos and history go only when its copy is removed for good.
 - A restorer that finds the original still there makes nothing, and says so.
 - An event comes back without its guests, so restoring never sends anyone an invitation.
 - [count:{{fact:src/jarvis/undo/store.py:PANEL_LISTED}}] Your list shows the newest {{fact:src/jarvis/undo/store.py:PANEL_LISTED}} items, and the brain's look-up sees the newest {{fact:src/jarvis/undo/store.py:MAX_LISTED}}, with titles fenced as outside text.

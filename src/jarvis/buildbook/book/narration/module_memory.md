@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
   "pg_module_memory": "545ef9ddc9a2ebfd"
-  "pg_card_c10": "560b7c67c7606727"
+  "pg_card_c10": "7844fbd1696c60a5"
   "pg_card_c23": "d4d52961acc41b12"
   "pg_card_c24": "f576964b8f9676df"
   "pg_screen_memory": "af573610489fa149"
@@ -64,6 +64,7 @@ pages:
 - The brain can save a fact, but it becomes a card when outside text was in view, and forgetting one always asks you.
 - [show:costs] With learning off, recall costs nothing: it is a database read and a little sorting.
 - [count:{{fact:src/jarvis/recall/extract.py:MAX_TOKENS}}] With learning on, each run is one small call of at most {{fact:src/jarvis/recall/extract.py:MAX_TOKENS}} tokens out, metered as memory, with a cap on runs a day.
+- A run on a model with no known price is still counted, as price unknown, never as nothing.
 - [show:fails] At your monthly limit learning is skipped, and nothing is counted.
 - [count:{{fact:src/jarvis/recall/lease.py:MAX_ATTEMPTS}}] A run that stops midway is picked up again, and a batch that fails {{fact:src/jarvis/recall/lease.py:MAX_ATTEMPTS}} times is skipped.
 - A memory record that can't be read is never overwritten.

@@ -3,18 +3,18 @@ page: pg_card_c55
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/__init__.py": "9aa09e18a3b4d0d0"
+  "src/jarvis/__init__.py": "c0533b5bcdc55981"
   "src/jarvis/about.py": "c310b3bdce51c135"
   "src/jarvis/api/static/console-vitals.js": "dd7cc4ee3cec2353"
   "src/jarvis/vitals/INTEGRATION-r51.md": "d438580f7e609bae"
   "src/jarvis/vitals/INTEGRATION.md": "7e64e6a74ab67000"
   "src/jarvis/vitals/__init__.py": "06d123afd3fa5674"
-  "src/jarvis/vitals/api.py": "c202f8299e5ac7c1"
-  "src/jarvis/vitals/auto.py": "11a539bc5ee8e42a"
+  "src/jarvis/vitals/api.py": "ed0a191b7a2b3219"
+  "src/jarvis/vitals/auto.py": "bb65160d0af385fe"
   "src/jarvis/vitals/brief.py": "007d850444bb6b29"
   "src/jarvis/vitals/guard.py": "6be1e7ffba9ddbde"
   "src/jarvis/vitals/job.py": "e11a30374de29c48"
-  "src/jarvis/vitals/models.py": "c53b7bd435b39219"
+  "src/jarvis/vitals/models.py": "d0e8b6bb2f24ef6a"
   "src/jarvis/vitals/own.py": "cd127fbc1ca087c6"
   "src/jarvis/vitals/own_cache.py": "16af887474ab0a93"
   "src/jarvis/vitals/service.py": "275d00127bb256c2"
@@ -27,11 +27,12 @@ sources:
 Vitals is one board for everything that has a limit or a renewal date: JARVIS's own keys and connections, the free allowances it lives on, your AI spending, and any bills or subscriptions you add yourself. Each line is green, amber or red, and JARVIS tells you once when a line gets worse. You only ever type a key's name, limit and expiry, never the key itself. At the foot of the panel, an About line says which version of JARVIS is running and the day it was built.
 
 ## Example (made up)
-You add a line "Domain renewal", expiring on 15 December. On 16 November it turns amber, because it is now within the warning days, and your phone gets one alert. Nothing more arrives until 15 December, when the line turns red and you get one more. Meanwhile the web search line reads "612 of 900 this month" in green, and the foot of the panel reads "About JARVIS · v6.3.2 · built 24 Nov 2026".
+You add a line "Domain renewal", expiring on 15 December. On 16 November it turns amber, because it is now within the warning days, and your phone gets one alert. Nothing more arrives until 15 December, when the line turns red and you get one more. Meanwhile the web search line reads "612 of 900 this month" in green, and the foot of the panel reads "About JARVIS · v6.4.0 · built 25 Nov 2026".
 
 ## How it works
 `VitalsService` builds the board from three sources: the lines you add, the meters other parts keep (spending, Google allowances, web credits), and JARVIS's own keys and connections from `Own` (`src/jarvis/vitals/service.py`).
 `status_of` works out each line's colour fresh every time: amber at {{fact:settings.vitals_amber_fraction}} of its limit or within {{fact:settings.vitals_expiry_amber_days}} days of its expiry, red at the limit or once expired, and "unknown" when a meter can't be read (`src/jarvis/vitals/status.py`).
+The AI spend line uses what your limit counts, the priced rupees plus any "price unknown" replies at their upper estimate, so its colour matches the limit, and its note says how many replies had no known price (`src/jarvis/vitals/auto.py`).
 `Own` asks each of its sources with a {{fact:src/jarvis/vitals/own.py:SOURCE_TIMEOUT_S}}-second limit, so one slow source turns its own line "unknown" and never slows the board (`src/jarvis/vitals/own.py`).
 Your own lines are a `Provider` each, at most {{fact:src/jarvis/vitals/models.py:MAX_MANUAL}}, kept in `vitals_providers` with their names in `vitals_index` (`VitalsStore`).
 `looks_like_a_key` refuses any label or note that looks like a credential, on every way in, so a key's value never gets stored (`src/jarvis/vitals/guard.py`).

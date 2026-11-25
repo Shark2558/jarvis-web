@@ -3,13 +3,13 @@ chapter: module_vitals
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_module_vitals": "9f38958fd42a1f97"
+  "pg_module_vitals": "9cf1677df06d9523"
   "pg_card_c44": "82626a80cc75e907"
-  "pg_card_c54": "1d8a71db60e5e8a9"
-  "pg_card_c55": "acabb33de1f8d805"
-  "pg_card_c56": "71d81afe8cf66ed4"
+  "pg_card_c54": "c0fb0155b89ba5f3"
+  "pg_card_c55": "db30a6e13f2c6481"
+  "pg_card_c56": "1014d9b2e02dfb36"
   "pg_card_c67": "d886a2ba380e16b0"
-  "pg_screen_vitals": "d096e373d8bbdc99"
+  "pg_screen_vitals": "d82f96d2d0d69fdd"
   "pg_service_frankfurter": "572319c24dce3f86"
 ---
 - [page:pg_module_vitals] [show:title] This chapter is about JARVIS keeping an eye on itself, and on everything that has a limit.
@@ -39,6 +39,7 @@ pages:
 - [show:costs] It all costs nothing: plain code on JARVIS's existing clocks, with no model call, inside the database's free daily allowance.
 - [show:fails] A record that can't be read shows "unavailable", and never hides the rest of the board.
 - Each watch job's own failures are reported by the other one, never by itself, and an alert that reached nobody is raised again on the next run.
+- A systems check asked for while one runs joins that run, and is turned away as busy only when the run already has its fill of listeners.
 - [page:pg_card_c44] [show:title] Now the first part: the free allowance ledger.
 - [show:plain] Google gives a free monthly allowance of Maps searches and routes, and a free daily allowance of YouTube look-ups.
 - [count:{{fact:src/jarvis/quota/ledger.py:STOP_PERCENT}}] JARVIS counts every call before it is made, and stops at {{fact:src/jarvis/quota/ledger.py:STOP_PERCENT}} per cent of the free amount, so Maps and YouTube never become a bill.
@@ -54,6 +55,8 @@ pages:
 - Once the limit is reached, JARVIS makes no more paid calls that month, while free brains keep answering.
 - [show:how] Before every call to a paid brain, or to one whose price is unknown, this month's rupees are checked against your limit.
 - A reply from a model with no price is never counted as nothing: the limit counts it at the dearest known price, an upper estimate.
+- A background job that hands over only a cost, such as the morning brief, counts on such a brain as one price unknown call of a fixed, generous size.
+- With Gemini's paid tier switched on, Gemini replies are priced at Google's paid-tier rates, not as free.
 - [count:{{fact:src/jarvis/billing/fx.py:RATE_MAX}}] The day's dollar rate comes from Frankfurter, and only a rate between {{fact:src/jarvis/billing/fx.py:RATE_MIN}} and {{fact:src/jarvis/billing/fx.py:RATE_MAX}} rupees is accepted.
 - [count:₹{{fact:src/jarvis/billing/budget.py:LIMIT_MAX}}] Your limit is a whole number of rupees, from {{fact:src/jarvis/billing/budget.py:LIMIT_MIN}} to {{fact:src/jarvis/billing/budget.py:LIMIT_MAX}}; lowering it is immediate, and raising or removing it asks you first.
 - [count:{{fact:src/jarvis/billing/ledger.py:LEDGER_DAYS}}] A daily ledger keeps counts only, calls, tokens and characters, for {{fact:src/jarvis/billing/ledger.py:LEDGER_DAYS}} days, and never a word of a message.
@@ -66,6 +69,7 @@ pages:
 - [show:plain] It is one board for everything with a limit or a renewal date, each line green, amber or red, and JARVIS tells you once when a line gets worse.
 - You only ever type a key's name, limit and expiry, never the key itself.
 - [show:how] [count:{{fact:settings.vitals_expiry_amber_days}}] A line turns amber at {{fact:settings.vitals_amber_fraction}} of its limit, or within {{fact:settings.vitals_expiry_amber_days}} days of its expiry, and red at the limit or once expired.
+- The AI spend line uses what your limit counts, any price unknown replies included at their upper estimate, and its note says how many there were.
 - [count:{{fact:src/jarvis/vitals/own.py:SOURCE_TIMEOUT_S}}] Each of JARVIS's own sources gets {{fact:src/jarvis/vitals/own.py:SOURCE_TIMEOUT_S}} seconds, so a slow one turns only its own line "unknown", and never slows the board.
 - [count:{{fact:src/jarvis/vitals/models.py:MAX_MANUAL}}] You can add up to {{fact:src/jarvis/vitals/models.py:MAX_MANUAL}} lines of your own, and anything that looks like a credential is refused, on every way in.
 - [count:{{fact:src/jarvis/vitals/job.py:POLL_EVERY_S}}] A background job looks at most every {{fact:src/jarvis/vitals/job.py:POLL_EVERY_S}} seconds, and alerts only when a line crosses upwards.
@@ -84,6 +88,7 @@ pages:
 - [edge:probes>rollup] [node:rollup] The results are rolled up into one overall status.
 - [edge:rollup>store] [node:store] The last report is kept.
 - [edge:rollup>brief] [node:brief] [count:{{fact:src/jarvis/health/briefing.py:MAX_SPOKEN}}] A briefing is built from fixed sentences, with the month's AI spend, and cut short past {{fact:src/jarvis/health/briefing.py:MAX_SPOKEN}} characters.
+- Replies with no known price are said as plus up to their upper estimate, and the spoken percentage counts them too.
 - [edge:brief>speak] [node:speak] The pop-up speaks it to you.
 - [edge:rollup>debounce] [node:debounce] When the status changes, JARVIS asks whether the problem lasts: {{fact:src/jarvis/health/changes.py:DEBOUNCE_CHECKS}} checks, at least {{fact:src/jarvis/health/changes.py:DEBOUNCE_GAP_S}} seconds apart.
 - [edge:debounce>alert] [node:alert] If it does, an alert goes through the alert policy; only "down" rings, and "degraded" is a silent note.
@@ -110,6 +115,7 @@ pages:
 - [show:plain] At the top it shows how quickly replies arrive, then "This month": the paid AI's cost so far in rupees, and your monthly limit.
 - Below is the board, each line with a plain status: OK, Watch, Act now or Unknown.
 - [show:how] The board groups keys and connections, allowances and quotas, and bills, with the worst first, in words, never colour alone.
+- The board's answer carries the month's replies with no known price too, at an upper estimate, never as nothing.
 - "Track something JARVIS can't see" adds your own item; it never asks for a key's value, and refuses one if pasted.
 - [show:example] In the example, late in the month, you see a domain renewal marked Act now, and raise your limit, confirming it before it is saved.
 - [show:costs] The rupee figures are estimates, because Anthropic bills in US dollars and your bank converts.

@@ -3,15 +3,15 @@ chapter: module_brain
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_module_brain": "478b35b5cf10077b"
+  "pg_module_brain": "0092747ee86ef6d0"
   "pg_card_c09": "d3c3d3cc0684264f"
-  "pg_card_c13": "82160b63aec333e7"
+  "pg_card_c13": "d0ee19b6a3869163"
   "pg_card_c14": "1d297bb5eae505ca"
   "pg_card_c15": "5b011adcd77f60f5"
-  "pg_card_c16": "bb4778023b54fa69"
+  "pg_card_c16": "4ba2cd05ca06d13d"
   "pg_card_c17": "3190b7dc62ba8aad"
   "pg_card_c68": "3b22362528a9ecb2"
-  "pg_screen_chat": "15d9b9e1a5ea436a"
+  "pg_screen_chat": "4881a58c9e10e887"
   "pg_screen_history": "74dfa93a74a5785c"
   "pg_service_anthropic": "593cd67a881aa39b"
   "pg_service_gemini": "aa8ef95faa153ecc"
@@ -35,6 +35,7 @@ pages:
 - [show:example] In the made-up example, Vikram asks what's on tomorrow and adds the gym; the brain gets only calendar and reminder tools, and proposes a card.
 - One evening Claude is down, so his laptop's small model answers, and any change it wants becomes a one-tap card.
 - [show:costs] The brain's tokens are JARVIS's main cost, counted in rupees against your monthly limit; the free brains and No-AI mode cost nothing.
+- Gemini is priced at Google's paid-tier prices once that tier is switched on, and a reply from a model with no known price says price unknown, never free.
 - [show:fails] A brain error becomes a short, friendly message, never the vendor's text.
 - [page:pg_card_c09] [show:title] The first part is your conversations, JARVIS's short-term memory.
 - [show:plain] Each chat is kept whole, and with every message the brain is sent its latest part, so it follows what you said a minute ago.
@@ -56,6 +57,7 @@ pages:
 - [edge:finish>save] [node:save] Last, the reply is saved, with its cost.
 - [show:example] In the example, you ask for sports day, the parents' meeting and both dentist visits in your calendar, and the four entries arrive on one approval card.
 - [show:costs] Tool rounds, summaries, narrations and retries are each a separate call, so a turn with tools costs more than a plain reply.
+- A call to a model with no known price is flagged on the reply, the stored turn and the conversation, so you see price unknown, never nothing.
 - [show:fails] Once a tool has changed something, saves never fail the turn, so nothing is done twice.
 - [count:{{fact:src/jarvis/core/approve_all.py:MAX_IDS}}] Approve all runs up to {{fact:src/jarvis/core/approve_all.py:MAX_IDS}} cards that can be undone, and a card that changed since you saw it is withdrawn and offered again.
 - [page:pg_card_c14] [show:title] The third part gives JARVIS its manner: the persona.
@@ -78,6 +80,8 @@ pages:
 - [edge:cloud>price] [node:price] A cloud answer has its tokens priced; a model missing from the price table counts as price unknown, never as free.
 - [edge:price>answer] [node:answer] [edge:laptop>answer] Then the answer goes back to the caller, from the cloud or from the laptop.
 - [show:example] In the example, you ask for a week of meals; Anthropic answers busy three times, so the router tries the fast tier, and your plan arrives.
+- That evening Anthropic has an outage, the call times out, and your laptop's small brain answers, over its encrypted Tailscale address.
+- [show:costs] With Gemini's paid tier switched on, Gemini is priced from Google's own price list, read on a stated day.
 - [show:fails] A vendor's own error text never reaches you, and the console's brain light shows how the last call ended, without a call.
 - [page:pg_card_c17] [show:title] The sixth part is the set of switches that decide which brain answers you.
 - [show:plain] The brain picker chooses the AI company, No-AI mode turns the AI off completely, and offline mode asks a small, free AI on your laptop.
@@ -98,6 +102,7 @@ pages:
 - [edge:limit>brain] [node:brain] Otherwise, the brain answers.
 - [edge:brain>card] [node:card] A change that needs your yes waits as a card in Approvals.
 - [edge:brain>reply] [node:reply] Under the reply you see the brain, the model, the time taken, the cost in rupees and the number of tool calls.
+- A reply from a model JARVIS has no price for says price unknown there instead, and a reopened conversation counts how many such replies it holds.
 - [edge:reply>saved] [node:saved] And the conversation is saved, so it survives JARVIS going to sleep.
 - [show:example] In the example, you tap a suggestion for today's calendar, then ask to move a call, and the Approvals button lights up.
 - [show:fails] If the brain or the network fails, the thread shows: JARVIS couldn't answer, with the reason, and nothing else breaks.

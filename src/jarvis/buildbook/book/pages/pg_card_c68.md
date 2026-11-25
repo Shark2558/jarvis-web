@@ -9,7 +9,7 @@ sources:
   "src/jarvis/api/r14_status.py": "efb328e795d63aa9"
   "src/jarvis/api/skills.py": "8266dcf3731b82b2"
   "src/jarvis/billing/ledger.py": "db2a8ce52cc2c908"
-  "src/jarvis/core/brain.py": "e418eb8e4df90505"
+  "src/jarvis/core/brain.py": "976861b3c96f073a"
   "src/jarvis/core/prompts.py": "d609029d91d73e5b"
   "src/jarvis/core/window.py": "06c365d979fdc3cf"
   "src/jarvis/helpers/house/service_request.py": "94e882c398af35c0"

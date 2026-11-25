@@ -102,9 +102,15 @@ def _where(path: Path) -> str:
 
 
 def _read(path: Path, cap: int, suffix: str) -> str:
+    return read_capped(path, cap, suffix, PAGE_ID, f"a page id (pg_<kind>_<id>{suffix})")
+
+
+def read_capped(path: Path, cap: int, suffix: str, name: str, rule: str) -> str:
+    """An authored file's text (R6.4: the narration scripts too): its name must match `name`
+    (`rule` says how in words), no link, at most `cap` bytes, UTF-8 without NUL, LF endings."""
     where = _where(path)
-    if path.suffix != suffix or not re.fullmatch(PAGE_ID, path.stem):
-        raise AuthoredError(f"{where}: the file name is not a page id (pg_<kind>_<id>{suffix})")
+    if path.suffix != suffix or not re.fullmatch(name, path.stem):
+        raise AuthoredError(f"{where}: the file name is not {rule}")
     if path.is_symlink():  # review I1 M-1: never followed, by id as by folder (`_all`)
         raise AuthoredError(f"{where}: is a link; write the file itself here")
     try:
@@ -141,8 +147,21 @@ def plain_errors(exc: ValidationError) -> str:
 
 _FIELDS = frozenset(
     {*FrontMatter.model_fields, "title", "dir", "nodes", "edges", "id", "label", "kind", "rank",
-     "col", "ref", "from", "to", "style"}
+     "col", "ref", "from", "to", "style", "chapter", "pages"}
 )  # fmt: skip
+
+
+def front_of(text: str) -> tuple[str, str, int] | None:
+    """(front matter, body, the body's first line number) of an authored file, or None."""
+    found = _FRONT.match(text)
+    if found is None:
+        return None
+    return found.group(1), text[found.end() :], text[: found.end()].count("\n") + 1
+
+
+def yaml_mapping(raw: str, where: str) -> dict[str, object]:
+    """Front matter as a mapping (AuthoredError: not YAML, anchors or aliases, too deep)."""
+    return _yaml(raw, where)
 
 
 def _yaml(raw: str, where: str) -> dict[str, object]:
@@ -238,14 +257,16 @@ def all_flows(root: Path) -> Loaded[FlowSpec]:
 
 
 # ---- the stamp (D5) -----------------------------------------------------------------------------
-def stamped(text: str, hashes: Mapping[str, str]) -> str:
+def stamped(text: str, hashes: Mapping[str, str], field: str = "sources") -> str:
     """The page file's text with only its `sources` block replaced (added at the end of the
-    front matter when it had none); every other line stays as it was."""
+    front matter when it had none); every other line stays as it was. R6.4: a narration
+    script's `pages` block the same way (`field="pages"`)."""
     text = text.removeprefix("\ufeff").replace("\r\n", "\n")
     found = _FRONT.match(text)
     if found is None:
         raise AuthoredError("no front matter to stamp")
-    block = ["sources:" + ("" if hashes else " {}")]
+    head = _SOURCES if field == "sources" else re.compile(rf"^{re.escape(field)}[ \t]*:")
+    block = [f"{field}:" + ("" if hashes else " {}")]
     block += [f"  {json.dumps(k)}: {json.dumps(v)}" for k, v in hashes.items()]
     kept: list[str] = []
     at: int | None = None
@@ -253,7 +274,7 @@ def stamped(text: str, hashes: Mapping[str, str]) -> str:
     for line in found.group(1).splitlines():
         if inside and (line[:1] in (" ", "\t") or not line.strip()):
             continue
-        inside = bool(_SOURCES.match(line))
+        inside = bool(head.match(line))
         if inside:
             at = len(kept) if at is None else at
             continue
@@ -284,10 +305,13 @@ __all__ = [
     "all_flows",
     "all_pages",
     "flow_path",
+    "front_of",
     "load_flow",
     "load_page",
     "page_path",
     "plain_errors",
+    "read_capped",
     "stamped",
     "write_text",
+    "yaml_mapping",
 ]

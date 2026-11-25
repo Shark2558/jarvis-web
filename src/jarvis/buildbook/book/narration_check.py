@@ -265,18 +265,19 @@ def stale_problems(script: Script, plan: ChapterPlan, now: Mapping[str, str | No
 
 
 # ---- the whole check ----------------------------------------------------------------------------
-def _flow(root: Path, page_id: str) -> FlowSpec | None:
+def flow_of(root: Path, page_id: str) -> FlowSpec | None:
+    """A page's flowchart, or None (no file, a link, or one that fails: its page check says why)."""
     path = flow_path(root, page_id)
     if not path.exists() or path.is_symlink():
         return None
     try:
         return load_flow(path)
     except AuthoredError:
-        return None  # the page's own check says why
+        return None
 
 
 def flows_of(root: Path, plan: ChapterPlan) -> dict[str, FlowSpec | None]:
-    return {pid: _flow(root, pid) for pid in plan.pages}
+    return {pid: flow_of(root, pid) for pid in plan.pages}
 
 
 def _capped(found: list[str]) -> list[str]:
@@ -339,6 +340,7 @@ __all__ = [
     "check_script",
     "code_names",
     "cue_problems",
+    "flow_of",
     "flows_of",
     "judge_script",
     "minutes_of",

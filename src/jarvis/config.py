@@ -38,8 +38,7 @@ _HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"  # R13
 
 
 def _is_private_host(host: str) -> bool:
-    """Loopback, RFC1918/ULA, link-local, or a bare/local name — plain http is tolerable there.
-    Never a Tailscale name (R6.4 D8): from the cloud, `*.ts.net` reaches Tailscale's relays."""
+    """Loopback, RFC1918/ULA, link-local or a bare/local name; never `*.ts.net` (R6.4 D8)."""
     import ipaddress
 
     h = host.lower()

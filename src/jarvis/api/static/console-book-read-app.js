@@ -26,7 +26,7 @@ const media = (q) => { try { return window.matchMedia(q); } catch (_) { return {
 const phoneQ = media(PHONE_Q), stillQ = media('(prefers-reduced-motion: reduce)');
 const R = { deps: null, book: null, rid: '', current: '', cache: new Map(), read: new Set(), resume: '', seq: 0, drawn: null,
   rail: { prefix: 'br', opened: new Set(), closed: new Set() }, sheet: { prefix: 'brS', opened: new Set(), closed: new Set() },
-  stop: null, mini: null, sheetBuilt: false, searches: [], told: '' };
+  stop: null, mini: null, sheetBuilt: false, searches: [], told: '', pointed: false };
 const isPhone = () => !!phoneQ.matches;
 const smooth = () => (stillQ.matches || document.documentElement.dataset.motion === 'off' || document.documentElement.dataset.motion === 'calm' ? 'auto' : 'smooth');
 const playing = () => ($('bookRead') || {}).dataset && $('bookRead').dataset.mode === 'player';
@@ -234,7 +234,19 @@ function openSheet(toSearch) {
 
 // ---- keys ----------------------------------------------------------------------------------------------------------------
 const typing = (t) => !!(t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]'));
+/** The first Tab after the reader opens, before any tap or click and with nothing focused, starts at the top bar's
+ *  first control, wherever the browser's starting point drifted (GitHub's slower runner began it in the contents,
+ *  PR #42). After a tap or click the browser's own order applies. */
+function firstTab(e) {
+  if (R.pointed || e.key !== 'Tab' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return false;
+  if (document.activeElement !== document.body || document.querySelector('dialog[open]')) return false;
+  const top = [...$('brTop').querySelectorAll('input, button, a[href]')].find((x) => !x.disabled && x.offsetParent);
+  if (!top) return false;
+  e.preventDefault(); top.focus();
+  return true;
+}
 function onKey(e) {
+  if (firstTab(e)) return;
   if (e.key !== '/' || e.altKey || e.ctrlKey || e.metaKey || typing(e.target) || playing()) return;
   if (document.querySelector('dialog[open]:not(#brSheet)')) return;
   e.preventDefault();
@@ -263,6 +275,7 @@ export async function startReader(deps) {
   $('brContents').replaceChildren(mk('p', 'bk-wait', 'Reading the contents\u2026'));
   R.searches.push(createSearch({ input: $('brSearch'), list: $('brResults'), box: $('brSearchBox'), api: deps.api, open: go, gone, note, phone: isPhone }));
   document.addEventListener('keydown', onKey);
+  document.addEventListener('pointerdown', () => { R.pointed = true; }, { once: true, capture: true });
   document.addEventListener('jarvis:book-chapter', onChapter);
   const cont = $('brContinue');
   if (cont) cont.addEventListener('click', onContinue);

@@ -479,6 +479,29 @@ def test_the_tab_order_is_the_visual_order_and_focus_is_always_seen(
         c.close()
 
 
+def test_the_first_tab_starts_at_the_top_bar_even_when_the_start_point_moved(
+    browser: Any, server_url: str, token: str
+) -> None:
+    # GitHub's slower runner once began the first Tab inside the contents, just after the current page
+    # (PR #42, 25 Nov). Whatever moved the browser's starting point there, the first Tab after the reader
+    # opens, before any tap or click, reaches the search box at the top.
+    c, _ = reader(browser, server_url, token, at="pg_module_vault")
+    try:
+        p = c.page
+        p.evaluate(
+            """() => { const a = [...document.querySelectorAll('#brContents [data-page]')]
+                .find((e) => e.dataset.page === 'pg_module_vault'); a.focus(); a.remove(); }"""
+        )
+        assert p.evaluate("document.activeElement === document.body")
+        p.keyboard.press("Tab")
+        assert p.evaluate(TABS_JS) == "brSearch"
+        p.keyboard.press("Tab")
+        assert p.evaluate(TABS_JS) == "brTour"
+        clean(c)
+    finally:
+        c.close()
+
+
 def test_a_phone_gets_the_contents_sheet_and_the_play_bar(
     browser: Any, server_url: str, token: str
 ) -> None:

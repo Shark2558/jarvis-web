@@ -247,11 +247,19 @@ def test_the_old_writer_collections_are_named_for_the_privacy_row() -> None:
 
 
 # ---- the HTTP contract ---------------------------------------------------------------------------
-def test_the_two_pages_routes() -> None:
+def test_the_pages_routes() -> None:
     keys = [(m, p) for m, p, *_ in http.ROUTES]
-    assert keys == [("GET", "/v1/book/pages"), ("GET", "/v1/book/pages/{page_id}")]
+    pages_routes = [k for k in keys if k[1].startswith(http.PAGES_PREFIX)]
+    # R6.4 D4: search before `{page_id}`, so "search" is never read as a page id
+    assert pages_routes == [
+        ("GET", "/v1/book/pages"),
+        ("GET", "/v1/book/pages/search"),
+        ("GET", "/v1/book/pages/{page_id}"),
+    ]
     assert {g for *_, g in http.ROUTES} == {"session"}
-    assert all(p.startswith(http.PAGES_PREFIX) for _, p in keys)
+    # R6.4 D5, D6: the chapters' two routes, the only others
+    rest = [k for k in keys if k not in pages_routes]
+    assert rest == [("GET", "/v1/book/chapters"), ("GET", "/v1/book/chapters/{chapter_id}")]
 
 
 def test_every_refusal_code_fits_the_refusal_model() -> None:

@@ -13,8 +13,8 @@ or null; 404 `no_page`), read from the pages and flows files sealed with that re
 R6.4 D4-D6 (docs/plans/r6-4-book-look.md), behind the same gates, in this order (the gate before
 any reading of the request): `GET /v1/book/chapters` and `/v1/book/chapters/{chapter_id}` (404
 `no_chapter`), 60 a minute with the pages; `GET /v1/book/pages/search?q=` (422 `bad_query`), on its
-own limit (`http.LIMITS["search"]`, installed here). `install_book_pages` also mounts the reader's
-page, `/book/read` (`api/book_read.py`).
+own limit (`http.LIMITS["search"]`, installed with the pages' by `r6_wiring`). `install_book_pages`
+also mounts the reader's page, `/book/read` (`api/book_read.py`).
 """
 
 from __future__ import annotations
@@ -30,12 +30,11 @@ from jarvis.api.auth import require_auth, session_email
 from jarvis.api.book_gate import BookRefused, console_only, limit, need, owner_session
 from jarvis.api.book_http import TOKEN_HEADER, book_json
 from jarvis.api.book_read import install_book_read
-from jarvis.api.ratelimit import RateLimiter
 from jarvis.buildbook.book.chapters import CHAPTER_ID
 from jarvis.buildbook.facts_model import PAGE_ID
 from jarvis.buildbook.model import RELEASE_ID
 from jarvis.buildbook.writer import search
-from jarvis.buildbook.writer.http import CHAPTERS_PREFIX, LIMITS, PAGES_PREFIX, ROUTES
+from jarvis.buildbook.writer.http import CHAPTERS_PREFIX, PAGES_PREFIX, ROUTES
 from jarvis.buildbook.writer.texts import REFUSED, PagesRefused
 
 router = APIRouter(prefix=PAGES_PREFIX, dependencies=[Depends(require_auth)])
@@ -128,11 +127,8 @@ for _method, _path, _part, _req, _reply, _codes, _gate in ROUTES:
 
 def install_book_pages(app: FastAPI) -> None:
     """Mounted by `r6_wiring.install_r6_routes` after `install_book` (its refusal handler; the
-    wiring adds the `pages` limit to R6's per-owner limits). R6.4: the other `http.LIMITS` (the
-    search's) are added here when the wiring hasn't, and the reader's page with them."""
-    limits = app.state.book_limits
-    for name, per_minute in LIMITS.items():
-        limits.setdefault(name, RateLimiter(per_minute))
+    wiring adds every `http.LIMITS`, the pages' and R6.4's search's, to R6's per-owner limits),
+    with the reader's page, `/book/read`."""
     app.include_router(router)
     app.include_router(chapters_router)
     install_book_read(app)

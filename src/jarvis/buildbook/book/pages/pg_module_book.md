@@ -4,9 +4,9 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 sources:
   "src/jarvis/api/book.py": "856e2f5276d6cb59"
-  "src/jarvis/api/book_pages.py": "8ab07f57314892fd"
+  "src/jarvis/api/book_pages.py": "cfe9fd9ab5712b04"
   "src/jarvis/api/book_read.py": "3681ad948c006e52"
-  "src/jarvis/api/r6_wiring.py": "a7a1861afa933ec1"
+  "src/jarvis/api/r6_wiring.py": "933facfd96a82b79"
   "src/jarvis/api/static/book-read-reader.css": "fa82f28854915f3d"
   "src/jarvis/api/static/book-read.css": "e35f4fae32cd8663"
   "src/jarvis/api/static/book-read.html": "febe4785a10de345"

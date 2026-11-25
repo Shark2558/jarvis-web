@@ -16,7 +16,7 @@ sources:
   "src/jarvis/api/personal.py": "7a9aa32e08b7d084"
   "src/jarvis/api/r11_wiring.py": "4cfa5b25282b147c"
   "src/jarvis/api/r4_wiring.py": "379192618b74836f"
-  "src/jarvis/api/r6_wiring.py": "a7a1861afa933ec1"
+  "src/jarvis/api/r6_wiring.py": "933facfd96a82b79"
   "src/jarvis/api/ratelimit.py": "cb57d8dab93e8640"
   "src/jarvis/api/routes.py": "4086daa780722d3f"
   "src/jarvis/api/selfcheck_wiring.py": "fb7336391ffa3727"

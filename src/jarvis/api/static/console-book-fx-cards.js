@@ -9,7 +9,7 @@
 import { lead, parseCount, rng, hash, sentences } from './console-book-fx-plan.js';
 
 const KIND = Object.freeze({ module: 'Module', card: 'Part', screen: 'Screen', service: 'Outside service', chapter: 'Story' });
-const LABEL = Object.freeze({ plain: 'In plain words', example: 'Example (made up)', how: 'How it works', costs: 'What it costs',
+const LABEL = Object.freeze({ plain: 'In plain words', example: 'Example', how: 'How it works', costs: 'What it costs',
   fails: 'When it fails' });
 const CAP = Object.freeze({ plain: 4, how: 6, fails: 5, example: 6 });
 const OUT = 'cubic-bezier(.16,1,.3,1)', EASE = 'cubic-bezier(.45,0,.2,1)';
@@ -67,13 +67,21 @@ export function cardLayer(layer, hud, ctx) {
     const title = page && typeof page.title === 'string' ? page.title : '';
     if (sc.view === 'title') {
       head(inner, (KIND[page && page.kind] || 'Page') + ' \u00b7 page ' + info.n + ' of ' + info.of);
-      inner.append(mk('h3', 'fx-h', title), mk('span', 'fx-rule'), mk('p', 'fx-sub', info.chapter));
+      const same = !info.chapter || info.chapter === title;
+      inner.append(mk('h3', 'fx-h', title), mk('span', 'fx-rule'),
+        mk('p', 'fx-sub', same ? 'This chapter: ' + info.of + (info.of === 1 ? ' page' : ' pages') : 'From the chapter ' + info.chapter));
       return card;
     }
     head(inner, LABEL[sc.view] || '', sc.view === 'example' ? 'Made-up' : title);
+    if (sc.view === 'costs') { // a Rupee mark: the card is about money (a number only ever comes from a count cue)
+      const coin = mk('span', 'fx-coin', '\u20b9');
+      coin.setAttribute('aria-hidden', 'true');
+      inner.firstChild.prepend(coin);
+    }
+    K.slot = mk('div', 'fx-slot'); inner.append(K.slot); // a count told on this card shows here
     const text = sectionText(page, sc.view === 'chart' ? 'how' : sc.view);
     if (sc.view === 'costs') {
-      K.slot = mk('div', 'fx-slot'); inner.append(K.slot, rich(mk('p', 'fx-lead'), lead(text, 300)));
+      inner.append(rich(mk('p', 'fx-lead'), lead(text, 300)));
       return card;
     }
     const items = sentences(text, sc.view === 'example' ? 200 : 240).slice(0, CAP[sc.view] || 4);
@@ -89,7 +97,6 @@ export function cardLayer(layer, hud, ctx) {
       return li;
     });
     K.win.append(K.list); inner.append(K.win);
-    if (sc.view === 'fails') { K.slot = mk('div', 'fx-slot'); inner.append(K.slot); }
     return card;
   }
 
@@ -154,8 +161,9 @@ export function cardLayer(layer, hud, ctx) {
   /** Keep the newest point in view: the list moves up when it runs past the card's window. */
   function follow(li, instant) {
     if (!K.win || !K.list || !li) return;
-    const room = K.win.clientHeight, bottom = li.offsetTop + li.offsetHeight + 8;
-    const shift = Math.max(0, bottom - room);
+    const room = K.win.clientHeight, over = K.list.offsetHeight - room;
+    const shift = over > 0 ? Math.max(0, Math.min(over, li.offsetTop + li.offsetHeight + 8 - room)) : 0;
+    if (shift) K.win.dataset.shifted = '1'; else delete K.win.dataset.shifted;
     if (shift === K.shift) return;
     const from = K.shift;
     K.shift = shift; K.list.style.transform = shift ? 'translateY(' + (-shift) + 'px)' : '';
@@ -218,9 +226,10 @@ export function cardLayer(layer, hud, ctx) {
     box.append(num);
     if (unit) box.append(mk('small', 'fx-unit', unit));
     box.append(bar);
-    const host = inCard && K.slot ? K.slot : hud;
+    const host = inCard && K.slot && K.card && K.card.isConnected ? K.slot : hud;
     box.dataset.in = host === hud ? 'hud' : 'card';
     host.replaceChildren(box);
+    if (host !== hud) follow(K.items[K.shown - 1], true); // the card's window is smaller now: its newest point stays in view
     if (instant || !ctx.full()) return;
     const stamp = variant === 'stamp', dur = stamp ? 900 : 1300, start = stamp ? 0.55 : 0;
     if (host === hud) ctx.a(box, [{ transform: 'translateY(-10px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 450, easing: OUT });

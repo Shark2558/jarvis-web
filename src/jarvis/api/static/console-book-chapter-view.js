@@ -178,8 +178,8 @@ export function mount(root, on) {
     if (!V.pages.length) return;
     const pi = st.pageIndex, page = V.pages[pi] || V.pages[0], sec = sectionName(st.view);
     const where = (sec ? sec + ' \u00b7 ' : '') + 'line ' + (st.lineInPage + 1) + ' of ' + page.lines;
-    kindPh.textContent = 'Page ' + (pi + 1) + ' of ' + V.pages.length;
-    subPh.textContent = page.title + ' \u00b7 ' + where;
+    kindPh.textContent = 'Chapter \u00b7 page ' + (pi + 1) + ' of ' + V.pages.length;
+    subPh.textContent = (page.title && page.title !== title.textContent ? page.title + ' \u00b7 ' : '') + where;
     V.stepEls.forEach((li, i) => {
       li.className = i < pi ? 'done' : i === pi ? 'now' : '';
       const small = li.querySelector('small');

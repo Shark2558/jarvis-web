@@ -159,7 +159,7 @@ export function createFx(stage, options = {}) {
     st.view = onChart ? 'chart' : sc.view;
     if (onChart) chart.apply(sc, fx, instant);
     else cards.show(sc.view === 'chart' ? Object.assign({}, sc, { view: 'how' }) : sc, fx, page, info(sc.page), instant);
-    if (sc.count) cards.readout(sc.count, unitOf(line.text, sc.count), fx.count, instant, sc.view === 'costs' || sc.view === 'fails');
+    if (sc.count) cards.readout(sc.count, unitOf(line.text, sc.count), fx.count, instant, !onChart && sc.view !== 'title');
     sample();
   }
 

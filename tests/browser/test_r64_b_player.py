@@ -559,7 +559,7 @@ def test_the_phone_player_keeps_44px_controls_and_no_sideways_scroll(
         assert all(w >= 44 and h >= 44 and right <= 390 for _, w, h, right in boxes), boxes
         assert p.evaluate("document.documentElement.scrollWidth") <= 390
         assert p.locator("#brPCapText").is_visible() and p.locator("#brPSteps").is_hidden()
-        assert "Page 1 of 5" in str(p.locator("#brPlayer .bk-side").text_content())
+        assert "page 1 of 5" in str(p.locator("#brPlayer .bk-side").text_content()).lower()
         _clean(c)
     finally:
         c.close()

@@ -1,4 +1,4 @@
-Version v6.4.0 · 25 Nov 2026, 12:45 IST · Release R6.4 · Status: Draft — waiting for approval stop 4 · Owner: 🛠 Mark XXIV
+Version v6.4.1 · 25 Nov 2026, 12:25 IST · Release R6.4 · Status: Approved (stop 4, 25 Nov 12:13 IST) · Owner: 🛠 Mark XXIV
 
 # Release R6.4 — Build Book Part 3: the Book's own look and the full book in narrated chapters (`v6.4.0`)
 
@@ -11,8 +11,11 @@ his answer of 24 Nov, 07:43 IST, "yes, fix both in the later releases", on two f
 paid service, secret or Scheduler job; narration uses the browser's voice (₹0) unless the owner
 switches the Book to the cloud voice (existing setting). **Version:** `v6.4.0`.
 
-**Approval stop 4:** nothing below is built until the owner approves the mockups
-(`docs/plans/r6-4-mockups/`, contact sheets sent in chat) and answers the questions in §8.
+**Approval stop 4 — passed 25 Nov 2026, 12:13 IST.** The owner's answers: 1. the new look as in
+the mockups (A–K): yes; 2. the flowcharts as the chapters' pictures, the tour keeping its 3D
+scenes: yes, *"and with animations and effects which would keep the reader engaged and doesn't feel
+monotonous or boring. May use different animations, variations, to keep the reader engaged"*
+(new row 394, D11); 3. a spoken script written for each of the 26 chapters: yes.
 
 ## 1. Scope (workbook rows)
 
@@ -22,6 +25,7 @@ switches the Book to the cloud voice (existing setting). **Version:** `v6.4.0`.
 | 390 | The full book narrated chapter by chapter | The chapter player: voice, captions, the flowchart's boxes lit as they are told, pause and skip (D4–D6) |
 | 392 | An AI address on a `*.ts.net` name must use https | `config._is_private_host` stops treating `*.ts.net` as private (D8) |
 | 393 | Costs counts paid Gemini and unpriced models | Paid-tier Gemini prices; an unknown model is flagged, never ₹0 (D9) |
+| 394 | Varied animations and effects in the narrated chapters (25 Nov) | The effects engine and its catalogue (D11) |
 
 **Not in R6.4** (from Phase A's old list, not in rows 381/390; can be added later on request): a
 Simple / Technical toggle, an interactive architecture map, print views, a guest-safe full book,
@@ -82,6 +86,30 @@ advances by itself.
   Costs as "price unknown", counted, and never as ₹0. Free tier unchanged (₹0).
 - **D10 — The Book's pages** whose code changes are refreshed in the same PR (`pages --check`
   strict, 153 ok), as every release since R6.3.1.
+- **D11 — Row 394, effects that keep the listener engaged** (no library: CSS, SVG and the Web
+  Animations API, transform and opacity only). A catalogue of families, each with 2–4 variants:
+  1. **Path tracing:** the main path draws itself from the told box to the spoken one; a glowing
+     "packet" travels along a connector.
+  2. **Box entrances:** sonar ping, bracket frame assembling, scan-line wipe, lift-and-glow.
+  3. **Kind accents:** a guard's shield locks, a store's cylinder fills, a service's double border
+     turns, a person's badge waves.
+  4. **Camera:** an establishing overview at a section's start, then a smooth pan and zoom to the
+     spoken box; a pull-back at the section's end.
+  5. **Section cards:** "In plain words", "Example", "What it costs", "When it fails" enter with
+     varied HUD reveals (split, typewriter, glitch-free decode, iris).
+  6. **Example as a storyboard:** the made-up person's steps appear as captioned frames.
+  7. **Costs:** a ₹ count-up with a bullet bar against the monthly limit.
+  8. **Failures:** an amber frame with a soft alert pulse.
+  9. **Captions:** the spoken words lit as they are said (the voice's word boundaries; timed
+     estimate when a voice sends none).
+  10. **Page change:** the chapter stepper slides; a wipe in the theme's accent.
+  11. **Ambient:** a slow HUD grid drift behind the stage.
+  Variation rule: a deterministic picker (seeded by chapter and line) never repeats an entrance or
+  camera move twice in a row and spreads every family across a chapter. Safety: Pause stops all
+  motion (WCAG 2.2.2); Motion "Calm" and reduced motion give cross-fades only, Motion "Off" none;
+  nothing flashes more than 3 times a second; effects pause when the tab is hidden; a phone keeps
+  60 fps by dropping the ambient layer first. Script cues (`node`, `edge`, `show`, `count`) say
+  WHAT is shown; the engine picks HOW.
 
 ## 4. Builders
 
@@ -89,8 +117,8 @@ advances by itself.
    its checks in `pages`, the sealing choice, `book-read.css` tokens, the panel's two buttons.
 2. **A — Reader:** `book-read.html`, `console-book-read.js` (contents, page, continue, keyboard),
    search UI; reuses `console-book-flow.js`.
-3. **B — Player:** `console-book-chapter.js` (timeline, browser voice through the existing
-   `console-book-voice.js`, captions, cues, controls).
+3. **B — Player and effects:** `console-book-chapter.js` (timeline, browser voice through the
+   existing `console-book-voice.js`, captions, cues, controls) and `console-book-fx.js` (D11).
 4. **C — Fixes 392 and 393** (tests first).
 5. **W1–W4 — Narration writers:** the 26 chapter scripts; then the stale pages refreshed.
 6. **I1** join → **one combined security + code review** with the one final check pass →
@@ -123,6 +151,7 @@ free allowance; a 9-minute chapter is about 7,000 characters).
 1. The new look as in the mockups (laptop A–F, phone G–K) [yes].
 2. New 3D scenes: the narrated chapters use the flowcharts as their pictures; the tour keeps its
    current 3D scenes [yes]. New 3D scenes (Fable 5.2) would add about a day; later, if wanted.
+   **Answer: yes, with varied animations and effects (D11, row 394).**
 3. Narration written by the Workshop at build time, chapter by chapter [yes]; the other way would
    read the page text aloud as it stands (quicker, sounds less natural).
 
@@ -131,3 +160,4 @@ free allowance; a 9-minute chapter is about 7,000 characters).
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.0 | 25 Nov 2026, 12:45 IST | R6.4 | First edition: scope (rows 381, 390, 392, 393), design (ui-ux-pro-max), decisions D1–D10, builders, tests, cost, risks and the questions for approval stop 4; mockups in `docs/plans/r6-4-mockups/` | 🛠 Mark XXIV |
+| v6.4.1 | 25 Nov 2026, 12:25 IST | R6.4 | Approval stop 4 passed (12:13 IST): the owner's three answers; new row 394 and decision D11 (the effects engine, its catalogue and its safety rules); builder B owns the effects |  🛠 Mark XXIV |

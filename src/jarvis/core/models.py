@@ -16,7 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from jarvis.core.guardrails import PendingAction
 from jarvis.documents.models import AttachmentRef
-from jarvis.llm.base import ContentBlock, Role, Usage
+from jarvis.llm.base import Completion, ContentBlock, Role, Usage
+from jarvis.llm.pricing import price_unknown
 from jarvis.recall.models import MemoryRef
 from jarvis.tools.reply_cards import ReplyCard, WhatsAppCard
 from jarvis.undo.models import UndoRef as UndoRef  # re-exported: replies carry it (slice 11)
@@ -69,6 +70,24 @@ class Turn(BaseModel):
     # else (`content` is what it understood and acted on). Shown as "heard / understood as"; it is
     # never sent to a model and never learned from. None: nothing was corrected.
     heard: str | None = Field(default=None, max_length=HEARD_LIMIT)
+    # R6.4 D9: written by a model with no known price (billing counts it as "price unknown"): its
+    # cost_usd is 0, but it is not free. A turn stored before v6.4.0 has no flag (False).
+    unpriced: bool = False
+
+
+def unpriced(completion: Completion | None) -> bool:
+    """A model call whose price JARVIS doesn't know (R6.4 D9): as billing counts it, never the
+    laptop's offline answer nor a provider that calls no vendor (`pricing.price_unknown`)."""
+    return (
+        completion is not None
+        and not completion.offline
+        and price_unknown(completion.model, completion.provider)
+    )
+
+
+def unpriced_calls(turns: list[Turn]) -> int:
+    """How many of a conversation's model calls had no known price (not in its ₹ total)."""
+    return sum(1 for t in turns if t.unpriced)
 
 
 class Session(BaseModel):
@@ -183,6 +202,14 @@ class ChatResponse(BaseModel):
     cost_inr: float = Field(default=0.0, description="This reply, ≈ rupees at today's rate")
     total_cost_usd: float = Field(default=0.0, description="The whole conversation so far")
     total_cost_inr: float = Field(default=0.0, description="The whole conversation, ≈ rupees")
+    unpriced: bool = Field(
+        default=False,
+        description="R6.4 D9: this reply's model has no known price, so cost_inr leaves it out "
+        '(the console says "price unknown", never ₹0)',
+    )
+    unpriced_calls: int = Field(
+        default=0, ge=0, description="Model calls in this conversation with no known price"
+    )
     latency_ms: int
     turn_count: int
     memory_used: list[MemoryRef] = Field(
@@ -235,6 +262,7 @@ class SessionView(Session):
     the stored draft results and checked again (final review; never Maps / YouTube cards)."""
 
     total_cost_inr: float = 0.0
+    unpriced_calls: int = Field(default=0, ge=0, description="R6.4 D9: replies with no known price")
     drafts: list[StoredDraft] = Field(
         default_factory=list,
         description="WhatsApp draft cards (Open in WhatsApp), each under the reply at `turn`",

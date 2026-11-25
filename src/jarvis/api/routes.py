@@ -14,7 +14,8 @@ POST /v1/chat/stream          one turn, text/plain streamed deltas (402 first if
                               "detail": ...} and the reply was not saved.
 GET  /v1/sessions             list the caller's sessions (+ total_cost_inr)
 GET  /v1/sessions/{id}        full transcript (audit / replay) (+ total_cost_inr, + drafts: the
-                              WhatsApp draft cards rebuilt from the stored results, final review)
+                              WhatsApp draft cards rebuilt from the stored results, final review;
+                              + unpriced_calls: its replies with no known price, R6.4 D9)
 DELETE /v1/sessions/{id}      forget a session (owner's delete right)
 POST /v1/approvals/approve-all {session_id, ids ≤ 20} → ChatResponse + results (slice 11 D6)
 GET  /health                  liveness + dependency check (unauthenticated)
@@ -41,6 +42,7 @@ from jarvis.core.models import (
     PendingApproval,
     SessionSummary,
     SessionView,
+    unpriced_calls,
 )
 from jarvis.memory.base import MessageNotSaved, SessionConflict, SessionNotFound, SessionStore
 from jarvis.permissions.models import PasskeyProof
@@ -206,7 +208,9 @@ async def get_session(
     inr = round(await brain.billing.inr(s.total_cost_usd), 4)
     # final review: the conversation's WhatsApp drafts get their Open in WhatsApp back
     drafts = stored_drafts(s)
-    return SessionView.model_validate({**dict(s), "total_cost_inr": inr, "drafts": drafts})
+    unknown = unpriced_calls(s.turns)  # R6.4 D9: not in total_cost_inr; the console says so
+    view = {**dict(s), "total_cost_inr": inr, "drafts": drafts, "unpriced_calls": unknown}
+    return SessionView.model_validate(view)
 
 
 @router.delete("/v1/sessions/{session_id}", status_code=204, dependencies=[Depends(require_auth)])

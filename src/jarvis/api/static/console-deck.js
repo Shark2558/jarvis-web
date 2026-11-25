@@ -327,7 +327,7 @@
     try { return '₹' + n.toLocaleString('en-IN'); } catch (_) { return '₹' + n; }
   }
   // wait: undefined = not loaded yet, null = could not load ("—", never a fake 0); audit likewise
-  const V = { lat: [], turns: 0, brain: '—', model: '—', cost: 0, wait: undefined, audit: null, auditCount: 0, events: [], busy: false, alert: false, voice: null };
+  const V = { lat: [], turns: 0, brain: '—', model: '—', cost: 0, unpriced: 0, wait: undefined, audit: null, auditCount: 0, events: [], busy: false, alert: false, voice: null };
   const started = Date.now();
   const setText = (id, text) => { const el = $(id); if (el && el.textContent !== text) el.textContent = text; };
   const setCls = (id, base, extra) => { const el = $(id); if (el) el.className = base + (extra ? ' ' + extra : ''); };
@@ -359,7 +359,7 @@
     setText('rTurns', turns); setText('cTurns', turns); setText('sTurns', turns);
     setText('rBrain', V.brain); setText('sBrain', V.brain);
     setText('rModel', V.model); setText('sModel', V.model);
-    setText('sCost', rupees(V.cost)); // this conversation so far (total_cost_inr)
+    setText('sCost', !V.unpriced ? rupees(V.cost) : V.cost > 0 ? rupees(V.cost) + ' + price unknown' : 'Price unknown'); // this conversation so far (total_cost_inr; R6.4 D9: replies with no known price are never ₹0)
     const known = Number.isFinite(V.wait), wait = known ? String(V.wait) : '—';
     setText('rApprovals', known ? V.wait + ' waiting' : '—'); setCls('rApprovals', 'v', V.wait ? 'warn' : '');
     setText('cWait', wait); setCls('cWait', 'v', V.wait ? 'warn' : '');
@@ -416,6 +416,7 @@
     if ('brain' in d) V.brain = d.brain || '—';
     if ('model' in d) V.model = d.model || '—';
     if (Number.isFinite(d.cost)) V.cost = d.cost;
+    if (Number.isFinite(d.cost)) V.unpriced = Number.isInteger(d.unpriced) && d.unpriced > 0 ? d.unpriced : 0; // set with the cost
     renderVitals();
   });
   document.addEventListener('jarvis:approvals', (e) => {

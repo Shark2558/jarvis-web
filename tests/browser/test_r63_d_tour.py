@@ -10,6 +10,7 @@
 # ruff: noqa: E501 -- JavaScript strings
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Iterator
@@ -354,6 +355,29 @@ def test_playing_the_tour_leaves_another_releases_reader_place_alone(
         _goto(c, 7)
         place = c.page.evaluate(f"JSON.parse(localStorage.getItem('{PLACE}'))")
         assert place == {"release": "aebff3a", "page": "pg_module_voice"}
+    finally:
+        c.close()
+
+
+def test_playing_the_tour_keeps_the_chapter_players_and_the_readers_fields(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R6.4 I1: the tour rebuilt the place from its scene and the reader's page only, so the
+    chapter player's {chapter, line, heard_at} (and the reader's read_at) were lost; it keeps
+    every field it doesn't own, as the reader and the player do."""
+    theirs = {"release": REL["id"], "page": "pg_module_vault", "read_at": 5,
+              "chapter": "module_vault", "line": 23, "heard_at": 9}  # fmt: skip
+    c, _ = _open(browser, server_url, token)
+    try:
+        c.page.evaluate(f"localStorage.setItem('{PLACE}', JSON.stringify({json.dumps(theirs)}))")
+        _begin(c, paused=True)
+        _goto(c, 7)
+        place = c.page.evaluate(f"JSON.parse(localStorage.getItem('{PLACE}'))")
+        assert place == {**theirs, "scene": 7}
+        _goto(c, 9)
+        place = c.page.evaluate(f"JSON.parse(localStorage.getItem('{PLACE}'))")
+        assert place == {**theirs, "scene": 9}
+        _clean(c)
     finally:
         c.close()
 

@@ -109,11 +109,12 @@ INDEX = {
 VAULT_PAGES = ["pg_module_vault", "pg_card_c07", "pg_card_c42", "pg_card_c43", "pg_screen_vault"]
 CHAPTERS = {
     "release": RID,
+    "label": "R6.4",  # R6.4 I1: the sealed release's label, for the chip
     "chapters": [
         {"id": "story_what", "title": "What JARVIS is", "kind": "story", "pages": ["pg_chapter_what"], "minutes": 0, "narrated": False},
         {"id": "story_example", "title": "The running example", "kind": "story", "pages": ["pg_chapter_example"], "minutes": 0, "narrated": False},
         {"id": "module_memory", "title": "Memory and knowledge", "kind": "module", "pages": ["pg_module_memory", "pg_card_c10"], "minutes": 0, "narrated": False},
-        {"id": "module_vault", "title": "Vault and documents", "kind": "module", "pages": VAULT_PAGES, "minutes": 9, "narrated": True},
+        {"id": "module_vault", "title": "Vault and documents", "kind": "module", "pages": VAULT_PAGES, "minutes": 9, "narrated": True, "lines": 80},
     ],
 }  # fmt: skip
 HOSTILE = '<img src=x onerror="window.__pwned=1">Vault'

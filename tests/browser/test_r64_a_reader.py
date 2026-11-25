@@ -101,7 +101,7 @@ def test_the_contents_list_the_four_groups_and_a_page_opens(browser: Any, server
         wait_title(c, "What JARVIS is")
         assert len(fake.to("GET", "/v1/book/pages/pg_chapter_what")) == 1  # kept for this visit, not asked again
         assert p.locator("#brSearch").get_attribute("placeholder") == "Search 11 pages"
-        assert p.locator("#brRelease").inner_text() == "v6.4.0 · " + RID
+        assert p.locator("#brRelease").inner_text() == "R6.4 · v6.4.0 · " + RID  # I1: the label too
         clean(c)
     finally:
         c.close()
@@ -163,8 +163,11 @@ def test_play_asks_the_chapter_player_and_says_so_politely_when_it_cannot(browse
         wait_title(c, "Document vault")
         card = p.locator("#brPlay")
         assert "Vault and documents" in card.inner_text() and "5 pages, about 9 minutes" in card.inner_text()
-        card.locator(".pbtn").click()  # builder B's stub says no
+        card.locator(".pbtn").click()  # B's player can't load this chapter here (I1: the two joined)
+        p.locator("#brPMsgText").wait_for()  # the player says why, with Back to reading
+        p.locator("#brPBack").click()
         p.locator("#brPlayNote", has_text="can’t be played right now").wait_for()
+        assert p.locator("#brPage #brTitle").inner_text() == "Document vault"  # the same page, as it was
         p.evaluate("window.JarvisBookChapter = { open: (id, o) => { window.__played = [id, o]; return Promise.resolve(true); } }")
         card.locator(".pbtn").click()
         p.wait_for_function("!!window.__played")
@@ -172,7 +175,7 @@ def test_play_asks_the_chapter_player_and_says_so_politely_when_it_cannot(browse
         assert p.locator("#brPlayNote").is_hidden()
         p.locator("#brPlay .bk-chaplist").click()  # Chapter list: the chapter opened in the rail, focused
         assert p.evaluate("document.activeElement.dataset.chapter") == "module_vault"
-        clean(c)
+        clean(c, 404)  # this small book serves no chapter: the player's own 404
     finally:
         c.close()
 
@@ -186,7 +189,9 @@ def test_continue_offers_the_remembered_place_and_keeps_the_tours(browser: Any, 
         card.click()
         wait_title(c, "Document vault")
         assert card.is_hidden() and p.evaluate("document.activeElement.id") == "brTitle"
-        assert json.loads(p.evaluate(f"localStorage.getItem('{PLACE}')")) == {"scene": 4, "release": RID, "page": "pg_card_c42"}
+        kept = json.loads(p.evaluate(f"localStorage.getItem('{PLACE}')"))
+        assert isinstance(kept.pop("read_at"), int)  # I1: when he chose the page (Continue weighs it against a chapter)
+        assert kept == {"scene": 4, "release": RID, "page": "pg_card_c42"}
         clean(c)
     finally:
         c.close()

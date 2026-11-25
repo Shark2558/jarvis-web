@@ -8,8 +8,9 @@
 // controls and the tour's keys: Space play/pause, Left/Right a line, Page Up/Down a page, C captions, M sound, Esc Stop.
 // Stop goes back to reading: the player closes and the document event 'jarvis:book-chapter' {action: 'stop', chapter,
 // page, line, release} names the page being told (the reader opens it). Continue where I left off: localStorage
-// jarvis_book_place_v1 {release, chapter, line} (ids only), merged with the tour's and the reader's fields, never over a
-// place of another release that they wrote; a chapter played to its end is forgotten. The tab hidden pauses it; back,
+// jarvis_book_place_v1 {release, chapter, line, heard_at} (ids, and when it was heard: ms, so the reader's Continue can
+// tell it from a page read later; I1), merged with the tour's and the reader's fields, never over a place of another
+// release that they wrote; a chapter played to its end is forgotten. The tab hidden pauses it; back,
 // it plays on only if it was playing. Contract (I0-NOTES.md section 7): window.JarvisBookChapter = {open(chapterId,
 // {line}) -> Promise<boolean>, stop(), state() -> {open, chapter, line, playing, page}}; it draws only in #brPlayer and
 // sets #bookRead[data-mode="player"] while open. No build step; CSP script-src 'self'; textContent only; ASCII; <= 400 lines.
@@ -19,6 +20,7 @@ import { mount } from './console-book-chapter-view.js';
 const $ = (id) => document.getElementById(id);
 const CHAPTER = /^(?:story|module)_[a-z0-9_]{1,40}$/, PAGE = /^pg_(?:chapter|module|card|screen|service)_[a-z0-9_]{1,40}$/;
 const RID = /^[0-9a-f]{7}$/, PLACE = 'jarvis_book_place_v1', CUES = new Set(['page', 'show', 'node', 'edge', 'count']);
+const MINE = ['release', 'chapter', 'line', 'heard_at'];
 const WORD_MS = 330, TAIL_MS = 800, FIRST_WORD_MS = 700, TICK_MS = 100, RATES = [0.85, 1, 1.25], WPM = 150;
 const GONE = new Set([401, 403, 410]);
 const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
@@ -70,18 +72,17 @@ function readPlace() {
 function remember() {
   const l = S.lines[S.index];
   if (!RID.test(S.release) || !l || S.state !== 'ready') return;
-  const old = readPlace(), others = Object.keys(old).filter((k) => k !== 'release' && k !== 'chapter' && k !== 'line');
+  const old = readPlace(), others = Object.keys(old).filter((k) => !MINE.includes(k));
   if (others.length && old.release !== S.release) return; // another part's place of another release stays as it is
-  if (old.release === S.release && old.chapter === S.id && old.line === l.n) return;
   const next = {};
   others.forEach((k) => { next[k] = old[k]; });
-  next.release = S.release; next.chapter = S.id; next.line = l.n;
+  next.release = S.release; next.chapter = S.id; next.line = l.n; next.heard_at = Date.now();
   try { localStorage.setItem(PLACE, JSON.stringify(next)); } catch (_) { /* full or blocked: nothing kept */ }
 }
 function forgetPlace() {
   const old = readPlace();
   if (old.release !== S.release || old.chapter !== S.id) return;
-  delete old.chapter; delete old.line;
+  delete old.chapter; delete old.line; delete old.heard_at;
   try {
     if (Object.keys(old).some((k) => k !== 'release')) localStorage.setItem(PLACE, JSON.stringify(old)); else localStorage.removeItem(PLACE);
   } catch (_) { /* blocked */ }

@@ -3,9 +3,10 @@
 // checked field by field (a field of the wrong type is dropped, never guessed); the contents (The story, Modules with
 // their pages, Screens, Outside services) merged from the pages index and the chapters; the places this browser keeps
 // (localStorage, ids only, every access in try/catch): "continue where I left off" in jarvis_book_place_v1, shared with
-// the tour (console-book-tour.js keeps {release, scene}; the player may keep {chapter, line}): read first and merge,
-// never overwrite another part's fields, and another release's place of another part stays as it is; the read dots in
-// jarvis_book_read_v1 (page ids per release, the last 3 releases). Small DOM helpers: textContent only, icons from
+// the tour (console-book-tour.js keeps {release, scene}; the player keeps {chapter, line, heard_at}): read first and
+// merge, never overwrite another part's fields, and another release's place of another part stays as it is; the read
+// dots in jarvis_book_read_v1 (page ids per release, the last 3 releases). I1: the reader keeps {page, read_at} (when
+// the owner last chose a page; ms), the player its heard_at, so Continue offers whichever came last. Small DOM helpers: textContent only, icons from
 // constant paths. No build step; CSP script-src 'self'; ASCII source; <= 400 lines.
 export const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 export const PAGE = /^pg_(?:chapter|module|card|screen|service)_[a-z0-9_]{1,40}$/;
@@ -80,6 +81,7 @@ export function normalChapters(list) {
   return arr(list).map(obj).filter(Boolean).filter((c) => CHAPTER.test(c.id || '')).map((c) => ({
     id: c.id, title: txt(c.title, 120) || c.id, kind: c.kind === 'story' ? 'story' : 'module',
     pages: arr(c.pages).filter((p) => typeof p === 'string' && PAGE.test(p)), minutes: int(c.minutes), narrated: c.narrated === true,
+    lines: int(c.lines),
   })).filter((c) => c.pages.length);
 }
 /** GET /v1/book/pages/{id}: the page's sections in their order, who wrote it, its flowchart (checked by the flow module). */
@@ -214,14 +216,20 @@ function save(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) { /* full or blocked: nothing kept */ }
 }
 export function place() { return obj(load(PLACE_KEY)) || {}; }
-/** Remember the page read, keeping every other part's fields exactly as they were written. */
-export function remember(rid, pageId) {
+const MINE = ['release', 'page', 'read_at'];
+const stamp = (v) => (Number.isFinite(v) && v >= 0 ? v : 0);
+/** Remember the page read, keeping every other part's fields exactly as they were written. `chosen`: the owner opened
+ *  it (a link, search, Continue, Back) -- not the address on arrival, nor the player's Stop -- so it is newer than the
+ *  chapter listened to (read_at). */
+export function remember(rid, pageId, chosen) {
   if (!RID.test(rid || '') || !PAGE.test(pageId || '')) return;
-  const old = place(), others = Object.keys(old).filter((k) => k !== 'page' && k !== 'release');
+  const old = place(), others = Object.keys(old).filter((k) => !MINE.includes(k));
   if (others.length && old.release !== rid) return; // another part's place of another release stays as it is
   const next = {};
   others.forEach((k) => { next[k] = old[k]; });
   next.release = rid; next.page = pageId;
+  const when = chosen ? Date.now() : (old.release === rid ? stamp(old.read_at) : 0);
+  if (when) next.read_at = when;
   save(PLACE_KEY, next);
 }
 /** The page this browser left off at, for this release, or ''. */
@@ -233,6 +241,11 @@ export function offered(rid) {
 export function chapterPlace(rid) {
   const p = place();
   return p.release === rid && CHAPTER.test(p.chapter || '') && Number.isInteger(p.line) && p.line > 0 ? { chapter: p.chapter, line: p.line } : null;
+}
+/** I1: the player's place when the owner listened after the last page he chose to read, else null (Continue's chapter). */
+export function heardPlace(rid) {
+  const at = chapterPlace(rid), p = place();
+  return at && stamp(p.heard_at) >= stamp(p.read_at) ? at : null;
 }
 function readList() {
   return arr(load(READ_KEY)).map(obj).filter((x) => x && RID.test(x.r || '')).map((x) => ({ r: x.r, ids: arr(x.ids).filter((i) => typeof i === 'string' && PAGE.test(i)) }));

@@ -104,10 +104,21 @@ export function mark(host, book, current, read, opts) {
   host.querySelectorAll('.bk-chapbtn.open').forEach((b) => { if (!b.closest('.bk-chrow').querySelector('a.now')) b.classList.remove('open'); });
   return now[0] || null;
 }
-/** The Continue card: the page this browser left off at, while another page is open. */
-export function drawContinue(el, book, pageId, current) {
-  const page = pageId ? book.pages.get(pageId) : null;
+/** The Continue card: the chapter the owner stopped listening to, when that came after the last page he chose
+ *  (heard: {chapter, line}; the reader plays it on a tap, I1), else the page this browser left off at, while another
+ *  page is open. One card, plain words. */
+export function drawContinue(el, book, pageId, current, heard) {
   if (!el) return;
+  delete el.dataset.chapter; delete el.dataset.page;
+  if (heard && heard.chapter) {
+    const ch = heard.chapter, words = mk('span'), of = ch.lines >= heard.line ? ' of ' + ch.lines : '';
+    el.href = '#' + (ch.pages.includes(current) ? current : ch.pages[0]); el.dataset.chapter = ch.id;
+    words.append(mk('b', '', 'Continue the chapter: ' + ch.title), mk('small', '', 'Line ' + heard.line + of));
+    el.replaceChildren(icon('play'), words);
+    el.hidden = false;
+    return;
+  }
+  const page = pageId ? book.pages.get(pageId) : null;
   if (!page || pageId === current) { el.hidden = true; el.replaceChildren(); return; }
   const at = whereIs(book, pageId), words = mk('span');
   el.href = '#' + pageId; el.dataset.page = pageId;

@@ -9,7 +9,11 @@
 // then the sheet; arrows and Enter in the results. The Play card asks builder B's player:
 // window.JarvisBookChapter.open(chapterId, {line, page}); when it is missing or says no, a polite note says so.
 // A refused session (401, 403, 410) goes back to I0's closed page. textContent only; ASCII source; <= 400 lines.
-import { PAGE, bookOf, chapterPlace, icon, markRead, mk, normalIndex, normalPage, offered, readIds, remember, txt } from './console-book-read-data.js';
+// I1 (the reader and the player joined): the player's Stop (the document event 'jarvis:book-chapter', action 'stop')
+// opens the page being told, which is not a page the owner chose, so the chapter stays the newer place; Continue then
+// offers that chapter at its line ("Continue the chapter: Vault and documents", "Line 23 of 80") until he chooses a page
+// to read; the release chip says the release's label, version and id ("R6.4 . v6.4.0 . 3f2a1c9").
+import { PAGE, bookOf, chapterPlace, heardPlace, icon, markRead, mk, normalIndex, normalPage, offered, readIds, remember, txt } from './console-book-read-data.js';
 import { chapterWords, drawPage, drawToc, follow } from './console-book-read-page.js';
 import { drawContents, drawContinue, mark, reveal } from './console-book-read-rail.js';
 import { createSearch } from './console-book-read-search.js';
@@ -22,7 +26,7 @@ const media = (q) => { try { return window.matchMedia(q); } catch (_) { return {
 const phoneQ = media(PHONE_Q), stillQ = media('(prefers-reduced-motion: reduce)');
 const R = { deps: null, book: null, rid: '', current: '', cache: new Map(), read: new Set(), resume: '', seq: 0, drawn: null,
   rail: { prefix: 'br', opened: new Set(), closed: new Set() }, sheet: { prefix: 'brS', opened: new Set(), closed: new Set() },
-  stop: null, mini: null, sheetBuilt: false, searches: [] };
+  stop: null, mini: null, sheetBuilt: false, searches: [], told: '' };
 const isPhone = () => !!phoneQ.matches;
 const smooth = () => (stillQ.matches || document.documentElement.dataset.motion === 'off' || document.documentElement.dataset.motion === 'calm' ? 'auto' : 'smooth');
 const playing = () => ($('bookRead') || {}).dataset && $('bookRead').dataset.mode === 'player';
@@ -57,7 +61,8 @@ function fromHash() {
 function busy(on) { const m = $('brMain'); if (m) m.setAttribute('aria-busy', String(on)); }
 async function open(id, o = {}) {
   if (!R.book || !R.book.pages.has(id)) { note('That page isn\u2019t in this book.'); return false; }
-  const mine = ++R.seq;
+  const mine = ++R.seq, told = R.told === id; // the player's Stop brought us here: not the owner's choice
+  R.told = '';
   R.current = id; marks();
   let page = R.cache.get(id);
   if (!page) {
@@ -76,7 +81,7 @@ async function open(id, o = {}) {
     if (R.cache.size > KEEP) R.cache.delete(R.cache.keys().next().value);
   }
   busy(false);
-  draw(page, o);
+  draw(page, Object.assign({}, o, { told }));
   return true;
 }
 function failed(id, words) {
@@ -99,7 +104,7 @@ function draw(page, o = {}) {
   R.stop = follow($('brMain'), $('brToc'), drawn);
   $('brMain').scrollTop = 0;
   R.read = markRead(R.rid, page.id, R.read);
-  remember(R.rid, page.id);
+  remember(R.rid, page.id, !o.initial && !o.told);
   if (R.resume === page.id) R.resume = '';
   marks();
   miniBar(drawn);
@@ -120,11 +125,35 @@ function marks() {
   if (!R.book) return;
   const now = mark($('brContents'), R.book, R.current, R.read, R.rail);
   if (now && !isPhone() && now.scrollIntoView && !$('brRail').contains(document.activeElement)) now.scrollIntoView({ block: 'nearest' });
-  drawContinue($('brContinue'), R.book, R.resume, R.current);
+  const heard = heardChapter();
+  drawContinue($('brContinue'), R.book, R.resume, R.current, heard);
   if (R.sheetBuilt) {
     mark($('brSheetNav'), R.book, R.current, R.read, R.sheet);
-    drawContinue($('brSheetContinue'), R.book, R.resume, R.current);
+    drawContinue($('brSheetContinue'), R.book, R.resume, R.current, heard);
   }
+}
+/** The chapter to continue, when the owner listened after the last page he chose: {chapter, line} or null. */
+function heardChapter() {
+  const at = heardPlace(R.rid), ch = at ? R.book.chapters.find((c) => c.id === at.chapter && c.narrated) : null;
+  return ch ? { chapter: ch, line: at.line } : null;
+}
+/** A tap on the Continue card: a chapter plays from where he stopped; a page is a link (the address opens it). */
+function onContinue(e) {
+  const id = e.currentTarget && e.currentTarget.dataset.chapter, ch = id && R.book ? R.book.chapters.find((c) => c.id === id) : null;
+  if (!ch) return;
+  e.preventDefault();
+  const sheet = $('brSheet');
+  if (sheet && sheet.open) sheet.close();
+  play(ch);
+}
+/** The player's Stop: back to reading at the page being told (after the player has put its focus back); on the page
+ *  already open, only the Continue card changes (the page, and anything it says, stays as it was). */
+function onChapter(e) {
+  const d = e && e.detail;
+  if (!R.book || !d || d.action !== 'stop') return;
+  const id = typeof d.page === 'string' && R.book.pages.has(d.page) ? d.page : R.current;
+  if (!id || id === R.current) { marks(); return; }
+  setTimeout(() => { R.told = id; go(id); }, 0);
 }
 
 // ---- Play: builder B's player -------------------------------------------------------------------------------------------
@@ -182,6 +211,7 @@ function buildSheet() {
   box.append(icon('search', 'ic'), input, list);
   const cont = mk('a', 'bk-cont'), nav = mk('nav', 'bk-snav');
   cont.id = 'brSheetContinue'; cont.hidden = true;
+  cont.addEventListener('click', onContinue);
   nav.id = 'brSheetNav'; nav.setAttribute('aria-label', 'Contents');
   d.replaceChildren(head, box, cont, nav);
   R.searches.push(createSearch({ input, list, box, api: R.deps.api, open: go, gone, note, phone: () => true, keepOpen: true }));
@@ -215,7 +245,8 @@ function onKey(e) {
 function chip(index) {
   const c = $('brRelease');
   const v = [...R.book.pages.values()].map((p) => p.meta).find((m) => m && m.release === R.rid && m.version);
-  if (c && R.rid) c.textContent = (v ? v.version + ' \u00b7 ' : '') + R.rid;
+  const label = R.deps.label ? R.deps.label + ' \u00b7 ' : ''; // I1: the sealed release's ("R6.4"); none for an old answer
+  if (c && R.rid) c.textContent = label + (v ? v.version + ' \u00b7 ' : '') + R.rid;
   return index;
 }
 function empty(words) {
@@ -224,7 +255,7 @@ function empty(words) {
   p.replaceChildren(box);
   $('brContents').replaceChildren(mk('p', 'bk-wait', 'No contents.'));
 }
-/** deps: {api, release, chapters, gone(e) -> bool}. Draws the contents and opens the page in the address, or the first. */
+/** deps: {api, release, label, chapters, gone(e) -> bool}. Draws the contents and opens the page in the address, or the first. */
 export async function startReader(deps) {
   R.deps = deps; R.rid = deps.release || '';
   R.read = readIds(R.rid); R.resume = offered(R.rid);
@@ -232,6 +263,9 @@ export async function startReader(deps) {
   $('brContents').replaceChildren(mk('p', 'bk-wait', 'Reading the contents\u2026'));
   R.searches.push(createSearch({ input: $('brSearch'), list: $('brResults'), box: $('brSearchBox'), api: deps.api, open: go, gone, note, phone: isPhone }));
   document.addEventListener('keydown', onKey);
+  document.addEventListener('jarvis:book-chapter', onChapter);
+  const cont = $('brContinue');
+  if (cont) cont.addEventListener('click', onContinue);
   const menu = $('brMenu'), find = $('brFind');
   if (menu) menu.addEventListener('click', () => openSheet(false));
   if (find) find.addEventListener('click', () => openSheet(true));

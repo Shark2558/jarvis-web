@@ -444,7 +444,9 @@ def test_continue_where_i_left_off_keeps_the_other_parts_fields(
         p.wait_for_function(f"() => {place}.line === 1")
         p.evaluate("window.__endLine()")
         p.wait_for_function(f"() => {place}.line === 2")
-        assert p.evaluate(place) == {
+        kept = p.evaluate(place)
+        assert kept.pop("heard_at") > 0  # I1: when it was heard (ms), for the reader's Continue
+        assert kept == {
             "release": rid,
             "scene": 3,
             "page": "pg_card_c42",

@@ -17,7 +17,7 @@ import { currentPage, openPage, startReader } from './console-book-read-app.js';
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = 'jarvis_book_token', SESSION_KEY = 'jarvis_book_session', HEADER = 'X-Jarvis-Book';
 const BEAT_MS = 60 * 1000, WORD_MS = 330, TAIL_MS = 800, GONE = new Set([401, 403, 404, 410]), OWN = /^\/(?![/\\])/;
-const RID = /^[0-9a-f]{7}$/;
+const RID = /^[0-9a-f]{7}$/, LABEL = /^R\d{1,3}(?:\.\d{1,2})?$/;
 const WORDS = Object.freeze({
   none: 'Open the full book from the Book panel in the console: Open for me, then Read the full book.',
   gone: 'The book session ended. Open the book again from the Book panel in the console.',
@@ -55,7 +55,7 @@ async function api(path, opts) {
 }
 
 // ---- the page's state ------------------------------------------------------------------------------------------------
-const S = { state: 'loading', release: '', chapters: [], beat: 0 };
+const S = { state: 'loading', release: '', label: '', chapters: [], beat: 0 };
 function set(state, words) {
   S.state = state;
   const app = $('bookRead');
@@ -79,6 +79,7 @@ async function boot() {
   try {
     const got = obj(await api('/v1/book/chapters')) || {};
     S.release = RID.test(got.release || '') ? got.release : '';
+    S.label = LABEL.test(got.label || '') ? got.label : ''; // I1: the release chip's "R6.4"
     S.chapters = Array.isArray(got.chapters) ? got.chapters.filter(obj) : [];
   } catch (e) { refused(e); return false; }
   const chip = $('brRelease');
@@ -137,7 +138,7 @@ const ready = boot();
 const closeBtn = $('brClose'), tourBtn = $('brTour');
 if (closeBtn) closeBtn.addEventListener('click', confirmClose);
 if (tourBtn) tourBtn.addEventListener('click', tour);
-ready.then((ok) => (ok ? startReader({ api, release: S.release, chapters: S.chapters.slice(), gone }) : false)).catch(() => {
+ready.then((ok) => (ok ? startReader({ api, release: S.release, label: S.label, chapters: S.chapters.slice(), gone }) : false)).catch(() => {
   const note = $('brNote');
   if (note) note.textContent = WORDS.down;
 });

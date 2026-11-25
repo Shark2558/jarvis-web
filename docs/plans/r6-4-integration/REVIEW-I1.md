@@ -1,4 +1,4 @@
-Version v6.4.0 · 25 Nov 2026, 16:10 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXIV
+Version v6.4.1 · 25 Nov 2026, 17:30 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXIV
 
 # R6.4 combined security and code review of I1 (fresh context, 25 Nov 2026)
 
@@ -68,7 +68,7 @@ fixed, three declined with their reasons).
 | M-1 | `docs/architecture/JARVIS-Architecture.md:2031` (§11), `:1343` (C57) | The roadmap still listed "R6.4 The Book's new look" as the first PLANNED row, so the short tour's "Next:" (`roadmap.next`) named the release being read, and the What's planned page and script ("phone calls at the top of the list") contradicted the table: an untrue spoken line. C57 said "being built" | Row removed; §11's opening says R6.4 is built and its "Not in R6.4" items wait for the owner (no row); the first row reads "Phone calls"; C57 says built, not yet deployed; guide v6.4.2 (`37c137e`) | `test_r63_seams`: a built release is never a planned row (red, then green) |
 | M-2 | `src/jarvis/people/research.py:348-350` | A classifier call that refused (a non-public label) raised before its cost was recorded: a paid call outside the monthly limit, and an unpriced one never counted (I1's note) | The reply's cost is recorded before the refusal (a ₹0 entry judged by billing as before); a classifier that raised records nothing; `pg_card_c21` and the `module_people` script say so (`2cbc607`) | `test_r64_i1_unpriced`: refusing classifier billed once (priced and ₹0), a failing one not |
 | M-3 | `evals/r6_3/run.py:54` | The plan's mock eval "narration scripts compile and pass the checks" (section 5) was never written ("evals before ship") | `evals/r6_3/narration.py`: a fixture compiled narrated with facts filled and a typed-number script not; each line check named; this checkout's 26 scripts; its control switches the line checks off (`cefad43`) | the part's own control fails it; `test_r63_seams` pins the four parts |
-| M-4 | `tests/r63_fakes_a.py:216-245`, `tests/test_r631_review_i1.py:126`, `tests/test_r63_types.py:250`, `evals/r6_3/authored.py:97`, `src/jarvis/api/book_pages.py:33,133-135` | The joined branch failed CI's test job and the r6_3 gated eval: the tour's pinned facts were R6.3.1's (label, version, plan title, roadmap), the compile's counts gained `narrated` (I0), the contract gained three routes, and the route file imported `jarvis.api.ratelimit` (refused by `test_r63_static`: a route file reads only the app's auth and book gate) | Pins brought to R6.4; `r6_wiring` installs every `http.LIMITS` entry (pages and search, 60 a minute) as it did the pages', and `book_pages.py` builds no limiter (`f9a093e`) | the four tests and `evals/r6_3` (30/30) green |
+| M-4 | `tests/r63_fakes_a.py:216-245`, `tests/test_r631_review_i1.py:126`, `tests/test_r63_types.py:250`, `tests/test_r131_i1_docs.py:20-22` (found in the final pass), `evals/r6_3/authored.py:97`, `src/jarvis/api/book_pages.py:33,133-135` | The joined branch failed CI's test job and the r6_3 gated eval: the tour's pinned facts were R6.3.1's (label, version, plan title, roadmap), the compile's counts gained `narrated` (I0), the contract gained three routes, and the route file imported `jarvis.api.ratelimit` (refused by `test_r63_static`: a route file reads only the app's auth and book gate) | Pins brought to R6.4; `r6_wiring` installs every `http.LIMITS` entry (pages and search, 60 a minute) as it did the pages', and `book_pages.py` builds no limiter (`f9a093e`; the R13.1 guide pin follows `jarvis.__version__`, `b45c797`) | the five tests and `evals/r6_3` (30/30) green |
 
 ## LOW
 
@@ -101,7 +101,21 @@ run, `health/service.py:55-78`), `pg_card_c12` (wardrobe pieces in `undo/models.
 
 ## The one final check pass (on `r6-4-review`)
 
-FINAL-PASS
+Run on `f9a093e` (all fixes in), Python 3.12 (`/tmp/venv-12`, with CI's homebridge extra and SciPy
+1.18.1), one machine with 2 CPUs, each heavy step behind the shared lock.
+
+| Check | Result |
+|---|---|
+| Unit suite, whole, with coverage (CI's `pytest -q --cov=jarvis`; in 8 chunks with `--cov-append`) | **19,519 passed, 1 failed, 55 skipped** (+ the 102 browser files, skipped without `JARVIS_BROWSER_TESTS`). The one failure, `test_r131_i1_docs`, pinned the guide to "Version v6.3." (stale since R6.4 I0, part of M-4): fixed in `b45c797` and re-run, 4 passed |
+| Coverage (`scripts/coverage_floor.py`) | **95.66 %** (floor 95 %, ECC target 80 %) |
+| `ruff check src tests evals` | all checks passed |
+| `ruff format --check src tests evals` | 2 files would be reformatted, both `main`'s own (`api/console.py`, `tests/test_r631_i1_release_new.py`); R6.4's are formatted (L-4) |
+| `mypy src` | 1 error, the known baseline `memory/redis_store.py:67` |
+| Mock evals (`evals/run_all_mock.py`, on `b45c797`) | **ALL MOCK EVALS: PASS**, 44 gated suites (phase0 is the ungated smoke run); `r6_3` 30/30 with the new `narration` part, every control failing its suite |
+| `scripts/check_doc_versions.py` / `scripts/arch_coverage.py` | 33 documents OK / OK (66 modules, 120 console modules, 2 jobs, 31 services, 126 collections) |
+| `pages --check` (strict, no `--allow-missing`) | **153 pages ok, 26 narrations ok**, 0 problems |
+| `python -m jarvis.buildbook.gen --check` | two builds byte-identical; `pages.json.gz` 297,953 bytes (cap 2 MiB), 153 written, 26 chapters narrated (2,264 lines) |
+| Browser (`-m browser`): the R6.4 files and the touched older ones (book panel, show, show hold, lock, tour, flow, usage, Vitals board, start) | 206 passed on `cefad43`, 1 flaky (`test_vitals_board` edit: "element is not stable" under load; passed alone); after L-8 and M-4: `test_r64_*` and the book panel again, **68 passed** on `b45c797` |
 
 ## Screenshots and recording
 
@@ -117,3 +131,4 @@ off-theme font after L-8 (the camera's crop of a tall chart is by design).
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.0 | 25 Nov 2026, 16:10 IST | R6.4 | First edition: the combined security and code review of I1 @ `61b0a41`, its fixes (M-1 to M-4, L-1 to L-4 and L-8), the sample, the final pass and the verdict APPROVE | 🛠 Mark XXIV |
+| v6.4.1 | 25 Nov 2026, 17:30 IST | R6.4 | The final check pass and its numbers; M-4 gains the R13.1 guide pin it found | 🛠 Mark XXIV |

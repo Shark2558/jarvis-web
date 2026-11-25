@@ -3,7 +3,7 @@ chapter: story_example
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_chapter_example": "15da99aeb230bed1"
+  "pg_chapter_example": "8693debfa8ef5509"
 ---
 - [show:title] This chapter follows one everyday request through the whole of JARVIS, so you can see how the parts fit together.
 - [show:plain] You tap the microphone and ask for a dentist appointment on Friday evening.
@@ -52,6 +52,7 @@ pages:
 - [count:{{fact:src/jarvis/tools/budget.py:MAX_FREE_DELETES}}] It may make at most {{fact:src/jarvis/tools/budget.py:MAX_FREE_DELETES}} undoable deletes without a card; after that, each delete waits for your approval.
 - [show:costs] The whole thread costs a couple of brain replies at the {{fact:settings.default_tier}} tier, counted in rupees against your monthly limit.
 - [count:{{fact:settings.voice_stt_free_seconds}}] Add a few seconds of listening and speech, inside the free voice allowance of {{fact:settings.voice_stt_free_seconds}} seconds of listening a month.
+- Had you picked a brain whose model has no known price, each reply would say price unknown, and count against your limit at the dearest price JARVIS knows.
 - The calendar, the cards, the audit trail and the activity log cost nothing.
 - [show:fails] If the microphone is blocked, a plain line tells you how to allow it, and typed chat still works.
 - If Google's speech is off, the browser's own voice and recogniser take over.

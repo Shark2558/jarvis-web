@@ -1,7 +1,7 @@
 ---
 page: pg_chapter_example
 written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_on: 2026-11-25
 sources:
   "src/jarvis/api/activity.py": "039fe358ea1af9ad"
   "src/jarvis/api/permissions.py": "42dc725d201a9c43"
@@ -31,14 +31,14 @@ sources:
   "src/jarvis/api/static/voice-capture-worklet.js": "4b1dbae36264b075"
   "src/jarvis/api/voice.py": "12fae33259cea1d6"
   "src/jarvis/core/approve_all.py": "59f16ea07d5207c5"
-  "src/jarvis/core/brain.py": "e418eb8e4df90505"
-  "src/jarvis/core/brain_decisions.py": "c952c68c5f5ad1d6"
+  "src/jarvis/core/brain.py": "976861b3c96f073a"
+  "src/jarvis/core/brain_decisions.py": "01cc210182d5e7a3"
   "src/jarvis/core/brain_types.py": "fa3d9df28ac632ba"
   "src/jarvis/core/channel.py": "0c46ee25a780e41b"
-  "src/jarvis/core/finish.py": "76f1255343c6e042"
+  "src/jarvis/core/finish.py": "a5f2f201ead235f7"
   "src/jarvis/core/fixed_lines.py": "f7628651dff9b5b5"
-  "src/jarvis/core/models.py": "deff434beeb1cc0d"
-  "src/jarvis/core/rounds.py": "4e7f24f94d989836"
+  "src/jarvis/core/models.py": "b81cc65f474ac5d8"
+  "src/jarvis/core/rounds.py": "f6a5203fab82caa5"
   "src/jarvis/core/saving.py": "c92f295af587766d"
   "src/jarvis/core/window.py": "06c365d979fdc3cf"
   "src/jarvis/llm/anthropic_provider.py": "60484f5c3cd11faf"
@@ -49,7 +49,7 @@ sources:
   "src/jarvis/llm/local_provider.py": "aa111fafc89f4a46"
   "src/jarvis/llm/mock_provider.py": "e846975cd22e657f"
   "src/jarvis/llm/openai_compat_provider.py": "4d0317770f7ba34f"
-  "src/jarvis/llm/pricing.py": "2def5f9e481da2f1"
+  "src/jarvis/llm/pricing.py": "a2d1278419157236"
   "src/jarvis/llm/router.py": "c72db7b28cbba849"
   "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
   "src/jarvis/storage/audit.py": "d268e84d6aa87ab5"
@@ -93,7 +93,7 @@ On Tuesday at 18:45 Meera taps the mic and says, "Add a dentist appointment on F
 Your voice is captured by `src/jarvis/api/static/console-voice-capture.js` and sent to `transcribe`, where `GoogleSTT` turns it into text with the language code {{fact:settings.voice_language}}; without Google's voice the browser's own recogniser does it (`src/jarvis/api/static/console-voice-loop-browser.js`). The text reaches `Brain`, which loads the conversation, adds what JARVIS remembers, and asks the router for the {{fact:settings.default_tier}} tier, {{fact:settings.model_balanced}} unless you picked another brain (`src/jarvis/llm/router.py`). The brain doesn't act by itself: it answers with a request to use the calendar tool from `calendar_tools`, with the day and time filled in (`parse_when`). Every tool call passes `Gateway`, which checks your rules for that group of tools. Because the request was spoken, the gateway asks first even where your rule says Allow, since someone else in the room might have said it (`src/jarvis/tools/gateway.py`). `create_card` writes the card's words in code, never the AI, and `src/jarvis/api/static/console-approvals.js` shows it with Approve and Decline. An event with guests would send invitations that are impossible to recall, so it always asks and, with the passkey rule on, needs your passkey (`ApprovalGuard`). On your approval the event goes into Google Calendar and the call into the append-only audit trail; the reply is shown and, for a spoken question, read aloud by `speak` once `speakable` has cleaned it. For "Cancel it", `delete_risk` finds the event undoable, `delete_card` asks first because it was spoken, and `delete_kept` keeps a copy before Google deletes it (`src/jarvis/tools/calendar_undo.py`). The activity log, served by `activity`, shows each step in plain words, and the Undo button brings the event back through `CalendarRestorer`. One message may propose at most {{fact:src/jarvis/tools/budget.py:MAX_NEW_CARDS}} new cards and make {{fact:src/jarvis/tools/budget.py:MAX_FREE_DELETES}} undoable deletes without one (`TurnBudget`).
 
 ## What it costs
-A couple of brain replies at the {{fact:settings.default_tier}} tier, counted in rupees against your monthly limit, plus a few seconds of listening and speech inside the free voice allowance (`src/jarvis/voice/google_cloud.py`). The calendar, the cards, the audit trail and the activity log cost nothing (`src/jarvis/tools/gateway.py`).
+A couple of brain replies at the {{fact:settings.default_tier}} tier, counted in rupees against your monthly limit, plus a few seconds of listening and speech inside the free voice allowance (`src/jarvis/voice/google_cloud.py`). Had you picked a brain whose model has no known price, each reply would be marked "price unknown", never ₹0, and counted against your limit at the dearest price JARVIS knows (`unpriced`, `dearest`). The calendar, the cards, the audit trail and the activity log cost nothing (`src/jarvis/tools/gateway.py`).
 
 ## When it fails
 A blocked microphone gets a plain line on how to allow it, and typed chat still works (`src/jarvis/api/static/console-voice-capture.js`). If Google's speech is off, the browser's own voice and recogniser take over (`src/jarvis/api/static/console-voice.js`). At your monthly limit no paid call is made, and the reply says so (`src/jarvis/core/brain.py`). If the event changed after its card was shown, for instance it gained guests, the card is withdrawn and a new one proposed (`src/jarvis/core/brain_decisions.py`). If the copy can't be kept, the event is not deleted (`delete_kept`).

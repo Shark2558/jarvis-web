@@ -1,0 +1,56 @@
+---
+chapter: story_what
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_chapter_what": "524a6f09bd9ceb3d"
+---
+- [show:title] This first chapter is about what JARVIS is, told in one picture.
+- [show:plain] JARVIS is your own personal assistant, running on a server of its own in the cloud, and answering only to you.
+- You talk to it in a web page called the console, on your phone or your laptop, by typing or by voice.
+- Behind that page sits a brain, an AI model, which reads your message together with your recent conversation.
+- It works out what you need, and asks for tools such as your calendar or your e-mail.
+- Anything that would change something waits for your approval, on a card.
+- And each release comes with the Build Book, JARVIS's own record of how it is built, sealed in your vault.
+- This book you are hearing now is part of it.
+- [show:how] Now let's see how the pieces fit.
+- [show:overview] Here is JARVIS in one picture, from the moment you speak to the moment your reply is saved.
+- [node:you] It starts with you, typing or speaking.
+- [edge:you>console] Your words go into the console, the one page that JARVIS serves for itself.
+- [node:console] The console runs the chat, the brain picker and the approval cards, and lays out the dock of panels.
+- Its scripts, fonts and libraries all come from JARVIS itself, never from another website.
+- [edge:console>brain] From the console, each message travels on to the brain.
+- [node:brain] The brain handles one message at a time in each conversation, and checks your monthly limit before any paid call.
+- [node:window] Beside it sits your recent conversation, kept until you choose to delete it.
+- [edge:window>brain] [count:{{fact:settings.session_max_turns}}] That context rides along with each message: at most {{fact:settings.session_max_turns}} turns, and about {{fact:settings.session_max_chars}} characters.
+- [edge:brain>tools] When the brain needs a tool, it asks for one.
+- [node:tools] Every tool call, without exception, passes through the gateway.
+- [count:{{fact:settings.tool_max_rounds}}] For one message, the brain may ask for tools for at most {{fact:settings.tool_max_rounds}} rounds.
+- [edge:tools>approve] When a call would change something, it comes to you first.
+- [node:approve] You approve the change or decline it, and nothing changes until you do.
+- [edge:tools>reply] Then the answer travels on, to be shown.
+- [node:reply] The reply appears in front of you, and the turn is saved.
+- If an answer comes back cut off, JARVIS asks for it once more.
+- And an answer with no words at all becomes a fixed, honest line, chosen by code from what actually happened.
+- JARVIS also notes whether your message came from the console or from Telegram, so that surface's own rules apply.
+- The running version number comes from one place only, so it is the same everywhere.
+- [edge:console>book] Off to one side, the console also opens the Build Book panel.
+- [node:book] The panel opens the book only behind your passkey and a fresh Google sign-in.
+- [edge:book>pages] Along this path travels the story of how JARVIS is built.
+- [node:pages] The full book is shown a page at a time, with a flowchart for each chapter, and it can open on a page of its own.
+- The Build Book is JARVIS describing itself: the generator builds it from the code at each release.
+- Its full pages are written by the Workshop while it builds JARVIS, then checked and compiled in.
+- [show:example] In the made-up example, Leela opens JARVIS on her phone early on a Monday morning.
+- She types: what's on today? Put a call with the plumber at four.
+- JARVIS reads her calendar, and answers with the day's meetings.
+- Under the answer a card waits: add event, call the plumber, this afternoon, with Approve and Decline.
+- She taps Approve, and the event is in her calendar.
+- That evening she opens the Book panel to see how all of this works, and starts with this very chapter.
+- [show:costs] The console and the Build Book cost nothing to use, and JARVIS calls no AI to write the book.
+- Each reply does use paid AI time, counted in rupees against the monthly limit you set.
+- With the AI switched off, nothing is spent at all.
+- [show:fails] When the brain hits an error, you get a short, friendly message, never the vendor's own words.
+- At your monthly limit no paid call is made, and the reply tells you so.
+- A message that clashes with one sent from another window is not stored, and you are asked to send it again.
+- A panel whose data doesn't arrive shows a plain line, and the rest of the console keeps working.
+- That is JARVIS in one picture: you speak, the brain reads, the gateway guards, and every change waits for you.

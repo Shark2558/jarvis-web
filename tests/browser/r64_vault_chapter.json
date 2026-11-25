@@ -1,0 +1,1369 @@
+{
+ "_about": "R6.4 builder B: the real Vault chapter (GET /v1/book/chapters/module_vault) and its five pages (GET /v1/book/pages/{id}) as this tree's compiled book serves them (facts filled). Made from narration/module_vault.md and the pages by compiling the book (gen.compile_pages); tests/test_r64_b_static.py checks it still matches the script.",
+ "chapter": {
+  "release": "cda01f1",
+  "id": "module_vault",
+  "title": "Vault and documents",
+  "kind": "module",
+  "pages": [
+   {
+    "id": "pg_module_vault",
+    "title": "Vault and documents"
+   },
+   {
+    "id": "pg_card_c07",
+    "title": "Attached documents"
+   },
+   {
+    "id": "pg_card_c42",
+    "title": "Document vault"
+   },
+   {
+    "id": "pg_card_c43",
+    "title": "DigiLocker import folder"
+   },
+   {
+    "id": "pg_screen_vault",
+    "title": "Vault"
+   }
+  ],
+  "lines": [
+   {
+    "n": 1,
+    "page": "pg_module_vault",
+    "text": "This chapter is about how your documents reach JARVIS, and how the important ones are kept safe.",
+    "cues": [
+     {
+      "kind": "page",
+      "target": "pg_module_vault"
+     },
+     {
+      "kind": "show",
+      "target": "title"
+     }
+    ]
+   },
+   {
+    "n": 2,
+    "page": "pg_module_vault",
+    "text": "There are two ways in: you attach files to a message, or you keep a paper in the vault.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "plain"
+     }
+    ]
+   },
+   {
+    "n": 3,
+    "page": "pg_module_vault",
+    "text": "Attached files are read with you for that conversation, and then the file itself is thrown away.",
+    "cues": []
+   },
+   {
+    "n": 4,
+    "page": "pg_module_vault",
+    "text": "The vault is different: a locked cupboard for the papers you keep, such as your ID, insurance and certificates.",
+    "cues": []
+   },
+   {
+    "n": 5,
+    "page": "pg_module_vault",
+    "text": "Here is the whole journey of a document, from the moment you add it to the moment it opens again.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "overview"
+     }
+    ]
+   },
+   {
+    "n": 6,
+    "page": "pg_module_vault",
+    "text": "It starts with you, adding a file to a message or to the vault.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "file"
+     }
+    ]
+   },
+   {
+    "n": 7,
+    "page": "pg_module_vault",
+    "text": "First, JARVIS checks the file's kind and size, by its name and its bytes together, never by what the browser claims.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "kind"
+     }
+    ]
+   },
+   {
+    "n": 8,
+    "page": "pg_module_vault",
+    "text": "A file that is too big, unreadable, password-protected or of the wrong kind is refused in plain words.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "kind>refused"
+     }
+    ]
+   },
+   {
+    "n": 9,
+    "page": "pg_module_vault",
+    "text": "A message carries at most 10 files, and 40 megabytes together.",
+    "cues": [
+     {
+      "kind": "count",
+      "target": "10"
+     }
+    ]
+   },
+   {
+    "n": 10,
+    "page": "pg_module_vault",
+    "text": "When you attach a file, its text is taken out by a separate, limited helper, one file at a time.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "kind>read"
+     }
+    ]
+   },
+   {
+    "n": 11,
+    "page": "pg_module_vault",
+    "text": "Only that text stays with the conversation, so JARVIS can read and search it as it answers you.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "chat"
+     }
+    ]
+   },
+   {
+    "n": 12,
+    "page": "pg_module_vault",
+    "text": "When you keep a file instead, it goes into the vault, sealed with a key of its own.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "kind>vault"
+     }
+    ]
+   },
+   {
+    "n": 13,
+    "page": "pg_module_vault",
+    "text": "Papers can also arrive from a Google Drive folder that you share documents into from the DigiLocker app.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "inbox"
+     }
+    ]
+   },
+   {
+    "n": 14,
+    "page": "pg_module_vault",
+    "text": "When the vault finds an expiry date in a PDF, it asks you to confirm it first.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "vault>confirm"
+     }
+    ]
+   },
+   {
+    "n": 15,
+    "page": "pg_module_vault",
+    "text": "Opening a kept file needs your passkey, or a fresh Google sign-in when you have none.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "vault>unlock"
+     }
+    ]
+   },
+   {
+    "n": 16,
+    "page": "pg_module_vault",
+    "text": "Before a single byte goes out, the opening is written to the audit trail.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "audit"
+     }
+    ]
+   },
+   {
+    "n": 17,
+    "page": "pg_module_vault",
+    "text": "Only then does the file download, through a link that works once.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "audit>open"
+     }
+    ]
+   },
+   {
+    "n": 18,
+    "page": "pg_module_vault",
+    "text": "In the made-up example, Lakshmi asks what her car insurance covers, and attaches the policy with photos of a dented bumper.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "example"
+     }
+    ]
+   },
+   {
+    "n": 19,
+    "page": "pg_module_vault",
+    "text": "JARVIS reads them all, strips the camera and location details from the photos, and answers her.",
+    "cues": []
+   },
+   {
+    "n": 20,
+    "page": "pg_module_vault",
+    "text": "She then keeps the policy in the vault, and a month before it ends, a reminder tells her so.",
+    "cues": []
+   },
+   {
+    "n": 21,
+    "page": "pg_module_vault",
+    "text": "Taking text out of a file and keeping the vault cost nothing, because both run on JARVIS's own server.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "costs"
+     }
+    ]
+   },
+   {
+    "n": 22,
+    "page": "pg_module_vault",
+    "text": "Reading a long file into a reply costs the brain's usual price, and the console shows a rupee estimate first.",
+    "cues": []
+   },
+   {
+    "n": 23,
+    "page": "pg_module_vault",
+    "text": "When the reader is busy with another file, an upload is turned away, with a request to try again after 30 seconds.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "fails"
+     }
+    ]
+   },
+   {
+    "n": 24,
+    "page": "pg_module_vault",
+    "text": "And if an unlock or a download can't be written to the audit trail, nothing opens at all.",
+    "cues": []
+   },
+   {
+    "n": 25,
+    "page": "pg_card_c07",
+    "text": "Now the first part: attached documents.",
+    "cues": [
+     {
+      "kind": "page",
+      "target": "pg_card_c07"
+     },
+     {
+      "kind": "show",
+      "target": "title"
+     }
+    ]
+   },
+   {
+    "n": 26,
+    "page": "pg_card_c07",
+    "text": "You attach files with the paperclip, or by dragging them in, and JARVIS reads them with you.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "plain"
+     }
+    ]
+   },
+   {
+    "n": 27,
+    "page": "pg_card_c07",
+    "text": "It reads PDF, Word, text, spreadsheets, slides, pictures, a zip, and even a whole folder.",
+    "cues": []
+   },
+   {
+    "n": 28,
+    "page": "pg_card_c07",
+    "text": "Each upload is checked by its name and its first bytes, and you can send at most 6 a minute.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "how"
+     }
+    ]
+   },
+   {
+    "n": 29,
+    "page": "pg_card_c07",
+    "text": "The reading happens in a fresh helper process with no secrets in it, and with caps on its time and memory.",
+    "cues": []
+   },
+   {
+    "n": 30,
+    "page": "pg_card_c07",
+    "text": "Only one runs at a time, and the others wait in a queue for up to 50 seconds.",
+    "cues": [
+     {
+      "kind": "count",
+      "target": "50"
+     }
+    ]
+   },
+   {
+    "n": 31,
+    "page": "pg_card_c07",
+    "text": "Spreadsheets give their values only, never formulas or macros, and slides give their text and their notes.",
+    "cues": []
+   },
+   {
+    "n": 32,
+    "page": "pg_card_c07",
+    "text": "A zip with a password, a hidden bomb or a path pointing outside is refused before anything is unpacked.",
+    "cues": []
+   },
+   {
+    "n": 33,
+    "page": "pg_card_c07",
+    "text": "A picture is cleaned of its camera and location data, and one wider than 2048 pixels is refused.",
+    "cues": [
+     {
+      "kind": "count",
+      "target": "2048"
+     }
+    ]
+   },
+   {
+    "n": 34,
+    "page": "pg_card_c07",
+    "text": "The text is cut into chunks and kept with the conversation, and the file itself is dropped.",
+    "cues": []
+   },
+   {
+    "n": 35,
+    "page": "pg_card_c07",
+    "text": "The brain then reads one part, or the best passages, at a time, fenced off as outside text.",
+    "cues": []
+   },
+   {
+    "n": 36,
+    "page": "pg_card_c07",
+    "text": "In the example, you drag in a long maintenance agreement and a photo of a broken tap, and ask whether the repair is covered.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "example"
+     }
+    ]
+   },
+   {
+    "n": 37,
+    "page": "pg_card_c07",
+    "text": "JARVIS searches the agreement for plumbing, reads the right pages, looks at the photo, and quotes the clause.",
+    "cues": []
+   },
+   {
+    "n": 38,
+    "page": "pg_card_c07",
+    "text": "Taking the text out costs nothing, and reading it costs the brain's normal price, kept small because it reads parts, never the whole file.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "costs"
+     }
+    ]
+   },
+   {
+    "n": 39,
+    "page": "pg_card_c07",
+    "text": "A brain that may learn from what it is sent never gets your files.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "fails"
+     }
+    ]
+   },
+   {
+    "n": 40,
+    "page": "pg_card_c42",
+    "text": "The second part is the document vault itself.",
+    "cues": [
+     {
+      "kind": "page",
+      "target": "pg_card_c42"
+     },
+     {
+      "kind": "show",
+      "target": "title"
+     }
+    ]
+   },
+   {
+    "n": 41,
+    "page": "pg_card_c42",
+    "text": "The vault is a locked drawer for your important papers, and every file in it is sealed with its own key.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "plain"
+     }
+    ]
+   },
+   {
+    "n": 42,
+    "page": "pg_card_c42",
+    "text": "The brain only ever sees a document's type, title and dates, never the file or a full number.",
+    "cues": []
+   },
+   {
+    "n": 43,
+    "page": "pg_card_c42",
+    "text": "Each file is cut into chunks, and each chunk is sealed so that one moved or cut short will not open.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "how"
+     }
+    ]
+   },
+   {
+    "n": 44,
+    "page": "pg_card_c42",
+    "text": "That file's key is itself locked by the vault's own key, and nothing readable is kept in the clear.",
+    "cues": []
+   },
+   {
+    "n": 45,
+    "page": "pg_card_c42",
+    "text": "Dates and the last few characters of an ID number are read from a PDF by fixed labels, with no AI at all.",
+    "cues": []
+   },
+   {
+    "n": 46,
+    "page": "pg_card_c42",
+    "text": "They stay a proposal until you confirm them.",
+    "cues": []
+   },
+   {
+    "n": 47,
+    "page": "pg_card_c42",
+    "text": "An unlock lasts 10 minutes, and it works only from the console, never from a script.",
+    "cues": [
+     {
+      "kind": "count",
+      "target": "10"
+     }
+    ]
+   },
+   {
+    "n": 48,
+    "page": "pg_card_c42",
+    "text": "Each opening takes a single-use ticket that lives 60 seconds.",
+    "cues": [
+     {
+      "kind": "count",
+      "target": "60"
+     }
+    ]
+   },
+   {
+    "n": 49,
+    "page": "pg_card_c42",
+    "text": "Reminders check your confirmed papers once a day, and send at most 3 alerts in a run.",
+    "cues": []
+   },
+   {
+    "n": 50,
+    "page": "pg_card_c42",
+    "text": "The brain's vault tools can list papers and change their dates on a card, but they can't read, add or delete a file.",
+    "cues": []
+   },
+   {
+    "n": 51,
+    "page": "pg_card_c42",
+    "text": "In the example, you upload a scan of your passport, JARVIS finds its expiry date, and you tap Confirm.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "example"
+     }
+    ]
+   },
+   {
+    "n": 52,
+    "page": "pg_card_c42",
+    "text": "It costs nothing, with your files in the document store, up to 150 megabytes in all.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "costs"
+     },
+     {
+      "kind": "count",
+      "target": "150"
+     }
+    ]
+   },
+   {
+    "n": 53,
+    "page": "pg_card_c42",
+    "text": "Reads fail closed: a record that can't be decrypted is refused, never shown in part.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "fails"
+     }
+    ]
+   },
+   {
+    "n": 54,
+    "page": "pg_card_c42",
+    "text": "Removing a document for good deletes the entry that holds its key first, so the file can never be opened again.",
+    "cues": []
+   },
+   {
+    "n": 55,
+    "page": "pg_card_c43",
+    "text": "The third part is the DigiLocker import folder.",
+    "cues": [
+     {
+      "kind": "page",
+      "target": "pg_card_c43"
+     },
+     {
+      "kind": "show",
+      "target": "title"
+     }
+    ]
+   },
+   {
+    "n": 56,
+    "page": "pg_card_c43",
+    "text": "DigiLocker only lets registered organisations use its partner service, so JARVIS takes a simpler path.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "plain"
+     }
+    ]
+   },
+   {
+    "n": 57,
+    "page": "pg_card_c43",
+    "text": "You share a document from the DigiLocker app into one Google Drive folder, and JARVIS brings the new files into your vault.",
+    "cues": []
+   },
+   {
+    "n": 58,
+    "page": "pg_card_c43",
+    "text": "JARVIS only reads that folder, your copies stay in Drive, and nothing is imported twice.",
+    "cues": []
+   },
+   {
+    "n": 59,
+    "page": "pg_card_c43",
+    "text": "The check rides the scheduler's regular tick, and an owner with no folder costs just one storage read.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "how"
+     }
+    ]
+   },
+   {
+    "n": 60,
+    "page": "pg_card_c43",
+    "text": "A PDF, JPEG or PNG within the vault's size limit is handed to the vault, at most 3 in a run.",
+    "cues": [
+     {
+      "kind": "count",
+      "target": "3"
+     }
+    ]
+   },
+   {
+    "n": 61,
+    "page": "pg_card_c43",
+    "text": "Other files are skipped with a reason, and not looked at again until they change.",
+    "cues": []
+   },
+   {
+    "n": 62,
+    "page": "pg_card_c43",
+    "text": "Before every run the folder is checked again, and if it is no longer shared or yours, imports stop and you are told why.",
+    "cues": []
+   },
+   {
+    "n": 63,
+    "page": "pg_card_c43",
+    "text": "In the example, you share your driving licence and your insurance into the folder, plus a Word file by mistake.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "example"
+     }
+    ]
+   },
+   {
+    "n": 64,
+    "page": "pg_card_c43",
+    "text": "The two PDFs arrive in the vault, ready for you to confirm their dates, and the Word file is listed as skipped.",
+    "cues": []
+   },
+   {
+    "n": 65,
+    "page": "pg_card_c43",
+    "text": "It costs nothing: reading the folder and sealing the files involve no AI and no paid service.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "costs"
+     }
+    ]
+   },
+   {
+    "n": 66,
+    "page": "pg_card_c43",
+    "text": "A run stops at its time budget of 55 seconds, and carries on the next time.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "fails"
+     },
+     {
+      "kind": "count",
+      "target": "55"
+     }
+    ]
+   },
+   {
+    "n": 67,
+    "page": "pg_screen_vault",
+    "text": "Last, the Vault screen in your console.",
+    "cues": [
+     {
+      "kind": "page",
+      "target": "pg_screen_vault"
+     },
+     {
+      "kind": "show",
+      "target": "title"
+     }
+    ]
+   },
+   {
+    "n": 68,
+    "page": "pg_screen_vault",
+    "text": "It lists your papers by person, each with its expiry and the time left.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "plain"
+     }
+    ]
+   },
+   {
+    "n": 69,
+    "page": "pg_screen_vault",
+    "text": "Here is what happens when you open one of them.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "overview"
+     }
+    ]
+   },
+   {
+    "n": 70,
+    "page": "pg_screen_vault",
+    "text": "You press Open on a document.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "open"
+     }
+    ]
+   },
+   {
+    "n": 71,
+    "page": "pg_screen_vault",
+    "text": "JARVIS first asks whether this tab is already unlocked.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "unlocked"
+     }
+    ]
+   },
+   {
+    "n": 72,
+    "page": "pg_screen_vault",
+    "text": "If it isn't, the panel asks for your passkey, or a recent Google sign-in.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "unlocked>prove"
+     }
+    ]
+   },
+   {
+    "n": 73,
+    "page": "pg_screen_vault",
+    "text": "The unlock lives only in this tab's memory, and is forgotten when the panel closes or the tab is hidden.",
+    "cues": []
+   },
+   {
+    "n": 74,
+    "page": "pg_screen_vault",
+    "text": "Once unlocked, the panel asks for a single-use ticket.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "unlocked>ticket"
+     }
+    ]
+   },
+   {
+    "n": 75,
+    "page": "pg_screen_vault",
+    "text": "The opening is written to the audit log first.",
+    "cues": [
+     {
+      "kind": "node",
+      "target": "audit"
+     }
+    ]
+   },
+   {
+    "n": 76,
+    "page": "pg_screen_vault",
+    "text": "And only then does the file download.",
+    "cues": [
+     {
+      "kind": "edge",
+      "target": "audit>file"
+     }
+    ]
+   },
+   {
+    "n": 77,
+    "page": "pg_screen_vault",
+    "text": "In the example, you photograph your new car insurance, press Add, and confirm the expiry JARVIS found.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "example"
+     }
+    ]
+   },
+   {
+    "n": 78,
+    "page": "pg_screen_vault",
+    "text": "The vault keeps your files in JARVIS's own database, with no outside service, so it costs nothing.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "costs"
+     }
+    ]
+   },
+   {
+    "n": 79,
+    "page": "pg_screen_vault",
+    "text": "Unlocks are limited to 10 a minute, and a file that isn't a PDF, JPEG or PNG is refused.",
+    "cues": [
+     {
+      "kind": "show",
+      "target": "fails"
+     },
+     {
+      "kind": "count",
+      "target": "10"
+     }
+    ]
+   },
+   {
+    "n": 80,
+    "page": "pg_screen_vault",
+    "text": "That is the Vault chapter: documents read with you, papers kept sealed, and nothing opened without you.",
+    "cues": []
+   }
+  ],
+  "minutes": 9,
+  "narrated": true,
+  "written": {
+   "written_by": "Workshop · Mark XXIV",
+   "written_on": "2026-11-25"
+  }
+ },
+ "pages": {
+  "pg_module_vault": {
+   "id": "pg_module_vault",
+   "kind": "module",
+   "title": "Vault and documents",
+   "part": "modules",
+   "chapter": "",
+   "sections": [
+    {
+     "id": "plain",
+     "heading": "In plain words",
+     "text": "This module is how documents reach JARVIS. Attaching files to a message (a PDF, a Word file, a spreadsheet, slides, a photo, a zip or a whole folder) lets JARVIS read them for that conversation; each file itself is thrown away and only its text stays with the chat. The vault is different: a locked cupboard for papers you keep, such as ID, insurance and certificates. Each file is sealed with its own key, JARVIS reminds you before something expires, and nothing opens until you prove it's you. The DigiLocker import folder brings documents you share from the DigiLocker app into the vault without uploading them again.",
+     "refs": []
+    },
+    {
+     "id": "example",
+     "heading": "Example (made up)",
+     "text": "Lakshmi drags her car insurance PDF and 2 photos of a dented bumper onto a message and asks what the policy covers. JARVIS reads all 3, strips the camera and location details from the photos, and answers. She then adds the policy to the vault; it finds an expiry date of 31 March 2027 in the PDF and asks her to confirm it. On 1 March 2027 a reminder says the policy expires in 30 days. At the garage she taps Open on the policy, her phone asks for her fingerprint, and the PDF downloads through a link that works once.",
+     "refs": []
+    },
+    {
+     "id": "how",
+     "heading": "How it works",
+     "text": "The paperclip and drag-and-drop in `src/jarvis/api/static/console-attach.js` send each file to `POST /v1/attachments`, where `upload` judges its kind by its name and its bytes together, never by what the browser claims. A message carries at most 10 files, 40 MB together and 4 pictures (`src/jarvis/documents/limits.py`). The text is taken out by a limited child process, one file at a time: `read_workbook` reads only an Excel file's values, never formulas or macros, and `read_deck` reads slides with their notes. `read_archive` refuses a zip with a password, a hidden bomb, a path pointing outside or an archive inside it before unpacking anything, then reads each member as its own kind. A folder you drop is packed into one zip in your browser first (`src/jarvis/api/static/console-r111-files.js`). `clean_picture` checks a photo's structure without decoding a pixel and drops camera and location data, and `with_pictures` shows it only to a brain that can see, with the message it came with. `discard` removes a file you take off before sending, and uploads are limited to 6 a minute (`_limit`). The vault panel, `src/jarvis/api/static/console-vault.js`, lists your documents from `GET /v1/vault`, and `src/jarvis/api/static/console-vault-add.js` adds one through `POST /v1/vault/upload`. Fields found in a PDF, such as an expiry date, come back as a proposal you confirm with `item_patch`. Opening a file needs `unlock`: your passkey when you have one, otherwise a fresh Google sign-in, and only in the console in your browser (`_console_only`). Each open then takes a single-use ticket from `file_ticket`, and `download` sends the file only after its audit line is written. `lock` ends the unlock at once, and `item_delete` puts a document in Recently deleted. The import folder is `src/jarvis/api/vault_inbox.py`: you pick a Drive folder shared with JARVIS (`PUT /v1/vault/inbox`), and `inbox_check` brings new files into the vault, skipping any it has seen.",
+     "refs": []
+    },
+    {
+     "id": "costs",
+     "heading": "What it costs",
+     "text": "Taking text out of a file and keeping the vault cost nothing: both run on JARVIS's own server with no outside service (`src/jarvis/api/documents.py`, `src/jarvis/api/vault.py`). Reading a long file's text into a reply costs the brain's usual price for that much text, and the console shows a rupee estimate before a costly send (`src/jarvis/api/static/console-r111-files.js`).",
+     "refs": []
+    },
+    {
+     "id": "fails",
+     "heading": "When it fails",
+     "text": "A file that is too big, unreadable, password-protected or of the wrong kind is refused in plain words (`DocumentRejected`). When the reader is busy with another file, the upload is refused as busy with a retry after 30 seconds, and an upload slower than 60 seconds is stopped (`src/jarvis/api/documents.py`). If the vault's unlock or download can't be written to the audit trail, nothing opens (`download`). A used or expired download link says \"Open it again.\" (`download`). Without JARVIS's encryption key the vault stays off. Files the import folder skips are listed with the reason, and nothing is imported twice (`inbox_view`).",
+     "refs": []
+    },
+    {
+     "id": "code",
+     "heading": "Where in the code",
+     "text": "`src/jarvis/api/documents.py`\n`src/jarvis/api/static/console-attach.js`\n`src/jarvis/api/static/console-r111-files.js`\n`src/jarvis/api/static/console-vault-add.js`\n`src/jarvis/api/static/console-vault.js`\n`src/jarvis/api/vault.py`\n`src/jarvis/api/vault_inbox.py`\n`src/jarvis/documents/archive.py`\n`src/jarvis/documents/imagecheck.py`\n`src/jarvis/documents/limits.py`\n`src/jarvis/documents/pictures.py`\n`src/jarvis/documents/sheets.py`\n`src/jarvis/documents/slides.py`",
+     "refs": [
+      "src/jarvis/api/documents.py",
+      "src/jarvis/api/static/console-attach.js",
+      "src/jarvis/api/static/console-r111-files.js",
+      "src/jarvis/api/static/console-vault-add.js",
+      "src/jarvis/api/static/console-vault.js",
+      "src/jarvis/api/vault.py",
+      "src/jarvis/api/vault_inbox.py",
+      "src/jarvis/documents/archive.py",
+      "src/jarvis/documents/imagecheck.py",
+      "src/jarvis/documents/limits.py",
+      "src/jarvis/documents/pictures.py",
+      "src/jarvis/documents/sheets.py",
+      "src/jarvis/documents/slides.py"
+     ]
+    }
+   ],
+   "meta": {
+    "written_by": "Workshop · Mark XXIV",
+    "written_on": "2026-11-24",
+    "release": "cda01f1",
+    "version": "v6.3.2"
+   },
+   "flow": {
+    "title": "A document, attached or kept in the vault",
+    "dir": "down",
+    "nodes": [
+     {
+      "id": "file",
+      "label": "You add a file",
+      "kind": "person",
+      "rank": 0,
+      "col": 0
+     },
+     {
+      "id": "kind",
+      "label": "Right kind and size?",
+      "kind": "guard",
+      "rank": 1,
+      "col": 0,
+      "ref": "src/jarvis/documents/limits.py"
+     },
+     {
+      "id": "refused",
+      "label": "Refused in plain words",
+      "kind": "step",
+      "rank": 1,
+      "col": 1
+     },
+     {
+      "id": "read",
+      "label": "Text taken out apart",
+      "kind": "step",
+      "rank": 2,
+      "col": 0,
+      "ref": "src/jarvis/api/documents.py"
+     },
+     {
+      "id": "chat",
+      "label": "Text kept with the chat",
+      "kind": "store",
+      "rank": 3,
+      "col": 0
+     },
+     {
+      "id": "vault",
+      "label": "Sealed in the vault",
+      "kind": "store",
+      "rank": 2,
+      "col": 2,
+      "ref": "src/jarvis/api/vault.py"
+     },
+     {
+      "id": "inbox",
+      "label": "DigiLocker Drive folder",
+      "kind": "service",
+      "rank": 1,
+      "col": 2,
+      "ref": "src/jarvis/api/vault_inbox.py"
+     },
+     {
+      "id": "confirm",
+      "label": "You confirm the expiry",
+      "kind": "person",
+      "rank": 3,
+      "col": 3,
+      "ref": "src/jarvis/api/static/console-vault-add.js"
+     },
+     {
+      "id": "unlock",
+      "label": "Passkey or fresh sign-in",
+      "kind": "guard",
+      "rank": 4,
+      "col": 2,
+      "ref": "src/jarvis/api/static/console-vault.js"
+     },
+     {
+      "id": "audit",
+      "label": "Audit line written",
+      "kind": "guard",
+      "rank": 5,
+      "col": 2
+     },
+     {
+      "id": "open",
+      "label": "One-time download",
+      "kind": "step",
+      "rank": 6,
+      "col": 2
+     }
+    ],
+    "edges": [
+     {
+      "from": "file",
+      "to": "kind",
+      "style": "main"
+     },
+     {
+      "from": "kind",
+      "to": "refused",
+      "style": "side"
+     },
+     {
+      "from": "kind",
+      "to": "read",
+      "label": "attach",
+      "style": "main"
+     },
+     {
+      "from": "read",
+      "to": "chat",
+      "style": "main"
+     },
+     {
+      "from": "kind",
+      "to": "vault",
+      "label": "keep",
+      "style": "main"
+     },
+     {
+      "from": "inbox",
+      "to": "vault",
+      "style": "side"
+     },
+     {
+      "from": "vault",
+      "to": "confirm",
+      "label": "expiry found",
+      "style": "side"
+     },
+     {
+      "from": "vault",
+      "to": "unlock",
+      "label": "open",
+      "style": "main"
+     },
+     {
+      "from": "unlock",
+      "to": "audit",
+      "style": "main"
+     },
+     {
+      "from": "audit",
+      "to": "open",
+      "style": "main"
+     }
+    ]
+   }
+  },
+  "pg_card_c07": {
+   "id": "pg_card_c07",
+   "kind": "card",
+   "title": "Attached documents",
+   "part": "parts",
+   "chapter": "vault",
+   "sections": [
+    {
+     "id": "plain",
+     "heading": "In plain words",
+     "text": "Attach files to a message with the paperclip or by dragging them in, and JARVIS reads them with you: PDF, Word, text, spreadsheets, slides, pictures, a zip, even a whole folder (`src/jarvis/api/static/console-attach.js`). The text is taken out in a sealed-off helper process, the file itself is thrown away, and JARVIS reads or searches that text as it answers (`src/jarvis/documents/service.py`). A picture goes only to a brain that can see and never trains on what it is sent (`src/jarvis/documents/pictures.py`).",
+     "refs": []
+    },
+    {
+     "id": "example",
+     "heading": "Example (made up)",
+     "text": "You drag in a 46-page PDF of your flat's maintenance agreement and a photo of a broken tap, and ask \"is this repair covered?\". The PDF's text is taken out in three seconds and split into chunks; the photo is cleaned of its camera and location data. JARVIS searches the agreement for \"plumbing\", reads pages 12 and 13, looks at the photo, and quotes the clause. Before a long reply on a big file, the console shows the likely cost, about ₹6, and waits for your choice.",
+     "refs": []
+    },
+    {
+     "id": "how",
+     "heading": "How it works",
+     "text": "`POST /v1/attachments` takes one file at a time, at most 6 a minute, and `sniff` checks its kind by its name and first bytes (`src/jarvis/api/documents.py`). `extract_isolated` reads it in a fresh child process with no secrets in its environment and caps on CPU, memory and time; one runs at a time, and others queue up to 50 seconds (`src/jarvis/documents/isolation.py`). Spreadsheets give values only, never formulas or macros, and hidden sheets are named but not read (`src/jarvis/documents/sheets.py`). Slides give their text and their notes (`src/jarvis/documents/slides.py`). `read_archive` reads each member of a zip as its own kind, and refuses a password, a zip bomb, a path pointing outside or an archive inside from the directory alone (`src/jarvis/documents/archive.py`). `clean_picture` keeps only what a picture needs, dropping camera and location data without decoding a pixel, and refuses one wider than 2048 pixels (`src/jarvis/documents/imagecheck.py`). The text is cut into chunks by `split` and kept in `attachments` with the conversation, and the file is dropped (`src/jarvis/documents/chunking.py`). On sending, `AttachPolicy` allows up to 10 files and 40 MB together, each still yours and waiting (`src/jarvis/documents/limits.py`). The brain reads through `document_tools`, one part or the best passages at a time, fenced as outside text, so any write after that round becomes a card (`src/jarvis/documents/tools.py`). `with_pictures` adds a picture only to the message it came with (`src/jarvis/documents/pictures.py`). `src/jarvis/api/static/console-r111-files.js` packs a folder into one zip in the browser and shows the cost line before a costly reply.",
+     "refs": []
+    },
+    {
+     "id": "costs",
+     "heading": "What it costs",
+     "text": "Taking the text out costs nothing; it runs on JARVIS's own server (`src/jarvis/documents/isolation.py`). Reading the text costs the brain's normal tokens, kept bounded because the brain reads parts and passages, never the whole file every turn (`src/jarvis/documents/tools.py`). Pictures kept beside a file are deleted with it (`src/jarvis/documents/store.py`).",
+     "refs": []
+    },
+    {
+     "id": "fails",
+     "heading": "When it fails",
+     "text": "A file that is too big, unreadable or of the wrong kind is refused in plain words (`DocumentRejected`). If the extractor stays busy past the queue, the upload says \"busy\" and suggests trying again after 30 seconds (`src/jarvis/api/documents.py`). A child that hits its CPU or memory cap reads as too slow or too complex, and it is always killed (`src/jarvis/documents/isolation.py`). A brain that may train on content never gets your files, and with Documents on \"Never\" in Permissions, or a setting that can't be read, uploads are refused (`src/jarvis/documents/service.py`). A picture that can't be loaded is said, never silently left out (`src/jarvis/documents/pictures.py`).",
+     "refs": []
+    },
+    {
+     "id": "code",
+     "heading": "Where in the code",
+     "text": "`src/jarvis/api/documents.py`\n`src/jarvis/api/static/console-attach.js`\n`src/jarvis/api/static/console-r111-files.js`\n`src/jarvis/documents/__init__.py`\n`src/jarvis/documents/archive.py`\n`src/jarvis/documents/chunking.py`\n`src/jarvis/documents/extract.py`\n`src/jarvis/documents/imagecheck.py`\n`src/jarvis/documents/isolation.py`\n`src/jarvis/documents/limits.py`\n`src/jarvis/documents/models.py`\n`src/jarvis/documents/note.py`\n`src/jarvis/documents/pictures.py`\n`src/jarvis/documents/service.py`\n`src/jarvis/documents/sheets.py`\n`src/jarvis/documents/slides.py`\n`src/jarvis/documents/store.py`\n`src/jarvis/documents/tools.py`\n`src/jarvis/documents/worker.py`",
+     "refs": [
+      "src/jarvis/api/documents.py",
+      "src/jarvis/api/static/console-attach.js",
+      "src/jarvis/api/static/console-r111-files.js",
+      "src/jarvis/documents/__init__.py",
+      "src/jarvis/documents/archive.py",
+      "src/jarvis/documents/chunking.py",
+      "src/jarvis/documents/extract.py",
+      "src/jarvis/documents/imagecheck.py",
+      "src/jarvis/documents/isolation.py",
+      "src/jarvis/documents/limits.py",
+      "src/jarvis/documents/models.py",
+      "src/jarvis/documents/note.py",
+      "src/jarvis/documents/pictures.py",
+      "src/jarvis/documents/service.py",
+      "src/jarvis/documents/sheets.py",
+      "src/jarvis/documents/slides.py",
+      "src/jarvis/documents/store.py",
+      "src/jarvis/documents/tools.py",
+      "src/jarvis/documents/worker.py"
+     ]
+    }
+   ],
+   "meta": {
+    "written_by": "Workshop · Mark XXIV",
+    "written_on": "2026-11-24",
+    "release": "cda01f1",
+    "version": "v6.3.2"
+   },
+   "flow": null
+  },
+  "pg_card_c42": {
+   "id": "pg_card_c42",
+   "kind": "card",
+   "title": "Document vault",
+   "part": "parts",
+   "chapter": "vault",
+   "sections": [
+    {
+     "id": "plain",
+     "heading": "In plain words",
+     "text": "The vault is a locked drawer for your important papers: ID cards, insurance, certificates. Every file is sealed with its own key, and opening one needs a fresh unlock on your console (`src/jarvis/vault/crypto.py`). JARVIS reminds you before a document expires, and the brain only ever sees a document's type, title and dates, never the file or a full number (`src/jarvis/vault/tools.py`).",
+     "refs": []
+    },
+    {
+     "id": "example",
+     "heading": "Example (made up)",
+     "text": "You upload a scan of your passport. JARVIS finds \"Date of Expiry 03/04/2027\" in the PDF and proposes it; you check it and tap Confirm. In October 2026 a reminder says the passport ends in about 180 days. You ask \"what's expiring in my vault?\" and hear \"Passport, yours, ends in 5 months\". To open the scan you unlock with your passkey; the unlock lasts 10 minutes, and the download link works once, for a minute.",
+     "refs": []
+    },
+    {
+     "id": "how",
+     "heading": "How it works",
+     "text": "`VaultService` checks each upload by its first bytes, refuses a file already there by its SHA-256, and makes it an item only once the index entry is written (`src/jarvis/vault/service.py`). `VaultCrypto` cuts a file into chunks and seals each with AES-256-GCM under the file's own key, bound to you, the item, the file and its place, so a chunk moved or cut short won't open; that key is itself wrapped by the vault key (`src/jarvis/vault/crypto.py`). The index is one sealed record in `vault`, and nothing readable is kept in clear (`src/jarvis/vault/store.py`). `propose` reads dates and the last four characters of an ID number from a PDF's text by fixed labels, with no AI, and it is only a proposal until you confirm it (`src/jarvis/vault/fields.py`). `POST /v1/vault/unlock` needs your passkey when passkeys are in force, otherwise a fresh Google sign-in, and lasts 10 minutes; it works only from the console, never from a script (`src/jarvis/api/vault.py`). Opening a file takes a single-use ticket that lives 60 seconds; only a keyed hash of it is stored in `vault_unlocks` (`src/jarvis/vault/unlock.py`). Every unlock, open and export is written to the audit log before the first byte goes out (`src/jarvis/api/vault.py`). `VaultReminders` checks confirmed items once a day and when the panel opens, sends one alert per step, at most 3 a run, from a fixed template, and records them in `vault_alerts` (`src/jarvis/vault/reminders.py`). The brain's `vault_tools` list items and dates and can change dates on a card, but can't read a file or add or delete one (`src/jarvis/vault/tools.py`). `src/jarvis/api/static/console-vault.js` and `src/jarvis/api/static/console-vault-add.js` draw the panel and its upload.",
+     "refs": []
+    },
+    {
+     "id": "costs",
+     "heading": "What it costs",
+     "text": "Nothing: sealing, reading dates and reminders are all code on JARVIS's own server, with the files kept in the document store, up to 150 MB in all (`src/jarvis/vault/service.py`).",
+     "refs": []
+    },
+    {
+     "id": "fails",
+     "heading": "When it fails",
+     "text": "Without the token key, or with `vault_enabled` off, the vault stays off (`src/jarvis/vault/build.py`). Reads fail closed: a record that can't be decrypted is refused, never shown in part (`VaultUnavailable`). A used, expired or unknown ticket gets one answer, gone (`TicketGone`). If the audit entry can't be written, nothing is sent (`src/jarvis/api/vault.py`). A delete is soft, through Recently deleted; \"remove now\" first deletes the index entry that holds the file's wrapped key, then the chunks, so the file can never be opened again (`VaultPurger`). A reminder that fails to send is tried again the next day (`src/jarvis/vault/reminders.py`).",
+     "refs": []
+    },
+    {
+     "id": "code",
+     "heading": "Where in the code",
+     "text": "`src/jarvis/api/static/console-vault-add.js`\n`src/jarvis/api/static/console-vault.js`\n`src/jarvis/api/vault.py`\n`src/jarvis/vault/__init__.py`\n`src/jarvis/vault/build.py`\n`src/jarvis/vault/crypto.py`\n`src/jarvis/vault/fields.py`\n`src/jarvis/vault/models.py`\n`src/jarvis/vault/ports.py`\n`src/jarvis/vault/privacy.py`\n`src/jarvis/vault/reminders.py`\n`src/jarvis/vault/service.py`\n`src/jarvis/vault/store.py`\n`src/jarvis/vault/tools.py`\n`src/jarvis/vault/unlock.py`",
+     "refs": [
+      "src/jarvis/api/static/console-vault-add.js",
+      "src/jarvis/api/static/console-vault.js",
+      "src/jarvis/api/vault.py",
+      "src/jarvis/vault/__init__.py",
+      "src/jarvis/vault/build.py",
+      "src/jarvis/vault/crypto.py",
+      "src/jarvis/vault/fields.py",
+      "src/jarvis/vault/models.py",
+      "src/jarvis/vault/ports.py",
+      "src/jarvis/vault/privacy.py",
+      "src/jarvis/vault/reminders.py",
+      "src/jarvis/vault/service.py",
+      "src/jarvis/vault/store.py",
+      "src/jarvis/vault/tools.py",
+      "src/jarvis/vault/unlock.py"
+     ]
+    }
+   ],
+   "meta": {
+    "written_by": "Workshop · Mark XXIV",
+    "written_on": "2026-11-24",
+    "release": "cda01f1",
+    "version": "v6.3.2"
+   },
+   "flow": null
+  },
+  "pg_card_c43": {
+   "id": "pg_card_c43",
+   "kind": "card",
+   "title": "DigiLocker import folder",
+   "part": "parts",
+   "chapter": "vault",
+   "sections": [
+    {
+     "id": "plain",
+     "heading": "In plain words",
+     "text": "DigiLocker only lets registered organisations use its partner service, so JARVIS uses a simple path instead: you share a document from the DigiLocker app into one Google Drive folder that JARVIS may view, and JARVIS picks new files up and puts them into your vault (`src/jarvis/vault_inbox/service.py`). JARVIS only reads that folder; your copies stay in Drive, and nothing is imported twice (`src/jarvis/vault_inbox/store.py`).",
+     "refs": []
+    },
+    {
+     "id": "example",
+     "heading": "Example (made up)",
+     "text": "You make a Drive folder called \"To vault\" and pick it in the Vault panel. On Saturday you share your driving licence and your vehicle's insurance from DigiLocker into it, plus a Word file by mistake. At the next scheduler tick JARVIS imports the two PDFs into the vault, ready for you to confirm their dates, and lists the Word file as skipped: \"not a PDF, JPEG or PNG\". Tapping \"Import now\" later does nothing new, because both PDFs were already taken.",
+     "refs": []
+    },
+    {
+     "id": "how",
+     "heading": "How it works",
+     "text": "`PUT /v1/vault/inbox` lets you pick the folder; `InboxService` accepts only a folder you own, not one already used for Drive answers or inside one (`src/jarvis/vault_inbox/service.py`). `InboxJob` rides the scheduler tick and runs a check for each owner with a folder; an owner with none costs one storage read and no Drive call (`src/jarvis/vault_inbox/job.py`). A check lists the folder's own files, up to 4 pages of 25, and takes a file only if it is new or changed, by its checksum or its time and size (`src/jarvis/vault_inbox/service.py`). A PDF, JPEG or PNG within the vault's size limit is downloaded and handed to the vault, at most 3 a run, and the rest wait for the next run (`InboxService`). Other files are skipped with a reason and not looked at again until they change (`Seen`). Before each run the folder is checked again: if it is no longer shared, no longer yours, in the bin, or now inside a folder used for Drive answers, imports stop and you are told why (`src/jarvis/vault_inbox/service.py`). `InboxStore` keeps the folder, the last check and what was already seen in `vault_inbox`, never a file's name or anything from inside a file (`src/jarvis/vault_inbox/store.py`). `POST /v1/vault/inbox/check` is \"Import now\", and each pick, switch-off and check is written to the audit log with the folder id only as a hash (`src/jarvis/api/vault_inbox.py`).",
+     "refs": []
+    },
+    {
+     "id": "costs",
+     "heading": "What it costs",
+     "text": "Nothing: reading the folder through Google Drive and sealing the files in the vault involve no AI and no paid service (`src/jarvis/vault_inbox/service.py`).",
+     "refs": []
+    },
+    {
+     "id": "fails",
+     "heading": "When it fails",
+     "text": "A file JARVIS skips is listed with its reason in plain words, and it is not tried again until it changes (`src/jarvis/vault_inbox/service.py`). If the stored record can't be read, it fails closed, and the Drive tools then read nothing at all, since the inbox can't be told apart (`InboxUnreadable`). A run stops at its time budget of 55 seconds and carries on next time (`InboxService`). With Drive not set up, or its permission set to \"Never\", the panel says so and nothing is fetched (`src/jarvis/api/vault_inbox.py`). Google's own error text never appears (`src/jarvis/api/vault_inbox.py`).",
+     "refs": []
+    },
+    {
+     "id": "code",
+     "heading": "Where in the code",
+     "text": "`src/jarvis/api/vault_inbox.py`\n`src/jarvis/vault_inbox/__init__.py`\n`src/jarvis/vault_inbox/job.py`\n`src/jarvis/vault_inbox/privacy.py`\n`src/jarvis/vault_inbox/service.py`\n`src/jarvis/vault_inbox/store.py`",
+     "refs": [
+      "src/jarvis/api/vault_inbox.py",
+      "src/jarvis/vault_inbox/__init__.py",
+      "src/jarvis/vault_inbox/job.py",
+      "src/jarvis/vault_inbox/privacy.py",
+      "src/jarvis/vault_inbox/service.py",
+      "src/jarvis/vault_inbox/store.py"
+     ]
+    }
+   ],
+   "meta": {
+    "written_by": "Workshop · Mark XXIV",
+    "written_on": "2026-11-24",
+    "release": "cda01f1",
+    "version": "v6.3.2"
+   },
+   "flow": null
+  },
+  "pg_screen_vault": {
+   "id": "pg_screen_vault",
+   "kind": "screen",
+   "title": "Vault",
+   "part": "screens",
+   "chapter": "",
+   "sections": [
+    {
+     "id": "plain",
+     "heading": "In plain words",
+     "text": "Vault is the locked drawer for your important papers: passport, licence, insurance, certificates. You add a PDF or a photo, JARVIS reads the dates from it, and once you confirm them it reminds you before each one expires. The files are kept encrypted. The assistant itself never reads them; it sees only the kind of document, the last few characters of its number and the dates. Opening a file needs a fresh check that it is really you, and works only in this panel (`src/jarvis/api/static/console-vault.js`).",
+     "refs": []
+    },
+    {
+     "id": "example",
+     "heading": "Example (made up)",
+     "text": "In March you photograph your new car insurance and press Add in Vault. You choose \"Vehicle insurance\", leave \"Whose is it?\" on you, and press Add to vault. JARVIS shows what it found: expires 14 Mar 2027, number ending 4821. You press Confirm and see \"Confirmed. Reminders are on.\" In February 2027 the brief and a reminder both say the policy is due. You tap the item, press Open front, use your passkey, and the policy downloads so you can send it to the renewal agent.",
+     "refs": []
+    },
+    {
+     "id": "how",
+     "heading": "How it works",
+     "text": "The panel lists your documents by person, with each one's expiry and time left, from `GET /v1/vault` (`src/jarvis/api/static/console-vault.js`). Add opens a small form from `src/jarvis/api/static/console-vault-add.js`; the file goes up raw through `POST /v1/vault/upload`, and JARVIS answers with what it read, which counts for nothing until you press Confirm (`src/jarvis/api/vault.py:upload`). Edit and Confirm save through `PATCH /v1/vault/items/{item_id}`, and the reminder ticks choose how early you hear (`src/jarvis/api/vault.py:item_patch`). Delete asks first and sends the document to Recently deleted, with an Undo (`DELETE /v1/vault/items/{item_id}`). To open a file the panel asks for an unlock with `POST /v1/vault/unlock`: your passkey where you require one, else a recent Google sign-in (`src/jarvis/api/vault.py:unlock`). The unlock lives only in this tab's memory and is forgotten when the panel closes or the tab hides (`src/jarvis/api/static/console-vault.js`). Each open asks for a single-use ticket and then downloads the file, and every unlock, open and export is written to the audit log first (`src/jarvis/api/vault.py:download`). Settings choose how reminders are worded, whether due documents show in the brief, and your family list (`PUT /v1/vault/settings`). \"Check DigiLocker now\" imports new files from the Drive folder you picked (`POST /v1/vault/inbox/check`).",
+     "refs": []
+    },
+    {
+     "id": "costs",
+     "heading": "What it costs",
+     "text": "The vault keeps your files in JARVIS's own database with no outside service, so it costs nothing (`src/jarvis/api/vault.py`). Reading the dates from a file is done by code on the server, not by an AI (`src/jarvis/api/static/console-vault-add.js`). The DigiLocker import uses Google Drive's free access (`src/jarvis/api/vault_inbox.py`).",
+     "refs": []
+    },
+    {
+     "id": "fails",
+     "heading": "When it fails",
+     "text": "A file that is not a PDF, JPEG or PNG is refused with \"Use a PDF, JPEG or PNG.\", and one over the size limit is refused before it is sent (`src/jarvis/api/static/console-vault-add.js`). A file already stored gives \"That file is already in your vault.\" If the unlock fails, the panel says \"The vault could not be unlocked.\"; if your sign-in is too old, it offers \"Sign in again\". Unlocks are limited to 10 a minute and uploads to 6 a minute. If a download fails, it says \"The download did not work.\"",
+     "refs": []
+    },
+    {
+     "id": "code",
+     "heading": "Where in the code",
+     "text": "`src/jarvis/api/static/console-vault-add.js`\n`src/jarvis/api/static/console-vault.js`\n`src/jarvis/api/static/console.html`\n`src/jarvis/api/vault.py`\n`src/jarvis/api/vault_inbox.py`",
+     "refs": [
+      "src/jarvis/api/static/console-vault-add.js",
+      "src/jarvis/api/static/console-vault.js",
+      "src/jarvis/api/static/console.html",
+      "src/jarvis/api/vault.py",
+      "src/jarvis/api/vault_inbox.py"
+     ]
+    }
+   ],
+   "meta": {
+    "written_by": "Workshop · Mark XXIV",
+    "written_on": "2026-11-24",
+    "release": "cda01f1",
+    "version": "v6.3.2"
+   },
+   "flow": {
+    "title": "Opening a document in Vault",
+    "dir": "down",
+    "nodes": [
+     {
+      "id": "open",
+      "label": "You press Open",
+      "kind": "person",
+      "rank": 0,
+      "col": 0,
+      "ref": "src/jarvis/api/static/console-vault.js"
+     },
+     {
+      "id": "unlocked",
+      "label": "Unlocked in this tab?",
+      "kind": "guard",
+      "rank": 1,
+      "col": 0
+     },
+     {
+      "id": "prove",
+      "label": "Passkey or fresh sign-in",
+      "kind": "guard",
+      "rank": 1,
+      "col": 1,
+      "ref": "src/jarvis/api/vault.py"
+     },
+     {
+      "id": "ticket",
+      "label": "Single-use ticket",
+      "kind": "step",
+      "rank": 2,
+      "col": 0,
+      "ref": "src/jarvis/api/vault.py"
+     },
+     {
+      "id": "audit",
+      "label": "Written to the audit log",
+      "kind": "store",
+      "rank": 3,
+      "col": 0
+     },
+     {
+      "id": "file",
+      "label": "File downloads",
+      "kind": "step",
+      "rank": 4,
+      "col": 0
+     }
+    ],
+    "edges": [
+     {
+      "from": "open",
+      "to": "unlocked",
+      "style": "main"
+     },
+     {
+      "from": "unlocked",
+      "to": "ticket",
+      "label": "yes",
+      "style": "main"
+     },
+     {
+      "from": "unlocked",
+      "to": "prove",
+      "label": "no",
+      "style": "side"
+     },
+     {
+      "from": "prove",
+      "to": "ticket",
+      "style": "side"
+     },
+     {
+      "from": "ticket",
+      "to": "audit",
+      "style": "main"
+     },
+     {
+      "from": "audit",
+      "to": "file",
+      "style": "main"
+     }
+    ]
+   }
+  }
+ }
+}

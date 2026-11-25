@@ -180,10 +180,6 @@
     const b = [...host.querySelectorAll('button')].filter((x) => x.textContent === k.text)[k.n];
     if (b && !b.disabled) b.focus(); else if (b) S.focus = k; // disabled while busy: the next render puts it back
   }
-  // R6.3 I0 (seam 8): C's full-book module, loaded ONCE at the panel's first open, handed its host and deps (R6.3.1: the writer is gone)
-  const X = {}, deps = () => ({ api, booked, ask, say, render, token: () => S.token, release: () => S.reading || ((S.data && S.data.release) || {}).id || '' });
-  function more() { if (X.pages) return; X.pages = mk('div', 'bk-pages'); [['console-book-pages.js', 'JarvisBookPages', (P) => P.mount(X.pages, deps())]]
-    .forEach(([f, name, go]) => { const t = document.createElement('script'); t.src = '/static/' + f; t.defer = true; t.addEventListener('load', () => { if (window[name]) go(window[name]); }); document.head.append(t); }); }
   function render() {
     const keep = focusKey();
     paint();
@@ -201,7 +197,7 @@
       host.append(l);
     }
     host.append(S.token ? sessionBar() : opens(d), noteEl);
-    if (S.token) host.append(reader(), ...[X.pages].filter(Boolean)); // R6.3: the full book (C's)
+    if (S.token) host.append(reader()); // R6.4 D1: the full book reads on its own page (Read the full book)
     host.append(sealedList(d), tiles(d));
     if (d.last) host.append(mk('p', 'bnote bk-last', 'Last session closed ' + d.last.at + '; its conversation was deleted'
       + (d.last.told ? ' and you were told.' : '.')));
@@ -372,7 +368,7 @@
   }
   function ready() {
     const p = pending();
-    if (!p) { ss.del(PENDING); if (Deck.isOpen('book')) { more(); load(); } return; } // a restored panel fires no jarvis:panel (R6.3 hotfix 1)
+    if (!p) { ss.del(PENDING); if (Deck.isOpen('book')) load(); return; } // a restored panel fires no jarvis:panel (R6.3 hotfix 1)
     if (back === 'done') S.resume = p;
     else { ss.del(PENDING); if (back === 'stale') say('bad', 'Google didn\u2019t confirm a fresh sign-in, so the book did not open. Sign out of Google in this browser, then try again. If it happens every time, Google isn\u2019t sending the sign-in time: switch on Session age claims in Google Auth Platform, or switch reauth_requires_auth_time off.'); }
     if (!back) return;
@@ -382,7 +378,7 @@
   document.addEventListener('jarvis:panel', (e) => {
     const d = e.detail || {};
     if (d.id !== 'book') return;
-    if (d.open) { more(); load(); } else if (S.token) end(false);
+    if (d.open) load(); else if (S.token) end(false);
   });
   document.addEventListener('jarvis:ready', ready);
   const JC = window.JarvisConsole;

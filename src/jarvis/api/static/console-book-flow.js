@@ -8,7 +8,8 @@
 // The main path is the accent with the theme's glow, a side path dashed; colours are console-book.css classes on the
 // console's tokens, so Night and Day both work. A box under 560 px is laid out "down" and packed to its width: no
 // sideways scroll, never drawn below 1:1 (text >= 12 px), taller instead; it lays itself out again when its box changes
-// (ResizeObserver). Imported by console-book-pages.js. Data reaches the page through textContent and setAttribute only.
+// (ResizeObserver). Imported by console-book-read-page.js (R6.4: the full book's page). Data reaches the page through
+// textContent and setAttribute only.
 // No build step; CSP script-src 'self'; ASCII; <= 400 lines.
 import { KINDS, SIZE, layout, normalFlow, stepsOf } from './console-book-flow-layout.js';
 

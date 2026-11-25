@@ -1,7 +1,7 @@
 # src/jarvis/buildbook/writer/http.py
 """The full book's HTTP contract (R6.3 "The HTTP contract"; R6.3.1 D7, D8: the writer's routes
-are gone, the two pages routes stay): `api/book_pages.py` answers exactly these and the console's
-reader (`console-book-pages.js`) draws exactly these.
+are gone, the two pages routes stay): `api/book_pages.py` answers exactly these and the full
+book's page, `/book/read` (R6.4: `console-book-read-*.js`), draws exactly these.
 
 Both routes are the signed-in PRIMARY owner's (L11: another owner e-mail is 403 `not_primary`),
 need an OWNER book session's `X-Jarvis-Book` (a guest's is 403 `owner_only`), pass

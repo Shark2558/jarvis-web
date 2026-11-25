@@ -10,7 +10,9 @@ import io
 import json
 import struct
 import wave
+from collections.abc import Callable
 from typing import Any
+from urllib.parse import parse_qsl
 
 RELEASE = {
     "id": "3f2a1c9",
@@ -465,9 +467,8 @@ def j(route: Any, status_code: int, body: Any) -> None:
     )
 
 
-# R6.3 (review I1 M-5): the console asks for the full book at the panel's open; R6's mock book is
-# a server with no full book, so it draws nothing (C's browser files send those routes on to C's
-# fake server instead, `r63_fakes_c.route_c`). R6.3.1 D8: the writer's route is gone.
+# R6's mock book is a server with no full book (R6.4 D1: the panel no longer asks for it; the full
+# book's page /book/read does, and its tests hand FakeBook a book: tests/browser/r64_a_book.py).
 NO_PAGES = {"release": RELEASE["id"], "parts": [], "limitations": {"shown": 0, "total": 0}}
 # R6.4 D5: GET /v1/book/chapters as I0 shapes it (docs/plans/r6-4-integration/I0-NOTES.md)
 CHAPTERS = {
@@ -502,6 +503,10 @@ class FakeBook:
         self.ask_answers: list[dict[str, Any]] = []
         self.lock: dict[str, Any] | None = {"on": False}  # None: a server without the lock route
         self.chapters_answer: tuple[int, Any] = (200, CHAPTERS)  # R6.4: the reader's first call
+        # R6.4 A: the reader's contents, its pages by id and its search (a function of the query)
+        self.pages_answer: tuple[int, Any] = (200, NO_PAGES)
+        self.page_answers: dict[str, tuple[int, Any]] = {}
+        self.search_answer: Callable[[str], tuple[int, Any]] | None = None
         self.resume_answers: list[
             Any
         ] = []  # consumed in order ("abort" or (code, body)); then resumed
@@ -525,7 +530,9 @@ class FakeBook:
                 body = json.loads(raw.decode("utf-8"))
             except ValueError:  # UnicodeDecodeError is a ValueError too
                 body = raw
-        call = {"method": req.method, "path": path, "headers": dict(req.headers), "body": body}
+        query = req.url.split("?", 1)[1] if "?" in req.url else ""
+        call = {"method": req.method, "path": path, "headers": dict(req.headers), "body": body,
+                "query": dict(parse_qsl(query, keep_blank_values=True))}  # fmt: skip
         self.calls.append(call)
         return call
 
@@ -590,7 +597,11 @@ class FakeBook:
             got = self.resume_answers.pop(0) if self.resume_answers else (200, {"resumed": True})
             return self._fail(route, got) if got == "abort" else j(route, *got)
         if m == "GET" and p == "/v1/book/pages":
-            return j(route, 200, NO_PAGES)
+            return j(route, *self.pages_answer)
+        if m == "GET" and p == "/v1/book/pages/search" and self.search_answer is not None:
+            return j(route, *self.search_answer(c["query"].get("q", "")))
+        if m == "GET" and p.startswith("/v1/book/pages/") and p[15:] in self.page_answers:
+            return j(route, *self.page_answers[p[15:]])
         if m == "GET" and p == "/v1/book/chapters":  # R6.4 D5
             code, body = self.chapters_answer
             return j(route, code, body)

@@ -9,6 +9,11 @@
 // search, continue, keyboard) and keeps this contract: window.JarvisBookRead = {state, release, chapters, ready, close}
 // and the document event 'jarvis:book-read' ({release}) once the page is ready.
 // No build step; CSP script-src 'self'; server text only through textContent; ASCII source; <= 400 lines.
+// Builder A (R6.4 D3, D4): once ready, the reader starts (console-book-read-app.js: contents, the page, search, continue,
+// keys, the phone's sheet and Play bar); Close asks first, as the show's End does (the console's .bdialog: "Close the
+// book?" / Keep reading / Close); JarvisBookRead also gives open(pageId) and page() (the page read: the address's #id).
+import { currentPage, openPage, startReader } from './console-book-read-app.js';
+
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = 'jarvis_book_token', SESSION_KEY = 'jarvis_book_session', HEADER = 'X-Jarvis-Book';
 const BEAT_MS = 60 * 1000, WORD_MS = 330, TAIL_MS = 800, GONE = new Set([401, 403, 404, 410]), OWN = /^\/(?![/\\])/;
@@ -99,12 +104,46 @@ function tour() {
   window.location.assign('/book/show');
 }
 
+/** Close asks first (the console's confirm dialog, as the show's End): Keep reading is the safe default. */
+function confirmClose() {
+  let d = $('brConfirm');
+  if (!d) {
+    d = document.createElement('dialog');
+    d.id = 'brConfirm'; d.className = 'bdialog'; d.setAttribute('role', 'alertdialog');
+    d.setAttribute('aria-labelledby', 'brConfirmTitle'); d.setAttribute('aria-describedby', 'brConfirmText');
+    const h = document.createElement('h2'), p = document.createElement('p'), row = document.createElement('div');
+    h.id = 'brConfirmTitle'; h.textContent = 'Close the book?';
+    p.id = 'brConfirmText'; p.textContent = 'The book session ends here. Your place is kept in this browser, so Continue picks up where you left off.';
+    row.className = 'actions';
+    [['brKeep', 'Keep reading', 'btn lift', 'keep'], ['brCloseNow', 'Close', 'btn lift primary', 'close']].forEach(([id, words, cls, value]) => {
+      const b = document.createElement('button');
+      b.id = id; b.type = 'button'; b.className = cls; b.textContent = words;
+      b.addEventListener('click', () => d.close(value));
+      row.append(b);
+    });
+    d.append(h, p, row);
+    d.addEventListener('close', () => { if (d.returnValue === 'close') close(); else if (closeBtn) closeBtn.focus(); });
+    $('bookRead').append(d);
+  }
+  if (d.open) return;
+  d.returnValue = '';
+  try { d.showModal(); } catch (_) { d.setAttribute('open', ''); }
+  $('brKeep').focus();
+}
+/** A refused session (the reader's own calls): back to the closed page, the token forgotten. */
+function gone(e) { refused(e); return true; }
+
 const ready = boot();
 const closeBtn = $('brClose'), tourBtn = $('brTour');
-if (closeBtn) closeBtn.addEventListener('click', close);
+if (closeBtn) closeBtn.addEventListener('click', confirmClose);
 if (tourBtn) tourBtn.addEventListener('click', tour);
+ready.then((ok) => (ok ? startReader({ api, release: S.release, chapters: S.chapters.slice(), gone }) : false)).catch(() => {
+  const note = $('brNote');
+  if (note) note.textContent = WORDS.down;
+});
 window.JarvisBook = Object.freeze({ api, raw, failure, captionMs, token: () => ss.get(TOKEN_KEY), mode: () => '' });
 window.JarvisBookRead = Object.freeze({
   state: () => S.state, release: () => S.release, chapters: () => S.chapters.slice(), ready: () => ready, close,
+  open: (pageId) => openPage(pageId), page: () => currentPage(),
 });
 export { api, close, ready };

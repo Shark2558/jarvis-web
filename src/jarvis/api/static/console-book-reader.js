@@ -7,8 +7,8 @@
 // No build step; CSP script-src 'self'; ASCII source; <= 400 lines.
 // R6.2 owner decision 4: Show voice and Listening are each "Browser (free)" (the default, Rs 0) or "Cloud"; a switch to
 // Cloud shows what it uses and costs and asks first (the console's .bdialog), then saves with confirm_cost: true.
-// window.JarvisBookReader = { sections(host, raw) -> count, settings(host, deps) }. R6.3 G4: under the limitations, the full
-// book's "+N more in the full book" (console-book-pages.js more(body); an owner session only).
+// window.JarvisBookReader = { sections(host, raw) -> count, settings(host, deps) }. (R6.4 D1: the full book reads on its
+// own page, /book/read, so R6.3 G4's "+N more in the full book" line under the limitations went with the in-panel reader.)
 (() => {
   'use strict';
   const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
@@ -127,7 +127,6 @@
       group(body, 'What JARVIS cannot do yet', items.map((l) => row(txt(l.release, 8), txt(l.text, 200),
         [KIND[l.kind] || '', txt(l.source, 160)].filter(Boolean).join(' \u00b7 '))));
       if (!items.length) none(body, 'Nothing listed.');
-      const P = window.JarvisBookPages; if (P && typeof P.more === 'function') P.more(body); // R6.3 G4: "+N more in the full book"
     } };
   }
   function costs(d) {

@@ -3,6 +3,9 @@
 DEFAULT_RATE (and its date), read with the rest from the code as ASTs:
 
     model   llm/pricing.py PRICES: input and output per 1M tokens; free brains at ₹0
+    paid    llm/pricing.py GEMINI_PAID_PRICES (R6.4 D9): Gemini's paid tier, each labelled "paid
+            tier" with the day the prices were read (GEMINI_PAID_AS_OF); listed last, so what the
+            tour shows (the first prices) and the free tier's ₹0 rows stay as they were
     voice   Settings defaults: Chirp 3 HD and Studio per 1M characters, speech per minute, and
             the free monthly characters and seconds JARVIS may use
     search  web/allowance.py MONTHLY_CREDITS (JARVIS stops there: ₹0)
@@ -42,6 +45,7 @@ CostKind = Literal["model", "voice", "search", "maps", "cloud", "other"]
 FREE_BRAIN = "free of charge; Google may learn from what it is told"
 _PER = {"month": "a month", "day": "a day"}
 PRICE_FIELDS = ("input_per_mtok", "output_per_mtok")
+PAID_TABLE, PAID_AS_OF = "GEMINI_PAID_PRICES", "GEMINI_PAID_AS_OF"  # llm/pricing.py, R6.4 D9
 VOICE_KEYS = (
     "voice_price_chirp3_hd_usd_per_m",
     "voice_price_studio_usd_per_m",
@@ -93,22 +97,42 @@ def _price(call: ast.expr | None) -> tuple[float, float] | None:
     return float(values[0]), float(values[1])
 
 
+def _table(rel: str | None, node: ast.expr | None, name: str) -> dict[str, tuple[float, float]]:
+    if not isinstance(node, ast.Dict):
+        raise GenError(f"{rel}: {name} isn't a literal table")
+    out: dict[str, tuple[float, float]] = {}
+    for key, call in zip(node.keys, node.values, strict=True):
+        price = _price(call)
+        if not (isinstance(key, ast.Constant) and isinstance(key.value, str)) or price is None:
+            raise GenError(f"{rel}: a {name} entry isn't a model id and Price(input, output)")
+        out[key.value] = price
+    return out
+
+
 def model_prices(repo: Repo) -> dict[str, tuple[float, float]]:
     """PRICES = {"model": Price(input, output, ...)} -> {model: (input, output)} US$ per 1M."""
     rel = module_path(repo, "llm.pricing")
     module = tree(repo, rel)
     if module is None:
         return {}
-    node = top_expr(module, "PRICES")
-    if not isinstance(node, ast.Dict):
-        raise GenError(f"{rel}: PRICES isn't a literal table")
-    out: dict[str, tuple[float, float]] = {}
-    for key, call in zip(node.keys, node.values, strict=True):
-        price = _price(call)
-        if not (isinstance(key, ast.Constant) and isinstance(key.value, str)) or price is None:
-            raise GenError(f"{rel}: a PRICES entry isn't a model id and Price(input, output)")
-        out[key.value] = price
-    return out
+    return _table(rel, top_expr(module, "PRICES"), "PRICES")
+
+
+def paid_tier_prices(repo: Repo) -> tuple[dict[str, tuple[float, float]], str]:
+    """GEMINI_PAID_PRICES as {model: (input, output)} US$ per 1M, and GEMINI_PAID_AS_OF, the
+    day they were read. ({}, "") when the price list has no paid tier; a paid tier without a
+    literal date, or one that can't be read, fails (the book never shows a price without its day).
+    """
+    rel = module_path(repo, "llm.pricing")
+    module = tree(repo, rel)
+    node = top_expr(module, PAID_TABLE) if module is not None else None
+    if module is None or node is None:
+        return {}, ""
+    table = _table(rel, node, PAID_TABLE)
+    when = top_value(module, PAID_AS_OF)
+    if not (isinstance(when, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", when)):
+        raise GenError(f"{rel}: {PAID_AS_OF} must be a literal date (YYYY-MM-DD)")
+    return table, when
 
 
 def _inr(usd: float, fx: float) -> float:
@@ -132,6 +156,25 @@ def _models(repo: Repo, fx: float) -> list[CostItem]:
             out.append(
                 CostItem(
                     id=f"{mid}_{short}",
+                    label=f"{label}, {side}",
+                    kind="model",
+                    unit=f"1M {side} tokens",
+                    inr=_inr(usd, fx),
+                )
+            )
+    return out
+
+
+def _paid_tier(repo: Repo, fx: float) -> list[CostItem]:
+    """Gemini's paid tier (R6.4 D9): two rows a model, "(paid tier, prices of <day>)"."""
+    table, when = paid_tier_prices(repo)
+    out = []
+    for model, (usd_in, usd_out) in table.items():
+        label, mid = f"{model_label(model)} (paid tier, prices of {when})", _id(model)
+        for side, short, usd in (("input", "in", usd_in), ("output", "out", usd_out)):
+            out.append(
+                CostItem(
+                    id=f"{mid}_paid_{short}",
                     label=f"{label}, {side}",
                     kind="model",
                     unit=f"1M {side} tokens",
@@ -230,7 +273,16 @@ def costs(repo: Repo) -> Costs:
         CostItem(id=i, label=lb, kind="cloud", unit=u, inr=0, free=f) for i, lb, u, f in FREE_TIER
     ]
     items = [*_models(repo, fx), *_voice(repo, fx), *_search(repo), *_maps(repo), *cloud]
+    items += _paid_tier(repo, fx)  # last: the tour's first prices stay as they were (R6.4 D9)
     return Costs(usd_inr=fx, rate_date=when, items=tuple(items))
 
 
-__all__ = ["FALLBACK_RATE", "FREE_TIER", "costs", "model_label", "model_prices", "rate"]
+__all__ = [
+    "FALLBACK_RATE",
+    "FREE_TIER",
+    "costs",
+    "model_label",
+    "model_prices",
+    "paid_tier_prices",
+    "rate",
+]

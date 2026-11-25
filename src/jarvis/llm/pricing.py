@@ -44,8 +44,9 @@ PRICES: dict[str, Price] = {
 }
 
 # Gemini's paid ("Standard") tier, USD per 1M tokens, from Google's published price list
-# https://ai.google.dev/gemini-api/docs/pricing, read 2026-11-25. None of these four has
-# prompt-length bands. 3.8 Flash and 3.6 Flash list $0.75 input / $3.75 output / $0.075 cache
+# https://ai.google.dev/gemini-api/docs/pricing, read 2026-11-25 (`GEMINI_PAID_SOURCE` and
+# `GEMINI_PAID_AS_OF`; the Book's cost table shows that day with the prices). None of these four
+# has prompt-length bands. 3.8 Flash and 3.6 Flash list $0.75 input / $3.75 output / $0.075 cache
 # through 31 Dec 2026 and $1.50 / $7.50 / $0.15 from 1 Jan 2027: the higher (later) price is used,
 # the worst case, so December 2026 reads high, never low. Flash-Lite: the text / image / video
 # input price (JARVIS sends no audio to the chat brain). Google bills no per-token cache write
@@ -57,6 +58,8 @@ GEMINI_PAID_PRICES: dict[str, Price] = {
     "gemini-3.5-flash-lite": Price(0.30, 2.50, 0.03, 0.30),
     "gemini-3.1-flash-lite": Price(0.25, 1.50, 0.025, 0.25),
 }
+GEMINI_PAID_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing"
+GEMINI_PAID_AS_OF = "2026-11-25"  # the day GEMINI_PAID_PRICES was read from GEMINI_PAID_SOURCE
 # Providers that call no vendor: the deterministic test/dev mock and the owner's own laptop
 # (`local_brain`). Their models are never "price unknown".
 FREE_PROVIDERS: frozenset[str] = frozenset({"mock", "local_brain"})

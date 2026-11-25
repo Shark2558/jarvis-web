@@ -10,9 +10,9 @@ sources:
   "src/jarvis/billing/fx.py": "a1f636e96ac588a7"
   "src/jarvis/billing/ledger.py": "db2a8ce52cc2c908"
   "src/jarvis/billing/meter.py": "25554dab6a58d209"
-  "src/jarvis/billing/service.py": "9778ed2f38fc3f08"
+  "src/jarvis/billing/service.py": "f8cd9507563514e1"
   "src/jarvis/billing/spend.py": "fad90ef7371200bc"
-  "src/jarvis/llm/pricing.py": "2def5f9e481da2f1"
+  "src/jarvis/llm/pricing.py": "a2d1278419157236"
 ---
 ## In plain words
 Paid AI replies and paid cloud voice cost real money, billed in US dollars. This part turns every such call into rupees, shows you what this month has cost, brain by brain, and holds to the monthly limit you set in Vitals. Once the limit is reached, JARVIS makes no more paid calls that month; free brains keep answering. Raising or removing the limit always asks you to confirm.
@@ -22,8 +22,9 @@ You set a limit of ₹500 a month. By the 20th the Vitals bar reads ₹410 of �
 
 ## How it works
 Before every call to a paid brain, or to one whose price is unknown, `Billing` checks this month's rupees against your limit and refuses with `BudgetReached` when it is used up; free brains are never blocked (`metered_brain`).
-After each reply, `cost_usd` prices the tokens from the model's price table, and `Billing` adds the cost in rupees to the month in one transaction, never failing the reply over a write (`src/jarvis/llm/pricing.py`).
+After each reply, `cost_usd` prices the tokens from the model's price table (with `gemini_paid_tier` on, Gemini at Google's paid-tier prices: `use_gemini_paid_tier`), and `Billing` adds the cost in rupees to the month in one transaction, never failing the reply over a write (`src/jarvis/llm/pricing.py`).
 A reply from a model with no price is never counted as nothing: `UsageMeter` keeps it apart as "price unknown" with its tokens, and the limit counts those at the `dearest` known price, an upper estimate (`price_unknown`).
+A background job that hands over only a cost, such as the morning brief or people research, reports no tokens, so on a brain with no known price its call counts as one "price unknown" call of a fixed, generous size (`unpriced_brain`).
 `FxRates` fetches the day's dollar-to-rupee rate from Frankfurter once a day with a {{fact:src/jarvis/billing/fx.py:FETCH_TIMEOUT_S}}-second limit, accepts only a rate between {{fact:src/jarvis/billing/fx.py:RATE_MIN}} and {{fact:src/jarvis/billing/fx.py:RATE_MAX}}, and keeps it in `fx` so a restart reads it back (`src/jarvis/billing/fx.py`).
 Your limit is a whole number of rupees from {{fact:src/jarvis/billing/budget.py:LIMIT_MIN}} to {{fact:src/jarvis/billing/budget.py:LIMIT_MAX}} in `budget`; lowering it is immediate, while raising or removing it needs your confirmation (`needs_confirm`).
 `UsageMeter` keeps the month's rupees and call counts in `usage`, plus the deployment's free cloud-voice allowance, which is free up to its amount and priced above it (`src/jarvis/billing/meter.py`).

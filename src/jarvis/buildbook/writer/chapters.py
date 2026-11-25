@@ -22,7 +22,8 @@ def chapters_of(f: PagesFile) -> tuple[BookChapter, ...]:
                  for c in ch.chapters(f.pages))  # fmt: skip
 
 
-def view(f: PagesFile) -> ChaptersView:
+def view(f: PagesFile, *, label: str | None = None) -> ChaptersView:
+    """The release's chapters; `label`: its sealed label ("R6.4"), for the reader's chip (I1)."""
     rows = tuple(
         ChapterRow(
             id=c.id,
@@ -31,10 +32,11 @@ def view(f: PagesFile) -> ChaptersView:
             pages=c.pages,
             minutes=c.minutes,
             narrated=c.narrated,
+            lines=len(c.lines),
         )  # fmt: skip
         for c in chapters_of(f)
     )
-    return ChaptersView(release=f.release, chapters=rows)
+    return ChaptersView(release=f.release, label=label, chapters=rows)
 
 
 def one(f: PagesFile, chapter_id: str) -> ChapterView | None:

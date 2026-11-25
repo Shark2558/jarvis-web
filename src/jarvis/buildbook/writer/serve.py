@@ -69,6 +69,13 @@ class BookPages:
         return f, flows
 
     async def _opened(self, uid: str, rid: str | None) -> tuple[tuple[str, ...], PagesFile, Flows]:
+        _, key, f, flows = await self._sealed_files(uid, rid)
+        return key, f, flows
+
+    async def _sealed_files(
+        self, uid: str, rid: str | None
+    ) -> tuple[Any, tuple[str, ...], PagesFile, Flows]:
+        """The kept release (its index row) and its opened files."""
         sealed = await self._kept(uid, rid)
         has_flows = has_file(sealed, "flows")
         key = (uid, sealed.id, sealed.file("pages").sha256,
@@ -79,7 +86,7 @@ class BookPages:
                 gone, _ = self._open.popitem(last=False)
                 self._found.pop(gone, None)
         self._open.move_to_end(key)
-        return (key, *self._open[key])
+        return (sealed, key, *self._open[key])
 
     async def files(self, uid: str, rid: str | None) -> tuple[PagesFile, Flows]:
         _, f, flows = await self._opened(uid, rid)
@@ -98,8 +105,8 @@ class BookPages:
 
     # ---- R6.4 D4-D6 ------------------------------------------------------------------------
     async def chapters(self, uid: str, rid: str | None) -> ChaptersView:
-        f, _ = await self.files(uid, rid)
-        return chapters.view(f)
+        sealed, _, f, _ = await self._sealed_files(uid, rid)
+        return chapters.view(f, label=sealed.label)  # R6.4 I1: the chip's "R6.4"
 
     async def chapter(self, uid: str, chapter_id: str, rid: str | None) -> ChapterView:
         f, _ = await self.files(uid, rid)

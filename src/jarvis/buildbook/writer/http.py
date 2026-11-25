@@ -12,9 +12,10 @@ no-store`, are rate-limited (`LIMITS`) and answer a refusal as `Refusal` (`{"err
 `ROUTES`: (method, path, part, request model, reply model, the statuses it may answer, gate).
 
 R6.4 D4-D6 (docs/plans/r6-4-book-look.md), behind the same gates: `GET /v1/book/chapters` (the
-release's chapters, `ChaptersView`), `GET /v1/book/chapters/{chapter_id}` (one chapter with its
-spoken lines, `ChapterView`; 404 `no_chapter`) and `GET /v1/book/pages/search?q=` (`SearchView`;
-422 `bad_query` unless `q` is 2 to 60 characters once trimmed; its own limit, `LIMITS["search"]`).
+release's chapters and, I1, its label, `ChaptersView`), `GET /v1/book/chapters/{chapter_id}` (one
+chapter with its spoken lines, `ChapterView`; 404 `no_chapter`) and `GET /v1/book/pages/search?q=`
+(`SearchView`; 422 `bad_query` unless `q` is 2 to 60 characters once trimmed; its own limit,
+`LIMITS["search"]`).
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from pydantic import Field
 from jarvis.buildbook.book.chapters import CHAPTER_ID, ChapterKind
 from jarvis.buildbook.facts_model import PAGE_ID, PageKind, PartId
 from jarvis.buildbook.model import RELEASE_ID
-from jarvis.buildbook.sections import Frozen
+from jarvis.buildbook.sections import RELEASE_LABEL, Frozen
 from jarvis.buildbook.writer.model import ChapterLine, Page, PageMeta, ScriptMeta
 
 ERRORS = (
@@ -81,12 +82,15 @@ class ChapterRow(Frozen):
     pages: tuple[str, ...] = ()  # page ids, in the order they are told
     minutes: int = Field(default=0, ge=0)  # the narration's, at 150 words a minute; 0: not narrated
     narrated: bool = False
+    lines: int = Field(default=0, ge=0)  # R6.4 I1: its spoken lines (Continue: "line 23 of 80")
 
 
 class ChaptersView(Frozen):
-    """`GET /v1/book/chapters?release=` (owner session)."""
+    """`GET /v1/book/chapters?release=` (owner session). R6.4 I1: `label`, the sealed release's
+    ("R6.4"), for the reader's chip; None when the view was built without one."""
 
     release: str = Field(pattern=RELEASE_ID)
+    label: str | None = Field(default=None, pattern=RELEASE_LABEL)
     chapters: tuple[ChapterRow, ...] = ()
 
 

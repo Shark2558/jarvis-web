@@ -23,6 +23,7 @@ READ_PAGE = "/book/read"
 JS = "application/javascript"
 READ_ASSETS: dict[str, str] = {
     "book-read.css": "text/css",  # I0: the Book-only tokens and the page's layout (D2, D3)
+    "book-read-reader.css": "text/css",  # A: the reader's parts (I1: out of book-read.css)
     "console-book-read.js": JS,  # A: contents, page, search, continue (I0: the token hand-off)
     "console-book-read-app.js": JS,  # A: the reader (contents, the page, keys, the phone's sheet)
     "console-book-read-data.js": JS,  # A: the routes' shapes checked, the places kept, helpers

@@ -102,6 +102,14 @@ NOT_IN_PAGE = {
         "from './console-book-read-search.js'",
     ),
     "console-book-fx.js": ("console-book-chapter.js", "from './console-book-fx.js'"),
+    # R6.4 B, joined at I1: the player's view and the effects engine's parts (ES modules)
+    "console-book-chapter-view.js": (
+        "console-book-chapter.js",
+        "from './console-book-chapter-view.js'",
+    ),
+    "console-book-fx-plan.js": ("console-book-fx.js", "from './console-book-fx-plan.js'"),
+    "console-book-fx-chart.js": ("console-book-fx.js", "from './console-book-fx-chart.js'"),
+    "console-book-fx-cards.js": ("console-book-fx.js", "from './console-book-fx-cards.js'"),
 }
 # R6.4: linked from the full book's page (book-read.html), served by api/book_read.READ_ASSETS
 ON_READ_PAGE = {"console-book-read.js", "console-book-chapter.js"}

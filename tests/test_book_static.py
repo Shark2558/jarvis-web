@@ -37,7 +37,7 @@ JS = [
     "console-book-read-rail.js",
     "console-book-read-search.js",
 ]
-CSS = ["console-book.css", "book.css", "book-read.css"]
+CSS = ["console-book.css", "book.css", "book-read.css", "book-read-reader.css"]
 SCENE_SPLIT = {
     "console-book-scenes.js": {1, 2, 12, 13},
     "console-book-scenes-flow.js": {3, 5, 6, 8},

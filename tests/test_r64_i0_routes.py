@@ -26,6 +26,7 @@ from jarvis.buildbook.writer.model import BookChapter, Narration, PageMeta, Page
 from jarvis.config import Settings
 
 RID = FixtureSource().current().id  # type: ignore[union-attr]
+LABEL = FixtureSource().current().label  # type: ignore[union-attr]
 META = PageMeta(written_by="Workshop · Mark XXIV", written_on="2026-11-24", release=RID)
 TEXT: dict[Any, str] = {"plain": "The demo checks each key's expiry date.", "how": "It picks."}
 LINES = [
@@ -81,12 +82,13 @@ async def test_the_chapters_list_and_one_chapter_with_its_lines(settings: Settin
             h = await _owner(app, c)
             r = await c.get("/v1/book/chapters", headers=h)
             assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
-            assert r.json() == {"release": RID, "chapters": [
+            # R6.4 I1: the sealed release's label too, for the reader's chip ("R6.4 · v6.4.0 · id")
+            assert r.json() == {"release": RID, "label": LABEL, "chapters": [
                 {"id": "story_example", "title": "The running example", "kind": "story",
-                 "pages": ["pg_chapter_example"], "minutes": 0, "narrated": False},
+                 "pages": ["pg_chapter_example"], "minutes": 0, "narrated": False, "lines": 0},
                 {"id": "module_demo", "title": "The demo", "kind": "module",
                  "pages": ["pg_module_demo", "pg_card_c01", "pg_card_c02"], "minutes": 1,
-                 "narrated": True},
+                 "narrated": True, "lines": 3},
             ]}  # fmt: skip
             one = (await c.get("/v1/book/chapters/module_demo", params={"release": RID},
                                headers=h)).json()  # fmt: skip
@@ -176,8 +178,8 @@ async def test_the_reader_page_and_its_assets_are_served_like_the_show(settings:
             assert read.headers["content-security-policy"] == CONSOLE_CSP
             html = read.text
             assert 'data-book="r64"' in html and 'id="bookRead"' in html and "<script>" not in html
-            for asset in ("book-read.css", "console-book-read.js", "console-book-chapter.js",
-                          "console-book-fx.js"):  # fmt: skip
+            for asset in ("book-read.css", "book-read-reader.css", "console-book-read.js",
+                          "console-book-chapter.js", "console-book-fx.js"):  # fmt: skip
                 r = await bare.get(f"/static/{asset}")
                 assert r.status_code == 200 and r.headers["cache-control"] == "no-store", asset
                 assert r.headers["x-content-type-options"] == "nosniff"

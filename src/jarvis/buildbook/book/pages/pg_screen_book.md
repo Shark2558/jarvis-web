@@ -16,7 +16,7 @@ sources:
   "src/jarvis/api/static/console-book-fx-cards.js": "5405770133312bf2"
   "src/jarvis/api/static/console-book-fx-chart.js": "65e9b511a4fb604b"
   "src/jarvis/api/static/console-book-fx-plan.js": "5c71ed8daf8824d5"
-  "src/jarvis/api/static/console-book-fx.js": "0e96836e0a0485e4"
+  "src/jarvis/api/static/console-book-fx.js": "57554389e75cee8a"
   "src/jarvis/api/static/console-book-read-app.js": "ba90aaa6a7eebea5"
   "src/jarvis/api/static/console-book-read-data.js": "e454107b9f3a8c13"
   "src/jarvis/api/static/console-book-read-page.js": "98e55aee6e35d779"

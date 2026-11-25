@@ -155,6 +155,7 @@ export function createFx(stage, options = {}) {
       turn(prev ? prev.page : '', sc.page, prev ? fx.swap : '');
     } else if (st.hl < 0) slideSteps(st.order.indexOf(sc.page), false);
     const onChart = sc.view === 'chart' && chart.has();
+    stage.classList.toggle('fx-readband', onChart && !!sc.count); // a phone's chart starts below the count (review L-8)
     setLayer(onChart ? 'chart' : 'cards', !instant && st.view !== '', !!fx.pullback);
     st.view = onChart ? 'chart' : sc.view;
     if (onChart) chart.apply(sc, fx, instant);
@@ -226,7 +227,7 @@ export function createFx(stage, options = {}) {
     if (ro) ro.disconnect();
     document.removeEventListener('jarvis:motion', onMotion);
     if (reduceQ.removeEventListener) reduceQ.removeEventListener('change', onReduce);
-    chart.reset(); cards.reset(); stage.textContent = ''; stage.classList.remove('fx-stage');
+    chart.reset(); cards.reset(); stage.textContent = ''; stage.classList.remove('fx-stage', 'fx-readband');
     delete root.dataset.fx;
   }
   applyMotion();

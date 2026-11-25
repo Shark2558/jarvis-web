@@ -327,6 +327,40 @@ def test_a_count_counts_up_to_the_filled_number(browser: Any, server_url: str, t
         c.close()
 
 
+def test_on_a_phone_a_count_never_covers_the_flowchart(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R6.4 review L-8: a phone's stage is as wide as the flowchart, so the count's readout (top right) covered its
+    title; while a count is over the chart, the chart's layer starts below the readout."""
+    c, _, _ = _player(browser, server_url, token, viewport=PHONE)
+    try:
+        p = c.page
+        i = first_line("count", "10")
+        assert _open(c, LINES[i]["n"]) is True
+        p.locator("#brPStage .fx-hud .fx-read").wait_for()
+        p.wait_for_timeout(1600)
+        box = "(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.top, r.bottom]; }"
+        read, chart = (
+            p.evaluate(box, "#brPStage .fx-hud .fx-read"),
+            p.evaluate(box, "#brPStage .fx-chart"),
+        )
+        assert read[1] <= chart[0] + 1, (
+            read,
+            chart,
+        )  # nothing of the chart is drawn under the readout
+        p.locator("#brPNextLine").click()
+        _at(c, LINES[i]["n"] + 1)
+        p.wait_for_timeout(300)
+        if not LINES[i + 1]["cues"] or all(x["kind"] != "count" for x in LINES[i + 1]["cues"]):
+            stage = p.evaluate(box, "#brPStage")
+            assert (
+                p.evaluate(box, "#brPStage .fx-chart")[0] <= stage[0] + 1
+            )  # the whole stage again
+        _clean(c)
+    finally:
+        c.close()
+
+
 def test_pause_leaves_no_running_animation(browser: Any, server_url: str, token: str) -> None:
     c, _, _ = _player(browser, server_url, token)
     try:

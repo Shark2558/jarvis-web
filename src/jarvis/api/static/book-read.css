@@ -261,7 +261,7 @@ html[data-book] .fx-wipe[data-dir="v"]{background:linear-gradient(180deg,transpa
   html[data-book] .fx-lead{font-size:16px}
   html[data-book] .fx-board{grid-template-columns:minmax(0,1fr)}
   html[data-book] .fx-frame{min-height:0}
-  html[data-book] .fx-hud{top:10px;right:10px}
+  html[data-book] .fx-hud{top:10px;right:10px} html[data-book] .fx-stage.fx-readband .fx-chart{top:72px} /* review L-8 */
   html[data-book] .fx-read{min-width:0;padding:8px 12px}
   html[data-book] .fx-num{font-size:26px}
 }

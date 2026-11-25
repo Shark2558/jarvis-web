@@ -1,0 +1,58 @@
+---
+chapter: story_technology
+written_by: Workshop · Mark XXIV
+written_on: 2026-11-25
+pages:
+  "pg_chapter_technology": "05f258f6ee635aee"
+---
+- [show:title] This chapter lists what JARVIS is built from: the pieces of other people's work it stands on, and where each one runs.
+- [show:plain] The server is written in Python, with the FastAPI web framework.
+- It is packed into one container on Google Cloud Run, with its memory in Firestore.
+- The server's own code comes to about {{fact:loc.python_code}} lines of Python.
+- The console is plain browser code, with no build step at all.
+- Your home laptop runs a small kit of its own for the cameras, and the Android app is built with Google's Android tools.
+- GitHub tests every change before it ships, and every package is pinned to an exact, checked version.
+- [show:how] Here are the building blocks. FastAPI and Uvicorn run the web server, Pydantic checks data, and httpx makes calls out.
+- Google's Firestore client handles storage, cryptography and webauthn handle keys and passkeys, and there are readers for PDF, Word, Excel and slides.
+- [count:{{fact:services.count}}] Out in the world, JARVIS talks to {{fact:services.count}} outside services in all.
+- A one-time setup, safe to run again, prepares Google Cloud: Cloud Run, Firestore, Secret Manager, Cloud Scheduler for the morning clock, and the speech services.
+- The older Render blueprint is still kept, from before the move to Google.
+- [show:overview] Now, here is how a change becomes a running JARVIS.
+- [node:change] It starts with a pull request, opened from a standard template.
+- A check makes sure its title names its version, its release and its Mark, and that every plan has a version line and a change log.
+- [edge:change>ci] The pull request goes to the tests and checks.
+- [node:ci] GitHub runs the tests, lint, a Firestore emulator, the browser tests, the document checks and the eval gate.
+- [edge:ci>fix] If a check fails, the change goes back.
+- [node:fix] It is fixed and pushed again, and the checks run once more.
+- [edge:ci>lock] When everything passes, the change is merged to main.
+- [node:lock] Every package is pinned with its exact hash in a lock, so the build refuses any file that differs from the reviewed one.
+- [edge:lock>image] Only those exact packages go into the image.
+- [node:image] The build makes one slim Python container that runs as an ordinary user, stamps its own build day and checks its own health.
+- [edge:image>cloud] The new image goes up to Cloud Run.
+- [node:cloud] There it waits, with no traffic yet.
+- [edge:cloud>health] First it must answer its health check.
+- [node:health] Is it healthy?
+- [edge:health>old] If not, the path stops here.
+- [node:old] The old version keeps running, untouched.
+- [edge:health>live] If it is healthy, the new version takes over.
+- [node:live] Traffic switches over to the new JARVIS.
+- [edge:change>home] A change can also reach the home kit.
+- [node:home] The home kit on your laptop runs Mosquitto for messages, Frigate for the cameras, Home Assistant and the JARVIS bridge.
+- Every one of its ports is bound to the laptop itself, and the bridge's packages are pinned by hash too.
+- [edge:change>android] And a change can reach the phone app.
+- [node:android] The Android app's tools and libraries are pinned once, in one list.
+- A separate run tests JARVIS against the real Claude models, and it spends nothing until you type yes.
+- The diagram tools behind the architecture guide's pictures are pinned as well, and the everyday commands, such as test, lint and serve, live in one place.
+- [show:example] In the made-up example, a security notice comes out one Monday, for the PDF reader that JARVIS uses.
+- The inventory shows where it lives: listed with the server's packages, pinned with its exact hash, and used only inside the cloud server.
+- The fix is a one-line change to the version, a refreshed lock, and a pull request whose title names its version, release and Mark.
+- GitHub runs the tests on the supported versions of Python, the merge builds a new image, and it gets traffic only after it answers its health check.
+- The new version is live within minutes of the merge.
+- [show:costs] The building blocks are free, open-source software.
+- The hosting is set up to stay inside Google's and GitHub's free tiers: one Cloud Run instance that sleeps when idle, Firestore in the free tier, and GitHub's own checks.
+- Only the real-model test run spends money, and only after you type yes.
+- [show:fails] A new version that isn't healthy never gets traffic, so the running JARVIS keeps going.
+- A package whose hash doesn't match the lock stops the build, before anything ships.
+- A wrongly titled pull request fails its title check until it is renamed, and that check never holds up a deploy.
+- And the tool that gave the earlier pull requests their titles, labels and releases reports every write GitHub refuses, with what to do by hand, then carries on.
+- That is the inventory: open pieces, pinned exactly, and a path to production that only a healthy JARVIS can take.

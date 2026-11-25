@@ -1,7 +1,8 @@
 // src/jarvis/api/static/console-book-chapter.js -- R6.4 D7 (docs/plans/r6-4-book-look.md): the chapter player of the
 // full book's page (/book/read), an ES module. The reader's Play card calls open(chapterId, {line}): GET
 // /v1/book/chapters/{id} (the book token on the page's transport, window.JarvisBook) gives the chapter's spoken lines with
-// their cues; GET /v1/book/pages/{id} gives each page's sections and flowchart. Then the timeline: one line at a time, the
+// their cues; GET /v1/book/pages/{id} gives each page's sections and flowchart (kept for the visit: a chapter played
+// again asks for none of them, review L-3). Then the timeline: one line at a time, the
 // next when the line's voice ends (console-book-voice.js, always the browser's voice: start('browser') from the Play tap;
 // captions only when Sound is off or there is no voice: 330 ms a word + 800 ms), the caption's words lit as they are said
 // (the voice's word boundaries, else a timed estimate), the stage drawn by the effects engine (console-book-fx.js), the
@@ -22,7 +23,7 @@ const CHAPTER = /^(?:story|module)_[a-z0-9_]{1,40}$/, PAGE = /^pg_(?:chapter|mod
 const RID = /^[0-9a-f]{7}$/, PLACE = 'jarvis_book_place_v1', CUES = new Set(['page', 'show', 'node', 'edge', 'count']);
 const MINE = ['release', 'chapter', 'line', 'heard_at'];
 const WORD_MS = 330, TAIL_MS = 800, FIRST_WORD_MS = 700, TICK_MS = 100, RATES = [0.85, 1, 1.25], WPM = 150;
-const GONE = new Set([401, 403, 410]);
+const GONE = new Set([401, 403, 410]), KEEP = 60; // KEEP: pages kept for this visit (a sealed release's never change)
 const INVISIBLE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 const WORDS = Object.freeze({
   gone: 'The book session ended. Open the book again from the Book panel in the console.',
@@ -37,6 +38,7 @@ const wordsIn = (t) => String(t || '').split(/\s+/).filter(Boolean).length;
 const voice = () => window.JarvisBookVoice || null;
 const book = () => window.JarvisBook || null;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const KEPT = new Map(); // '<release>:<page id>' -> the page as checked: a chapter played again asks for none (review L-3)
 
 const S = { open: false, gen: 0, id: '', release: '', title: '', lines: [], pages: {}, list: [], plan: [], first: {},
   est: [], index: 0, playing: false, run: 0, loop: 0, waiters: [], cc: true, sound: true, rate: 1, fx: null, view: null,
@@ -281,11 +283,13 @@ async function open(chapterId, options) {
     const p = S.list[S.list.length - 1]; p.lines += 1; p.words += wordsIn(l.text);
   });
   S.list.forEach((p) => { p.minutes = Math.round(p.words / WPM); });
-  const ids = S.list.map((p) => p.id);
-  const answers = await Promise.allSettled(ids.map((pid) => B.api('/v1/book/pages/' + pid + query())));
+  const ids = S.list.map((p) => p.id), at = (pid) => S.release + ':' + pid, fresh = ids.filter((pid) => !KEPT.has(at(pid)));
+  const answers = await Promise.allSettled(fresh.map((pid) => B.api('/v1/book/pages/' + pid + query())));
   if (my !== S.gen) return false;
+  answers.forEach((r, k) => { const p = r.status === 'fulfilled' ? pageOf(r.value, fresh[k]) : null; if (p) KEPT.set(at(fresh[k]), p); });
+  while (KEPT.size > KEEP) KEPT.delete(KEPT.keys().next().value);
   S.pages = {};
-  answers.forEach((r, k) => { const p = r.status === 'fulfilled' ? pageOf(r.value, ids[k]) : null; if (p) { S.pages[ids[k]] = p; if (p.title) S.list[k].title = p.title; } });
+  ids.forEach((pid, k) => { const p = KEPT.get(at(pid)); if (p) { S.pages[pid] = p; if (p.title) S.list[k].title = p.title; } });
   S.est = S.lines.map(lineMs);
   S.view.ready(info());
   S.fx = createFx(S.view.stage, { root, steps: S.view.steps });

@@ -104,7 +104,7 @@ function draw(page, o = {}) {
   R.stop = follow($('brMain'), $('brToc'), drawn);
   $('brMain').scrollTop = 0;
   R.read = markRead(R.rid, page.id, R.read);
-  remember(R.rid, page.id, !o.initial && !o.told);
+  if (!o.initial) remember(R.rid, page.id, !o.told); // the page arrived on is no place left off at (review L-2)
   if (R.resume === page.id) R.resume = '';
   marks();
   miniBar(drawn);

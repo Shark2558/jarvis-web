@@ -339,7 +339,13 @@ def test_r631_f_a_page_without_a_flow_reads_as_before(
         c.page.locator(f"{PAGES} details.bk-more", has_text="Where in the code").wait_for()
         c.page.wait_for_timeout(300)  # the module would have answered by now
         labels = c.page.locator(f"{PAGES} .bk-sec > .bk-h2").all_text_contents()
-        assert labels == ["In plain words", "Example", "How it works", "What it costs", "When it fails"]
+        assert labels == [
+            "In plain words",
+            "Example",
+            "How it works",
+            "What it costs",
+            "When it fails",
+        ]
         assert c.page.locator(f"{PAGES} .bk-flow, {PAGES} .bk-fig, {PAGES} svg.fl-svg").count() == 0
         clean(c)
     finally:

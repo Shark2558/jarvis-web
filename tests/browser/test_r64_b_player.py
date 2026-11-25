@@ -131,6 +131,29 @@ def test_play_tells_the_vault_chapter_line_by_line_with_its_pages(
         c.close()
 
 
+def test_a_chapter_played_again_asks_for_none_of_its_pages_again(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R6.4 review L-3: the pages share a limit of 60 a minute, and a long chapter (27 pages) played twice would use
+    most of it: a sealed release's pages never change, so the player keeps the ones it read for this visit."""
+    c, fake, _ = _player(browser, server_url, token)
+
+    def asked() -> list[str]:
+        return sorted(x["path"] for x in fake.calls if x["path"].startswith("/v1/book/pages/"))
+
+    try:
+        assert _open(c) is True
+        first = asked()
+        assert [x.rsplit("/", 1)[-1] for x in first] == sorted(PAGES)
+        c.page.evaluate("window.JarvisBookChapter.stop()")
+        assert _open(c) is True
+        assert asked() == first  # the second play read every page from what it kept
+        assert c.page.locator("#brPSteps .step").count() == 5 and _state(c)["line"] == 1
+        _clean(c)
+    finally:
+        c.close()
+
+
 def test_controls_pause_skip_lines_and_pages_and_stop_back_to_the_page_told(
     browser: Any, server_url: str, token: str
 ) -> None:

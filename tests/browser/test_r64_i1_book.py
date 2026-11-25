@@ -52,7 +52,9 @@ def reader(browser: Any, url: str, token: str, *, at: str = "pg_module_vault", s
     install(fake)
     if chapters is not None:
         fake.chapters_answer = (200, chapters)
-    serve_vault(c.page, fake)  # the real Vault chapter and pages (the same page ids as the small book's)
+    serve_vault(
+        c.page, fake
+    )  # the real Vault chapter and pages (the same page ids as the small book's)
     c.page.goto(url + "/book/read#" + at)
     c.page.locator("#brTitle").wait_for()
     return c, fake
@@ -63,7 +65,9 @@ def wait_title(c: Console, words: str) -> None:
 
 
 def at_line(c: Console, n: int) -> None:
-    c.page.wait_for_function(f"() => window.JarvisBookChapter.state().open && window.JarvisBookChapter.state().line === {n}")
+    c.page.wait_for_function(
+        f"() => window.JarvisBookChapter.state().open && window.JarvisBookChapter.state().line === {n}"
+    )
 
 
 def clean(c: Console) -> None:
@@ -82,35 +86,65 @@ def test_stop_shows_the_page_told_and_continue_offers_the_chapter_until_a_page_i
         at_line(c, 25)
         p.locator("#brPStop").click()
         wait_title(c, "Attached documents")
-        assert p.evaluate("location.hash") == "#pg_card_c07" and p.locator("#bookRead").get_attribute("data-mode") is None
+        assert (
+            p.evaluate("location.hash") == "#pg_card_c07"
+            and p.locator("#bookRead").get_attribute("data-mode") is None
+        )
         card = p.locator("#brContinue")
         card.wait_for(state="visible")
         assert card.get_attribute("data-chapter") == "module_vault"
-        assert "Continue the chapter: Vault and documents" in card.inner_text() and "Line 25 of 80" in card.inner_text()
+        assert (
+            "Continue the chapter: Vault and documents" in card.inner_text()
+            and "Line 25 of 80" in card.inner_text()
+        )
         kept = p.evaluate(READ_PLACE)
-        assert (kept["release"], kept["chapter"], kept["line"], kept["page"]) == (RID, "module_vault", 25, "pg_card_c07")
-        assert kept["heard_at"] > 0 and "read_at" not in kept  # the page told was not the owner's choice
+        assert (kept["release"], kept["chapter"], kept["line"], kept["page"]) == (
+            RID,
+            "module_vault",
+            25,
+            "pg_card_c07",
+        )
+        assert (
+            kept["heard_at"] > 0 and "read_at" not in kept
+        )  # the page told was not the owner's choice
 
         p.reload()
         wait_title(c, "Attached documents")
         card.wait_for(state="visible")
-        assert "Continue the chapter: Vault and documents" in card.inner_text() and "Line 25 of 80" in card.inner_text()
+        assert (
+            "Continue the chapter: Vault and documents" in card.inner_text()
+            and "Line 25 of 80" in card.inner_text()
+        )
         card.click()  # plays the chapter from where he stopped
         at_line(c, 25)
-        assert p.locator("#bookRead").get_attribute("data-mode") == "player" and p.evaluate("location.hash") == "#pg_card_c07"
+        assert (
+            p.locator("#bookRead").get_attribute("data-mode") == "player"
+            and p.evaluate("location.hash") == "#pg_card_c07"
+        )
         p.locator("#brPStop").click()
         wait_title(c, "Attached documents")
         card.wait_for(state="visible")
 
         p.locator("#brContents a[data-page=pg_card_c42]").click()  # he chooses a page to read
         wait_title(c, "Document vault")
-        assert card.is_hidden()  # the chapter is no longer the newer place, and this is the page read
+        assert (
+            card.is_hidden()
+        )  # the chapter is no longer the newer place, and this is the page read
         kept = p.evaluate(READ_PLACE)
-        assert kept["page"] == "pg_card_c42" and kept["read_at"] >= kept["heard_at"] and kept["chapter"] == "module_vault"
-        p.goto(server_url + "/book/read?again=1#pg_module_vault")  # a new visit: Continue offers the page he chose
+        assert (
+            kept["page"] == "pg_card_c42"
+            and kept["read_at"] >= kept["heard_at"]
+            and kept["chapter"] == "module_vault"
+        )
+        p.goto(
+            server_url + "/book/read?again=1#pg_module_vault"
+        )  # a new visit: Continue offers the page he chose
         wait_title(c, "Vault and documents")
         card.wait_for(state="visible")
-        assert "Continue: Document vault" in card.inner_text() and card.get_attribute("data-chapter") is None
+        assert (
+            "Continue: Document vault" in card.inner_text()
+            and card.get_attribute("data-chapter") is None
+        )
         clean(c)
     finally:
         c.close()
@@ -127,7 +161,13 @@ def test_stop_shows_the_page_told_and_continue_offers_the_chapter_until_a_page_i
 def test_continue_offers_whichever_came_last_in_one_card(
     browser: Any, server_url: str, token: str, heard: int | None, read: int | None, words: list[str]
 ) -> None:
-    store: dict[str, Any] = {"release": RID, "page": "pg_card_c42", "chapter": "module_vault", "line": 23, "scene": 4}
+    store: dict[str, Any] = {
+        "release": RID,
+        "page": "pg_card_c42",
+        "chapter": "module_vault",
+        "line": 23,
+        "scene": 4,
+    }
     if heard is not None:
         store["heard_at"] = heard
     if read is not None:
@@ -141,18 +181,24 @@ def test_continue_offers_whichever_came_last_in_one_card(
         c.close()
 
 
-def test_another_releases_chapter_is_never_offered(browser: Any, server_url: str, token: str) -> None:
+def test_another_releases_chapter_is_never_offered(
+    browser: Any, server_url: str, token: str
+) -> None:
     other = {"release": "aebff3a", "chapter": "module_vault", "line": 23, "heard_at": 9}
     c, _ = reader(browser, server_url, token, store=other)
     try:
         assert c.page.locator("#brContinue").is_hidden()
-        assert c.page.evaluate(READ_PLACE) == other  # another release's place stays as the player wrote it
+        assert (
+            c.page.evaluate(READ_PLACE) == other
+        )  # another release's place stays as the player wrote it
         clean(c)
     finally:
         c.close()
 
 
-def test_the_release_chip_says_label_version_and_id(browser: Any, server_url: str, token: str) -> None:
+def test_the_release_chip_says_label_version_and_id(
+    browser: Any, server_url: str, token: str
+) -> None:
     c, _ = reader(browser, server_url, token)
     try:
         assert c.page.locator("#brRelease").inner_text() == "R6.4 · v6.4.0 · " + RID
@@ -162,6 +208,28 @@ def test_the_release_chip_says_label_version_and_id(browser: Any, server_url: st
     c, _ = reader(browser, server_url, token, chapters=old)
     try:
         assert c.page.locator("#brRelease").inner_text() == "v6.4.0 · " + RID
+        clean(c)
+    finally:
+        c.close()
+
+
+def test_arriving_never_takes_the_place_of_the_page_left_off_at(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R6.4 review L-2: the page the book opens on (the panel's first page, or a reload's address) is not one the
+    owner chose, so it never overwrites the place Continue offers: the card is still there on the visit after."""
+    store = {"release": RID, "page": "pg_card_c42", "read_at": 5, "scene": 4}
+    c, _ = reader(browser, server_url, token, store=store)
+    try:
+        p, card = c.page, c.page.locator("#brContinue")
+        for again in ("1", "2"):  # two more visits, each arriving on the module page
+            card.wait_for(state="visible")
+            assert "Continue: Document vault" in card.inner_text()
+            assert p.evaluate(READ_PLACE) == store
+            p.goto(server_url + f"/book/read?again={again}#pg_module_vault")
+            wait_title(c, "Vault and documents")
+        card.wait_for(state="visible")
+        assert "Continue: Document vault" in card.inner_text() and p.evaluate(READ_PLACE) == store
         clean(c)
     finally:
         c.close()

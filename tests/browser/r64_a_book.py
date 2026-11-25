@@ -12,7 +12,12 @@ from typing import Any
 from book_mocks import RELEASE
 
 RID = RELEASE["id"]
-META = {"written_by": "Workshop · Mark XXIV", "written_on": "2026-11-24", "release": RID, "version": "v6.4.0"}
+META = {
+    "written_by": "Workshop · Mark XXIV",
+    "written_on": "2026-11-24",
+    "release": RID,
+    "version": "v6.4.0",
+}
 HEADINGS = {"plain": "In plain words", "example": "Example (made up)", "how": "How it works",
             "costs": "What it costs", "fails": "When it fails", "code": "Where in the code"}  # fmt: skip
 VAULT_FLOW: dict[str, Any] = {
@@ -46,7 +51,11 @@ VAULT = {
     "costs": "Taking text out of a file and keeping the vault cost nothing: both run on JARVIS’s own server with no outside service.",
     "fails": "A file that is too big, unreadable or of the wrong kind is refused in plain words (`DocumentRejected`). When the reader is busy, the upload is refused with a retry after 30 seconds. If the vault’s unlock can’t be written to the audit trail, nothing opens.",
 }
-REFS = ["src/jarvis/api/documents.py", "src/jarvis/api/vault.py", "src/jarvis/api/static/console-attach.js"]
+REFS = [
+    "src/jarvis/api/documents.py",
+    "src/jarvis/api/vault.py",
+    "src/jarvis/api/static/console-attach.js",
+]
 
 
 def _words(title: str) -> dict[str, str]:
@@ -70,7 +79,10 @@ def page(pid: str, kind: str, title: str, part: str, chapter: str = "", words: d
             "meta": META if written else None, "flow": flow}  # fmt: skip
 
 
-C42 = dict(_words("Document vault"), costs="₹0 for the vault: sealing, reading dates and reminders are all code on JARVIS’s own server.")
+C42 = dict(
+    _words("Document vault"),
+    costs="₹0 for the vault: sealing, reading dates and reminders are all code on JARVIS’s own server.",
+)
 PAGES: dict[str, dict[str, Any]] = {
     p["id"]: p
     for p in (
@@ -78,7 +90,15 @@ PAGES: dict[str, dict[str, Any]] = {
         page("pg_chapter_example", "chapter", "The running example", "plain"),
         page("pg_module_memory", "module", "Memory and knowledge", "modules"),
         page("pg_card_c10", "card", "Long-term memory", "parts", "memory"),
-        page("pg_module_vault", "module", "Vault and documents", "modules", words=VAULT, flow=VAULT_FLOW, refs=REFS),
+        page(
+            "pg_module_vault",
+            "module",
+            "Vault and documents",
+            "modules",
+            words=VAULT,
+            flow=VAULT_FLOW,
+            refs=REFS,
+        ),
         page("pg_card_c07", "card", "Attached documents", "parts", "vault"),
         page("pg_card_c42", "card", "Document vault", "parts", "vault", words=C42),
         page("pg_card_c43", "card", "DigiLocker import folder", "parts", "vault", written=False),
@@ -90,7 +110,10 @@ PAGES: dict[str, dict[str, Any]] = {
 
 
 def _rows(*ids: str) -> list[dict[str, Any]]:
-    return [{"id": i, "kind": PAGES[i]["kind"], "title": PAGES[i]["title"], "written": PAGES[i]["meta"]} for i in ids]
+    return [
+        {"id": i, "kind": PAGES[i]["kind"], "title": PAGES[i]["title"], "written": PAGES[i]["meta"]}
+        for i in ids
+    ]
 
 
 INDEX = {

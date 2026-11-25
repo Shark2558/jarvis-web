@@ -75,7 +75,7 @@ sources:
   "src/jarvis/buildbook/writer/search.py": "bab272bfc2a715fb"
   "src/jarvis/buildbook/writer/serve.py": "fd1317ec69c29b9f"
   "src/jarvis/buildbook/writer/texts.py": "6f3404fa209040d2"
-  "src/jarvis/core/brain.py": "5c361ba3e1e3e346"
+  "src/jarvis/core/brain.py": "e418eb8e4df90505"
   "src/jarvis/core/brain_types.py": "fa3d9df28ac632ba"
   "src/jarvis/core/channel.py": "0c46ee25a780e41b"
   "src/jarvis/core/finish.py": "76f1255343c6e042"

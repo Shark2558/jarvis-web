@@ -3,7 +3,7 @@ page: pg_card_c73
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "291d919ed466219d"
+  "deploy/cloudrun.sh": "8fd20146ba1568b4"
   "src/jarvis/api/r13_status.py": "af7163933e6796e4"
   "src/jarvis/api/seeme.py": "7e11a9d91c1d664c"
   "src/jarvis/api/static/console-r111-files.js": "1fec6c5ad6de99be"
@@ -11,7 +11,7 @@ sources:
   "src/jarvis/api/static/console-tryon-me.js": "88bc303d9c049cc3"
   "src/jarvis/api/static/console-tryon-photo.js": "2a921f5c94ec59bd"
   "src/jarvis/api/tryon_wiring.py": "47536713ac1021b3"
-  "src/jarvis/billing/spend.py": "3761764d204d7a7e"
+  "src/jarvis/billing/spend.py": "fad90ef7371200bc"
   "src/jarvis/llm/tryon.py": "839f8746d75d6c7d"
   "src/jarvis/llm/tryon_gemini.py": "3e233dc06019ff0c"
   "src/jarvis/wardrobe/seeme/__init__.py": "f74a53a075cdcaa4"

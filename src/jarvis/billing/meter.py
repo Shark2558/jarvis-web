@@ -3,7 +3,7 @@
 
     {prefix}usage/{uid}_{YYYY-MM}   user_id, month, usd_total, inr_total, calls,
                                     by_brain {brain id: usd}, by_brain_inr {brain id: inr},
-                                    updated_at
+                                    unpriced_calls, unpriced_tokens, unpriced_inr, updated_at
     {prefix}allowance/{YYYY-MM}     month, tz, units {key: amount}, updated_at   (one per
                                     deployment, Pacific-time month)
 
@@ -20,19 +20,24 @@ America/Los_Angeles. `add_units` reads it, prices only the part of a call above 
 adds that cost to the CALLER's IST month under `label` ("voice"), and counts the units — all in
 one transaction, so two calls can't both use the last free units.
 
-Fail closed: `inr_total` is what the owner's limit is compared with, so an existing month whose
-`inr_total` is not a finite number ≥ 0 is UNREADABLE (UsageUnreadable) — never "₹0 spent", and
-never silently reset by the next increment. The same holds for an allowance counter: a stored
-value under a key that is not a finite number ≥ 0 makes THAT key unreadable (and is kept as it
-is by writes to other keys); a `units` field that is not a map makes them all unreadable. The
-other usage fields are only shown and read leniently.
+"Price unknown" replies (R6.4 D9: a model with no price) are not in the totals above: they count
+as `unpriced_calls` and `unpriced_tokens`, and `unpriced_inr` is those tokens at the dearest known
+price (an upper estimate). The owner's limit is compared with `counted_inr`, both together.
+
+Fail closed: `inr_total` and `unpriced_inr` are what the owner's limit is compared with, so an
+existing month whose `inr_total` (or a stored `unpriced_inr`) is not a finite number ≥ 0 is
+UNREADABLE (UsageUnreadable) — never "₹0 spent", and never silently reset by the next increment.
+The same holds for an allowance counter: a stored value under a key that is not a finite number
+≥ 0 makes THAT key unreadable (and is kept as it is by writes to other keys); a `units` field
+that is not a map makes them all unreadable. The other usage fields are only shown and read
+leniently.
 """
 
 from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -76,6 +81,15 @@ def _total(v: object) -> float:
     return float(v)  # type: ignore[arg-type]
 
 
+def _unpriced_total(v: object) -> float:
+    """A month written before R6.4 has no `unpriced_inr`: none. A stored one must be valid."""
+    return 0.0 if v is None else _total(v)
+
+
+def _count(v: object) -> int:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0
+
+
 def _amounts(v: object) -> dict[str, float]:
     if not isinstance(v, dict):
         return {}
@@ -91,11 +105,20 @@ class MonthUsage:
     calls: int = 0
     by_brain: dict[str, float] = field(default_factory=dict)  # USD per brain id
     by_brain_inr: dict[str, float] = field(default_factory=dict)  # rupees per brain id
+    unpriced_calls: int = 0  # "price unknown" replies: not in the totals above
+    unpriced_tokens: int = 0
+    unpriced_inr: float = 0.0  # their tokens at the dearest known price (an upper estimate)
+
+    @property
+    def counted_inr(self) -> float:
+        """What the owner's limit is compared with: the priced rupees plus the "price unknown"
+        replies at the dearest known price."""
+        return round(self.inr_total + self.unpriced_inr, 6)
 
     def plus(self, brain_id: str, cost_usd: float, cost_inr: float) -> MonthUsage:
         key = brain_id if _BRAIN.fullmatch(brain_id) else OTHER_BRAIN
-        return MonthUsage(
-            month=self.month,
+        return replace(
+            self,
             usd_total=round(self.usd_total + cost_usd, 8),
             inr_total=round(self.inr_total + cost_inr, 6),
             calls=self.calls + 1,
@@ -104,6 +127,15 @@ class MonthUsage:
                 **self.by_brain_inr,
                 key: round(self.by_brain_inr.get(key, 0.0) + cost_inr, 6),
             },
+        )
+
+    def plus_unpriced(self, *, tokens: int, inr: float) -> MonthUsage:
+        """One "price unknown" reply: its tokens, and `inr` (them at the dearest known price)."""
+        return replace(
+            self,
+            unpriced_calls=self.unpriced_calls + 1,
+            unpriced_tokens=self.unpriced_tokens + max(0, tokens),
+            unpriced_inr=round(self.unpriced_inr + max(0.0, inr), 6),
         )
 
 
@@ -174,14 +206,16 @@ def decode(doc: dict[str, Any] | None, month: str) -> MonthUsage:
         return MonthUsage(month)
     if not isinstance(doc, dict):
         raise UsageUnreadable("month document is not a map")
-    calls = doc.get("calls")
     return MonthUsage(
         month=month,
         usd_total=_amount(doc.get("usd_total")),
         inr_total=_total(doc.get("inr_total")),
-        calls=calls if isinstance(calls, int) and not isinstance(calls, bool) and calls > 0 else 0,
+        calls=_count(doc.get("calls")),
         by_brain=_amounts(doc.get("by_brain")),
         by_brain_inr=_amounts(doc.get("by_brain_inr")),
+        unpriced_calls=_count(doc.get("unpriced_calls")),
+        unpriced_tokens=_count(doc.get("unpriced_tokens")),
+        unpriced_inr=_unpriced_total(doc.get("unpriced_inr")),
     )
 
 
@@ -195,6 +229,9 @@ def encode(uid: str, m: MonthUsage, now: datetime) -> dict[str, Any]:
         "calls": m.calls,
         "by_brain": m.by_brain,
         "by_brain_inr": m.by_brain_inr,
+        "unpriced_calls": m.unpriced_calls,
+        "unpriced_tokens": m.unpriced_tokens,
+        "unpriced_inr": m.unpriced_inr,
         "updated_at": now.isoformat(),
     }
 
@@ -287,6 +324,19 @@ class UsageMeter:
 
         async def fn(tx: DocTx) -> MonthUsage:
             new = decode(await tx.get(path), month).plus(brain_id, cost_usd, cost_inr)
+            tx.set(path, encode(uid, new, now))
+            return new
+
+        return await self._d.transaction(fn)
+
+    async def add_unpriced(self, uid: str, *, tokens: int, inr: float, now: datetime) -> MonthUsage:
+        """One "price unknown" reply, added in a transaction to the owner's month at `now`: its
+        tokens and `inr`, them at the dearest known price. UsageUnreadable as `add`."""
+        month = self.month_of(now)
+        path = self._path(uid, month)
+
+        async def fn(tx: DocTx) -> MonthUsage:
+            new = decode(await tx.get(path), month).plus_unpriced(tokens=tokens, inr=inr)
             tx.set(path, encode(uid, new, now))
             return new
 

@@ -5,7 +5,10 @@
 
 GET /v1/usage           UsageView {month, used_inr, limit_inr, remaining_inr, percent, warn,
                         reached, calls, by_brain [{brain, label, used_inr}], rate {inr_per_usd,
-                        as_of, source}}
+                        as_of, source}, limit_unreadable, unpriced_calls, unpriced_tokens,
+                        unpriced_inr} — the "price unknown" replies (R6.4 D9) are not in
+                        used_inr; unpriced_inr is them at the dearest known price, which
+                        remaining_inr, percent, warn and reached count
 PUT /v1/usage/budget    {monthly_limit_inr: int 1–100000 | null, confirm_raise?: true} →
                         UsageView; 422 {"error": "invalid_budget"} out of range, or a raise /
                         removal without confirm_raise (it lets JARVIS spend more)

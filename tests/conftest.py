@@ -15,6 +15,7 @@ from jarvis.core.guardrails import ConfirmationGate
 from jarvis.integrations.google import GoogleConnector
 from jarvis.integrations.vault import MemoryTokenStore
 from jarvis.llm.mock_provider import MockProvider
+from jarvis.llm.pricing import use_gemini_paid_tier
 from jarvis.llm.router import ModelRouter, ModelTier
 from jarvis.memory.inmemory import InMemorySessionStore
 from jarvis.tools import AuditLog, Gateway, Policy, ToolRegistry
@@ -25,6 +26,15 @@ TIERS = {
     ModelTier.BALANCED: "mock-balanced",
     ModelTier.STRONG: "mock-strong",
 }
+
+
+@pytest.fixture(autouse=True)
+def _free_tier_gemini_prices() -> Iterator[None]:
+    """R6.4 D9: the price table in force is process-wide (`BrainRegistry.from_settings` sets it
+    from `gemini_paid_tier`); every test starts and ends on the free tier's table."""
+    use_gemini_paid_tier(False)
+    yield
+    use_gemini_paid_tier(False)
 
 
 @pytest.fixture

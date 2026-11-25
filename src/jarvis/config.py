@@ -38,11 +38,11 @@ _HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"  # R13
 
 
 def _is_private_host(host: str) -> bool:
-    """Loopback, RFC1918/ULA, link-local, or a bare/local name — plain http is tolerable there."""
+    """Loopback, RFC1918/ULA, link-local or a bare/local name; never `*.ts.net` (R6.4 D8)."""
     import ipaddress
 
     h = host.lower()
-    if h in ("localhost", "host.docker.internal") or h.endswith((".local", ".internal", ".ts.net")):
+    if h in ("localhost", "host.docker.internal") or h.endswith((".local", ".internal")):
         return True
     try:
         ip = ipaddress.ip_address(h)
@@ -761,8 +761,8 @@ class Settings(BaseSettings):
             raise ValueError("JARVIS_OPENAI_COMPAT_BASE_URL must be an http(s) URL with a host")
         if u.scheme == "http" and not _is_private_host(u.hostname):
             raise ValueError(
-                "JARVIS_OPENAI_COMPAT_BASE_URL uses http:// to a non-local host; use https:// "
-                "(an API key would be sent in cleartext)"
+                "JARVIS_OPENAI_COMPAT_BASE_URL uses http:// to a non-local host (a Tailscale name "
+                "is one); use https:// (an API key would be sent in clear text)"
             )
         return v.strip().rstrip("/")
 

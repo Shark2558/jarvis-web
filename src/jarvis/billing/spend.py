@@ -6,7 +6,8 @@ is not a brain call (a "See it on me" picture).
   picture and its monthly cap include `tryon_tax_pct`, M1). Not money (negative, NaN, infinite)
   or a rate outside 0-28 % is a ValueError.
 - `ensure_spend_allowed(billing, uid, inr)`: his OVERALL monthly limit (Vitals) before the spend:
-  refused when this month's use plus `inr` would pass it (`BudgetReached`, "Raise it in Vitals."),
+  refused when this month's counted use (priced rupees plus "price unknown" replies at the dearest
+  known price) plus `inr` would pass it (`BudgetReached`, "Raise it in Vitals."),
   fail closed when the limit or the month can't be read (`BudgetUnavailable`), and no limit set
   lets it through. The try-on cap is a second, separate gate (Part C's `TryonCap`).
 """
@@ -48,16 +49,18 @@ async def ensure_spend_allowed(billing: Billing, uid: str, inr: float) -> None:
         if limit is None:
             return
         month = billing.meter.month_of(billing.clock())
-        used = (await billing.meter.get(uid, month)).inr_total
+        m = await billing.meter.get(uid, month)
     except Exception as exc:  # noqa: BLE001 - fail closed: no spend we can't account for
         log.error("LIMIT CHECK FAILED; no priced action made", extra={"reason": type(exc).__name__})
         raise BudgetUnavailable(MSG_SPEND_UNAVAILABLE) from None
-    if used + spend > limit:
+    if m.counted_inr + spend > limit:  # "price unknown" replies count too (R6.4 D9)
         log.info(
             "monthly limit reached; priced action refused",
-            extra={"limit_inr": limit, "used_inr": round(used, 2)},
+            extra={"limit_inr": limit, "used_inr": round(m.counted_inr, 2)},
         )
-        raise BudgetReached(limit_inr=limit, used_inr=used, free_brain=False)
+        raise BudgetReached(
+            limit_inr=limit, used_inr=m.inr_total, free_brain=False, unpriced_inr=m.unpriced_inr
+        )
 
 
 __all__ = ["MAX_TAX_PCT", "MSG_SPEND_UNAVAILABLE", "ensure_spend_allowed", "with_tax"]

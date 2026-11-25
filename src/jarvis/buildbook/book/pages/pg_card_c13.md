@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/core/__init__.py": "cbb70bfb5ae294a7"
   "src/jarvis/core/approve_all.py": "59f16ea07d5207c5"
-  "src/jarvis/core/brain.py": "5c361ba3e1e3e346"
+  "src/jarvis/core/brain.py": "e418eb8e4df90505"
   "src/jarvis/core/brain_decisions.py": "c952c68c5f5ad1d6"
   "src/jarvis/core/brain_types.py": "fa3d9df28ac632ba"
   "src/jarvis/core/channel.py": "0c46ee25a780e41b"

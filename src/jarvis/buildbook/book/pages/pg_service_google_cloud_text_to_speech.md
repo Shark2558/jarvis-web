@@ -3,7 +3,7 @@ page: pg_service_google_cloud_text_to_speech
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/voice/google_cloud.py": "70b3d0637df4a58b"
   "src/jarvis/voice/service.py": "3bdab151205a517d"
 ---

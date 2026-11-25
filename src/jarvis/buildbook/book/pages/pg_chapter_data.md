@@ -31,7 +31,7 @@ sources:
   "src/jarvis/backup/verify.py": "98381e6ba5786d43"
   "src/jarvis/backup/vitals.py": "9e8fb47f5bdbeba9"
   "src/jarvis/backup/walk_checks.py": "e4f0a11c2664ebe0"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/core/guardrails.py": "906dc22e6f5c1678"
   "src/jarvis/integrations/vault.py": "b766226c56672432"
   "src/jarvis/keyring.py": "78e7ac914cd81e85"

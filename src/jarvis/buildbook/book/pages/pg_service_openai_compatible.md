@@ -3,7 +3,7 @@ page: pg_service_openai_compatible
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/llm/brains.py": "a1fa670cdd1f62ae"
   "src/jarvis/llm/router.py": "c72db7b28cbba849"
 ---

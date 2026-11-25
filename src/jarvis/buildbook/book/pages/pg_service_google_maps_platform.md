@@ -3,7 +3,7 @@ page: pg_service_google_maps_platform
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/integrations/google_key.py": "5bb317b3fa34a038"
   "src/jarvis/media/service.py": "b536d789f9f47be8"
   "src/jarvis/places/google_maps.py": "e501dc1330ddf0e6"

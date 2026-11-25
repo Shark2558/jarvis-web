@@ -3,7 +3,7 @@ page: pg_service_ollama
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/offline/service.py": "d8859988abef45c7"
 ---
 ## In plain words

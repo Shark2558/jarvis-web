@@ -19,7 +19,7 @@ sources:
   "src/jarvis/backup/part.py": "acc12e13dbcb26b4"
   "src/jarvis/billing/service.py": "9778ed2f38fc3f08"
   "src/jarvis/buildbook/unlock.py": "a8cc9e601703c920"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/drive/service.py": "dc7c305c68c1aca4"
   "src/jarvis/fixes/ports.py": "19c609bda735565b"
   "src/jarvis/kb/service.py": "352c0e4f7d8c5c66"

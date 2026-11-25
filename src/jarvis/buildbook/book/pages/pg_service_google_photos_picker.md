@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/r4_wiring.py": "379192618b74836f"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/photos/picker.py": "6dc3c8c5e7df6b3c"
 ---
 ## In plain words

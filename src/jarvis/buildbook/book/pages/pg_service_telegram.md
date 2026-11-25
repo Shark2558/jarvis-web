@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/telegram.py": "4787df327efb86d5"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/telegram/client.py": "c5efc78af12cb8f9"
   "src/jarvis/vitals/own.py": "cd127fbc1ca087c6"
 ---

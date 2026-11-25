@@ -41,7 +41,7 @@ sources:
   "src/jarvis/backup/verify.py": "98381e6ba5786d43"
   "src/jarvis/backup/vitals.py": "9e8fb47f5bdbeba9"
   "src/jarvis/backup/walk_checks.py": "e4f0a11c2664ebe0"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/core/guardrails.py": "906dc22e6f5c1678"
   "src/jarvis/logging.py": "ce88f3d3fe3403b8"
   "src/jarvis/storage/firestore_admin.py": "342edf56ae911283"

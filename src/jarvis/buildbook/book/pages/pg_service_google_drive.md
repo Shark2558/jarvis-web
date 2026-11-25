@@ -10,7 +10,7 @@ sources:
   "src/jarvis/api/personal.py": "7a9aa32e08b7d084"
   "src/jarvis/api/startup_log.py": "4ba9e18096e253e1"
   "src/jarvis/api/vault_inbox.py": "26546b663f03b975"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/drive/client.py": "766e2385d779a833"
   "src/jarvis/drive/guard.py": "89a1025585b08521"
   "src/jarvis/drive/kinds.py": "64732723fb4aeeed"

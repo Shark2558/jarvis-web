@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
 ---
 ## In plain words
 Web Push is the standard way a website sends notifications to your browser, even when its tab is closed. Each browser maker runs its own push service that delivers them. JARVIS uses it to send its alerts to the browsers you allow, as well as to Telegram. Each message is encrypted for that one browser, so the push service carries it without being able to read it. The message is the fixed alert text and a link back to JARVIS, never a picture.

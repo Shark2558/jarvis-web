@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/brief/deliver.py": "b961684f4ad40dc0"
-  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/config.py": "e223e4b9e6e6333b"
   "src/jarvis/integrations/google.py": "5e687c47689b959b"
   "src/jarvis/tools/gmail.py": "b20d7099344ef32a"
 ---

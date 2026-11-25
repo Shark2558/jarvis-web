@@ -3,7 +3,7 @@ chapter: story_setup
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_chapter_setup": "5a3b9ab1968f7cc4"
+  "pg_chapter_setup": "e768b0b16ec2fd7f"
 ---
 - [show:title] This chapter is about running JARVIS on a computer of your own.
 - [show:plain] You might do it to try something out, or an engineer might do it to work on JARVIS, without ever touching the live one.
@@ -42,7 +42,9 @@ pages:
 - Nothing he did reached the live JARVIS or its data.
 - [show:costs] With the mock brain it costs nothing: it runs on your own computer, and calls no outside service.
 - With a Claude key, each reply costs the same tokens as on the live JARVIS, counted against the monthly limit.
+- The terminal chat prints each reply's cost under it, or price unknown for a model JARVIS has no price for.
 - [show:fails] With the Claude brain chosen and no key, start-up stops, with a line naming the missing setting.
 - Outside development mode, a missing bearer token stops it too.
-- And an unknown brain asked for in the terminal chat stops with the list of brains you have set up.
+- An unknown brain asked for in the terminal chat stops with the list of brains you have set up.
+- And a custom AI address must use an encrypted link unless it is on this machine or your home network, and a Tailscale name always needs one.
 - That is a local JARVIS: the same server, the same console, and nothing at stake.

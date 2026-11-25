@@ -130,7 +130,7 @@ html[data-book] .bk-steps small{display:block;font:400 12px/1.4 var(--font);colo
 html[data-book] .bk-steps .fx-hl{position:absolute;left:0;top:0;width:3px;margin:0;border-radius:2px;background:var(--accent);box-shadow:var(--glow);z-index:2;pointer-events:none}
 html[data-book] .bk-cap{grid-column:1 / -1;padding:0 24px 12px;position:relative;z-index:3}
 html[data-book] .bk-cap[hidden]{display:none}
-html[data-book] .bk-cap p{margin:0 auto;max-width:980px;min-height:3.4em;padding:14px 20px;border-radius:var(--r-md);border:1px solid var(--line);border-left:3px solid var(--accent);
+html[data-book] .bk-cap p{margin:0 auto;max-width:980px;min-height:calc(3em + 30px);padding:14px 20px;border-radius:var(--r-md);border:1px solid var(--line);border-left:3px solid var(--accent);
   background:var(--bk-paper);font:400 20px/1.5 var(--font);color:var(--ink-2)}
 html[data-book] .bk-cap .w.on{color:var(--ink)}
 html[data-book] .bk-ctl{grid-column:1 / -1;display:flex;align-items:center;gap:14px;padding:12px 20px 16px;border-top:1px solid var(--line-2);background:var(--bg)}
@@ -248,7 +248,7 @@ html[data-book] .fx-wipe[data-dir="v"]{background:linear-gradient(180deg,transpa
   html[data-book] .bk-side .sub{margin:0}
   html[data-book] .bk-stage{grid-column:1;grid-row:2}
   html[data-book] .bk-cap{padding:0 12px 10px}
-  html[data-book] .bk-cap p{font-size:17px;padding:12px 14px;min-height:0}
+  html[data-book] .bk-cap p{font-size:17px;padding:12px 14px;min-height:calc(4.5em + 26px)}
   html[data-book] .bk-ctl{flex-wrap:wrap;gap:10px;padding:10px 12px 14px}
   html[data-book] .bk-ctl .bk-prog{order:-1;flex:1 1 100%}
   html[data-book] .bk-ctl .grp.main{flex:1 1 auto;justify-content:center}

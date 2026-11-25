@@ -168,9 +168,11 @@ export function mount(root, on) {
 
   /** Controls, side panel and progress from the player's state. */
   function sync(st) {
-    root.dataset.playing = String(!!st.playing);
-    B.play.textContent = ''; B.play.append(icon(st.playing ? 'pause' : 'play'));
-    B.play.setAttribute('aria-label', st.playing ? 'Pause (Space)' : 'Play (Space)');
+    if (root.dataset.playing !== String(!!st.playing)) {
+      root.dataset.playing = String(!!st.playing);
+      B.play.textContent = ''; B.play.append(icon(st.playing ? 'pause' : 'play'));
+      B.play.setAttribute('aria-label', st.playing ? 'Pause (Space)' : 'Play (Space)');
+    }
     B.cc.setAttribute('aria-pressed', String(st.cc)); cap.hidden = !st.cc;
     B.sound.setAttribute('aria-pressed', String(st.sound)); B.sound.textContent = st.sound ? 'Sound' : 'Muted';
     const r = st.rate === 1 ? '1' : String(st.rate);

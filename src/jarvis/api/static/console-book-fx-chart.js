@@ -262,8 +262,13 @@ export function chartLayer(layer, ctx) {
     if (fx.enter) enter(fx.enter, n);
     if (fx.accent) accent(fx.accent, n);
   }
-  /** The stage changed size: the camera keeps the spoken box in view (no animation). */
-  function relayout() { if (C.scene) aim(C.scene, '', true); }
+  /** The stage changed size: the camera keeps the spoken box in view (no animation; a move under way ends first). */
+  function relayout() {
+    if (!C.scene) return;
+    const a = C.camAnim;
+    if (a && a.playState === 'running') { a.finished.then(() => { if (C.camAnim === a) aim(C.scene, '', true); }, () => {}); return; }
+    aim(C.scene, '', true);
+  }
   function reset() { if (C.mo) C.mo.disconnect(); C.mo = null; cam.textContent = ''; C.page = ''; C.fig = null; C.box = null; C.scene = null; }
   return { mount, has, apply, pullback, relayout, reset, clear: clearFx, svg };
 }

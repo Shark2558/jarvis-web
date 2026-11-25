@@ -9,6 +9,12 @@ release's pages index (parts -> chapters -> pages, `limitations {shown, total}`)
 (written by the Workshop, or the generator's text "Not written yet"; with `flow`, its flowchart
 or null; 404 `no_page`), read from the pages and flows files sealed with that release
 (`writer/serve.BookPages` on `app.state.book_pages`). Nothing here logs a value or page text.
+
+R6.4 D4-D6 (docs/plans/r6-4-book-look.md), behind the same gates, in this order (the gate before
+any reading of the request): `GET /v1/book/chapters` and `/v1/book/chapters/{chapter_id}` (404
+`no_chapter`), 60 a minute with the pages; `GET /v1/book/pages/search?q=` (422 `bad_query`), on its
+own limit (`http.LIMITS["search"]`, installed here). `install_book_pages` also mounts the reader's
+page, `/book/read` (`api/book_read.py`).
 """
 
 from __future__ import annotations
@@ -23,13 +29,20 @@ from fastapi.responses import JSONResponse
 from jarvis.api.auth import require_auth, session_email
 from jarvis.api.book_gate import BookRefused, console_only, limit, need, owner_session
 from jarvis.api.book_http import TOKEN_HEADER, book_json
+from jarvis.api.book_read import install_book_read
+from jarvis.api.ratelimit import RateLimiter
+from jarvis.buildbook.book.chapters import CHAPTER_ID
 from jarvis.buildbook.facts_model import PAGE_ID
 from jarvis.buildbook.model import RELEASE_ID
-from jarvis.buildbook.writer.http import PAGES_PREFIX, ROUTES  # by name: A's route scan
+from jarvis.buildbook.writer import search
+from jarvis.buildbook.writer.http import CHAPTERS_PREFIX, LIMITS, PAGES_PREFIX, ROUTES
 from jarvis.buildbook.writer.texts import REFUSED, PagesRefused
 
 router = APIRouter(prefix=PAGES_PREFIX, dependencies=[Depends(require_auth)])
+# R6.4: a router a prefix, so the fact pack's route scan reads each loop's rows (gen/facts_routes)
+chapters_router = APIRouter(prefix=CHAPTERS_PREFIX, dependencies=[Depends(require_auth)])
 Act = Callable[[Any, str, str | None, Request], Awaitable[Any]]
+SEARCH = f"{PAGES_PREFIX}/search"
 
 
 def primary(request: Request, svc: Any) -> str:
@@ -52,13 +65,13 @@ def release_of(request: Request) -> str | None:
     return rid
 
 
-def route(act: Act) -> Callable[[Request], Awaitable[JSONResponse]]:
+def route(act: Act, limited: str = "pages") -> Callable[[Request], Awaitable[JSONResponse]]:
     async def handler(request: Request) -> JSONResponse:
         svc = need(request, "book_pages")
         uid = primary(request, svc)
         await owner_session(request, uid, request.headers.get(TOKEN_HEADER))
         console_only(request)  # after the session: an unsigned script stays 401 (review I1 L-1)
-        limit(request, "pages", uid)
+        limit(request, limited, uid)
         try:
             body = await act(svc, uid, release_of(request), request)
         except PagesRefused as no:
@@ -79,19 +92,50 @@ async def _page(svc: Any, uid: str, rid: str | None, request: Request) -> Any:
     return await svc.page(uid, page_id, rid)
 
 
-P = PAGES_PREFIX
-ACTS: dict[tuple[str, str], Act] = {("GET", P): _index, ("GET", f"{P}/{{page_id}}"): _page}
+async def _chapters(svc: Any, uid: str, rid: str | None, request: Request) -> Any:
+    return await svc.chapters(uid, rid)
+
+
+async def _chapter(svc: Any, uid: str, rid: str | None, request: Request) -> Any:
+    chapter_id = str(request.path_params.get("chapter_id", ""))
+    if not re.fullmatch(CHAPTER_ID, chapter_id):
+        raise PagesRefused("no_chapter")
+    return await svc.chapter(uid, chapter_id, rid)
+
+
+async def _search(svc: Any, uid: str, rid: str | None, request: Request) -> Any:
+    q = search.normal_query(request.query_params.get("q", ""))
+    if q is None:
+        raise PagesRefused("bad_query")
+    return await svc.search(uid, q, rid)
+
+
+P, C = PAGES_PREFIX, CHAPTERS_PREFIX
+ACTS: dict[tuple[str, str], Act] = {
+    ("GET", P): _index, ("GET", SEARCH): _search, ("GET", f"{P}/{{page_id}}"): _page,
+    ("GET", C): _chapters, ("GET", f"{C}/{{chapter_id}}"): _chapter,
+}  # fmt: skip
 for _method, _path, _part, _req, _reply, _codes, _gate in ROUTES:
     if _path.startswith(P):
-        router.add_api_route(
-            _path.removeprefix(P), route(ACTS[(_method, _path)]), methods=[_method], name=_path
+        act = route(ACTS[(_method, _path)], "search" if _path == SEARCH else "pages")
+        router.add_api_route(_path.removeprefix(P), act, methods=[_method], name=_path)
+for _method, _path, _part, _req, _reply, _codes, _gate in ROUTES:
+    if _path.startswith(C):
+        chapters_router.add_api_route(
+            _path.removeprefix(C), route(ACTS[(_method, _path)]), methods=[_method], name=_path
         )
 
 
 def install_book_pages(app: FastAPI) -> None:
     """Mounted by `r6_wiring.install_r6_routes` after `install_book` (its refusal handler; the
-    wiring adds the `pages` limit, `http.LIMITS`, to R6's per-owner limits)."""
+    wiring adds the `pages` limit to R6's per-owner limits). R6.4: the other `http.LIMITS` (the
+    search's) are added here when the wiring hasn't, and the reader's page with them."""
+    limits = app.state.book_limits
+    for name, per_minute in LIMITS.items():
+        limits.setdefault(name, RateLimiter(per_minute))
     app.include_router(router)
+    app.include_router(chapters_router)
+    install_book_read(app)
 
 
-__all__ = ["install_book_pages", "primary", "router"]
+__all__ = ["chapters_router", "install_book_pages", "primary", "router"]

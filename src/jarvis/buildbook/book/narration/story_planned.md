@@ -3,24 +3,30 @@ chapter: story_planned
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-25
 pages:
-  "pg_chapter_planned": "4d454c3625690202"
+  "pg_chapter_planned": "459107c97ecbfd63"
 ---
 - [show:title] This chapter is the list of what isn't part of JARVIS yet.
 - [show:plain] It tells you which parts you can use today, and which exist only on paper.
 - Every other page of this book describes the code as it runs now. This one looks ahead.
+- But first, what has just left the list: this release, {{fact:release.label}}, is built.
+- It gave the Build Book its own look, and the full book a page of its own, with contents and search.
+- It narrated the full book chapter by chapter, with varied effects, as you are hearing now.
+- And it fixed two things: costs that never read as free when a price is unknown, and secure links for a Tailscale address.
 - The next releases come in the order you set them, from the architecture guide's roadmap.
-- Nothing here is built yet, and plans can change.
+- Nothing on that list is built yet, and plans can change.
 - [show:how] The architecture guide gives every part of JARVIS a card, and marks in capitals any part that isn't built yet.
 - So a reader never mistakes a plan for a feature.
-- A page of this book may name unbuilt work only in a separate paragraph marked for it, so the rest of each page sticks to what the code does.
-- [show:overview] Here is the roadmap, in your order.
-- [node:guide] It starts with the guide's roadmap, which lists the next releases with what each one holds, and says plainly that none of it is built.
+- Each release also has its own plan, which says what it holds and what it leaves out.
+- [show:overview] Here is the roadmap, in your order, starting from the release you are reading.
+- [node:built] It starts with {{fact:release.label}}, built: the Book's own reader, its search, and the narrated chapters with their effects.
+- [edge:built>left] Its plan set a few things aside for later.
+- [node:left] A guest-safe full book, print views, a Simple or Technical toggle, and an interactive architecture map are not in it.
+- They stay on this list until a release takes them, if you ask for them.
+- [edge:built>guide] After this release, the guide's roadmap takes over, in your order.
+- [node:guide] The roadmap lists the next releases with what each one holds, and says plainly that none of it is built.
 - [edge:guide>tour] The short tour takes what comes next from here.
 - [node:tour] It reads its next and after-that lines from the top rows of the roadmap.
-- [edge:guide>look] The roadmap's first row comes first.
-- [node:look] R6.4 is the Book's new look, shown to you as mockups first.
-- It brings the full book narrated chapter by chapter, like the tour, a guest-safe full book, search and print.
-- [edge:look>calls] After that comes a new way to talk.
+- [edge:guide>calls] First on the roadmap comes a new way to talk.
 - [node:calls] JARVIS making and answering phone calls from your laptop.
 - [edge:calls>voice] Then the voice itself.
 - [node:voice] R5.2 is the voice build, with the voice fixes you asked for.
@@ -38,13 +44,13 @@ pages:
 - R19 is a trading desk, with the decision about it left for later, and there is deeper tracing with OpenTelemetry.
 - [show:example] In the made-up example, Priya opens the Book on her phone one evening.
 - She wonders whether JARVIS can already answer a phone call for her.
-- She opens this chapter, and finds phone calls from your laptop in the list, second after the Book's new look.
+- She opens this chapter, and finds phone calls from your laptop at the top of the list, just after the release she is reading.
 - So she doesn't hunt for it in the console.
-- She turns instead to the Voice page, which tells her what the microphone does today, and makes a note to look again in a few releases.
+- She turns instead to the Voice page, which tells her what the microphone does today, and presses Play to hear its chapter.
+- Then she makes a note to look again in a few releases.
 - [show:costs] Reading this list costs nothing.
 - What a release on it would cost is worked out in that release's own plan, before any work starts, and is not guessed here.
 - [show:fails] A roadmap row goes out of date when plans change.
 - The guide is updated with each release, and its change log at the end says what moved.
-- If a page of this book named unbuilt work outside its marked paragraph, the page would fail its checks.
-- The reader would then show the plain generated text in its place.
+- A plan's own change log says what changed in it after approval, as this release's records your answers and the effects added at your request.
 - That is the road ahead: in your order, honestly marked, and never mistaken for what runs today.

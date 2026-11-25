@@ -65,7 +65,7 @@ sources:
   "src/jarvis/buildbook/writer/privacy.py": "d4078ad08f78acf1"
   "src/jarvis/buildbook/writer/serve.py": "c6115dc83f8a168c"
   "src/jarvis/buildbook/writer/texts.py": "38f334fe9cc95de9"
-  "src/jarvis/core/brain.py": "5c361ba3e1e3e346"
+  "src/jarvis/core/brain.py": "e418eb8e4df90505"
   "src/jarvis/core/brain_types.py": "fa3d9df28ac632ba"
   "src/jarvis/core/channel.py": "0c46ee25a780e41b"
   "src/jarvis/core/finish.py": "76f1255343c6e042"

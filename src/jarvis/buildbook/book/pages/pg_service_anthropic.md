@@ -3,8 +3,8 @@ page: pg_service_anthropic
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "8c6265f13d09201d"
-  "src/jarvis/llm/brains.py": "926e3ef2f35fcb02"
+  "src/jarvis/config.py": "3d154bdd78268162"
+  "src/jarvis/llm/brains.py": "a1fa670cdd1f62ae"
   "src/jarvis/llm/factory.py": "bc538ec75083020d"
   "src/jarvis/llm/router.py": "c72db7b28cbba849"
   "src/jarvis/vitals/own.py": "cd127fbc1ca087c6"

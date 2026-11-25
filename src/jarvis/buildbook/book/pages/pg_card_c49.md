@@ -3,7 +3,7 @@ page: pg_card_c49
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "8c6265f13d09201d"
+  "src/jarvis/config.py": "3d154bdd78268162"
 ---
 ## In plain words
 Every knob that changes how JARVIS behaves lives in one place: which AI to use, your time zone, how long the app lock waits, how many SOS contacts you may have, which features are switched on, and the secret keys it needs. They are read from the server's environment when JARVIS starts, so changing one means a redeploy, not editing code (`src/jarvis/config.py`). Secret values are held in a special type that never prints them in a log or an error message. Before it starts on the cloud, JARVIS also refuses settings that would be unsafe there (`Settings`).

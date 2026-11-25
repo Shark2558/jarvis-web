@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
-  "src/jarvis/config.py": "8c6265f13d09201d"
+  "src/jarvis/config.py": "3d154bdd78268162"
 ---
 ## In plain words
 Frigate is a free camera watcher that runs on your laptop at home. It watches your camera, spots people and parcels, keeps the recordings and the face library, all at home. JARVIS uses it for the burglar alarm (Away or Night), for questions like "who was at the gate yesterday?" and for parcel alerts at the door. The pictures stay on the laptop: the bridge passes on only short event facts, never thumbnails, and a small photo goes to your phone with a burglar alert only if you switch that on. Faces are recognised only for people added with their consent.

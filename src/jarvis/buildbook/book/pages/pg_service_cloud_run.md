@@ -9,7 +9,7 @@ sources:
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
   "src/jarvis/api/integrations.py": "849076061558773f"
   "src/jarvis/api/permissions.py": "42dc725d201a9c43"
-  "src/jarvis/config.py": "8c6265f13d09201d"
+  "src/jarvis/config.py": "3d154bdd78268162"
   "src/jarvis/drive/token.py": "9e3f8f673ac390aa"
 ---
 ## In plain words

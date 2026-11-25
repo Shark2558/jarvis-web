@@ -38,7 +38,7 @@ sources:
   "src/jarvis/wardrobe/catalog/search.py": "67770241b8727e6c"
   "src/jarvis/wardrobe/catalog/service.py": "ba14754909a040bc"
   "src/jarvis/wardrobe/catalog/store.py": "44e6dddf6ca5ce6b"
-  "src/jarvis/wardrobe/catalog/tagging.py": "92309f3533ffe1e9"
+  "src/jarvis/wardrobe/catalog/tagging.py": "17b8436332659078"
   "src/jarvis/wardrobe/catalog/tools.py": "a74be4c4d219276f"
   "src/jarvis/wardrobe/catalog/tools_life.py": "a366407ae458554e"
   "src/jarvis/wardrobe/catalog/tools_write.py": "516396e9dea4d720"

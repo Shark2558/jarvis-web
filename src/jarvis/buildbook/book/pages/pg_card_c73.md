@@ -11,7 +11,7 @@ sources:
   "src/jarvis/api/static/console-tryon-me.js": "88bc303d9c049cc3"
   "src/jarvis/api/static/console-tryon-photo.js": "2a921f5c94ec59bd"
   "src/jarvis/api/tryon_wiring.py": "47536713ac1021b3"
-  "src/jarvis/billing/spend.py": "3761764d204d7a7e"
+  "src/jarvis/billing/spend.py": "fad90ef7371200bc"
   "src/jarvis/llm/tryon.py": "839f8746d75d6c7d"
   "src/jarvis/llm/tryon_gemini.py": "3e233dc06019ff0c"
   "src/jarvis/wardrobe/seeme/__init__.py": "f74a53a075cdcaa4"

@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
-  "src/jarvis/config.py": "8c6265f13d09201d"
+  "src/jarvis/config.py": "3d154bdd78268162"
 ---
 ## In plain words
 Home Assistant is a free program that runs on your laptop at home and talks to your smart devices: lights, plugs and sensors. JARVIS never reaches Home Assistant directly from the internet. It talks to a small bridge on your laptop, and the bridge talks to Home Assistant with its own non-admin user. You choose which devices JARVIS may see; only those, with their states, reach JARVIS, and JARVIS sends back commands such as "switch the hall light off". A smoke, gas, water-leak or similar sensor you chose rings an urgent alert. Home Assistant's own token stays on the laptop.

@@ -171,6 +171,7 @@ html[data-book] .bk-nav a.now .t{color:var(--ink);font-weight:500}
 /* the page */
 html[data-book] .bk-crumb{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin:0 0 14px}
 html[data-book] .bk-crumb .sep,html[data-book] .bk-meta .sep{color:var(--ink-3)}
+html[data-book] .bk-h1{width:fit-content;max-width:100%}
 html[data-book] .bk-h1:focus{outline:none}
 html[data-book] .bk-h1:focus-visible,html[data-book] .bk-h2:focus-visible{outline:2px solid var(--accent-ink);outline-offset:4px;border-radius:2px}
 html[data-book] .bk-h2:focus{outline:none}

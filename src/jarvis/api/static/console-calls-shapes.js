@@ -62,7 +62,6 @@ export function readiness(v) { // GET /v1/calls/status: the desk and the phone a
     month: { used: Math.max(0, num(m.used_inr) || 0), cap: int(m.cap_inr, 0, 100000) },
     today: { calls: int(t.calls, 0, 1000) || 0, max: int(t.max, 1, 1000) },
     active: a && callId(a.call_id) ? { callId: a.call_id, state: CALL_STATES.includes(a.state) ? a.state : 'talking' } : null,
-    templates: arr(o.templates).slice(0, 20).map(template).filter(Boolean),
   };
 }
 
@@ -78,29 +77,36 @@ function booking(v) {
     number4: four(b, 'give_number_last4', 'give_number_masked', 'give_number'), reason: txt(b.reason, 300),
     minutes: int(b.duration_minutes, 5, 480) || 30, calendar: b.add_to_calendar !== false };
 }
+const E164 = /^\+[1-9][0-9]{6,14}$/;
+/** A1's card_view (jarvis.api.calls_handlers_cards): the card, `number_masked`, `needs_passkey`, `blocked {code, words}`. */
 export function card(v) {
   const c = obj(v);
   if (!c || !cardId(c.id)) return null;
-  const r = obj(c.ready) || {}, lim = obj(c.limits) || {};
+  const lim = obj(c.limits) || {}, est = obj(c.estimate) || {}, blocked = obj(c.blocked), r = obj(c.ready);
   const status = CARD_STATUS.includes(c.status) ? c.status : 'draft';
+  const full = [c.number_e164, c.number].find((n) => typeof n === 'string' && E164.test(n)) || '';
   return {
     id: c.id, status, callState: CALL_STATES.includes(c.call_state) ? c.call_state : '', callId: callId(c.call_id),
-    number4: four(c, 'number_last4', 'number_masked', 'number_e164'), who: txt(c.contact_name, 60),
+    number4: four(c, 'number_last4', 'number_masked', 'number_e164', 'number'), who: txt(c.contact_name, 60),
+    number: full, // kept for Edit only (sent back with the new card), never shown
     purpose: txt(c.purpose, 300), maySay: lines(c.may_say), mayAgree: lines(c.may_agree), booking: booking(c.booking),
     languages: langs(c.languages), template: typeof c.template === 'string' && TEMPLATE_ID.test(c.template) ? c.template : '',
-    maxMinutes: int(lim.max_minutes, 1, 30), maxInr: int(lim.max_inr, 1, 200), estimate: num(c.estimate_inr),
-    newNumber: c.new_number === true, passkey: c.passkey_required === true || c.new_number === true,
-    approvalId: typeof c.approval_id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(c.approval_id) ? c.approval_id : '',
-    ready: { known: !!obj(c.ready), ok: r.ok === true, problems: lines(r.problems, 6, 300) }, why: txt(c.refused, 300),
+    maxMinutes: int(lim.max_minutes, 1, 30), maxInr: int(lim.max_inr, 1, 200), estimate: num(c.estimate_inr) ?? num(est.total_inr),
+    newNumber: c.new_number === true, passkey: c.needs_passkey === true || c.passkey_required === true || c.new_number === true,
+    approvalId: typeof c.approval_id === 'string' && /^[A-Za-z0-9_:.-]{1,128}$/.test(c.approval_id) ? c.approval_id : '',
+    ready: blocked ? { known: true, ok: false, problems: [txt(blocked.words, 300) || 'This call can\u2019t be placed now.'] }
+      : r ? { known: true, ok: r.ok === true, problems: lines(r.problems, 6, 300) } : { known: false, ok: true, problems: [] },
+    why: '',
   };
 }
+const TEMPLATE_FIELDS = ['number', 'contact', 'languages', 'max_minutes', 'windows', 'give_name', 'give_number', 'items', 'order',
+  'place', 'reason', 'duration_minutes'];
+/** A ready card (jarvis.calls.templates.catalogue): its name, title and the fields it takes; it writes the rest itself. */
 export function template(v) {
   const t = obj(v);
-  if (!t || typeof t.id !== 'string' || !TEMPLATE_ID.test(t.id)) return null;
-  const lim = obj(t.limits) || {};
-  return { id: t.id, title: txt(t.title, 80) || t.id, purpose: txt(t.purpose, 300), maySay: lines(t.may_say), mayAgree: lines(t.may_agree),
-    booking: booking(t.booking), languages: langs(t.languages), who: txt(t.contact_name, 60), number4: four(t, 'number_last4', 'number_masked'),
-    maxMinutes: int(lim.max_minutes, 1, 30) };
+  const id = t && (t.name || t.id);
+  if (typeof id !== 'string' || !TEMPLATE_ID.test(id)) return null;
+  return { id, title: txt(t.title, 80) || id, fields: arr(t.fields).filter((f) => TEMPLATE_FIELDS.includes(f)) };
 }
 function line(v) {
   const l = obj(v);
@@ -117,18 +123,39 @@ export function record(v) {
     id: r.id, state: CALL_STATES.includes(r.state) ? r.state : 'ended', end: typeof r.end_reason === 'string' && END_WORDS[r.end_reason] ? r.end_reason : '',
     direction: r.direction === 'incoming' ? 'incoming' : 'outgoing', at: txt(r.started_at, 40), seconds: num(r.seconds),
     number4: four(r, 'number_last4', 'number_masked', 'number_e164'), who: txt(r.contact_name, 60), purpose: txt(r.purpose, 300),
-    languages: langs(r.languages_used, 4), cost: num(r.cost_inr), summary: txt(r.summary, 4000),
-    transcript: arr(r.transcript).slice(0, 2000).map(line).filter(Boolean),
+    languages: langs(r.languages_used, 4), cost: num(r.cost_inr), summary: summary(r.summary),
+    transcript: arr(obj(r.transcript) ? r.transcript.lines : r.transcript).slice(0, 2000).map(line).filter(Boolean),
     recorded: r.recorded !== false && r.objected !== true, objected: r.objected === true, audio: r.has_audio === true,
     keep: r.keep === true, deleteAfter: txt(r.delete_after, 40),
-    event: ev ? { title: txt(ev.title, 120), when: txt(ev.when, 80), undone: ev.undone === true } : (r.booking_event_ref ? { title: '', when: '', undone: false } : null),
+    event: ev ? { title: txt(ev.title, 120), when: txt(ev.when, 80), undone: ev.undone === true }
+      : r.booking_added === true || r.booking_event_ref ? { title: '', when: '', undone: false } : null,
   };
+}
+/** A call's summary (jarvis.calls.records.CallSummary): the English summary, what was agreed, next steps, what needs him. */
+function summary(v) {
+  if (typeof v === 'string') return { english: txt(v, 4000), agreed: [], next: [], needs: [], message: '' };
+  const o = obj(v);
+  if (!o) return null;
+  const m = obj(o.message);
+  const msg = m ? [txt(m.name, 80), txt(m.reason, 500), txt(m.call_back, 20) ? 'call back on ' + txt(m.call_back, 20) : ''].filter(Boolean).join(' \u00b7 ') : '';
+  return { english: txt(o.english, 4000), agreed: lines(o.agreed, 20, 300), next: lines(o.next_steps, 20, 300), needs: lines(o.needs_owner, 20, 300), message: msg };
 }
 /** The language table: one row per language, the option that passed (free first, the laptop first), else the reasons. */
 export function languages(v) {
   const o = obj(v) || {}, ch = obj(o.check) || {};
-  const byLang = new Map();
-  arr(o.results || o.languages).slice(0, 200).forEach((x) => {
+  const byLang = new Map(), offered = new Map();
+  const flat = [];
+  arr(o.results || o.languages).slice(0, 200).forEach((x) => { // A1 nests each language's results; a flat list works too
+    const row = obj(x);
+    if (row && Array.isArray(row.results)) {
+      const code = lang(row.lang);
+      if (code && row.offered === true) offered.set(code, typeof row.option === 'string' ? row.option : '');
+      if (code && !row.results.length) byLang.set(code, [{ code, name: langName(code, row.name), option: '', optionWords: '', passed: false,
+        running: false, perMin: null, why: [], native: false, balanced: false, at: '' }]);
+      row.results.slice(0, 10).forEach((r) => flat.push(r));
+    } else flat.push(x);
+  });
+  flat.forEach((x) => {
     const l = obj(x);
     const code = l && lang(l.lang || l.code);
     if (!code) return;
@@ -136,7 +163,8 @@ export function languages(v) {
     const row = { code, name: langName(code, l.name), option, optionWords: OPTIONS[option] || '', passed: l.passed === true,
       running: l.running === true, perMin: num(l.inr_per_minute), why: lines(l.why_failed, 4, 200), native: l.native_heard === true,
       balanced: l.needs_balanced === true, at: txt(l.checked_at, 40) };
-    if (!byLang.has(code)) byLang.set(code, []);
+    if (offered.has(code) && offered.get(code) === option) row.passed = true; // what A1 offers is what passed
+    if (!byLang.has(code) || !byLang.get(code)[0].at) byLang.set(code, (byLang.get(code) || []).filter((r) => r.at));
     byLang.get(code).push(row);
   });
   const rows = [...byLang.values()].map((opts) => {
@@ -159,6 +187,7 @@ export function settings(v) {
     retention: int(o.retention_days, 1, 30) || 30, recordAudio: o.record_audio !== false,
     balanced: o.allow_balanced === true, sarvam: o.sarvam_on === true, firstName: txt(o.owner_first_name, 60),
     azure: txt(az.status || o.azure_status, 20),
+    templates: arr(o.templates).slice(0, 20).map(template).filter(Boolean), // A1's settings_view carries the ready cards
   };
 }
 export function caption(v) { return line(v); } // LiveCaption {who, lang, text, english}

@@ -17,28 +17,26 @@ Branch `r18-e`. The console only reads and sends what is listed here; every fiel
 | `api/console.py` | `**CALLS_ASSETS` (the 13 new files, listed in the new `api/console_calls_assets.py`; console.py keeps its 473-line guard) |
 | tests | dock count 22 → 23 (`test_console_assets`, `test_arch_coverage`, `test_r7_seams`), `console.html` SHA pins (R6.3, R13, R13.1 seams), `NOT_IN_PAGE` entries; guide C01 lists Calls |
 
-## What the console sends and reads (A1's `CallsApi` views)
+## What the console sends and reads (A1's `CallsApi` views, `r18-a1` @ bc67de7)
 
 | Route | Console sends | Console reads |
 |---|---|---|
-| `GET /v1/calls/status` | — | `desk {connected, ready, problems[], bt_headset}`, `phone {linked}`, `month {used_inr, cap_inr}`, `today {calls, max}`, `active {call_id, state}`, **`templates[]`** (the ready cards: `id, title, contact_name, number_last4, purpose, may_say, may_agree, languages, booking, limits`) |
-| `POST /v1/calls/cards` | `number` (E.164, optional), `contact_name`, `purpose`, `may_say[]`, `may_agree[]`, `languages` (first = opening), `limits {max_minutes}`, `template?`, `booking {windows[{day,start,end}], give_name, give_number?, reason, no_payment, duration_minutes, add_to_calendar}?`, **`from_card?`** (Edit: reuse that card's number) | `{card}` or the card: `id, status, number_last4 \| number_masked \| number_e164` (only the last 4 digits are ever shown), `contact_name, purpose, may_say, may_agree, languages, booking (give_number_last4), limits {max_minutes, max_inr}, estimate_inr, new_number, passkey_required?, approval_id?, ready {ok, problems[]}, call_id?, call_state?, refused?` |
-| `POST /v1/calls/cards/{id}/approve` | `{passkey?}`: a proof from `JarvisPasskey.approve(approval_id or card id)` (purpose `approve`) | `{card, call_id}`; a 4xx with `error: "passkey_required"` makes the card ask for the passkey |
-| `POST /v1/calls/cards/{id}/cancel` | `{}` | `{card}` |
-| `GET /v1/calls/records?limit=50` | — | `{records: [...]}`: `id, direction, state, end_reason, started_at, seconds, cost_inr, contact_name, number_last4, purpose, languages_used` |
-| `GET /v1/calls/records/{id}` | — | the above + `summary, transcript [{who, lang, text, english}], has_audio, recorded, objected, keep, delete_after, booking_event {title, when, undone}` |
-| `PUT …/keep`, `POST …/booking/undo`, `DELETE`, `GET …/audio` | `{keep}`, `{}` | audio bytes any Web Audio decodes (WAV or Ogg/WebM Opus) |
-| `GET`/`PUT /v1/calls/settings` | changed `CallSettings` fields only; **`?confirm=1`** when he confirmed a raise, answering on, Sarvam / balanced on, or fewer days kept | `CallSettings` fields + `azure_status` (`ready` or anything else) |
-| `GET /v1/calls/languages` | — | `{results: [LanguageResult...], check {running}}` (one row per language and option; the console picks the passed one, free first) |
-| `POST /v1/calls/languages/check` | `{confirm: false}` then `{confirm: true, estimate_inr}` | `{estimate_inr, languages}` (count) |
-| WS `/v1/calls/{id}/live` | `listen {audio}` (first message; `false` until he presses Listen live), `takeover`, `tell {text ≤ 500}`, `hangup` | `caption`, `state` (`LiveState`), binary `0x03` PCM; close codes 4400/4401/4404/4501 are shown in words, not retried |
+| `GET /v1/calls/status` (A2/I1: not in A1) | — | `desk {connected, ready, problems[], bt_headset}`, `phone {linked}`, `month {used_inr, cap_inr}`, `today {calls, max}`, `active {call_id, state}` |
+| `POST /v1/calls/cards` | a `PlaceArgs` draft (`number?` E.164, `contact?`, `purpose`, `may_say[]`, `may_agree[]`, `languages` (first = opening), `max_minutes`, `booking?`, `template?`) or `{template, fields}` (the template's own fields); Edit adds `replaces` (and resends the card's number) | `card_view`: only `number_masked` / the last 4 digits are shown (the whole `number` is kept for Edit, never drawn), `needs_passkey`, `blocked {words}`, `estimate_inr` |
+| `POST /v1/calls/cards/{id}/approve` | `{}`; after `{status: "needs_passkey", approval_id}`, his next press sends `{approval_id, passkey}` (`JarvisPasskey.approve(approval_id)`, purpose `approve`) | `{status, card_id, call_id}` → the live view opens |
+| `POST /v1/calls/cards/{id}/cancel` | `{}` | `card_view` |
+| `GET /v1/calls/records?limit=50`, `GET …/{id}` | — | `record_view`; the record adds `transcript {lines[{who, lang, text, english}]}` and `summary {english, agreed, next_steps, needs_owner, message}` |
+| `PUT …/keep` `{keep}`, `POST …/booking/undo`, `DELETE`, `GET …/audio` | | `record_view`; Undo's `words` are shown; audio any Web Audio decodes (WAV or Ogg/WebM Opus) |
+| `GET`/`PUT /v1/calls/settings` | the changed `CallSettings` fields; `confirm_raise: true` whenever he confirmed (a raise, Sarvam or the balanced tier on, answering on, fewer days) | `settings_view` with `templates [{name, title, fields}]` (the ready cards for New call) |
+| `GET /v1/calls/languages` | — | `{languages: [{lang, name, offered, option, inr_per_minute, results[LanguageResult]}]}` (a flat result list works too) |
+| `POST /v1/calls/languages/check` (B/I1) | `{confirm: false}` then `{confirm: true, estimate_inr}` | `{estimate_inr, languages}` (count); a row whose result has `running: true` shows "Being checked" |
+| WS `/v1/calls/{id}/live` (`?device=phone` on the phone layout) | `listen {audio}` (first; `false` until he presses Listen live), `takeover`, `tell {text ≤ 500}`, `hangup` | `caption`, `state` (`LiveState`), binary `0x03` PCM; close codes 4400/4401/4404/4501 shown in words, not retried |
 
-Chat: a reply's `ChatResponse.cards` item `{kind: "call_card", ...card fields}` is drawn under the reply (Call, Edit, Cancel).
+Chat: a reply's `ChatResponse.cards` item `{kind: "call_card", ...card_view}` is drawn under the reply (Call, Edit, Cancel). Nothing emits it yet: in the chat, `calls_place` shows the gateway's own approval card.
 
 ## Open points
 
-- **Templates route**: there is none in I0; the console reads `templates` from `GET /v1/calls/status`.
-- **Edit**: no card update route; Edit makes a new card (`from_card` when the number is not retyped) and cancels the old one.
+- **Status**: `GET /v1/calls/status` is A2's/I1's delegate; the shape above is what the readiness line, Vitals' line and the live view need.
 - **Token auth and the live socket**: a browser cannot send `Authorization` on a WebSocket, so in `JARVIS_AUTH_MODE=token` the live view needs another way in (cookie mode works). Tests stub the socket.
 - The Approvals panel's existing card prints `a.arguments` as JSON: for `calls_place` that would show the full number unless the gateway redacts it.
 - `test_arch_coverage::test_the_real_guide_passes` wants the new console modules in a guide card's "Where in the code" (the Book refresh).

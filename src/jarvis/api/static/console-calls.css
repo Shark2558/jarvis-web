@@ -27,6 +27,8 @@
 .cl-lang input:disabled + label{cursor:default;color:var(--ink-2)}
 .cl-book{margin:4px 0 0 2px;padding:0 0 4px 12px;border-left:2px solid var(--line)}
 .cl-amber{color:var(--amber-ink)!important}
+.cl-window{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);align-items:end;gap:0 8px;padding:4px 0 8px;border-bottom:1px dashed var(--line-2)}
+.cl-window .sacts{grid-column:1/-1;margin-top:6px}
 .cl-out{margin-top:12px}
 .cl-out .cl-card{width:100%}
 
@@ -56,6 +58,7 @@
 html[data-surface="night"] .cl-rtitle{font:400 15px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase}
 .cl-rtitle:focus{outline:0}
 .cl-rtitle:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+.cl-sub{margin:10px 0 4px}
 .cl-text{margin:0;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
 .cl-transcript,.cl-captions{display:flex;flex-direction:column;gap:2px}
 .cl-line{padding:6px 0 6px 10px;border-top:1px dashed var(--line-2);box-shadow:inset 2px 0 0 var(--line)}
@@ -105,6 +108,8 @@ html[data-surface="night"] .cl-rtitle{font:400 15px/1.3 var(--tech);letter-spaci
   .cl-lang{min-height:44px}
   .cl-seek{height:44px}
   .cl-kv{grid-template-columns:96px minmax(0,1fr)}
+  .cl-window{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .cl-window > .cl-field:first-child{grid-column:1/-1}
   .cl-captions{max-height:38vh}
   .cl-live-acts .btn{flex:1 1 0}
   #p-calls .seg{max-width:none}

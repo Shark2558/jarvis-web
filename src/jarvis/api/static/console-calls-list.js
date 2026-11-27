@@ -5,7 +5,7 @@
 // asked not to be recorded), when it will be deleted, Keep and Delete (Delete asks first: it cannot be undone).
 // What the other person said is their words: shown with textContent, in its own direction (dir=auto) and language.
 // ASCII source.
-import { PATHS, api, button, chip, duration, failed, isToday, langName, masked, mk, rupees, say, when } from './console-calls-api.js';
+import { PATHS, api, button, chip, duration, failed, isToday, langName, masked, mk, rupees, say, txt, when } from './console-calls-api.js';
 import { END_WORDS, STATE_WORDS, isLive, record as checkRecord, whoWord } from './console-calls-shapes.js';
 import { player } from './console-calls-audio.js';
 
@@ -93,9 +93,7 @@ export function mount(host, ctx) {
     const parts = [backBtn, h, meta];
     if (r.purpose) parts.push(mk('p', 'snote', r.purpose));
     if (r.end) parts.push(mk('p', 'sfine', END_WORDS[r.end]));
-    const sum = mk('section', 'bsec');
-    sum.append(mk('h3', '', 'Summary (English)'), mk('p', 'cl-text', r.summary || 'No summary yet.'));
-    parts.push(sum);
+    parts.push(summaryBox(r));
     if (r.event) parts.push(eventBox(r));
     const tr = mk('section', 'bsec');
     tr.append(mk('h3', '', 'Transcript'));
@@ -114,6 +112,20 @@ export function mount(host, ctx) {
     recView.replaceChildren(...parts);
     if (had) h.focus(); // the record has loaded: the keyboard (and a screen reader) lands on its title
   }
+  function summaryBox(r) {
+    const sec = mk('section', 'bsec'), s = r.summary;
+    sec.append(mk('h3', '', 'Summary (English)'), mk('p', 'cl-text', s && s.english ? s.english : 'No summary yet.'));
+    if (s) {
+      [['Agreed', s.agreed], ['Next steps', s.next], ['Needs you', s.needs]].forEach(([name, list]) => {
+        if (!list.length) return;
+        const ul = mk('ul', 'blines');
+        list.forEach((t) => ul.append(mk('li', '', t)));
+        sec.append(mk('p', 'k cl-sub', name), ul);
+      });
+      if (s.message) sec.append(mk('p', 'snote', 'Message: ' + s.message));
+    }
+    return sec;
+  }
   function eventBox(r) {
     const box = mk('div', 'bnote cl-event');
     if (r.event.undone) { box.textContent = 'The calendar entry this call added was removed.'; return box; }
@@ -122,8 +134,9 @@ export function mount(host, ctx) {
     const undo = button('Undo', 'bact', async (b) => {
       b.disabled = true;
       try {
-        await api(PATHS.records + '/' + encodeURIComponent(r.id) + '/booking/undo', { body: {} });
-        box.replaceChildren(mk('span', '', 'Removed from your calendar.'));
+        const out = await api(PATHS.records + '/' + encodeURIComponent(r.id) + '/booking/undo', { body: {} });
+        const words = out && typeof out.words === 'string' ? txt(out.words, 300) : '';
+        box.replaceChildren(mk('span', '', words || 'Removed from your calendar.'));
       } catch (e) { b.disabled = false; box.append(mk('span', 'lerr', ' ' + failed(e))); }
     });
     undo.setAttribute('aria-label', 'Undo: remove the calendar entry this call added');

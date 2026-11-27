@@ -53,7 +53,10 @@ def _shot(c: Calls, name: str, panel: str = "#p-calls", bottom: bool = False) ->
     folder = Path(SHOTS)
     folder.mkdir(parents=True, exist_ok=True)
     c.page.screenshot(path=str(folder / f"{name}.png"))
-    if bottom:  # the rest of a long pane, scrolled to its end
+    if bottom:  # the rest of a long pane: its middle, then its end
+        c.page.locator(f"{panel} .pbody").first.evaluate("b => { b.scrollTop = (b.scrollHeight - b.clientHeight) / 2; }")
+        c.page.wait_for_timeout(150)
+        c.page.screenshot(path=str(folder / f"{name}-mid.png"))
         c.page.locator(f"{panel} .pbody").first.evaluate("b => { b.scrollTop = b.scrollHeight; }")
         c.page.wait_for_timeout(150)
         c.page.screenshot(path=str(folder / f"{name}-end.png"))
@@ -81,6 +84,12 @@ def _screens(c: Calls, vp: str, surface: str) -> list[tuple[str, Callable[[], No
         )
 
     def new_card() -> None:
+        pane = c.pane("new")
+        pane.get_by_label("Who it is (a saved contact, or a name for the card)").fill("Laundry")
+        pane.get_by_label("Name to give").fill("Arun")
+        pane.get_by_label("Day 1").fill("2026-11-28")
+        pane.get_by_label("Time 1: from").fill("10:00")
+        pane.get_by_label("Time 1: until").fill("12:00")
         c.button("Make the card", "#clp-new").click()
         p.locator("#clp-new .cl-card").wait_for()
 

@@ -5,8 +5,9 @@
 // answering the calls he misses (row 104: off until he switches it on and says yes; after how many rings; which
 // callers), the records (keep the audio; how many days; lowering it asks first: older calls go), and the paid or
 // dearer options (Sarvam, the balanced brain: each only with his yes). Every change is one PUT /v1/calls/settings of
-// the changed fields; one he confirmed carries ?confirm=1. I1: the call desk's kit and its link code (the home
-// kit's way: a plain download link, a code that works once for 10 minutes). ASCII source; textContent only.
+// the changed fields; one he confirmed carries confirm_raise: true (A1 needs it for a raise). I1: the call desk's kit
+// and its link code (the home kit's way: a plain download link, a code that works once for 10 minutes). ASCII source;
+// textContent only.
 import { MAX_INDIAN, PATHS, api, button, choice, failed, field, input, mk, option, say, toggle, uid, wholeRupees } from './console-calls-api.js';
 import { settings as checkSettings } from './console-calls-shapes.js';
 
@@ -43,7 +44,7 @@ export function mount(host, ctx) {
   const langs = sec('Default languages', [mk('p', 'sfine', 'Put on every new card, besides English. Up to ' + MAX_INDIAN + ', from the languages that passed.'), langBox, row(langSave)]);
   // answering missed calls (row 104)
   const ans = sw('Answer the calls I miss', 'Off until you switch it on.', (on) => setAnswering(on));
-  const rings = input('text', 2); rings.inputMode = 'numeric';
+  const rings = input('text', 2); rings.inputMode = 'numeric'; // 2 to 15 (jarvis.calls.models)
   const ringsSave = button('Save', 'sact', () => saveRings());
   const polLabel = mk('span', 'bl', 'Answer for'); polLabel.id = uid('clpol');
   let pol = choice('clpol', polLabel.id, POLICIES, 'all', (v) => put({ answer_policy: v }, 'Saved.'));
@@ -112,8 +113,8 @@ export function mount(host, ctx) {
     if (S.busy) return false;
     S.busy = true; err.textContent = ''; paint();
     try {
-      const d = checkSettings(await api(PATHS.settings + (confirmed ? '?confirm=1' : ''), { method: 'PUT', body: changes }));
-      S.data = d; say(state, ok, 'ok');
+      const d = checkSettings(await api(PATHS.settings, { method: 'PUT', body: confirmed ? { ...changes, confirm_raise: true } : changes }));
+      S.data = d; say(state, ok, 'ok'); ctx.settingsLoaded(d);
       fill(Object.keys(changes));
       return true;
     } catch (e) { err.textContent = failed(e); return false; }
@@ -201,7 +202,7 @@ export function mount(host, ctx) {
     if (S.busy) return;
     S.busy = true;
     if (!S.data) say(state, 'Loading the settings\u2026');
-    try { S.data = checkSettings(await api(PATHS.settings)); say(state, ''); fill(Object.keys(FIELDS)); S.painted = false; } catch (e) { say(state, failed(e), 'bad'); }
+    try { S.data = checkSettings(await api(PATHS.settings)); say(state, ''); fill(Object.keys(FIELDS)); S.painted = false; ctx.settingsLoaded(S.data); } catch (e) { say(state, failed(e), 'bad'); }
     S.busy = false;
     paint();
   }

@@ -48,10 +48,16 @@ def full_hd(browser: Any, server_url: str, token: str) -> Iterator[Calls]:
 
 
 def _not_in_the_dock(c: Calls) -> None:
-    """Full HD: the Calls tab is not in the bar, and no More button shows for it."""
+    """Full HD: the Calls tab is not in the bar, and no More button shows for it. More shows only
+    while another tab is folded, as it was before R18: on a machine whose fonts make a label wider
+    than its tab (GitHub's runner), that tab folds behind More with or without R18
+    (tests/browser/test_dock_fit.py compares the bar with the one before R18 to the pixel)."""
     c.page.evaluate(SETTLE_JS)
     assert c.page.locator('.dk[data-open="calls"]').is_hidden()
-    assert c.page.locator("#dockMore").is_hidden()
+    tabs = c.page.locator(".dk[data-open]").all()
+    folded = [t.get_attribute("data-open") for t in tabs if t.is_hidden()]
+    others = [t for t in folded if t != "calls"]
+    assert c.page.locator("#dockMore").is_visible() == bool(others), folded
 
 
 def _calls_open(c: Calls) -> None:

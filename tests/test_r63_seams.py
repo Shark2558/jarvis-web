@@ -112,7 +112,8 @@ def test_the_guide_names_the_full_book_the_old_writers_data_and_the_roadmap() ->
     # the guide moves forward with each release (v6.4.x / R6.4 at R6.4, v18.0.x / R18 at R18)
     now = ".".join(jarvis.__version__.split(".")[:2])
     label = "R" + now.removesuffix(".0")  # 6.4 -> R6.4, 18.0 -> R18 (`plans.release_label`)
-    assert guide.splitlines()[0].startswith(f"Version v{now}.") and f"Release {label} " in guide[:200]
+    assert guide.splitlines()[0].startswith(f"Version v{now}.")
+    assert f"Release {label} " in guide[:200]
     c57 = guide[guide.index("#### C57 · Build book") : guide.index("#### C58")]
     for name in COLLECTIONS:
         assert f"`{name}/" in c57, name  # each with its document id, as the card names R6's

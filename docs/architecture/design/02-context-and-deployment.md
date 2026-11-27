@@ -1,4 +1,4 @@
-Version v6.6.0 · 27 Nov 2026, 22:04 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.1 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 02 · System context and deployment
 
@@ -71,6 +71,10 @@ request; `.dockerignore` lets it in) and NumPy, the language check's audio maths
 R5.2 adds no package to the cloud image: the speech kit's engines and server run only on the
 laptop, from their own hash-pinned list (`deploy/local-speech/requirements-kit.txt`), and a test
 keeps the kit's heavy modules out of the cloud's imports (`tests/test_r52_v1_import_guard.py`).
+The image's `pip install .` carries the speaker check's release folder as package data
+(`pyproject.toml`: `static/vendor/speaker/*/*`, so its `MANIFEST.json`, and the model once the
+owner pins it, ship with JARVIS; R5.2 review, `f13624a`;
+`tests/test_r14_i1_join.py:test_every_runtime_data_file_ships_in_the_wheel`).
 
 | Setting | Value | Where | What it implies |
 |---|---|---|---|
@@ -137,9 +141,11 @@ and `local_speech_url`, the kit's address. Unlike R18's keys, the deploy asks fo
 `--local-speech`) for the address and the key, reads the key without echo and stores it straight
 in the secret `jarvis-local-speech-key`, never in a file or the log. Enter skips it, and a quick
 re-run keeps the saved answer. A failed grant leaves the kit off with a plain note
-(`grant_failed`). An address of the wrong shape, a key under 32 characters or a failed secret write
-stops the whole deploy (`die`), although I1's notes say an optional part never does: an open item
-for the review (chapter 12, section 7).
+(`grant_failed`). An address of the wrong shape, a key under 32 characters or a key Secret Manager
+won't store never stops the deploy either: `ls_skip` says why in plain words, leaves the kit off
+this time (voice uses Google, then the browser) and the deploy goes on; the key is never echoed
+(R5.2 review, `311e621`; `tests/test_r52_review_deploy_kit.py`). A new key replaces the saved
+one the same way (`--local-speech`; Enter keeps it).
 
 ### 2.4 Service accounts
 
@@ -201,12 +207,18 @@ already serves something else (R5.2 review: the brain's scripts had taken the br
 `POST /v1/chat/completions` and `GET /v1/models`, bodies up to 2 MB
 (`deploy/local-brain/Caddyfile`).
 
-**One public port per program.** Funnel gives each program on the laptop its own https port. The
-speech kit uses 10000 (`src/jarvis/localspeech/protocol.py:FUNNEL_PORT`). The home bridge's set-up
-(`deploy/home/setup-windows.ps1`) and the laptop brain's start script
-(`deploy/local-brain/start-windows.ps1`) both take 8443, so on one laptop the brain's script
-replaces the bridge's door, and stopping the brain closes it. That clash is older than R5.2 and
-open (chapter 12, section 7).
+**One public port per program.** Funnel gives each program on the laptop its own https port, and
+it offers only three: the laptop brain 443 (`deploy/local-brain/start-windows.ps1`,
+`start-unix.sh`; R3's plan D3, and `src/jarvis/home/client.py` refuses 443 as the brain's), the
+home bridge 8443 (`deploy/home/setup-windows.ps1`, `src/jarvis/home/models.py:BRIDGE_PORT`) and the
+speech kit 10000 (`src/jarvis/localspeech/protocol.py:FUNNEL_PORT`). Each script reads Funnel's
+status first and refuses its port while it serves something else, before Caddy starts
+(`Test-FunnelTaken`; on Unix `tailscale funnel status`, where port 443's door has no `:port`); it
+closes only its own port, and the brain prints only its own door's address. Before the R5.2 review
+the brain's scripts also took 8443, so on one laptop the brain's start replaced the bridge's door
+and stopping it closed it (review finding 1, `7ed07a8`; `tests/test_r52_review_ports.py`). An
+offline brain set up before `v5.2.0` gets a new address (no `:8443`), pasted once into
+Integrations → Offline mode (`docs/plans/r5-2-integration/REVIEW.md`, section 4).
 
 ### 2.8 Telegram
 
@@ -298,10 +310,10 @@ real engines, Caddy, Tailscale Funnel and the PowerShell scripts have not run on
 |---|---|---|
 | The kit's server | Python 3.12 on Windows, Starlette and uvicorn on `127.0.0.1:11437` only, never published; no access log, no server header; kit version 1.0.0 on its own track | `src/jarvis/localspeech/__main__.py:serve`, `src/jarvis/localspeech/kitconfig.py:HOST`, `src/jarvis/localspeech/server.py` |
 | The gate | Caddy bound to `127.0.0.1:11436`. It passes exactly the kit's API (`GET /v1/health`, `GET /v1/jobs/job_…`, and the `POST` routes for listening, speaking, the session's clips and the wake word) and only with `Authorization: Bearer <key>`; a known address without the key gets 401, anything else 404, a body over 3 MB 413; with no key, or one under 32 characters, every request gets 503 | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/protocol.py:GATE_PORT` |
-| The public door | Tailscale Funnel publishes the gate on https port 10000 (`-HttpsPort 443` when 10000 already serves something else; the laptop brain keeps 8443). TLS ends on the laptop. The start script never takes a Funnel port that already serves something else, and closes only the port it opened | `deploy/local-speech/start-kit.ps1` (`Test-FunnelTaken`), `src/jarvis/localspeech/protocol.py:FUNNEL_PORT` |
+| The public door | Tailscale Funnel publishes the gate on https port 10000; `-HttpsPort 443` only when something else holds 10000 and the offline brain, whose port 443 is, isn't used on this laptop (the bridge keeps 8443). TLS ends on the laptop. The start script never takes a Funnel port that already serves something else (port 443 read as a door with no `:port`, the others by their exact suffix), and closes only the port it opened | `deploy/local-speech/start-kit.ps1` (`Test-FunnelTaken`), `deploy/local-speech/start-kit.sh`, `src/jarvis/localspeech/protocol.py:FUNNEL_PORT`, `tests/test_r52_review_ports.py` |
 | Installing it | `install-kit.ps1` installs Python 3.12 and Caddy only with the owner's typed Y, makes the kit's private folder (only his account can open it), its hash-pinned packages and the pinned Whisper files (about 2 GB, each file checked) | `deploy/local-speech/install-kit.ps1`, `deploy/local-speech/requirements-kit.txt`, `deploy/local-speech/models.json`, `deploy/local-speech/README.md` |
 | Starting it | `start-kit.ps1` makes the key on the first run (32 random bytes, 43 characters), starts the server, the gate and Funnel, and prints the address (`https://<laptop>.<tailnet>.ts.net:10000`) and the key to give JARVIS; `-SelfTest` prints a report the owner can paste, which never holds the key, a folder name, the Tailscale name or anything he said | `deploy/local-speech/start-kit.ps1`, `src/jarvis/localspeech/selftest.py` |
-| Giving JARVIS the address and key | `bash deploy/cloudrun.sh --local-speech` in Cloud Shell: the address must be the laptop's Tailscale https name with a Funnel port (443, 8443 or 10000) and no path; the key goes straight to the secret `jarvis-local-speech-key` (section 2.3) | `deploy/cloudrun.sh:local_speech_answer`, `ls_url_ok` |
+| Giving JARVIS the address and key | `bash deploy/cloudrun.sh --local-speech` in Cloud Shell: the address must be the laptop's Tailscale https name with a Funnel port (443, 8443 or 10000) and no path; the key goes straight to the secret `jarvis-local-speech-key` (section 2.3). A bad address, a short key or a failed secret write: a plain note, the kit left off this time, the deploy goes on | `deploy/cloudrun.sh:local_speech_answer`, `ls_url_ok`, `ls_skip`; `tests/test_r52_review_deploy_kit.py` |
 | The cloud reaching it | One kit client (`HttpKit`) for the console's voice, R18's calls, the voice session and the wake word: https only, R1's pinned transport (the name resolved again, every address public, the connection made to the address just checked), no redirects, at most 4 MB of a reply read; its health trusted 30 s, so no turn waits for an absent laptop | `src/jarvis/localspeech/client.py:cloud_kit`, `src/jarvis/voice/laptop.py:LaptopVoice`, `src/jarvis/api/r52_wiring.py:voice_service` |
 | The call desk reaching it | Over loopback: plain http to the gate on `127.0.0.1:11436`, under `/v1`, with the kit's key; nothing leaves the laptop | `src/jarvis/localspeech/protocol.py:LOOPBACK_BASE`, `src/jarvis/localspeech/client.py:loopback_kit`, `src/jarvis/localspeech/desk.py` |
 | Engines | Each in its own slot, loaded on demand so a 4 GB graphics card is enough (else the CPU). Kit 1.0.0 pins only faster-whisper small and medium (English listening, MIT). Kokoro and Piper (voices) and AI4Bharat's Indian-language engines are left out (ADR-41), so the kit has no voice and no Indian-language engine | `src/jarvis/localspeech/engines.py`, `deploy/local-speech/models.json` (`left_out`) |
@@ -311,7 +323,11 @@ real engines, Caddy, Tailscale Funnel and the PowerShell scripts have not run on
 **When the voice parts are wired.** `src/jarvis/api/r52_wiring.py:voice_service` builds the voice
 service with the kit and the voice profile in `app._wire_core`. With `voice_profile_enabled` off
 the `/v1/voice/profile` routes answer 503 and listening keeps its usual order; a part that fails
-to build leaves its routes at 501, logged by name.
+to build leaves its routes at 501, logged by name. Anything else a part raises behind those routes
+(the profile store down, a session document that can't be read) is logged by its class name only
+and answered 503 `unavailable` in plain words, never a bare 500 or the error's text
+(`src/jarvis/api/voice_profile_routes.py:_answer`, `_file`; R5.2 review, `8459218`;
+`tests/test_r52_review_routes.py`).
 
 ## 3. Trust boundaries
 
@@ -352,3 +368,4 @@ R18 left it; it is not wrong for R5.2, only incomplete, as before.
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the deploy now mounts each optional speech key when its secret is stored (`deploy/cloudrun.sh:speech_keys`, both deploy paths, a failed grant never fatal), so v6.5.0's "not mounted" and "how to add them unverified" no longer hold; how to add one is in the call desk README; up to 14 secrets; the go-live guide's step is left for the owner | 🛠 Mark XXV |
 | v6.5.2 | 27 Nov 2026, 22:20 IST | R5.2 | R5.2 review: Funnel's ports, one door each (the bridge 8443, the laptop brain 443, the speech kit 10000), and every start script refuses a taken port | 🛠 Mark XXV |
 | v6.6.0 | 27 Nov 2026, 22:04 IST | R5.2 | R5.2 "Your voice": the laptop speech kit in plain words; the kit and Hugging Face's Whisper downloads in the context table; no new package in the cloud image; the kit's two settings; up to 15 secrets, `jarvis-local-speech-key` asked by `cloudrun.sh --local-speech` (its stops on a bad address or short key flagged); 136 console modules; one Funnel port per program (the kit's 10000; the bridge and brain both on 8443, an older clash); the call desk's laptop speech reaches the kit over loopback; new section 2.14, the kit (server, gate, Funnel port 10000, install, start, the cloud's pinned client, the desk's loopback, engines, what it keeps); trust boundaries B13 and B14; Figure 15's laptop box names the speech kit (re-exported); Figure 16 unchanged, B13 and B14 in its table only | 🛠 Mark XXV |
+| v6.6.1 | 28 Nov 2026 | R5.2 | Brought in line with R5.2's combined review (`docs/plans/r5-2-integration/REVIEW.md`): one Funnel port per program as built (the brain 443, the bridge 8443, the kit 10000; every start script refuses a taken port; the brain's old clash on 8443 fixed, its new address); `cloudrun.sh`'s kit step warns and leaves the kit off instead of stopping the deploy; the profile routes answer 503 `unavailable`, never a bare 500; the speaker check's release folder ships with the package | 🛠 Mark XXV |

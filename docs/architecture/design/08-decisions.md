@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 20:40 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 08 · Architecture decisions (ADR log)
 
@@ -449,10 +449,12 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 - **Consequences:** The check, not the price, decides what is offered; the card's estimate and the
   call use the same option. Languages without FLEURS test clips (8 of the 22) can't be checked and
   are not offered. The first build ranked by list price after the free allowance, so paid Sarvam
-  could beat Google while Google was still free; the review fixed it.
+  could beat Google while Google was still free; the review fixed it, and the calls eval's
+  `free_first` suite now checks that choice, with ranking by list price as the control that must
+  fail (chapter 07, section 8.2).
 - **Code:** `src/jarvis/calls/cards.py:offered`, `Estimator.free_options`,
   `src/jarvis/calls/langcheck/runner.py:LanguageCheck`, `src/jarvis/calls/models.py:LANG_CHECK`,
-  `src/jarvis/calls/speech/catalogue.py`.
+  `src/jarvis/calls/speech/catalogue.py`; eval `evals/calls_language/suites.py:suite_free_first`.
 
 ### ADR-32 · A call's speech is metered in one place
 
@@ -578,11 +580,13 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   Telegram. A waiting card shows the number's last four digits only.
 - **Consequences:** Every call is one tap by the owner, and a template (laundry) only writes a
   draft. On Telegram he must open the console or the phone app to approve. Grants live in memory
-  (ADR-36). A waiting card's full arguments still sit in `approvals` in clear for up to 10 minutes
-  (chapter 05, residual risk 10).
+  (ADR-36). A waiting card's numbers are sealed in `approvals` under the `calls` key since the
+  combined review; its other arguments are in clear there for up to 10 minutes (chapter 05,
+  residual risks 10 and 11).
 - **Code:** `src/jarvis/calls/approvals.py:CallsService`, `GrantBook`,
   `src/jarvis/calls/tools.py:calls_tools`, `src/jarvis/core/guardrails.py:CONSOLE_ONLY_TOOLS`,
-  `src/jarvis/core/models.py:shown_arguments`, `src/jarvis/calls/join.py:PhoneCardDesk`.
+  `src/jarvis/core/models.py:shown_arguments`, `src/jarvis/calls/join.py:PhoneCardDesk`,
+  `src/jarvis/calls/pending.py:CallNumberSeal`.
 
 ### ADR-39 · The live call socket accepts a one-use ticket in token mode
 
@@ -605,10 +609,10 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 | F1 | A tree-wide check that only `jarvis.llm` imports an AI vendor SDK | ADR-02 was enforced by review only | Closed 27 Nov 2026: `tests/test_llm_sdk_boundary.py` |
 | F2 | Teach `scripts/arch_inventory.py` the two idioms it misses (a helper-named collection; a tuple assignment) | 5 collections are invisible to the coverage check | Open: needs the Build Book's `src/jarvis/buildbook/gen/facts_code.py:COLLECTION` changed with it (chapter 04, section 2; chapter 12, section 4) |
 | F3 | Extend `scripts/check_doc_versions.py` to `docs/architecture/design/` | This document's version lines were not checked in CI | Closed 27 Nov 2026: `FOLDERS` includes the folder; `tests/test_check_doc_versions.py` |
-| F4 | Keep outfit plans 90 days after their day (`src/jarvis/wardrobe/styling/plans.py`) | The code keeps 14 days; R13's plan and the owner's 27 Nov 2026 decision say 90 | Open: next app release (chapter 12, section 4) |
-| F5 | Keep a waiting call card's number out of the unsealed `approvals` collection, or seal it there (R18) | The call store seals every number; the gateway's waiting card keeps it in clear for up to 10 minutes | Open: for the R18 review or the next app release (chapter 12, section 6) |
-| F6 | A deploy step for the three speech keys (R18) | `deploy/cloudrun.sh` creates and mounts none, so a deployed JARVIS has Google's speech only | Open: needs a deploy-script change (chapter 12, section 6) |
-| F7 | Make the calls eval prove the choice a call really uses (R18) | Its `selection` suite tests the language check's own order, not `cards.offered` | Open: an eval change (chapter 12, section 6) |
+| F4 | Keep outfit plans 90 days after their day (`src/jarvis/wardrobe/styling/plans.py`) | The code kept 14 days; R13's plan and the owner's 27 Nov 2026 decision say 90 | Closed 27 Nov 2026 (R18 review, the owner's decision): `KEEP_DAYS` 90, `MAX_PLANS` 250, the calendar's cap split into `MAX_CAL_AHEAD` 20 and `MAX_CAL_PLANS` 100 (`src/jarvis/wardrobe/styling/calendar.py:_room`); commit `2041978`, `tests/test_r18_review_outfit_plans.py` |
+| F5 | Keep a waiting call card's number out of the unsealed `approvals` collection, or seal it there (R18) | The call store sealed every number; the gateway's waiting card kept it in clear for up to 10 minutes | Closed 27 Nov 2026 (R18 review, item 12): sealed there by `src/jarvis/calls/pending.py:CallNumberSeal` through `src/jarvis/storage/approvals.py:DocApprovalStore.use_seal`; commit `9e8b490`, `tests/test_r18_review_approval_seal.py` |
+| F6 | A deploy step for the three speech keys (R18) | `deploy/cloudrun.sh` created and mounted none, so a deployed JARVIS had Google's speech only | Closed 27 Nov 2026 (R18 review, item 23): `deploy/cloudrun.sh:speech_keys` mounts each stored key; commit `09bb44e` (its message repeats `9e8b490`'s by mistake: `docs/plans/r18-integration/REVIEW.md`, section 4), `tests/test_r18_review_deploy_speech.py`. The go-live guide's step is left for the owner |
+| F7 | Make the calls eval prove the choice a call really uses (R18) | Its `selection` suite tested the language check's own order, not `cards.offered` | Closed 27 Nov 2026 (R18 review, item 24): the `free_first` suite, `evals/calls_language/suites.py:suite_free_first`; commit `4c1f66b`, `tests/test_evals_calls_language.py` |
 
 ## 4. Proposed ADRs
 
@@ -624,3 +628,4 @@ Proposed; it becomes Accepted when the code does what it says, in the same pull 
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): chapter 12's proposals B–G recorded as ADR-25 to ADR-30 (25 Accepted as built, the rest Proposed; A was already ADR-01); ADR-07's date and source from GitHub's history, its reason and ADR-10's marked unverified; F1 and F3 closed, F2 left open with the reason | 🛠 Mark XXV |
 | v6.4.3 | 27 Nov 2026 | R6.4 | Follow-up F4 added: outfit plans kept 90 days, as the owner decided | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 20:40 IST | R18 | R18 "Calls from your laptop": ADR-27 accepted and rewritten as built; nine new ADRs, 31 to 39 (free speech first behind the language check, metering in one place, 8 kHz WAV recordings, English "not yet checked", the 1920 px dock rule, the one-instance call hub and the 1800 s timeout, the phone's doorbell and signed commands, the one-use grant and no Telegram approval, the live socket's ticket); ADR-07, ADR-25, ADR-28 and ADR-29 updated for R18; follow-ups F5–F7 | 🛠 Mark XXV |
+| v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: follow-ups F4 (outfit plans 90 days, commit `2041978`), F5 (the approvals seal, `9e8b490`), F6 (the deploy's speech keys, `09bb44e`) and F7 (the `free_first` eval, `4c1f66b`) closed; ADR-31 names the eval; ADR-38's consequences and code name the approvals seal | 🛠 Mark XXV |

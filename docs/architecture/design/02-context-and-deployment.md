@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 19:30 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 02 · System context and deployment
 
@@ -82,13 +82,14 @@ before R18; the calls add 8). R18 added no index and no indexing exemption to th
 
 ### 2.3 Secret Manager
 
-Up to 11 secrets, each readable by `jarvis-run` through its own grant (`deploy/cloudrun.sh` step
+Up to 14 secrets, each readable by `jarvis-run` through its own grant (`deploy/cloudrun.sh` step
 5): `jarvis-google-client-secret`, `jarvis-anthropic-key`, `jarvis-gemini-key`,
 `jarvis-openai-compat-key`, `jarvis-session-secret`, `jarvis-api-token`, `jarvis-token-key` (the
 root of the keyring, 32 random bytes made once), `jarvis-tavily-key`, `jarvis-google-api-key`,
-`jarvis-telegram-bot-token`, `jarvis-telegram-webhook-secret`. The optional ones (web search, Maps
-and YouTube, Telegram) are left unmounted if their grant fails; every other grant failing stops the
-deploy (`grant_failed`). Secrets reach the process as environment variables and are held as
+`jarvis-telegram-bot-token`, `jarvis-telegram-webhook-secret`, and from R18's review the three
+optional speech keys below. The optional ones (web search, Maps and YouTube, Telegram, the speech
+keys) are left unmounted if their grant fails; every other grant failing stops the deploy
+(`grant_failed`). Secrets reach the process as environment variables and are held as
 `SecretStr` in `src/jarvis/config.py` (11 fields, one per secret: `api_token`,
 `google_client_secret`, `session_secret`, `anthropic_api_key`, `gemini_api_key`,
 `openai_compat_api_key`, `token_key`, `tavily_api_key`, `telegram_bot_token`,
@@ -97,10 +98,19 @@ deploy (`grant_failed`). Secrets reach the process as environment variables and 
 **R18's speech keys.** `src/jarvis/config_calls.py:CallsConfig` (a base class of `Settings`) adds
 three optional `SecretStr` fields, 14 in all: `azure_speech_key` (Azure's free tier F0),
 `sarvam_api_key` (paid; also needs `sarvam_enabled`) and `bhashini_api_key` (with
-`bhashini_user_id`). Without a key that option is simply not offered. `deploy/cloudrun.sh` creates
-no secret for them and mounts none, so a deploy by the script gives calls Google's speech only.
-*Unverified:* how the owner is meant to add one of these keys on Cloud Run; no deploy file or plan
-says (chapter 12, section 6).
+`bhashini_user_id`). Without a key that option is simply not offered. Since the combined review
+(`docs/plans/r18-integration/REVIEW.md`, item 23) `deploy/cloudrun.sh:speech_keys` mounts each
+one from Secret Manager only when its secret exists (`jarvis-azure-speech-key`,
+`jarvis-sarvam-key`, `jarvis-bhashini-key`), on both deploy paths. It asks no question and creates
+no secret, and no key value is in the repository: the owner stores a key from Cloud Shell and runs
+the script again (`deploy/calldesk/README.txt`, "On the server"). A failed grant leaves that key
+out and never stops the deploy (`speech_unmount`); a quick re-run unmounts a key whose secret is
+gone. With none stored, calls use Google's speech only. The three plain settings
+(`JARVIS_AZURE_SPEECH_REGION`, `JARVIS_SARVAM_ENABLED`, `JARVIS_BHASHINI_USER_ID`) are set on the
+service by hand, and a `--reconfigure` run clears them (the same README). Tests:
+`tests/test_r18_review_deploy_speech.py`. The go-live guide, a project document outside this
+repository, does not have this step yet, by the review's report (REVIEW.md, section 4;
+*unverified* here, since the guide is not in the repository).
 
 ### 2.4 Service accounts
 
@@ -266,3 +276,4 @@ its label is what the receiving side checks. Redrawn for R18 with the call desk'
 | v6.4.1 | 27 Nov 2026, 14:50 IST | R6.4 | First edition: system context, Cloud Run settings and what they imply, Firestore, Secret Manager, service accounts, the two Scheduler jobs, the console and phone app, the home kit, Telegram, the Google APIs, CI/CD, backups, environments, nine trust boundaries; Figures 15 and 16 | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11, named; step 3's Maps and YouTube APIs added; `render.yaml`'s status and the date of the move to Cloud Run from GitHub's history, the reason marked unverified; the concurrency default marked unverified in plain words | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 19:30 IST | R18 | R18 "Calls from your laptop": the calls' actors in the context table; `--timeout 1800`; the image carries the call desk kit and NumPy; 139 collections; the three speech keys (not mounted by the deploy, how to add them unverified); the phone app's calls (version 18.0.0, the door's fifth route, signed commands, CI's two new controls); when calls are wired; new section 2.13, the call desk, VB-CABLE and Phone Link; trust boundaries B1 and B2 widened, B10–B12 added; Figures 15 and 16 redrawn for R18 (the call desk, the speech services); the capacity pointer fixed to chapter 06, section 5 | 🛠 Mark XXV |
+| v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the deploy now mounts each optional speech key when its secret is stored (`deploy/cloudrun.sh:speech_keys`, both deploy paths, a failed grant never fatal), so v6.5.0's "not mounted" and "how to add them unverified" no longer hold; how to add one is in the call desk README; up to 14 secrets; the go-live guide's step is left for the owner | 🛠 Mark XXV |

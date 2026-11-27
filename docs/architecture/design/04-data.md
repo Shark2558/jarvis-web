@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 19:50 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 04 · Data architecture
 
@@ -63,7 +63,7 @@ morning sweeps delete what expires, because Firestore TTL policies are billed an
 | Area | Collections | What they hold | Sealed | Kept |
 |---|---|---|---|---|
 | Conversations | `sessions` (turns under each), `meta` | Conversations; the audit head; a health ping | No | Until deleted |
-| Approvals and audit | `approvals`, `audit` | Waiting cards (10-minute expiry); the hash-chained audit (tool, risk, outcome, arguments' hash, short detail; never the arguments) | No | Until decided; audit always (append-only) |
+| Approvals and audit | `approvals`, `audit` | Waiting cards (10-minute expiry); the hash-chained audit (tool, risk, outcome, arguments' hash, short detail; never the arguments) | No; from R18's review a waiting call card's number to call and a booking's number to give: `calls` (`src/jarvis/calls/pending.py:CallNumberSeal`) | Until decided; audit always (append-only) |
 | Long-term memory | `memory`, `memory_shards` | Profile blocks and facts about the owner | No | Until deleted |
 | Notes | `kb`, `kb_shards`, `kb_fetch` | Notes, memo transcripts, saved links | `notes` | Until deleted |
 | Things | `belongings`, `belongings_history` | Where things are kept | `belongings` | Until deleted |
@@ -85,7 +85,7 @@ morning sweeps delete what expires, because Firestore TTL policies are billed an
 | Helpers (R11) | `helpers_nudge`, `helpers_gate`, `helpers_clock`, `bills`, `bills_told`, `birthdays_told`, `chores`, `maintenance`, `house_told`, `outside`, `nudges`, `wellbeing`, `kitchen`, `spend`, `spend_scan` | Nudge caps and send log; bills (never a card number); reminder claims (hashes only); chores and upkeep; the owner's place and warnings; wellbeing log; pantry and recipes; grocery spend | `bills`, `alerts_place` (`outside`), `wellbeing`, `kitchen`, `spend` | Claims 30–400 days; spend 13 months |
 | Followed plans | `series`, `series_told` | Plans with calendar event ids and session states; check-in claims | No | Claims 60 days |
 | Phone, watch, SOS, vision (R7) | `phone_link`, `phone_devices`, `watch_days`, `watch_state`, `sos`, `sos_join`, `sos_log`, `vision_results` | A link code's hash; linked phones' public keys; steps, heart rate, sleep; emergency contacts; SOS log without coordinates; kept camera results (never a frame) | `watch` (days), `sos` (contacts), `vision` | Code 10 minutes; watch and SOS log 400 days; vision 90 days |
-| Wardrobe (R13) | `wardrobe`, `wardrobe_log`, `wardrobe_photo`, `wardrobe_fp`, `wardrobe_restore`, `wardrobe_laundry`, `wardrobe_review`, `wardrobe_told`, `wardrobe_plans`, `wardrobe_cal`, `wardrobe_outlook` | The sealed index; each piece's append-only events; cleaned 512-px photos; fingerprints; laundry loads; review entries; outfit plans; the last calendar read (never a title); the weather outlook | `wardrobe`, `wardrobe_photos` | Closed loads 90 days; plans 14 days after their day, at most 60 (`src/jarvis/wardrobe/styling/plans.py:BACK_DAYS`, `MAX_PLANS`). The owner decided on 27 Nov 2026 that plans are kept 90 days after their day, as R13 planned; the code changes in the next app release (chapter 12, section 4) |
+| Wardrobe (R13) | `wardrobe`, `wardrobe_log`, `wardrobe_photo`, `wardrobe_fp`, `wardrobe_restore`, `wardrobe_laundry`, `wardrobe_review`, `wardrobe_told`, `wardrobe_plans`, `wardrobe_cal`, `wardrobe_outlook` | The sealed index; each piece's append-only events; cleaned 512-px photos; fingerprints; laundry loads; review entries; outfit plans; the last calendar read (never a title); the weather outlook | `wardrobe`, `wardrobe_photos` | Closed loads 90 days; plans 90 days after their day (`src/jarvis/wardrobe/styling/plans.py:KEEP_DAYS`, `StylingDoc.pruned`), at most 250 (`MAX_PLANS`), of which at most 100 made by the calendar (`MAX_CAL_PLANS`) and 20 of those from today on (`MAX_CAL_AHEAD`); a new plan's day is 14 days back to 30 ahead (`BACK_DAYS`, `AHEAD_DAYS`). The owner decided this on 27 Nov 2026, as R13 planned; the code has matched since R18's review (commit `2041978`; chapter 12, section 4) |
 | Try-on (R13.1) | `tryon`, `tryon_person`, `tryon_consent`, `tryon_picture`, `tryon_garment`, `tryon_spend` | Measurements and figure; the owner's one photo; his YES; Google's pictures; garment photos; the month's try-on ₹ | `tryon`, `tryon_photos` | Pictures 30 days unless kept; spend 13 months |
 | Build Book (R6) | `book` (and chunks), `book_lease`, `book_lock`, `book_sessions`, `book_settings`, `book_tickets`, `book_notices`, `book_closed` | Sealed releases' books, the sealer's lease, the guest lock, sessions, tickets, content-free notices | `book_index`, `book_session`; tickets hashed | Books until removed (60 MB cap); sessions 45 minutes |
 | Old Book writer trial (R6.3, no longer written) | `book_writer`, `book_write_lease`, `book_write_spend`, `book_drafts`, `book_trial`, `book_pages` | The removed runtime writer's records | `book_index` for the pages index | Until the owner deletes them (Privacy row "Book writer (old trial)") |
@@ -112,7 +112,8 @@ The 27 cipher purposes: `vault`, `vault_index`, `notes`, `belongings`, `tickets`
 `home_feed`, `faces`, `webpush`, `notify`, `connectors`, `book_index`, `book_session`, `bills`,
 `spend`, `wellbeing`, `alerts_place`, `kitchen`, `watch`, `sos`, `vision`, `backup_probe`,
 `wardrobe`, `wardrobe_photos`, `tryon`, `tryon_photos`, `calls` (R18: the other person's number,
-its keyed reference and the call desk's seed). The phone's call commands are signed with a P-256
+its keyed reference, the call desk's seed and, since the review, a waiting call card's numbers in
+`approvals`). The phone's call commands are signed with a P-256
 key made at each start and kept in memory, so R18 added no secret purpose
 (`docs/plans/r18-integration/I1-NOTES.md`, decision 7).
 
@@ -134,14 +135,25 @@ to one item and file, valid 60 seconds and removed when taken (at most 3 live gr
 tickets).
 
 **Not sealed by JARVIS** (Google's encryption only): conversations, long-term memory facts,
-attachment text, briefs, the audit, approvals, permissions and the cost counters. Anyone who can
-open the Cloud project can read them (the guide, section 10). From R18 also: a call card's
-purpose, its lines, the contact's name and a booking's name and number to give; a call record's
-times, languages and ₹; the call settings (the owner's first name among them); the language
-check's results. One more found while writing this edition: a waiting `calls_place` approval
-card holds the call's arguments, the other person's full number included, in `approvals` until it
-is decided or tidied after its 10 minutes (`src/jarvis/storage/approvals.py:DocApprovalStore.put`;
-the console shows it masked, chapter 05, section 8). Chapter 12, section 6 lists both.
+attachment text, briefs, the audit, approvals (apart from a waiting call card's numbers, below),
+permissions and the cost counters. Anyone who can open the Cloud project can read them (the
+guide, section 10). From R18 also: a call card's purpose, its lines, the contact's name and a
+booking's name and number to give; a call record's times, languages and ₹; the call settings (the
+owner's first name among them); the language check's results. Chapter 12, section 6 lists them
+(G12).
+
+**A waiting call card in `approvals`** (R18). The gateway keeps a waiting `calls_place` card's
+arguments, which are what runs on approval, in `approvals` until it is decided or tidied after its
+10 minutes. This edition first found the other person's full number in clear there; the combined
+review now seals it (`docs/plans/r18-integration/REVIEW.md`, item 12). The store takes a seal
+(`src/jarvis/storage/approvals.py:DocApprovalStore.use_seal`, an `ArgumentSeal`): sealed on the
+way in, opened on the way out, and a card that does not open is unreadable, never a guess.
+`src/jarvis/calls/pending.py:CallNumberSeal` seals the number to call and a booking's number to
+give under the `calls` key, bound to the approval id and the field, so a sealed number moved to
+another card or field does not open; `src/jarvis/api/r18_wiring.py:finish_r18` puts it on the
+gateway's store (`seal_pending_calls`). The card's other arguments (purpose, lines, the contact's
+name, a booking's name) stay in clear for those 10 minutes; the console shows the numbers masked
+(chapter 05, section 8). Test: `tests/test_r18_review_approval_seal.py`.
 
 ## 4. Retention and deletion
 
@@ -224,3 +236,4 @@ reasoning under India's data law is in chapter 05, section 8.
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the five collections the inventory misses named with their lines; why fixing the inventory needs an app-code change too; the seven sub-collections added; outfit plans are kept 14 days after their day, not 90 | 🛠 Mark XXV |
 | v6.4.3 | 27 Nov 2026 | R6.4 | Outfit plans: the owner's decision (90 days after their day) recorded; the code change is pending | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 19:50 IST | R18 | R18 "Calls from your laptop": the calls' data in plain words; where it lives (the desk's folder, the server's memory, the phone app); 134 + 5 = 139 collections with the Calls row (what is sealed, what is not, how long each is kept); 13 sub-collections; the `calls` key (27 cipher purposes) and how a call's records are sealed (8 kHz WAV, 16 MiB cap); what is not sealed, a waiting call card's number in `approvals` among it; 30-day retention, deletion on objection and the four Privacy rows; who hears a call; backups and the drill; two more things that stay on the laptop | 🛠 Mark XXV |
+| v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: a waiting call card's numbers are sealed in `approvals` (`src/jarvis/calls/pending.py:CallNumberSeal`), in the collections table, the `calls` purpose and a new paragraph, its other arguments still in clear; the Wardrobe row as built: plans kept 90 days after their day, at most 250, the calendar's cap 20 ahead and 100 kept | 🛠 Mark XXV |

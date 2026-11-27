@@ -19,6 +19,9 @@
 // and a clip of up to 2.5 s goes to the cloud engine and then to the local router; anything that is not
 // a command or an address ("Jarvis ...") is dropped unread and his volume returns.
 // Privacy: the clip's words are never shown, logged or stored unless they are a command.
+// R5.2 row 84: with the owner's voice print active on this device (console-voiceprint.js), a voice that opens the
+// gate lowers his volume and a check clip is judged on this device first: in "speech" mode only the owner's voice
+// stops him; in "name" mode another voice is dropped unsent. Without a print (or if the check fails) nothing changes.
 (() => {
   'use strict';
   const BARGE = Object.freeze({
@@ -47,6 +50,7 @@
   });
   const HEADSET = /head(set|phone)|ear(phone|bud|pod)|buds|airpods|hands-?free/i;
   const A = () => window.JarvisAudio, V = () => window.JarvisVoice;
+  const printOn = () => { try { const p = window.JarvisVoicePrint; return !!(p && p.active()); } catch (_) { return false; } };
 
   // ---- the pure gate ------------------------------------------------------------------------------
   const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
@@ -191,7 +195,7 @@
     const { pol, kd, Au } = p, speaker = V().speaker;
     const gate = createGate(kd, recall(kd));
     const s = { off: false, ring: [], clip: null, clips: 0, empties: 0, lastClip: 0, ducked: false, duckTimer: 0, hot: 0, loudAt: 0,
-      began: false, t0: performance.now(), ctrl: new AbortController() };
+      began: false, t0: performance.now(), ctrl: new AbortController(), check: printOn() ? pol : null };
     const sampler = setInterval(() => sample(s, gate, speaker, o), BARGE.OUT_MS);
     const unduck = () => { clearTimeout(s.duckTimer); if (s.ducked) { s.ducked = false; try { speaker.duck(false); } catch (_) {} } };
     function disarm() {
@@ -218,7 +222,7 @@
       if (!g.open) { if (!g.run) s.hot = 0; else if (!s.hot) s.hot = t - g.run * BARGE.FRAME_MS; return; }
       if (!s.hot) s.hot = t - g.run * BARGE.FRAME_MS;
       const ms = Math.round(t - s.hot);
-      if (pol === 'speech') { interrupt({ how: 'speech', ms, frames: s.ring.slice(-Math.min(s.ring.length, g.run + BARGE.SEED_BEFORE)), peak: g.peak }); return; }
+      if (pol === 'speech' && !s.check) { interrupt({ how: 'speech', ms, frames: s.ring.slice(-Math.min(s.ring.length, g.run + BARGE.SEED_BEFORE)), peak: g.peak }); return; }
       clips.start(t, g);
     }
     return { disarm, gate: () => gate, recentLoud: (ms) => performance.now() - s.loudAt <= ms };
@@ -235,7 +239,7 @@
     const seed = (n) => s.ring.slice(-Math.min(s.ring.length, n));
     function start(t, g) {
       // clips only inside a conversation the owner started (D18), at most 3 a reply / 20 a conversation / 12 an hour (SM5)
-      if (o.clips !== true || !clipAllowed(s.clips) || s.empties >= BARGE.MAX_EMPTY || t - s.lastClip < BARGE.CLIP_GAP_MS) { gate.reset(); return; }
+      if ((s.check !== 'speech' && (o.clips !== true || !clipAllowed(s.clips))) || s.empties >= BARGE.MAX_EMPTY || t - s.lastClip < BARGE.CLIP_GAP_MS) { gate.reset(); return; }
       s.lastClip = t;
       s.ducked = true; try { speaker.duck(true); } catch (_) { s.ducked = false; }
       clearTimeout(s.duckTimer);
@@ -246,7 +250,7 @@
       const c = s.clip, loud = window.JarvisVad.rms(frame) > BARGE.MIN_RMS;
       c.frames.push(frame);
       if (loud) { c.speech++; c.quiet = 0; } else c.quiet++;
-      const done = c.frames.length * BARGE.FRAME_MS >= BARGE.CLIP_MS || (c.speech >= BARGE.CLIP_MIN_FRAMES && c.quiet >= BARGE.CLIP_QUIET_FRAMES);
+      const done = c.frames.length * BARGE.FRAME_MS >= (s.check === 'speech' ? window.JarvisVoicePrint.CHECK_MS : BARGE.CLIP_MS) || (c.speech >= BARGE.CLIP_MIN_FRAMES && c.quiet >= BARGE.CLIP_QUIET_FRAMES);
       if (done) { s.clip = null; gate.reset(); judge(c); }
     }
     return { start, collect };
@@ -254,6 +258,12 @@
   /** The clip goes to the cloud engine and then to the local router; its words are dropped unless they are a command. */
   function makeJudge(o, s, gate, kd, Au, unduck, interrupt) {
     return async function judge(c) {
+      if (s.check) {                                                 // whose voice? judged here, nothing is sent
+        const who = await heardBy(c.frames);
+        if (s.off || Au.locked()) return;
+        if (who === 'other' || (who === 'short' && s.check === 'speech')) { s.empties++; unduck(); return; }
+        if (s.check === 'speech') { interrupt({ how: 'speech', ms: Math.round(performance.now() - (s.hot || c.started)), frames: c.frames, peak: c.peak }); return; }
+      }
       s.clips++; countClip();                                        // counted when the request is SENT
       let text = '';
       try {
@@ -273,6 +283,8 @@
       s.empties++; unduck();                                          // not for JARVIS: the words are dropped here
     };
   }
+  /** R5.2 row 84: 'owner' | 'other' | 'short' | 'skip' for a clip; 'skip' (no print, a failure) is today's behaviour. */
+  async function heardBy(frames) { try { const p = window.JarvisVoicePrint; return p ? await p.verify(frames) : 'skip'; } catch (_) { return 'skip'; } }
   /** Only the part after "Jarvis" becomes the next turn (the name itself is not part of the question). */
   function afterName(C, text) {
     const w = String(text).trim().split(/\s+/);

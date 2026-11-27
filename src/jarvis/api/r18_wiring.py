@@ -103,7 +103,8 @@ from jarvis.vault.crypto import VaultCrypto
 log = get_logger(__name__)
 
 SPEECH_TIMEOUT_S = 30.0
-NO_KEY = "R18 calls are not wired: they need JARVIS_TOKEN_KEY (numbers and records are sealed)."
+# the other features' words (`personal`, `home_wiring`); the one JARVIS_TOKEN_KEY warning: app.py
+NO_KEY = "No encryption key on this server: phone calls are OFF (numbers and records are sealed)"
 
 
 @dataclass

@@ -373,13 +373,22 @@ def _bridge_extra() -> set[str]:
     return _names(list(project["optional-dependencies"]["homebridge"]))
 
 
+def _calldesk_requirements() -> set[str]:
+    """R18: the call desk runs on the owner's Windows laptop from its own hash-pinned list
+    (deploy/calldesk/requirements-calldesk.txt), never the cloud image's dependencies."""
+    text = (ROOT / "deploy" / "calldesk" / "requirements-calldesk.txt").read_text()
+    return _names(re.findall(r"^([A-Za-z0-9_.-]+==[^\s\\]+)", text, re.M))
+
+
 def test_every_third_party_top_level_import_in_src_is_in_pyproject() -> None:
     declared = _declared()
     bridge = declared | _bridge_extra()
+    desk = declared | _calldesk_requirements()
     stdlib = set(sys.stdlib_module_names)
     missing: dict[str, str] = {}
     for path in (ROOT / "src").rglob("*.py"):
         allowed = bridge if "homebridge" in path.parts else declared
+        allowed = desk if "calldesk" in path.parts else allowed
         for node in ast.walk(ast.parse(path.read_text())):
             mods: list[str] = []
             if isinstance(node, ast.Import):

@@ -3,14 +3,14 @@ page: pg_service_google_drive
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/api/app.py": "2f8821679b892d33"
+  "src/jarvis/api/app.py": "a739af3f1d029daa"
   "src/jarvis/api/drive.py": "aab977fe9441f939"
   "src/jarvis/api/feature_wiring.py": "473760847cb35d03"
   "src/jarvis/api/integrations.py": "849076061558773f"
-  "src/jarvis/api/personal.py": "8874aeec850037d6"
+  "src/jarvis/api/personal.py": "4613f76e7db113c9"
   "src/jarvis/api/startup_log.py": "4ba9e18096e253e1"
   "src/jarvis/api/vault_inbox.py": "26546b663f03b975"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/drive/client.py": "766e2385d779a833"
   "src/jarvis/drive/guard.py": "89a1025585b08521"
   "src/jarvis/drive/kinds.py": "64732723fb4aeeed"

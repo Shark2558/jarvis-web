@@ -3,11 +3,11 @@ page: pg_service_anthropic
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/llm/brains.py": "a1fa670cdd1f62ae"
   "src/jarvis/llm/factory.py": "bc538ec75083020d"
   "src/jarvis/llm/router.py": "c72db7b28cbba849"
-  "src/jarvis/vitals/own.py": "cd127fbc1ca087c6"
+  "src/jarvis/vitals/own.py": "9f8aef630fa0d168"
 ---
 ## In plain words
 Anthropic makes Claude, JARVIS's main brain. Claude reads your message, writes the reply and decides when a tool is needed, such as your calendar, your e-mail or a web search. It does the small background jobs too: picking out facts to remember, the morning brief's optional summary and the checks in people research. What goes to Anthropic for a reply: the recent conversation, the memory facts that match it and the results of the tools used in that turn. JARVIS treats Claude as a brain that does not learn from your words, which is why it may be given tools and personal data while a brain that may learn from prompts never is (`src/jarvis/llm/brains.py:BrainSpec`). Claude is a paid service.

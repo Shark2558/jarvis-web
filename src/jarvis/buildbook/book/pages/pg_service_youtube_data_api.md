@@ -3,7 +3,7 @@ page: pg_service_youtube_data_api
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/integrations/google_key.py": "5bb317b3fa34a038"
 ---
 ## In plain words

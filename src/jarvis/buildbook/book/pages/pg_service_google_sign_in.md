@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/auth.py": "02a9e121c2585fd8"
   "src/jarvis/api/scheduler_auth.py": "346bb43278c2d8f2"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/integrations/google.py": "5e687c47689b959b"
 ---
 ## In plain words

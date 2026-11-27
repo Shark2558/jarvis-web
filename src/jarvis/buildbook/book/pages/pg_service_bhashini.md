@@ -6,7 +6,7 @@ sources:
   "src/jarvis/calls/prices.py": "09530bc93cd5d9f2"
   "src/jarvis/calls/speech/bhashini.py": "32a72dec885b81c5"
   "src/jarvis/calls/speech/build.py": "f03b52cba95aad09"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
 ---
 ## In plain words
 Bhashini is the Government of India's language platform, run by the ministry for electronics and IT. JARVIS can use it on phone calls to hear the other person and to speak JARVIS's side in Indian languages, and it lists more of them than any other cloud option JARVIS has (`src/jarvis/calls/speech/build.py:build_speech`). It is optional and off until you set both your Bhashini user id, `bhashini_user_id`, and its key, `bhashini_api_key`. Bhashini publishes no price for this use, so JARVIS treats its price as unknown, never as free (`src/jarvis/calls/prices.py:PriceUnknown`). What goes to Bhashini: your user id and key, with the task and the language, when JARVIS asks where to send a request; then each short clip of the other person's voice, or the text of a line JARVIS says, with its language.

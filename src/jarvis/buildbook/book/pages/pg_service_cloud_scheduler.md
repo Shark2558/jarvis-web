@@ -3,8 +3,8 @@ page: pg_service_cloud_scheduler
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/api/app.py": "2f8821679b892d33"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/api/app.py": "a739af3f1d029daa"
+  "src/jarvis/config.py": "965b3658da16361e"
 ---
 ## In plain words
 Cloud Scheduler is Google's alarm clock for internet services. JARVIS's server sleeps when nobody is using it, so something has to wake it on time. Google's clock calls JARVIS at fixed times: through the morning, to make your brief when it is due and to run the daily jobs, and every few minutes all day, to watch your home laptop and run the helpers' reminders and alerts. Each call proves it really comes from Google's clock with a signed token. Nothing of yours goes to Cloud Scheduler: it only knows JARVIS's address and when to call.

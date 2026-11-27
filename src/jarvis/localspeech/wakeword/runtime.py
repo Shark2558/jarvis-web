@@ -18,11 +18,17 @@ from typing import Any, Final
 
 import numpy as np
 
-from jarvis.localspeech.wakeword.formats import CURRENT_MODEL, EMBEDDING_MODEL, MEL_MODEL
+from jarvis.localspeech.wakeword.formats import (
+    CONSOLE_MODELS_DIR,
+    CURRENT_MODEL,
+    EMBEDDING_MODEL,
+    MEL_MODEL,
+    console_pins,
+)
 from jarvis.localspeech.wakeword.port import WakewordFailed
 from jarvis.localspeech.wakeword.streaming import F32, FeatureModels, Runner
 
-CONSOLE_MODELS: Final = Path(__file__).resolve().parents[2] / "api" / "static" / "wakeword"
+CONSOLE_MODELS: Final = CONSOLE_MODELS_DIR
 NO_RUNTIME = "The kit's ONNX runtime is not installed (onnxruntime); reinstall the kit."
 CHANGED = "One of the wake-word models on this laptop differs from the pinned file; reinstall."
 
@@ -35,16 +41,6 @@ class ConsoleModels:
     @property
     def feature_shas(self) -> dict[str, str]:
         return {n: self.shas[n] for n in (MEL_MODEL, EMBEDDING_MODEL)}
-
-
-def pinned(folder: Path) -> dict[str, str]:
-    """`sha256 <hex> <bytes> <name> ...` lines of MANIFEST.txt -> {name: hex}."""
-    pins: dict[str, str] = {}
-    for line in (folder / "MANIFEST.txt").read_text(encoding="utf-8").splitlines():
-        parts = line.split()
-        if len(parts) >= 4 and parts[0] == "sha256":
-            pins[parts[3]] = parts[1]
-    return pins
 
 
 def verified(folder: Path, name: str, pins: dict[str, str]) -> bytes:
@@ -72,7 +68,7 @@ def onnx_runner(data: bytes) -> Runner:
 
 def open_console_models(folder: Path = CONSOLE_MODELS) -> ConsoleModels:
     try:
-        pins = pinned(folder)
+        pins = console_pins(folder)
         mel, emb, wake = (
             verified(folder, n, pins) for n in (MEL_MODEL, EMBEDDING_MODEL, CURRENT_MODEL)
         )
@@ -83,4 +79,4 @@ def open_console_models(folder: Path = CONSOLE_MODELS) -> ConsoleModels:
     return ConsoleModels(features=features, shas=shas)
 
 
-__all__ = ["CONSOLE_MODELS", "ConsoleModels", "onnx_runner", "open_console_models", "pinned"]
+__all__ = ["CONSOLE_MODELS", "ConsoleModels", "onnx_runner", "open_console_models", "verified"]

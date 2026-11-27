@@ -24,7 +24,7 @@ from jarvis.localspeech.protocol import (
     WakeTrainIn,
 )
 from jarvis.localspeech.wakeword import RUNTIME_MODULES, WakewordKit, build_wakeword
-from jarvis.localspeech.wakeword.formats import sha256_hex
+from jarvis.localspeech.wakeword.formats import console_pins, sha256_hex
 from jarvis.localspeech.wakeword.port import WakeClip, WakewordFailed
 from jarvis.localspeech.wakeword.service import BUSY, FAILED, WakewordService
 from jarvis.localspeech.wakeword.store import ArtifactStore
@@ -229,7 +229,7 @@ def test_a_record_for_the_other_artifact_is_refused(tmp_path: Path) -> None:
 def test_the_kit_reads_the_consoles_files_only_by_their_pinned_hashes() -> None:
     runtime = pytest.importorskip("jarvis.localspeech.wakeword.runtime")
     folder = runtime.CONSOLE_MODELS
-    pins = runtime.pinned(folder)
+    pins = console_pins(folder)
     for name in ("melspectrogram.onnx", "embedding_model.onnx", "hey_jarvis_v0.1.onnx"):
         assert sha256_hex(runtime.verified(folder, name, pins)) == pins[name]
     with pytest.raises(WakewordFailed, match="differs from the pinned file"):

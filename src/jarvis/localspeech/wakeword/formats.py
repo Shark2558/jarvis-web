@@ -20,9 +20,9 @@ use only, so stage 2 is required before any launch. The two feature models every
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Final, Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -59,8 +59,22 @@ LAUNCH_WORDS: Final = (
     "4.0). Your own model must replace it before any launch, and the two feature models it "
     "reads, recorded under the same licence, need a permissive source too."
 )
+FEATURES_PERMISSIVE: Final = False  # the feature models' recorded licence is CC BY-NC-SA 4.0
 EVALS_MAX: Final = 12
 WORDS_MAX: Final = 200
+# The console's vendored models, in the installed package: the kit reads them (never downloads
+# them), the cloud reads only their pinned hashes from MANIFEST.txt.
+CONSOLE_MODELS_DIR: Final = Path(__file__).resolve().parents[2] / "api" / "static" / "wakeword"
+
+
+def console_pins(folder: Path = CONSOLE_MODELS_DIR) -> dict[str, str]:
+    """`sha256 <hex> <bytes> <name> ...` lines of the console's MANIFEST.txt -> {name: hex}."""
+    pins: dict[str, str] = {}
+    for line in (folder / "MANIFEST.txt").read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[0] == "sha256":
+            pins[parts[3]] = parts[1]
+    return pins
 
 
 class _Frozen(BaseModel):
@@ -200,17 +214,15 @@ def compact_evals(values: dict[str, float]) -> dict[str, float]:
     return dict(list(kept.items())[:EVALS_MAX])
 
 
-def dumps(obj: object) -> bytes:
-    return json.dumps(obj, separators=(",", ":"), sort_keys=True).encode("utf-8")
-
-
 __all__ = [
+    "CONSOLE_MODELS_DIR",
     "COOLDOWN_FRAMES",
     "CURRENT_LICENCE",
     "CURRENT_MODEL",
     "DIM",
     "EMBEDDING_MODEL",
     "FEATURES",
+    "FEATURES_PERMISSIVE",
     "FRAMES",
     "FRAME_SAMPLES",
     "LAUNCH_WORDS",
@@ -228,6 +240,7 @@ __all__ = [
     "ModelCard",
     "VerifierFile",
     "compact_evals",
+    "console_pins",
     "manifest_sha256",
     "sha256_hex",
     "sigmoid",

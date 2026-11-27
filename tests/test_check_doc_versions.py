@@ -1,9 +1,13 @@
 # tests/test_check_doc_versions.py -- R6.1 D4 (acceptance check 3): every docs/plans/*.md and
 # docs/architecture/*.md opens with its version line and ends with its change log
 # (scripts/check_doc_versions.py, run once by CI's docs-check job; no deploy waits for it).
+# The Architecture Design Document is kept privately on the owner's Drive: its chapters are
+# checked from a fixture folder in tmp_path here, and the private copy only where JARVIS_ADD_DIR
+# names it.
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -37,6 +41,13 @@ def _load() -> ModuleType:
 
 
 cdv = _load()
+PRIVATE_ADD = cdv.add_folder()  # read before the fixture below hides the variable
+
+
+@pytest.fixture(autouse=True)
+def _no_private_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every case names its own ADD folder: the owner's private copy never leaks in."""
+    monkeypatch.delenv(cdv.ADD_ENV, raising=False)
 
 
 def doc(tmp: Path, rel: str, text: str) -> Path:
@@ -166,21 +177,65 @@ def test_every_plan_and_architecture_doc_is_checked(tmp_path: Path) -> None:
     assert all(len(v) == 2 for v in found.values())  # both the line and the log are missing
 
 
+def _add(tmp: Path) -> tuple[Path, Path]:
+    """(a repository with one good plan, a fixture ADD folder outside it)."""
+    root, add = tmp / "repo", tmp / "add"
+    doc(root, "docs/plans/good.md", GOOD)
+    doc(add, "00-README.md", GOOD)
+    doc(add, "13-verification.md", "# No version\n")
+    doc(add, "notes/scratch.md", "# not checked: below the ADD's folder\n")
+    return root, add
+
+
 def test_the_design_documents_chapters_are_checked_too(tmp_path: Path) -> None:
-    """The ADD (docs/architecture/design/*.md) follows the same standard (ADD chapter 13)."""
-    doc(tmp_path, "docs/plans/good.md", GOOD)
-    doc(tmp_path, "docs/architecture/design/00-README.md", GOOD)
-    doc(tmp_path, "docs/architecture/design/13-verification.md", "# No version\n")
-    doc(tmp_path, "docs/architecture/design/notes/scratch.md", "# not checked: below design/\n")
-
-    assert sorted(cdv.check(tmp_path)) == ["docs/architecture/design/13-verification.md"]
+    """The ADD's chapters, when their folder is given, follow the same standard."""
+    root, add = _add(tmp_path)
+    assert sorted(cdv.check(root, add)) == [f"{add.as_posix()}/13-verification.md"]
+    assert cdv.check(root) == {}  # no folder given: only the repository's documents
 
 
-def test_the_repositorys_design_chapters_are_among_the_documents() -> None:
-    names = {p.relative_to(ROOT).as_posix() for p in cdv.documents(ROOT)}
-    chapters = sorted(p.name for p in (ROOT / "docs/architecture/design").glob("[0-9][0-9]-*.md"))
-    assert len(chapters) >= 13
-    assert {f"docs/architecture/design/{c}" for c in chapters} <= names
+def test_the_add_folders_chapters_are_among_the_documents(tmp_path: Path) -> None:
+    root, add = _add(tmp_path)
+    assert set(cdv.documents(root, add)) == {
+        root / "docs/plans/good.md",
+        add / "00-README.md",
+        add / "13-verification.md",
+    }
+    assert cdv.documents(root) == [root / "docs/plans/good.md"]
+
+
+def test_the_cli_reads_the_add_folder_from_the_argument_or_the_environment(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, add = _add(tmp_path)
+    assert cdv.main(["--root", str(root), "--add-dir", str(add)]) == 1
+    assert f"{add.as_posix()}/13-verification.md: missing the version line" in (
+        capsys.readouterr().out
+    )
+    monkeypatch.setenv(cdv.ADD_ENV, str(add))
+    assert cdv.main(["--root", str(root)]) == 1
+    assert "1 of 3 documents need" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("where", ["none", "argument", "environment"])
+def test_the_cli_skips_the_add_cleanly_when_its_folder_is_not_here(
+    where: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _ = _add(tmp_path)
+    missing = str(tmp_path / "not-here")
+    argv = ["--root", str(root)] + (["--add-dir", missing] if where == "argument" else [])
+    if where == "environment":
+        monkeypatch.setenv(cdv.ADD_ENV, missing)
+    assert cdv.main(argv) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        cdv.ADD_SKIPPED,
+        "All 1 documents have their version line and change log.",
+    ]
+    doc(root, "docs/plans/bad.md", "# No version\n")  # the other documents: as strict as ever
+    assert cdv.main(argv) == 1
 
 
 def test_a_tree_without_an_architecture_folder_is_fine(tmp_path: Path) -> None:
@@ -208,13 +263,15 @@ def test_the_script_runs_with_the_standard_library_alone(tmp_path: Path) -> None
         capture_output=True,
         text=True,
         timeout=30,
+        env={k: v for k, v in os.environ.items() if k != cdv.ADD_ENV},
     )
     assert done.returncode == 0, done.stdout + done.stderr
 
 
 # ---- this repository --------------------------------------------------------------------------
 def test_this_repository_passes() -> None:
-    assert cdv.check(ROOT) == {}
+    """The repository's documents, and the private ADD copy where JARVIS_ADD_DIR names it."""
+    assert cdv.check(ROOT, PRIVATE_ADD) == {}
 
 
 def _tsv() -> dict[str, tuple[str, str]]:

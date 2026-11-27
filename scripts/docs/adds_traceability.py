@@ -2,10 +2,15 @@
 # scripts/docs/adds_traceability.py
 """The Architecture Design Document's traceability matrix.
 
-It writes docs/architecture/design/10-traceability.md:
+It writes the document's chapter 10, `10-traceability.md`:
 
-    python scripts/docs/adds_traceability.py WORKBOOK.xlsx [--repo DIR] [--out FILE]
-        [--version-line LINE] [--workbook-name NAME]
+    python scripts/docs/adds_traceability.py WORKBOOK.xlsx [--repo DIR] [--add-dir DIR]
+        [--out FILE] [--version-line LINE] [--workbook-name NAME]
+
+The document is kept privately on the owner's Drive, not in the repository: the chapter goes to
+`--out`, else into the folder from `--add-dir` or the environment variable `JARVIS_ADD_DIR`. When
+neither names a folder that is there, the workbook is still read and checked (and stale pointers
+reported), then writing is skipped with one line and exit 0.
 
 Reads the requirements workbook's "Requirements" sheet (columns found by their header names:
 "Serial No.", "Module", "Feature", "Status", "Release") and writes one Markdown row per
@@ -39,6 +44,7 @@ Needs openpyxl (the dev environment has it).
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import zipfile
@@ -693,6 +699,20 @@ def _change_row(version_line: str, workbook_name: str, change: str | None = None
 DEFAULT_VERSION = (
     "Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV"
 )
+CHAPTER = "10-traceability.md"
+ADD_ENV = "JARVIS_ADD_DIR"  # the private copy of the Architecture Design Document's chapters
+ADD_SKIPPED = (
+    "adds_traceability: chapter 10 not written, the Architecture Design Document's private copy"
+    f" isn't here (pass --add-dir DIR or --out FILE, or set {ADD_ENV})"
+)
+
+
+def add_folder(given: Path | None = None) -> Path | None:
+    """The Architecture Design Document's folder: `given`, else `JARVIS_ADD_DIR`; None when
+    neither names a folder that is there."""
+    env = os.environ.get(ADD_ENV, "").strip()
+    folder = given if given is not None else (Path(env).expanduser() if env else None)
+    return folder if folder is not None and folder.is_dir() else None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -700,7 +720,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("workbook", type=Path)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument(
-        "--out", type=Path, default=Path("docs/architecture/design/10-traceability.md")
+        "--add-dir", type=Path, default=None, help=f"the ADD's chapters (default: ${ADD_ENV})"
+    )
+    parser.add_argument(
+        "--out", type=Path, default=None, help=f"default: {CHAPTER} in the ADD's folder"
     )
     parser.add_argument("--version-line", default=DEFAULT_VERSION)
     parser.add_argument("--workbook-name", default=None)
@@ -718,7 +741,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = build_rows(reqs, index)
     for problem in stale_pointers(reqs, index, OVERRIDES, NOT_LOCATED):
         print(f"adds_traceability: stale pointer, {problem}", file=sys.stderr)
-    out = args.out if args.out.is_absolute() else args.repo / args.out
+    if args.out is not None:
+        out = args.out if args.out.is_absolute() else args.repo / args.out
+    elif (add := add_folder(args.add_dir)) is not None:
+        out = add / CHAPTER
+    else:
+        print(ADD_SKIPPED)
+        return 0
     before = out.read_text(encoding="utf-8") if out.is_file() else ""
     name = args.workbook_name or args.workbook.name
     text = render(

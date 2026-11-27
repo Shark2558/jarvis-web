@@ -1,5 +1,6 @@
 # tests/test_llm_sdk_boundary.py -- CLAUDE.md "Nothing outside `jarvis.llm` imports a vendor SDK"
-# (the ADD's principle P7, ADR-02; follow-up F1 of docs/architecture/design/08-decisions.md).
+# (principle P7, ADR-02 and follow-up F1 of the Architecture Design Document, kept privately on
+# the owner's Drive).
 # A syntax-tree scan of every module under src/jarvis/: an AI vendor's SDK may be imported only
 # inside src/jarvis/llm/. Plain `import x`, `from x import y`, a function-local import, an import
 # under `if TYPE_CHECKING:` and `importlib.import_module("x")` / `__import__("x")` with a literal

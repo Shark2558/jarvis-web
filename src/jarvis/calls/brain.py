@@ -26,14 +26,19 @@ import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from jarvis.llm.base import ChatMessage, Completion, Effort, Role
+from jarvis.calls.guard import GuardContext, check_reply
+from jarvis.llm.base import ChatMessage, Completion, Effort, LLMError, Role
 from jarvis.llm.brains import BrainRegistry, BrainSpec
 from jarvis.llm.router import ModelRouter, ModelTier
+from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
+
+log = get_logger(__name__)
 
 MAX_TOKENS = 350
 MAX_SAY_CHARS = 300
@@ -335,8 +340,147 @@ class CallBrain:
         return BrainTurn(parse_reply(completion.text), completion)
 
 
+# ---- the fixed lines ---------------------------------------------------------------------------
+
+
+class LineKind(StrEnum):
+    OPENING = "opening"  # the disclosure, outgoing (models.OPENING_LINE)
+    OPENING_ANSWERING = "opening_answering"
+    CHECK_BACK = "check_back"  # the guard's refusal and anything outside the card
+    HANDOVER = "handover"  # before the owner takes over
+    GOODBYE = "goodbye"
+    GOODBYE_CAP = "goodbye_cap"  # a cap was reached
+    REPEAT = "repeat"
+    HOLD = "hold"
+    STILL_THERE = "still_there"
+    RECORDING_STOPPED = "recording_stopped"
+    UNSUPPORTED = "unsupported"  # spoken in English, then in Hindi
+
+
+ENGLISH_LINES: dict[LineKind, str] = {
+    LineKind.OPENING: (
+        "Hello, this is JARVIS, an AI assistant calling on behalf of {first_name}. "
+        "This call is recorded."
+    ),
+    LineKind.OPENING_ANSWERING: (
+        "Hello, this is JARVIS, an AI assistant answering for {first_name}, who can't take the "
+        "call right now. This call is recorded. May I take a message?"
+    ),
+    LineKind.CHECK_BACK: "I will check with {first_name} and call you back.",
+    LineKind.HANDOVER: "{first_name} is joining the call now.",
+    LineKind.GOODBYE: "Thank you. Goodbye.",
+    LineKind.GOODBYE_CAP: "I'm sorry, I have to end this call now. Thank you, goodbye.",
+    LineKind.REPEAT: "Sorry, could you say that again?",
+    LineKind.HOLD: "One moment, please.",
+    LineKind.STILL_THERE: "Are you still there?",
+    LineKind.RECORDING_STOPPED: "Okay, I have stopped recording this call.",
+    LineKind.UNSUPPORTED: (
+        "Sorry, I can only speak {languages} on this call. {first_name} will call you back."
+    ),
+}
+HINDI_LINES: dict[LineKind, str] = {
+    LineKind.OPENING: (
+        "नमस्ते, मैं JARVIS हूँ, {first_name} की ओर से कॉल कर रहा एक AI सहायक। यह कॉल रिकॉर्ड की जा रही है।"
+    ),
+    LineKind.OPENING_ANSWERING: (
+        "नमस्ते, मैं JARVIS हूँ, {first_name} का AI सहायक। {first_name} अभी कॉल नहीं उठा सकते। "
+        "यह कॉल रिकॉर्ड की जा रही है। क्या मैं आपका संदेश ले सकता हूँ?"
+    ),
+    LineKind.CHECK_BACK: "मैं {first_name} से पूछकर आपको वापस कॉल करूँगा।",
+    LineKind.HANDOVER: "{first_name} अब कॉल पर आ रहे हैं।",
+    LineKind.GOODBYE: "धन्यवाद, नमस्ते।",
+    LineKind.GOODBYE_CAP: "माफ़ कीजिए, मुझे अब यह कॉल समाप्त करनी होगी। धन्यवाद, नमस्ते।",
+    LineKind.REPEAT: "माफ़ कीजिए, क्या आप फिर से कह सकते हैं?",
+    LineKind.HOLD: "एक पल रुकिए।",
+    LineKind.STILL_THERE: "क्या आप अभी भी लाइन पर हैं?",
+    LineKind.RECORDING_STOPPED: "ठीक है, मैंने इस कॉल की रिकॉर्डिंग बंद कर दी है।",
+    LineKind.UNSUPPORTED: (
+        "माफ़ कीजिए, इस कॉल पर मैं केवल {languages} बोल सकता हूँ। {first_name} आपको वापस कॉल करेंगे।"
+    ),
+}
+BUILT_IN: dict[str, dict[LineKind, str]] = {"en-IN": ENGLISH_LINES, "hi-IN": HINDI_LINES}
+TRANSLATE_SYSTEM = (
+    "You translate one short sentence that an AI phone assistant speaks into the language asked "
+    "for, polite and natural for a phone call. Keep the names and the word JARVIS as they are. "
+    "Reply with the translation only, one line, no quotes."
+)
+LINE_MAX_CHARS = 300
+_LINE_MAX_TOKENS = 200
+
+
+def _names(languages: Sequence[str]) -> str:
+    names = [language_name(c) for c in languages] or ["English"]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+class FixedLines:
+    """The call's fixed lines per language. English and Hindi are written here; any other
+    language is translated once from English on the fast tier and cached for the process (the
+    pre-made audio of each line is the speech part's cache). A translation that is empty, too long
+    or that the guard would refuse falls back to English."""
+
+    def __init__(self, brains: BrainRegistry, *, brain_id: str | None = None) -> None:
+        self.spec = pick_call_brain(brains, brain_id)
+        self._router = brains.router_for(self.spec.id)
+        self._cache: dict[tuple[LineKind, str, str, str], str] = {}
+
+    @staticmethod
+    def english(kind: LineKind, first_name: str, *, languages: Sequence[str] = ()) -> str:
+        return ENGLISH_LINES[kind].format(
+            first_name=_field(first_name) or "the owner", languages=_names(languages)
+        )
+
+    async def text(
+        self, kind: LineKind, lang: str, first_name: str, *, languages: Sequence[str] = ()
+    ) -> tuple[str, Completion | None]:
+        """The line in `lang`, and the completion when a model was called for it (to meter)."""
+        name = _field(first_name) or "the owner"
+        table = BUILT_IN.get(lang)
+        if table is not None:
+            return table[kind].format(first_name=name, languages=_names(languages)), None
+        english = self.english(kind, first_name, languages=languages)
+        key = (kind, lang, name, ",".join(languages))
+        if key in self._cache:
+            return self._cache[key], None
+        try:
+            done = await self._router.complete(
+                tier=ModelTier.FAST,
+                system=TRANSLATE_SYSTEM,
+                messages=[
+                    ChatMessage(
+                        role=Role.USER,
+                        content=f"Into {language_name(lang)} ({lang}):\n{english}",
+                    )
+                ],
+                max_tokens=_LINE_MAX_TOKENS,
+                effort=Effort.LOW,
+                tools=None,
+                allow_degrade=False,
+            )
+        except LLMError as exc:
+            log.warning(
+                "fixed line not translated",
+                extra={"lang": lang, "kind": kind.value, "error": type(exc).__name__},
+            )
+            return english, None
+        line = one_line(done.text, LINE_MAX_CHARS + 1)
+        if not _usable(line):
+            return english, done
+        self._cache[key] = line
+        return line, done
+
+
+def _usable(line: str) -> bool:
+    if not line or len(line) > LINE_MAX_CHARS:
+        return False
+    return check_reply(line, line, GuardContext(card=frozenset())).ok
+
+
 __all__ = [
     "ACTIONS",
+    "BUILT_IN",
+    "ENGLISH_LINES",
+    "HINDI_LINES",
     "LANGUAGE_NAMES",
     "MAX_SAY_CHARS",
     "MAX_TOKENS",
@@ -345,7 +489,9 @@ __all__ = [
     "BrainTurn",
     "CallBrain",
     "CallBrief",
+    "FixedLines",
     "Line",
+    "LineKind",
     "Mode",
     "NoPrivateBrain",
     "Slot",

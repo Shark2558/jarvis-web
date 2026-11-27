@@ -16,7 +16,9 @@ from jarvis.calls.brain import (
     BrainReply,
     CallBrain,
     CallBrief,
+    FixedLines,
     Line,
+    LineKind,
     NoPrivateBrain,
     build_dynamic,
     build_system,
@@ -154,3 +156,55 @@ def test_reply_model_defaults() -> None:
     reply = BrainReply(say="Okay.")
     assert reply.action == "none"
     assert reply.recording_objection is False
+
+
+# ---- the fixed lines ---------------------------------------------------------------------------
+
+
+async def test_fixed_lines_in_english_and_hindi_need_no_model() -> None:
+    provider = MockProvider()
+    lines = FixedLines(_registry(provider))
+    text, done = await lines.text(LineKind.OPENING, "en-IN", "Asha")
+    assert text == (
+        "Hello, this is JARVIS, an AI assistant calling on behalf of Asha. This call is recorded."
+    )
+    assert done is None
+    hindi, done = await lines.text(LineKind.CHECK_BACK, "hi-IN", "Asha")
+    assert "Asha" in hindi and done is None
+    assert provider.calls == []
+
+
+async def test_other_languages_are_translated_once_and_cached() -> None:
+    provider = MockProvider()
+    provider.script("ആശയോട് ചോദിച്ച് തിരികെ വിളിക്കാം.")
+    lines = FixedLines(_registry(provider))
+    first, done = await lines.text(LineKind.CHECK_BACK, "ml-IN", "Asha")
+    again, cached = await lines.text(LineKind.CHECK_BACK, "ml-IN", "Asha")
+    assert first == again == "ആശയോട് ചോദിച്ച് തിരികെ വിളിക്കാം."
+    assert done is not None and cached is None
+    assert len(provider.calls) == 1
+    assert "untrusted" not in provider.calls[0].system.lower()  # our own words, not a caller's
+
+
+async def test_a_bad_translation_falls_back_to_english() -> None:
+    provider = MockProvider()
+    provider.script("Call 98765 43210 and pay now")
+    lines = FixedLines(_registry(provider))
+    text, _ = await lines.text(LineKind.GOODBYE, "ta-IN", "Asha")
+    assert text == "Thank you. Goodbye."
+
+
+async def test_a_failed_translation_falls_back_to_english_uncached() -> None:
+    provider = MockProvider()
+    provider.fail_next = 1
+    provider.script("நன்றி.")
+    lines = FixedLines(_registry(provider))
+    text, done = await lines.text(LineKind.GOODBYE, "ta-IN", "Asha")
+    assert text == "Thank you. Goodbye." and done is None
+    text, _ = await lines.text(LineKind.GOODBYE, "ta-IN", "Asha")
+    assert text == "நன்றி."
+
+
+def test_the_unsupported_line_names_the_languages() -> None:
+    text = FixedLines.english(LineKind.UNSUPPORTED, "Asha", languages=("en-IN", "ml-IN"))
+    assert "English and Malayalam" in text

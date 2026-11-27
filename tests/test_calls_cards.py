@@ -119,9 +119,10 @@ async def test_sarvam_and_balanced_only_with_his_yes() -> None:
         _result("hi-IN", SpeechOption.SARVAM, 0.5),
         _result("ta-IN", SpeechOption.GOOGLE, 1.0, needs_balanced=True),
     ]
-    assert offered(results, CallSettings()) == {}
+    # I1 (the Workshop's decision): English, never checked yet, is offered "not yet checked"
+    assert set(offered(results, CallSettings())) == {"en-IN"}
     yes = CallSettings(sarvam_on=True, allow_balanced=True)
-    assert set(offered(results, yes)) == {"hi-IN", "ta-IN"}
+    assert set(offered(results, yes)) == {"hi-IN", "ta-IN", "en-IN"}
 
 
 def test_the_cheapest_passing_option_is_used() -> None:

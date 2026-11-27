@@ -1,12 +1,18 @@
 // src/jarvis/api/static/console-dock.js — R6.1 D7: the dock fits every screen ("priority plus").
 // The dock measures itself at every width: the tabs keep their order, and the ones that do not fit
-// fold into the More sheet, last tabs first. More shows only when a tab is folded and lights up
-// while a folded panel is open; the sheet lists exactly the folded tabs, in dock order. Nothing
+// fold into the More sheet, last tabs first. More shows only when a tab is folded (R18: one but
+// Calls, below) and lights up while a folded panel is open; the sheet lists exactly the folded
+// tabs, in dock order. Nothing
 // scrolls sideways. A tab shows only while it holds its label with air beside it (review A, H1/M1):
 // a phone tab needs its label + borders + LABEL_CLEAR (and 44 px); a desktop tab whose label is
 // wider than the tab (900-1180 px) folds wherever it sits. Chat, Brief and Approvals never fold
 // for lack of room; when Approvals folds for its label, More carries the approvals badge. Phones
 // keep at most eight tabs in the bar (More included). The chat box's hint fits on one line too.
+// R18 (the owner, 27 Nov 2026: "Calls not in the bar at 1920"): Calls (EXTRA) never displaces a
+// tab. The others are chosen as if it were not there; it joins the bar only when none of them is
+// folded for room and it fits beside them (beside More when a label already folds one behind it);
+// otherwise it waits in the More sheet while More shows for the others, or is in neither: Vitals'
+// calls line, the chat's call card and ?open=calls open it. A bar full before R18 stays as it was.
 // The measure is taken against the room the window gives the dock, never the dock's own width
 // (which changes with what it shows), at most once per animation frame, on resize, font load and
 // theme change, so it cannot loop. Panel state stays in console-deck.js: this file reads the
@@ -19,6 +25,7 @@
   if (!dock || !moreBtn) return;
 
   const PINNED = 3; // the first three tabs (Chat, Brief, Approvals) never fold for lack of room
+  const EXTRA = new Set(['calls']); // R18: tabs that join the bar only where they displace none
   const PHONE_MAX = 8; // phones: at most eight tabs in the bar, More included (slice 8)
   const MIN_TOUCH = 44; // phones: every tab is at least a 44 px touch target (R5.1 D11)
   const LABEL_CLEAR = 8; // phones: px of air a tab keeps beside its label (two labels never touch)
@@ -118,38 +125,50 @@
     if (sep && shown(sep)) { const ss = getComputedStyle(sep); sepW = width(sep) + px(ss.marginLeft) + px(ss.marginRight); }
     return { phone, room: room(s), gap: px(s.columnGap), tabs: tabs.map(need), holds: tabs.map(holds), more: need(moreBtn), sepW };
   }
-  /** Do these tabs (indexes, in dock order) fit the room, beside More when some are left out? */
-  function fits(m, show) {
-    const folded = show.length < m.tabs.length, items = show.length + (folded ? 1 : 0);
+  /** Do these tabs (indexes, in dock order) fit the room, beside More when it shows? */
+  function fits(m, show, more) {
+    const items = show.length + (more ? 1 : 0);
     const needs = show.map((i) => m.tabs[i]);
     if (m.phone) {
       if (items > PHONE_MAX) return false;
-      const widest = Math.max(...needs, folded ? m.more : 0);
+      const widest = Math.max(...needs, more ? m.more : 0);
       return (m.room - m.gap * (items - 1)) / items >= widest - EPS;
     }
     const withSep = m.sepW > 0 && afterSep >= 0 && show.some((i) => i >= afterSep);
-    const sum = needs.reduce((a, b) => a + b, 0) + (folded ? m.more : 0) + (withSep ? m.sepW : 0);
+    const sum = needs.reduce((a, b) => a + b, 0) + (more ? m.more : 0) + (withSep ? m.sepW : 0);
     return sum + m.gap * (items + (withSep ? 1 : 0) - 1) <= m.room + EPS;
   }
-  /** Which tabs show: those that hold their label, in order, all when they fit, else the most that
-   *  fit beside More, never fewer than the pinned ones (they fit a 320 px phone with room to spare). */
+  /** Which tabs show, and whether More does. Of the tabs but the EXTRA ones: those that hold their
+   *  label, in order, all when they fit, else the most that fit beside More, never fewer than the
+   *  pinned ones (they fit a 320 px phone with room to spare). An EXTRA tab then joins only when
+   *  none of them is folded for room and it fits beside them; More shows only for the others. */
   function choose(m) {
-    const able = m.tabs.map((_, i) => i).filter((i) => m.holds[i]);
+    const all = m.tabs.map((_, i) => i), core = all.filter((i) => !EXTRA.has(tabs[i].dataset.open));
+    const able = core.filter((i) => m.holds[i]);
     const pinned = able.filter((i) => i < PINNED).length;
-    for (let k = able.length; k > pinned; k--) if (fits(m, able.slice(0, k))) return able.slice(0, k);
-    return able.slice(0, pinned);
+    let k = able.length;
+    while (k > pinned && !fits(m, able.slice(0, k), k < core.length)) k--;
+    let show = able.slice(0, k);
+    const more = show.length < core.length;
+    if (show.length === able.length) {
+      all.filter((i) => !core.includes(i) && m.holds[i]).forEach((i) => {
+        const joined = [...show, i].sort((a, b) => a - b);
+        if (fits(m, joined, more)) show = joined;
+      });
+    }
+    return { show, more };
   }
-  /** Fold every tab not in `show`; show More and the matching sheet entries only when needed. */
-  function apply(show) {
+  /** Fold every tab not in `show`; More and the folded tabs' sheet entries show only with `more`. */
+  function apply({ show, more }) {
     const focused = document.activeElement; // read first: hiding the focused tab blurs it at once
     const on = new Set(show);
     tabs.forEach((t, i) => { const fold = !on.has(i); if (t.hidden !== fold) t.hidden = fold; });
     const sepOff = afterSep >= 0 && !show.some((i) => i >= afterSep);
     if (sep && sep.hidden !== sepOff) sep.hidden = sepOff;
-    const none = show.length >= tabs.length;
-    if (moreBtn.hidden !== none) moreBtn.hidden = none;
-    entries.forEach((b, id) => { const t = tabFor(id), off = !t || !t.hidden; if (b.hidden !== off) b.hidden = off; });
-    if (none) closeSheet();
+    if (moreBtn.hidden !== !more) moreBtn.hidden = !more;
+    // without More no entry shows (console-deck.css reads More hidden beside a shown entry as "not fitted yet")
+    entries.forEach((b, id) => { const t = tabFor(id), off = !more || !t || !t.hidden; if (b.hidden !== off) b.hidden = off; });
+    if (!more) closeSheet();
     carryBadge();
     rescueFocus(focused);
     syncMore();
@@ -197,14 +216,16 @@
     const label = parts.join(', ');
     if (moreBtn.getAttribute('aria-label') !== label) moreBtn.setAttribute('aria-label', label);
   }
-  /** Focus never falls to the page: a tab that folds hands it to More; a More that goes (everything
-   *  fits again) to the last tab; a sheet entry that goes to the first entry left, or to its tab
-   *  once the sheet has closed. */
+  /** Focus never falls to the page: a tab that folds hands it to More (to the last tab shown when
+   *  More stays away: an EXTRA tab folding alone); a More that goes (everything fits again) to the
+   *  last tab; a sheet entry that goes to the first entry left, or to its tab once the sheet has
+   *  closed. */
   function rescueFocus(was) {
     if (!was || !was.hidden) return;
     let target = null;
-    if (tabs.includes(was)) target = moreBtn.hidden ? null : moreBtn;
-    else if (was === moreBtn) target = tabs.filter((t) => !t.hidden).pop() || null;
+    const lastTab = () => tabs.filter((t) => !t.hidden).pop() || null;
+    if (tabs.includes(was)) target = moreBtn.hidden ? lastTab() : moreBtn;
+    else if (was === moreBtn) target = lastTab();
     else if (sheet.contains(was)) {
       target = sheet.open ? [...entries.values()].find((b) => !b.hidden) || null : tabFor(was.dataset.sheetOpen);
     }

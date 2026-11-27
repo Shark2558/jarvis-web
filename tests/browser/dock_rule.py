@@ -12,6 +12,12 @@
 #            borders and LABEL_CLEAR of air, and 44 px at the least; at most eight items, More
 #            included.
 #   both:    Chat, Brief and Approvals never fold for lack of room.
+#   R18:     Calls never displaces a tab (the owner, 27 Nov 2026: "Calls not in the bar at 1920").
+#            The other tabs are chosen as if it were not there; it joins the bar only when none
+#            of them is folded for room and it fits beside them (and beside More when a label
+#            already folds a tab behind it). Otherwise it sits in the More sheet while More shows
+#            for the others, or is in neither (Vitals' calls line, the chat's call card and
+#            ?open=calls open it). More shows only while a tab other than Calls is folded.
 from __future__ import annotations
 
 import math
@@ -19,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 PINNED_COUNT = 3  # Chat, Brief, Approvals: the first three tabs
+EXTRA_IDS = frozenset({"calls"})  # R18: tabs that never displace another (console-dock.js EXTRA)
 PHONE_MAX_TABS = 8  # More included
 MIN_TOUCH = 44
 LABEL_CLEAR = 8  # px of air a phone tab keeps beside its label
@@ -128,12 +135,11 @@ def _need(tab: Item, phone: bool, wider: float) -> float:
     return max(MIN_TOUCH, label + tab.borders + LABEL_CLEAR)
 
 
-def _fits(d: Dock, show: list[int], wider: float) -> bool:
-    """Do these tabs (indexes, in dock order) fit the room, beside More when some are left out?"""
-    folded = len(show) < len(d.tabs)
-    items = len(show) + int(folded)
+def _fits(d: Dock, show: list[int], wider: float, more: bool) -> bool:
+    """Do these tabs (indexes, in dock order) fit the room, beside More when it shows?"""
+    items = len(show) + int(more)
     needs = [_need(d.tabs[i], d.phone, wider) for i in show]
-    if folded:
+    if more:
         needs.append(_need(d.more, d.phone, wider))
     if d.phone:
         share = (d.room - d.gap * (items - 1)) / items
@@ -144,12 +150,36 @@ def _fits(d: Dock, show: list[int], wider: float) -> bool:
 
 
 def expected_shown(d: Dock, wider: float = 0.0) -> list[str]:
-    """The tabs the dock should show: those holding their label, in order, as many as fit, never
-    fewer than the pinned ones among them."""
-    able = [i for i, t in enumerate(d.tabs) if holds_label(t, d.phone, wider)]
+    """The tabs the dock should show: of the tabs other than Calls, those holding their label, in
+    order, as many as fit (beside More when one is left out), never fewer than the pinned ones;
+    Calls then only beside every one of them that holds its label."""
+    core = [i for i, t in enumerate(d.tabs) if t.id not in EXTRA_IDS]
+    able = [i for i in core if holds_label(d.tabs[i], d.phone, wider)]
     pinned = sum(1 for i in able if i < PINNED_COUNT)
-    k = next((k for k in range(len(able), pinned, -1) if _fits(d, able[:k], wider)), pinned)
-    return [d.tabs[i].id for i in able[:k]]
+    fit = (k for k in range(len(able), pinned, -1) if _fits(d, able[:k], wider, k < len(core)))
+    show = able[: next(fit, pinned)]
+    more = len(show) < len(core)
+    if len(show) == len(able):  # none folded for room: an extra tab may join, never displace
+        for i, t in enumerate(d.tabs):
+            if t.id in EXTRA_IDS and holds_label(t, d.phone, wider):
+                joined = sorted([*show, i])
+                if _fits(d, joined, wider, more):
+                    show = joined
+    return [d.tabs[i].id for i in show]
+
+
+def more_expected(d: Dock, visible: list[str]) -> bool:
+    """More shows exactly while a tab other than an extra one (Calls) is folded."""
+    return any(t.id not in visible and t.id not in EXTRA_IDS for t in d.tabs)
+
+
+def without_extras(d: Dock) -> Dock:
+    """The dock as it was before R18: the same measured tabs, Calls left out."""
+    kept = [i for i, t in enumerate(d.tabs) if t.id not in EXTRA_IDS]
+    after = next((j for j, i in enumerate(kept) if i >= d.after_sep), -1)
+    after = after if d.after_sep >= 0 else -1
+    tabs = tuple(d.tabs[i] for i in kept)
+    return Dock(d.phone, d.room, d.gap, d.sep, after, tabs, d.more)
 
 
 def shown_choices(d: Dock) -> list[list[str]]:

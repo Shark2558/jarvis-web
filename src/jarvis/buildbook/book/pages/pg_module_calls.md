@@ -17,7 +17,7 @@ sources:
   "src/jarvis/api/calls_routes.py": "4afdecf7fe9949c6"
   "src/jarvis/api/calls_ws.py": "1963a0a1fef6419e"
   "src/jarvis/api/console_calls_assets.py": "d55916e88be20e3e"
-  "src/jarvis/api/r18_wiring.py": "bec007fcf7d6ee6c"
+  "src/jarvis/api/r18_wiring.py": "9c0a9b872566617c"
   "src/jarvis/api/static/calls-listen-worklet.js": "652d3339bf8b5fa9"
   "src/jarvis/api/static/console-calls-api.js": "30e91b868cba4573"
   "src/jarvis/api/static/console-calls-audio.js": "4d3e16c6b71d771e"

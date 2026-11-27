@@ -7,7 +7,7 @@ sources:
   "src/jarvis/api/calls_handlers_cards.py": "f2631a9c8e5140a3"
   "src/jarvis/api/calls_routes.py": "4afdecf7fe9949c6"
   "src/jarvis/api/console_calls_assets.py": "d55916e88be20e3e"
-  "src/jarvis/api/r18_wiring.py": "bec007fcf7d6ee6c"
+  "src/jarvis/api/r18_wiring.py": "9c0a9b872566617c"
   "src/jarvis/api/static/console-calls-api.js": "30e91b868cba4573"
   "src/jarvis/api/static/console-calls-card.js": "0a7f743bb3cc8942"
   "src/jarvis/api/static/console-calls-form.js": "7279e89d506cadd2"

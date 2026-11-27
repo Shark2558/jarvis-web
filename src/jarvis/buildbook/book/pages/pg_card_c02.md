@@ -69,7 +69,7 @@ sources:
   "src/jarvis/api/r13_wiring.py": "4228b2005530a17c"
   "src/jarvis/api/r14_status.py": "efb328e795d63aa9"
   "src/jarvis/api/r14_wiring.py": "9a389842728e9471"
-  "src/jarvis/api/r18_wiring.py": "bec007fcf7d6ee6c"
+  "src/jarvis/api/r18_wiring.py": "9c0a9b872566617c"
   "src/jarvis/api/r4_wiring.py": "379192618b74836f"
   "src/jarvis/api/r6_wiring.py": "933facfd96a82b79"
   "src/jarvis/api/r7_wiring.py": "3c5071faac3bda6b"

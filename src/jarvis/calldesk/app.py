@@ -34,6 +34,7 @@ from jarvis.calldesk.session import DeskSession
 from jarvis.calldesk.sound import CallAudio
 from jarvis.calldesk.speech_local import LocalSpeech, NotInstalled
 from jarvis.calldesk.watchdog import EXIT_ALREADY_RUNNING, EXIT_OK, Supervisor
+from jarvis.localspeech.desk import desk_speech
 
 log = logging.getLogger(__name__)
 
@@ -114,6 +115,14 @@ async def _watch_stop(path: Path, stop: asyncio.Event, every_s: float) -> None:
         await asyncio.sleep(every_s)
 
 
+def local_speech(cfg: DeskConfig) -> LocalSpeech | None:
+    """R5.2: the laptop speech kit on this laptop (its gate on 127.0.0.1), when the desk holds
+    the kit's key (`config.speech_key`); None: the desk offers cloud speech only."""
+    if cfg.speech_key is None:
+        return None
+    return desk_speech(cfg.speech_key)
+
+
 async def serve(
     cfg: DeskConfig,
     parts: Parts,
@@ -139,6 +148,9 @@ async def serve(
     finally:
         watcher.cancel()
         await session.shutdown()
+        close = getattr(local, "aclose", None)
+        if close is not None:
+            await close()  # the speech kit's one connection pool
         log.info("call desk stopped; the laptop's audio is as the owner left it")
     return EXIT_OK
 
@@ -149,7 +161,9 @@ def run_desk(cfg: DeskConfig, parts: Parts) -> int:
     left = guard_for(cfg, parts).restore_left_over()
     if left is not None:
         log.info("restored the audio a previous run left", extra={"ok": left.ok})
-    return asyncio.run(serve(cfg, parts))
+    local = local_speech(cfg)
+    log.info("call desk starting", extra={"laptop_speech": local is not None})
+    return asyncio.run(serve(cfg, parts, local=local))
 
 
 def run_watchdog(cfg: DeskConfig, parts: Parts, child: Sequence[str]) -> int:
@@ -186,6 +200,7 @@ __all__ = [
     "child_command",
     "close_logging",
     "guard_for",
+    "local_speech",
     "restore_now",
     "run_desk",
     "run_watchdog",

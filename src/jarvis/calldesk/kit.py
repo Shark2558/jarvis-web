@@ -34,10 +34,32 @@ ROOT_DIR = "JARVIS-CallDesk"
 SRC_DIR = "desk-src"
 REQUIREMENTS = "requirements-calldesk.txt"
 KIT_ONLY = "jarvis.calldesk.kit"  # this file: cloud only
-SAFE_JARVIS = frozenset({"jarvis.calls.protocol", "jarvis.calls.models", "jarvis.home.signing"})
-PACKAGES = frozenset({"jarvis", "jarvis.calls", "jarvis.home", "jarvis.calldesk"})
+SAFE_JARVIS = frozenset(
+    {
+        "jarvis.calls.protocol",
+        "jarvis.calls.models",
+        "jarvis.home.signing",
+        # R5.2 I1: the laptop speech kit's client for the desk (V2's `desk_speech`)
+        "jarvis.localspeech.protocol",
+        "jarvis.localspeech.client",
+        "jarvis.localspeech.desk",
+        "jarvis.offline.config",
+    }
+)
+PACKAGES = frozenset(
+    {
+        "jarvis",
+        "jarvis.calls",
+        "jarvis.home",
+        "jarvis.calldesk",
+        "jarvis.localspeech",
+        "jarvis.offline",
+    }
+)
 IMPORT_TO_DIST = {"pydantic_core": "pydantic-core", "typing_extensions": "typing-extensions"}
-SKIP_NAMES = frozenset({"desk.env", "secret.json", "audio-state.json", ".env", "stop.request"})
+SKIP_NAMES = frozenset(
+    {"desk.env", "secret.json", "audio-state.json", ".env", "stop.request", "local-speech.key"}
+)
 SKIP_PARTS = frozenset({"__pycache__", ".git", ".venv", "desk-data"})
 SKIP_SUFFIXES = (".pem", ".key", ".pyc", ".tmp", ".log")
 _STAMP = (2026, 1, 1, 0, 0, 0)

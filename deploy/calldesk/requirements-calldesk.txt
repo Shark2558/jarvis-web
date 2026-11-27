@@ -38,3 +38,24 @@ typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
 typing-inspection==0.4.5 \
     --hash=sha256:bc210535442b39e1bf2805e0c7a17dfd6a4ace760c84c7f7d16245d23a6b1c39
+# R5.2 I1: the laptop speech kit's client (jarvis/localspeech/client.py, desk.py) talks to the kit's
+# gate on 127.0.0.1 over httpx. Pure-Python wheels (py3-none-any); hashes are PyPI's own SHA-256,
+# read on 27 Nov 2026 (anyio, h11 and idna match deploy/local-speech/requirements-kit.txt).
+# httpx (BSD-3-Clause)
+httpx==0.28.1 \
+    --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
+# httpcore (BSD-3-Clause): httpx's transport
+httpcore==1.0.9 \
+    --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55
+# h11 (MIT): httpcore's HTTP/1.1
+h11==0.16.0 \
+    --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
+# anyio (MIT): httpx's async I/O
+anyio==4.16.0 \
+    --hash=sha256:c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026
+# idna (BSD-3-Clause): httpx's and anyio's host names
+idna==3.20 \
+    --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+# certifi (MPL-2.0, used unmodified): httpx's certificate bundle (the loopback gate is plain http)
+certifi==2026.11.20 \
+    --hash=sha256:7422df25243767b9877031a2248cb14d09ddac9beee846f4cef3d5c9191d488f

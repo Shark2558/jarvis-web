@@ -61,7 +61,7 @@ def test_a_good_answer_gives_the_desk_id_and_seed() -> None:
     req, timeout = seen[0]
     assert req.get_method() == "POST" and req.full_url == URL + link.LINK_PATH
     assert req.get_header("Content-type") == "application/json"
-    assert json.loads(req.data) == {"code": "K7M2X9QP", "desk_version": "18.0.0"}
+    assert json.loads(req.data) == {"code": "K7M2X9QP", "desk_version": "18.1.0"}  # R5.2 I1
     assert timeout == link.TIMEOUT_S
 
 

@@ -281,7 +281,7 @@ def test_link_with_the_code_from_the_console(kit: Path, capsys: pytest.CaptureFi
     assert cli.main(["link", "abcd-2345"], opener=opener) == 0
     assert "linked to JARVIS" in capsys.readouterr().out
     assert sent[0].full_url == "https://jarvis.example/v1/calls/desk/link"
-    assert json.loads(sent[0].data) == {"code": "ABCD2345", "desk_version": "18.0.0"}
+    assert json.loads(sent[0].data) == {"code": "ABCD2345", "desk_version": "18.1.0"}  # R5.2 I1
     assert (kit / "data" / "secret.json").exists()
 
 

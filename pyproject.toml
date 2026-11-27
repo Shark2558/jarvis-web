@@ -43,6 +43,10 @@ dependencies = [
     # R6.3.1 D2 (docs/plans/r6-3-1-book-at-build.md): the Build Book's written pages open with YAML
     # front matter (yaml.safe_load). PyYAML MIT; already in the image through uvicorn[standard].
     "pyyaml>=6",
+    # R18 B (docs/plans/r18-calls.md 5.3): the calls language check's phone-line simulation
+    # (8 kHz, G.711 mu-law) and audio resampling. NumPy BSD-3-Clause (its wheels also carry 0BSD,
+    # MIT, Zlib and CC0-1.0 parts); the image locks 2.5.4 (Python 3.12), 3.11 resolves a 2.x.
+    "numpy>=2.0,<3",
 ]
 
 [project.optional-dependencies]

@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 22:12 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 11 · Target architecture: the roadmap by release
 
@@ -11,7 +11,7 @@ Chapters 01–08 describe JARVIS as built (live release `v6.4.0`, plus R18 `v18.
 |---|---|---|---|---|---|
 | R18 Calls from your laptop | `v18.0.0` | 387, 395, 396, 104, 195–197 | 1, 2, 3, 4, 5, 6, 7, 8 | Windows **call desk** on the laptop; phone app call permissions | Built and joined; in its combined review; not yet deployed |
 | R18.x follow-ups | — | (within R18's rows) | 2, 4, 6 | — | Planned: the brain check per language first (below) |
-| R5.2 Your voice | `v5.2.0` | 81, 83, 84, 383 | 1, 2, 6, 7, 8 | Laptop **speech kit** behind its own key gate, Funnel port 10000 | Built and joined; in its combined review; not yet deployed |
+| R5.2 Your voice | `v5.2.0` | 81, 83, 84, 383 | 1, 2, 6, 7, 8 | Laptop **speech kit** behind its own key gate, Funnel port 10000 | Built, joined and reviewed (28 Nov: on its release branch); not yet deployed |
 | R5.2.x follow-ups | — | (within R5.2's rows) | 2, 6 | — | Planned: a permissive voice, the speaker model, an owned wake-word front end (below) |
 | R8 Vision core & desk camera | `v8.0.0` | R8's 25 (with R13's activity rows) | 2, 5, 6 | Vision engine on the home laptop | **Next**; cameras in |
 | R8.1 Workout spot | `v8.1.0` | the workout-spot rows | 2, 5 | Pose models on the tripod phone | Planned; camera in |
@@ -75,8 +75,9 @@ English call, one call with a language switch.
 
 Plan: `docs/plans/r5-2-voice.md` (approved under the owner's 27 Nov instruction). Build brief:
 `docs/plans/r5-2-voice/BUILD-BRIEF.md`; the join: `docs/plans/r5-2-integration/I1-NOTES.md`.
-**Status (27 Nov 2026):** built on the `r5-2-*` branches, joined, its Build Book pages written,
-and in its combined review (branch `r5-2-review`); not yet merged to `main` or deployed. Rows 81,
+**Status (28 Nov 2026):** built on the `r5-2-*` branches, joined, its Build Book pages written,
+reviewed (branch `r5-2-review`; `docs/plans/r5-2-integration/REVIEW.md`) and prepared for its pull
+request on the release branch `r5-2-release`; not yet merged to `main` or deployed. Rows 81,
 83, 84 and 383 are built (chapter 10 moves them to Done at the release paperwork). The as-built
 design is in chapters 02–08 (components C79–C83, ADR-40 to ADR-46); the table below is the plan's
 design delta, kept for the record, with what was built.
@@ -177,3 +178,4 @@ Layer 6 work on the home bridge: Home Assistant devices the owner lists (robot c
 | v6.4.3 | 27 Nov 2026, 20:50 IST | R18 | R18 "Calls from your laptop" built and joined: its status and where the as-built design lives; where the build differs from the plan; R18.x's follow-ups; R5.2 makes the desk's laptop speech selectable | 🛠 Mark XXV |
 | v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the speech keys' deploy step and the approvals seal moved from "next" to done; R18.x adds sealing every R3 card at rest and the go-live guide's speech-key step; the live checks include scoring each voice | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 22:12 IST | R5.2 | R5.2 "Your voice" built and joined: its status, rows 81, 83, 84 and 383 built, the as-built design in chapters 02–08 (C79–C83, ADR-40 to ADR-46); the plan's delta with what was built; where the build differs from the plan (no laptop voice or Indian engine, the speaker model's empty slot, blob-id pins, port 10000, the wake word's front end); R5.2.x follow-ups and the owner's steps; R8 is next; R18's laptop speech mode now wired but not yet usable; R18.1 needs a permissive wake-word front end too | 🛠 Mark XXV |
+| v6.5.1 | 28 Nov 2026 | R5.2 | R5.2's status after its combined review: reviewed, on its release branch `r5-2-release`, not yet merged or deployed | 🛠 Mark XXV |

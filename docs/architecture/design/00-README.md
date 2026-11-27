@@ -1,4 +1,4 @@
-Version v6.4.5 · 27 Nov 2026, 22:15 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.6 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 00 · The JARVIS Architecture Design Document
 
@@ -36,7 +36,7 @@ session teaches JARVIS how you speak and picks the engine that understands you b
 "Hey Jarvis" can be trained on your laptop; and a speaker check in your browser lets only your
 voice interrupt JARVIS (it never approves anything). It costs ₹0 a month. Chapters 02–08, 11 and
 12 describe it, each part marked "(R5.2)"; chapter 08 adds ADR-40 to ADR-46, and chapter 12,
-section 7 lists what is not finished and what is open for R5.2's review.
+section 7 lists what is not finished and what R5.2's review closed and left.
 
 ## How to use this document
 
@@ -68,9 +68,11 @@ free-first eval, outfit plans kept 90 days) were then checked into chapters 02, 
 the R18 release branch (`r18-release` at `c036ca1`). For what is marked R5.2, "as built" means
 R5.2's code on its Build Book branch (`r5-2-book` at `1db5988`) with R18's final release
 (`r18-release` at `48d35d4`) merged, on the ADD's own branch `add-r52`, program version `5.2.0`;
-it is not yet in `main` or deployed. R5.2's combined review fixes its code on another branch at
-the same time; the chapters describe the code before those fixes, and the Workshop brings them in
-line afterwards (chapter 12, section 7).
+it is not yet in `main` or deployed. R5.2's combined review then fixed its code on the
+`r5-2-review` branch (`docs/plans/r5-2-integration/REVIEW.md`); on the R5.2 release branch
+(`r5-2-release`, 28 Nov 2026) chapters 02–08 and 12 were brought in line with the reviewed code
+and the owner's decision of 28 Nov 2026 on "Delete my recordings" (chapter 12, section 7.3), so
+for R5.2 "as built" now means that reviewed code.
 
 ## Chapters
 
@@ -186,3 +188,4 @@ repository as *Unverified*; chapter 13 lists every fix and how to repeat the che
 | v6.4.3 | 27 Nov 2026, 21:10 IST | R18 | R18 "Calls from your laptop": what this edition adds, in plain words; what "as built" means for R18 (not yet in `main`); twelve terms added to the glossary | 🛠 Mark XXV |
 | v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: what "as built" means for R18 now (the release branch `r18-release` at `c036ca1`, after `docs/plans/r18-integration/REVIEW.md`) and which chapters took the approvals seal, the deploy's speech keys, the free-first eval and outfit plans kept 90 days | 🛠 Mark XXV |
 | v6.4.5 | 27 Nov 2026, 22:15 IST | R5.2 | R5.2 "Your voice": what this edition adds, in plain words; what "as built" means for R5.2 (its Book branch with R18's final release, on `add-r52`; not yet in `main`; the review's fixes synced afterwards); the guide's edition; twelve terms added to the glossary | 🛠 Mark XXV |
+| v6.4.6 | 28 Nov 2026 | R5.2 | What "as built" means for R5.2 after its combined review: the reviewed code on `r5-2-release`, chapters 02–08 and 12 brought in line; chapter 12, section 7 now lists what the review closed and left | 🛠 Mark XXV |

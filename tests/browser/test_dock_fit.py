@@ -12,20 +12,30 @@
 # draws them wider than this machine's: CONNECTORS outgrows its 78 px tab there). So the tests no
 # longer write one machine's counts in: they measure each label and tab themselves and check the
 # dock against the rule (dock_rule.py), and a test-only style imitates a wider-text renderer here.
+# R18 dock (the owner, 27 Nov 2026: "Calls not in the bar at 1920"): Calls never displaces a tab.
+# At 1920 x 1080 the bar is the bar before R18 (the same tabs, places and look, no More where
+# there was none); Calls shows in the bar only where it fits beside every other tab (2560), in the
+# More sheet only while More shows for others (narrower screens), and otherwise is reached from
+# Vitals' calls line, the chat's call card and ?open=calls (test_r18_calls_ways_in.py).
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
 from dock_rule import (
+    EXTRA_IDS,
     MIN_TOUCH,
     PHONE_MAX_TABS,
     SHEET_JS,
     Dock,
     assert_follows_rule,
     measure_dock,
+    more_expected,
     overflowing,
+    shown_choices,
+    without_extras,
 )
 from test_console import Console
 
@@ -35,7 +45,8 @@ expect = _pw.expect
 
 pytestmark = pytest.mark.browser
 
-WIDE = 2560  # R18: 23 tabs fit a wide desktop; at 1920 the last one (Calls) folds
+WIDE = 2560  # R18: 23 tabs fit a wide desktop; at 1920 Calls stays out of the bar (no More)
+FULL_HD = 1920
 WIDTHS = {
     WIDE: 1440,
     1920: 1080,
@@ -222,16 +233,79 @@ def test_the_dock_fits_and_every_panel_is_reachable_exactly_once(
             assert {"approvals", "integrations"} <= set(over), over  # these labels (review A, M1)
         if width == WIDE:  # a wide screen has room for every tab: only a tab whose label is
             assert folded == over, (folded, over)  # wider than it folds (none on this machine)
-        if width == 1920:  # full HD: R18's Calls folds for room, Camera with it (More takes a slot)
-            room = [t for t in folded if t not in over]
-            assert room in ([], ["calls"], ["camera", "calls"]), (folded, over)
+        if width == FULL_HD:  # the bar before R18: only a tab whose label is wider than it folds
+            # (none on this machine), and Calls only out of the bar, never another tab for it
+            assert [t for t in folded if t not in EXTRA_IDS] == over, (folded, over)
+            _assert_bar_before_r18(dock, s)
         _assert_hint_whole(c, width)
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()
 
 
-@pytest.mark.parametrize("width", [WIDE, 1366, 390])
+# The page before R18 E added its tab: the same console.html without the Calls tab (E-NOTES: the
+# dock's one new line), served to this test's page only. Each shown dock item's place and size.
+CALLS_TAB = re.compile(r'\n[ ]*<button class="dk" type="button" data-open="calls"[^\n]*</button>')
+BAR_JS = """() => {
+  const d = document.getElementById('dock');
+  const box = (e) => {
+    const r = e.getBoundingClientRect();
+    return [r.left, r.top, r.width, r.height];
+  };
+  const items = [...d.children].filter((e) => e.getClientRects().length > 0);
+  const name = (e) => e.dataset.open || e.id || e.className;
+  return {dock: box(d), items: items.map((e) => [name(e), ...box(e)])};
+}"""
+
+
+def _before_r18(route: Any) -> None:
+    resp = route.fetch()
+    html, n = CALLS_TAB.subn("", resp.text())
+    assert n == 1, "the Calls tab line in console.html"
+    route.fulfill(response=resp, body=html)
+
+
+# Test-only: everything but the dock is left unpainted (its boxes keep their places), so the
+# Core's animation behind the dock's glass is not in the picture; only the dock's own pixels are.
+DOCK_ALONE = (
+    "body * { visibility: hidden !important } #dock, #dock * { visibility: visible !important }"
+)
+
+
+def _dock_shot(c: Console) -> bytes:
+    """The dock as painted, with CSS animation stopped and the caret hidden (the same on both)."""
+    c.page.add_style_tag(content=DOCK_ALONE)
+    c.page.mouse.move(0, 0)  # nothing hovered
+    c.page.evaluate(SETTLE_JS)
+    shot: bytes = c.page.locator("#dock").screenshot(animations="disabled", caret="hide")
+    return shot
+
+
+@pytest.mark.parametrize("surface", SURFACES)
+def test_at_full_hd_the_bar_is_the_bar_before_r18_to_the_pixel(
+    browser: Any, server_url: str, token: str, surface: str
+) -> None:
+    # the owner's rule at 1920 x 1080: every tab that was in the bar stays exactly where it was
+    now = _console(browser, server_url, token, FULL_HD, surface)
+    before = Console(browser, server_url, token, {"width": FULL_HD, "height": WIDTHS[FULL_HD]})
+    try:
+        before.page.add_init_script(f"localStorage.setItem('jarvis_surface', '{surface}');")
+        before.page.route(server_url + "/", _before_r18)
+        before.open()
+        before.page.evaluate(SETTLE_JS)
+        assert before.page.locator('.dk[data-open="calls"]').count() == 0
+        bar = now.page.evaluate(BAR_JS)
+        # the same items (More only where it was), in the same places and sizes
+        assert bar == before.page.evaluate(BAR_JS), bar
+        assert now.page.locator('.dk[data-open="calls"]').is_hidden()
+        assert _dock_shot(now) == _dock_shot(before), "the dock's pixels differ from before R18"
+        assert now.errors == [] and before.errors == [] and now.csp_violations() == []
+    finally:
+        now.close()
+        before.close()
+
+
+@pytest.mark.parametrize("width", [WIDE, FULL_HD, 1366, 390])
 def test_a_renderer_with_wider_text_folds_the_labels_that_no_longer_fit(
     browser: Any, server_url: str, token: str, width: int
 ) -> None:
@@ -252,6 +326,9 @@ def test_a_renderer_with_wider_text_folds_the_labels_that_no_longer_fit(
         assert folded and s["more"], folded
         if width == WIDE:
             assert folded == over, (folded, over)  # folded for its label, not for lack of room
+        if width == FULL_HD:  # More takes the folded label's slot: Calls waits behind it, and no
+            assert [t for t in folded if t not in over] in ([], ["calls"]), (folded, over)  # other
+            _assert_bar_before_r18(dock, s)
         first = folded[0]  # an open folded panel lights More
         page.locator("#dockMore").click()
         page.locator(f'#moreSheet [data-sheet-open="{first}"]').click()
@@ -278,12 +355,24 @@ def _assert_folding(c: Console, s: dict[str, Any], dock: Dock) -> list[str]:
     for pinned in PINNED:  # never folded for lack of room; Approvals only where its label
         assert (pinned in visible) is (pinned not in over), (pinned, visible)  # overflows
     folded = [t for t in order if t not in visible]
-    assert s["more"] is bool(folded), (s["more"], folded)
-    sheet = _sheet_entries(c) if folded else []
-    assert sheet == folded, (sheet, folded)  # exactly the folded tabs, in dock order
-    reachable = visible + sheet
+    # More only while a tab other than Calls is folded (R18: Calls never brings More on its own)
+    assert s["more"] is more_expected(dock, visible), (s["more"], folded)
+    sheet = _sheet_entries(c) if s["more"] else []
+    assert sheet == (folded if s["more"] else []), (sheet, folded)  # the folded tabs, in order
+    outside = [t for t in folded if t not in sheet]  # no More: Calls alone, reached from Vitals,
+    assert set(outside) <= EXTRA_IDS and (not outside or not s["more"]), outside  # the chat card
+    reachable = visible + sheet + outside  # and ?open=calls instead (test_r18_calls_ways_in.py)
     assert sorted(reachable) == sorted(order) and len(reachable) == len(set(reachable))
     return folded
+
+
+def _assert_bar_before_r18(dock: Dock, s: dict[str, Any]) -> None:
+    """The tabs before R18 show as the rule shows them without Calls, More only as it would have:
+    Calls displaced nothing (the owner's rule at 1920 px)."""
+    before = without_extras(dock)
+    visible = [t for t in s["visible"] if t not in EXTRA_IDS]
+    assert visible in shown_choices(before), (visible, shown_choices(before))
+    assert s["more"] is more_expected(before, visible), s["more"]
 
 
 @pytest.mark.parametrize("width", [1280, 360])

@@ -110,6 +110,9 @@ NOT_IN_PAGE = {
     "console-book-fx-plan.js": ("console-book-fx.js", "from './console-book-fx-plan.js'"),
     "console-book-fx-chart.js": ("console-book-fx.js", "from './console-book-fx-chart.js'"),
     "console-book-fx-cards.js": ("console-book-fx.js", "from './console-book-fx-cards.js'"),
+    # R5.2 V3: Voice -> Your voice and the voice session, brought by the R7 loader
+    "console-voice-session.js": ("console-r7.js", "import('./console-voice-session.js')"),
+    "console-voice-session.css": ("console-r7.js", "'/static/console-voice-session.css'"),
 }
 # R6.4: linked from the full book's page (book-read.html), served by api/book_read.READ_ASSETS
 ON_READ_PAGE = {"console-book-read.js", "console-book-chapter.js"}

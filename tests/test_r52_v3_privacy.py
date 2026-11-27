@@ -51,7 +51,8 @@ async def test_three_rows_with_counts_and_no_audio_in_the_export() -> None:
     exported = json.dumps([await profile.export(UID), await recordings.export(UID)])
     assert "audio" not in exported and "pcm" not in exported.casefold()
     assert '"recordings_on_laptop": 120' in exported and "browser_heard" in exported
-    assert (await profile.export(UID))["voice_profile"]["chosen"] == ListenEngine.WHISPER_SMALL
+    mine = await profile.export(UID)
+    assert mine is not None and mine["voice_profile"]["chosen"] == ListenEngine.WHISPER_SMALL
 
 
 async def test_deleting_the_recordings_keeps_the_profile_and_needs_the_laptop() -> None:

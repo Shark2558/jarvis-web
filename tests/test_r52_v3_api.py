@@ -173,7 +173,7 @@ def test_clip_errors_are_plain(settings: Settings) -> None:
 
 
 # ---- the production parts ------------------------------------------------------------------------
-PRICES = PriceList.from_settings(Settings(_env_file=None))
+PRICES = PriceList.from_settings(Settings(_env_file=None))  # type: ignore[call-arg]
 
 
 def _voice(docs: MemoryDocs, stt: FakeSTT, *, engines: bool = True) -> VoiceService:

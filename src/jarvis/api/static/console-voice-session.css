@@ -1,0 +1,82 @@
+/* src/jarvis/api/static/console-voice-session.css -- R5.2 V3 (docs/plans/r5-2-voice.md 3.3): the
+   Voice panel's "Your voice" section and the voice session pop-up. Loaded by
+   console-voice-session.js. Reuses the console's own pieces: .bsec / .bopt / .btxt / .bl / .bsw /
+   .bnote / .bfine / .vlist / .vchip / .vline-s / .vstatus, .btn (.bact / .primary / .danger),
+   .actions, .mbar, .k, .minput, .pbtn and the dialog (.bdialog). This sheet only places things:
+   no new colours, fonts, radii or shadows (tokens only: Night and Day, every theme). A state is
+   always a word too, never colour alone. The level bar follows the console's motion setting.
+   Phones: targets >= 44 px. Paragraph rules carry .vsess: `.bdialog p` would set them to 14 px. */
+
+/* ---- Voice -> Your voice ------------------------------------------------------------------- */
+#vSlotProfile .vstatus{margin:0 0 6px}
+#vSlotProfile .actions{flex-wrap:wrap;margin-top:10px}
+#vSlotProfile .actions .btn.bact{flex:none;margin-top:0}
+.vs-rank .bopt{padding:7px 0}
+.vs-rank .bopt:first-child{border-top:0}
+.vs-rank .btxt small{font-variant-numeric:tabular-nums}
+.vs-rank .vchip{flex:none;margin:0}
+#vSlotProfile .bnote:empty{display:none}
+
+/* ---- the pop-up: title, status, progress and blocks stay on top; the middle scrolls --------- */
+.bdialog.vsess{width:min(560px,calc(100vw - 32px));padding:0 22px 18px}
+.vsess .vs-top{position:sticky;top:0;z-index:1;margin:0 -22px;padding:18px 22px 12px;border-bottom:1px solid var(--line-2);
+  background:linear-gradient(90deg,transparent 6%,color-mix(in srgb,var(--accent) 55%,transparent) 50%,transparent 94%) top/100% 1px no-repeat,var(--panel-solid)}
+.vs-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.vs-head h2{margin:0}
+.vsess .vs-x{flex:none;width:36px;height:36px;margin-right:-8px}
+.vsess .vs-x svg{width:16px;height:16px}
+.vsess p.vs-status{margin:4px 0 0;font-size:14px;line-height:1.45;color:var(--ink-2)}
+.vsess .vs-bar{margin-top:10px}
+.vs-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;list-style:none;margin:10px 0 0;padding:0}
+.vs-steps li{min-width:0;padding:6px 8px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--well)}
+.vs-steps li[aria-current="step"]{border-color:var(--accent);outline:1px solid var(--accent);outline-offset:-2px}
+.vs-steps .k{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vs-steps b{display:block;margin-top:3px;font:400 12.5px/1.2 var(--tech);letter-spacing:.06em;color:var(--ink);font-variant-numeric:tabular-nums}
+.vs-steps li[data-done="true"] b{color:var(--ok-ink)}
+.vs-body{padding-top:14px}
+.vsess p.vs-text{margin:0 0 10px;font-size:14px;line-height:1.5;color:var(--ink-2)}
+.vsess p.vs-text b{font-weight:650;color:var(--ink)}
+
+/* the line to read */
+.vs-card{padding:16px 16px 14px;border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--well-2)}
+.vs-card .k{display:flex;flex-wrap:wrap;gap:4px 12px}
+.vs-card .k .acc{color:var(--accent-ink)}
+.vsess p.vs-line{margin:10px 0 0;font:700 22px/1.35 var(--hud);letter-spacing:.01em;color:var(--ink);overflow-wrap:anywhere}
+html[data-surface="night"] .vsess p.vs-line{font:400 20px/1.4 var(--tech);letter-spacing:.04em}
+.vsess p.vs-how{margin:6px 0 0;font-size:14px;line-height:1.45;color:var(--ink-2)}
+.vsess p.vs-how:empty{display:none}
+.vs-level{margin-top:14px}
+.vs-level i{transition:width .08s linear}
+html[data-motion="calm"] .vs-level i,html[data-motion="off"] .vs-level i{transition:none}
+.vsess p.vs-hint{margin:8px 0 0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+.vsess .actions{flex-wrap:wrap;margin-top:14px}
+.vsess .actions .btn{min-width:96px;height:40px}
+.vsess .btn[aria-pressed="true"]{outline:2px solid var(--accent-ink);outline-offset:2px}
+
+/* the ₹ question, his words, the browser switch */
+.vs-field{margin-top:12px}
+.vs-field label{display:block;margin-bottom:6px;font-size:13px;font-weight:600;line-height:1.35;color:var(--ink)}
+.vsess .vs-field .minput{max-width:100%}
+.vsess .vs-field .minput.vs-yes{max-width:160px;font-family:var(--tech);letter-spacing:.2em;text-transform:uppercase}
+.vsess .bopt{margin-top:10px}
+.vsess .bnote{margin-top:12px}
+.vsess .bnote.vs-ask{color:var(--ink);background:var(--amber-tint);border-color:var(--amber-line)}
+
+/* the results */
+.vsess .vs-rank{margin-top:4px}
+.vsess .vs-words{margin:10px 0 0;font-size:13px;line-height:1.45;color:var(--ink-2)}
+
+/* ---- phones ----------------------------------------------------------------------------------- */
+@media (max-width: 560px){
+  .bdialog.vsess{padding:0 14px 14px}
+  .vsess .vs-top{margin:0 -14px;padding:12px 14px 10px}
+  .vsess .vs-x{width:44px;height:44px;margin-right:-10px}
+  .vs-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .vsess p.vs-line{font-size:19px}
+  .vsess .actions .btn{flex:1 1 40%;height:44px}
+  .vsess .actions .btn.primary{flex-basis:100%}
+}
+@media (max-width: 899px){
+  #vSlotProfile .actions .btn.bact,#vSlotProfile .bsw{min-height:44px}
+  .vsess .minput{height:44px}
+}

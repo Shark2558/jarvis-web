@@ -95,14 +95,14 @@ async def running(s: Settings) -> AsyncIterator[tuple[FastAPI, AsyncClient]]:
 
 # ---- 1 · the version and the book's release name -------------------------------------------------
 def test_the_version_is_fourteen() -> None:
-    # R6.4 (6.3.2 at R6.3.1, 13.1.0 at R13.1, 13.0.0 at R13, 14.0.2 at hotfix 2); nothing compares
-    assert jarvis.__version__ == "6.4.0"
+    # R18 (6.4.0 at R6.4, 13.1.0 at R13.1, 14.0.2 at hotfix 2); nothing compares
+    assert jarvis.__version__ == "18.0.0"
 
 
 def test_the_real_repository_is_r14_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)  # R6.4: the release is now R6.4 (tests/test_r63_seams.py)
-    assert plans.release_label(repo) == "R6.4"  # R6.3 at R6.3, R13.1 at R13.1, R14 to hotfix 2
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"  # R6.4
+    assert plans.release_label(repo) == "R18"  # R6.3 at R6.3, R13.1 at R13.1, R14 to hotfix 2
+    assert plans.plan_paths(repo)[0] == "docs/plans/r18-calls.md"  # R6.4
     assert "docs/plans/r14-hardening.md" in plans.plan_paths(repo)
 
 
@@ -257,8 +257,9 @@ def test_a_self_health_ring_that_reached_no_channel_gives_its_slot_back() -> Non
 
 # ---- 3 · the key purpose -------------------------------------------------------------------------
 def test_one_key_purpose_makes_twenty_two() -> None:
-    assert keyring.PURPOSES[-5] == "backup_probe"  # R13 appended 2 (wardrobe), R13.1 2 (tryon)
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 26
+    # R13 appended 2 (wardrobe), R13.1 2 (tryon), R18 1 (calls)
+    assert keyring.PURPOSES[-6] == "backup_probe"
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
 
 
 # ---- 4 · permissions: no new row, the new tools in their rows, the words ------------------------

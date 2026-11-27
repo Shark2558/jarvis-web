@@ -1,4 +1,4 @@
-Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.3 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 08 · Architecture decisions (ADR log)
 
@@ -402,6 +402,7 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 | F1 | A tree-wide check that only `jarvis.llm` imports an AI vendor SDK | ADR-02 was enforced by review only | Closed 27 Nov 2026: `tests/test_llm_sdk_boundary.py` |
 | F2 | Teach `scripts/arch_inventory.py` the two idioms it misses (a helper-named collection; a tuple assignment) | 5 collections are invisible to the coverage check | Open: needs the Build Book's `src/jarvis/buildbook/gen/facts_code.py:COLLECTION` changed with it (chapter 04, section 2; chapter 12, section 4) |
 | F3 | Extend `scripts/check_doc_versions.py` to `docs/architecture/design/` | This document's version lines were not checked in CI | Closed 27 Nov 2026: `FOLDERS` includes the folder; `tests/test_check_doc_versions.py` |
+| F4 | Keep outfit plans 90 days after their day (`src/jarvis/wardrobe/styling/plans.py`) | The code keeps 14 days; R13's plan and the owner's 27 Nov 2026 decision say 90 | Open: next app release (chapter 12, section 4) |
 
 ## 4. Proposed ADRs
 
@@ -415,3 +416,4 @@ Proposed; it becomes Accepted when the code does what it says, in the same pull 
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 17:05 IST | R6.4 | First edition: 24 ADRs with context, decision, consequences, status and code, every departure from the reference architecture included; three follow-ups found while writing; the link to chapter 12's proposed ADRs | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): chapter 12's proposals B–G recorded as ADR-25 to ADR-30 (25 Accepted as built, the rest Proposed; A was already ADR-01); ADR-07's date and source from GitHub's history, its reason and ADR-10's marked unverified; F1 and F3 closed, F2 left open with the reason | 🛠 Mark XXV |
+| v6.4.3 | 27 Nov 2026 | R6.4 | Follow-up F4 added: outfit plans kept 90 days, as the owner decided | 🛠 Mark XXV |

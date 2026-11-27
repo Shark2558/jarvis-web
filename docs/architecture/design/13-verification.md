@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 13 · Verification of the design document
 
@@ -128,7 +128,8 @@ Done, or the path was removed) is reported when the generator runs.
   changed together with `scripts/arch_inventory.py`, because a test holds their counts equal. That
   is app code, so it was recorded (chapter 12, section 4), not done.
 - **Outfit plans:** R13's plan keeps them 90 days after the event; the code keeps them 14 days
-  after their day. Which one is meant is the owner's call (chapter 12, section 4).
+  after their day. The owner decided on 27 Nov 2026 for 90 days; the code changes in the next app
+  release (chapter 12, section 4, follow-up F4).
 - **The guide** (`docs/architecture/JARVIS-Architecture.md`, not part of this document) still dates
   the move to Cloud Run "by Slice 4 (*unverified*)" in its technology table; the date is now known
   (31 Oct 2026). Its next edition can take it.
@@ -137,7 +138,8 @@ Done, or the path was removed) is reported when the generator runs.
   stamp is old), so `python -m jarvis.buildbook.gen pages --check` fails until they are re-stamped:
   `PYTHONPATH=src python -m jarvis.buildbook.gen pages --stamp pg_chapter_technology
   pg_module_delivery pg_card_c58`. The pages live under `src/jarvis/`, so this verification did not
-  stamp them; the pull request needs it before CI's `docs-check` job passes.
+  stamp them. With the owner's approval the Workshop re-stamped them on 27 Nov 2026; only the stamp
+  line changed, and `pages --check` passes (153 pages, 26 narrations, 0 problems).
 - **The workbook** lives outside the repository, so CI can't regenerate chapter 10; the Workshop
   runs the generator at each release (chapter 09, rule 6).
 
@@ -170,3 +172,4 @@ the chapter's earlier change-log rows are kept.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026 | R6.4 | First edition: the independent verification of chapters 00–12 against the code and the workbook: method, counts, every fix, the traceability review, what stays unverified, what is left for the owner, how to re-run | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | The three Build Book pages re-stamped with the owner's approval; the owner's outfit-plan decision recorded | 🛠 Mark XXV |

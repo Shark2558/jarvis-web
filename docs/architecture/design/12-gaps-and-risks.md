@@ -1,4 +1,4 @@
-Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.3 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 12 · Gaps, conflicts and risks
 
@@ -70,8 +70,9 @@ From the handoff's carried-over list and the R6.4 review (left on purpose, docum
   - `README.md` still offers `render.yaml` as an alternative host; nothing deploys it.
   - Outfit plans: R13's plan (`docs/plans/r13-wardrobe.md`, the data table) keeps
     `wardrobe_plans` "90 days after the event"; the code drops a plan 14 days after its day
-    (`src/jarvis/wardrobe/styling/plans.py:StylingDoc.pruned`). Chapter 04 describes the code; which
-    one is meant is the owner's call.
+    (`src/jarvis/wardrobe/styling/plans.py:StylingDoc.pruned`). The owner decided on 27 Nov 2026:
+    keep plans 90 days after their day, as R13 planned. The code changes in the next app release
+    (follow-up F4); until then it keeps 14 days.
 
 ## 5. Proposed ADRs
 
@@ -83,3 +84,4 @@ Moved to chapter 08 on 27 Nov 2026: ADR-A is ADR-01, and ADR-B to ADR-G are ADR-
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:30 IST | R6.4 | First edition: modules with no code home, nine conflicts and their resolutions, scaling and availability limits, carried-over debt, seven proposed ADRs | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): conflict C10 (the slice 1 plan's R0 tier against the code's three classes); C1's source and C6's resolution; the one-instance row says what is really in memory; the timeout is set, not a default; three debt items the verification found; the proposed ADRs moved to chapter 08 with a pointer left here | 🛠 Mark XXV |
+| v6.4.3 | 27 Nov 2026 | R6.4 | Outfit plans: the owner chose 90 days; the code change is follow-up F4 | 🛠 Mark XXV |

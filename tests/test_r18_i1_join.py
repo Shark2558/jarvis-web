@@ -24,9 +24,10 @@ from jarvis.api.calls_console import ConsoleCardsApi
 from jarvis.api.r18_wiring import R18Parts
 from jarvis.calls.approvals import GrantBook
 from jarvis.calls.brain import Line
-from jarvis.calls.cards import offered, provisional
+from jarvis.calls.cards import offered, provisional, read_draft
 from jarvis.calls.join import (
     BookingSlots,
+    EngineStarter,
     GrantGate,
     HubAnswering,
     HubPhoneSink,
@@ -627,6 +628,52 @@ async def test_the_call_speaks_with_the_option_its_card_was_estimated_with() -> 
     assert langs == ("en-IN", "ml-IN") and balanced == frozenset()
     await choices.refresh(UID, None)  # an answered call: his default languages
     assert choices.snapshot(UID)[2] == ("en-IN",)
+
+
+async def test_review_the_call_speaks_free_first_as_its_card_was_estimated() -> None:
+    # R18 review HIGH: with Sarvam on, Google (₹0 while its allowance lasts) is chosen before the
+    # cheaper paid Sarvam; the allowance is read for the call's own length
+    from jarvis.calls.join_speech import SpeechChoices
+
+    store = MemoryCallStore()
+    await store.save_settings(UID, {"sarvam_on": True})
+    for option, inr in ((SpeechOption.SARVAM, 0.70), (SpeechOption.GOOGLE, 1.57)):
+        await store.put_language_result(
+            LanguageResult(
+                lang="hi-IN", option=option, checked_at=NOW, passed=True, inr_per_minute=inr
+            )
+        )
+    asked: list[int] = []
+
+    async def free(minutes: int) -> frozenset[SpeechOption]:
+        asked.append(minutes)
+        return frozenset({SpeechOption.GOOGLE}) if minutes <= 4 else frozenset()
+
+    choices = SpeechChoices(store, free=free)
+    await choices.refresh(UID, ("hi-IN",), 4)
+    assert choices.snapshot(UID)[0] == {"hi-IN": "google"} and asked == [4]
+    await choices.refresh(UID, ("hi-IN",), 6)  # past the allowance: the cheaper price
+    assert choices.snapshot(UID)[0] == {"hi-IN": "sarvam"}
+
+
+async def test_review_the_starter_reads_the_table_for_the_card_s_length() -> None:
+    seen: list[tuple[Any, ...]] = []
+
+    async def refresh(uid: str, langs: Any, minutes: Any = None) -> None:
+        seen.append((uid, langs, minutes))
+
+    class _StartHub:
+        async def start_outgoing(self, uid: str, card: Any, approval_id: str) -> Any:
+            return type("R", (), {"id": "call_0000000000aa"})()
+
+    r = await rig()
+    await known(r.store)
+    card = await r.service.builder.build(
+        UID, read_draft({"number": NUMBER, "purpose": "Book", "max_minutes": 4})
+    )
+    started = await EngineStarter(_StartHub(), refresh).start(UID, card, "cg_x")  # type: ignore[arg-type]
+    assert started == "call_0000000000aa"
+    assert seen == [(UID, card.languages, 4)]
 
 
 # ---- the chat's call card (E draws `call_card`; A1's press either way, once) ---------------------

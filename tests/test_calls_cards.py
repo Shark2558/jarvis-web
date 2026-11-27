@@ -134,6 +134,52 @@ def test_the_cheapest_passing_option_is_used() -> None:
     assert offered(results, CallSettings())["ml-IN"].option is SpeechOption.AZURE
 
 
+class _LeftFor:
+    """The free allowance left, per option (the real `BillingAllowance` meters Google only)."""
+
+    def __init__(self, **left: tuple[float, float]) -> None:
+        self.by = {SpeechOption(k): v for k, v in left.items()}
+
+    async def left(self, option: SpeechOption) -> tuple[float, float] | None:
+        return self.by.get(option)
+
+
+def test_review_free_first_beats_a_cheaper_paid_option_while_the_allowance_lasts() -> None:
+    # R18 review HIGH (the owner's "free first" rule): Sarvam at about ₹0.70 a call minute is
+    # cheaper than Google past its free allowance, but while Google's allowance covers the call
+    # Google costs ₹0 and comes first
+    results = [
+        _result("hi-IN", SpeechOption.SARVAM, 0.70),
+        _result("hi-IN", SpeechOption.GOOGLE, 1.57),
+    ]
+    yes = CallSettings(sarvam_on=True)
+    assert offered(results, yes, free={SpeechOption.GOOGLE})["hi-IN"].option is SpeechOption.GOOGLE
+    assert offered(results, yes)["hi-IN"].option is SpeechOption.SARVAM  # no allowance left
+
+
+async def test_review_the_estimator_names_the_options_a_call_costs_nothing_on() -> None:
+    est = Estimator(PRICES, RATE, allowance=_LeftFor(google=(1e6, 1e7)))
+    assert await est.free_options(6) == {SpeechOption.GOOGLE, SpeechOption.AZURE}
+    spent = Estimator(PRICES, RATE, allowance=_LeftFor(google=(10.0, 10.0)))
+    assert await spent.free_options(6) == {SpeechOption.AZURE}  # Azure F0 can't bill
+    assert await Estimator(PRICES, RATE).free_options(6) == {SpeechOption.AZURE}
+
+
+async def test_review_a_card_speaks_free_first_and_its_estimate_says_so() -> None:
+    store = await _store(
+        _result("en-IN", SpeechOption.GOOGLE, 1.57),
+        _result("hi-IN", SpeechOption.SARVAM, 0.70),
+        _result("hi-IN", SpeechOption.GOOGLE, 1.57),
+    )
+    await store.save_settings(UID, {"sarvam_on": True})
+    plenty = CardBuilder(store, Estimator(PRICES, RATE, allowance=_LeftFor(google=(1e6, 1e7))))
+    card, estimate = await plenty.estimate_for(UID, _draft(languages=["hi-IN", "en-IN"]))
+    assert estimate.speech_free and estimate.speech_inr == 0
+    spent = CardBuilder(store, Estimator(PRICES, RATE, allowance=_LeftFor(google=(1.0, 1.0))))
+    _, priced = await spent.estimate_for(UID, _draft(languages=["hi-IN", "en-IN"]))
+    assert not priced.speech_free and priced.speech_inr == pytest.approx(0.5 * 3 + 0.003 * 2700)
+
+
 async def test_an_unknown_template_is_refused() -> None:
     store = await _store()
     with pytest.raises(CardRefused) as err:

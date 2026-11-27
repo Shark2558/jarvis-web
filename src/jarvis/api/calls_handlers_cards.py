@@ -500,9 +500,10 @@ class CardsApi:
         try:
             settings = await self.store.settings(uid)
             results = await self.store.language_results()
+            free = await self.builder.estimator.free_options(settings.call_max_minutes)
         except Exception as exc:  # noqa: BLE001
             raise refused(exc) from None
-        offer = offered(results, settings)
+        offer = offered(results, settings, free)  # the option a call would use: free first
         rows = [
             {
                 "lang": code,

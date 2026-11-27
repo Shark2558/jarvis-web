@@ -225,6 +225,40 @@ async def test_the_language_table_says_what_is_offered() -> None:
     assert not rows["ta-IN"]["offered"] and len(rows) == 23
 
 
+async def test_review_the_language_table_offers_free_first() -> None:
+    # R18 review HIGH: the table shows the option a call would use, ₹0 now before a cheaper paid one
+    from jarvis.calls.cards import CardBuilder, Estimator
+    from jarvis.calls.models import LanguageResult, SpeechOption
+    from jarvis.calls.prices import SpeechPrice
+
+    a, r = await _api(languages=())
+    for option, inr in ((SpeechOption.SARVAM, 0.70), (SpeechOption.GOOGLE, 1.57)):
+        await r.store.put_language_result(
+            LanguageResult(
+                lang="hi-IN", option=option, checked_at=cr_now(), passed=True, inr_per_minute=inr
+            )
+        )
+    await r.store.save_settings(UID, {"sarvam_on": True})
+    prices = {
+        SpeechOption.GOOGLE: SpeechPrice(SpeechOption.GOOGLE, 2.0, 2.5, 3600, 1_000_000),
+        SpeechOption.SARVAM: SpeechPrice(SpeechOption.SARVAM, 0.5, 3.0, paid=True),
+    }
+
+    class _Plenty:
+        async def left(self, option: SpeechOption) -> tuple[float, float] | None:
+            return (1e6, 1e7) if option is SpeechOption.GOOGLE else None
+
+    a.builder = CardBuilder(r.store, Estimator(prices, None, allowance=_Plenty()))
+    rows = {row["lang"]: row for row in (await a.languages(UID))["languages"]}
+    assert rows["hi-IN"]["option"] == "google"
+
+
+def cr_now() -> Any:
+    from datetime import UTC, datetime
+
+    return datetime(2026, 11, 27, 6, 30, tzinfo=UTC)
+
+
 async def test_status_and_the_language_check_wait_for_their_parts() -> None:
     a, _ = await _api()
     assert (await _refused(a.status(UID))).status == 501

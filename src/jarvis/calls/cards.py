@@ -16,9 +16,10 @@ Communication skill): from the owner's request to the card he approves.
   `allow_balanced`; English before its first check is offered "not yet checked", the Workshop's
   I1 decision: Google en-IN is JARVIS's own voice path), the limits (never above his settings),
   "never called before" and the ₹ estimate. Refusals are `CardRefused` (plain words, stable code).
-- `Estimator`: speech (the language's cheapest passing option; within the free allowances, or on
-  an option that can't bill, ₹0), the brain (fast tier, about 4 turns a minute) and the summary,
-  for the card's full length. A price JARVIS does not know makes the estimate None, never ₹0.
+- `Estimator`: speech (the language's passing option, free first: one the call costs ₹0 on now,
+  within its free allowance or unable to bill, before any paid one, then the cheapest; R18
+  review), the brain (fast tier, about 4 turns a minute) and the summary, for the card's full
+  length. A price JARVIS does not know makes the estimate None, never ₹0.
 - `card_text`: the approval card's one line (the number's last four digits only).
 - `card_args`: a stored card back as the tool's arguments (the console's approval runs the same
   gateway tool as a chat card).
@@ -31,7 +32,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
@@ -203,23 +204,31 @@ def provisional(result: LanguageResult) -> bool:
     return result.versions.get("check") == NOT_YET_CHECKED
 
 
-def offered(results: Sequence[LanguageResult], settings: CallSettings) -> dict[str, LanguageResult]:
-    """Each language JARVIS may use on a call → its cheapest passing option he allows (a known
-    price before an unknown one, then the option's order); English "not yet checked" until it has
-    a result of its own."""
+def _rank(r: LanguageResult, free: Collection[SpeechOption]) -> tuple[bool, bool, float, int]:
+    """Free first (the owner's rule): an option this call costs ₹0 on, then a known price before
+    an unknown one, the lower price first, then the option's order (the laptop first)."""
+    price = r.inr_per_minute
+    return (r.option not in free, price is None, price or 0.0, _OPTION_ORDER[r.option])
+
+
+def offered(
+    results: Sequence[LanguageResult],
+    settings: CallSettings,
+    free: Collection[SpeechOption] = (),
+) -> dict[str, LanguageResult]:
+    """Each language JARVIS may use on a call → its passing option he allows, free first: one in
+    `free` (it costs this call ₹0: it can't bill, or its free allowance still covers the call;
+    `Estimator.free_options`) before any paid one, then the cheapest known price, then the
+    option's order. R18 review: a paid option's lower list price never outranks one that is ₹0
+    now. English "not yet checked" until it has a result of its own."""
     best: dict[str, LanguageResult] = {}
     if not any(r.lang == ENGLISH for r in results):
         best[ENGLISH] = PROVISIONAL_ENGLISH
     for r in results:
         if not _allowed(r, settings):
             continue
-        key = (r.inr_per_minute is None, r.inr_per_minute or 0.0, _OPTION_ORDER[r.option])
         held = best.get(r.lang)
-        if held is None or key < (
-            held.inr_per_minute is None,
-            held.inr_per_minute or 0.0,
-            _OPTION_ORDER[held.option],
-        ):
+        if held is None or _rank(r, free) < _rank(held, free):
             best[r.lang] = r
     return best
 
@@ -356,6 +365,16 @@ class Estimator:
             log.warning("speech allowance unreadable", extra={"error": type(exc).__name__})
             return None
 
+    async def free_options(self, minutes: int) -> frozenset[SpeechOption]:
+        """The options a call of `minutes` costs ₹0 on now: one that can't bill (the laptop,
+        Azure F0) or one whose free allowance this month still covers it (Google's). An option
+        whose allowance can't be read is not free (priced: the safe side)."""
+        free: set[SpeechOption] = set()
+        for option in self.prices:
+            if (await self._speech(option, minutes))[1]:
+                free.add(option)
+        return frozenset(free)
+
     async def estimate(self, minutes: int, option: SpeechOption | None) -> Estimate:
         speech, free = (None, False) if option is None else await self._speech(option, minutes)
         if self.rate is None:
@@ -477,7 +496,8 @@ class CardBuilder:
         if not settings.owner_first_name.strip():
             raise CardRefused("no_name", MSG_NO_NAME)
         languages = draft.languages or settings.default_languages
-        allowed = offered(results, settings)
+        minutes = min(draft.max_minutes or settings.call_max_minutes, settings.call_max_minutes)
+        allowed = offered(results, settings, await self.estimator.free_options(minutes))
         for code in languages:
             if code not in allowed:
                 words = MSG_LANGUAGE.format(name=LANGUAGE_NAMES.get(code, code))
@@ -486,7 +506,6 @@ class CardBuilder:
             self._is_template and self._is_template(draft.template)
         ):
             raise CardRefused("template", MSG_TEMPLATE)
-        minutes = min(draft.max_minutes or settings.call_max_minutes, settings.call_max_minutes)
         estimate = await self.estimator.estimate(minutes, allowed[languages[0]].option)
         fields: dict[str, Any] = {
             "number_e164": number,

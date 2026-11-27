@@ -286,7 +286,7 @@ def _build(app: FastAPI, s: Settings, docs: Docs, ring: Keyring, audit: AuditTra
     records = VaultRecords(keeper)
     http = httpx.AsyncClient(timeout=SPEECH_TIMEOUT_S, follow_redirects=False)
     speech = _SpeechFactory(app, s, store, http)
-    choices = SpeechChoices(store)
+    choices = SpeechChoices(store, free=builder.estimator.free_options)  # free first (review)
     base = EngineDeps(
         desk=None,  # type: ignore[arg-type]  # each call's: the hub's DeskProxy
         phone=NoPhone(),

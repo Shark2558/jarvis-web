@@ -41,6 +41,7 @@ from jarvis.api.belongings import install_belongings
 from jarvis.api.body import MAX_BODY_BYTES, BodySizeLimit, BodyTooLarge, too_large_body
 from jarvis.api.brief import internal_router as brief_internal_router
 from jarvis.api.brief import router as brief_router
+from jarvis.api.calls_routes import install_calls_routes
 from jarvis.api.camera import install_camera
 from jarvis.api.console import router as console_router
 from jarvis.api.deleted import router as deleted_router
@@ -690,6 +691,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     r7.install_r7_routes(app)  # R7: /app, /v1/vision, /v1/phone, /v1/watch, /v1/sos
     r14.install_r14_routes(app)  # R14: /v1/r14, /v1/backup, /v1/selfwatch, /v1/skills
     r13.install_r13_routes(app)  # R13: /v1/r13, /v1/wardrobe, /v1/laundry, /v1/outfits
+    install_calls_routes(app)  # R18: /v1/calls (501 until I1 wires the parts), its 2 sockets
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

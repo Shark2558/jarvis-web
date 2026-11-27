@@ -20,8 +20,10 @@ kotlin {
     }
 }
 
-// The JVM tests read the same file as the server's tests (D24); it sits beside android/.
+// The JVM tests read the same files as the server's tests (D24); they sit beside android/. R18 adds
+// the cloud-signed call commands' vectors (src/jarvis/phone/calls_wire.py writes them).
 val sharedVectors: File = rootProject.file("../tests/fixtures/r7/phone_vectors.json")
+val callVectors: File = rootProject.file("../tests/fixtures/r18/phone_calls_vectors.json")
 
 tasks.named<Test>("test") {
     enabled = false // the tests run through jvmTests: no test framework (D24)
@@ -34,6 +36,7 @@ val jvmTests = tasks.register<JavaExec>("jvmTests") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.shark2558.jarvis.core.CoreTestsKt")
     systemProperty("jarvis.vectors", sharedVectors.absolutePath)
+    systemProperty("jarvis.calls_vectors", callVectors.absolutePath)
 }
 
 tasks.named("check") {

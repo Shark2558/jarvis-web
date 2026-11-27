@@ -622,7 +622,7 @@ gcloud run deploy "$SERVICE" --source . --region "$REGION" \
   --service-account "$RUN_SA" \
   --allow-unauthenticated \
   --min-instances 0 --max-instances 1 \
-  --memory 512Mi --cpu 1 --timeout 300 \
+  --memory 512Mi --cpu 1 --timeout 1800 \
   "${CONFIG_FLAGS[@]}" \
   --quiet || { show_logs; exit 1; }
 

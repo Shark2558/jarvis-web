@@ -33,13 +33,13 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name -----------------------------------------------
 def test_the_version_is_thirteen_point_one() -> None:
-    assert jarvis.__version__ == "6.4.0"  # R6.4 (13.1.0 at R13.1); the persona stays p13.0
+    assert jarvis.__version__ == "18.0.0"  # R18 (13.1.0 at R13.1); persona p13.0
 
 
 def test_the_real_repository_is_r13_1_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R6.4"  # R6.4 (R6.3 at R6.3 I0)
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"
+    assert plans.release_label(repo) == "R18"  # R6.4 (R6.3 at R6.3 I0)
+    assert plans.plan_paths(repo)[0] == "docs/plans/r18-calls.md"
     assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 
@@ -51,9 +51,9 @@ def test_the_persona_stays_p13_0() -> None:
 
 # ---- 2 · two key purposes ------------------------------------------------------------------------
 def test_two_key_purposes_make_twenty_six() -> None:
-    assert keyring.PURPOSES[-2:] == ("tryon", "tryon_photos")
-    assert keyring.PURPOSES[-4:-2] == ("wardrobe", "wardrobe_photos")
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 26
+    assert keyring.PURPOSES[-3:-1] == ("tryon", "tryon_photos")  # R18 appended "calls"
+    assert keyring.PURPOSES[-5:-3] == ("wardrobe", "wardrobe_photos")
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
     ring = keyring.Keyring(bytes(range(9, 41)))
     blob = ring.cipher("tryon_photos").encrypt(b"x", aad="tryon/person/u/v1")
     with pytest.raises(Exception):  # noqa: B017 - each purpose is its own key
@@ -107,7 +107,8 @@ def test_the_settings_edges_are_accepted() -> None:
 
 
 def test_config_stays_under_its_guard() -> None:
-    assert _lines(SRC / "config.py") <= 790
+    # R18 +2: the import of its settings' base class (`config_calls.py`, where R18's keys live)
+    assert _lines(SRC / "config.py") <= 791
 
 
 # ---- 8 · money: the try-on label, tax and the overall limit -------------------------------------
@@ -248,7 +249,7 @@ def test_the_words_and_ids() -> None:
     assert re.fullmatch(m.REQUEST_ID, "tq_" + "0123456789abcdef")
     assert m.aad_person("u") == "tryon/person/u/v1"
     assert m.aad_picture("u", "tp_0123456789ab") == "tryon/picture/u/tp_0123456789ab/v1"
-    assert (m.PURPOSE, m.PHOTO_PURPOSE) == keyring.PURPOSES[-2:]
+    assert (m.PURPOSE, m.PHOTO_PURPOSE) == keyring.PURPOSES[-3:-1]
     assert re.fullmatch(m.GARMENT_ID, m.new_garment_id()) and m.GARMENT == "tryon_garment"
     assert m.aad_garment("u", "tg_0123456789ab") == "tryon/garment/u/tg_0123456789ab/v1"
 
@@ -418,7 +419,8 @@ def test_console_html_is_unchanged_and_the_dock_stays_22() -> None:
     import hashlib
 
     got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
-    assert got == "9f4c0c68f45e46fe150e65e182f4d2ba1132eb556b3ddee0ba3491e4c85450a2"
+    # R18 E: + the Calls panel and its tab
+    assert got == "d26e202e4e9aa526a94aab01b1b85433582482b06c0ad79fced61abebf7d466c"
     assert _lines(STATIC / "console.html") == 782
 
 
@@ -899,10 +901,10 @@ def test_the_book_knows_the_mannequins_licences() -> None:
 
 # ---- size guards, "no real clock", ₹ only ------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 735  # not edited by R13.1 (732)
+    assert _lines(SRC / "api" / "app.py") <= 738  # not edited by R13.1 (732); R18 I1 +4
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") <= 741  # not edited (713)
-    assert _lines(SRC / "config.py") <= 790
+    assert _lines(SRC / "config.py") <= 791  # R18 +2: the import of `config_calls.CallsConfig`
     assert _lines(STATIC / "console-helpers.js") <= 238  # not edited
     assert _lines(STATIC / "console-helpers-wardrobe.js") <= 306
     assert _lines(STATIC / "console-r7-send.js") <= 165

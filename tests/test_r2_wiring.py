@@ -260,6 +260,7 @@ async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> Non
     r14 = ["backup_canary", "backup_drill", "selfwatch_daily"]  # R14 I1: A's two, B's one
     r13 = ["wardrobe_sweep", "laundry_daily"]  # R13: A's sweep (keyring on), B's morning job
     r13 += ["seeme_daily"]  # R13.1 C: See it on me's morning job
+    r18 = ["calls_retention"]  # R18 I1: the calls' 30 days (his Keep aside)
     assert names == [
         *r2,
         "vitals_poll",
@@ -269,6 +270,7 @@ async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> Non
         *r11,
         *r14,
         *r13,
+        *r18,
     ]
     assert not RESERVED_JOB_NAMES & set(names)
     assert await run_jobs(on.app.state.tick_jobs, [UID]) == dict.fromkeys(names, "ok")

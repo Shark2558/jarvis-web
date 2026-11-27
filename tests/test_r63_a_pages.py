@@ -110,9 +110,10 @@ OPTS = write.Options(flows=FLOWS, layer_of={"demo": "L4", "config": "X"}, licenc
 
 
 def test_the_generator_refuses_a_card_in_no_module(tmp_path: Path) -> None:
-    """Through the join with the real module map: C74 is placed nowhere, so no book is built."""
-    with pytest.raises(GenError, match="cards in no module.*C74"):
-        write.build(a_repo(tmp_path, c74=True), OPTS)
+    """Through the join with the real module map: C79 is placed nowhere, so no book is built (R18
+    placed C74-C78 in the Phone calls module)."""
+    with pytest.raises(GenError, match="cards in no module.*C79"):
+        write.build(a_repo(tmp_path, c74=True, card_id="C79"), OPTS)
 
 
 def test_the_join_writes_the_pages_into_facts_json(

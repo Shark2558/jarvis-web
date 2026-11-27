@@ -20,6 +20,7 @@ token vault keeps using the raw key, so tokens stored before R2 still decrypt.
 - R6: `book_index` (the sealed build-book index) and `book_session` (book sessions; used both as a
   cipher and as a MAC domain, which `mac` keeps apart by its own HKDF info).
 - R11: `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (the helpers' sealed data).
+- R18: `calls` (the numbers on call cards and records; as a MAC domain, their keyed refs).
 """
 
 from __future__ import annotations
@@ -83,6 +84,9 @@ PURPOSES: tuple[str, ...] = (
     # choices, saved comparisons and his YES; and his photo and the try-on pictures, apart
     "tryon",
     "tryon_photos",
+    # R18 (docs/plans/r18-calls.md section 9, "Data"): the numbers on call cards and records
+    # (sealed) and, as a MAC domain, their keyed references (`mac("calls", "number/<uid>/<e164>")`)
+    "calls",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

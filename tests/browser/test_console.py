@@ -76,6 +76,10 @@ class Console:
         # storage, switched off); the Wardrobe tab's section then takes no room, as R13's tab was
         if "503" in msg.text and url.endswith("/v1/tryon"):
             return
+        # R18 E: a server whose calls are switched off (503 calls_off) or not wired yet (501
+        # not_built, before the I1 join) answers the Calls panel so; the panel says it in words
+        if ("501" in msg.text or "503" in msg.text) and "/v1/calls/" in url:
+            return
         self.errors.append(f"console.error: {msg.text} @ {msg.location.get('url', '')}")
 
     def open(self, path: str = "/") -> None:

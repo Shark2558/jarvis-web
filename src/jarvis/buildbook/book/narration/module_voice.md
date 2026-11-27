@@ -1,14 +1,14 @@
 ---
 chapter: module_voice
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
   "pg_module_voice": "303373d01cc439ca"
   "pg_card_c05": "6f1e9f1eae6e0f4c"
   "pg_card_c06": "0c93fd63672dc89d"
   "pg_screen_voice": "3cd7f21a82067368"
-  "pg_service_google_cloud_speech_to_text": "941502246658e464"
-  "pg_service_google_cloud_text_to_speech": "604ca9bd152c73c3"
+  "pg_service_google_cloud_speech_to_text": "27ee781a35616177"
+  "pg_service_google_cloud_text_to_speech": "e08f6f14a597b1fc"
 ---
 - [page:pg_module_voice] [show:title] This chapter is about voice: how you talk to JARVIS, and how JARVIS talks back.
 - [show:plain] Voice works in the console, on your laptop or on your phone.
@@ -98,9 +98,11 @@ pages:
 - Too many requests in a minute get a polite line, and JARVIS asks again in a few seconds.
 - [page:pg_service_google_cloud_speech_to_text] [show:title] Now the two outside services, starting with Google Cloud Speech-to-Text.
 - [show:plain] It is how JARVIS listens: after the wake word, that one short clip goes to Google, which sends back the words.
-- Google gets the audio of that turn and a short list of hint words, and JARVIS stores no audio and never logs what you said.
+- Google gets the audio of that turn and a short list of hint words, and JARVIS stores no audio of these turns and never logs what you said.
+- On a phone call where Google is the chosen option, what the other person says goes to Google the same way, one short clip at a time.
 - [show:example] In the example, you ask JARVIS to add oat milk to groceries, Google returns the words and other guesses, and the item is added.
 - [show:how] Cloud listening is switched on only with the cloud voice, and JARVIS signs in as its own Google service account, with no extra key.
+- Phone calls get Google's listening only under the same conditions, through the voice's own connection and price list, so calls and spoken chat share one free allowance.
 - [count:{{fact:src/jarvis/voice/google_cloud.py:SHORT_CLIP_S}}] Your language is {{fact:settings.voice_language}}, with automatic punctuation, and the short-clip model handles clips up to {{fact:src/jarvis/voice/google_cloud.py:SHORT_CLIP_S}} seconds.
 - The extra guesses cost nothing, and they help the "understood as" check.
 - [count:{{fact:settings.voice_hint_words}}] This turn's hints are capped at {{fact:settings.voice_hint_words}} words, after the base list and the honorific, and before your own words.
@@ -113,8 +115,10 @@ pages:
 - [page:pg_service_google_cloud_text_to_speech] [show:title] Last, Google Cloud Text-to-Speech: JARVIS's voice.
 - [show:plain] The reply is sent to Google, which returns it as sound, in one of the British voices you choose.
 - Only the text to be spoken goes to Google, and JARVIS stores no audio and never logs the text.
+- On a phone call where Google is the chosen option, Google speaks JARVIS's side of the call too, in a stock male voice of the call's language.
 - [show:example] In the example, you ask aloud for your first meeting, and the short answer comes back in your chosen HD voice in under a second.
 - [show:how] Google is asked for compressed sound at your chosen speed, with no retry, because a late voice is worse than the browser's voice now.
+- Phone calls get Google's voice only under the same conditions, through the voice's own connection and price list, so calls and spoken replies share one free allowance.
 - [count:{{fact:src/jarvis/voice/service.py:MAX_TEXT_IN}}] A reply of at most {{fact:src/jarvis/voice/service.py:MAX_TEXT_IN}} characters is accepted, then shortened to what is worth speaking.
 - [count:{{fact:src/jarvis/voice/google_cloud.py:VOICES_TTL_S}}] The list of voices is kept for {{fact:src/jarvis/voice/google_cloud.py:VOICES_TTL_S}} seconds, and a failed list isn't asked for again for {{fact:src/jarvis/voice/google_cloud.py:VOICES_FAIL_TTL_S}} seconds.
 - [show:costs] Inside the free allowance it costs nothing, and Google's allowance resets on Pacific-time months, shared across your billing account.

@@ -1,10 +1,10 @@
 ---
 page: pg_chapter_data
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
   "deploy/backup_setup.sh": "354cd02d8afbcc3f"
-  "deploy/cloudrun.sh": "8fd20146ba1568b4"
+  "deploy/cloudrun.sh": "768853b09894305d"
   "evals/r14/backup.py": "163e8845efbe7c01"
   "src/jarvis/api/backup.py": "d9e1d0f24f8d2498"
   "src/jarvis/api/privacy.py": "26b8bb3f25b86ee7"
@@ -31,10 +31,10 @@ sources:
   "src/jarvis/backup/verify.py": "98381e6ba5786d43"
   "src/jarvis/backup/vitals.py": "9e8fb47f5bdbeba9"
   "src/jarvis/backup/walk_checks.py": "e4f0a11c2664ebe0"
-  "src/jarvis/config.py": "e223e4b9e6e6333b"
+  "src/jarvis/config.py": "8c3c0b7f0890ff99"
   "src/jarvis/core/guardrails.py": "906dc22e6f5c1678"
   "src/jarvis/integrations/vault.py": "b766226c56672432"
-  "src/jarvis/keyring.py": "78e7ac914cd81e85"
+  "src/jarvis/keyring.py": "092c625e649b4b88"
   "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
   "src/jarvis/storage/audit.py": "d268e84d6aa87ab5"
   "src/jarvis/storage/docs.py": "561064f51e6e084f"
@@ -45,13 +45,13 @@ sources:
   "src/jarvis/telegram/service.py": "abea8743a90bb292"
 ---
 ## In plain words
-This chapter is about where your data lives and how it is kept safe and recoverable. JARVIS runs on Google Cloud Run, keeps its records in Google's Firestore database in the Mumbai region, and keeps its secrets in Secret Manager, never in the code. The most private things, such as the vault, notes, things and your Google tokens, are sealed again by JARVIS with keys of its own, a separate key for each kind of data. The privacy panel shows everything that is kept, with Export and Delete, and once you switch backups on, Google copies the database daily while JARVIS proves each month that a copy restores. The Vault, Privacy, Approvals and Delivery pages give the details.
+This chapter is about where your data lives and how it is kept safe and recoverable. JARVIS runs on Google Cloud Run, keeps its records in Google's Firestore database in the Mumbai region, and keeps its secrets in Secret Manager, never in the code. The most private things, such as the vault, notes, things, the numbers you call and your Google tokens, are sealed again by JARVIS with keys of its own, a separate key for each kind of data. The privacy panel shows what is kept, with Export and Delete; phone calls are the exception, deleted in the Calls panel or at the end of their keeping time. Once you switch backups on, Google copies the database daily while JARVIS proves each month that a copy restores. The Vault, Privacy, Approvals and Delivery pages give the details.
 
 ## Example (made up)
 On a Friday Ritu wonders what JARVIS keeps about her family. Privacy lists 14 kinds of data: the vault holds 12 documents, encrypted by JARVIS, and Memory 63 facts. She downloads everything except the vault files as one file for her own records. That night Google copies the whole database, as it has every night since she ran the backup setup in October, and on 1 December the monthly drill proves that a copy restores and opens with today's key.
 
 ## How it works
-`deploy/cloudrun.sh` sets JARVIS up on Google Cloud Run, sleeping when idle, with Firestore as its database in the same project and every secret stored in Secret Manager. `src/jarvis/config.py` reads every setting from the environment, keeps secrets typed so they never reach a log, and refuses to start in production with unsafe settings, such as a missing API token or a laptop-only mode. Every store speaks one small port, `Docs`, and only `src/jarvis/storage/firestore_docs.py` talks to Firestore, under the `firestore_prefix` name prefix. Conversations, approval cards and the audit chain live in `src/jarvis/storage/sessions.py`, `src/jarvis/storage/approvals.py` and `src/jarvis/storage/audit.py`, the last one append-only. `Keyring` turns the one token key into a separate key for each kind of data, so the key for notes never opens the vault, and `TokenCipher` seals with AES-256-GCM. The vault seals each file under its own key and opens a file only after an unlock in the console that lasts {{fact:settings.vault_unlock_minutes}} minutes (`src/jarvis/api/vault.py`). The privacy panel, `src/jarvis/api/privacy.py`, lists every kind of data kept, with Export and Delete, and asks for your passkey before anything goes for good. Backups begin with your one-time `deploy/backup_setup.sh`: a daily copy kept {{fact:src/jarvis/backup/status.py:RETENTION_DAYS}} days, and delete protection on the live database. `src/jarvis/backup/canary.py` writes a daily canary sealed with today's key, and the monthly drill in `src/jarvis/backup/drill.py` restores a copy into a throw-away database and checks it (`src/jarvis/backup/verify.py`). The drill reaches Google only through `FirestoreAdmin`, and reads both databases through read-only views (`src/jarvis/backup/readonly.py`).
+`deploy/cloudrun.sh` sets JARVIS up on Google Cloud Run, sleeping when idle, with Firestore as its database in the same project and every secret stored in Secret Manager. `src/jarvis/config.py` reads every setting from the environment, keeps secrets typed so they never reach a log, and refuses to start in production with unsafe settings, such as a missing API token or a laptop-only mode. Every store speaks one small port, `Docs`, and only `src/jarvis/storage/firestore_docs.py` talks to Firestore, under the `firestore_prefix` name prefix. Conversations, approval cards and the audit chain live in `src/jarvis/storage/sessions.py`, `src/jarvis/storage/approvals.py` and `src/jarvis/storage/audit.py`, the last one append-only. `Keyring` turns the one token key into a separate key for each kind of data, so the key for notes never opens the vault, and `TokenCipher` seals with AES-256-GCM. The vault seals each file under its own key and opens a file only after an unlock in the console that lasts {{fact:settings.vault_unlock_minutes}} minutes (`src/jarvis/api/vault.py`). The privacy panel, `src/jarvis/api/privacy.py`, lists the kinds of data kept, with Export and Delete, and asks for your passkey before anything goes for good. Phone calls, kept in `calls`, have no row there: `src/jarvis/api/privacy.py` names none of them. Backups begin with your one-time `deploy/backup_setup.sh`: a daily copy kept {{fact:src/jarvis/backup/status.py:RETENTION_DAYS}} days, and delete protection on the live database. `src/jarvis/backup/canary.py` writes a daily canary sealed with today's key, and the monthly drill in `src/jarvis/backup/drill.py` restores a copy into a throw-away database and checks it (`src/jarvis/backup/verify.py`). The drill reaches Google only through `FirestoreAdmin`, and reads both databases through read-only views (`src/jarvis/backup/readonly.py`).
 
 ## What it costs
 Keeping your data costs nothing while it stays inside Firestore's free tier, and the keyring and the vault use no outside service (`src/jarvis/keyring.py`). Secret Manager is free for the first few secret versions, with a small monthly charge for each one beyond them. Backups add a few rupees a month for a small database, only after you switch them on (`deploy/backup_setup.sh`).

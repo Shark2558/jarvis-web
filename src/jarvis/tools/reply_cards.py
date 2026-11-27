@@ -42,6 +42,7 @@ from typing import Annotated, Final, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from jarvis.calls.chat_card import CallReplyCard
 from jarvis.people.offer_card import PeopleOfferCard
 from jarvis.whatsapp.draft import WhatsAppCard
 
@@ -217,6 +218,7 @@ class TryOnCard(_Strict):
 
 # R11.1 D21-D: + the "Look up" offer of a name the picture's own text holds (people/offer.py)
 # R13.1 D21: + the try-on card ("what should I wear?" shows the look on his 3D figure)
+# R18 I1: + the call card a proposed `calls_place` shows (Call, Edit, Cancel; calls/chat_card.py)
 AnyCard = (
     PlacesCard
     | RouteCard
@@ -226,6 +228,7 @@ AnyCard = (
     | BatchCard
     | PeopleOfferCard
     | TryOnCard
+    | CallReplyCard
 )
 ReplyCard = Annotated[AnyCard, Field(discriminator="kind")]
 
@@ -248,6 +251,8 @@ def _has_room(cards: list[AnyCard], card: AnyCard) -> bool:
     """Whether `cards` can take `card` within the reply's cap for its kind (one try-on card)."""
     if isinstance(card, TryOnCard) and any(isinstance(c, TryOnCard) for c in cards):
         return False  # R13.1 D21: one figure under one reply, the first look asked
+    if isinstance(card, CallReplyCard):  # R18 I1: once per card (a proposal looked up again)
+        return not any(isinstance(c, CallReplyCard) and c.id == card.id for c in cards)
     if isinstance(card, WhatsAppCard):
         return _count(cards, drafts=True) < MAX_DRAFTS
     return _count(cards, drafts=False) < MAX_CARDS
@@ -316,6 +321,7 @@ __all__ = [
     "AnyCard",
     "BatchCard",
     "BatchItem",
+    "CallReplyCard",
     "PlaceItem",
     "PlacesCard",
     "ReplyCard",

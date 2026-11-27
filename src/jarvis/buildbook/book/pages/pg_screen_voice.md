@@ -19,7 +19,7 @@ sources:
   "src/jarvis/api/static/console-voice-speech.js": "3ac2e294edcc281c"
   "src/jarvis/api/static/console-voice-wake.js": "906de367b5e856ef"
   "src/jarvis/api/static/console-voice.js": "69224f06a0ee9c0e"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
   "src/jarvis/api/voice.py": "12fae33259cea1d6"
 ---
 ## In plain words

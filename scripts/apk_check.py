@@ -65,6 +65,11 @@ ALLOWED_PERMISSIONS: dict[str, str] = {
     "android.permission.WAKE_LOCK": "WorkManager: keep the CPU awake for a short job",
     "android.permission.RECEIVE_BOOT_COMPLETED": "WorkManager: keep jobs after a restart",
     f"{PACKAGE}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION": "AndroidX core's own, app-only",
+    # R18 D (docs/plans/r18-calls.md section 3; android calls/CallsAccess.kt)
+    "android.permission.CALL_PHONE": "place the call he approved on its card (R18)",
+    "android.permission.ANSWER_PHONE_CALLS": "answer a ringing call, end JARVIS's own call (R18)",
+    "android.permission.READ_PHONE_STATE": "the PHONE_STATE broadcast: ringing, off the hook (R18)",
+    "android.permission.READ_CALL_LOG": "the caller's number in PHONE_STATE, answering only (R18)",
 }
 REQUIRED_PERMISSIONS: frozenset[str] = frozenset(
     {
@@ -101,9 +106,6 @@ FORBIDDEN_PERMISSIONS: frozenset[str] = frozenset(
         "android.permission.QUERY_ALL_PACKAGES",
         "android.permission.REQUEST_INSTALL_PACKAGES",
         "android.permission.ACCESS_BACKGROUND_LOCATION",
-        "android.permission.READ_PHONE_STATE",
-        "android.permission.READ_CALL_LOG",
-        "android.permission.CALL_PHONE",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.USE_FULL_SCREEN_INTENT",
         "android.permission.health.READ_RESTING_HEART_RATE",

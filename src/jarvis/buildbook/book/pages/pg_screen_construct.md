@@ -3,7 +3,7 @@ page: pg_screen_construct
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Construct is the console's hologram: three wireframe shapes nested inside each other, slowly turning above a projector base while a glowing plane sweeps up and down through them. It does no work for you; it is there for the look of the deck, like the Core in the middle of the screen. Under it, three readings show the real numbers of the drawing: Vertices, Edges and Frame rate (`src/jarvis/api/static/console.html`).

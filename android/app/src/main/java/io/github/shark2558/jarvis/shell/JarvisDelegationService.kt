@@ -11,6 +11,8 @@ import android.app.Notification
 import android.app.NotificationManager
 import androidx.core.app.NotificationManagerCompat
 import com.google.androidbrowserhelper.trusted.DelegationService
+import io.github.shark2558.jarvis.calls.CallsLink
+import io.github.shark2558.jarvis.calls.CallsWake
 import io.github.shark2558.jarvis.core.Channels
 
 class JarvisDelegationService : DelegationService() {
@@ -26,6 +28,13 @@ class JarvisDelegationService : DelegationService() {
         notification: Notification,
         channelName: String,
     ): Boolean {
+        // R18 D: the cloud's doorbell for call commands. Its sentence is for the laptop's browser;
+        // here it only means "ask the door": the commands come signed in the door's answer and are
+        // checked before anything is done (calls/CallsLink.kt). Shown as nothing of its own.
+        if (CallsWake.isDoorbell(platformTag)) {
+            CallsLink.pullSoon(this)
+            return true
+        }
         if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
         NotifyChannels.ensure(this)
         val channel = Channels.forTag(platformTag)

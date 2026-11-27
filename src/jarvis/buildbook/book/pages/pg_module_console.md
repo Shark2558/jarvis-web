@@ -1,12 +1,12 @@
 ---
 page: pg_module_console
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  "src/jarvis/api/app.py": "51eaf37fbe6a89cf"
+  "src/jarvis/api/app.py": "2f8821679b892d33"
   "src/jarvis/api/auth.py": "02a9e121c2585fd8"
   "src/jarvis/api/body.py": "94feeb1db871c289"
-  "src/jarvis/api/console.py": "03b9b870e751911f"
+  "src/jarvis/api/console.py": "5f89470424a0a10a"
   "src/jarvis/api/feature_wiring.py": "473760847cb35d03"
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
   "src/jarvis/api/identity.py": "4b025a7710b59c4b"
@@ -20,14 +20,14 @@ sources:
   "src/jarvis/api/startup_log.py": "4ba9e18096e253e1"
   "src/jarvis/api/static/console-3d-scenes.js": "80d2691e8bb110de"
   "src/jarvis/api/static/console-3d.js": "b590fd5947ccb313"
-  "src/jarvis/api/static/console-deck.js": "cfb441c3101b8045"
-  "src/jarvis/api/static/console-dock.js": "0798faf0a39ad778"
+  "src/jarvis/api/static/console-deck.js": "9068fb0d30f872de"
+  "src/jarvis/api/static/console-dock.js": "7172e71a34e29998"
   "src/jarvis/api/static/console-fx.js": "bb9dd7f373411a5f"
   "src/jarvis/api/static/console-helpers.js": "38c9179fa5cd2d23"
   "src/jarvis/api/static/console-text.js": "be5a5239bbffae37"
   "src/jarvis/api/static/console.css": "6a8f96e9bcd21971"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
-  "src/jarvis/api/static/console.js": "ac49b62db99514f8"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.js": "7f64b41a454a9ea7"
   "src/jarvis/cli.py": "fe0bb250afc25bfa"
   "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
   "src/jarvis/storage/audit.py": "d268e84d6aa87ab5"
@@ -36,7 +36,7 @@ sources:
   "src/jarvis/storage/sessions.py": "c9a8ec12966d54db"
 ---
 ## In plain words
-The console is the web page you use JARVIS from, on a laptop or a phone: the chat, a dock of panels such as Brief, Approvals, Activity, Memory, Vault, Home and Vitals, the brain picker, and the Night and Day looks. Behind it sits JARVIS's server, which lets in only the Google accounts you listed as owners, limits how fast anyone may call it, and keeps conversations, approvals and the audit trail in Google's Firestore database. Engineers have a terminal client too, for talking to the brain without the page.
+The console is the web page you use JARVIS from, on a laptop or a phone: the chat, a dock of panels such as Brief, Approvals, Activity, Memory, Vault, Home and Vitals, the brain picker, and the Night and Day looks. The Calls button never takes another button's place in the dock: it joins the bar only where it fits beside all the others, and otherwise you open Calls from More while More shows, from Vitals' calls line, a call card in the chat or its own link (`src/jarvis/api/static/console-dock.js`). Behind it sits JARVIS's server, which lets in only the Google accounts you listed as owners, limits how fast anyone may call it, and keeps conversations, approvals and the audit trail in Google's Firestore database. Engineers have a terminal client too, for talking to the brain without the page.
 
 ## Example (made up)
 Asha opens JARVIS on her phone at the bus stop and signs in with Google. Her address is on the owner list, so the console opens on the chat, with Chat, Brief, Approvals and a More button in the dock. She asks for today's plan and closes the browser. At 9:30 at her desk she opens the laptop and the same conversation is waiting, because it lives on the server, not on the phone. That evening her cousin tries the same link with his own Google account and sees "This JARVIS belongs to someone else."

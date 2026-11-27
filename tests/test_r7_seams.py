@@ -107,8 +107,8 @@ def _text(path: Path) -> str:
 
 # ---- 1, 2 · the version and the build book's release name --------------------------------------
 def test_the_version_is_seven() -> None:
-    # R6.4 (6.3.2 at R6.3.1, 13.1.0 at R13.1, 14.0.2 at hotfix 2, 7.0.0 at R7 I0); nothing compares
-    assert jarvis.__version__ == "6.4.0"
+    # R18 (6.4.0 at R6.4, 14.0.2 at hotfix 2, 7.0.0 at R7 I0); nothing compares
+    assert jarvis.__version__ == "18.0.0"
 
 
 def _repo(tmp_path: Path, version: str | None) -> Repo:
@@ -157,8 +157,8 @@ def test_the_fallback_label_reads_the_checkouts_version_file(tmp_path: Path) -> 
 
 def test_the_real_repository_is_r7_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)  # R6.4: the release is now R6.4 (tests/test_r63_seams.py)
-    assert plans.release_label(repo) == "R6.4"  # R6.3 at R6.3, R13.1 at R13.1, R14 to hotfix 2
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"  # R6.4
+    assert plans.release_label(repo) == "R18"  # R6.3 at R6.3, R13.1 at R13.1, R14 to hotfix 2
+    assert plans.plan_paths(repo)[0] == "docs/plans/r18-calls.md"  # R6.4
     assert "docs/plans/r7-mobile.md" in plans.plan_paths(repo)
 
 
@@ -291,8 +291,9 @@ def test_no_row_lets_a_tool_send_an_sos() -> None:
 
 # ---- 7 · key purposes ---------------------------------------------------------------------------
 def test_three_key_purposes_make_twenty_one() -> None:
-    assert keyring.PURPOSES[-8:-5] == ("watch", "sos", "vision")  # R14 + 1, R13 + 2, R13.1 + 2
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 26
+    # R14 + 1, R13 + 2, R13.1 + 2, R18 + 1
+    assert keyring.PURPOSES[-9:-6] == ("watch", "sos", "vision")
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
 
 
 # ---- 8, 20 · the parts' contract and wiring -----------------------------------------------------
@@ -322,8 +323,15 @@ def test_a_mobile_part_carries_r11_1s_part_fields() -> None:
 
 
 def test_the_door_has_four_routes_each_owned_by_one_part() -> None:
-    assert DOOR_ROUTES == ("hello", "health", "inbox", "sos")
-    assert DOOR_OWNER == {"hello": "phone", "health": "body", "inbox": "phone", "sos": "body"}
+    # R18 I1: a fifth, `calls` (Part C's phone part carries the calls' door, jarvis.phone.calls)
+    assert DOOR_ROUTES == ("hello", "health", "inbox", "sos", "calls")
+    assert DOOR_OWNER == {
+        "hello": "phone",
+        "health": "body",
+        "inbox": "phone",
+        "sos": "body",
+        "calls": "phone",
+    }
     assert DOOR_CAPS["inbox"] == 10 * 1024 * 1024 + 64 * 1024
     assert max(v for k, v in DOOR_CAPS.items() if k != "inbox") <= 256 * 1024
 
@@ -352,7 +360,7 @@ async def test_the_app_starts_with_four_built_parts_and_their_status_routes(
         assert (await client.get("/v1/sos")).json()["part"] == "body"
         # I1: every part is built: C's hello and inbox, D's health and sos (DOOR_OWNER)
         handlers = wiring.door_handlers(app)
-        assert set(handlers) == {"hello", "inbox", "health", "sos"}
+        assert set(handlers) == {"hello", "inbox", "health", "sos", "calls"}  # R18 I1: + calls
         assert all(callable(h) for h in handlers.values())
         for route in handlers:
             assert route in (parts[DOOR_OWNER[route]].services.get("door") or {}), route
@@ -617,7 +625,8 @@ def test_the_camera_is_the_twenty_second_tab_with_its_panel() -> None:
     html = _text(STATIC / "console.html")
     dock = html[html.index('id="dock"') : html.index("</nav>")]
     names = re.findall(r'data-open="(\w+)"', dock)
-    assert len(names) == 22 and names[-1] == "camera" and names[-2] == "helpers"
+    # R18: Calls is the 23rd, after Camera
+    assert len(names) == 23 and names[-2] == "camera" and names[-3] == "helpers"
     assert 'id="p-camera" data-panel="camera" aria-labelledby="t-camera"' in html
     assert '<h2 id="t-camera">Camera</h2>' in html
 
@@ -649,7 +658,7 @@ def test_new_css_stays_small() -> None:
 
 def test_the_line_budgets_hold() -> None:
     assert _lines(SRC / "tools" / "gateway.py") <= 760
-    assert _lines(SRC / "api" / "app.py") <= 735
+    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
     for path in STATIC.glob("console*.js"):
         assert _lines(path) <= 800, path.name
 

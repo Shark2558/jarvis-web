@@ -51,8 +51,11 @@ def test_the_built_sheet_equals_the_page_it_replaced(
         built = [_plain(h) for h in c.page.evaluate(ENTRIES_JS)]
         # the old markup, read by the same browser (an SVG <path/> serialises as <path></path>)
         old = c.page.evaluate(BEFORE_JS, before)
-        assert len(old) == 19 and len(built) == 20
+        assert len(old) == 19 and len(built) == 21  # + R7's Camera and R18's Calls
         assert built[:19] == old  # same order, same words, same markup
+        calls = built[20]
+        assert calls.startswith('<button class="sheet-item" type="button" data-sheet-open="calls">')
+        assert "<b>Calls</b><small>Calls JARVIS places from your phone" in calls
         camera = built[19]
         head = '<button class="sheet-item" type="button" data-sheet-open="camera">'
         words = "<b>Camera</b><small>Look at a photo or the live picture, on this device</small>"

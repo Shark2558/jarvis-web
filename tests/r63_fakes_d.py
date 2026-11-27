@@ -87,7 +87,7 @@ PLAN_VALUES: dict[str, Any] = {
     "release.new": "The Build Book: written by AI, short tour and full book",
     "cards.count": 73,
     "modules.count": 18,
-    "modules.else_count": 11,
+    "modules.else_count": 12,  # R18: the Phone calls module is one of the others
     "loc.python_code": "124 thousand",
     "layers.count": 8,
     "brain.balanced_model": "Claude Sonnet 5.5",

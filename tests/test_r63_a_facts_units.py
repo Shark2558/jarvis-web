@@ -254,3 +254,27 @@ def facts_values_context() -> facts_values.Context:
         roadmap=("R9",),
         guide="docs/architecture/JARVIS-Architecture.md",
     )
+
+
+def test_r18_review_a_loop_over_a_dict_with_a_spread_reads_the_spread_too() -> None:
+    # R18 review (BOOK-LIST 3.1): console.py's APP_ASSETS spreads R18's **CALLS_ASSETS (another
+    # module's dict); the route reader skipped it, so the calls' /static/ routes were missing
+    import ast as _ast
+
+    from jarvis.buildbook.gen.facts_routes import Consts, loop_envs
+
+    trees = {
+        "src/pkg/__init__.py": _ast.parse(""),
+        "src/pkg/more.py": _ast.parse('_T = "text/css"\nMORE = {"b.css": _T}\n'),
+        "src/pkg/main.py": _ast.parse(
+            "from pkg.more import MORE\n"
+            'ALL = {"a.js": "application/javascript", **MORE}\n'
+            "for _name, _type in ALL.items():\n    pass\n"
+        ),
+    }
+    loop = next(n for n in trees["src/pkg/main.py"].body if isinstance(n, _ast.For))
+    envs = loop_envs(Consts(trees), "src/pkg/main.py", loop)
+    assert envs == [
+        {"_name": "a.js", "_type": "application/javascript"},
+        {"_name": "b.css", "_type": "text/css"},
+    ]

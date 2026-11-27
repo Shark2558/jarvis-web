@@ -1,35 +1,39 @@
 ---
 chapter: story_planned
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_chapter_planned": "459107c97ecbfd63"
+  "pg_chapter_planned": "536b451386937a72"
 ---
 - [show:title] This chapter is the list of what isn't part of JARVIS yet.
 - [show:plain] It tells you which parts you can use today, and which exist only on paper.
 - Every other page of this book describes the code as it runs now. This one looks ahead.
-- But first, what has just left the list: this release, {{fact:release.label}}, is built.
-- It gave the Build Book its own look, and the full book a page of its own, with contents and search.
-- It narrated the full book chapter by chapter, with varied effects, as you are hearing now.
-- And it fixed two things: costs that never read as free when a price is unknown, and secure links for a Tailscale address.
-- The next releases come in the order you set them, from the architecture guide's roadmap.
-- Nothing on that list is built yet, and plans can change.
+- But first, what has just left the list: this release, {{fact:release.label}}, Calls from your laptop, is built.
+- After your tap, JARVIS places a phone call from your own number, through your laptop.
+- It speaks English and the Indian languages that pass its language check, and keeps a sealed record of the call.
+- Next comes the voice build, then the home cameras with the first home vision uses, then the kitchen vision uses.
+- Later come care, a fitness coach, smart-home extras, subscription releases, a Health and Wellbeing skill, a trading desk and deeper tracing.
+- A few things were left out of the calls release for later: calls while the laptop is off, a second SIM for forwarded calls, the WhatsApp route and a launch release.
+- None of it is built yet, and plans can change.
 - [show:how] The architecture guide gives every part of JARVIS a card, and marks in capitals any part that isn't built yet.
 - So a reader never mistakes a plan for a feature.
-- Each release also has its own plan, which says what it holds and what it leaves out.
+- Each release also has its own plan, which says what it holds and what it leaves for later.
 - [show:overview] Here is the roadmap, in your order, starting from the release you are reading.
-- [node:built] It starts with {{fact:release.label}}, built: the Book's own reader, its search, and the narrated chapters with their effects.
+- [node:built] It starts with {{fact:release.label}}, built: phone calls placed after your tap, from your own number, through Phone Link on the laptop.
+- Its plan also holds the language check, answering the calls you miss once you switch it on, a ready card for laundry calls, and bookings added to your calendar.
+- And each call's summary, transcript and recording are kept in the vault.
+- The guide's cards for these parts call them built and joined, though not yet deployed, so this book describes them as built.
 - [edge:built>left] Its plan set a few things aside for later.
-- [node:left] A guest-safe full book, print views, a Simple or Technical toggle, and an interactive architecture map are not in it.
-- They stay on this list until a release takes them, if you ask for them.
+- [node:left] A home call box, so calls work while the laptop is off, and a second SIM at home for forwarded calls.
+- Then the WhatsApp Business route, which needs a registered business, calls while the laptop sleeps, and a launch release.
+- A follow-up adds the brain's own check of each call language.
+- They stay on this list until a release takes them.
 - [edge:built>guide] After this release, the guide's roadmap takes over, in your order.
 - [node:guide] The roadmap lists the next releases with what each one holds, and says plainly that none of it is built.
 - [edge:guide>tour] The short tour takes what comes next from here.
 - [node:tour] It reads its next and after-that lines from the top rows of the roadmap.
-- [edge:guide>calls] First on the roadmap comes a new way to talk.
-- [node:calls] JARVIS making and answering phone calls from your laptop.
-- [edge:calls>voice] Then the voice itself.
-- [node:voice] R5.2 is the voice build, with the voice fixes you asked for.
+- [edge:guide>voice] First on the roadmap comes the voice itself.
+- [node:voice] R5.2 is the voice build, with the microphone and listening fixes you asked for.
 - [edge:voice>cams] Then the cameras.
 - [node:cams] R8 is the home cameras' setup, with the first home vision uses, on JARVIS's own on-device vision engine.
 - [node:confirm] Here you play a part: each of those vision uses starts only after you confirm its cameras.
@@ -40,17 +44,20 @@ pages:
 - [node:kitchen] R9 brings the kitchen vision uses.
 - [edge:kitchen>later] Beyond that, the list goes on.
 - [node:later] Later come R10, with care uses and a fitness coach, and R12, with smart-home extras.
-- Then R15 to R18, the subscription releases, and a new core skill for Health and Wellbeing.
+- Then the subscription releases, and a new core skill for Health and Wellbeing.
 - R19 is a trading desk, with the decision about it left for later, and there is deeper tracing with OpenTelemetry.
+- And only when you ask for them: a Simple or Technical toggle, an interactive architecture map, print views and a guest-safe full book.
 - [show:example] In the made-up example, Priya opens the Book on her phone one evening.
-- She wonders whether JARVIS can already answer a phone call for her.
-- She opens this chapter, and finds phone calls from your laptop at the top of the list, just after the release she is reading.
-- So she doesn't hunt for it in the console.
-- She turns instead to the Voice page, which tells her what the microphone does today, and presses Play to hear its chapter.
+- She wonders whether JARVIS can already watch her front door.
+- She opens this chapter, and finds the home cameras second on the list, just after the voice build.
+- So she doesn't hunt for them in the console.
+- She turns instead to the Phone calls chapter, which tells her what a call from her laptop needs today, and presses Play to hear it.
 - Then she makes a note to look again in a few releases.
 - [show:costs] Reading this list costs nothing.
 - What a release on it would cost is worked out in that release's own plan, before any work starts, and is not guessed here.
+- The calls release did exactly that: its plan priced the line, the speech, the brain and the caps in rupees before anything was built.
 - [show:fails] A roadmap row goes out of date when plans change.
 - The guide is updated with each release, and its change log at the end says what moved.
-- A plan's own change log says what changed in it after approval, as this release's records your answers and the effects added at your request.
+- A plan's own change log says what changed in it after approval, as this release's records your answer to keep each call's audio as well.
+- The roadmap follows the order relayed from your release plan, which isn't kept with the code, so a change there reaches this chapter only when the guide is updated.
 - That is the road ahead: in your order, honestly marked, and never mistaken for what runs today.

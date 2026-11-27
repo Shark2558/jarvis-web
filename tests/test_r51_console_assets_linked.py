@@ -110,6 +110,19 @@ NOT_IN_PAGE = {
     "console-book-fx-plan.js": ("console-book-fx.js", "from './console-book-fx-plan.js'"),
     "console-book-fx-chart.js": ("console-book-fx.js", "from './console-book-fx-chart.js'"),
     "console-book-fx-cards.js": ("console-book-fx.js", "from './console-book-fx-cards.js'"),
+    # R18 E: the Calls panel, loaded by the R7 loader; it brings its stylesheet and its parts
+    "console-calls.js": ("console-r7.js", "import('./console-calls.js')"),
+    "console-calls.css": ("console-calls.js", "'/static/console-calls.css'"),
+    "console-calls-api.js": ("console-calls.js", "from './console-calls-api.js'"),
+    "console-calls-shapes.js": ("console-calls.js", "from './console-calls-shapes.js'"),
+    "console-calls-card.js": ("console-calls.js", "from './console-calls-card.js'"),
+    "console-calls-list.js": ("console-calls.js", "from './console-calls-list.js'"),
+    "console-calls-form.js": ("console-calls.js", "from './console-calls-form.js'"),
+    "console-calls-live.js": ("console-calls.js", "from './console-calls-live.js'"),
+    "console-calls-langs.js": ("console-calls.js", "from './console-calls-langs.js'"),
+    "console-calls-settings.js": ("console-calls.js", "from './console-calls-settings.js'"),
+    "console-calls-vitals.js": ("console-calls.js", "from './console-calls-vitals.js'"),
+    "console-calls-audio.js": ("console-calls-live.js", "from './console-calls-audio.js'"),
 }
 # R6.4: linked from the full book's page (book-read.html), served by api/book_read.READ_ASSETS
 ON_READ_PAGE = {"console-book-read.js", "console-book-chapter.js"}

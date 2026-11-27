@@ -1,9 +1,9 @@
 ---
 page: pg_card_c55
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  "src/jarvis/__init__.py": "c0533b5bcdc55981"
+  "src/jarvis/__init__.py": "e7c19ff56bddba24"
   "src/jarvis/about.py": "c310b3bdce51c135"
   "src/jarvis/api/static/console-vitals.js": "dd7cc4ee3cec2353"
   "src/jarvis/vitals/INTEGRATION-r51.md": "d438580f7e609bae"
@@ -27,7 +27,7 @@ sources:
 Vitals is one board for everything that has a limit or a renewal date: JARVIS's own keys and connections, the free allowances it lives on, your AI spending, and any bills or subscriptions you add yourself. Each line is green, amber or red, and JARVIS tells you once when a line gets worse. You only ever type a key's name, limit and expiry, never the key itself. At the foot of the panel, an About line says which version of JARVIS is running and the day it was built.
 
 ## Example (made up)
-You add a line "Domain renewal", expiring on 15 December. On 16 November it turns amber, because it is now within the warning days, and your phone gets one alert. Nothing more arrives until 15 December, when the line turns red and you get one more. Meanwhile the web search line reads "612 of 900 this month" in green, and the foot of the panel reads "About JARVIS · v6.4.0 · built 25 Nov 2026".
+You add a line "Domain renewal", expiring on 15 December. On 16 November it turns amber, because it is now within the warning days, and your phone gets one alert. Nothing more arrives until 15 December, when the line turns red and you get one more. Meanwhile the web search line reads "612 of 900 this month" in green, and the foot of the panel reads "About JARVIS · v18.0.0 · built 27 Nov 2026".
 
 ## How it works
 `VitalsService` builds the board from three sources: the lines you add, the meters other parts keep (spending, Google allowances, web credits), and JARVIS's own keys and connections from `Own` (`src/jarvis/vitals/service.py`).

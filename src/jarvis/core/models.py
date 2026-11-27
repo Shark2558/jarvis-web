@@ -151,6 +151,41 @@ class ChatRequest(BaseModel):
     )
 
 
+# R18 review (E-NOTES): what a card SHOWS of its arguments (the Approvals panel prints them). A
+# phone call's numbers are shown as the card's text shows them, the last four digits only; the
+# gate keeps the whole arguments, which are what runs on his approval.
+MASKED_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    "calls_place": ("number", "booking.give_number"),  # a key, or "<outer>.<key>"
+}
+
+
+def _masked_number(value: object) -> object:
+    if value is None:
+        return None
+    digits = "".join(c for c in str(value) if c.isdigit())
+    if not isinstance(value, str) or len(digits) < 8:
+        return "…"
+    return ("+91 …" if value.startswith("+91") else "…") + digits[-4:]
+
+
+def shown_arguments(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """A card's arguments as shown: a copy, its numbers masked (`MASKED_ARGUMENTS`)."""
+    paths = MASKED_ARGUMENTS.get(tool)
+    if not paths:
+        return arguments
+    shown: dict[str, Any] = {**arguments}
+    for path in paths:
+        outer, _, key = path.rpartition(".")
+        if not outer:
+            if key in shown:
+                shown[key] = _masked_number(shown[key])
+            continue
+        inner = shown.get(outer)
+        if isinstance(inner, dict) and key in inner:  # a copy: the gate's own stays whole
+            shown[outer] = {**inner, key: _masked_number(inner[key])}
+    return shown
+
+
 class PendingApproval(BaseModel):
     id: str
     tool: str
@@ -179,7 +214,7 @@ class PendingApproval(BaseModel):
             id=a.id,
             tool=a.tool,
             summary=a.summary,
-            arguments=a.arguments,
+            arguments=shown_arguments(a.tool, a.arguments),
             risk=a.risk.value,
             expires_at=a.expires_at,
             session_id=sid,

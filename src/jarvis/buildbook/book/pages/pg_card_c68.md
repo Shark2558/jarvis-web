@@ -20,7 +20,7 @@ sources:
   "src/jarvis/offline/r14_part.py": "6d70ec07cf642990"
   "src/jarvis/offline/said.py": "571a7157094332b5"
   "src/jarvis/skills/__init__.py": "e183f17eb3bde99b"
-  "src/jarvis/skills/catalogue.json": "5d199a221efb71a8"
+  "src/jarvis/skills/catalogue.json": "fecdbe0c3b75aa75"
   "src/jarvis/skills/ids.py": "5978ff2b3a2b549e"
   "src/jarvis/skills/offer.py": "7d55ef5bbc813fac"
   "src/jarvis/skills/open_tool.py": "86b05e4f2e426f2d"

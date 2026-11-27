@@ -4,7 +4,7 @@
 // signed (ECDSA P-256, SHA-256: Android Keystore's "SHA256withECDSA") over
 //   "jarvis-phone-v1\n" + device id + "\n" + t + "\n" + n + "\n" + METHOD + "\n" + path + "\n"
 //   + hex(sha256(body))
-// The path is one of the four door routes and never carries a query string.
+// The path is one of the door's routes (R18 adds `calls`) and never carries a query string.
 package io.github.shark2558.jarvis.core
 
 import java.security.MessageDigest
@@ -21,8 +21,9 @@ object Door {
     private const val NONCE_BYTES = 16
     private const val POINT_BYTES = 65
 
-    val ROUTES: List<String> = listOf("hello", "health", "inbox", "sos")
-    private val PATH = Regex("/phone/v1/(?:hello|health|inbox|sos)")
+    // R18 D: `calls` carries call events and fetches the cloud's signed call commands.
+    val ROUTES: List<String> = listOf("hello", "health", "inbox", "sos", "calls")
+    private val PATH = Regex("/phone/v1/(?:hello|health|inbox|sos|calls)")
     private val DEVICE_ID = Regex("ph_[0-9a-f]{12}")
     private val NONCE = Regex("[0-9a-f]{32}")
     private val METHODS = setOf("GET", "POST")
@@ -72,6 +73,13 @@ object Door {
         val point = spki.copyOfRange(prefix.size, spki.size)
         require(point[0] == 0x04.toByte()) { "not an uncompressed point" }
         return point
+    }
+
+    /** R18: the X.509 form the JDK reads a P-256 public key in, from its 65-byte X9.62 point (the
+     *  cloud's command key comes as that point's hex, as the phone's own key goes at linking). */
+    fun spkiFromX962(point: ByteArray): ByteArray {
+        require(point.size == POINT_BYTES && point[0] == 0x04.toByte()) { "not an uncompressed P-256 point" }
+        return P256_SPKI_PREFIX + point
     }
 
     fun sha256Hex(data: ByteArray): String = hex(MessageDigest.getInstance("SHA-256").digest(data))

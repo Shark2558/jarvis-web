@@ -204,6 +204,7 @@ async def linked_gateway(undo: UndoBin | None = None) -> Gateway:
         r7=r7_tools(google, docs),  # R7 I0 seam 21: every mobile part's tools, as the app builds
         r14=r14_tools(google, docs),  # R14 I0 seam 4: backups' and the register's tools (C4)
         r13=r13_tools(docs),  # R13 I0 seam 6: the wardrobe's tools, as the app builds them
+        r18=r18_tools(docs, ring),  # R18 I1: calls_place (R3) and calls_answer_mode
     )
 
 
@@ -274,6 +275,21 @@ def r13_tools(docs: Any) -> tuple[Any, ...]:
         state={}.get,
     )
     return tools_of(build_parts(ctx))
+
+
+def r18_tools(docs: Any, ring: Keyring) -> tuple[Any, ...]:
+    """R18's two call tools as the app registers them (`api/r18_wiring.r18_tools`): the R3
+    `calls_place` card and the answering switch, so the register and the Telegram guards see
+    them."""
+    from jarvis.calls.approvals import CallsService
+    from jarvis.calls.cards import CardBuilder, Estimator
+    from jarvis.calls.limits import Limits
+    from jarvis.calls.store import DocCallStore, KeyringSealer
+    from jarvis.calls.tools import calls_tools
+
+    store = DocCallStore(docs, sealer=KeyringSealer(ring))
+    service = CallsService(store, CardBuilder(store, Estimator({}, None)), Limits(store))
+    return tuple(calls_tools(service))
 
 
 def r111_tools(google: Any, docs: Any) -> tuple[Any, ...]:

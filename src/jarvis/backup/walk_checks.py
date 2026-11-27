@@ -35,7 +35,15 @@ KNOWN_SUBCOLLECTIONS: tuple[str, ...] = (
     "pictures",  # documents/store.py: {prefix}attachments/{id}/pictures
     "book_chunks",  # buildbook/seal_chunks.py: {prefix}book/{uid}/book_chunks
     "items",  # undo/store.py: {prefix}deleted_items/{uid}/items
-    "days",  # activity/store.py: {prefix}activity_days/{uid}/days
+    "days",  # activity/store.py: {prefix}activity_days/{uid}/days; calls/store.py's too
+    # R18 (review): calls/store.py and calls/records.py, {prefix}calls/{uid}/<kind>; without them
+    # the drill's count came out short once a call was kept, and the drill failed closed
+    "cards",
+    "records",
+    "numbers",
+    "months",
+    "sealed",
+    "sealed_chunks",
 )
 ACTIVITY_DAYS = "activity_days"
 _DAY = re.compile(r"\d{8}")

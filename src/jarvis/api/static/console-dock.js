@@ -57,11 +57,11 @@
     people: 'Public figures and work due-diligence, profiles open in your browser',
     book: 'How JARVIS is built, sealed in your vault with each release',
     voice: 'JARVIS\'s voice, speed and wit; how this device listens',
+    calls: 'Calls JARVIS places from your phone: live captions, records, languages', // R18
     media: 'Play the videos and music JARVIS found for you',
     construct: 'The rotating hologram',
     helpers: 'Bills, chores, weather and alerts, nudges and the kitchen',
     camera: 'Look at a photo or the live picture, on this device', // R7
-    calls: 'Calls JARVIS places from your phone: live captions, records, languages', // R18
   };
   function buildSheet() {
     const close = $('moreClose'), into = close ? close.parentNode : null;

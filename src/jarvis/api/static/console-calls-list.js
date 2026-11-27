@@ -115,7 +115,7 @@ export function mount(host, ctx) {
     if (had) h.focus(); // the record has loaded: the keyboard (and a screen reader) lands on its title
   }
   function eventBox(r) {
-    const box = mk('div', 'bnote');
+    const box = mk('div', 'bnote cl-event');
     if (r.event.undone) { box.textContent = 'The calendar entry this call added was removed.'; return box; }
     const what = [r.event.title, r.event.when].filter(Boolean).join(', ');
     box.append(mk('span', '', 'Added to your calendar' + (what ? ': ' + what : '') + '. '));

@@ -5,9 +5,11 @@
    44 px on the phone layout; Motion Off and reduced motion stop every transition here. */
 #p-calls .opt-in{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
 #p-calls .opt-in:disabled + .seg-opt{cursor:default;opacity:.6}
-#p-calls .seg{max-width:360px}
+#p-calls .seg{max-width:360px;gap:4px}
 #p-calls .seg-opt{min-height:36px;padding:0 6px;font-size:12px;letter-spacing:.1em}
 .cl-ready{margin:0 0 12px}
+#p-calls .hp-acts{align-items:center}
+#p-calls .hp-acts .vt-chip{margin-top:0}
 .cl-chips{display:flex;flex-wrap:wrap;gap:6px}
 .cl-ready .sfine{margin-top:8px}
 .cl-ready .bnote b,.cl-cready .bnote b{display:block;margin-bottom:4px;color:var(--ink)}
@@ -15,11 +17,12 @@
 .cl-field{margin-top:12px}
 .cl-field .bl{margin-bottom:6px}
 .cl-field .mhelp{margin-top:0}
+.cl-field .mhelp + .mhelp{margin-top:-4px}
 .cl-wide{width:100%}
 .cl-langs{min-width:0;margin:14px 0 0;padding:0;border:0}
 .cl-langs legend{padding:0;margin-bottom:6px}
 .cl-lang{display:flex;align-items:center;gap:10px;min-height:32px}
-.cl-lang input{flex:none;width:18px;height:18px;margin:0;accent-color:var(--accent)}
+.cl-lang input{flex:none;width:20px;height:20px;margin:0}  /* the size of the Wardrobe's and Try it on's boxes */
 .cl-lang label{font:600 14px/1.3 var(--hud);color:var(--ink);cursor:pointer}
 .cl-lang input:disabled + label{cursor:default;color:var(--ink-2)}
 .cl-book{margin:4px 0 0 2px;padding:0 0 4px 12px;border-left:2px solid var(--line)}
@@ -29,6 +32,7 @@
 
 /* the call card: in the chat (under a reply) and under the form */
 .cl-cards{margin-top:8px}
+#log .cl-kv{grid-template-columns:96px minmax(0,1fr)}
 .cl-card{display:flex;flex-direction:column;gap:6px;width:min(460px,100%);padding:12px 14px}
 .cl-chead{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:6px 10px}
 .cl-ctitle{min-width:0;font:700 15px/1.25 var(--hud);letter-spacing:.04em;color:var(--ink);overflow-wrap:anywhere}
@@ -65,10 +69,17 @@ html[data-surface="night"] .cl-rtitle{font:400 15px/1.3 var(--tech);letter-spaci
 .cl-en{margin:2px 0 0;font-size:12.5px;line-height:1.4;color:var(--ink-2);overflow-wrap:anywhere}
 .cl-record .confirm{flex-wrap:wrap;margin-top:8px}
 .cl-record .confirm span{flex:1 1 100%;overflow-wrap:anywhere}
-.cl-record .bnote .btn.bact{margin:0 0 0 6px}
+.cl-event{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.cl-event > span{flex:1 1 200px;min-width:0}
+.cl-event .btn.bact{margin:0}
 .cl-player{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin-top:4px}
 .cl-player .btn{min-width:72px}
-.cl-seek{flex:1 1 140px;min-width:0;height:24px;margin:0;accent-color:var(--accent);cursor:pointer}
+.cl-seek{flex:1 1 140px;min-width:0;height:24px;margin:0;background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none}
+.cl-seek::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:var(--line-2)}
+.cl-seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-5px;border-radius:50%;border:2px solid var(--well);background:var(--accent)}
+.cl-seek::-moz-range-track{height:6px;border-radius:3px;background:var(--line-2)}
+.cl-seek::-moz-range-thumb{width:12px;height:12px;border-radius:50%;border:2px solid var(--well);background:var(--accent)}
+.cl-seek:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
 .cl-time{font:400 12.5px/1 var(--tech);letter-spacing:.04em;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* the live call */
@@ -92,7 +103,6 @@ html[data-surface="night"] .cl-rtitle{font:400 15px/1.3 var(--tech);letter-spaci
   #p-calls .btn,.cl-card .btn,#p-calls .minput,#p-calls .bsel,#p-calls .seg-opt,#p-calls .hp-acts .btn{min-height:44px}
   #p-calls .bsel{height:44px}
   .cl-lang{min-height:44px}
-  .cl-lang input{width:22px;height:22px}
   .cl-seek{height:44px}
   .cl-kv{grid-template-columns:96px minmax(0,1fr)}
   .cl-captions{max-height:38vh}

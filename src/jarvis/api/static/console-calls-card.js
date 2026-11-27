@@ -81,7 +81,7 @@ export function render(c, ctx) {
     if (b) {
       body.append(row('Times it may accept', b.windows.length ? lines(b.windows.map(slotWords)) : '\u2014'));
       if (b.name) body.append(row('Name to give', b.name));
-      if (b.number4) body.append(row('Number to give', masked(b.number4)));
+      if (b.number4) body.append(row('Number to give', mk('span', 'cl-v cl-num', masked(b.number4))));
       if (b.reason) body.append(row('Reason', b.reason));
       body.append(row('Calendar', b.calendar ? 'Adds a ' + b.minutes + '-minute entry after the call, with Undo' : 'Not added'));
     }

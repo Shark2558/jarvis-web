@@ -68,7 +68,9 @@ export function mount(host, ctx) {
   const clear = button('Clear', 'sact', () => reset(true));
   const out = mk('div', 'cl-out');
   const numField = field('Number to call', number, NUMBER_HELP);
-  numField.append(numberNote);
+  numField.insertBefore(numberNote, number); // under the help line, above the box it is about
+  numberNote.id = uid('cln');
+  number.setAttribute('aria-describedby', number.getAttribute('aria-describedby') + ' ' + numberNote.id);
   host.append(intro, field('Start from', tplSel), numField, field('Who it is (optional)', who), field('Purpose', purpose),
     field('What JARVIS may tell them', say1, LINES_HELP), field('What JARVIS may agree to', agree, AGREE_HELP), bookRow, bookBox,
     langBox, langNote, field('It opens in', opens), field('At most, in minutes', minutes), rowOf(make, clear), err, note, out);

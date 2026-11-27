@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'calls', 'media', 'construct', 'book', 'helpers', 'camera'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'media', 'construct', 'book', 'helpers', 'camera', 'calls'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;

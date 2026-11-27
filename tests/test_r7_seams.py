@@ -618,7 +618,8 @@ def test_the_camera_is_the_twenty_second_tab_with_its_panel() -> None:
     html = _text(STATIC / "console.html")
     dock = html[html.index('id="dock"') : html.index("</nav>")]
     names = re.findall(r'data-open="(\w+)"', dock)
-    assert len(names) == 23 and names[-1] == "camera" and names[-2] == "helpers"  # R18: Calls, after Voice
+    # R18: Calls is the 23rd, after Voice
+    assert len(names) == 23 and names[-1] == "camera" and names[-2] == "helpers"
     assert 'id="p-camera" data-panel="camera" aria-labelledby="t-camera"' in html
     assert '<h2 id="t-camera">Camera</h2>' in html
 

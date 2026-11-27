@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 from jarvis.api.auth import session_email
+from jarvis.api.console_calls_assets import CALLS_ASSETS
 from jarvis.config import Settings
 from jarvis.logging import get_logger
 
@@ -190,21 +191,7 @@ APP_ASSETS: dict[str, str] = {
     "console-book-script.js": _JS,  # R6.3: the show's script reader (the show and the tour)
     "console-book-tour.js": _JS,  # R6.3 D: the tour's chapters, owner-only scenes, continue
     # R6.3.1 F: the full book's flowcharts (R6.4: /book/read, imported by console-book-read-page.js)
-    "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS,
-    # R18 E (docs/plans/r18-calls.md): the Calls panel and the call cards, loaded by console-r7.js
-    "console-calls.js": _JS,  # the panel's frame: readiness line, tabs, window.JarvisCalls
-    "console-calls-api.js": _JS,  # paths, checks, words, shared builders
-    "console-calls-shapes.js": _JS,  # the server's shapes, checked field by field
-    "console-calls-card.js": _JS,  # the call card (chat and panel): Call, Edit, Cancel
-    "console-calls-form.js": _JS,  # New call: templates (Laundry) and the card's fields
-    "console-calls-list.js": _JS,  # today's and recent calls, a call's record
-    "console-calls-live.js": _JS,  # the live call: captions, Listen, Take over, Tell, Hang up
-    "console-calls-audio.js": _JS,  # Listen live (AudioWorklet) and a recording's player
-    "console-calls-langs.js": _JS,  # the language check's table and Run
-    "console-calls-settings.js": _JS,  # caps, limits, languages, answering, records, speech
-    "console-calls-vitals.js": _JS,  # Vitals' "Calls this month" line
-    "console-calls.css": "text/css",  # places only (existing tokens and classes)
-    "calls-listen-worklet.js": _JS,  # AudioWorkletProcessor: the live call's 16 kHz PCM
+    "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS, **CALLS_ASSETS,  # + R18 E's
 }
 
 # Self-hosted OFL fonts (licences beside them).

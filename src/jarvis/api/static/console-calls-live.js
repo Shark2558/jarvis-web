@@ -9,8 +9,8 @@
 //   Tell JARVIS                   a typed instruction the other person does not hear
 //   Hang up                       at any moment, one press
 // Captions are the other person's words (untrusted): textContent, their own direction and language. ASCII source.
-import { PATHS, button, choice, chip, duration, failed, input, langName, masked, mk, rupees, say, uid } from './console-calls-api.js';
-import { END_WORDS, STATE_WORDS, caption as checkCaption, isLive, liveState } from './console-calls-shapes.js';
+import { PATHS, api, button, choice, chip, duration, failed, input, langName, masked, mk, rupees, say, uid } from './console-calls-api.js';
+import { END_WORDS, STATE_WORDS, caption as checkCaption, isLive, liveState, record as checkRecord } from './console-calls-shapes.js';
 import { canListen, listener } from './console-calls-audio.js';
 import { lineEl } from './console-calls-list.js';
 
@@ -187,6 +187,13 @@ export function mount(host, ctx) {
     connect();
     S.tick = setInterval(paintFacts, 1000);
     h.focus();
+    if (!S.who && !S.number4) whoIs(callId); // opened from the status alone: who it is comes with the record
+  }
+  async function whoIs(callId) {
+    try {
+      const r = checkRecord(await api(PATHS.records + '/' + encodeURIComponent(callId)));
+      if (r && S.id === callId) { S.who = r.who; S.number4 = r.number4; paint(); }
+    } catch (_) { /* the call is still being made: its name shows once the list has it */ }
   }
   function close(focusBack) {
     clearTimeout(S.timer); clearInterval(S.tick);

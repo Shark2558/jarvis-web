@@ -526,5 +526,6 @@ def test_card_c01_lists_the_panels_in_the_dock_s_order() -> None:
     html = (ROOT / "src/jarvis/api/static/console.html").read_text(encoding="utf-8")
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     labels = re.findall(r'data-open="\w+"[^>]*>.*?<span(?: class="full")?>([^<]+)</span>', dock)
-    assert len(labels) == len(re.findall(r'data-open="\w+"', dock)) == 23  # R11 Helpers, R7 Camera, R18 Calls
+    # R11 Helpers, R7 Camera, R18 Calls
+    assert len(labels) == len(re.findall(r'data-open="\w+"', dock)) == 23
     assert _c01_panels((ROOT / ac.GUIDE).read_text(encoding="utf-8")) == labels

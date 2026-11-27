@@ -10,11 +10,11 @@ up to the cap) ONLY where the vendor surely did not process it, so nothing is bi
     not retried a timeout or a broken connection after the request was sent (`maybe_billed`),
                 401 / 403 (the key), 400 / 404 / 413 / 415 / 422 (this audio or text)
 
-    401 / 403           SpeechUnavailable("auth")
+    401 / 403           OptionUnavailable("auth")
     4xx (other)         SpeechRejected
     429 (last attempt)  SpeechBusy(retry_after_s)
-    5xx (last attempt)  SpeechUnavailable("upstream_error")
-    deadline            SpeechUnavailable("timeout", maybe_billed=<a request was in flight>)
+    5xx (last attempt)  OptionUnavailable("upstream_error")
+    deadline            OptionUnavailable("timeout", maybe_billed=<a request was in flight>)
 
 The vendor's own error text never leaves this module, and neither the audio, the text nor a
 transcript is ever logged: the option, the API name, the status and the attempt only. Secrets
@@ -31,7 +31,7 @@ from typing import Any
 
 import httpx
 
-from jarvis.calls.speech.errors import SpeechBusy, SpeechRejected, SpeechUnavailable
+from jarvis.calls.speech.errors import OptionUnavailable, SpeechBusy, SpeechRejected
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
@@ -78,12 +78,12 @@ def _raise_for(r: httpx.Response, option: str, api: str) -> None:
         return
     log.warning("speech api error", extra={"option": option, "api": api, "status": code})
     if code in AUTH_STATUSES:
-        raise SpeechUnavailable(option, "auth")
+        raise OptionUnavailable(option, "auth")
     if code == 429:
         raise SpeechBusy(option, _retry_after(r) or 5.0)
     if code < 500:
         raise SpeechRejected(option)
-    raise SpeechUnavailable(option, "upstream_error")
+    raise OptionUnavailable(option, "upstream_error")
 
 
 async def _attempt(
@@ -100,12 +100,12 @@ async def _attempt(
         return None
     except httpx.TimeoutException:
         log.warning("speech api timed out", extra={"option": option, "api": api})
-        raise SpeechUnavailable(option, "timeout", maybe_billed=True) from None
+        raise OptionUnavailable(option, "timeout", maybe_billed=True) from None
     except httpx.HTTPError as exc:
         log.warning(
             "speech api broke off", extra={"option": option, "api": api, "why": type(exc).__name__}
         )
-        raise SpeechUnavailable(option, "upstream_error", maybe_billed=True) from None
+        raise OptionUnavailable(option, "upstream_error", maybe_billed=True) from None
 
 
 async def _loop(
@@ -129,7 +129,7 @@ async def _loop(
             _raise_for(r, option, api)
             return r
         if r is None and last:
-            raise SpeechUnavailable(option, "upstream_error")
+            raise OptionUnavailable(option, "upstream_error")
         hint = _retry_after(r) if r is not None else None
         await sleep(_pause(policy, attempt, hint, rng))
     raise AssertionError("unreachable")
@@ -169,17 +169,17 @@ async def send(
             return await _loop(http, method, url, kw, option, api, policy, sleep, rng, in_flight)
     except TimeoutError:
         log.warning("speech api: deadline passed", extra={"option": option, "api": api})
-        raise SpeechUnavailable(option, "timeout", maybe_billed=in_flight[0]) from None
+        raise OptionUnavailable(option, "timeout", maybe_billed=in_flight[0]) from None
 
 
 def json_body(r: httpx.Response, option: str) -> dict[str, Any]:
-    """A 2xx answer's JSON object; SpeechUnavailable("bad_answer", billed) otherwise."""
+    """A 2xx answer's JSON object; OptionUnavailable("bad_answer", billed) otherwise."""
     try:
         body = r.json()
     except ValueError:
-        raise SpeechUnavailable(option, "bad_answer", maybe_billed=True) from None
+        raise OptionUnavailable(option, "bad_answer", maybe_billed=True) from None
     if not isinstance(body, dict):
-        raise SpeechUnavailable(option, "bad_answer", maybe_billed=True)
+        raise OptionUnavailable(option, "bad_answer", maybe_billed=True)
     return body
 
 

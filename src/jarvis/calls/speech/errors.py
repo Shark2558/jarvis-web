@@ -2,9 +2,11 @@
 """What a call's speech adapter raises (R18 B; Layer 6): one family, plain words, no vendor text.
 
 Every adapter (Google, Azure free tier, Bhashini, Sarvam; the laptop's through the desk) maps its
-vendor's failures to these, so the call engine handles one set:
+vendor's failures to these. All of them are `jarvis.calls.ports.SpeechUnavailable` (I0's seam:
+"the caller tries the next option or ends the call politely"), so the call engine catches one
+class and may look closer:
 
-    SpeechUnavailable  the option is off, not set up, refused our key, down or too slow
+    OptionUnavailable  the option is off, not set up, refused our key, down or too slow
                        (`reason`; `maybe_billed`: the request may have reached the vendor)
     SpeechBusy         the vendor throttled us (`retry_after_s`)
     SpeechRejected     the vendor refused this audio or text (an invalid request, not an outage)
@@ -18,6 +20,8 @@ vendor's failures to these, so the call engine handles one set:
 from __future__ import annotations
 
 from typing import Literal
+
+from jarvis.calls.ports import SpeechUnavailable
 
 Reason = Literal[
     "not_configured", "off", "auth", "upstream_error", "timeout", "budget", "bad_answer"
@@ -45,13 +49,13 @@ def label(option: str) -> str:
     return _LABEL.get(option, "That speech option")
 
 
-class SpeechError(RuntimeError):
+class SpeechError(SpeechUnavailable):
     def __init__(self, option: str, message: str) -> None:
         self.option = option
         super().__init__(message)
 
 
-class SpeechUnavailable(SpeechError):
+class OptionUnavailable(SpeechError):
     def __init__(self, option: str, reason: Reason, *, maybe_billed: bool = False) -> None:
         self.reason: Reason = reason
         self.maybe_billed = maybe_billed
@@ -95,11 +99,11 @@ class NotOffered(SpeechError):
 __all__ = [
     "AllowanceUsedUp",
     "NotOffered",
+    "OptionUnavailable",
     "PaidOptionOff",
     "Reason",
     "SpeechBusy",
     "SpeechError",
     "SpeechRejected",
-    "SpeechUnavailable",
     "label",
 ]

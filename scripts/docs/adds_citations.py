@@ -2,10 +2,16 @@
 # scripts/docs/adds_citations.py
 """Every repository citation in the Architecture Design Document must exist.
 
-    python scripts/docs/adds_citations.py [--root DIR]   exit 0 when all exist, 1 with the list
+    python scripts/docs/adds_citations.py [--root DIR] [--add-dir DIR]
+        exit 0 when all exist, 1 with the list
 
-Reads `docs/architecture/design/[0-9][0-9]-*.md`. A citation is a code span (between backticks,
-outside fenced code) that is a repository path, `path:Symbol` or `path:LINE`:
+The document is kept privately on the owner's Drive, not in the repository: its folder comes from
+`--add-dir` or the environment variable `JARVIS_ADD_DIR`. When neither names a folder that is
+there, the check is skipped with one line and exit 0 (CI has no private copy).
+
+Reads the folder's `[0-9][0-9]-*.md`; each citation is looked up in the repository (`--root`,
+default this checkout). A citation is a code span (between backticks, outside fenced code) that
+is a repository path, `path:Symbol` or `path:LINE`:
 
 - a path under `src/`, `tests/`, `evals/`, `scripts/`, `deploy/`, `docs/`, `android/`, `tools/`,
   `.github/` or `.claude/`, or one of the top-level files in `TOP_FILES`;
@@ -24,13 +30,18 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 import re
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DESIGN = "docs/architecture/design"
+ADD_ENV = "JARVIS_ADD_DIR"  # the private copy of the Architecture Design Document's chapters
+ADD_SKIPPED = (
+    "adds_citations: skipped, the Architecture Design Document's private copy isn't here"
+    f" (pass --add-dir DIR or set {ADD_ENV})"
+)
 ROOTS = (
     "src", "tests", "evals", "scripts", "deploy", "docs", "android", "tools", ".github", ".claude"
 )
@@ -147,10 +158,24 @@ def _symbol_problem(target: Path, symbol: str) -> str | None:
     return None if symbol in text else f"{symbol} does not appear in that file"
 
 
-def check(root: Path) -> Report:
+def add_folder(given: Path | None = None) -> Path | None:
+    """The Architecture Design Document's folder: `given`, else `JARVIS_ADD_DIR`; None when
+    neither names a folder that is there."""
+    env = os.environ.get(ADD_ENV, "").strip()
+    folder = given if given is not None else (Path(env).expanduser() if env else None)
+    return folder if folder is not None and folder.is_dir() else None
+
+
+def _shown(path: Path, root: Path) -> str:
+    """A chapter's name in the report: relative to root, or its own path outside it."""
+    return path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+
+
+def check(root: Path, add_dir: Path) -> Report:
+    """Every citation in the chapters under `add_dir`, looked up in the repository at `root`."""
     report = Report()
-    for chapter in sorted((root / DESIGN).glob("[0-9][0-9]-*.md")):
-        rel = chapter.relative_to(root).as_posix()
+    for chapter in sorted(add_dir.glob("[0-9][0-9]-*.md")):
+        rel = _shown(chapter, root)
         for number, line in _lines(chapter.read_text(encoding="utf-8")):
             for m in SPAN.finditer(line):
                 cited = citation(m.group(1))
@@ -175,8 +200,15 @@ def check(root: Path) -> Report:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument(
+        "--add-dir", type=Path, default=None, help=f"the ADD's chapters (default: ${ADD_ENV})"
+    )
     args = parser.parse_args(argv)
-    report = check(args.root)
+    add = add_folder(args.add_dir)
+    if add is None:
+        print(ADD_SKIPPED)
+        return 0
+    report = check(args.root, add)
     for problem in report.problems:
         print(problem)
     for item in report.elsewhere:

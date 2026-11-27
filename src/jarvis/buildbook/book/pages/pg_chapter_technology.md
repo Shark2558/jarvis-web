@@ -16,7 +16,7 @@ sources:
   "pyproject.toml": "9444b848ad331d79"
   "render.yaml": "f4d4dcab2c0f7920"
   "requirements.lock": "9c015550bb6a8ae7"
-  "scripts/check_doc_versions.py": "d5acf001aa9fe82d"
+  "scripts/check_doc_versions.py": "c0b0c0420638b540"
   "scripts/check_pr_title.py": "8a7d9975cdae0f81"
   "scripts/github_backfill.sh": "a988b2892ffcc3aa"
   "tools/markdy/package-lock.json": "f3ac43f6e9ddd521"

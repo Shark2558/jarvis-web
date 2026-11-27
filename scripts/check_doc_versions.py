@@ -2,8 +2,8 @@
 # scripts/check_doc_versions.py
 """R6.1 D4 (acceptance check 3): every plan and architecture document is versioned.
 
-Each `docs/plans/*.md`, `docs/architecture/*.md` and `docs/architecture/design/*.md` (the
-Architecture Design Document's chapters; no other sub-folder) must:
+Each `docs/plans/*.md` and `docs/architecture/*.md` (no sub-folder) must, and so must each
+chapter (`*.md`) of the Architecture Design Document when its folder is given:
 
   1. open with its version line, as its FIRST line:
        Version v6.1.1 · 11 Nov 2026, 12:00 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
@@ -13,7 +13,13 @@ Architecture Design Document's chapters; no other sub-folder) must:
      more, each row's first cell a version such as v6.1.1. A line may come before the table;
      nothing but table rows after it. Lines inside fenced code (``` or ~~~) are never headings.
 
-    python3 scripts/check_doc_versions.py [--root DIR]   exit 0 when all pass, 1 with the list
+    python3 scripts/check_doc_versions.py [--root DIR] [--add-dir DIR]
+        exit 0 when all pass, 1 with the list
+
+The Architecture Design Document is kept privately on the owner's Drive, not in the repository:
+its folder comes from `--add-dir` or the environment variable `JARVIS_ADD_DIR`. When neither names
+a folder that is there, its chapters are skipped with one line and the other documents are checked
+as always (CI has no private copy, so it never fails for want of one).
 
 CI's docs-check job runs it once on every pull request and every push to main; no job waits for
 that one, so a missing version line never holds up a deploy. Standard library only.
@@ -22,11 +28,17 @@ that one, so a missing version line never holds up a deploy. Standard library on
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
 
-FOLDERS = ("docs/plans", "docs/architecture", "docs/architecture/design")
+FOLDERS = ("docs/plans", "docs/architecture")
+ADD_ENV = "JARVIS_ADD_DIR"  # the private copy of the Architecture Design Document's chapters
+ADD_SKIPPED = (
+    "check_doc_versions: the Architecture Design Document's chapters skipped (its private copy"
+    f" isn't here: pass --add-dir DIR or set {ADD_ENV})"
+)
 _MONTH = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
 VERSION_LINE = re.compile(
     rf"^Version v\d+\.\d+\.\d+ · \d{{1,2}} (?:{_MONTH}) \d{{4}}(?:, \d{{1,2}}:\d{{2}} IST)?"
@@ -113,34 +125,55 @@ def problems(text: str) -> list[str]:
     return found
 
 
-def documents(root: Path) -> list[Path]:
-    return sorted(p for folder in FOLDERS for p in (root / folder).glob("*.md") if p.is_file())
+def add_folder(given: Path | None = None) -> Path | None:
+    """The Architecture Design Document's folder: `given`, else `JARVIS_ADD_DIR`; None when
+    neither names a folder that is there."""
+    env = os.environ.get(ADD_ENV, "").strip()
+    folder = given if given is not None else (Path(env).expanduser() if env else None)
+    return folder if folder is not None and folder.is_dir() else None
 
 
-def check(root: Path) -> dict[str, list[str]]:
-    """{path relative to root: problems} for every document that doesn't pass."""
+def documents(root: Path, add_dir: Path | None = None) -> list[Path]:
+    """The repository's plans and architecture documents, then the ADD's chapters (if given)."""
+    folders = [root / f for f in FOLDERS] + ([add_dir] if add_dir is not None else [])
+    return sorted(p for folder in folders for p in folder.glob("*.md") if p.is_file())
+
+
+def _shown(path: Path, root: Path) -> str:
+    """A document's name in the report: relative to root, or its own path outside it."""
+    return path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+
+
+def check(root: Path, add_dir: Path | None = None) -> dict[str, list[str]]:
+    """{document: problems} for every document that doesn't pass (relative to root)."""
     out = {}
-    for path in documents(root):
+    for path in documents(root, add_dir):
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            out[path.relative_to(root).as_posix()] = [f"unreadable ({type(exc).__name__})"]
+            out[_shown(path, root)] = [f"unreadable ({type(exc).__name__})"]
             continue
         found = problems(text)
         if found:
-            out[path.relative_to(root).as_posix()] = found
+            out[_shown(path, root)] = found
     return out
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="check_doc_versions.py", description=__doc__.split("\n")[0])
     ap.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    ap.add_argument(
+        "--add-dir", type=Path, default=None, help=f"the ADD's chapters (default: ${ADD_ENV})"
+    )
     args = ap.parse_args(argv)
-    docs = documents(args.root)
-    if not any(p.parent.name == "plans" for p in docs):
+    add = add_folder(args.add_dir)
+    if not any(p.is_file() for p in (args.root / "docs/plans").glob("*.md")):
         print(f"no docs/plans/*.md under {args.root}: nothing to check is an error")
         return 1
-    found = check(args.root)
+    if add is None:
+        print(ADD_SKIPPED)
+    docs = documents(args.root, add)
+    found = check(args.root, add)
     for rel, said in found.items():
         for problem in said:
             print(f"{rel}: {problem}")

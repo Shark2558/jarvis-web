@@ -1,7 +1,8 @@
 """The ADD's traceability generator (scripts/docs/adds_traceability.py).
 
 Every case builds its own tiny workbook and a tiny fake repository in tmp_path; the real
-requirements workbook (which holds personal remarks) is never read here.
+requirements workbook (which holds personal remarks) is never read here, and neither is the
+Architecture Design Document's private copy (kept on the owner's Drive, not in the repository).
 """
 
 from __future__ import annotations
@@ -29,6 +30,12 @@ def _load() -> ModuleType:
 
 
 tr = _load()
+
+
+@pytest.fixture(autouse=True)
+def _no_private_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every case names where chapter 10 goes: the owner's private copy is never written."""
+    monkeypatch.delenv(tr.ADD_ENV, raising=False)
 
 
 def _workbook(path: Path, rows: list[list[object]], sheet: str = "Requirements") -> Path:
@@ -155,6 +162,41 @@ def test_main_writes_the_chapter_and_rejects_a_bad_workbook(
     bad = tmp_path / "bad.xlsx"
     bad.write_text("not a workbook", encoding="utf-8")
     assert tr.main([str(bad), "--repo", str(repo)]) == 2
+
+
+def test_main_writes_into_the_add_folder_from_the_argument_or_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    book = _workbook(tmp_path / "w.xlsx", ROWS)
+    add = tmp_path / "add"
+    add.mkdir()
+    assert tr.main([str(book), "--repo", str(repo), "--add-dir", str(add)]) == 0
+    assert (add / tr.CHAPTER).read_text(encoding="utf-8").startswith("Version ")
+    (add / tr.CHAPTER).unlink()
+    monkeypatch.setenv(tr.ADD_ENV, str(add))
+    assert tr.main([str(book), "--repo", str(repo)]) == 0
+    assert (add / tr.CHAPTER).is_file()
+
+
+@pytest.mark.parametrize("where", ["none", "argument", "environment"])
+def test_main_skips_writing_cleanly_when_the_private_copy_is_not_here(
+    where: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    book = _workbook(tmp_path / "w.xlsx", ROWS)
+    missing = tmp_path / "not-here"
+    argv = [str(book), "--repo", str(repo)]
+    argv += ["--add-dir", str(missing)] if where == "argument" else []
+    if where == "environment":
+        monkeypatch.setenv(tr.ADD_ENV, str(missing))
+    assert tr.main(argv) == 0
+    assert capsys.readouterr().out.splitlines() == [tr.ADD_SKIPPED]
+    assert not missing.exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["repo", "w.xlsx"]
 
 
 def test_kotlin_package_folders_are_folded_in_located_paths() -> None:

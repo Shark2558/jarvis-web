@@ -7,7 +7,8 @@
     bhashini  when `bhashini_user_id` and `bhashini_api_key` are set
     sarvam    when `sarvam_api_key` is set AND `sarvam_enabled`; each request still asks the
               owner's own YES (`sarvam_on`, his Calls setting) and is refused without it
-    laptop    the call desk's local models, when the desk offers them (passed in by the hub)
+    laptop    the laptop speech kit (R5.2), when it is set up: its hearing and voice, handed in
+              by `api/r18_wiring.py` from `api/r52_wiring.calls_laptop`
 
 An option that is not built is listed in `missing` with the reason in plain words, for the
 language table. One `SpeechMeter` per owner (and per call, to tally that call's ₹).
@@ -69,7 +70,7 @@ def build_speech(
     if voice_l is not None:
         out.voices[LAPTOP] = voice_l
     if hearing_l is None and voice_l is None:
-        out.missing[LAPTOP] = "The call desk has not offered its laptop speech models."
+        out.missing[LAPTOP] = "The laptop speech kit is not set up on this server."
 
     if s.voice_cloud and google_tokens is not None and not google_tokens.not_configured:
         prices = PriceList.from_settings(s)

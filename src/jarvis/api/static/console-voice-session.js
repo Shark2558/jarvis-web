@@ -1,15 +1,17 @@
 // src/jarvis/api/static/console-voice-session.js -- R5.2 V3 (docs/plans/r5-2-voice.md 3.3, D4;
 // I0 seams /v1/voice/profile): Voice -> "Your voice" and the 20-minute voice session pop-up.
 // Loaded by console-r7.js (one line, with its stylesheet console-voice-session.css); it puts its
-// section after the Voice panel's slots, so neither console.html nor console-voice.js changes. The console's look is kept: existing classes and tokens only.
+// section after the Voice panel's slots, so neither console.html nor console-voice.js changes.
+// The console's look is kept: existing classes and tokens only.
 //   The section: where the session stands, the engines ranked for his voice, the chosen one, the
 //   corrections switch, Start / Continue, Check again, Delete my recordings (a confirm first).
 //   The pop-up: about 120 short lines in 4 blocks with a break after each; Record (stops by itself
-//   when he pauses), Redo, Skip. Each clip goes to POST .../session/clips as a WAV (window.JarvisWav)
-//   and on to his laptop; for a comparison line this browser's own listening may hear it too (his
-//   choice, said plainly: in Chrome that audio goes to the browser's maker) and its words go with
-//   the clip. The rupee question (402 needs_yes) is answered by typing YES, or by going on without
-//   Google; a clip refused for it is sent again after his answer. Then Score -> the results.
+//   when he pauses), Redo, Skip. Each clip goes by PUT .../session/clips/<prompt id> as a WAV
+//   (window.JarvisWav) and on to his laptop; for a comparison line this browser's own listening
+//   may hear it too (his choice, said plainly: in Chrome that audio goes to the browser's maker)
+//   and its words go with the clip. The rupee question (402 needs_yes) is answered by typing YES,
+//   or by going on without Google; a clip refused for it is sent again after his answer. Then
+//   Score -> the results.
 // Audio stays in this page's memory only until its clip is sent; nothing is stored here but this
 // device's browser-listening choice. While the pop-up is open a voice conversation is ended and
 // "Hey Jarvis" is paused (the session says it 30 times). No build step; CSP script-src 'self';

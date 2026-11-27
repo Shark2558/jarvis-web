@@ -1,0 +1,210 @@
+/* docs/plans/r8-mockups/tools/r8-common.css -- the NEW pieces the R8 / R8.1 screens add (mockups only).
+   Everything else on the page is the console's own CSS, copied verbatim by tools/kit.py. Every colour, font, radius
+   and shadow below is a console token (console.css); the two colour mixes for the warning and error cards are the ones
+   console-deck.css already uses for "This month" (.spend). No new colours, fonts, radii or shadows. Prefix: r8-. */
+
+/* what console-fx.js derive() sets inline for the Workshop theme on each surface (read from the live console) */
+html[data-surface="night"]{--accent-ink:#2190FF}
+html[data-surface="day"]{--accent-ink:#0064C9}
+
+/* ---- mock chrome: the canvas grid field and the 2D Core stand-ins (the console draws these with canvas/WebGL) ---- */
+.r8-field{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.22;
+  background:linear-gradient(color-mix(in srgb,var(--accent) 32%,transparent) 1px,transparent 1px) 0 0/56px 56px,
+    linear-gradient(90deg,color-mix(in srgb,var(--accent) 32%,transparent) 1px,transparent 1px) 0 0/56px 56px}
+html[data-surface="day"] .r8-field{opacity:.28}
+.r8-radar{position:absolute;inset:4%;color:var(--accent-2)}
+.r8-radar svg{width:100%;height:100%;overflow:visible}
+.r8-radar .g{fill:none;stroke:currentColor;stroke-width:.7;opacity:.55}
+.r8-radar text{font:400 4px/1 var(--tech);fill:var(--ink-3);letter-spacing:.1em}
+#p-chat .r8-empty{flex:1}
+
+/* ---- the camera tab strip: six tabs (Look, Desk, Workout, Results, Cameras, Wardrobe) in 3 x 2 ------------------
+   console-camera.css sets four columns; six names at 12.5 px with the console's tracking do not fit one row at 420 px */
+#p-camera .hp-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+/* ---- the privacy promise: one line on every screen (the .bnote material, an eye like the Privacy tab's) ---------- */
+.r8-promise{display:flex;align-items:flex-start;gap:8px;margin:10px 0 0;padding:7px 10px;border-radius:var(--r-sm);
+  background:var(--well-2);border:1px solid var(--line-2);font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.r8-promise svg{flex:none;width:16px;height:16px;margin-top:1px;color:var(--ok-ink)}
+.r8-promise b{font-weight:600;color:var(--ink)}
+
+/* ---- rows: a camera, a room, a session (.hp-row frame; the chip is the Vitals .vt-chip) ----------------------- */
+.r8-cam{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:10px}
+.r8-cam .hp-txt b{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+.r8-cam .vt-chip{margin-top:0}
+.r8-cam .hp-acts{margin-top:-2px}
+.r8-cam .hp-acts:empty{display:none}
+.r8-cam .r8-wide{grid-column:1/-1}
+.r8-cam .r8-wide .sacts{margin-top:8px}
+.r8-health{display:flex;align-items:flex-start;gap:7px;margin-top:4px;font:400 12px/1.35 var(--tech);letter-spacing:.03em;color:var(--ink-2)}
+.r8-health .dot{flex:none;width:7px;height:7px;margin-top:4px}
+.r8-health span{min-width:0}
+.r8-cam .vt-why{margin:6px 0 0}
+.r8-cam[data-status="amber"],.r8-cam[data-status="red"]{padding-left:10px;box-shadow:inset 2px 0 0 var(--amber)}
+.r8-cam[data-status="red"]{box-shadow:inset 2px 0 0 var(--bad)}
+.r8-cam[data-status="amber"] .vt-why{color:var(--amber-ink)}
+.r8-cam[data-status="red"] .vt-why{color:var(--bad-ink)}
+.r8-cam .r8-sub{display:block;margin-top:2px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.r8-sess .hp-txt b{display:flex;align-items:center;gap:8px}
+.r8-sess .vt-chip{font-size:10.5px}
+.r8-need{color:var(--ink-3)}
+.r8-add{margin-top:6px}
+
+/* ---- cards: the "This month" material (.vt-card), amber and red the way .spend shows warn / reached ----------- */
+.r8-card{margin:10px 0 0}
+.r8-card .rhead{align-items:center}
+.r8-card.r8-warn{background:var(--amber-tint);border-color:var(--amber-line)}
+.r8-card.r8-bad{background:var(--bad-tint);border-color:var(--bad-line)}
+html[data-surface="night"] .r8-card.r8-warn{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
+html[data-surface="night"] .r8-card.r8-bad{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
+.r8-card.r8-dim .r8-fig,.r8-card.r8-dim .tiles{opacity:.55}
+.r8-lead{margin:0;font-size:14px;font-weight:600;line-height:1.4;color:var(--ink)}
+.r8-warn .r8-lead{color:var(--amber-ink)}
+.r8-bad .r8-lead{color:var(--bad-ink)}
+.r8-card .tiles{margin:10px 0 0}
+.r8-card .tile{background:var(--well-2)}
+.r8-card .sacts{margin-top:10px}
+.r8-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.r8-two .vt-card{margin:0;display:flex;flex-direction:column}
+.r8-two .sacts{margin-top:auto;padding-top:8px}
+
+/* the body lines (never the picture): SVG strokes in the accents; amber where the warning is; the upright as a ghost */
+.r8-post{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:center;margin-top:4px}
+.r8-fig{position:relative;width:96px;height:112px;border-radius:var(--r-sm);background:var(--well);border:1px solid var(--line-2)}
+.r8-fig svg,.r8-view svg.r8-body{display:block;width:100%;height:100%;overflow:visible}
+.r8-body .bone{fill:none;stroke:var(--accent-2);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.r8-body .head{fill:none;stroke:var(--accent-2);stroke-width:2.4}
+.r8-body .joint{fill:var(--accent-ink)}
+.r8-body .warnb{stroke:var(--amber)}
+.r8-body .warnj{fill:var(--amber)}
+.r8-body .ghost{fill:none;stroke:var(--ink-3);stroke-width:1.4;stroke-dasharray:3 3;stroke-linecap:round}
+.r8-body .floor{stroke:var(--line);stroke-width:1.2}
+.r8-figcap{position:absolute;left:0;right:0;bottom:4px;text-align:center;font:400 9.5px/1 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+
+/* water and breath, the two small cards */
+.r8-big{display:flex;align-items:baseline;gap:6px;margin-top:2px}
+.r8-big b{font:400 26px/1.1 var(--tech);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.r8-big span{font:400 13px/1.2 var(--tech);letter-spacing:.06em;color:var(--ink-2)}
+.r8-breath{display:flex;align-items:center;gap:10px;margin-top:2px}
+.r8-ring{position:relative;flex:none;width:64px;height:64px}
+.r8-ring svg{width:100%;height:100%}
+.r8-ring .trk{fill:none;stroke:var(--line-2);stroke-width:3}
+.r8-ring .arc{fill:none;stroke:var(--accent-2);stroke-width:3;stroke-linecap:round}
+.r8-ring .disc{fill:color-mix(in srgb,var(--accent-2) 16%,transparent);stroke:var(--accent-2);stroke-width:1}
+.r8-ring b{position:absolute;inset:0;display:grid;place-items:center;font:400 15px/1 var(--tech);color:var(--ink)}
+.r8-bwords{min-width:0;font:400 12px/1.4 var(--tech);letter-spacing:.06em;color:var(--ink-2)}
+.r8-bwords b{display:block;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink)}
+
+/* numbered steps (first use) */
+.r8-steps{list-style:none;margin:8px 0 0;padding:0;counter-reset:s}
+.r8-steps > li{position:relative;padding:10px 0 10px 36px;border-top:1px solid var(--line-2);counter-increment:s}
+.r8-steps > li:first-child{border-top:0}
+.r8-steps > li::before{content:counter(s);position:absolute;left:0;top:9px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;
+  font:400 12px/1 var(--tech);color:var(--accent-ink);background:var(--tint);border:1px solid var(--line)}
+.r8-steps > li.done::before{content:"\2713";color:var(--ok-ink)}
+.r8-steps b{display:block;font:600 14px/1.3 var(--hud);color:var(--ink)}
+html[data-surface="night"] .r8-steps b{font:400 12.5px/1.3 var(--tech);letter-spacing:.12em;text-transform:uppercase}
+.r8-steps small{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.r8-steps .sacts{margin-top:8px}
+.r8-steps label.hp-field{margin-top:8px}
+.r8-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 8px}
+
+/* checklists: the BP posture coach, the no-cloud check (a mark + words; never colour alone) */
+.r8-checks{list-style:none;margin:6px 0 0;padding:0}
+.r8-checks li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 8px;align-items:start;padding:7px 0;border-top:1px dashed var(--line-2)}
+.r8-checks li:first-child{border-top:0}
+.r8-checks svg{width:16px;height:16px;margin-top:1px}
+.r8-checks .need svg{color:var(--accent-ink)} .r8-checks .need em{color:var(--accent-ink)}
+.r8-checks .ok svg{color:var(--ok-ink)} .r8-checks .warn svg{color:var(--amber)} .r8-checks .no svg{color:var(--bad-ink)} .r8-checks .wait svg{color:var(--ink-3)}
+.r8-checks span{font-size:13.5px;line-height:1.4;color:var(--ink)}
+.r8-checks small{display:block;margin-top:1px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.r8-checks .warn small{color:var(--amber-ink)}
+.r8-checks em{font:400 11px/1.5 var(--tech);font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.r8-checks .ok em{color:var(--ok-ink)} .r8-checks .warn em{color:var(--amber-ink)} .r8-checks .no em{color:var(--bad-ink)}
+.r8-reading{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:end;margin-top:8px}
+.r8-reading .minput{font:400 15px/1 var(--tech);letter-spacing:.04em}
+
+/* the reaction game / hand exercises play area */
+.r8-play{position:relative;height:214px;margin-top:10px;border-radius:var(--r-md);background:var(--well);border:1px solid var(--line-2);overflow:hidden}
+.r8-tg{position:absolute;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;border:2px solid var(--line)}
+.r8-tg.lit{border-color:var(--accent-2);background:color-mix(in srgb,var(--accent-2) 30%,transparent);box-shadow:0 0 22px -2px var(--accent-2)}
+.r8-hand{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2.5px solid var(--accent-ink);background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.r8-playcap{position:absolute;left:0;right:0;bottom:8px;text-align:center;font:400 11px/1 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.r8-play .r8-body{position:absolute;left:50%;top:50%;width:120px;height:150px;margin:-62px 0 0 -60px;opacity:.6}
+
+/* ---- the day strip (Vitals): pattern + colour + words; a list of totals beside it ------------------------------ */
+.r8-day{margin-top:6px}
+.r8-hours{position:relative;height:12px;margin:2px 0 0}
+.r8-hours span{position:absolute;top:0;transform:translateX(-50%);font:400 10px/1 var(--tech);letter-spacing:.1em;color:var(--ink-3)}
+.r8-hours span:first-child{transform:none}
+.r8-hours span:last-child{transform:translateX(-100%)}
+.r8-strip{position:relative;height:28px;border-radius:4px;background:var(--well-2);border:1px solid var(--line-2);overflow:hidden}
+.r8-strip::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(90deg,transparent 0 calc(100% / 17 - 1px),color-mix(in srgb,var(--accent) 22%,transparent) calc(100% / 17 - 1px) calc(100% / 17))}
+.r8-seg{position:absolute;top:0;bottom:0}
+.r8-sw{display:inline-block;flex:none;width:14px;height:14px;border-radius:3px;border:1px solid var(--line-2);background:var(--well-2);vertical-align:-2px}
+.r8-seg.desk,.r8-sw.desk{background:var(--accent)}
+.r8-seg.phone,.r8-sw.phone{background:var(--accent-2);box-shadow:inset 0 0 0 1.5px var(--accent-ink)}
+.r8-seg.eat,.r8-sw.eat{background:var(--ok)}
+.r8-seg.away,.r8-sw.away{background:repeating-linear-gradient(135deg,var(--ink-3) 0 1.5px,transparent 1.5px 5px)}
+.r8-seg.off,.r8-sw.off{background:repeating-linear-gradient(45deg,var(--ink-3) 0 1.2px,transparent 1.2px 4px),repeating-linear-gradient(135deg,var(--ink-3) 0 1.2px,transparent 1.2px 4px)}
+.r8-seg.later{background:transparent}
+.r8-snow{position:absolute;top:-1px;bottom:-1px;width:2px;margin-left:-1px;background:var(--accent-2);box-shadow:0 0 10px var(--accent-2),0 0 2px var(--accent-2)}
+.r8-snowlbl{position:absolute;top:0;font:400 10px/1 var(--tech);letter-spacing:.1em;color:var(--accent-ink);white-space:nowrap}
+.r8-legend{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 9px;align-items:center;margin:10px 0 0;padding:0;list-style:none}
+.r8-legend li{display:contents}
+.r8-legend span{font-size:13.5px;line-height:1.3;color:var(--ink)}
+.r8-legend b{font:400 13px/1.3 var(--tech);letter-spacing:.04em;color:var(--ink-2);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.r8-subcard{margin-top:10px;padding-top:9px;border-top:1px solid var(--line-2)}
+.r8-subcard h4{margin:0 0 2px;font:400 11px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-ink)}
+
+/* ---- the workout session: the whole phone screen (R8.1). The panel material, the title bar, the HUD brackets. ---- */
+.panel.r8-full{inset:0!important;width:auto;height:auto;border-radius:0;border-width:0;max-height:none;max-width:none;animation:none}
+.panel.r8-full .ptitle{height:56px;padding:0 8px 0 6px;gap:8px;cursor:default}
+.r8-full .ptitle h2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r8-full .pbody{padding:12px 14px 14px;display:flex;flex-direction:column}
+.r8-back{flex:none;display:inline-flex;align-items:center;gap:2px;height:44px;padding:0 10px 0 6px;font-size:12px}
+.r8-back svg{width:16px;height:16px}
+.r8-full .ptitle .status{height:44px;padding:0 12px;font-size:12px;letter-spacing:.08em;cursor:pointer}
+.r8-view{position:relative;flex:none;height:262px;border-radius:var(--r-md);background:var(--well);border:1px solid var(--line-2)}
+.r8-view .r8-body{position:absolute;inset:14px 0 26px}
+.r8-viewcap{position:absolute;left:10px;right:10px;bottom:8px;text-align:center;font:400 10.5px/1.2 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.r8-view .r8-viewmid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;text-align:center}
+.r8-viewmid p{margin:0;font-size:14px;line-height:1.45;color:var(--ink-2)}
+.r8-viewmid .r8-lead{font-size:15px}
+.r8-nums{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:8px;margin-top:12px}
+.r8-num{min-width:0;padding:8px 10px 9px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
+.r8-num .k{display:block}
+.r8-num b{display:block;margin-top:4px;font:400 30px/1 var(--tech);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.r8-num.reps b{font-size:64px;line-height:.92}
+.r8-num.reps b small{font-size:20px;letter-spacing:.04em;color:var(--ink-2)}
+.r8-num i{display:block;margin-top:5px;font:400 11px/1.3 var(--tech);font-style:normal;letter-spacing:.08em;color:var(--ink-2)}
+.r8-tempo{margin-top:8px;padding:8px 10px 9px;border-radius:var(--r-sm);background:var(--well-2);border:1px solid var(--line-2)}
+.r8-tempo .rhead{margin:0 0 6px}
+.r8-tempo .mbar{margin-top:0;height:8px}
+.r8-tip{display:flex;align-items:flex-start;gap:10px;margin-top:8px;padding:10px 12px;border-radius:var(--r-md);background:color-mix(in srgb,var(--ok) 12%,transparent);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+.r8-tip svg{flex:none;width:20px;height:20px;margin-top:1px;color:var(--ok-ink)}
+.r8-tip p{margin:0;font-size:15px;font-weight:600;line-height:1.4;color:var(--ink)}
+.r8-tip small{display:block;margin-top:2px;font-size:12.5px;font-weight:400;color:var(--ink-2)}
+.r8-tip.r8-warn{background:var(--amber-tint);border-color:var(--amber-line)}
+html[data-surface="night"] .r8-tip.r8-warn{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
+.r8-tip.r8-warn svg{color:var(--amber)}
+.r8-tip.r8-warn p{color:var(--amber-ink)}
+.r8-ctl{display:grid;grid-template-columns:1fr 1.6fr;gap:8px;margin-top:auto;padding-top:10px}
+.r8-ctl .btn{height:64px;font-size:15px;letter-spacing:.16em}
+.r8-ctl .btn.danger{font-size:18px;letter-spacing:.2em}
+.r8-ctl .btn svg{width:18px;height:18px;vertical-align:-3px;margin-right:8px}
+.r8-safe{margin:8px 0 0;font-size:12.5px;line-height:1.4;color:var(--ink-2);text-align:center}
+.r8-safe b{color:var(--ink);font-weight:600}
+.r8-full .r8-promise{margin-top:8px}
+.r8-pick .hp-row{min-height:56px}
+.r8-pick .hp-acts .btn{height:44px}
+.r8-pick .seg{grid-template-columns:repeat(4,minmax(0,1fr));margin:10px 0 4px}
+.r8-pick .seg-opt{min-height:44px;font-size:11.5px;letter-spacing:.08em;padding:0 2px}
+.r8-pick .opt-in{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+
+/* phone layout: the console's 44 px targets */
+@media (max-width:899px){
+  .r8-cam .hp-acts .btn,.r8-sess .hp-acts .btn,.r8-card .btn,.r8-steps .btn{min-height:44px}
+}
+html[data-motion="off"] .r8-tg.lit,html[data-motion="off"] .r8-snow{transition:none}

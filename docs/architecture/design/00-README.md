@@ -1,4 +1,4 @@
-Version v6.4.4 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.5 · 27 Nov 2026, 22:15 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 00 · The JARVIS Architecture Design Document
 
@@ -11,7 +11,8 @@ the requirements, verify the architecture, and refer to it in future". It is cal
 (Architecture Design Document) from here on.
 
 **How it differs from the guide you already have.** The *JARVIS Architecture & Technology Guide*
-(`docs/architecture/JARVIS-Architecture.md`, edition v6.4.2) explains JARVIS in plain words, one
+(`docs/architecture/JARVIS-Architecture.md`, edition v5.2.1 since R5.2's catalogue; the guide's
+version follows the release that changed it last) explains JARVIS in plain words, one
 card per part. This document is for whoever plans, builds or reviews a change. It does not replace
 the guide; the guide stays the place to read what a part does for you.
 
@@ -28,6 +29,14 @@ yet says PLANNED. Money is in rupees (₹) and every ₹ figure is an estimate.
 can place a call from your own phone number after your tap, speak in the call through your laptop,
 and keep a sealed recording and summary. Chapters 02–08, 11 and 12 describe it, each part marked
 "(R18)"; chapter 12, section 6 lists what is not finished.
+
+**R5.2 in this edition.** Release R5.2, "Your voice", is built but not yet live. A free speech kit
+on your laptop can listen for JARVIS, so Google's free minutes last longer; a 20-minute voice
+session teaches JARVIS how you speak and picks the engine that understands you best; your own
+"Hey Jarvis" can be trained on your laptop; and a speaker check in your browser lets only your
+voice interrupt JARVIS (it never approves anything). It costs ₹0 a month. Chapters 02–08, 11 and
+12 describe it, each part marked "(R5.2)"; chapter 08 adds ADR-40 to ADR-46, and chapter 12,
+section 7 lists what is not finished and what is open for R5.2's review.
 
 ## How to use this document
 
@@ -56,7 +65,12 @@ version `18.0.0`; it is not yet in `main` or deployed. This edition was first wr
 own branch (`main` at `8e95780` plus the `r18-review` branch at `7d7ce19`); the review's later
 fixes (`docs/plans/r18-integration/REVIEW.md`: the approvals seal, the deploy's speech keys, the
 free-first eval, outfit plans kept 90 days) were then checked into chapters 02, 04–08 and 11–13 on
-the R18 release branch (`r18-release` at `c036ca1`).
+the R18 release branch (`r18-release` at `c036ca1`). For what is marked R5.2, "as built" means
+R5.2's code on its Build Book branch (`r5-2-book` at `1db5988`) with R18's final release
+(`r18-release` at `48d35d4`) merged, on the ADD's own branch `add-r52`, program version `5.2.0`;
+it is not yet in `main` or deployed. R5.2's combined review fixes its code on another branch at
+the same time; the chapters describe the code before those fixes, and the Workshop brings them in
+line afterwards (chapter 12, section 7).
 
 ## Chapters
 
@@ -150,6 +164,18 @@ repository as *Unverified*; chapter 13 lists every fix and how to repeat the che
 | Doorbell (R18) | A Web Push message with no details that tells the phone app to fetch its signed commands. |
 | A2P call (R18) | TRAI's term for a call started by software without a person dialling it. |
 | DPDP Act (R18) | India's Digital Personal Data Protection Act, 2023. |
+| Laptop speech kit (R5.2) | JARVIS's small speech program on the owner's laptop: it listens for JARVIS, keeps the voice session's recordings and trains his own wake word. |
+| Tailscale Funnel | Tailscale's feature that gives one program on the laptop a public https address on port 443, 8443 or 10000; the encryption ends on the laptop. |
+| Caddy gate | A small free web server on the laptop that lets a request through to a JARVIS program only with that program's key. |
+| Voice session (R5.2) | About 120 short lines the owner reads aloud in 20 minutes, from which JARVIS ranks listening engines on his voice and learns his corrections and words. |
+| Voice profile (R5.2) | What the voice session learned, kept in the cloud: each engine's score for his voice, the chosen engine, the corrections. Never audio. |
+| Word error rate | The share of words an engine got wrong (left out, added or changed); lower is better. |
+| Whisper (faster-whisper) | OpenAI's open speech-recognition model (MIT), run on the laptop through the faster-whisper library. |
+| Wake-word verifier and owned model (R5.2) | Stage 1: a small check trained on the owner's "Hey Jarvis" that runs after today's detector. Stage 2: a whole wake-word model trained by and owned by him. |
+| Barge-in | Talking over JARVIS to interrupt him while he speaks. |
+| Voice print and speaker check (R5.2) | A device's summary of the owner's voice, made and kept only in that browser, and the check that uses it to let only his voice barge in. It never approves anything. |
+| Pinned transport | JARVIS's way of calling the laptop: the address's name is looked up again for every request and the connection made to the address just checked. |
+| Git blob id (R5.2) | The SHA-1 fingerprint git gives a file; the kit accepts it for small text model files at a fixed commit, where Hugging Face shows no SHA-256 (ADR-42). |
 
 ## Change log
 
@@ -159,3 +185,4 @@ repository as *Unverified*; chapter 13 lists every fix and how to repeat the che
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): chapter 13 added to the list; how the document was verified; the proposed ADRs now in chapter 08 | 🛠 Mark XXV |
 | v6.4.3 | 27 Nov 2026, 21:10 IST | R18 | R18 "Calls from your laptop": what this edition adds, in plain words; what "as built" means for R18 (not yet in `main`); twelve terms added to the glossary | 🛠 Mark XXV |
 | v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: what "as built" means for R18 now (the release branch `r18-release` at `c036ca1`, after `docs/plans/r18-integration/REVIEW.md`) and which chapters took the approvals seal, the deploy's speech keys, the free-first eval and outfit plans kept 90 days | 🛠 Mark XXV |
+| v6.4.5 | 27 Nov 2026, 22:15 IST | R5.2 | R5.2 "Your voice": what this edition adds, in plain words; what "as built" means for R5.2 (its Book branch with R18's final release, on `add-r52`; not yet in `main`; the review's fixes synced afterwards); the guide's edition; twelve terms added to the glossary | 🛠 Mark XXV |

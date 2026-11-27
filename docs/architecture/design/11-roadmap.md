@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 22:20 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.0 · 27 Nov 2026, 22:12 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 11 · Target architecture: the roadmap by release
 
@@ -176,4 +176,4 @@ Layer 6 work on the home bridge: Home Assistant devices the owner lists (robot c
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the R18 and R5.2 plans named as branch files, not yet in `main`; the paper-trading period marked unverified; rows 35 and 386 carry their workbook release; R5.2's speech-kit folder marked planned | 🛠 Mark XXV |
 | v6.4.3 | 27 Nov 2026, 20:50 IST | R18 | R18 "Calls from your laptop" built and joined: its status and where the as-built design lives; where the build differs from the plan; R18.x's follow-ups; R5.2 makes the desk's laptop speech selectable | 🛠 Mark XXV |
 | v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the speech keys' deploy step and the approvals seal moved from "next" to done; R18.x adds sealing every R3 card at rest and the go-live guide's speech-key step; the live checks include scoring each voice | 🛠 Mark XXV |
-| v6.5.0 | 27 Nov 2026, 22:20 IST | R5.2 | R5.2 "Your voice" built and joined: its status, rows 81, 83, 84 and 383 built, the as-built design in chapters 02–08 (C79–C83, ADR-40 to ADR-46); the plan's delta with what was built; where the build differs from the plan (no laptop voice or Indian engine, the speaker model's empty slot, blob-id pins, port 10000, the wake word's front end); R5.2.x follow-ups and the owner's steps; R8 is next; R18's laptop speech mode now wired but not yet usable; R18.1 needs a permissive wake-word front end too | 🛠 Mark XXV |
+| v6.5.0 | 27 Nov 2026, 22:12 IST | R5.2 | R5.2 "Your voice" built and joined: its status, rows 81, 83, 84 and 383 built, the as-built design in chapters 02–08 (C79–C83, ADR-40 to ADR-46); the plan's delta with what was built; where the build differs from the plan (no laptop voice or Indian engine, the speaker model's empty slot, blob-id pins, port 10000, the wake word's front end); R5.2.x follow-ups and the owner's steps; R8 is next; R18's laptop speech mode now wired but not yet usable; R18.1 needs a permissive wake-word front end too | 🛠 Mark XXV |

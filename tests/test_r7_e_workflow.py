@@ -75,6 +75,9 @@ def test_the_controls_job_breaks_core_four_ways_and_needs_each_to_fail() -> None
         "cancel_ignored",
         "json_form",
         "launch_words_open",
+        # R18 D: the cloud's signature on a call command, and an incoming number kept back
+        "call_signature_off",
+        "call_number_leaks",
     }
     for _name, file, needle in controls:
         text = (CORE / "jarvis" / "core" / file).read_text(encoding="utf-8")

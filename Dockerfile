@@ -13,7 +13,9 @@ RUN pip install --require-hashes -r requirements.lock
 COPY src ./src
 # R3: the home kit that GET /v1/home/kit zips (with src/jarvis/homebridge)
 COPY deploy/home ./deploy/home
-# Where kit.build finds deploy/home and src (the installed package sits in site-packages)
+# R18: the call desk's kit that GET /v1/calls/desk/kit zips (with src/jarvis/calldesk)
+COPY deploy/calldesk ./deploy/calldesk
+# Where kit.build finds deploy/home, deploy/calldesk and src (the package sits in site-packages)
 ENV HOME_KIT_ROOT=/app
 # R6.1 D4: the build time the Vitals "About JARVIS" line shows (jarvis.about), stamped HERE at image
 # build (never at request time); package data carries it into the installed package. It is this

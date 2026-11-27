@@ -323,8 +323,15 @@ def test_a_mobile_part_carries_r11_1s_part_fields() -> None:
 
 
 def test_the_door_has_four_routes_each_owned_by_one_part() -> None:
-    assert DOOR_ROUTES == ("hello", "health", "inbox", "sos")
-    assert DOOR_OWNER == {"hello": "phone", "health": "body", "inbox": "phone", "sos": "body"}
+    # R18 I1: a fifth, `calls` (Part C's phone part carries the calls' door, jarvis.phone.calls)
+    assert DOOR_ROUTES == ("hello", "health", "inbox", "sos", "calls")
+    assert DOOR_OWNER == {
+        "hello": "phone",
+        "health": "body",
+        "inbox": "phone",
+        "sos": "body",
+        "calls": "phone",
+    }
     assert DOOR_CAPS["inbox"] == 10 * 1024 * 1024 + 64 * 1024
     assert max(v for k, v in DOOR_CAPS.items() if k != "inbox") <= 256 * 1024
 
@@ -353,7 +360,7 @@ async def test_the_app_starts_with_four_built_parts_and_their_status_routes(
         assert (await client.get("/v1/sos")).json()["part"] == "body"
         # I1: every part is built: C's hello and inbox, D's health and sos (DOOR_OWNER)
         handlers = wiring.door_handlers(app)
-        assert set(handlers) == {"hello", "inbox", "health", "sos"}
+        assert set(handlers) == {"hello", "inbox", "health", "sos", "calls"}  # R18 I1: + calls
         assert all(callable(h) for h in handlers.values())
         for route in handlers:
             assert route in (parts[DOOR_OWNER[route]].services.get("door") or {}), route
@@ -618,7 +625,8 @@ def test_the_camera_is_the_twenty_second_tab_with_its_panel() -> None:
     html = _text(STATIC / "console.html")
     dock = html[html.index('id="dock"') : html.index("</nav>")]
     names = re.findall(r'data-open="(\w+)"', dock)
-    assert len(names) == 22 and names[-1] == "camera" and names[-2] == "helpers"
+    # R18: Calls is the 23rd, after Camera
+    assert len(names) == 23 and names[-2] == "camera" and names[-3] == "helpers"
     assert 'id="p-camera" data-panel="camera" aria-labelledby="t-camera"' in html
     assert '<h2 id="t-camera">Camera</h2>' in html
 
@@ -650,7 +658,7 @@ def test_new_css_stays_small() -> None:
 
 def test_the_line_budgets_hold() -> None:
     assert _lines(SRC / "tools" / "gateway.py") <= 760
-    assert _lines(SRC / "api" / "app.py") <= 735
+    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
     for path in STATIC.glob("console*.js"):
         assert _lines(path) <= 800, path.name
 

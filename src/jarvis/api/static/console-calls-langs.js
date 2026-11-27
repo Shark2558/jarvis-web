@@ -1,0 +1,103 @@
+// src/jarvis/api/static/console-calls-langs.js -- R18 E (docs/plans/r18-calls.md section 5.3, step 5): Calls ->
+// Languages, the language check's table. Each language: whether it passed, the option that passed (free first, the
+// laptop first), its rupees a minute, why it failed, "not yet heard by a native speaker" until a person who speaks it
+// has scored it, and a language that needs the balanced brain (offered only with his yes). "Run language check" first
+// asks the cloud what the run would cost, shows that estimate and runs only after his Run press (confirm before
+// commit: it may spend from the free allowances or, past them, rupees). ASCII source; textContent only.
+import { PATHS, api, button, chip, failed, mk, perMinute, rupees, say, when } from './console-calls-api.js';
+import { languages as checkLanguages } from './console-calls-shapes.js';
+
+const POLL_MS = 5000;
+const INTRO = 'Only the languages that pass are offered on a call card. The check hears phone-quality clips, speaks call sentences and hears them back, times the replies and holds a mock call.';
+const STATUS = { passed: ['Passed', 'ok'], failed: ['Failed', 'red'], untested: ['Not checked', 'unknown'], running: ['Checking', 'amber'] };
+
+export function mount(host, ctx) {
+  const S = { data: null, busy: false, poll: 0 };
+  const intro = mk('p', 'sfine', INTRO);
+  const state = mk('p', 'snote'); state.setAttribute('role', 'status');
+  const rows = mk('div', 'cl-langrows');
+  const runBtn = button('Run language check', 'primary sact', () => estimate());
+  const acts = mk('div', 'sacts'); acts.append(runBtn);
+  const ask = mk('div', 'mbox'); ask.hidden = true; ask.setAttribute('role', 'group');
+  const err = mk('p', 'lerr'); err.setAttribute('role', 'alert');
+  host.append(intro, state, rows, acts, ask, err);
+
+  function detail(l) {
+    if (l.status === 'running') return 'Being checked now\u2026';
+    if (l.status === 'untested') return 'Not checked yet.';
+    if (l.status === 'failed') return 'Failed' + (l.why.length ? ': ' + l.why.join('; ') + '.' : '.') + (l.optionWords ? ' Best try: ' + l.optionWords + '.' : '');
+    const bits = [l.optionWords, l.perMin === null ? 'price a minute unknown' : perMinute(l.perMin)].filter(Boolean);
+    return bits.join(' \u00b7 ') + '.';
+  }
+  function item(l) {
+    const r = mk('div', 'hp-row'), t = mk('div', 'hp-txt'), a = mk('div', 'hp-acts');
+    t.append(mk('b', '', l.name), mk('small', '', detail(l)));
+    if (l.status === 'passed' && !l.native) t.append(mk('small', 'cl-amber', 'Not yet heard by a native speaker.'));
+    if (l.balanced) t.append(mk('small', 'cl-amber', 'Needs the balanced brain (\u2248 \u20b92\u20134 a minute): offered only with your yes.'));
+    if (l.at) t.append(mk('small', '', 'Checked ' + when(l.at)));
+    const [w, s] = STATUS[l.status];
+    a.append(chip(w, s));
+    r.append(t, a);
+    return r;
+  }
+  function paint() {
+    const d = S.data;
+    rows.replaceChildren(...(d ? d.rows.map(item) : []));
+    const running = !!d && (d.check.running || d.rows.some((l) => l.status === 'running'));
+    runBtn.disabled = S.busy || running;
+    runBtn.textContent = running ? 'Checking\u2026' : 'Run language check';
+    if (d && !d.rows.length) say(state, 'No language has been checked yet. Run the check to find the ones JARVIS can use.');
+    else if (running) say(state, 'The language check is running. This table fills in as each language finishes.');
+    else if (d) say(state, '');
+    clearTimeout(S.poll);
+    if (running) S.poll = setTimeout(() => load(true), POLL_MS);
+  }
+  async function load(force) {
+    if (S.busy || (S.data && !force)) { paint(); return; }
+    S.busy = true;
+    if (!S.data) say(state, 'Loading the language table\u2026');
+    try {
+      S.data = checkLanguages(await api(PATHS.languages));
+      err.textContent = '';
+      ctx.languagesChanged(S.data.rows);
+    } catch (e) { say(state, failed(e), 'bad'); }
+    S.busy = false;
+    paint();
+  }
+  async function estimate() {
+    if (S.busy) return;
+    S.busy = true; err.textContent = ''; paint();
+    try {
+      const r = await api(PATHS.languages + '/check', { body: { confirm: false } });
+      const est = r && typeof r.estimate_inr === 'number' && Number.isFinite(r.estimate_inr) ? r.estimate_inr : null;
+      const n = r && Number.isInteger(r.languages) ? r.languages : null;
+      confirmBox(est, n);
+    } catch (e) { err.textContent = failed(e); }
+    S.busy = false; paint();
+  }
+  function confirmBox(est, n) {
+    const what = n ? n + (n === 1 ? ' language' : ' languages') : 'every candidate language';
+    const cost = est === null ? 'JARVIS couldn\u2019t estimate it.' : est <= 0 ? 'Estimate: \u20b90 (inside the free allowances).' : 'Estimate: ' + rupees(est) + ', counted in your calls cap.';
+    const t = mk('p', 'strong', 'Run the language check for ' + what + '?');
+    const c = mk('p', '', cost + ' It takes a few minutes; no real call is made.');
+    const no = button('Not now', 'sact', () => { ask.hidden = true; runBtn.focus(); });
+    const yes = button(est && est > 0 ? 'Run (' + rupees(est) + ')' : 'Run', 'primary sact', () => run(yes, no, est));
+    const row = mk('div', 'sacts'); row.append(no, yes);
+    ask.replaceChildren(t, c, row);
+    ask.hidden = false;
+    ask.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); no.click(); } }, { once: true });
+    no.focus(); // the safe choice is where Enter lands
+  }
+  async function run(yes, no, est) {
+    yes.disabled = true; no.disabled = true;
+    try {
+      await api(PATHS.languages + '/check', { body: { confirm: true, estimate_inr: est } });
+      ask.hidden = true;
+      if (S.data) S.data = { ...S.data, check: { ...S.data.check, running: true } };
+      say(state, 'The language check has started.', 'ok');
+      runBtn.focus();
+      await load(true);
+    } catch (e) { yes.disabled = false; no.disabled = false; err.textContent = failed(e); }
+  }
+  return Object.freeze({ load, rows: () => (S.data ? S.data.rows : []), stop: () => clearTimeout(S.poll) });
+}

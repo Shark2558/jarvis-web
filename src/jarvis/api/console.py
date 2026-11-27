@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 from jarvis.api.auth import session_email
+from jarvis.api.console_calls_assets import CALLS_ASSETS
 from jarvis.config import Settings
 from jarvis.logging import get_logger
 
@@ -190,7 +191,7 @@ APP_ASSETS: dict[str, str] = {
     "console-book-script.js": _JS,  # R6.3: the show's script reader (the show and the tour)
     "console-book-tour.js": _JS,  # R6.3 D: the tour's chapters, owner-only scenes, continue
     # R6.3.1 F: the full book's flowcharts (R6.4: /book/read, imported by console-book-read-page.js)
-    "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS,
+    "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS, **CALLS_ASSETS,  # + R18 E's
 }
 
 # Self-hosted OFL fonts (licences beside them).

@@ -18,9 +18,13 @@ checks the owner, the path and the body's size and shape, then calls the part wi
     POST   /records/{call_id}/booking/undo  the calendar add's Undo        calls_api.undo_booking
     GET    /settings                                                       calls_api.get_settings
     PUT    /settings                        a subset of CallSettings       calls_api.put_settings
+                                            (?confirm=1: {confirm_raise: true}, I1)
     GET    /languages                       the language table             calls_api.languages
     POST   /languages/check                 run the language check         calls_api.run_language_
                                                                            check
+    POST   /languages/score                 his 1-5 scores of samples (I1) calls_api.score_language
+    POST   /{call_id}/live/ticket           a one-use 30 s ticket for the  (here, I1)
+                                            live socket in token mode
     POST   /desk/code                       a link code for the desk       calls_desk_door.code
     DELETE /desk                            unlink the desk                calls_desk_door.unlink
     GET    /desk/kit, /desk/kit/info        the call desk's kit zip        calls_desk_kit
@@ -28,7 +32,10 @@ checks the owner, the path and the body's size and shape, then calls the part wi
     POST   /v1/calls/desk/link                                             calls_desk_door.link
     WebSockets:
     /v1/calls/desk/ws                       the desk (A2 checks its signed credentials)
-    /v1/calls/{call_id}/live                the owner's live listen (checked here, then A2)
+    /v1/calls/{call_id}/live                the owner's live listen (checked here, then A2):
+                                            his bearer, his cookie from JARVIS's own page, or
+                                            (I1) ?ticket= from POST …/live/ticket (a browser
+                                            can't send Authorization on a WebSocket)
 
 Not wired yet: 501 {"error": "not_built"}; a WebSocket closes 4501. `calls_enabled` off: 503
 {"error": "calls_off"}. A handler refuses with `CallsRefused` -> {error, detail}. Bodies are JSON
@@ -41,6 +48,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -98,6 +106,8 @@ ROUTES: tuple[tuple[str, str], ...] = (
     ("PUT", f"{PREFIX}/settings"),
     ("GET", f"{PREFIX}/languages"),
     ("POST", f"{PREFIX}/languages/check"),
+    ("POST", f"{PREFIX}/languages/score"),
+    ("POST", f"{PREFIX}/{{call_id}}/live/ticket"),
     ("POST", f"{PREFIX}/desk/code"),
     ("DELETE", f"{PREFIX}/desk"),
     ("GET", f"{PREFIX}/desk/kit"),
@@ -276,7 +286,9 @@ async def get_settings(request: Request, uid: str = Depends(current_user)) -> Re
 
 @router.put("/settings", include_in_schema=False)
 async def put_settings(request: Request, uid: str = Depends(current_user)) -> Response:
-    return await _with_body(request, API_SLOT, lambda api, b: api.put_settings(uid, b))
+    # I1: the console marks a change he confirmed (a raise, answering on) with ?confirm=1
+    confirmed = {"confirm_raise": True} if request.query_params.get("confirm") == "1" else {}
+    return await _with_body(request, API_SLOT, lambda api, b: api.put_settings(uid, b | confirmed))
 
 
 @router.get("/languages", include_in_schema=False)
@@ -287,6 +299,61 @@ async def languages(request: Request, uid: str = Depends(current_user)) -> Respo
 @router.post("/languages/check", include_in_schema=False)
 async def language_check(request: Request, uid: str = Depends(current_user)) -> Response:
     return await _with_body(request, API_SLOT, lambda api, b: api.run_language_check(uid, b))
+
+
+@router.post("/languages/score", include_in_schema=False)
+async def language_score(request: Request, uid: str = Depends(current_user)) -> Response:
+    return await _with_body(request, API_SLOT, lambda api, b: api.score_language(uid, b))
+
+
+# ---- the live socket's ticket (I1) ---------------------------------------------------------------
+TICKET_TTL_S = 30.0
+TICKETS_MAX = 64
+TICKETS_SLOT = "calls_live_tickets"
+
+
+class LiveTickets:
+    """One-use tickets for `/v1/calls/{call_id}/live` (token mode: a browser can't send the bearer
+    on a WebSocket). Each names its owner and call and lives `TICKET_TTL_S`; at most
+    `TICKETS_MAX` are held (the oldest go). In memory: Cloud Run runs one instance."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._held: dict[str, tuple[str, str, float]] = {}
+
+    def issue(self, uid: str, call_id: str) -> str:
+        now = self._clock()
+        self._held = {k: v for k, v in self._held.items() if v[2] > now}
+        while len(self._held) >= TICKETS_MAX:
+            self._held.pop(next(iter(self._held)))
+        ticket = "lt_" + secrets.token_urlsafe(24)
+        self._held[ticket] = (uid, call_id, now + TICKET_TTL_S)
+        return ticket
+
+    def take(self, ticket: str, call_id: str) -> str | None:
+        held = self._held.pop(ticket, None)
+        if held is None or held[1] != call_id or held[2] <= self._clock():
+            return None
+        return held[0]
+
+
+def tickets(app: Any) -> LiveTickets:
+    found: LiveTickets | None = getattr(app.state, TICKETS_SLOT, None)
+    if found is None:
+        found = LiveTickets()
+        setattr(app.state, TICKETS_SLOT, found)
+    return found
+
+
+@router.post("/{call_id}/live/ticket", include_in_schema=False)
+async def live_ticket(
+    request: Request, call_id: str = CallIdPath, uid: str = Depends(current_user)
+) -> Response:
+    _, refused = _part(request, SOCKETS_SLOT)  # no live socket: nothing to let in
+    if refused is not None:
+        return refused
+    ticket = tickets(request.app).issue(uid, call_id)
+    return _json({"ticket": ticket, "expires_in_s": int(TICKET_TTL_S)})
 
 
 # ---- the call desk -------------------------------------------------------------------------------
@@ -371,6 +438,9 @@ async def desk_socket(ws: WebSocket) -> None:
 async def live_socket(ws: WebSocket, call_id: str) -> None:
     s = _settings(ws.app)
     uid = ws_owner(ws, s)
+    ticket = ws.query_params.get("ticket")
+    if uid is None and ticket and same_origin(ws, s):  # I1: token mode, from JARVIS's own page
+        uid = tickets(ws.app).take(ticket, call_id)
     if uid is None:
         await ws.close(code=WS_UNAUTHORIZED)
         return
@@ -392,6 +462,8 @@ def install_calls_routes(app: FastAPI) -> None:
 
 __all__ = [
     "BODY_MAX",
+    "TICKET_TTL_S",
+    "LiveTickets",
     "PREFIX",
     "ROUTES",
     "WEBSOCKETS",

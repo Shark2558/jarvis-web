@@ -76,13 +76,14 @@ COLLECTIONS: Mapping[PartName, tuple[str, ...]] = {
 
 # ---- the phone's door (D6): four signed routes, each owned by one part ---------------------
 DOOR_PREFIX = "/phone/v1/"
-DoorRoute = Literal["hello", "health", "inbox", "sos"]
+DoorRoute = Literal["hello", "health", "inbox", "sos", "calls"]  # R18 I1: + calls (Part C)
 DOOR_ROUTES: tuple[DoorRoute, ...] = get_args(DoorRoute)
 DOOR_OWNER: Mapping[str, PartName] = {
     "hello": "phone",
     "health": "body",
     "inbox": "phone",
     "sos": "body",
+    "calls": "phone",  # R18 I1: the phone's call commands and events (`jarvis.phone.calls`)
 }
 _KB = 1024
 DOOR_CAPS: Mapping[str, int] = {  # the body cap of each route, checked before any parsing
@@ -90,6 +91,7 @@ DOOR_CAPS: Mapping[str, int] = {  # the body cap of each route, checked before a
     "health": 256 * _KB,  # 35 days of daily sums at most
     "inbox": 10 * _KB * _KB + 64 * _KB,  # one file of at most 10 MB and its first line
     "sos": 16 * _KB,
+    "calls": 16 * _KB,  # R18: `jarvis.phone.calls.DOOR_CAP`
 }
 # The four launch words (D8): a launch address opens a screen and never acts.
 LAUNCH_WORDS: tuple[str, ...] = ("talk", "look", "sos", "shared")

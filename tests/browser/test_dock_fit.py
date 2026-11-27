@@ -35,7 +35,9 @@ expect = _pw.expect
 
 pytestmark = pytest.mark.browser
 
+WIDE = 2560  # R18: 23 tabs fit a wide desktop; at 1920 the last one (Calls) folds
 WIDTHS = {
+    WIDE: 1440,
     1920: 1080,
     1440: 900,
     1366: 768,
@@ -218,15 +220,18 @@ def test_the_dock_fits_and_every_panel_is_reachable_exactly_once(
         folded = _assert_folding(c, s, dock)
         if PHONE_BELOW <= width <= NARROW_DESK:  # the 66 / 88 px tabs are over 2 px narrower than
             assert {"approvals", "integrations"} <= set(over), over  # these labels (review A, M1)
-        if width == 1920:  # a full-HD screen has room for every tab: only a tab whose label is
+        if width == WIDE:  # a wide screen has room for every tab: only a tab whose label is
             assert folded == over, (folded, over)  # wider than it folds (none on this machine)
+        if width == 1920:  # full HD: R18's Calls folds for room, Camera with it (More takes a slot)
+            room = [t for t in folded if t not in over]
+            assert room in ([], ["calls"], ["camera", "calls"]), (folded, over)
         _assert_hint_whole(c, width)
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()
 
 
-@pytest.mark.parametrize("width", [1920, 1366, 390])
+@pytest.mark.parametrize("width", [WIDE, 1366, 390])
 def test_a_renderer_with_wider_text_folds_the_labels_that_no_longer_fit(
     browser: Any, server_url: str, token: str, width: int
 ) -> None:
@@ -245,7 +250,7 @@ def test_a_renderer_with_wider_text_folds_the_labels_that_no_longer_fit(
             assert over, "the wider text should push a label past its tab"
         folded = _assert_folding(c, s, dock)
         assert folded and s["more"], folded
-        if width == 1920:
+        if width == WIDE:
             assert folded == over, (folded, over)  # folded for its label, not for lack of room
         first = folded[0]  # an open folded panel lights More
         page.locator("#dockMore").click()
@@ -320,10 +325,10 @@ def test_a_folded_panel_lights_more_and_focus_comes_back_to_more(
 def test_the_dock_refits_on_resize_without_a_layout_loop(
     browser: Any, server_url: str, token: str
 ) -> None:
-    c = _console(browser, server_url, token, 1920)
+    c = _console(browser, server_url, token, WIDE)
     page = c.page
     try:
-        # test-only: no label outgrows its tab on any renderer, so the full-HD dock shows every tab
+        # test-only: no label outgrows its tab on any renderer, so the wide dock shows every tab
         # and More can go (GitHub's Chromium folds CONNECTORS there for its label, and More stays)
         _hold_every_label(page)
         s = page.evaluate(STATE_JS)
@@ -338,12 +343,12 @@ def test_the_dock_refits_on_resize_without_a_layout_loop(
             assert s["more"] is True and "construct" not in s["visible"], (width, s["visible"])
         # a focused tab that folds hands its focus to More, never to the page
         assert page.evaluate("document.activeElement.id") == "dockMore"
-        page.set_viewport_size({"width": 1920, "height": 1080})
+        page.set_viewport_size({"width": WIDE, "height": WIDTHS[WIDE]})
         page.evaluate(SETTLE_JS)
         s = page.evaluate(STATE_JS)
         assert s["more"] is False and s["visible"] == s["order"], s["visible"]
-        # More went with the focus on it: the last tab (R7: Camera; Helpers before it) takes it
-        assert page.evaluate("document.activeElement.dataset.open") == "camera"
+        # More went with the focus on it: the last tab (R18: Calls; Camera before it) takes it
+        assert page.evaluate("document.activeElement.dataset.open") == "calls"
         # settled: nothing in the dock changes on its own any more (no measure loop)
         changes = page.evaluate(
             """() => new Promise((done) => {
@@ -366,13 +371,13 @@ def test_an_open_sheet_closes_when_everything_fits_and_focus_lands_on_the_tab(
     c = _console(browser, server_url, token, 1280)
     page = c.page
     try:
-        # test-only: with every label holding its 78 px tab, everything fits 1920 on any renderer
-        # (desktop tabs are the same size at 1280 and 1920, so the check here holds there too)
+        # test-only: with every label holding its 78 px tab, everything fits a wide desktop on any
+        # renderer (desktop tabs are the same size at 1280 and WIDE, so the check holds there too)
         _hold_every_label(page)
         page.locator("#dockMore").click()
         page.locator("#moreSheet").wait_for(state="visible")
         first = page.evaluate("document.activeElement.dataset.sheetOpen")
-        page.set_viewport_size({"width": 1920, "height": 1080})
+        page.set_viewport_size({"width": WIDE, "height": WIDTHS[WIDE]})
         page.locator("#moreSheet").wait_for(state="hidden")
         page.evaluate(SETTLE_JS)
         assert page.locator("#dockMore").is_hidden()
@@ -481,7 +486,7 @@ def test_before_its_script_runs_no_tab_shows_past_the_dock(
         page.evaluate(SETTLE_JS)
         early = page.evaluate(EARLY_JS)
         assert held and early["ready"] == "interactive", early["ready"]  # painted, not yet fitted
-        assert len(early["boxes"]) == 22 and early["rows"] == 1  # all tabs (R7), More hidden
+        assert len(early["boxes"]) == 23 and early["rows"] == 1  # all tabs (R18), More hidden
         assert early["overflowX"] == "clip", early  # what runs past the dock is not painted
         assert early["right"] <= early["vw"] and early["pageScroll"] <= 0, early
 

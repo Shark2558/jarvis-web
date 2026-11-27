@@ -111,7 +111,8 @@ def _ctx(settings: Settings, **extra: Any) -> MobileContext:
 def test_the_part_offers_its_door_routes_the_lock_and_one_privacy_row(settings: Settings) -> None:
     part = build(_ctx(settings))
     assert part.name == "phone" and part.ready == READY and part.tools == ()
-    assert set(part.services["door"]) == {"hello", "inbox"}
+    assert set(part.services["door"]) == {"hello", "inbox", "calls"}  # R18 I1: + the calls' door
+    assert part.services["phone_calls"].door_handlers().keys() == {"calls"}
     assert callable(part.services["app_lock"]) and len(part.privacy) == 1
     off = build(_ctx(settings, mobile_enabled=False))
     assert off.ready == OFF and "door" not in off.services and "app_lock" not in off.services

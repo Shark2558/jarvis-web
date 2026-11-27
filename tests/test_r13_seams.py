@@ -558,7 +558,8 @@ def test_console_html_is_byte_identical_to_r14s() -> None:
     import hashlib
 
     got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
-    assert got == "9f4c0c68f45e46fe150e65e182f4d2ba1132eb556b3ddee0ba3491e4c85450a2"  # 9a8392b
+    # R18 E: + the Calls panel and its tab (9a8392b before)
+    assert got == "d26e202e4e9aa526a94aab01b1b85433582482b06c0ad79fced61abebf7d466c"
     assert _lines(STATIC / "console.html") == 782
 
 
@@ -597,7 +598,7 @@ def test_the_wardrobe_css_only_places_things() -> None:
 
 # ---- size guards and "no real clock" -------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 735
+    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
     assert _lines(SRC / "tools" / "gateway.py") == 760
     assert _lines(SRC / "core" / "brain.py") <= 741
     for path in STATIC.glob("console*.js"):

@@ -37,6 +37,8 @@ REST = [
     ("PUT", "/v1/calls/settings"),
     ("GET", "/v1/calls/languages"),
     ("POST", "/v1/calls/languages/check"),
+    ("POST", "/v1/calls/languages/score"),  # I1: his 1-5 scores of a language's samples
+    ("POST", f"/v1/calls/{CALL}/live/ticket"),  # I1: the live socket's ticket (token mode)
     ("POST", "/v1/calls/desk/code"),
     ("DELETE", "/v1/calls/desk"),
     ("GET", "/v1/calls/desk/kit"),
@@ -221,3 +223,42 @@ def test_the_app_mounts_every_calls_route(settings: Settings) -> None:
     mounted = _flat(create_app(settings, provider=MockProvider()).routes)
     assert set(cr.ROUTES) <= mounted
     assert {("WEBSOCKET", path) for path in cr.WEBSOCKETS} <= mounted
+
+
+def test_a_live_ticket_lets_his_own_page_in_once_in_token_mode(settings: Settings) -> None:
+    """I1: a browser can't send the bearer on a WebSocket; a ticket from POST …/live/ticket
+    (his bearer) opens that call's live socket once, from JARVIS's own page only."""
+    seen: list[tuple[str, str]] = []
+
+    class _Sockets:
+        async def live(self, ws: WebSocket, uid: str, call_id: str) -> None:
+            seen.append((uid, call_id))
+            await ws.accept()
+            await ws.close()
+
+        async def desk(self, ws: WebSocket) -> None:
+            await ws.close()
+
+    s = _settings(settings)
+    app = _app(s)
+    app.state.calls_sockets = _Sockets()
+    origin = {"Origin": "http://testserver"}
+    with TestClient(app) as c:
+        got = c.post(f"/v1/calls/{CALL}/live/ticket", json={}, headers=AUTH)
+        assert got.status_code == 200 and got.json()["expires_in_s"] == 30
+        ticket = got.json()["ticket"]
+        assert c.post(f"/v1/calls/{CALL}/live/ticket", json={}).status_code == 401
+        with pytest.raises(WebSocketDisconnect) as stray:  # another site's page
+            with c.websocket_connect(
+                f"/v1/calls/{CALL}/live?ticket={ticket}", headers={"Origin": "https://evil.test"}
+            ) as ws:
+                ws.receive_text()
+        assert stray.value.code == p.WS_UNAUTHORIZED
+        again = c.post(f"/v1/calls/{CALL}/live/ticket", json={}, headers=AUTH).json()["ticket"]
+        with c.websocket_connect(f"/v1/calls/{CALL}/live?ticket={again}", headers=origin):
+            pass
+        with pytest.raises(WebSocketDisconnect) as spent:  # one use
+            with c.websocket_connect(f"/v1/calls/{CALL}/live?ticket={again}", headers=origin) as ws:
+                ws.receive_text()
+        assert spent.value.code == p.WS_UNAUTHORIZED
+    assert seen == [(primary_user_id(s), CALL)]

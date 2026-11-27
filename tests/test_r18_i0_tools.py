@@ -135,8 +135,11 @@ def test_the_tools_are_filed_under_communication_and_planned_until_i1() -> None:
         assert register.skill_of(name) == "communication"
         group = register.group_of(name)
         assert group is not None and group.id == "calls"
-    assert {ct.PLACE, ct.ANSWER_MODE} <= register.catalogue.planned
+    # R18 I1: registered, so no longer planned; the register sees them in the registry
+    assert not {ct.PLACE, ct.ANSWER_MODE} & register.catalogue.planned
     reg = ToolRegistry()
+    for tool in ct.calls_tools(_Calls()):
+        reg.register(tool)
     assert not [p for p in register.problems(reg) if "calls" in p]
 
 

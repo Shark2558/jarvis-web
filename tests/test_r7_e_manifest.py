@@ -42,6 +42,11 @@ OWN_PERMISSIONS = {
     "android.permission.health.READ_HEART_RATE",
     "android.permission.health.READ_SLEEP",
     "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
+    # R18 D: calls (place, answer and end, the call state, the caller's number for answering)
+    "android.permission.CALL_PHONE",
+    "android.permission.ANSWER_PHONE_CALLS",
+    "android.permission.READ_PHONE_STATE",
+    "android.permission.READ_CALL_LOG",
 }
 COMPONENTS = ("activity", "activity-alias", "service", "receiver", "provider")
 

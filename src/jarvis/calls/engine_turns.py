@@ -98,6 +98,7 @@ class Turns:
     _told: asyncio.Event
     _dtmf_done: asyncio.Event
     _said_goodbye: bool
+    _audio_writes: set[asyncio.Task[Any]]
 
     if TYPE_CHECKING:  # the session's helpers this part calls
 
@@ -178,7 +179,7 @@ class Turns:
                 log.warning("language detection failed", extra={"error": type(exc).__name__})
                 lang, conf = self.lang, 0.0
         hear_lang = lang if lang in self.allowed and conf >= SWITCH_CONFIDENCE else self.lang
-        if lang not in self.allowed and conf >= SWITCH_CONFIDENCE:
+        if lang not in self.allowed and conf >= SWITCH_CONFIDENCE and not self.taken_over:
             await self._unsupported()
             return
         hearing = self.d.speech.hearing(hear_lang)
@@ -201,7 +202,7 @@ class Turns:
         text = one_line(text, 2000)
         if not text:
             return
-        if lang != self.lang and confidence >= SWITCH_CONFIDENCE:
+        if lang != self.lang and confidence >= SWITCH_CONFIDENCE and not self.taken_over:
             if lang in self.allowed:
                 self._switch(lang)
             elif is_language(lang):
@@ -429,6 +430,8 @@ class Turns:
         self.objected = True
         self.recording = False
         self._rec_buf = bytearray()
+        if self._audio_writes:  # a chunk on its way lands before the delete, never after it
+            await asyncio.gather(*list(self._audio_writes), return_exceptions=True)
         await self._audit("objection")
         try:
             await self.d.records.objection(self.uid, self.call_id)

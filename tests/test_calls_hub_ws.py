@@ -542,3 +542,16 @@ async def test_model_calls_are_metered_and_the_owners_limit_is_checked() -> None
     assert await spend.allowed(UID)
     await billing.record(UID, "anthropic", 0.02)  # about ₹1.90
     assert not await spend.allowed(UID)
+
+
+async def test_two_quick_ringing_events_answer_once() -> None:
+    r, hub, _, sockets, desk_id, seed = await linked_world()
+    policy = Answering(yes=True)
+    hub._answering = policy
+    desk, desk_task = await open_desk(sockets, desk_id, seed)
+    await r.store.save_settings(UID, {"answering_on": True})
+    ring = phone_event("ringing", None, number_e164="+919000000005", rings=5)
+    await asyncio.gather(hub.phone_event(UID, ring), hub.phone_event(UID, ring))
+    assert len(policy.asked) == 1 and hub.active(UID) is not None
+    await hub.aclose()
+    await asyncio.wait_for(desk_task, 1)

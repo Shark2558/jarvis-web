@@ -452,14 +452,60 @@ async def test_the_rupee_cap_says_goodbye_then_ends() -> None:
     assert spoken(r)[-1] == ENGLISH_LINES[LineKind.GOODBYE_CAP]
 
 
-async def test_the_owners_overall_limit_ends_the_call() -> None:
+async def test_the_owners_overall_limit_reached_dials_nothing() -> None:
     r = rig()
     r.spend.ok = False
     s = r.session(card())
+    await s.start_outgoing("appr_12345678")
+    assert s.end_reason is EndReason.CAP_INR
+    assert r.phone.sent == [] and "brain" not in r.provider.routes()
+
+
+async def test_the_owners_overall_limit_reached_mid_call_ends_it() -> None:
+    r = rig()
+    r.provider.say("Hello.")
+    s = r.session(card())
     await connect(r, s)
     await settle(s)
+    r.spend.ok = False
+    await them(r, s, "Yes?")
     assert s.end_reason is EndReason.CAP_INR
-    assert "brain" not in r.provider.routes()
+    assert spoken(r)[-1] == ENGLISH_LINES[LineKind.GOODBYE_CAP]
+
+
+async def test_no_call_is_placed_while_the_ai_is_switched_off() -> None:
+    r = rig()
+    r.deps.brain._router.bind_blocked(lambda: True)
+    s = r.session(card())
+    await s.start_outgoing("appr_12345678")
+    assert r.phone.sent == [] and s.state is CallState.FAILED
+    assert any("switched off" in n for n in r.notice.notes)
+
+
+async def test_owner_hangs_up_while_the_desk_gets_ready_finishes_once() -> None:
+    r = rig()
+    r.desk.answer_prepare = False
+    s = r.session(card())
+    task = asyncio.create_task(s.start_outgoing("appr_12345678"))
+    for _ in range(20):
+        await asyncio.sleep(0)
+    await s.hangup()
+    await task
+    assert len(r.records.finished) == 1 and r.phone.types() == ["call.end"]
+    assert r.gate.asked == []  # the approval was never redeemed
+
+
+async def test_after_a_takeover_another_language_never_makes_jarvis_speak() -> None:
+    r = rig(detector=True)
+    r.provider.say("Hello.")
+    s = r.session(card(languages=("en-IN", "ml-IN")))
+    await connect(r, s)
+    await settle(s)
+    await s.takeover()
+    said = len(spoken(r))
+    r.speech.det.script.append(("ta-IN", 0.95))  # type: ignore[union-attr]
+    await them(r, s, "வணக்கம்", lang="ta-IN")
+    assert len(spoken(r)) == said
 
 
 async def test_a_long_silence_asks_then_says_goodbye() -> None:
@@ -620,3 +666,33 @@ async def test_listeners_get_state_and_captions_and_speech_is_metered() -> None:
     await asyncio.wait_for(run, 1)
     assert '"state":"ended"' in sink.texts[-1]
     assert FAST.pace is False and NUMBER.startswith("+91")
+
+
+async def test_an_audio_chunk_on_its_way_lands_before_the_objection_delete() -> None:
+    r = rig()
+    r.provider.say("Hello.")
+    r.provider.say("Okay, I have stopped recording.", recording_objection=True)
+    order: list[str] = []
+    gate = asyncio.Event()
+
+    async def slow_audio(uid: str, call_id: str, pcm: bytes) -> None:
+        await gate.wait()
+        order.append("audio")
+
+    async def objection(uid: str, call_id: str) -> None:
+        order.append("delete")
+
+    r.records.audio = slow_audio  # type: ignore[method-assign]
+    r.records.objection = objection  # type: ignore[method-assign]
+    s = r.session(card())
+    await connect(r, s)
+    await settle(s, rounds=1)
+    s.on_audio(b"\x01\x00" * 320 * 50)
+    for _ in range(60):
+        s.pump_audio()
+    hold = asyncio.create_task(them(r, s, "Please don't record this."))
+    for _ in range(50):
+        await asyncio.sleep(0)
+    gate.set()
+    await hold
+    assert order and order[-1] == "delete" and "audio" in order

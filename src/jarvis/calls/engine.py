@@ -153,6 +153,8 @@ class CallSession(Turns):
         self._tasks: set[asyncio.Task[Any]] = set()
         self._ending = False  # no new work: a goodbye or the end is under way
         self._closed = False  # `end` / `_finish` has started (once)
+        self._finished = False
+        self._audio_writes: set[asyncio.Task[Any]] = set()
         self._month_spent = 0.0
         self._said_goodbye = False
         self._failures = 0
@@ -343,7 +345,9 @@ class CallSession(Turns):
             return
         chunk, self._rec_buf = bytes(self._rec_buf), bytearray()
         if self.recording and not self.objected:
-            self._spawn(self.d.records.audio(self.uid, self.call_id, chunk))
+            task = self._spawn(self.d.records.audio(self.uid, self.call_id, chunk))
+            self._audio_writes.add(task)
+            task.add_done_callback(self._audio_writes.discard)
 
     async def _mixer_loop(self) -> None:
         start = clock_time.monotonic()
@@ -403,9 +407,15 @@ class CallSession(Turns):
             note = "This month's calls spend could not be read, so nothing was dialled."
             await self._finish(EndReason.NOT_READY, outcome="failed", note=note)
             return False
-        if self._month_spent >= self.settings.month_cap_inr:
-            note = "This month's calls limit is used up, so nothing was dialled."
+        if self._month_spent >= self.settings.month_cap_inr or not await self.d.spend.allowed(
+            self.uid
+        ):
+            note = "This month's limit is used up, so nothing was dialled."
             await self._finish(EndReason.CAP_INR, outcome="cap_rupees", note=note)
+            return False
+        if await self.d.brain.blocked():
+            note = "The AI is switched off (no-AI mode), so nothing was dialled."
+            await self._finish(EndReason.NOT_READY, outcome="failed", note=note)
             return False
         problems = desk_problems(self.d.desk.state(), connected=self.d.desk.is_ready())
         if problems:
@@ -424,7 +434,7 @@ class CallSession(Turns):
             note = "The laptop call desk did not switch its audio for the call."
             await self._finish(EndReason.NOT_READY, outcome="desk_not_ready", note=note)
             return False
-        return True
+        return not self._closed  # the owner hung up while the desk got ready
 
     async def _prewarm(self) -> None:
         kinds = (LineKind.CHECK_BACK, LineKind.GOODBYE, LineKind.GOODBYE_CAP, LineKind.HANDOVER)
@@ -700,7 +710,10 @@ class CallSession(Turns):
     async def _finish(
         self, reason: EndReason, *, outcome: str | None = None, note: str = ""
     ) -> None:
-        """Summary, record, ₹, the vault and the owner's note; then the listeners close."""
+        """Summary, record, ₹, the vault and the owner's note; then the listeners close. Once."""
+        if self._finished:
+            return
+        self._finished = True
         self._ending = self._closed = True
         self.end_reason = reason
         self.outcome = outcome or outcome_for(
@@ -765,7 +778,7 @@ class CallSession(Turns):
         except Exception as exc:  # noqa: BLE001
             log.error("call record not saved", extra={"error": type(exc).__name__})
         words = summary.text
-        if self.outcome == "desk_not_ready" and self.notes:
+        if self.answered_at is None and self.notes:  # never connected: say why
             words = f"{words} {self.notes[-1]}"
         await self._notice(one_line(words, 400))
 

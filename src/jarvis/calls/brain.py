@@ -313,6 +313,10 @@ class CallBrain:
         self._router: ModelRouter = brains.router_for(self.spec.id)
         self._max_tokens = max_tokens
 
+    async def blocked(self) -> bool:
+        """True while the AI is switched off (no-AI mode): no call is placed then."""
+        return await self._router.blocked_now()
+
     async def reply(
         self,
         brief: CallBrief,

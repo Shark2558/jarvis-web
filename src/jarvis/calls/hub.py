@@ -375,7 +375,7 @@ class CallHub:
         self._desks: dict[str, DeskConnection] = {}
         self._calls: dict[str, tuple[str, CallSession]] = {}
         self._active: dict[str, str] = {}  # uid -> call id (one phone line)
-        self._declined: dict[str, bool] = {}  # uid -> a ringing call he was asked about
+        self._asked: set[str] = set()  # owners whose ringing call was decided on
         self._tasks: set[asyncio.Task[Any]] = set()
 
     # ---- desks -----------------------------------------------------------------------------
@@ -481,32 +481,33 @@ class CallHub:
         if session is not None:
             await session.on_phone_state(ev)
             if ev.state == "ended":
-                self._declined.pop(uid, None)
+                self._asked.discard(uid)
             return
         if ev.state == "ended":
-            self._declined.pop(uid, None)
+            self._asked.discard(uid)
             return
         if ev.state == "ringing" and ev.call_id is None and ev.number_e164:
             await self._maybe_answer(uid, ev)
 
     async def _maybe_answer(self, uid: str, ev: CallStateEvent) -> None:
-        if self._answering is None or self._declined.get(uid) or self.active(uid) is not None:
+        number = ev.number_e164
+        if self._answering is None or not number or uid in self._asked or self.active(uid):
             return
-        settings = await self._store.settings(uid)
-        if not settings.answering_on or ev.rings < settings.answer_after_rings:
-            return
-        assert ev.number_e164 is not None
+        self._asked.add(uid)  # before any await: a second ringing event can't race this one
         try:
-            yes = await self._answering.should_answer(uid, ev.number_e164, ev.rings, settings)
+            settings = await self._store.settings(uid)
+            if not settings.answering_on or ev.rings < settings.answer_after_rings:
+                self._asked.discard(uid)  # not yet: a later ring may still be answered
+                return
+            yes = await self._answering.should_answer(uid, number, ev.rings, settings)
         except Exception as exc:  # noqa: BLE001 - when in doubt, JARVIS does not answer
             log.warning("answering policy failed", extra={"error": type(exc).__name__})
             yes = False
-        self._declined[uid] = not yes
-        if not yes:
+        if not yes or self.active(uid) is not None:
             return
         record = CallRecord(
             direction=Direction.INCOMING,
-            number_e164=ev.number_e164,
+            number_e164=number,
             state=CallState.PREPARING,
             started_at=ev.at,
             retention_days=settings.retention_days,

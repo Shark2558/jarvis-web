@@ -1,64 +1,64 @@
 {
  "about": "R18 D: cloud-signed phone commands (src/jarvis/phone/calls.py; android core CallCommands). The private key was discarded.",
  "scheme": "jarvis-cloud-v1",
- "public_key": "046a78d1cf7be49fda0cb2251f9c75ed2ad2428b50faa9401321929fbe0efc81320d25672047b4edb8c6161a2f87ce0315c28575ea873e04440d15dff28def52b3",
+ "public_key": "040a512b16b2ed0d3553dabd7a625cb05fe10b84264588449605095692200547ca4f5d355fca11cbfca14f28b9fa6e5d7ebbade4b509a224d71daedb9cd75226ee",
  "device_id": "ph_0123456789ab",
  "now": 1800000000,
  "good": [
   {
    "name": "dial",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
-   "sig": "MEQCIBYKQzXS5JnUMYjgBA23RoeTOuiJSiZOCn1He-4K40ANAiAbHbTo9-RTDFLZmBhheibK2T5DdUn8vnwlBHOE99P3yg"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"type\":\"call.dial\",\"iat\":1800000000,\"exp\":1800000300,\"call_id\":\"call_000000000001\",\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEQCICoGMFHeS1-abOSuTO5gvpn3ts4E87esdXRW0EC3SMdTAiBKVYAi3_sjHvd4AQ7lhXdzC5zpGHuzDAFIxtuafZMmvA"
   },
   {
    "name": "answer",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000002\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.answer\",\"call_id\":\"call_0002\",\"iat\":1800000000,\"exp\":1800000030}",
-   "sig": "MEQCIAlP5rLBtkaTdfFvpl_3YS5m3ITFGf1k7mDfgTaxMCxeAiAKsgiQ7dI154eBawUseoyDtnthV4EXveqTGcKXsytAcw"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000002\",\"d\":\"ph_0123456789ab\",\"type\":\"call.answer\",\"iat\":1800000000,\"exp\":1800000030,\"call_id\":\"call_000000000002\"}",
+   "sig": "MEYCIQC-2X46b9_9Fzgg2pZvzQBfld4rSlE0twX-mawk6wsC2AIhANI5K2kxw6jBqXdlYXsY8HAKQXcJGeZymiiqqZquwszL"
   },
   {
    "name": "end",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000003\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.end\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000120}",
-   "sig": "MEUCIQC0Ot0Ij7UxzYyHL9VHLXbDdHbXMedsA0LOCCi7Mz1U7AIgJ2zh33P6g6lnHNLCAjjZSzjySQcgnBHjq3zTtNJKHDk"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000003\",\"d\":\"ph_0123456789ab\",\"type\":\"call.end\",\"iat\":1800000000,\"exp\":1800000120,\"call_id\":\"call_000000000001\"}",
+   "sig": "MEUCIF24Gmyg8lV85AmSTX64H4mlMqeRWamEW6fsu-KMx12YAiEA3mp2tFqeK2i1TcGSJtrjUq09ISz6lXGuCA91IGs7m3g"
   },
   {
    "name": "route",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000004\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.route\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000060,\"to\":\"phone\"}",
-   "sig": "MEUCIBBXCGJOOzN0qO_nyVDGFzlDmsHSmu79h6N-MuYLbk0EAiEAqCe3Fk8NUzceTnfd4V6EkW733C9JjfBQPFfXJ1ixm-0"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000004\",\"d\":\"ph_0123456789ab\",\"type\":\"call.route\",\"iat\":1800000000,\"exp\":1800000060,\"call_id\":\"call_000000000001\",\"to\":\"phone\"}",
+   "sig": "MEUCIQDGPDGd6-janq-bIglRcegsCIEZ3znLlTJSNunAxT1oYQIgZ58usEfbLV3Hs4KMlXknUPF-jUIpT2JmpUHPVgEcDMY"
   },
   {
    "name": "card",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000005\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.card\",\"call_id\":\"card_0001\",\"iat\":1800000000,\"exp\":1800000600,\"card_id\":\"card_0001\",\"label\":\"Dr \\\"Rao\\\"\",\"purpose\":\"Book Saturday 10:00-12:00no payment\",\"passkey\":true}",
-   "sig": "MEUCIA5ZdU4F3MDtxg1BDnYLglAbyA8i_hXNK3QUhLFDrwMXAiEAplhQj2kktqpnDOyvoMTslfKuFqZHaCxJL_Y1d0mFBMM"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000005\",\"d\":\"ph_0123456789ab\",\"type\":\"call.card\",\"iat\":1800000000,\"exp\":1800000600,\"card_id\":\"cc_000000000001\",\"label\":\"Dr \\\"Rao\\\"\",\"purpose\":\"Book Saturday 10:00-12:00no payment\",\"passkey\":true}",
+   "sig": "MEQCIH6Y8jMGrk3dp5MLf5gxlC0MAKr1OzLjBjf7hUpYgM1pAiBbZyXq6dDAewvB8Q9xJPCuBqwrkZLfXdA9UdvTy38JQw"
   }
  ],
  "bad_signature": [
   {
    "name": "changed_body",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000009\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
-   "sig": "MEQCIBYKQzXS5JnUMYjgBA23RoeTOuiJSiZOCn1He-4K40ANAiAbHbTo9-RTDFLZmBhheibK2T5DdUn8vnwlBHOE99P3yg"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"type\":\"call.dial\",\"iat\":1800000000,\"exp\":1800000300,\"call_id\":\"call_000000000001\",\"number\":\"+919000000009\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEQCICoGMFHeS1-abOSuTO5gvpn3ts4E87esdXRW0EC3SMdTAiBKVYAi3_sjHvd4AQ7lhXdzC5zpGHuzDAFIxtuafZMmvA"
   },
   {
    "name": "other_key",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
-   "sig": "MEUCID6YVTlSQQpnba-tmxOTzKsGgCuIf0wYNuZXZH6ADJ1uAiEAgt8H4rgsSVGBUN4ArRtEOLOCs-EXHU-cRVoR7PWkdvI"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"type\":\"call.dial\",\"iat\":1800000000,\"exp\":1800000300,\"call_id\":\"call_000000000001\",\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEUCIQCfKQYRN_hNDFT81BdciL9VlRa4djlALPvaJyfbfPomcAIgHpFB0OfUTxheSZj74F8ecNr1-HndMWPgqL1k7GdT7_s"
   },
   {
    "name": "no_scheme",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
-   "sig": "MEYCIQDsLbb0-zgjNGeSrISrRADUVeerUE6Yq_CvKSl0prf86gIhAIghKGgc3n9wq3ZXLH17vg7Bx52IudOaosLViRUYVfRN"
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"type\":\"call.dial\",\"iat\":1800000000,\"exp\":1800000300,\"call_id\":\"call_000000000001\",\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEYCIQCc9J3OdO3a6RPM0xoWVtxnOc-xul_V6kGDyUROqA20-wIhAK32vehQmzu2g5_VxynxPYhOG08UGkEke3mSWRaVmD1d"
   }
  ],
  "refused": [
   {
    "name": "other_device",
-   "body": "{\"v\":1,\"id\":\"pc_00000000000000ff\",\"d\":\"ph_ba9876543210\",\"kind\":\"call.end\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000120}",
-   "sig": "MEUCIQCc-Vu4BunQs7bgwCiT3k6_uzcJ1E_iE2lysBTkkbSlJwIgVWgJ5eIBKl1YvC5o0bGJE0kqMGb94_jVJOorKx-v548",
+   "body": "{\"v\":1,\"id\":\"pc_00000000000000ff\",\"d\":\"ph_ba9876543210\",\"type\":\"call.end\",\"iat\":1800000000,\"exp\":1800000120,\"call_id\":\"call_000000000001\"}",
+   "sig": "MEQCIEoWT8DGvgYdhhcntFczHxT1xqoC2puBHrgadUXKk8p4AiB6ACw6Pq6LLf761vDC2AShMmnMXiMYEmI-mkbWnj1IWA",
    "why": "device"
   },
   {
    "name": "expired",
-   "body": "{\"v\":1,\"id\":\"pc_0000000000000002\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.answer\",\"call_id\":\"call_0002\",\"iat\":1800000000,\"exp\":1800000030}",
-   "sig": "MEQCIAlP5rLBtkaTdfFvpl_3YS5m3ITFGf1k7mDfgTaxMCxeAiAKsgiQ7dI154eBawUseoyDtnthV4EXveqTGcKXsytAcw",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000002\",\"d\":\"ph_0123456789ab\",\"type\":\"call.answer\",\"iat\":1800000000,\"exp\":1800000030,\"call_id\":\"call_000000000002\"}",
+   "sig": "MEYCIQC-2X46b9_9Fzgg2pZvzQBfld4rSlE0twX-mawk6wsC2AIhANI5K2kxw6jBqXdlYXsY8HAKQXcJGeZymiiqqZquwszL",
    "now": 1800000031,
    "why": "expired"
   }

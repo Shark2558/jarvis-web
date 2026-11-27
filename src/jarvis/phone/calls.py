@@ -1,81 +1,89 @@
 # src/jarvis/phone/calls.py
 """R18 D: the cloud's half of the phone's call commands and call events
 (docs/plans/r18-calls/BUILD-BRIEF.md, "Phone <-> cloud"; docs/plans/r18-calls.md sections 4, 8).
+The bytes on the wire are `jarvis.phone.calls_wire`'s; what I1 wires is in
+docs/plans/r18-calls/INTEGRATION-D.md.
 
 **How the cloud reaches the phone.** R7 gave the phone a signed door (phone -> cloud) and, the
-other way, only Web Push: Chrome shows each push through the app's notification service (R7
-D10). No Firebase, no socket the phone keeps open, no foreground service (R7 D9, D22). So a
-command travels in two steps:
+other way, only Web Push, which Chrome hands to the app's notification service (R7 D10). There is
+no Firebase, no socket the phone keeps open and no foreground service (R7 D9, D22). So a command
+travels in two steps:
 
-1. `send(uid, command)` signs it, puts it in the phone's outbox and rings the **doorbell**: one
-   Web Push of the kind `call_command` with a plain sentence and never a number or a name (the
-   laptop's browser shows the same sentence, which is harmless and tells him what is happening).
-2. The app's notification service sees that kind, asks the door `POST /phone/v1/calls` (signed,
-   checked by `DoorGate` like every door request: shape, flood, device, time, cap, nonce,
-   signature, rate) and the answer carries every pending command. The phone also asks on every
-   call-state change and when the app opens, so a lost push only delays a command.
+1. `send(uid, command)` signs it, puts it in the phone's outbox and rings the **doorbell**: one Web
+   Push of the kind `call_command` carrying a plain sentence, never a number or a name (the laptop's
+   browser shows the same sentence: harmless, and it tells him what is happening).
+2. The app's notification service sees that kind and asks the door, `POST /phone/v1/calls`, which
+   `DoorGate` checks like every door request (shape, flood, device, time, cap, nonce, signature,
+   rate); the answer carries every pending command. The phone also asks on every call-state change
+   and when the app opens, so a lost push only delays a command, and it may wait up to 25 s for one
+   (`wait`; Cloud Run runs one instance, so one in-memory outbox is enough).
 
-**The cloud's signature.** Each command is the one JSON form (`contract.canonical_json`) of
-`{v, id, d, kind, call_id, iat, exp, ...}`, signed ECDSA P-256 / SHA-256 (DER, base64url) over
-`"jarvis-cloud-v1\\n" + body`. The phone acts on a command only when the signature verifies with
-the key the door's answer gave it (`key`), `d` is its own device id, `exp` has not passed and `id`
-was never acted on. The key comes from the keyring (`CommandSigner.from_secret`, the same key on
-every start, like the VAPID key) or, until that purpose exists, `CommandSigner.ephemeral()`; the
-phone takes the key from each door answer (TLS to its one built-in address), so a new key after a
-restart costs nothing.
+**The cloud's signature** (`calls_wire`). The phone acts on a command only when it verifies with the
+key the door's answer gave (`key`), names this phone, has not expired and was never acted on. The
+key comes from the keyring (`CommandSigner.from_secret`, the same key on every start, like the VAPID
+key) or, until that purpose exists, `CommandSigner.ephemeral()`.
 
-**A dial** needs a live approval: `ApprovalCheck.live_until(uid, approval_id, call_id, number)`
-must give a time in the future, else nothing is queued (fail closed, also when the check fails).
-The command lives until that time, at most `DIAL_MAX_S`; the phone dials by itself only while it
-is fresh and otherwise asks for his tap (android `calls/CallActions.kt`).
+**A dial** needs a live approval: `ApprovalCheck.live_until(uid, approval_id, call_id, number)` must
+give a time in the future, else nothing is queued (fail closed, also when the check fails). The
+command lives until then, at most `DIAL_MAX_S`; the phone dials by itself only while it is fresh and
+otherwise asks for his tap.
 
-**Events** (`call.state`, `call.result`, `card.decision`) come in the same door body. Each is the
-strict shape below; at most `EVENTS_MAX` a request and `EVENTS_PER_MINUTE` a phone; one older
-than `EVENT_MAX_AGE_S` or ahead of the clock is dropped (answered, never delivered); an event id
-seen in the last `EVENT_SEEN_S` is a retry and is not delivered twice. An event id counts as seen
-only after the engine took it, so an engine failure answers 503 and the phone's retry arrives.
-An incoming number (`number_e164`, ringing only) reaches the engine only while answering missed
-calls is on (`AnsweringView`); otherwise it is dropped on arrival. No log line carries a full
-number (`mask_number`); the audit gets the masked form.
+**Events** come in the same body: strict shapes, at most `EVENTS_MAX` a request and
+`EVENTS_PER_MINUTE` a phone; one older than `EVENT_MAX_AGE_S` or ahead of the clock is dropped
+(answered, never delivered); an event id seen in the last `EVENT_SEEN_S` is a retry and is not
+delivered twice. An id counts as seen only once the engine took it: an engine failure answers 503
+and the phone's retry arrives. An incoming number reaches the engine only while answering missed
+calls is on (`AnsweringView`); otherwise it is dropped on arrival. No log line carries a full number
+(`mask_number`); the audit gets the masked form.
 
-The interface the calls engine (builder A2) consumes is `PhoneCalls` (`send`, `last_state`,
-`readiness`) and the `PhoneEventSink` it implements. What I1 wires is listed in
-docs/plans/r18-calls/INTEGRATION-D.md.
+**What the calls engine (A2) uses.** `OwnerPhoneLink(calls, uid)` is I0's `PhoneLink` (`send`,
+`last_state`); `PhoneCalls.readiness(uid)` is the card's ready check; the engine implements
+`PhoneEventSink` (I0's `CallStateEvent` for each state, `PhoneCommandResult` for each command the
+phone acted on). A1's cards implement `CardDesk` and `ApprovalCheck`, its settings `AnsweringView`.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
-import re
-import secrets
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal, Protocol
+from datetime import UTC, datetime
+from typing import Any, Literal, Protocol
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
+from jarvis.calls.protocol import CallStateEvent
 from jarvis.core.guardrails import ActionRisk
 from jarvis.logging import get_logger
-from jarvis.mobile import contract
 from jarvis.mobile.ports import PhoneReply, PhoneRequest
+from jarvis.phone.calls_wire import (
+    EVENTS_MAX,
+    WAIT_MAX_S,
+    AnyEvent,
+    Can,
+    Card,
+    CardDecision,
+    CardEvent,
+    CommandSigner,
+    Dial,
+    PhoneCommand,
+    ProtocolCommand,
+    ResultEvent,
+    Sealed,
+    StateEvent,
+    from_protocol,
+    mask_number,
+    parse_body,
+    seal,
+)
 from jarvis.phone.door import PerPhoneRate
 from jarvis.phone.store import Phone
 
 log = get_logger(__name__)
 
-SCHEME = "jarvis-cloud-v1"
 DOOR_ROUTE = "calls"
 DOOR_CAP = 16 * 1024
 DOORBELL_KIND = "call_command"
-P256_ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
-SECRET_MIN = 32
 DIAL_MAX_S = 600  # an approval lives 10 minutes; a dial never outlives it
 TTL_S: Mapping[str, int] = {
     "call.answer": 30,  # a ringing call does not wait
@@ -85,119 +93,14 @@ TTL_S: Mapping[str, int] = {
 }
 OUTBOX_MAX = 16
 DEVICES_MAX = 8
-EVENTS_MAX = 8
 EVENTS_PER_MINUTE = 40
 EVENT_MAX_AGE_S = 900  # a phone may hold an event a while when it is offline
 EVENT_AHEAD_S = 120
 EVENT_SEEN_S = 1800
 EVENT_SEEN_MAX = 4096
-ACKS_MAX = 16
-WAIT_MAX_S = 25
+STATES_MAX = 64
 CHECKIN_FRESH_S = 7 * 86_400
 REJECTED: Mapping[str, str] = {"error": "input_rejected"}
-
-CALL_ID = r"^[A-Za-z0-9_-]{4,64}$"
-CARD_ID = r"^[A-Za-z0-9_-]{4,64}$"
-APPROVAL_ID = r"^[A-Za-z0-9_-]{8,128}$"
-EVENT_ID = r"^pe_[0-9a-f]{16}$"
-COMMAND_ID = r"^pc_[0-9a-f]{16}$"
-# Indian numbers only, ten digits after +91 and not starting with 0 (no short code, no emergency
-# number, no 1900 premium line, nothing international can have this shape); the limits of A1
-# say the same in words, this is the shape the phone also checks before it dials.
-DIAL_NUMBER = r"^\+91[1-9][0-9]{9}$"
-E164 = r"^\+[1-9][0-9]{6,14}$"
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁠-⁩﻿]")
-
-CallState = Literal["ringing", "dialing", "active", "ended"]
-CommandKind = Literal["call.dial", "call.answer", "call.end", "call.route", "call.card"]
-RouteTarget = Literal["phone", "bluetooth"]
-CardDecision = Literal["approve", "decline"]
-CardOutcome = Literal["approved", "declined", "passkey_needed", "gone", "unavailable"]
-SendStatus = Literal["queued", "refused", "no_phone"]
-
-
-def mask_number(number: str | None) -> str:
-    """`+91********01`: the country code and the last two digits, never more (logs, audit)."""
-    if not number:
-        return ""
-    if len(number) <= 5:
-        return "*" * len(number)
-    head = 3 if number.startswith("+") else 0
-    return number[:head] + "*" * (len(number) - head - 2) + number[-2:]
-
-
-def _plain(text: str, limit: int) -> str:
-    return " ".join(_CONTROL.sub("", text).split())[:limit]
-
-
-# ---- the commands (cloud -> phone) ---------------------------------------------------------
-class _Command(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
-
-    def fields(self) -> dict[str, Any]:
-        """The kind's own fields, after the common ones, in this order."""
-        return {}
-
-
-class Dial(_Command):
-    kind: Literal["call.dial"] = "call.dial"
-    call_id: str = Field(pattern=CALL_ID)
-    number: str = Field(pattern=DIAL_NUMBER)
-    approval_id: str = Field(pattern=APPROVAL_ID)
-    label: str = Field(default="", max_length=40)  # the card's name for "Tap to let JARVIS call"
-
-    def fields(self) -> dict[str, Any]:
-        return {
-            "number": self.number,
-            "approval_id": self.approval_id,
-            "label": _plain(self.label, 40),
-        }
-
-
-class Answer(_Command):
-    kind: Literal["call.answer"] = "call.answer"
-    call_id: str = Field(pattern=CALL_ID)
-
-
-class End(_Command):
-    kind: Literal["call.end"] = "call.end"
-    call_id: str = Field(pattern=CALL_ID)
-
-
-class RouteTo(_Command):
-    kind: Literal["call.route"] = "call.route"
-    call_id: str = Field(pattern=CALL_ID)
-    to: RouteTarget
-
-    def fields(self) -> dict[str, Any]:
-        return {"to": self.to}
-
-
-class Card(_Command):
-    """A call card waiting for him: the phone shows Approve / Decline (`card.decision`)."""
-
-    kind: Literal["call.card"] = "call.card"
-    card_id: str = Field(pattern=CARD_ID)
-    label: str = Field(min_length=1, max_length=40)
-    purpose: str = Field(default="", max_length=120)
-    passkey: bool = False  # a never-called number: Approve opens the console for the passkey
-    expires_at: float | None = None
-
-    @property
-    def call_id(self) -> str:
-        return self.card_id
-
-    def fields(self) -> dict[str, Any]:
-        return {
-            "card_id": self.card_id,
-            "label": _plain(self.label, 40),
-            "purpose": _plain(self.purpose, 120),
-            "passkey": self.passkey,
-        }
-
-
-PhoneCommand = Dial | Answer | End | RouteTo | Card
-
 DOORBELL_TEXT: Mapping[str, str] = {
     "call.dial": "JARVIS is placing the call you approved.",
     "call.answer": "JARVIS is answering a call for you.",
@@ -205,186 +108,16 @@ DOORBELL_TEXT: Mapping[str, str] = {
     "call.route": "JARVIS is moving the call's sound.",
     "call.card": "A JARVIS call is waiting for your approval.",
 }
+CardOutcome = Literal["approved", "declined", "passkey_needed", "gone", "unavailable"]
+SendStatus = Literal["queued", "refused", "no_phone"]
 
 
-# ---- the cloud's signature ------------------------------------------------------------------
-def _signing_bytes(body: str) -> bytes:
-    return f"{SCHEME}\n".encode("ascii") + body.encode("utf-8")
-
-
-class CommandSigner:
-    """The cloud's P-256 key for commands. Its private half is never stored or logged."""
-
-    def __init__(self, private: ec.EllipticCurvePrivateKey) -> None:
-        self._private = private
-        raw = private.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
-        self.public_key_hex = raw.hex()
-
-    def __repr__(self) -> str:
-        return "CommandSigner(<hidden>)"
-
-    @classmethod
-    def from_secret(cls, raw: bytes) -> CommandSigner:
-        """The same key on every start: d = secret mod (n - 1) + 1 (as `VapidKey.from_secret`)."""
-        if len(raw) < SECRET_MIN:
-            raise ValueError("the command key's secret is too short")
-        d = int.from_bytes(raw, "big") % (P256_ORDER - 1) + 1
-        return cls(ec.derive_private_key(d, ec.SECP256R1()))
-
-    @classmethod
-    def ephemeral(cls) -> CommandSigner:
-        return cls(ec.generate_private_key(ec.SECP256R1()))
-
-    def sign(self, body: str) -> str:
-        der = self._private.sign(_signing_bytes(body), ec.ECDSA(hashes.SHA256()))
-        return contract.b64url(der)
-
-
-def verify_command(public_key_hex: str, body: str, sig: str) -> bool:
-    """What the phone checks (android core `CallCommands.verify`); here for tests and vectors."""
-    try:
-        key = ec.EllipticCurvePublicKey.from_encoded_point(
-            ec.SECP256R1(), bytes.fromhex(public_key_hex)
-        )
-        der = contract._unb64url(sig)  # noqa: SLF001 - the contract's own decoder
-        if not der:
-            return False
-        key.verify(der, _signing_bytes(body), ec.ECDSA(hashes.SHA256()))
-    except (InvalidSignature, ValueError):
-        return False
-    return True
-
-
-@dataclass(frozen=True)
-class Sealed:
-    """A signed command in an outbox: `body` is exactly the signed text."""
-
-    id: str
-    kind: str
-    call_id: str
-    body: str
-    sig: str
-    exp: float
-
-    def wire(self) -> dict[str, str]:
-        return {"body": self.body, "sig": self.sig}
-
-
-def seal(
-    signer: CommandSigner,
-    command: PhoneCommand,
-    *,
-    device_id: str,
-    now: float,
-    exp: float,
-    command_id: str | None = None,
-) -> Sealed:
-    cid = command_id or f"pc_{secrets.token_hex(8)}"
-    data: dict[str, Any] = {
-        "v": 1,
-        "id": cid,
-        "d": device_id,
-        "kind": command.kind,
-        "call_id": command.call_id,
-        "iat": int(now),
-        "exp": int(exp),
-        **command.fields(),
-    }
-    text = contract.canonical_json(data).decode("utf-8")
-    return Sealed(cid, command.kind, command.call_id, text, signer.sign(text), float(int(exp)))
-
-
-# ---- the events (phone -> cloud) -------------------------------------------------------------
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-
-class Can(_Strict):
-    """What the app may do now (its permissions), sent with every calls request."""
-
-    place: bool
-    answer: bool
-    state: bool
-    number: bool
-    notify: bool
-
-
-class StateEvent(_Strict):
-    id: str = Field(pattern=EVENT_ID)
-    kind: Literal["call.state"]
-    call_id: str | None = Field(default=..., pattern=CALL_ID)
-    state: CallState
-    number_e164: str | None = Field(default=..., pattern=E164)
-    rings: int = Field(ge=0, le=60)
-    at: int = Field(ge=0, le=10**11)
-
-
-class ResultEvent(_Strict):
-    id: str = Field(pattern=EVENT_ID)
-    kind: Literal["call.result"]
-    command_id: str = Field(pattern=COMMAND_ID)
-    call_id: str | None = Field(default=..., pattern=CALL_ID)
-    command: CommandKind
-    ok: bool
-    code: str = Field(pattern=r"^[a-z_]{1,32}$")
-    at: int = Field(ge=0, le=10**11)
-
-
-class CardEvent(_Strict):
-    id: str = Field(pattern=EVENT_ID)
-    kind: Literal["card.decision"]
-    card_id: str = Field(pattern=CARD_ID)
-    decision: CardDecision
-    at: int = Field(ge=0, le=10**11)
-
-
-Event = Annotated[StateEvent | ResultEvent | CardEvent, Field(discriminator="kind")]
-
-
-class CallsBody(_Strict):
-    v: Literal[1]
-    app_version: str = Field(pattern=r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$")
-    can: Can
-    events: list[Event] = Field(max_length=EVENTS_MAX)
-    acks: list[Annotated[str, Field(pattern=COMMAND_ID)]] = Field(max_length=ACKS_MAX)
-    wait: int = Field(ge=0, le=WAIT_MAX_S)
-
-
-def parse_body(raw: bytes) -> CallsBody | None:
-    """The body, only when `raw` is exactly its one JSON form (as `handlers.canonical`)."""
-    try:
-        data = json.loads(raw.decode("utf-8"))
-        parsed = CallsBody.model_validate(data)
-        same = contract.canonical_json(data) == raw
-    except (UnicodeDecodeError, ValueError, TypeError, RecursionError, ValidationError):
-        return None
-    if not same:
-        return None
-    for ev in parsed.events:  # a number only on a ringing call (incoming): never otherwise
-        if isinstance(ev, StateEvent) and ev.number_e164 is not None and ev.state != "ringing":
-            return None
-    return parsed
-
-
-# ---- what the calls engine gets --------------------------------------------------------------
-@dataclass(frozen=True)
-class PhoneCallState:
-    """One `call.state` from the phone. `call_id` is None for a call JARVIS did not place (an
-    incoming one before it is answered). `number_e164` is set only for a ringing incoming call
-    while answering missed calls is on. `rings` counts rings so far (the app's estimate)."""
-
-    device_id: str
-    call_id: str | None
-    state: CallState
-    number_e164: str | None
-    rings: int
-    at: float
-
-
+# ---- what the engine and the cards get -------------------------------------------------------
 @dataclass(frozen=True)
 class PhoneCommandResult:
     """What the phone did with a command: `ok`, and `code` such as `placed`, `needs_tap`,
-    `refused`, `answered`, `ended`, `route_refused`, `no_permission`, `expired`."""
+    `refused`, `answered`, `not_ringing`, `ended`, `routed`, `route_refused`, `no_permission`,
+    `expired`."""
 
     device_id: str
     command_id: str
@@ -412,9 +145,21 @@ class SendOutcome:
 
 @dataclass(frozen=True)
 class PhoneReadiness:
+    """`ready` False only for a known fault; `problems` are plain codes for the card's words:
+    no_phone, not_checked_in (soft: the doorbell still wakes it), cannot_place, cannot_answer
+    (soft: answering is off by default), no_call_state, no_notifications."""
+
     ready: bool
     device_id: str | None
     problems: tuple[str, ...]
+
+
+class PhoneCommandRefused(RuntimeError):
+    """`OwnerPhoneLink.send` could not queue the command: `code` is approval, number or no_phone."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"the phone command was not sent ({code})")
+        self.code = code
 
 
 # ---- the ports (implemented elsewhere; documented here) --------------------------------------
@@ -426,8 +171,8 @@ class PhoneDirectory(Protocol):
 
 class ApprovalCheck(Protocol):
     """A1's approvals: when the approval `approval_id` for this call and number ends (unix
-    seconds), or None when it is not live or not bound to them. It must NOT spend the approval:
-    the gateway did that when the call was placed; this only proves the dial is the approved one."""
+    seconds), or None when it is not live or not bound to them. It must NOT spend the approval
+    (the gateway did that when the call was placed); it proves the dial is the approved one."""
 
     async def live_until(
         self, uid: str, approval_id: str, call_id: str, number_e164: str
@@ -435,23 +180,23 @@ class ApprovalCheck(Protocol):
 
 
 class Doorbell(Protocol):
-    """Wakes the phone; the number of devices that took it (`PushDoorbell` uses Web Push)."""
+    """Wakes the phone; the number of devices that took it (`PushDoorbell`: Web Push)."""
 
     async def ring(self, uid: str, kind: str, text: str) -> int: ...
 
 
 class PhoneEventSink(Protocol):
-    """A2's calls engine. Both are awaited before the door answers; raising means "not taken":
-    the door answers 503 and the phone sends the event again."""
+    """A2's calls engine. Both are awaited before the door answers; raising means "not taken": the
+    door answers 503 and the phone sends the event again (it is never delivered twice)."""
 
-    async def phone_state(self, uid: str, state: PhoneCallState) -> None: ...
+    async def phone_state(self, uid: str, event: CallStateEvent) -> None: ...
 
     async def phone_result(self, uid: str, result: PhoneCommandResult) -> None: ...
 
 
 class CardDesk(Protocol):
-    """A1's call cards: Approve / Decline tapped on the phone's notification. A card whose number
-    was never called answers `passkey_needed` (the phone then opens the console for the passkey)."""
+    """A1's call cards: Approve / Decline tapped on the phone. A card whose number was never called
+    answers `passkey_needed`: the phone then opens the console's Calls panel for the passkey."""
 
     async def decide(
         self, uid: str, card_id: str, decision: CardDecision, device_id: str
@@ -488,8 +233,7 @@ class PushDoorbell:
         service = self._push()
         if service is None:
             return 0
-        sent = await service.send(uid, kind=kind, text=text)
-        return int(sent)
+        return int(await service.send(uid, kind=kind, text=text))
 
 
 # ---- the outbox and the seen events ----------------------------------------------------------
@@ -528,8 +272,8 @@ class Outbox:
 
     def ack(self, device_id: str, ids: Sequence[str]) -> None:
         box = self._boxes.get(device_id)
-        for cid in ids:
-            if box is not None:
+        if box is not None:
+            for cid in ids:
                 box.pop(cid, None)
 
 
@@ -558,9 +302,13 @@ class CheckIn:
     app_version: str
 
 
+def _when(at: float) -> datetime:
+    return datetime.fromtimestamp(at, UTC)
+
+
 # ---- the service -----------------------------------------------------------------------------
 class PhoneCalls:
-    """The phone link of the calls engine (the I0 `PhoneLink` port) and the `calls` door route."""
+    """The phone link of the calls engine and the `calls` door route (one per process)."""
 
     def __init__(
         self,
@@ -577,52 +325,53 @@ class PhoneCalls:
         max_wait_s: float = WAIT_MAX_S,
     ) -> None:
         self._phones, self._signer, self._approvals = phones, signer, approvals
-        self._bell, self._sink, self._cards = doorbell, sink, cards
-        self._answering, self._audit, self._clock = answering, audit, clock
+        self._bell, self.sink, self.cards = doorbell, sink, cards
+        self.answering, self._audit, self._clock = answering, audit, clock
         self._max_wait = max_wait_s
         self._outbox = Outbox()
         self._seen = SeenEvents()
         self._rate = PerPhoneRate(per_minute=EVENTS_PER_MINUTE, max_phones=DEVICES_MAX)
-        self._checkins: dict[str, CheckIn] = {}
-        self._states: OrderedDict[str, PhoneCallState] = OrderedDict()
+        self._checkins: OrderedDict[str, CheckIn] = OrderedDict()
+        self._states: OrderedDict[str, CallStateEvent] = OrderedDict()
+        self._latest: CallStateEvent | None = None
 
     def door_handlers(self) -> dict[str, Callable[[PhoneRequest], Awaitable[PhoneReply]]]:
-        """{route: handler} for `MobilePart.services["door"]` of the phone part (I1)."""
+        """{route: handler} for the phone part's `services["door"]` (I1)."""
         return {DOOR_ROUTE: self.door}
 
     # ---- sending ------------------------------------------------------------------------------
-    async def send(self, uid: str, command: PhoneCommand) -> SendOutcome:
+    async def send(self, uid: str, command: PhoneCommand | ProtocolCommand) -> SendOutcome:
         """Sign, queue and ring. Never raises; the outcome says what happened."""
+        try:
+            cmd = from_protocol(command)
+        except ValueError:
+            log.warning("phone command refused", extra={"code": "number"})
+            return SendOutcome("refused", code="number")
         now = self._clock()
-        exp = await self._expiry(uid, command, now)
+        exp = await self._expiry(uid, cmd, now)
         if exp is None:
-            log.warning("phone command refused", extra={"kind": command.kind, "code": "approval"})
-            await self._record("calls_phone_command", "refused", command, None)
+            log.warning("phone command refused", extra={"type": cmd.type, "code": "approval"})
+            await self._record_command("refused", cmd, None)
             return SendOutcome("refused", code="approval")
         target = await self._target(uid)
         if target is None:
-            await self._record("calls_phone_command", "no_phone", command, None)
+            await self._record_command("no_phone", cmd, None)
             return SendOutcome("no_phone", code="no_phone")
-        sealed = seal(self._signer, command, device_id=target, now=now, exp=exp)
+        sealed = seal(self._signer, cmd, device_id=target, now=now, exp=exp)
         self._outbox.put(target, sealed)
-        rang = await self._ring(uid, command.kind)
-        log.info(
-            "phone command queued",
-            extra={"kind": command.kind, "device": target, "rang": rang},
-        )
-        await self._record("calls_phone_command", "queued", command, target)
+        rang = await self._ring(uid, cmd.type)
+        log.info("phone command queued", extra={"type": cmd.type, "device": target, "rang": rang})
+        await self._record_command("queued", cmd, target)
         return SendOutcome("queued", device_id=target, command_id=sealed.id, rang=rang)
 
-    async def _expiry(self, uid: str, command: PhoneCommand, now: float) -> float | None:
-        if isinstance(command, Card):
-            until = command.expires_at or now + TTL_S["call.card"]
+    async def _expiry(self, uid: str, cmd: PhoneCommand, now: float) -> float | None:
+        if isinstance(cmd, Card):
+            until = now + TTL_S["call.card"] if cmd.expires_at is None else cmd.expires_at
             return min(until, now + TTL_S["call.card"]) if until > now else None
-        if not isinstance(command, Dial):
-            return now + TTL_S[command.kind]
+        if not isinstance(cmd, Dial):
+            return now + TTL_S[cmd.type]
         try:
-            live = await self._approvals.live_until(
-                uid, command.approval_id, command.call_id, command.number
-            )
+            live = await self._approvals.live_until(uid, cmd.approval_id, cmd.call_id, cmd.number)
         except Exception as exc:  # noqa: BLE001 - an approval that can't be read never dials
             log.warning("approval check failed", extra={"error": type(exc).__name__})
             return None
@@ -637,11 +386,11 @@ class PhoneCalls:
         except Exception as exc:  # noqa: BLE001 - no phone known is "no phone", logged
             log.warning("linked phones unreadable", extra={"error": type(exc).__name__})
             return None
-        if not phones:
-            return None
-        able = [p for p in phones if (c := self._checkins.get(p.id)) and c.can.place]
+        able = [p for p in phones if (c := self._checkins.get(p.id)) is not None and c.can.place]
         if able:
             return max(able, key=lambda p: self._checkins[p.id].at).id
+        if not phones:
+            return None
         return max(phones, key=lambda p: p.last_seen or p.linked_at).id
 
     async def _ring(self, uid: str, kind: str) -> bool:
@@ -654,24 +403,25 @@ class PhoneCalls:
             return False
 
     # ---- reading ------------------------------------------------------------------------------
-    def last_state(self, call_id: str) -> PhoneCallState | None:
-        return self._states.get(call_id)
+    def last_state(self, call_id: str | None = None) -> CallStateEvent | None:
+        """The last state of that call, or of any call when `call_id` is None."""
+        return self._latest if call_id is None else self._states.get(call_id)
 
     async def readiness(self, uid: str) -> PhoneReadiness:
-        """For the card's ready check: which phone, and what is missing (plain codes)."""
         target = await self._target(uid)
         if target is None:
             return PhoneReadiness(False, None, ("no_phone",))
         checkin = self._checkins.get(target)
         if checkin is None or self._clock() - checkin.at > CHECKIN_FRESH_S:
             return PhoneReadiness(True, target, ("not_checked_in",))
+        can = checkin.can
         problems = [
             word
             for word, ok in (
-                ("cannot_place", checkin.can.place),
-                ("cannot_answer", checkin.can.answer),
-                ("no_call_state", checkin.can.state),
-                ("no_notifications", checkin.can.notify),
+                ("cannot_place", can.place),
+                ("cannot_answer", can.answer),
+                ("no_call_state", can.state),
+                ("no_notifications", can.notify),
             )
             if not ok
         ]
@@ -685,61 +435,59 @@ class PhoneCalls:
             log.info("phone calls body refused", extra={"device": req.device_id})
             return PhoneReply(422, REJECTED)
         now = self._clock()
-        self._checkins[req.device_id] = CheckIn(body.can, now, body.app_version)
-        if len(self._checkins) > DEVICES_MAX:
-            self._checkins.pop(next(iter(self._checkins)))
+        self._check_in(req.device_id, CheckIn(body.can, now, body.app_version))
         rule = await self._rule(req.uid)
         if body.events and not all(self._rate.allow(req.device_id, now) for _ in body.events):
-            log.info("phone calls events over the rate", extra={"device": req.device_id})
+            log.info("phone call events over the rate", extra={"device": req.device_id})
             return PhoneReply(429, {"error": "rate_limited"})
         took, decisions, failed = await self._take(req, body.events, rule, now)
         if failed:
             return PhoneReply(503, {"error": "unavailable", "detail": "Try again in a moment."})
         self._outbox.ack(req.device_id, body.acks)
         commands = await self._wait(req.device_id, body.wait, now)
-        answer: dict[str, Any] = {
-            "v": 1,
-            "key": self._signer.public_key_hex,
-            "answering": {
-                "on": rule.on,
-                "after_rings": rule.after_rings,
-                "number": rule.on,
+        return PhoneReply(
+            200,
+            {
+                "v": 1,
+                "key": self._signer.public_key_hex,
+                "answering": {"on": rule.on, "after_rings": rule.after_rings, "number": rule.on},
+                "took": took,
+                "commands": [c.wire() for c in commands],
+                "decisions": decisions,
             },
-            "took": took,
-            "commands": [c.wire() for c in commands],
-            "decisions": decisions,
-        }
-        return PhoneReply(200, answer)
+        )
+
+    def _check_in(self, device_id: str, checkin: CheckIn) -> None:
+        self._checkins[device_id] = checkin
+        self._checkins.move_to_end(device_id)
+        while len(self._checkins) > DEVICES_MAX:
+            self._checkins.popitem(last=False)
 
     async def _rule(self, uid: str) -> AnsweringRule:
-        if self._answering is None:
+        if self.answering is None:
             return AnsweringRule()
         try:
-            return await self._answering.rule(uid)
+            return await self.answering.rule(uid)
         except Exception as exc:  # noqa: BLE001 - unknown means off: no number is kept
             log.warning("answering rule unreadable", extra={"error": type(exc).__name__})
             return AnsweringRule()
 
     async def _take(
-        self,
-        req: PhoneRequest,
-        events: Sequence[StateEvent | ResultEvent | CardEvent],
-        rule: AnsweringRule,
-        now: float,
+        self, req: PhoneRequest, events: Sequence[AnyEvent], rule: AnsweringRule, now: float
     ) -> tuple[int, list[dict[str, str]], bool]:
         took, decisions = 0, list[dict[str, str]]()
-        for ev in events:
+        for ev in events[:EVENTS_MAX]:
             key = f"{req.device_id}:{ev.id}"
             if self._seen.seen(key, now):
                 continue
             if not now - EVENT_MAX_AGE_S <= ev.at <= now + EVENT_AHEAD_S:
-                log.info("phone call event stale", extra={"kind": ev.kind})
+                log.info("phone call event out of time", extra={"type": ev.type})
                 self._seen.add(key, now)
                 continue
             try:
                 outcome = await self._deliver(req, ev, rule)
             except Exception as exc:  # noqa: BLE001 - not taken: 503, the phone sends it again
-                log.error("calls engine refused a phone event", extra={"error": type(exc).__name__})
+                log.error("calls engine did not take an event", extra={"error": type(exc).__name__})
                 return took, decisions, True
             self._seen.add(key, now)
             took += 1
@@ -748,37 +496,44 @@ class PhoneCalls:
         return took, decisions, False
 
     async def _deliver(
-        self, req: PhoneRequest, ev: StateEvent | ResultEvent | CardEvent, rule: AnsweringRule
+        self, req: PhoneRequest, ev: AnyEvent, rule: AnsweringRule
     ) -> CardOutcome | None:
         uid, device = req.uid, req.device_id
         if isinstance(ev, StateEvent):
             number = ev.number_e164 if rule.on and ev.state == "ringing" else None
-            state = PhoneCallState(device, ev.call_id, ev.state, number, ev.rings, float(ev.at))
-            if self._sink is not None:
-                await self._sink.phone_state(uid, state)
+            state = CallStateEvent(
+                call_id=ev.call_id,
+                state=ev.state,
+                number_e164=number,
+                rings=ev.rings,
+                at=_when(ev.at),
+            )
+            if self.sink is not None:
+                await self.sink.phone_state(uid, state)
             self._remember(state)
-            await self._record_event(ev.kind, ev.state, number, device)
+            await self._record_event(ev.type, ev.state, number, device)
             return None
         if isinstance(ev, ResultEvent):
             result = PhoneCommandResult(
                 device, ev.command_id, ev.call_id, ev.command, ev.ok, ev.code, float(ev.at)
             )
-            if self._sink is not None:
-                await self._sink.phone_result(uid, result)
-            await self._record_event(ev.kind, ev.code, None, device)
+            if self.sink is not None:
+                await self.sink.phone_result(uid, result)
+            await self._record_event(ev.type, f"{ev.command}:{ev.code}", None, device)
             return None
         outcome: CardOutcome = "unavailable"
-        if self._cards is not None:
-            outcome = await self._cards.decide(uid, ev.card_id, ev.decision, device)
-        await self._record_event(ev.kind, f"{ev.decision}:{outcome}", None, device)
+        if self.cards is not None:
+            outcome = await self.cards.decide(uid, ev.card_id, ev.decision, device)
+        await self._record_event(ev.type, f"{ev.decision}:{outcome}", None, device)
         return outcome
 
-    def _remember(self, state: PhoneCallState) -> None:
+    def _remember(self, state: CallStateEvent) -> None:
+        self._latest = state
         if state.call_id is None:
             return
         self._states[state.call_id] = state
         self._states.move_to_end(state.call_id)
-        while len(self._states) > 64:
+        while len(self._states) > STATES_MAX:
             self._states.popitem(last=False)
 
     async def _wait(self, device_id: str, wait_s: int, now: float) -> list[Sealed]:
@@ -794,18 +549,16 @@ class PhoneCalls:
         return self._outbox.pending(device_id, self._clock())
 
     # ---- the audit ----------------------------------------------------------------------------
-    async def _record(
-        self, tool: str, outcome: str, command: PhoneCommand, device: str | None
-    ) -> None:
-        args: dict[str, Any] = {"kind": command.kind, "call_id": command.call_id}
+    async def _record_command(self, outcome: str, cmd: PhoneCommand, device: str | None) -> None:
+        args: dict[str, Any] = {"type": cmd.type, "subject": cmd.subject}
         if device is not None:
             args["device"] = device
-        if isinstance(command, Dial):
-            args["number"] = mask_number(command.number)
-        await self._append(tool, outcome, args)
+        if isinstance(cmd, Dial):
+            args["number"] = mask_number(cmd.number)
+        await self._append("calls_phone_command", outcome, args)
 
     async def _record_event(self, kind: str, what: str, number: str | None, device: str) -> None:
-        args: dict[str, Any] = {"kind": kind, "what": what, "device": device}
+        args: dict[str, Any] = {"type": kind, "what": what, "device": device}
         if number is not None:
             args["number"] = mask_number(number)
         await self._append("calls_phone_event", "received", args)
@@ -815,55 +568,51 @@ class PhoneCalls:
             return
         try:
             await self._audit.append(
-                agent="calls",
-                tool=tool,
-                risk=ActionRisk.READ_ONLY,
-                outcome=outcome,
-                args=args,
+                agent="calls", tool=tool, risk=ActionRisk.READ_ONLY, outcome=outcome, args=args
             )
         except Exception as exc:  # noqa: BLE001 - logged; the command or event already moved
             log.error("AUDIT WRITE FAILED for a call step", extra={"error": type(exc).__name__})
 
 
+class OwnerPhoneLink:
+    """I0's `PhoneLink` (`jarvis.calls.ports`) for one owner: what the calls engine holds."""
+
+    def __init__(self, calls: PhoneCalls, uid: str) -> None:
+        self._calls, self._uid = calls, uid
+
+    async def send(self, command: ProtocolCommand | PhoneCommand) -> None:
+        out = await self._calls.send(self._uid, command)
+        if out.status != "queued":
+            raise PhoneCommandRefused(out.code or out.status)
+
+    def last_state(self) -> CallStateEvent | None:
+        return self._calls.last_state()
+
+
 __all__ = [
     "DIAL_MAX_S",
     "DOORBELL_KIND",
+    "DOORBELL_TEXT",
     "DOOR_CAP",
     "DOOR_ROUTE",
-    "EVENTS_MAX",
     "EVENTS_PER_MINUTE",
     "EVENT_MAX_AGE_S",
     "OUTBOX_MAX",
-    "SCHEME",
     "TTL_S",
-    "Answer",
     "AnsweringRule",
     "AnsweringView",
     "ApprovalCheck",
-    "CallsBody",
-    "Can",
-    "Card",
-    "CardDecision",
     "CardDesk",
     "CardOutcome",
-    "CommandSigner",
-    "Dial",
     "Doorbell",
-    "End",
-    "PhoneCallState",
+    "OwnerPhoneLink",
     "PhoneCalls",
-    "PhoneCommand",
+    "PhoneCommandRefused",
     "PhoneCommandResult",
     "PhoneDirectory",
     "PhoneEventSink",
     "PhoneReadiness",
     "PushDoorbell",
-    "RouteTo",
-    "Sealed",
     "SendOutcome",
     "StoreDirectory",
-    "mask_number",
-    "parse_body",
-    "seal",
-    "verify_command",
 ]

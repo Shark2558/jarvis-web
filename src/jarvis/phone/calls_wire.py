@@ -59,7 +59,8 @@ COMMAND_ID = r"^pc_[0-9a-f]{16}$"
 # 1900 premium line or international number has this shape (A1's limits refuse them in words;
 # this is also the shape the phone checks before it dials: defence in depth).
 DIAL_NUMBER = r"^\+91[1-9][0-9]{9}$"
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁠-⁩﻿]")
+_BREAKS = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")  # a line break is a space
+_INVISIBLE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]")
 
 CommandType = Literal["call.dial", "call.answer", "call.end", "call.route", "call.card"]
 CardDecision = Literal["approve", "decline"]
@@ -77,7 +78,7 @@ def mask_number(number: str | None) -> str:
 
 def plain(text: str, limit: int) -> str:
     """One line of plain text: no control or invisible characters, spaces collapsed."""
-    return " ".join(_CONTROL.sub("", text).split())[:limit]
+    return " ".join(_INVISIBLE.sub("", _BREAKS.sub(" ", text)).split())[:limit]
 
 
 # ---- the commands ------------------------------------------------------------------------------

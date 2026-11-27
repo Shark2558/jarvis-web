@@ -74,6 +74,13 @@ object Door {
         return point
     }
 
+    /** R18: the X.509 form the JDK reads a P-256 public key in, from its 65-byte X9.62 point (the
+     *  cloud's command key comes as that point's hex, as the phone's own key goes at linking). */
+    fun spkiFromX962(point: ByteArray): ByteArray {
+        require(point.size == POINT_BYTES && point[0] == 0x04.toByte()) { "not an uncompressed P-256 point" }
+        return P256_SPKI_PREFIX + point
+    }
+
     fun sha256Hex(data: ByteArray): String = hex(MessageDigest.getInstance("SHA-256").digest(data))
 
     fun b64url(data: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(data)

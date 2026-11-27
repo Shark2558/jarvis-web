@@ -247,6 +247,17 @@ def test_the_shared_vectors_verify_and_their_bad_cases_do_not() -> None:
         assert not w.verify_command(key, case["body"], case["sig"]), case["name"]
 
 
+def test_the_shared_door_body_is_accepted_and_the_refused_vectors_are_what_they_say() -> None:
+    v = json.loads(VECTORS.read_text(encoding="utf-8"))
+    parsed = w.parse_body(v["door_body"].encode("utf-8"))
+    assert parsed is not None and len(parsed.events) == 3 and parsed.wait == 8
+    for case in v["refused"]:
+        assert w.verify_command(v["public_key"], case["body"], case["sig"]), case["name"]
+        cmd = json.loads(case["body"])
+        now = case.get("now", v["now"])
+        assert cmd["d"] != v["device_id"] or cmd["exp"] <= now, case["name"]
+
+
 def test_a_command_body_is_the_one_json_form_with_its_fields_in_order() -> None:
     signer = w.CommandSigner.from_secret(SECRET)
     sealed = w.seal(
@@ -640,7 +651,9 @@ async def test_the_engine_gets_i0s_call_state_with_an_aware_time() -> None:
 
 
 def test_a_card_notice_comes_from_i0s_call_card() -> None:
-    card = CallCard(number_e164=NUMBER, contact_name="Laundry​", purpose="Pickup", new_number=True)
+    card = CallCard(
+        number_e164=NUMBER, contact_name="Laundry\u200b", purpose="Pickup", new_number=True
+    )
     notice = w.Card.for_card(card)
     assert notice.card_id == card.id and notice.label == "Laundry" and notice.passkey
     nameless = w.Card.for_card(CallCard(number_e164=NUMBER, purpose="Pickup"))

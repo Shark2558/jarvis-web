@@ -160,7 +160,7 @@ async def test_a_recording_the_kit_cant_use_is_bad_audio() -> None:
 
 async def test_the_owners_words_reach_the_kit() -> None:
     r = Rig()
-    await r.svc.update_settings(UID, VoiceSettingsPatch(phrases=["Priya", "Thrissur"]))
+    await r.svc.update_settings(UID, VoiceSettingsPatch(phrases=["Priya", "Shimla"]))
     seen: list[p.SttRequest] = []
     original = r.kit.stt
 
@@ -171,7 +171,7 @@ async def test_the_owners_words_reach_the_kit() -> None:
     r.kit.stt = spy  # type: ignore[method-assign]
     await r.svc.transcribe(UID, wav(1.2), turn_hints=("budget.xlsx",))
     words = seen[0].phrases
-    assert words[:2] == ("JARVIS", "Hey Jarvis") and {"Priya", "Thrissur", "budget.xlsx"} <= set(
+    assert words[:2] == ("JARVIS", "Hey Jarvis") and {"Priya", "Shimla", "budget.xlsx"} <= set(
         words
     )
 

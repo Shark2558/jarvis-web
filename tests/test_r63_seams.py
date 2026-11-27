@@ -81,7 +81,7 @@ def test_the_keyring_keeps_its_27_purposes() -> None:
 
 # ---- the size guards -----------------------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") == 734  # R18 +2 (the calls routes), else not edited
+    assert _lines(SRC / "api" / "app.py") == 738  # R18 +2 (the calls routes), I1 +4 (the join)
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") == 713  # not edited
     assert _lines(SRC / "config.py") == 791  # R18 +2 (CallsConfig's import; its guard is 791)

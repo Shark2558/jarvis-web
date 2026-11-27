@@ -597,7 +597,7 @@ def test_the_wardrobe_css_only_places_things() -> None:
 
 # ---- size guards and "no real clock" -------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 735
+    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
     assert _lines(SRC / "tools" / "gateway.py") == 760
     assert _lines(SRC / "core" / "brain.py") <= 741
     for path in STATIC.glob("console*.js"):

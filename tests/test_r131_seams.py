@@ -900,7 +900,7 @@ def test_the_book_knows_the_mannequins_licences() -> None:
 
 # ---- size guards, "no real clock", ₹ only ------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 735  # not edited by R13.1 (732)
+    assert _lines(SRC / "api" / "app.py") <= 738  # not edited by R13.1 (732); R18 I1 +4
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") <= 741  # not edited (713)
     assert _lines(SRC / "config.py") <= 791  # R18 +2: the import of `config_calls.CallsConfig`

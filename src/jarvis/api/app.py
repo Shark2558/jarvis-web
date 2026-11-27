@@ -31,6 +31,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import jarvis.api.r7_wiring as r7
 import jarvis.api.r13_wiring as r13
 import jarvis.api.r14_wiring as r14
+import jarvis.api.r18_wiring as r18
 from jarvis import __version__ as VERSION
 from jarvis.activity.service import ActivityService
 from jarvis.activity.store import ActivityStore
@@ -378,6 +379,7 @@ def _build_tool_gateway(
         r7=r7.mobile_tools(app.state.r7_parts),  # R7: the mobile parts' tools
         r14=r14.r14_tools(app.state.r14_parts),  # R14: backups and the skill register's tools
         r13=r13.r13_tools(app.state.r13_parts),  # R13: the wardrobe's 18 tools
+        r18=r18.r18_tools(app.state.r18_parts),  # R18: calls_place (R3), calls_answer_mode
         pictures=app_guard(lambda name: getattr(app.state, name, None)),  # R11.1 D21-D
     )
 
@@ -445,6 +447,7 @@ _CLOSABLES: tuple[tuple[str, str], ...] = (
     ("scheduler_verifier", "aclose"),
     ("push", "aclose"),  # R3 D11: Web Push's pinned client
     ("github", "aclose"),  # R4 C: the GitHub client's one httpx client
+    ("r18_parts", "aclose"),  # R18: the call hub, the language check, the speech client
 )
 
 
@@ -499,6 +502,7 @@ def _lifespan(
             await r14.wire_r14(app, s, docs, audit)  # R14: backups, self-health, cost, No-AI 2
             stack.callback(r14.remove_log_handler, app)  # R14 I1: its errors handler comes off
             await r13.wire_r13(app, s, docs, audit)  # R13: the wardrobe (A-D), before the gateway
+            await r18.wire_r18(app, s, docs, audit)  # R18: calls, before the gateway (its tools)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()

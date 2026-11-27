@@ -64,6 +64,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "photos": "L6",
         "home": "L6",
         "homebridge": "L6",
+        "calldesk": "L6",  # R18 C: the call desk on the laptop (Windows audio, Phone Link)
         "camera": "L6",
         # L7 Data & Persistence
         "storage": "L7",

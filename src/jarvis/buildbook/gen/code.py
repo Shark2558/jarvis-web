@@ -183,16 +183,42 @@ def _description(value: ast.expr | None) -> str:
     return ""
 
 
-def settings_fields(repo: Repo) -> tuple[tuple[str, str], ...]:
-    """(name, description) of every field of `class Settings` in config.py, in order."""
+def _fields(cls: ast.ClassDef) -> list[ast.AnnAssign]:
+    return [n for n in cls.body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)]
+
+
+def _base_class(repo: Repo, module: ast.Module, name: str) -> ast.ClassDef | None:
+    """A base class `config.py` imports from a `jarvis` module (R18: `config_calls.CallsConfig`)."""
+    for node in module.body:
+        if not (isinstance(node, ast.ImportFrom) and (node.module or "").startswith("jarvis.")):
+            continue
+        if any(a.name == name and a.asname is None for a in node.names):
+            other = tree(repo, module_path(repo, str(node.module).removeprefix("jarvis.")))
+            cls = _find(other.body, name) if other else None
+            return cls if isinstance(cls, ast.ClassDef) else None
+    return None
+
+
+def settings_nodes(repo: Repo) -> list[ast.AnnAssign]:
+    """Every `Settings` field in Pydantic's order: its `jarvis` base classes' first (reversed
+    MRO: the last base first), then its own."""
     module = tree(repo, module_path(repo, "config"))
     cls = _find(module.body, "Settings") if module else None
-    if not isinstance(cls, ast.ClassDef):
-        return ()
+    if module is None or not isinstance(cls, ast.ClassDef):
+        return []
+    out: list[ast.AnnAssign] = []
+    for base in reversed(cls.bases):
+        found = _base_class(repo, module, base.id) if isinstance(base, ast.Name) else None
+        out += _fields(found) if found is not None else []
+    return out + _fields(cls)
+
+
+def settings_fields(repo: Repo) -> tuple[tuple[str, str], ...]:
+    """(name, description) of every field of `class Settings` in config.py, in order."""
     return tuple(
         (n.target.id, _description(n.value))
-        for n in cls.body
-        if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)
+        for n in settings_nodes(repo)
+        if isinstance(n.target, ast.Name)
     )
 
 
@@ -211,16 +237,11 @@ def _default(value: ast.expr | None) -> Any:
 
 def settings_defaults(repo: Repo) -> dict[str, Any]:
     """The literal default of every `Settings` field (a non-literal default is left out)."""
-    module = tree(repo, module_path(repo, "config"))
-    cls = _find(module.body, "Settings") if module else None
-    if not isinstance(cls, ast.ClassDef):
-        return {}
     out: dict[str, Any] = {}
-    for n in cls.body:
-        if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name):
-            value = _default(n.value)
-            if value is not None:
-                out[n.target.id] = value
+    for n in settings_nodes(repo):
+        value = _default(n.value)
+        if value is not None and isinstance(n.target, ast.Name):
+            out[n.target.id] = value
     return out
 
 
@@ -369,6 +390,7 @@ __all__ = [
     "service_owners",
     "services_named",
     "settings_defaults",
+    "settings_nodes",
     "settings_fields",
     "slug",
     "top_expr",

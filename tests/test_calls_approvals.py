@@ -262,3 +262,17 @@ async def test_answer_mode_on_is_a_card_and_off_runs_at_once() -> None:
         off = await r.gateway.execute(_call({"on": False}, ANSWER_MODE), scope=SCOPE)
     assert off.outcome is GatewayOutcome.EXECUTED
     assert not (await r.store.settings(UID)).answering_on
+
+
+async def test_a_call_the_engine_could_not_start_goes_back_to_waiting() -> None:
+    r = await rig()
+    await known(r.store)
+    r.starter.fail = True
+    card = await _stored_card(r)
+    done = await _approve_console(r, card)
+    assert done.outcome is GatewayOutcome.ERROR  # type: ignore[attr-defined]
+    stored = await r.store.get_card(UID, card.id)
+    assert stored is not None and stored.status is CardStatus.DRAFT
+    r.starter.fail = False
+    again = await _approve_console(r, card)
+    assert again.outcome is GatewayOutcome.EXECUTED  # type: ignore[attr-defined]

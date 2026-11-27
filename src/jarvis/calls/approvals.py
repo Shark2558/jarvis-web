@@ -334,8 +334,10 @@ class CallsService:
             return None
         try:
             return await self.starter.start(uid, card, grant.id)
-        except Exception as exc:  # noqa: BLE001 - the card stays approved for 10 minutes
+        except Exception as exc:  # noqa: BLE001 - nothing was dialled: back to waiting
             log.error("the call engine did not start the call", extra={"error": type(exc).__name__})
+            await self.grants.drop_card(uid, card.id)
+            await self.store.put_card(uid, card.model_copy(update={"status": CardStatus.DRAFT}))
             await audit_step(
                 self.audit, PLACE, "start_failed", {"card": card.id}, type(exc).__name__
             )

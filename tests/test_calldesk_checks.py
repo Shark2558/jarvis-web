@@ -92,7 +92,11 @@ def test_headset_rules() -> None:
         Endpoint("{a}", "Headset (WH-1000XM4 Hands-Free AG Audio)", "capture")
     )
     assert checks.is_bluetooth_headset(Endpoint("{b}", "Headset", "capture", True, FORM_HEADSET))
-    # a Bluetooth speaker (form factor 1) or a USB headset is fine for Phone Link
+    # the phone's own hands-free link (Phone Link calls), a Bluetooth speaker (form factor 1) or
+    # a USB headset is fine for Phone Link
+    assert not checks.is_bluetooth_headset(
+        Endpoint("{p}", "Headset (Galaxy Hands-Free HF Audio)", "capture", True, FORM_HEADSET)
+    )
     assert not checks.is_bluetooth_headset(Endpoint("{c}", "Speaker", "render", True, 1))
     assert not checks.is_bluetooth_headset(
         Endpoint("{d}", "Headset (USB Audio)", "render", False, FORM_HEADSET)

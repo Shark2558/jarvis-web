@@ -9,7 +9,8 @@ S0 has not run on the owner's laptop yet, so the desk proves the audio path itse
 - no Bluetooth headset is connected to the LAPTOP: Phone Link refuses calls then ("Calls using
   Bluetooth headsets are not supported", seen 25 Nov 2026). A headset is an endpoint on a Bluetooth
   bus whose form factor is headphones or headset, or one Windows names "... Hands-Free AG Audio"
-  (Windows as the audio gateway, the headset as hands-free unit);
+  (Windows as the audio gateway, the headset as hands-free unit); the phone's own link for
+  Phone Link calls ("... Hands-Free HF Audio", Windows as the hands-free unit) is not a headset;
 - the audio path is alive: the loopback recording of the default speaker and CABLE Input open
   and move audio.
 
@@ -43,7 +44,8 @@ log = logging.getLogger(__name__)
 
 CABLE_SPEAKER = "CABLE Input"  # VB-CABLE's playback side: JARVIS plays into it
 PHONE_LINK_PROCESSES = frozenset({"phoneexperiencehost.exe", "yourphone.exe"})
-_HANDS_FREE_AG = "hands-free ag audio"
+_HANDS_FREE_AG = "hands-free ag audio"  # a headset: Windows is the audio gateway
+_HANDS_FREE_HF = "hands-free hf audio"  # the phone: Windows is the hands-free unit
 
 NO_CABLE = (
     "VB-CABLE is not installed (CABLE Input and CABLE Output are missing): install it (README "
@@ -80,8 +82,11 @@ def _has(endpoints: Sequence[Endpoint], name: str) -> bool:
 
 
 def is_bluetooth_headset(endpoint: Endpoint) -> bool:
-    if _HANDS_FREE_AG in endpoint.name.casefold():
+    name = endpoint.name.casefold()
+    if _HANDS_FREE_AG in name:
         return True
+    if _HANDS_FREE_HF in name:  # the PHONE's own hands-free link (Windows as the car kit)
+        return False
     return endpoint.bluetooth and endpoint.form_factor in (FORM_HEADPHONES, FORM_HEADSET)
 
 

@@ -6,7 +6,7 @@ sources:
   "src/jarvis/backup/part.py": "acc12e13dbcb26b4"
   "src/jarvis/billing/fx.py": "a1f636e96ac588a7"
   "src/jarvis/billing/service.py": "f8cd9507563514e1"
-  "src/jarvis/config.py": "e223e4b9e6e6333b"
+  "src/jarvis/config.py": "8c3c0b7f0890ff99"
   "src/jarvis/wardrobe/catalog/part.py": "107e069a8eb76134"
   "src/jarvis/wardrobe/seeme/make.py": "5f40b732edadfa8a"
   "src/jarvis/wardrobe/seeme/part.py": "414e788c2a14b47d"

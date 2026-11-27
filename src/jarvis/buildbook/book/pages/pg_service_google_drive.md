@@ -3,14 +3,14 @@ page: pg_service_google_drive
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/api/app.py": "51eaf37fbe6a89cf"
+  "src/jarvis/api/app.py": "2f8821679b892d33"
   "src/jarvis/api/drive.py": "aab977fe9441f939"
   "src/jarvis/api/feature_wiring.py": "473760847cb35d03"
   "src/jarvis/api/integrations.py": "849076061558773f"
   "src/jarvis/api/personal.py": "7a9aa32e08b7d084"
   "src/jarvis/api/startup_log.py": "4ba9e18096e253e1"
   "src/jarvis/api/vault_inbox.py": "26546b663f03b975"
-  "src/jarvis/config.py": "e223e4b9e6e6333b"
+  "src/jarvis/config.py": "8c3c0b7f0890ff99"
   "src/jarvis/drive/client.py": "766e2385d779a833"
   "src/jarvis/drive/guard.py": "89a1025585b08521"
   "src/jarvis/drive/kinds.py": "64732723fb4aeeed"
@@ -23,7 +23,7 @@ sources:
   "src/jarvis/privacy/existing.py": "021f304566e63a19"
   "src/jarvis/privacy/sources.py": "312d6572b6dd061e"
   "src/jarvis/tools/budget.py": "bb2f9659efef5175"
-  "src/jarvis/tools/setup.py": "b430d38a376cac97"
+  "src/jarvis/tools/setup.py": "ed7411bf67783b50"
   "src/jarvis/vault_inbox/service.py": "28d7d4fda9011c06"
   "src/jarvis/vault_inbox/store.py": "bfcd12486df55c2d"
 ---

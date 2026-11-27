@@ -1,0 +1,24 @@
+---
+page: pg_service_bhashini
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
+sources:
+  "src/jarvis/calls/prices.py": "09530bc93cd5d9f2"
+  "src/jarvis/calls/speech/bhashini.py": "32a72dec885b81c5"
+  "src/jarvis/calls/speech/build.py": "f03b52cba95aad09"
+  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+---
+## In plain words
+Bhashini is the Government of India's language platform, run by the ministry for electronics and IT. JARVIS can use it on phone calls to hear the other person and to speak JARVIS's side in Indian languages, and it lists more of them than any other cloud option JARVIS has (`src/jarvis/calls/speech/build.py:build_speech`). It is optional and off until you set both your Bhashini user id, `bhashini_user_id`, and its key, `bhashini_api_key`. Bhashini publishes no price for this use, so JARVIS treats its price as unknown, never as free (`src/jarvis/calls/prices.py:PriceUnknown`). What goes to Bhashini: your user id and key, with the task and the language, when JARVIS asks where to send a request; then each short clip of the other person's voice, or the text of a line JARVIS says, with its language.
+
+## Example (made up)
+You set your Bhashini user id and key and run the language check for Odia, accepting that Bhashini's price is unknown. It passes. At 10:20 JARVIS calls a tailor in Odia. The first clip of the tailor's voice makes JARVIS ask Bhashini where to send Odia hearing; the next 11 clips go straight there, as the answer is kept for an hour. The call's card showed the speech's price as unknown, and the call's own cap counted Bhashini's hearing and voice at Google's paid rate.
+
+## How it works
+`build_speech` builds Bhashini only when both `bhashini_user_id` and `bhashini_api_key` are set; otherwise the language table says it is not set up and is optional (`src/jarvis/calls/speech/build.py`). `BhashiniPipeline` first asks Bhashini, with your user id and key, where to send a task in a language, and gets back an address, a short inference key and a service id (`src/jarvis/calls/speech/bhashini.py:BhashiniPipeline`). That answer is kept for {{fact:src/jarvis/calls/speech/bhashini.py:CONFIG_TTL_S}} seconds per task and language, so most requests skip the first step (`BhashiniPipeline`). It is treated as untrusted: `_host_ok` accepts the address only over https on Bhashini's own domains and with no user name in it, and `_endpoint` refuses anything else before a byte is sent there (`src/jarvis/calls/speech/bhashini.py:_endpoint`). `BhashiniHearing` then sends one clip of at most {{fact:src/jarvis/calls/speech/bhashini.py:MAX_AUDIO_S}} seconds as a WAV with the language's short code, and keeps at most {{fact:src/jarvis/calls/speech/bhashini.py:MAX_TEXT}} characters of the text it gets back (`src/jarvis/calls/speech/bhashini.py:BhashiniHearing`). Bhashini gives no confidence, so a non-empty answer gets {{fact:src/jarvis/calls/speech/bhashini.py:NO_CONFIDENCE}}, and when JARVIS is unsure of the language a check of the words' script decides (`BhashiniHearing`). `BhashiniVoice` sends the line's text, at most {{fact:src/jarvis/calls/speech/bhashini.py:MAX_SAY_CHARS}} characters, asks for a male voice and reads the sound back (`src/jarvis/calls/speech/bhashini.py:BhashiniVoice`). `speech_prices` prices Bhashini's hearing only when `voice_price_bhashini_inr_per_minute` is set and its voice never, and an unknown price raises `PriceUnknown` rather than count as ₹0 (`src/jarvis/calls/prices.py`). With a hearing price set, `BhashiniHearing` checks your monthly limit before sending and counts the rupees after; without one, each use is reported as of unknown price (`BhashiniHearing`). Your key and the inference key are never logged (`BhashiniPipeline`).
+
+## What it costs
+Unknown: Bhashini publishes no price for this use, and `voice_price_bhashini_inr_per_minute` is unset by default, so JARVIS never counts it as ₹0 (`src/jarvis/calls/prices.py:speech_prices`). On a call, each use of unknown price is counted against that call's own rupee cap at Google's paid rate, though no rupees are billed for it. A call prefers any passing option with a known price over Bhashini. The language check runs Bhashini only when you accept that its price is unknown.
+
+## When it fails
+Without both settings, Bhashini is not offered (`build_speech`). An answer from Bhashini that names any other address, or that does not read, stops that request with nothing sent onwards (`_endpoint`). A clip over {{fact:src/jarvis/calls/speech/bhashini.py:MAX_AUDIO_S}} seconds, or a line over {{fact:src/jarvis/calls/speech/bhashini.py:MAX_SAY_CHARS}} characters, is refused before it is sent (`BhashiniHearing`). An answer with no text or no sound counts as a failure Bhashini may have processed (`BhashiniVoice`). How fast Bhashini answers on a live call is not known beforehand; the language check measures it. Each failure is told in plain words, never in Bhashini's own text.

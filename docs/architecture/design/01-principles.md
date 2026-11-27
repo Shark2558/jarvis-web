@@ -101,7 +101,7 @@ negative control that must fail when the safety it tests is switched off.
 
 | Where | What it does |
 |---|---|
-| `evals/` (47 suite folders) and `evals/run_all_mock.py` | Every suite against the mock brain (`make eval-mock`). |
+| `evals/` (47 folders, one per suite plus the real-run harness) and `evals/run_all_mock.py` | Every suite against the mock brain (`make eval-mock`). |
 | `tests/test_evals_*.py` (32 files) | Run the suites' mock mode inside `pytest`, controls included, so CI's `test` job runs them. |
 | `evals/phase0/run.py` | The real-model gate: pass rate ≥ 90 %, p95 turn ≤ 4,000 ms, mean cost ≤ US$0.01 a turn (≈ ₹0.95). CI runs it with `--mock` on every change and for real on `main` when a key is set (`eval-gate`). |
 | `deploy/run-real-evals.sh` | The owner's real runs: a ₹ estimate first, a typed YES, a stop at 1.5 times the estimate. |

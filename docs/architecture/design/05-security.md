@@ -131,6 +131,9 @@ non-root user; the home bridge runs read-only with no capabilities.
 
 ## 6. Threat model summary
 
+In the "Code" column, paths are under `src/jarvis/` unless they start with `deploy/`, `.github/`
+or name a top-level file.
+
 | # | Threat | Mitigation as built | Code | Residual |
 |---|---|---|---|---|
 | T1 | Prompt injection through mail, web, documents or contacts | Results prefixed as untrusted and fenced; taint turns writes into cards; R3 always a card; Telegram never approves R3 | `tools/gateway.py`, `tools/external.py`, `tools/taint.py` | The owner can still approve a card that injected text shaped; reads still happen |

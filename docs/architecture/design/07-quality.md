@@ -52,7 +52,7 @@ long); the floor is what CI enforces on every change.
 
 | Part | As built | Evidence |
 |---|---|---|
-| Suites | 47 folders under `evals/` (one per slice or release: injection, privacy, budget, correctness); each has a negative control that must fail when its safety is switched off (for example `policy.TAINTED_WRITES_ASK`, `telegram.service.R3_REFUSAL`, `recall.gate.memory_allowed` are read at call time for exactly that) | `evals/run_all_mock.py` |
+| Suites | 47 folders under `evals/` (one per slice or release, plus `realrun`, the real-run harness: injection, privacy, budget, correctness); each has a negative control that must fail when its safety is switched off (for example `policy.TAINTED_WRITES_ASK`, `telegram.service.R3_REFUSAL`, `recall.gate.memory_allowed` are read at call time for exactly that) | `evals/run_all_mock.py` |
 | Mock runs | `make eval-mock` runs every suite on the mock brain; in CI the suites run inside `pytest` through 32 `tests/test_evals_*.py` files, controls included | `Makefile`, `tests/test_evals_*.py` |
 | Phase 0 gate | pass rate ≥ 90 %, p95 turn ≤ 4,000 ms on balanced, mean cost ≤ US$0.01 a turn (≈ ₹0.95); `--mock` on every CI run (plumbing only), for real on `main` when the key is set (`eval-gate`, skipped with a notice otherwise; reports, never blocks the deploy) | `evals/phase0/run.py`, `.github/workflows/ci.yml` |
 | Owner's real runs | Cloud Shell, key read from Secret Manager into memory only, ₹ estimate and typed YES, stop at 1.5 times the estimate; `--all` adds memory, voice, brief and the Google tools | `deploy/run-real-evals.sh` |

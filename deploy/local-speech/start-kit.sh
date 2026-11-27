@@ -4,7 +4,7 @@
 # kit's packages into $JARVIS_SPEECH_KIT_DIR/venv yourself (README "Not on Windows?").
 #
 # Runs the kit's speech server (127.0.0.1:11437) and the gate in front of it (Caddy, 127.0.0.1:11436,
-# checks the key), publishes the gate with Tailscale Funnel on https port 8443 (or
+# checks the key), publishes the gate with Tailscale Funnel on https port 10000 (or
 # JARVIS_SPEECH_KIT_HTTPS_PORT: 443, 8443 or 10000), then prints the address and key to give JARVIS.
 # Leave this window open; Ctrl+C stops the kit and closes Funnel on that port.
 set -euo pipefail
@@ -16,7 +16,7 @@ PY="$DIR/venv/bin/python"
 KEYFILE="$DIR/key"
 GATE_PORT=11436
 SERVER_PORT=11437
-HTTPS_PORT="${JARVIS_SPEECH_KIT_HTTPS_PORT:-8443}"
+HTTPS_PORT="${JARVIS_SPEECH_KIT_HTTPS_PORT:-10000}"
 WAIT_S="${JARVIS_SPEECH_KIT_WAIT_S:-30}"
 
 case "$HTTPS_PORT" in
@@ -52,14 +52,14 @@ for port in "$GATE_PORT" "$SERVER_PORT"; do
   fi
 done
 
-# Never take over a Funnel port that already serves something else (the offline brain uses 8443).
+# Never take over a Funnel port that already serves something else (the offline brain keeps 8443).
 taken="$(tailscale funnel status 2>/dev/null | awk -v port=":$HTTPS_PORT" -v gate="127.0.0.1:$GATE_PORT" '
   /^https:\/\// { here = (index($1, port) > 0) }
   here && /proxy/ && index($0, gate) == 0 { print "yes"; exit }
 ' || true)"
 if [ "$taken" = "yes" ]; then
   echo "Tailscale Funnel's port $HTTPS_PORT already serves something else on this laptop" >&2
-  echo "(the offline brain uses 8443). Run again with JARVIS_SPEECH_KIT_HTTPS_PORT=10000." >&2
+  echo "(the offline brain keeps 8443). Run again with JARVIS_SPEECH_KIT_HTTPS_PORT=443." >&2
   exit 1
 fi
 

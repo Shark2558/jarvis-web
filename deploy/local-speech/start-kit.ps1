@@ -1,16 +1,17 @@
 # deploy/local-speech/start-kit.ps1 -- R5.2 "Your voice": starts the laptop speech kit (Windows,
 # plan D1). Runs the kit's speech server (127.0.0.1:11437), the gate in front of it (Caddy,
-# 127.0.0.1:11436, checks the key) and publishes the gate with Tailscale Funnel on https port 8443,
+# 127.0.0.1:11436, checks the key) and publishes the gate with Tailscale Funnel on https port 10000,
 # then prints the address and key to give JARVIS. Leave this window open; Ctrl+C or closing it
 # stops the kit and closes Funnel on that port. The key is made on the first run and kept in the
 # kit's private folder.
 #
 #   powershell -ExecutionPolicy Bypass -File .\start-kit.ps1             start
 #   powershell -ExecutionPolicy Bypass -File .\start-kit.ps1 -SelfTest   start, then the self-test
-#   powershell -ExecutionPolicy Bypass -File .\start-kit.ps1 -HttpsPort 10000
-#       if the offline brain (deploy/local-brain) already uses Funnel's port 8443 on this laptop
+#   powershell -ExecutionPolicy Bypass -File .\start-kit.ps1 -HttpsPort 443
+#       if Funnel's port 10000 already serves something else on this laptop (the offline brain
+#       keeps 8443)
 param(
-    [ValidateSet(443, 8443, 10000)][int]$HttpsPort = 8443,
+    [ValidateSet(443, 8443, 10000)][int]$HttpsPort = 10000,
     [switch]$SelfTest
 )
 $ErrorActionPreference = 'Stop'
@@ -51,7 +52,7 @@ foreach ($port in @($gatePort, $serverPort)) {
     }
 }
 
-# Never take over a Funnel port that already serves something else (the offline brain uses 8443).
+# Never take over a Funnel port that already serves something else (the offline brain keeps 8443).
 function Test-FunnelTaken([int]$port) {
     try { $cfg = (& tailscale funnel status --json 2>$null | Out-String) | ConvertFrom-Json } catch { return $false }
     if (-not $cfg -or -not $cfg.Web) { return $false }
@@ -64,7 +65,7 @@ function Test-FunnelTaken([int]$port) {
     return $false
 }
 if (Test-FunnelTaken $HttpsPort) {
-    Write-Host "Tailscale Funnel's port $HttpsPort already serves something else on this laptop (the offline brain uses 8443). Run this again with -HttpsPort 10000 (or 443), and give JARVIS that address."
+    Write-Host "Tailscale Funnel's port $HttpsPort already serves something else on this laptop (the offline brain keeps 8443). Run this again with -HttpsPort 443, and give JARVIS that address."
     exit 1
 }
 

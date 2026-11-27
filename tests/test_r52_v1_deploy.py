@@ -1,6 +1,6 @@
 # tests/test_r52_v1_deploy.py -- R5.2 V1 (plan D1, 3.1, risk 2): deploy/local-speech/. The gate
 # passes exactly the kit's API with the key (32+ characters, fail closed) on loopback in front of
-# the server; Funnel on 8443 (or 10000 / 443 when the offline brain holds 8443), never the server's
+# the server; Funnel on 10000 (the offline brain keeps 8443; 443 when 10000 is taken), never the server's
 # port; the installer installs only hash-pinned wheels with licences written beside them and no
 # GPL package; the manifest pins or leaves out every slot; the README in plain words.
 # start-kit.sh is RUN here against stub caddy / tailscale / python programs.
@@ -208,7 +208,7 @@ def test_the_readme_covers_the_setup_and_what_was_left_out_in_plain_words() -> N
         "₹0 a month",
         "install-kit.ps1",
         "start-kit.ps1 -SelfTest",
-        "-HttpsPort 10000",
+        "-HttpsPort 443",
         "JARVIS_LOCAL_SPEECH_URL",
         "jarvis-local-speech-key",
         "http://127.0.0.1:11436/v1",
@@ -309,7 +309,7 @@ def test_a_run_makes_a_private_key_and_publishes_only_the_gate(stubs: dict[str, 
         and stat.S_IMODE(stubs["kit"].stat().st_mode) == 0o700
     )
     assert (
-        "Address: https://my-laptop.tail1234.ts.net:8443" in r.stdout and f"Key: {key}" in r.stdout
+        "Address: https://my-laptop.tail1234.ts.net:10000" in r.stdout and f"Key: {key}" in r.stdout
     )
     log = stubs["log"]
     assert (log / "server_env").read_text().startswith(f"key={key} manifest={KIT}/models.json")
@@ -317,8 +317,9 @@ def test_a_run_makes_a_private_key_and_publishes_only_the_gate(stubs: dict[str, 
     assert (log / "caddy_env").read_text().strip() == f"key={key}"
     assert key not in (log / "caddy_args").read_text() + (log / "server_args").read_text()
     ts = (log / "tailscale").read_text()
-    assert f"funnel --bg --https=8443 {p.GATE_PORT}" in ts and str(p.SERVER_PORT) not in ts
-    assert "funnel --https=8443 off" in ts and "reset" not in ts
+    assert f"funnel --bg --https={p.FUNNEL_PORT} {p.GATE_PORT}" in ts and str(p.SERVER_PORT) not in ts
+    assert f"funnel --https={p.FUNNEL_PORT} off" in ts and "reset" not in ts
+    assert "8443" not in ts.replace("funnel status", "")  # the offline brain's port is never used
     again = _run(stubs)
     assert key_file.read_text() == key and f"Key: {key}" in again.stdout
 
@@ -327,10 +328,10 @@ def test_a_funnel_port_held_by_the_offline_brain_is_never_taken(stubs: dict[str,
     (stubs["bin"] / "status").write_text(
         "https://my-laptop.tail1234.ts.net:8443 (Funnel on)\n|-- / proxy http://127.0.0.1:11435\n"
     )
-    r = _run(stubs)
+    r = _run(stubs, JARVIS_SPEECH_KIT_HTTPS_PORT="8443")
     assert r.returncode != 0 and "already serves something else" in r.stderr
     assert not (stubs["kit"] / "key").exists() and not (stubs["log"] / "caddy_env").exists()
-    r = _run(stubs, JARVIS_SPEECH_KIT_HTTPS_PORT="10000")
+    r = _run(stubs)  # I1: the kit's default, 10000, leaves the brain's 8443 alone
     assert r.returncode == 0, r.stderr
     assert "Address: https://my-laptop.tail1234.ts.net:10000" in r.stdout
     assert "funnel --bg --https=10000 11436" in (stubs["log"] / "tailscale").read_text()

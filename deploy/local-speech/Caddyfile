@@ -2,7 +2,7 @@
 # D1). Same pattern as the offline brain's gate (deploy/local-brain/Caddyfile).
 #
 # Listens on 127.0.0.1:11436 ONLY. Tailscale Funnel forwards the kit's public https address
-# (https://<machine>.<tailnet>.ts.net:8443) to it and TLS ends on this laptop; the call desk on the
+# (https://<machine>.<tailnet>.ts.net:10000) to it and TLS ends on this laptop; the call desk on the
 # same laptop uses http://127.0.0.1:11436/v1. The kit's own server (127.0.0.1:11437) is never
 # published.
 #

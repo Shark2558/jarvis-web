@@ -63,7 +63,7 @@ This first version of the kit (1.0.0) is honest about what it could check when i
    It makes your key the first time, starts the kit and its gate, opens Funnel and prints:
 
    ```
-   Address: https://my-laptop.tail1234.ts.net:8443
+   Address: https://my-laptop.tail1234.ts.net:10000
    Key: <43 characters>
    ```
 
@@ -78,9 +78,10 @@ This first version of the kit (1.0.0) is honest about what it could check when i
 Keep the window open and the laptop awake. Ctrl+C stops the kit and closes Funnel on its port
 (nothing else of your Tailscale setup is touched).
 
-**Offline brain on the same laptop?** It already uses Funnel's port 8443. Start the kit with
-`.\start-kit.ps1 -HttpsPort 10000` and give JARVIS the address it prints (it ends in `:10000`).
-The script refuses to take over a port that serves something else.
+**Funnel's ports.** The kit uses Funnel's https port **10000**; the offline brain keeps 8443, so
+both can run on the same laptop. If port 10000 already serves something else, start the kit with
+`.\start-kit.ps1 -HttpsPort 443` and give JARVIS the address it prints. The script refuses to take
+over a port that serves something else.
 
 ## Why it is safe
 
@@ -114,7 +115,7 @@ Run them in PowerShell from `C:\JARVIS\deploy\local-speech`, with
 | "Missing: caddy" | Open a new PowerShell window (after installing), or run install-kit.ps1 again. |
 | "The kit is not installed yet" | Run install-kit.ps1 (step 2). |
 | "Port 11436 is already in use" | A kit is already running: close that window first. |
-| "Funnel's port 8443 already serves something else" | Use `-HttpsPort 10000` (see above). |
+| "Funnel's port 10000 already serves something else" | Use `-HttpsPort 443` (see above). |
 | "Funnel did not start" | Tailscale admin console -> allow Funnel for this laptop; try again in 10 minutes. |
 | The self-test says an engine is "Not installed" | Expected in kit 1.0.0 until its model is pinned (see above). |
 | JARVIS says "The laptop speech kit refused JARVIS's key" | Give JARVIS the key printed by start-kit.ps1 again. |

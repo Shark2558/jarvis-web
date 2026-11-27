@@ -75,7 +75,7 @@ ROUTES: Final[tuple[tuple[str, str], ...]] = (
 )  # exactly what the gate passes (with the key); everything else 404
 GATE_PORT: Final = 11436  # Caddy, on 127.0.0.1 only (the offline brain's gate is 11435)
 SERVER_PORT: Final = 11437  # the kit's own server, on 127.0.0.1 only, never published
-FUNNEL_PORT: Final = 8443  # Tailscale Funnel's https port for the kit (the brain keeps 443)
+FUNNEL_PORT: Final = 10000  # Funnel's https port for the kit (the offline brain keeps 8443)
 LOOPBACK_BASE: Final = f"http://127.0.0.1:{GATE_PORT}{API_PREFIX}"  # the call desk, same laptop
 KEY_MIN_CHARS: Final = 32
 BODY_MAX: Final = 3_000_000  # one request (60 s of PCM is 2.56 MB as base64)

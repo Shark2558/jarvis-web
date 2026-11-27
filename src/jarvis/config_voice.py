@@ -25,7 +25,7 @@ _LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _HOST = re.compile(rf"^{_LABEL}\.{_LABEL}\.ts\.net$")
 _SHAPE = (
     "JARVIS_LOCAL_SPEECH_URL must be the laptop's Tailscale Funnel address, like "
-    "https://my-laptop.tail1234.ts.net:8443 (https, no IP address, no extra path)"
+    "https://my-laptop.tail1234.ts.net:10000 (https, no IP address, no extra path)"
 )
 
 

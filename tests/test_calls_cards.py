@@ -47,6 +47,7 @@ def _result(lang: str, option: SpeechOption, inr: float | None = 0.0, **kw: Any)
 
 async def _store(*results: LanguageResult) -> MemoryCallStore:
     store = MemoryCallStore()
+    await store.save_settings(UID, {"owner_first_name": "Sam"})
     for r in results or (
         _result("en-IN", SpeechOption.GOOGLE),
         _result("ml-IN", SpeechOption.AZURE),
@@ -225,6 +226,14 @@ async def test_a_card_round_trips_through_the_tool_arguments() -> None:
     card = await builder.build(UID, _draft(booking=booking.model_dump(mode="json"), contact="Shop"))
     again = await builder.build(UID, read_draft(card_args(card)), card_id=card.id)
     assert again.digest() == card.digest() and again.id == card.id
+
+
+async def test_a_card_needs_his_first_name_for_the_opening_line() -> None:
+    store = await _store()
+    await store.save_settings(UID, {"owner_first_name": ""})
+    with pytest.raises(CardRefused) as err:
+        await _builder(store).build(UID, _draft())
+    assert err.value.code == "no_name"
 
 
 def test_a_bad_draft_is_refused_in_plain_words() -> None:

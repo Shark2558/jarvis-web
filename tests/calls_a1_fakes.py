@@ -92,6 +92,7 @@ class Rig:
 
 async def rig(*, passkey: bool = False, languages: tuple[str, ...] = ("en-IN", "ml-IN")) -> Rig:
     store, clock, passkeys = MemoryCallStore(), Clock(), Passkeys(passkey)
+    await store.save_settings(UID, {"owner_first_name": "Sam"})
     for lang in languages:
         await store.put_language_result(
             LanguageResult(

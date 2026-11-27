@@ -164,6 +164,9 @@ MSG_LANGUAGE = "{name} hasn't passed the language check yet, so JARVIS can't use
 MSG_TEMPLATE = "That call template doesn't exist."
 MSG_DRAFT = "Check the call card: {words}"
 MSG_STORE = "JARVIS can't read its call data just now, so no card was made."
+MSG_NO_NAME = (
+    "Add your first name in Calls → Settings: JARVIS says whose assistant it is on every call."
+)
 
 
 # ---- languages --------------------------------------------------------------------------------
@@ -397,6 +400,8 @@ class CardBuilder:
         except Exception as exc:  # noqa: BLE001 - can't tell: no card
             log.error("call data unreadable; no card", extra={"error": type(exc).__name__})
             raise CardRefused("unreadable", MSG_STORE) from None
+        if not settings.owner_first_name.strip():
+            raise CardRefused("no_name", MSG_NO_NAME)
         languages = draft.languages or settings.default_languages
         allowed = offered(results, settings)
         for code in languages:

@@ -564,26 +564,39 @@ class VoiceSessions:
         return await self.p.profiles.update(uid, change)
 
     # ---- deleting --------------------------------------------------------------------------------
+    @property
+    def kit_set_up(self) -> bool:
+        return self.p.kit is not None
+
     async def delete_recordings(self, uid: str, *, wakeword: bool = False) -> Deleted:
         """Every recording on the laptop (and, if asked, the wake-word files made from them), and
-        the session's transcripts here. The laptop must answer first: nothing is deleted while it
-        can't be reached, so nothing claims to be gone that isn't."""
+        the session's transcripts here. A kit that is set up must answer first: nothing is deleted
+        while it can't be reached, so nothing claims to be gone that isn't. With no kit set up
+        (the owner's decision, 28 Nov 2026) only the transcripts here go: the laptop's recordings
+        are out of reach, so none is claimed gone and their count stays."""
         async with self._lock(uid):
-            try:
-                deleted = await self._kit().delete(DeleteIn(session_id=None, wakeword=wakeword))
-            except KitError as exc:
-                raise _kit_error(exc) from None
+            if self.p.kit is None:
+                deleted, clips = Deleted(clips=0), None
+            else:
+                try:
+                    deleted = await self.p.kit.delete(DeleteIn(session_id=None, wakeword=wakeword))
+                except KitError as exc:
+                    raise _kit_error(exc) from None
+                clips = 0
             await self.p.sessions.delete(uid)
             await self.p.profiles.update(
                 uid,
                 lambda p: with_(
                     p,
-                    clips=0,
+                    clips=p.clips if clips is None else clips,
                     session_id=None,
                     state=SessionState.DONE if p.ranking else SessionState.NONE,
                 ),
             )
-            log.info("voice recordings deleted", extra={"clips": deleted.clips})
+            log.info(
+                "voice recordings deleted",
+                extra={"clips": deleted.clips, "laptop": clips is not None},
+            )
             return deleted
 
 

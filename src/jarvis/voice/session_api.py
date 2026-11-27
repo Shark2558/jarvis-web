@@ -54,6 +54,10 @@ LABELS: Final[dict[ListenEngine, str]] = {
 }
 REJECTED = "That request isn't one the voice session understands."
 TYPE_YES = f"To include Google beyond the free minutes, type {YES_WORD} exactly."
+WORDS_ONLY_HERE = (
+    "Deleted the comparison's words kept here. The laptop speech kit isn't set up, so any "
+    "recordings on your laptop stay until it is."
+)
 BAD_WORD = (
     f"Give at most {TYPED_WORDS_MAX} names or places, each 1 to 40 characters with at least one "
     "letter (letters, numbers, spaces and - ' . & only)."
@@ -305,7 +309,9 @@ class SessionApi:
         gone = await self.s.delete_recordings(uid, wakeword=wakeword)
         n = gone.clips
         words = f"Deleted {n} recording{'s' if n != 1 else ''} from your laptop."
-        if gone.wakeword_files:
+        if not self.s.kit_set_up:
+            words = WORDS_ONLY_HERE
+        elif gone.wakeword_files:
             words += " The wake-word files made from them are deleted too."
         return {"clips": n, "wakeword_files": gone.wakeword_files, "words": words}
 

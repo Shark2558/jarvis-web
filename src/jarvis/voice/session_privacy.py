@@ -12,7 +12,9 @@ the voice session's own parts. Wired by the integrator where `settings_source(` 
 
 No audio or voice print is ever in the cloud, so none is ever exported: the export is the
 profile's fields and the transcripts of the comparison lines. A laptop that can't be reached is
-"Couldn't check right now" (look) or a failed delete: nothing claims to be gone that isn't.
+"Couldn't check right now" (look) or a failed delete: nothing claims to be gone that isn't. With
+no kit set up (the owner's decision, 28 Nov 2026) the delete clears the comparison's words here
+and the laptop's recordings are counted as left.
 """
 
 from __future__ import annotations
@@ -115,6 +117,7 @@ def recordings_source(sessions: VoiceSessions) -> CallbackSource:
             delete="confirm",
             note=(
                 "The recordings never leave your laptop; they can only be deleted while it is on. "
+                "With no speech kit set up, deleting clears the comparison's words here only. "
                 "Your voice profile stays (delete it on its own row). The wake-word files made "
                 "from them are on the next row."
             ),

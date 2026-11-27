@@ -34,9 +34,11 @@ then the browser, as before. Section 2.14 has the details.
 [`15-containers.markdy`](../diagrams/15-containers.markdy). The guide's Figure 1
 (`../diagrams/01-context.png`) draws the same context in the owner's words. Redrawn for R18: the
 laptop box now holds the call desk too, whose signed socket comes in to Cloud Run (step 3), and
-the phone app places calls; the speech services a call uses are in Figure 16. Redrawn for R5.2:
-the laptop box holds the speech kit as well, which Cloud Run calls with its key over https
-(step 4).
+the phone app places calls; the speech services a call uses are in Figure 16. Updated for R5.2:
+the laptop box now names the speech kit as well. Cloud Run's voice service calls the kit directly
+with the kit's key over https (section 2.14, boundary B13), not through the tool gateway; the
+"HMAC both ways" arrow is the home bridge's only. A separate arrow for the kit was tried and
+dropped, because the router laid it over the call desk's arrow and cut its label.
 
 | Actor or system | Role | How it reaches JARVIS, or JARVIS reaches it | Evidence |
 |---|---|---|---|
@@ -314,8 +316,10 @@ to build leaves its routes at 501, logged by name.
 *Figure 16. Trust boundaries.* Source:
 [`16-trust-boundaries.markdy`](../diagrams/16-trust-boundaries.markdy). Each arrow is a crossing;
 its label is what the receiving side checks. Redrawn for R18 with the call desk's signed socket
-(B10) and the speech services that hear a call (B12), and for R5.2 with the speech kit's door
-(B13, step 4).
+(B10) and the speech services that hear a call (B12). Not every crossing is drawn: B5, B9 and B11
+never were, and R5.2's B13 and B14 (the speech kit) are in the table only. Every layout that
+added the kit as its own box made an arrow cross another arrow's label, so the figure stays as
+R18 left it; it is not wrong for R5.2, only incomplete, as before.
 
 | # | Boundary | Crossing | Checked by | Data that crosses |
 |---|---|---|---|---|
@@ -342,4 +346,4 @@ its label is what the receiving side checks. Redrawn for R18 with the call desk'
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11, named; step 3's Maps and YouTube APIs added; `render.yaml`'s status and the date of the move to Cloud Run from GitHub's history, the reason marked unverified; the concurrency default marked unverified in plain words | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 19:30 IST | R18 | R18 "Calls from your laptop": the calls' actors in the context table; `--timeout 1800`; the image carries the call desk kit and NumPy; 139 collections; the three speech keys (not mounted by the deploy, how to add them unverified); the phone app's calls (version 18.0.0, the door's fifth route, signed commands, CI's two new controls); when calls are wired; new section 2.13, the call desk, VB-CABLE and Phone Link; trust boundaries B1 and B2 widened, B10–B12 added; Figures 15 and 16 redrawn for R18 (the call desk, the speech services); the capacity pointer fixed to chapter 06, section 5 | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the deploy now mounts each optional speech key when its secret is stored (`deploy/cloudrun.sh:speech_keys`, both deploy paths, a failed grant never fatal), so v6.5.0's "not mounted" and "how to add them unverified" no longer hold; how to add one is in the call desk README; up to 14 secrets; the go-live guide's step is left for the owner | 🛠 Mark XXV |
-| v6.6.0 | 27 Nov 2026, 22:05 IST | R5.2 | R5.2 "Your voice": the laptop speech kit in plain words; the kit and Hugging Face's Whisper downloads in the context table; no new package in the cloud image; the kit's two settings; up to 15 secrets, `jarvis-local-speech-key` asked by `cloudrun.sh --local-speech` (its stops on a bad address or short key flagged); 136 console modules; one Funnel port per program (the kit's 10000; the bridge and brain both on 8443, an older clash); the call desk's laptop speech reaches the kit over loopback; new section 2.14, the kit (server, gate, Funnel port 10000, install, start, the cloud's pinned client, the desk's loopback, engines, what it keeps); trust boundaries B13 and B14; Figures 15 and 16 redrawn for the kit | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 22:05 IST | R5.2 | R5.2 "Your voice": the laptop speech kit in plain words; the kit and Hugging Face's Whisper downloads in the context table; no new package in the cloud image; the kit's two settings; up to 15 secrets, `jarvis-local-speech-key` asked by `cloudrun.sh --local-speech` (its stops on a bad address or short key flagged); 136 console modules; one Funnel port per program (the kit's 10000; the bridge and brain both on 8443, an older clash); the call desk's laptop speech reaches the kit over loopback; new section 2.14, the kit (server, gate, Funnel port 10000, install, start, the cloud's pinned client, the desk's loopback, engines, what it keeps); trust boundaries B13 and B14; Figure 15's laptop box names the speech kit (re-exported); Figure 16 unchanged, B13 and B14 in its table only | 🛠 Mark XXV |

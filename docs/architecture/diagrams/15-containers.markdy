@@ -12,7 +12,7 @@ database Store "Firestore" sub="asia-south1, one database"
 gateway Gateway "Tool gateway" sub="policy, cards, passkeys, audit"
 cloud Google "Google APIs" sub="Calendar, Gmail, Drive, speech"
 external Search "Tavily" sub="web search, fenced; 900 credits"
-desktop Home "The owner's laptop" sub="home kit behind Funnel; call desk"
+desktop Home "The owner's laptop" sub="home kit, call desk, speech kit"
 
 beat reach "1. Ways in":
   show $nodes stagger=30ms

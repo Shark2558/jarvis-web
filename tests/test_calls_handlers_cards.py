@@ -253,6 +253,37 @@ async def test_review_the_language_table_offers_free_first() -> None:
     assert rows["hi-IN"]["option"] == "google"
 
 
+async def test_review_the_settings_carry_the_limits_and_the_paid_prices() -> None:
+    # R18 review: the console showed the limits and Sarvam's prices as fixed text; it reads them
+    from jarvis.calls.cards import CardBuilder, Estimator
+    from jarvis.calls.models import SpeechOption
+    from jarvis.calls.prices import SpeechPrice
+
+    a, r = await _api()
+    view = await a.get_settings(UID)
+    assert view["limits"] == {
+        "calls_per_day": 10,
+        "calls_per_number_per_day": 2,
+        "new_numbers_per_day": 3,
+        "no_answer_redials_per_day": 1,
+        "quiet_from": "21:00",
+        "quiet_until": "08:00",
+        "quiet_zone": "IST",
+    }
+    assert view["ceilings"] == {
+        "month_cap_inr": 3000,
+        "call_cap_inr": 200,
+        "call_max_minutes": 30,
+        "retention_days": 30,
+        "answer_rings": [2, 15],
+    }
+    assert view["prices"]["sarvam"] is None  # the rig prices no Sarvam: unknown, never ₹0
+    sarvam = SpeechPrice(SpeechOption.SARVAM, 0.5, 3.0, paid=True)
+    a.builder = CardBuilder(r.store, Estimator({SpeechOption.SARVAM: sarvam}, None))
+    shown = (await a.put_settings(UID, {"owner_first_name": "Sam"}))["prices"]["sarvam"]
+    assert shown == {"hear_inr_per_minute": 0.5, "voice_inr_per_1k_chars": 3.0}
+
+
 def cr_now() -> Any:
     from datetime import UTC, datetime
 

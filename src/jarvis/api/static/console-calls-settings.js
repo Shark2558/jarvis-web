@@ -6,15 +6,31 @@
 // callers), the records (keep the audio; how many days; lowering it asks first: older calls go), and the paid or
 // dearer options (Sarvam, the balanced brain: each only with his yes). Every change is one PUT /v1/calls/settings of
 // the changed fields; one he confirmed carries confirm_raise: true (A1 needs it for a raise). I1: the call desk's kit
-// and its link code (the home kit's way: a plain download link, a code that works once for 10 minutes). ASCII source;
-// textContent only.
+// and its link code (the home kit's way: a plain download link, a code that works once for 10 minutes); the review's
+// Unlink (DELETE /v1/calls/desk, after his yes). R18 review: the limits, the caps' ranges and Sarvam's prices come
+// from the server's settings (never typed in here). ASCII source; textContent only.
 import { MAX_INDIAN, PATHS, api, button, choice, failed, field, input, mk, option, say, toggle, uid, wholeRupees } from './console-calls-api.js';
 import { settings as checkSettings } from './console-calls-shapes.js';
 
 const POLICIES = [['all', 'Everyone'], ['contacts', 'Saved contacts'], ['not_contacts', 'All but contacts']];
 const POLICY_WORDS = { all: 'every caller', contacts: 'saved contacts only', not_contacts: 'everyone except saved contacts' };
 const ANSWER_NOTE = 'JARVIS answers only a call you haven\u2019t picked up, says it is your AI assistant, takes a message (name, reason, call-back number) and never agrees to anything. You get the summary.';
-const LIMITS = '10 calls a day \u00b7 2 a day to one number \u00b7 3 new numbers a day \u00b7 one redial a day to a number that didn\u2019t answer \u00b7 no calls 21:00\u201308:00 IST. Never emergency, premium-rate or international numbers.';
+const NEVER = 'Never emergency, premium-rate or international numbers.';
+const UNLINK_NOTE = 'Calls can\u2019t be placed until you link it again with a new code. The desk on your laptop stops at once.';
+/** R18 review: the limits as the server sends them (jarvis.calls.models), never typed in here. */
+function limitWords(l) {
+  if (!l) return 'JARVIS keeps its daily limits, but couldn\u2019t read them just now. ' + NEVER;
+  const n = (v, one, many) => v + ' ' + (v === 1 ? one : many);
+  const redial = l.redials === 0 ? 'no redial to a number that didn\u2019t answer' : (l.redials === 1 ? 'one redial' : l.redials + ' redials') + ' a day to a number that didn\u2019t answer';
+  return [n(l.perDay, 'call a day', 'calls a day'), l.perNumber + ' a day to one number', n(l.newNumbers, 'new number a day', 'new numbers a day'),
+    redial, 'no calls ' + l.from + '\u2013' + l.until + ' IST'].join(' \u00b7 ') + '. ' + NEVER;
+}
+const inr = (v) => '\u20b9' + (Number.isInteger(v) ? String(v) : v.toFixed(2));
+/** Sarvam's prices from the server's settings (jarvis.calls.prices), or plain words when unknown. */
+function sarvamWords(p) {
+  return p ? inr(p.hear) + ' a minute of hearing and ' + inr(p.voice) + ' per 1,000 characters of voice. Only for a language the free options fail.'
+    : 'Its price isn\u2019t known on this server, so a call can\u2019t be estimated with it.';
+}
 
 export function mount(host, ctx) {
   const S = { data: null, busy: false, painted: false };
@@ -33,7 +49,8 @@ export function mount(host, ctx) {
   const capsSave = button('Save the caps', 'sact', () => saveCaps());
   const caps = sec('Money and length', [field('Calls in a month, in rupees', month, 'Inside your monthly limit in Vitals. 0 stops every call.'),
     field('One call, in rupees', call), field('One call, in minutes', minutes), row(capsSave)]);
-  const limits = sec('Limits', [mk('p', 'sfine', LIMITS)]);
+  const limitsText = mk('p', 'sfine', limitWords(null));
+  const limits = sec('Limits', [limitsText]);
   // the opening line
   const first = input('text', 60);
   const firstSave = button('Save', 'sact', () => saveName());
@@ -58,7 +75,7 @@ export function mount(host, ctx) {
   const keepSave = button('Save', 'sact', () => saveRetention());
   const records = sec('Records', [audio.row, field('Keep calls for this many days', keep, 'From 1 to 30. A call you Keep stays until you delete it.'), row(keepSave)]);
   // paid or dearer options
-  const sarvam = sw('Sarvam speech (paid)', '\u20b90.50 a minute of hearing and \u20b93 per 1,000 characters of voice. Only for a language the free options fail.', (on) => setPaid('sarvam_on', on));
+  const sarvam = sw('Sarvam speech (paid)', sarvamWords(null), (on) => setPaid('sarvam_on', on));
   const balanced = sw('Languages that need the balanced brain', 'About \u20b92\u20134 a call minute instead of \u20b90.10\u20130.20.', (on) => setPaid('allow_balanced', on));
   const azureEl = mk('p', 'snote');
   const speech = sec('Speech and brain', [azureEl, sarvam.row, balanced.row]);
@@ -68,8 +85,9 @@ export function mount(host, ctx) {
   const kitNote = mk('p', 'sfine'), code = mk('p', 'cl-code'), codeNote = mk('p', 'snote');
   codeNote.setAttribute('role', 'status'); codeNote.setAttribute('aria-live', 'polite');
   const linkBtn = button('Link the call desk', 'sact', () => linkCode());
+  const unlinkBtn = button('Unlink', 'sact cl-unlink', () => confirmFirst('Unlink the call desk?', [UNLINK_NOTE], 'Unlink', () => unlink(), unlinkBtn));
   const desk = sec('Call desk on your laptop', [mk('p', 'sfine', 'Install VB-CABLE (free), extract the kit and run install-calldesk.ps1, then -Link with a code from here.'),
-    kitNote, row(kit, linkBtn), code, codeNote]);
+    kitNote, row(kit, linkBtn, unlinkBtn), code, codeNote]);
   host.append(state, caps, limits, opening, langs, answering, records, speech, desk, ask, err);
 
   const FIELDS = { month_cap_inr: () => { month.value = S.data.month !== null ? String(S.data.month) : ''; },
@@ -88,6 +106,8 @@ export function mount(host, ctx) {
     pol.replaceWith(fresh); pol = fresh;
     audio.t.set(d.recordAudio);
     sarvam.t.set(d.sarvam); balanced.t.set(d.balanced);
+    limitsText.textContent = limitWords(d.limits);
+    const sarvamSmall = sarvam.row.querySelector('small'); if (sarvamSmall) sarvamSmall.textContent = sarvamWords(d.sarvamPrice);
     azureEl.textContent = 'Azure free tier: ' + (d.azure === 'ready' ? 'ready. It stops at its free allowance and can never bill.' : 'not set up. Add its key on the server for 5 free hours a month.');
     [capsSave, firstSave, langSave, ringsSave, keepSave].forEach((b) => { b.disabled = S.busy; });
   }
@@ -132,10 +152,11 @@ export function mount(host, ctx) {
   const whole = (v, lo, hi) => { const t = String(v || '').replace(/[\u20b9,\s]/g, ''); if (!/^\d{1,6}$/.test(t)) return null; const n = parseInt(t, 10); return n >= lo && n <= hi ? n : null; };
   function saveCaps() {
     const d = S.data; if (!d) return;
-    const m = whole(month.value, 0, 3000), c = whole(call.value, 1, 200), mi = whole(minutes.value, 1, 30);
-    if (m === null) { err.textContent = 'A month\u2019s cap is a whole number of rupees from \u20b90 to \u20b93,000.'; month.focus(); return; }
-    if (c === null) { err.textContent = 'One call\u2019s cap is from \u20b91 to \u20b9200.'; call.focus(); return; }
-    if (mi === null) { err.textContent = 'One call lasts from 1 to 30 minutes.'; minutes.focus(); return; }
+    const ce = d.ceilings; // the server's ranges (R18 review), never typed in here
+    const m = whole(month.value, 0, ce.month), c = whole(call.value, 1, ce.call), mi = whole(minutes.value, 1, ce.minutes);
+    if (m === null) { err.textContent = 'A month\u2019s cap is a whole number of rupees from \u20b90 to ' + wholeRupees(ce.month) + '.'; month.focus(); return; }
+    if (c === null) { err.textContent = 'One call\u2019s cap is from \u20b91 to ' + wholeRupees(ce.call) + '.'; call.focus(); return; }
+    if (mi === null) { err.textContent = 'One call lasts from 1 to ' + ce.minutes + ' minutes.'; minutes.focus(); return; }
     const changes = { month_cap_inr: m, call_cap_inr: c, call_max_minutes: mi };
     const up = [d.month !== null && m > d.month ? 'up to ' + wholeRupees(m) + ' a month on calls' : '',
       d.call !== null && c > d.call ? wholeRupees(c) + ' on one call' : '', d.minutes !== null && mi > d.minutes ? mi + ' minutes a call' : ''].filter(Boolean);
@@ -155,23 +176,26 @@ export function mount(host, ctx) {
       'Switch on', () => put({ answering_on: true }, 'JARVIS answers the calls you miss.', true), ans.t.el);
   }
   function saveRings() {
-    const n = whole(rings.value, 2, 15);
-    if (n === null) { err.textContent = 'From 2 to 15 rings.'; rings.focus(); return; }
+    const ce = S.data ? S.data.ceilings : { ringsMin: 2, ringsMax: 15 };
+    const n = whole(rings.value, ce.ringsMin, ce.ringsMax);
+    if (n === null) { err.textContent = 'From ' + ce.ringsMin + ' to ' + ce.ringsMax + ' rings.'; rings.focus(); return; }
     put({ answer_after_rings: n }, 'Saved.');
   }
   function setPaid(key, on) {
     const t = key === 'sarvam_on' ? sarvam.t : balanced.t;
     if (!on) { put({ [key]: false }, 'Switched off.'); return; }
+    const p = S.data && S.data.sarvamPrice;
     const lines = key === 'sarvam_on'
-      ? ['Sarvam is paid: \u20b90.50 a minute of their speech and \u20b93 per 1,000 characters of JARVIS\u2019s voice, inside your calls cap.', 'JARVIS still tries the free options first.']
+      ? [p ? 'Sarvam is paid: ' + inr(p.hear) + ' a minute of their speech and ' + inr(p.voice) + ' per 1,000 characters of JARVIS\u2019s voice, inside your calls cap.'
+        : 'Sarvam is paid, and its price isn\u2019t known on this server: a call can\u2019t be estimated with it.', 'JARVIS still uses the free options first.']
       : ['A language that needs the balanced brain costs about \u20b92\u20134 a call minute, inside your calls cap.', 'Only languages the check marked so use it.'];
     confirmFirst(key === 'sarvam_on' ? 'Switch Sarvam on?' : 'Allow the balanced brain on calls?', lines, 'Switch on',
       () => put({ [key]: true }, 'Switched on.', true), t.el);
   }
   function saveRetention() {
     const d = S.data; if (!d) return;
-    const n = whole(keep.value, 1, 30);
-    if (n === null) { err.textContent = 'From 1 to 30 days.'; keep.focus(); return; }
+    const n = whole(keep.value, 1, d.ceilings.retention);
+    if (n === null) { err.textContent = 'From 1 to ' + d.ceilings.retention + ' days.'; keep.focus(); return; }
     if (n >= d.retention) { put({ retention_days: n }, 'Calls are kept ' + n + ' days.'); return; }
     confirmFirst('Keep calls for ' + n + ' days?', ['Calls older than ' + n + ' days (except the ones you kept) are deleted, with their audio. This can\u2019t be undone.'],
       'Keep ' + n + ' days', () => put({ retention_days: n }, 'Calls are kept ' + n + ' days.', true), keepSave);
@@ -196,6 +220,14 @@ export function mount(host, ctx) {
       say(codeNote, 'Type this code into install-calldesk.ps1 -Link on your laptop. It works once and expires in 10 minutes.');
     } catch (e) { say(codeNote, failed(e), 'bad'); }
     linkBtn.disabled = false;
+  }
+  async function unlink() { // R18 review: his Unlink (DELETE /v1/calls/desk): the link and an unused code go
+    unlinkBtn.disabled = true; code.textContent = ''; say(codeNote, '');
+    try {
+      const r = await api(PATHS.desk, { method: 'DELETE' });
+      say(codeNote, r && r.unlinked === true ? 'The call desk is unlinked. Link it again with a new code when you need it.' : 'No call desk was linked.', 'ok');
+    } catch (e) { say(codeNote, failed(e), 'bad'); }
+    unlinkBtn.disabled = false;
   }
   async function load() {
     if (kit.hidden && !kitNote.textContent) kitInfo();

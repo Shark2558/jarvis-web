@@ -51,14 +51,28 @@ from jarvis.calls.cards import (
 )
 from jarvis.calls.limits import LimitRefused
 from jarvis.calls.models import (
+    ANSWER_RINGS_MAX,
+    ANSWER_RINGS_MIN,
+    CALL_CAP_CEILING_INR,
+    CALL_MAX_MINUTES_CEILING,
+    CALLS_PER_DAY,
+    CALLS_PER_NUMBER_PER_DAY,
     CARD_ID_RE,
     LANGUAGE_NAMES,
+    MONTH_CAP_CEILING_INR,
+    NEW_NUMBERS_PER_DAY,
+    NO_ANSWER_REDIALS_PER_DAY,
+    QUIET_FROM,
+    QUIET_UNTIL,
+    RETENTION_DAYS_CEILING,
     CallCard,
     CallRecord,
     CallSettings,
     CardStatus,
+    SpeechOption,
 )
 from jarvis.calls.ports import CallsRefused, CallStore
+from jarvis.calls.prices import SpeechPrice
 from jarvis.calls.records import RecordKeeper, RecordRefused
 from jarvis.calls.settings import CallSettingsRejected
 from jarvis.calls.templates import TemplateRefused, catalogue, draft_from
@@ -199,8 +213,46 @@ def record_view(rec: CallRecord) -> dict[str, Any]:
     }
 
 
-def settings_view(s: CallSettings) -> dict[str, Any]:
-    return s.model_dump(mode="json") | {"templates": catalogue()}
+# R18 review: what the console shows of the fixed limits and the caps' ranges, read from the code
+# (the console no longer types them), and the paid option's prices from the settings
+LIMITS_VIEW: dict[str, Any] = {
+    "calls_per_day": CALLS_PER_DAY,
+    "calls_per_number_per_day": CALLS_PER_NUMBER_PER_DAY,
+    "new_numbers_per_day": NEW_NUMBERS_PER_DAY,
+    "no_answer_redials_per_day": NO_ANSWER_REDIALS_PER_DAY,
+    "quiet_from": QUIET_FROM.strftime("%H:%M"),
+    "quiet_until": QUIET_UNTIL.strftime("%H:%M"),
+    "quiet_zone": "IST",
+}
+CEILINGS_VIEW: dict[str, Any] = {
+    "month_cap_inr": MONTH_CAP_CEILING_INR,
+    "call_cap_inr": CALL_CAP_CEILING_INR,
+    "call_max_minutes": CALL_MAX_MINUTES_CEILING,
+    "retention_days": RETENTION_DAYS_CEILING,
+    "answer_rings": [ANSWER_RINGS_MIN, ANSWER_RINGS_MAX],
+}
+
+
+def _price_view(price: SpeechPrice | None) -> dict[str, float] | None:
+    """A paid option's prices in ₹, or None when unknown (never shown as ₹0)."""
+    if price is None or price.hear_inr_per_minute is None or price.voice_inr_per_1k_chars is None:
+        return None
+    return {
+        "hear_inr_per_minute": round(price.hear_inr_per_minute, 4),
+        "voice_inr_per_1k_chars": round(price.voice_inr_per_1k_chars, 4),
+    }
+
+
+def settings_view(
+    s: CallSettings, prices: Mapping[SpeechOption, SpeechPrice] | None = None
+) -> dict[str, Any]:
+    paid = (prices or {}).get(SpeechOption.SARVAM)
+    return s.model_dump(mode="json") | {
+        "templates": catalogue(),
+        "limits": LIMITS_VIEW,
+        "ceilings": CEILINGS_VIEW,
+        "prices": {"sarvam": _price_view(paid)},
+    }
 
 
 # ---- the handlers -----------------------------------------------------------------------------
@@ -472,7 +524,7 @@ class CardsApi:
     # ---- settings and languages ---------------------------------------------------------------
     async def get_settings(self, uid: str) -> dict[str, Any]:
         try:
-            return settings_view(await self.store.settings(uid))
+            return settings_view(await self.store.settings(uid), self._prices())
         except Exception as exc:  # noqa: BLE001
             raise refused(exc) from None
 
@@ -494,7 +546,10 @@ class CardsApi:
             ", ".join(sorted(changes))[:200],
             ActionRisk.REVERSIBLE,
         )
-        return settings_view(saved)
+        return settings_view(saved, self._prices())
+
+    def _prices(self) -> Mapping[SpeechOption, SpeechPrice]:
+        return self.builder.estimator.prices
 
     async def languages(self, uid: str) -> dict[str, Any]:
         try:

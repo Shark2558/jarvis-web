@@ -44,8 +44,9 @@ The steps
     If it offers to install Python 3.12 (free), type Y. If it then asks you to, close
     PowerShell, open it again and type the two lines again.
 
- 5. LINK. When the installer asks for a code: in JARVIS open Calls -> Call desk -> "Link the
-    call desk", and type the code it shows (it works for a few minutes, once).
+ 5. LINK. When the installer asks for a code: in JARVIS open Calls -> Settings -> "Call desk
+    on your laptop" -> "Link the call desk", and type the code it shows (it works for 10
+    minutes, once).
 
  6. START AT SIGN-IN. When asked, type Y: then the call desk starts whenever you sign in, and
     puts your microphone back even after a crash or a restart.
@@ -84,4 +85,5 @@ Removing it
 -----------
 Run "JARVIS Call Desk - Stop", delete the shortcuts in Start -> JARVIS and in your Startup
 folder (Win+R, shell:startup), then delete C:\JARVIS-CallDesk and
-%LOCALAPPDATA%\JARVIS\CallDesk. In JARVIS, Calls -> Call desk -> Unlink.
+%LOCALAPPDATA%\JARVIS\CallDesk. In JARVIS, Calls -> Settings -> "Call desk on your laptop" ->
+Unlink (or Privacy -> Phone calls -> Call desk link).

@@ -23,7 +23,9 @@ has the details.
 
 *Figure 15. JARVIS as built: the containers.* Source:
 [`15-containers.markdy`](../diagrams/15-containers.markdy). The guide's Figure 1
-(`../diagrams/01-context.png`) draws the same context in the owner's words.
+(`../diagrams/01-context.png`) draws the same context in the owner's words. Redrawn for R18: the
+laptop box now holds the call desk too, whose signed socket comes in to Cloud Run (step 3), and
+the phone app places calls; the speech services a call uses are in Figure 16.
 
 | Actor or system | Role | How it reaches JARVIS, or JARVIS reaches it | Evidence |
 |---|---|---|---|
@@ -239,7 +241,8 @@ S0 laptop test of the real sound path has not been run yet (*unverified* on a re
 
 *Figure 16. Trust boundaries.* Source:
 [`16-trust-boundaries.markdy`](../diagrams/16-trust-boundaries.markdy). Each arrow is a crossing;
-its label is what the receiving side checks.
+its label is what the receiving side checks. Redrawn for R18 with the call desk's signed socket
+(B10) and the speech services that hear a call (B12).
 
 | # | Boundary | Crossing | Checked by | Data that crosses |
 |---|---|---|---|---|
@@ -262,4 +265,4 @@ its label is what the receiving side checks.
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:50 IST | R6.4 | First edition: system context, Cloud Run settings and what they imply, Firestore, Secret Manager, service accounts, the two Scheduler jobs, the console and phone app, the home kit, Telegram, the Google APIs, CI/CD, backups, environments, nine trust boundaries; Figures 15 and 16 | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11, named; step 3's Maps and YouTube APIs added; `render.yaml`'s status and the date of the move to Cloud Run from GitHub's history, the reason marked unverified; the concurrency default marked unverified in plain words | 🛠 Mark XXV |
-| v6.5.0 | 27 Nov 2026, 19:30 IST | R18 | R18 "Calls from your laptop": the calls' actors in the context table; `--timeout 1800`; the image carries the call desk kit and NumPy; 139 collections; the three speech keys (not mounted by the deploy, how to add them unverified); the phone app's calls (version 18.0.0, the door's fifth route, signed commands, CI's two new controls); when calls are wired; new section 2.13, the call desk, VB-CABLE and Phone Link; trust boundaries B1 and B2 widened, B10–B12 added; the capacity pointer fixed to chapter 06, section 5 | 🛠 Mark XXV |
+| v6.5.0 | 27 Nov 2026, 19:30 IST | R18 | R18 "Calls from your laptop": the calls' actors in the context table; `--timeout 1800`; the image carries the call desk kit and NumPy; 139 collections; the three speech keys (not mounted by the deploy, how to add them unverified); the phone app's calls (version 18.0.0, the door's fifth route, signed commands, CI's two new controls); when calls are wired; new section 2.13, the call desk, VB-CABLE and Phone Link; trust boundaries B1 and B2 widened, B10–B12 added; Figures 15 and 16 redrawn for R18 (the call desk, the speech services); the capacity pointer fixed to chapter 06, section 5 | 🛠 Mark XXV |

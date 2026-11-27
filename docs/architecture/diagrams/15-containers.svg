@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1456 704" width="1456" height="704">
+  <defs>
+    <!-- Embedded Typography & Anti-Aliasing -->
+    <style>
+      text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+      }
+      .markdy-svg-text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+      }
+      .markdy-svg-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+      }
+    </style>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="markdy-node-shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#020617" flood-opacity="0.12"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#020617" flood-opacity="0.08"/>
+    </filter>
+
+    <!-- Grid Patterns -->
+    <pattern id="markdy-grid-minor" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(15, 23, 42, 0.06)" stroke-width="1" stroke-opacity="0.5"/>
+    </pattern>
+    <pattern id="markdy-grid-major" width="160" height="160" patternUnits="userSpaceOnUse">
+      <path d="M 160 0 L 0 0 0 160" fill="none" stroke="rgba(15, 23, 42, 0.10)" stroke-width="1.2" stroke-opacity="0.6"/>
+    </pattern>
+
+    <!-- Arrowhead Markers -->
+    <marker id="arrow-request" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 1.5 1.6 L 9 5 L 1.5 8.4 L 3.4 5 Z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrow-response" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 1.5 1.6 L 9 5 L 1.5 8.4" fill="none" stroke="#a78bfa" stroke-width="1.4"/>
+    </marker>
+    <marker id="arrow-event" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <circle cx="5" cy="5" r="3" fill="#f59e0b"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  
+  <rect width="100%" height="100%" fill="#f6f8fc"/>
+  <rect width="100%" height="100%" fill="url(#markdy-grid-minor)"/>
+  <rect width="100%" height="100%" fill="url(#markdy-grid-major)"/>
+  
+
+  <!-- Diagram Title -->
+  <g class="markdy-title-layer">
+    <text x="48" y="44" class="markdy-svg-text" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif" font-size="22" font-weight="700" fill="#0f1c2e" dominant-baseline="central" letter-spacing="-0.02em">Figure 15 · JARVIS as built: the containers</text>
+  </g>
+  <!-- Main Scene Content -->
+  <g class="markdy-camera-layer">
+  <!-- Edge Connections -->
+  <g class="markdy-edges-layer">
+    <g id="edge-flow_1" class="markdy-edge" >
+      <path d="M 336 134 L 349 134 Q 362 134 362 147 L 362 348 Q 362 362 376 362 L 404 362" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="278.8" y="353" width="112.39999999999999" height="18" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="335" y="362" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">sign-in cookie</text>
+    </g>
+    <g id="edge-flow_2" class="markdy-edge" >
+      <path d="M 328 282 L 360 282 Q 374 282 374 296 L 374 340 Q 374 354 388 354 L 404 354" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="337.2" y="266" width="59.599999999999994" height="32" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="367" y="275.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">signed</text>
+      <text x="367" y="288.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">routes</text>
+    </g>
+    <g id="edge-flow_3" class="markdy-edge" >
+      <path d="M 312 462 L 328 462 Q 342 462 342 448 L 342 408 Q 342 394 356 394 L 404 394" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="323.9" y="385" width="66.19999999999999" height="18" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="357" y="394" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">webhook</text>
+    </g>
+    <g id="edge-flow_4" class="markdy-edge" >
+      <path d="M 336 606 L 372 606 Q 386 606 386 592 L 386 385 Q 386 376 395 376 L 404 376" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 6"  marker-end="url(#arrow-event)"/>
+      <!-- Edge Label -->
+      <rect x="343.4" y="597" width="99.19999999999999" height="18" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="393" y="606" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">signed ticks</text>
+    </g>
+    <g id="edge-flow_5" class="markdy-edge" >
+      <path d="M 684 362 L 698 362 Q 712 362 712 348 L 712 148 Q 712 134 726 134 L 756 134" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="688.2" y="125" width="59.599999999999994" height="18" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="718" y="134" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">a tier</text>
+    </g>
+    <g id="edge-flow_6" class="markdy-edge" >
+      <path d="M 684 354 L 714 354 Q 728 354 728 340 L 728 296 Q 728 282 742 282 L 756 282" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="695.5" y="338" width="53" height="32" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="722" y="347.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">at</text>
+      <text x="722" y="360.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">start</text>
+    </g>
+    <g id="edge-flow_7" class="markdy-edge" >
+      <path d="M 684 394 L 694 394 Q 704 394 704 404 L 704 448 Q 704 462 718 462 L 756 462" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="687.5" y="446" width="53" height="32" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="714" y="455.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">read,</text>
+      <text x="714" y="468.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">write</text>
+    </g>
+    <g id="edge-flow_8" class="markdy-edge" >
+      <path d="M 684 376 L 722 376 Q 736 376 736 390 L 736 457 A 5 5 0 0 1 736 467 L 736 596 Q 736 606 746 606 L 756 606" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="655" y="597" width="86" height="18" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="698" y="606" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">tool calls</text>
+    </g>
+    <g id="edge-flow_9" class="markdy-edge" >
+      <path d="M 1044 610 L 1057 610 Q 1070 610 1070 597 L 1070 212 Q 1070 198 1084 198 L 1112 198" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="1051" y="189" width="48" height="18" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="1075" y="198" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">REST</text>
+    </g>
+    <g id="edge-flow_10" class="markdy-edge" >
+      <path d="M 1044 602 L 1072 602 Q 1086 602 1086 588 L 1086 371 Q 1086 358 1099 358 L 1112 358" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="1037.2" y="349" width="59.599999999999994" height="18" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="1067" y="358" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">fenced</text>
+    </g>
+    <g id="edge-flow_11" class="markdy-edge" >
+      <path d="M 1044 630 L 1053 630 Q 1062 630 1062 621 L 1062 615 A 5 5 0 0 0 1062 605 L 1062 607 A 5 5 0 0 0 1062 597 L 1062 589 Q 1062 575 1076 575 L 1112 575" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"   marker-end="url(#arrow-request)"/>
+      <!-- Edge Label -->
+      <rect x="1061.3" y="614" width="79.4" height="32" rx="4" fill="#f6f8fc" stroke="#cbd5e1" stroke-width="1"/>
+      <text x="1101" y="623.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">HMAC</text>
+      <text x="1101" y="636.5" class="markdy-svg-mono" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="10.5" font-weight="500" fill="#0f172a" text-anchor="middle" dominant-baseline="central">both ways</text>
+    </g>
+  </g>
+  <!-- Node Cards -->
+  <g class="markdy-nodes-layer">
+    <g id="node-Console" transform="translate(48, 84)" >
+      <rect width="288" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="287" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#f59e0b" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2.5" />
+        <path d="M3 9h18" />
+        <path d="M7 7h.01M10 7h.01" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Console</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="198" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">web page: plain JS, strict CSP</text>
+    </g>
+    <g id="node-Phone" transform="translate(48, 252)" >
+      <rect width="280" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="279" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#f59e0b" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="7" y="3" width="10" height="18" rx="2.6" />
+        <path d="M10.5 18h3" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Phone app</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="185.6" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">Android TWA: Chrome draws it</text>
+    </g>
+    <g id="node-Telegram" transform="translate(48, 416)" >
+      <rect width="264" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="263" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#f59e0b" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2.5" />
+        <path d="M3 9h18" />
+        <path d="M7 7h.01M10 7h.01" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Telegram</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="173.20000000000002" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">chat and alerts by webhook</text>
+    </g>
+    <g id="node-Clock" transform="translate(48, 584)" >
+      <rect width="288" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="287" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#38bdf8" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 7.5V12l3.2 2" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Cloud Scheduler</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="198" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">brief clock, 5-minute watchdog</text>
+    </g>
+    <g id="node-Api" transform="translate(404, 336)" >
+      <rect width="280" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="279" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#38bdf8" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4.5" width="16" height="6.5" rx="2" />
+        <rect x="4" y="13" width="16" height="6.5" rx="2" />
+        <path d="M7.5 7.75h.01M7.5 16.25h.01" />
+        <path d="M11 7.75h6M11 16.25h6" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">JARVIS on Cloud Run</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="185.6" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">FastAPI, 1 instance, 512 MiB</text>
+    </g>
+    <g id="node-Brains" transform="translate(756, 84)" >
+      <rect width="288" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="287" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#60a5fa" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 16a4 4 0 0 1-.88-7.9 5 5 0 0 1 9.76-1.1A4 4 0 0 1 17 16H7z" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">AI brains</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="191.8" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">Claude; free Gemini, no tools</text>
+    </g>
+    <g id="node-Secrets" transform="translate(756, 252)" >
+      <rect width="256" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="255" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#fb7185" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8.5" cy="8.5" r="3.6" />
+        <path d="M11.1 11.1 19 19" />
+        <path d="M16.4 16.4l1.8 1.8M18.2 13.6l1.8 1.8" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Secret Manager</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="167" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">API keys and the root key</text>
+    </g>
+    <g id="node-Store" transform="translate(756, 416)" >
+      <rect width="280" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="279" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#22c55e" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5.5" rx="7" ry="3" />
+        <path d="M5 5.5v10c0 1.7 3.1 3 7 3s7-1.3 7-3v-10" />
+        <path d="M5 10.5c0 1.7 3.1 3 7 3s7-1.3 7-3" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Firestore</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="185.6" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">asia-south1, 126 collections</text>
+    </g>
+    <g id="node-Gateway" transform="translate(756, 584)" >
+      <rect width="288" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="287" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#60a5fa" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="5" cy="12" r="2" />
+        <circle cx="19" cy="6" r="2" />
+        <circle cx="19" cy="18" r="2" />
+        <path d="M7 12h4l5.5-5" />
+        <path d="M11 12l5.5 5" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Tool gateway</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="198" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">policy, cards, passkeys, audit</text>
+    </g>
+    <g id="node-Google" transform="translate(1112, 148)" >
+      <rect width="288" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="287" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#60a5fa" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 16a4 4 0 0 1-.88-7.9 5 5 0 0 1 9.76-1.1A4 4 0 0 1 17 16H7z" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Google APIs</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="198" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">Calendar, Gmail, Drive, speech</text>
+    </g>
+    <g id="node-Search" transform="translate(1112, 328)" >
+      <rect width="248" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="247" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#60a5fa" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="7" r="2" />
+        <circle cx="18" cy="7" r="2" />
+        <circle cx="12" cy="18" r="2" />
+        <path d="M8 8.5 11 16M16 8.5 13 16M8 7h8" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Tavily</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="43" width="154.6" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">web search, 900 credits</text>
+    </g>
+    <g id="node-Home" transform="translate(1112, 508)" >
+      <rect width="296" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="295" height="87" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <!-- Frameless Icon Glyph -->
+      <g transform="translate(16, 31) scale(1.0833333333333333)" fill="none" stroke="#60a5fa" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="5" cy="12" r="2" />
+        <circle cx="19" cy="6" r="2" />
+        <circle cx="19" cy="18" r="2" />
+        <path d="M7 12h4l5.5-5" />
+        <path d="M11 12l5.5 5" />
+      </g>
+      <!-- Label -->
+      <text x="54" y="37" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Laptop behind Tailscale Funnel</text>
+      <!-- Tech Badge -->
+      <rect x="54" y="49" width="148.4" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="57" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">home kit; laptop brain</text>
+    </g>
+  </g>
+  </g>
+
+  <!-- Watermark -->
+  <g class="markdy-watermark" transform="translate(1336, 686)">
+    <text class="markdy-svg-text" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif" font-size="10" font-weight="500" fill="#475569" opacity="0.7" dominant-baseline="central">Powered by Markdy</text>
+  </g>
+</svg>

@@ -257,6 +257,16 @@ async def test_audio_that_cannot_start_restores_everything(rig: Rig) -> None:
     assert rig.session.call_id is None
 
 
+async def test_an_unexpected_failure_after_the_switch_restores_everything(rig: Rig) -> None:
+    def broken() -> bool:
+        raise AttributeError("a COM wrapper changed")
+
+    rig.guard.mute_sounds = broken  # type: ignore[method-assign]
+    await rig.prepare()
+    assert not rig.guard.on_cable and rig.session.call_id is None
+    assert rig.out.of(p.DeskError)[-1].code == "audio_failed"
+
+
 async def test_laptop_mode_without_laptop_speech_is_refused(rig: Rig) -> None:
     await rig.prepare(mode="laptop")
     assert rig.guard.log == []

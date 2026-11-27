@@ -264,11 +264,11 @@ class DeskSession:
             self._out.send(self._state(check, extra=switched.problems, ready=False))
             self._error(msg.call_id, "mic_switch_failed", (*switched.problems, NOT_READY)[0])
             return
-        await self._blocking(self._guard.mute_sounds)
-        self._call = _Call(msg.call_id, msg.mode, tuple(msg.languages))
+        self._call = _Call(msg.call_id, msg.mode, tuple(msg.languages))  # release restores now
         try:
+            await self._blocking(self._guard.mute_sounds)
             self._audio.start(self._on_frame, self._on_marker, self._on_audio_error)
-        except Exception:  # noqa: BLE001 - any device failure: his microphone back first
+        except Exception:  # noqa: BLE001 - any failure here: his microphone back first
             log.exception("the call's audio could not start")
             await self._release(msg.call_id, notify=False)
             self._out.send(self._state(check, extra=(AUDIO_FAILED,), ready=False))

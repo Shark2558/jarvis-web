@@ -6,18 +6,24 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from jarvis.api.calls_handlers_cards import CardsApi
 from jarvis.calls.approvals import CallsService, GrantBook
+from jarvis.calls.booking import BookingCalendar
 from jarvis.calls.cards import CardBuilder, Estimator, TokenRate
 from jarvis.calls.limits import Limits
 from jarvis.calls.models import CallCard, LanguageResult, SpeechOption
 from jarvis.calls.prices import SpeechPrice
+from jarvis.calls.records import RecordKeeper, SealedBlobs
 from jarvis.calls.store import MemoryCallStore
+from jarvis.calls.templates import is_template
 from jarvis.calls.tools import calls_tools
 from jarvis.core.guardrails import ConfirmationGate, PendingAction
+from jarvis.keyring import Keyring
 from jarvis.tools.audit import AuditLog
 from jarvis.tools.gateway import Gateway
 from jarvis.tools.policy import Policy
 from jarvis.tools.registry import ToolRegistry
+from jarvis.vault.crypto import VaultCrypto
 
 UID = "u_0123456789abcdef"
 SCOPE = f"{UID}:calls"
@@ -90,9 +96,11 @@ class Rig:
     starter: Starter
 
 
-async def rig(*, passkey: bool = False, languages: tuple[str, ...] = ("en-IN", "ml-IN")) -> Rig:
+async def rig(
+    *, passkey: bool = False, languages: tuple[str, ...] = ("en-IN", "ml-IN"), uid: str = UID
+) -> Rig:
     store, clock, passkeys = MemoryCallStore(), Clock(), Passkeys(passkey)
-    await store.save_settings(UID, {"owner_first_name": "Sam"})
+    await store.save_settings(uid, {"owner_first_name": "Sam"})
     for lang in languages:
         await store.put_language_result(
             LanguageResult(
@@ -104,7 +112,7 @@ async def rig(*, passkey: bool = False, languages: tuple[str, ...] = ("en-IN", "
             )
         )
     audit = AuditLog()
-    builder = CardBuilder(store, Estimator(PRICES, RATE), is_template=lambda n: True)
+    builder = CardBuilder(store, Estimator(PRICES, RATE), is_template=is_template)
     limits = Limits(store, clock=clock)
     starter = Starter()
     service = CallsService(
@@ -126,6 +134,23 @@ async def rig(*, passkey: bool = False, languages: tuple[str, ...] = ("en-IN", "
     return Rig(store, service, gateway, audit, clock, passkeys, guard, starter)
 
 
-async def known(store: MemoryCallStore, number: str = NUMBER) -> None:
+async def known(store: MemoryCallStore, number: str = NUMBER, uid: str = UID) -> None:
     """Make `number` one JARVIS called before (a week ago)."""
-    await store.count_call(UID, (NOON_IST - timedelta(days=7)).date(), number)
+    await store.count_call(uid, (NOON_IST - timedelta(days=7)).date(), number)
+
+
+def api(r: Rig, *, parser: Any = None) -> CardsApi:
+    """The Calls panel's handlers over the rig (records sealed with a test key)."""
+    blobs = SealedBlobs(r.store.docs, VaultCrypto(Keyring(bytes(range(32)))), prefix="test_")
+    keeper = RecordKeeper(r.store, blobs, audit=r.audit, clock=r.clock)
+    return CardsApi(
+        store=r.store,
+        builder=r.service.builder,
+        service=r.service,
+        gateway=r.gateway,
+        keeper=keeper,
+        booking=BookingCalendar(r.gateway, r.store, audit=r.audit),
+        parser=parser,
+        passkeys=r.passkeys,
+        audit=r.audit,
+    )

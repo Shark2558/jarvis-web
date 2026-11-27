@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 15:15 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 03 · The eight layers, as built
 
@@ -140,7 +140,7 @@ section 3, where each part's files are listed in full.
 | Aspect | As built |
 |---|---|
 | Packages and modules | `config`, `logging`, `keyring`, `permissions`, `privacy`, `billing`, `vitals`, `health`, `selfwatch`, `hardening`, `buildbook`, `fixes`, `about` |
-| Components | C49 Configuration, C50 Logging, C51 Keyring, C52 Permissions and passkeys, C53 Privacy dashboard, C54 Costs in ₹, C55 Vitals, C56 Systems check, C57 Build book, C58 Delivery, C59 Evals and the visual gate, C66–C68 (R14) |
+| Components | C49 Configuration, C50 Logging, C51 Keyring, C52 Permissions and passkeys, C53 Privacy dashboard, C54 Costs in ₹, C55 Vitals, C56 Systems check, C57 Build book, C58 Delivery, C59 Evals and the visual gate, C67 Self-health watch (R14; C66 Backups is in L7, C68 Skill register in L5) |
 | Ports and interfaces | `src/jarvis/config.py:Settings`; `src/jarvis/logging.py:get_logger` (JSON logs with a trace id; the one file to swap for OpenTelemetry); `src/jarvis/privacy/ports.py:PrivacySource`, `PrivacyRegistry`; `src/jarvis/hardening/ports.py:HardeningPart`; `src/jarvis/buildbook/ports.py:BookSource`, `BookVault` |
 
 ## 3. The eleven skills
@@ -184,3 +184,4 @@ open by default; private reads stay off there unless switched on (C04).
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 15:15 IST | R6.4 | First edition: a request through the layers (Figure 17); for each of the eight layers and the cross-cutting concerns its packages, components, responsibilities, ports, key data and failure modes, No-AI and offline included; the 11 skills measured from the register (157 tools, risk tiers, No-AI counts, R3 tools, groups) | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the cross-cutting components list C67 only (C66 sits in L7, C68 in L5, as the guide's cards are placed) | 🛠 Mark XXV |

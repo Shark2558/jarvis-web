@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 15:40 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 04 · Data architecture
 
@@ -26,12 +26,23 @@ your one-time backup step) are gone within 7 days of a delete.
 ## 2. Firestore collections
 
 **How many.** `scripts/arch_inventory.py` finds **126** collection names in the code (27 Nov 2026).
-A wider search for this chapter found **5 more** that its patterns miss: `wardrobe_plans`,
-`wardrobe_cal` and `wardrobe_outlook` (named through `src/jarvis/wardrobe/styling/part.py:_sealed`)
-and `bills_told` and `birthdays_told` (a tuple assignment in `src/jarvis/helpers/today/part.py`).
-So the code names **131** collections. The coverage check passes all the same, because the guide
-happens to name all five; its inventory should learn both idioms (chapter 08, follow-up F2).
+A wider search found **5 more** that its patterns miss: `wardrobe_outlook`, `wardrobe_plans` and
+`wardrobe_cal`, named through a helper (`src/jarvis/wardrobe/styling/part.py:_sealed`, lines 50,
+53 and 54; also `src/jarvis/wardrobe/kept.py:PLANS_SINGLES`), and `bills_told` and
+`birthdays_told`, named in a tuple assignment (`src/jarvis/helpers/today/part.py`, line 36; also
+`src/jarvis/helpers/kinds.py`). So the code names **131** top-level collections, and the table
+below lists all 131 (checked name by name against the inventory on 27 Nov 2026). The coverage
+check passes all the same, because the guide happens to name all five. Teaching the inventory both
+idioms is not a docs-only change: the Build Book's fact pack uses the same patterns
+(`src/jarvis/buildbook/gen/facts_code.py:COLLECTION`) and `tests/test_r63_a_facts_real.py` holds
+the two counts equal, so both must change together (chapter 12, section 4; follow-up F2).
 Every name carries the prefix `jarvis_` (`src/jarvis/config.py` `firestore_prefix`).
+
+**Sub-collections.** Seven more names live under a parent document, listed for the restore drill
+in `src/jarvis/backup/walk_checks.py:KNOWN_SUBCOLLECTIONS` (pinned against the code by a test):
+`turns` (under `sessions`), `vault_chunks` (under `vault`), `chunks` and `pictures` (under
+`attachments`), `book_chunks` (under `book`), `items` (under `deleted_items`) and `days` (under
+`activity_days`); the Activity log's own days are `activity/{uid}/d{YYYYMMDD}`.
 
 "Sealed" names the keyring purpose that encrypts the content (section 3); "token key" means the
 root key directly (these predate the keyring). "Kept" is how long JARVIS keeps it; JARVIS's own
@@ -156,3 +167,4 @@ text to speak; Telegram stores bot chats, which are not end-to-end encrypted.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 15:40 IST | R6.4 | First edition: where data lives; the 131 collections by area (126 from the coverage inventory plus 5 its patterns miss) with what is sealed and kept; keys and sealing (26 cipher purposes), the vault; what is not sealed; retention, deletion and privacy rows; backups and the drill; what never leaves a device | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the five collections the inventory misses named with their lines; why fixing the inventory needs an app-code change too; the seven sub-collections added | 🛠 Mark XXV |

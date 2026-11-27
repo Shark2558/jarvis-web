@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 16:25 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 06 · Cost and capacity
 
@@ -93,12 +93,12 @@ of data, treat ₹100 a month as the low end, not a forecast (*unverified*).
 
 | Setting (`deploy/cloudrun.sh` step 6) | Value | Implication | What depends on it |
 |---|---|---|---|
-| `--max-instances` | 1 | Exactly one process holds all in-memory state: rate-limit buckets (`src/jarvis/api/ratelimit.py`), the per-conversation lock (`src/jarvis/core/brain.py:Brain._serialised`), the home nonce cache (`src/jarvis/home/signing.py:NonceCache`), the phone door's nonce store, each turn's offered tool set (`src/jarvis/skills/offer.py`). The Telegram webhook is registered with one connection to match. | Raising it needs those moved to Firestore or Redis first (the deploy script's own warning; chapter 12's proposed ADR-B) |
-| `--min-instances` | 0 | Scales to zero: ₹0 when idle; the first request after idle waits for a cold start (*unverified*: not measured) | The clock's calls wake it |
+| `--max-instances` | 1 | Exactly one process holds all in-memory state: rate-limit buckets (`src/jarvis/api/ratelimit.py`), the per-conversation lock (`src/jarvis/core/brain.py:Brain._serialised`), the home nonce cache (`src/jarvis/home/signing.py:NonceCache`), the phone door's nonce store, each turn's offered tool set (`src/jarvis/skills/offer.py`). The Telegram webhook is registered with one connection to match. | Raising it needs those moved to Firestore or Redis first (the deploy script's own warning; ADR-25 in chapter 08) |
+| `--min-instances` | 0 | Scales to zero: ₹0 when idle; the first request after idle waits for a cold start. *Unverified:* how long a cold start takes; nothing in the repository measures it | The clock's calls wake it; with the home kit linked, the bridge's heartbeat every 2 minutes keeps the instance warm (`src/jarvis/homebridge/heartbeat.py:DEFAULT_INTERVAL_S`; `docs/plans/r3-home-camera.md`) |
 | `--memory` | 512 MiB | The document extractor's child is capped at 200 MiB (`RLIMIT_AS`) so the server keeps room; one attachment message is at most 40 MB in total | `src/jarvis/documents/isolation.py`, `src/jarvis/documents/limits.py` |
 | `--cpu` | 1, allocated only during requests (default) | Work after a reply (learning) gets CPU only while a request runs, so it is swept at the start of the next request and by the tick | `src/jarvis/core/brain.py` module docstring |
 | `--timeout` | 300 s | A request, a tick included, has 5 minutes; the clock's own attempt deadlines are 180 s (brief) and 60 s (watchdog); each tick job has its own time box | `deploy/cloudrun.sh` step 8, `src/jarvis/ticks.py` |
-| Concurrency | not set (Cloud Run's default, 80; *unverified*) | Many requests share the one process; turns of one conversation are serialised, other conversations run side by side | `src/jarvis/core/brain.py:Brain._serialised` |
+| Concurrency | not set, so Cloud Run's own default applies (*unverified:* 80 is Google's documented default, not set or read in this repository) | Many requests share the one process; turns of one conversation are serialised, other conversations run side by side | `src/jarvis/core/brain.py:Brain._serialised` |
 | LLM timeout | 20 s (`JARVIS_LLM_TIMEOUT_S`) | A stuck model costs seconds before the router degrades a tier | `src/jarvis/config.py` `llm_timeout_s` |
 | Firestore free daily quota | 50,000 reads, 20,000 writes | The practical ceiling at ₹0: about 1–6 % of the free writes at 200 messages a day (slice 5 plan's estimate) | the guide, C09 |
 
@@ -111,3 +111,4 @@ changes; the call desk planned for R18 already needs a longer timeout (chapter 1
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 16:25 IST | R6.4 | First edition: the metering design (before and after each call, months, shared allowances, unpriced models, the rate, the ledger); the AI and voice price tables in ₹; free allowances, stops and caps; a typical month; Cloud Run's capacity settings and what each implies | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): cold start and concurrency marked unverified in plain words, with the bridge heartbeat that keeps the instance warm; proposed ADR-B is now ADR-25 | 🛠 Mark XXV |

@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 16:45 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 07 · Quality: tests, evals, CI and releases
 
@@ -16,14 +16,17 @@ Measured on 27 Nov 2026 at `83331a1` (Python 3.13 here; CI uses 3.11 and 3.12):
 
 | Suite | Files | Count | How counted | Runs in |
 |---|---|---|---|---|
-| Unit and store tests (`tests/`) | 939 Python files, 846 with tests | **19,530** collected items | `pytest --collect-only -q` | CI `test` (3.11 and 3.12) |
+| Unit and store tests (`tests/`) | 939 Python files (browser tests and fixtures aside), 846 with collected items (848 define test functions) | **19,530** collected items | `pytest --collect-only -q` | CI `test` (3.11 and 3.12) |
 | Firestore contract tests | 5 files marked `firestore_emulator` (part of the 19,530) | — | marker search | CI `firestore`, against the official emulator; `JARVIS_REQUIRE_EMULATOR=1` fails rather than skips |
 | Browser tests (`tests/browser/`) | 105 test files | **1,207** test functions | static count of `def test_` (not collected here: Playwright is not in this environment) | CI `browser`, 4 shards, headless Chromium (Playwright 1.63) |
 | Android `core` | JVM tests against the server's shared phone vectors | — | not counted | `.github/workflows/android.yml` (`build`, `controls`) |
 | All test functions, static | — | 12,237 `def test_` (browser included) before parametrisation | `grep` | — |
 
 **Where the unit tests point** (collected items grouped by the package a test file's name names;
-files named only for a release are grouped by release):
+files named only for a release are grouped by release). *Unverified:* the rule that put each file
+in a group was not recorded, and a re-count by file name alone on 27 Nov 2026 gives different
+group sizes (for example `voice` 428, `telegram` 266); the groups add up to the verified total of
+19,530, and only that total is a measured figure:
 
 | Group | Items | Group | Items |
 |---|---|---|---|
@@ -52,7 +55,7 @@ long); the floor is what CI enforces on every change.
 
 | Part | As built | Evidence |
 |---|---|---|
-| Suites | 47 folders under `evals/` (one per slice or release, plus `realrun`, the real-run harness: injection, privacy, budget, correctness); each has a negative control that must fail when its safety is switched off (for example `policy.TAINTED_WRITES_ASK`, `telegram.service.R3_REFUSAL`, `recall.gate.memory_allowed` are read at call time for exactly that) | `evals/run_all_mock.py` |
+| Suites | 46 folders under `evals/` (45 suites, one per slice or release, plus `realrun`, the real-run harness: injection, privacy, budget, correctness); each has a negative control that must fail when its safety is switched off (for example `policy.TAINTED_WRITES_ASK`, `telegram.service.R3_REFUSAL`, `recall.gate.memory_allowed` are read at call time for exactly that) | `evals/run_all_mock.py` |
 | Mock runs | `make eval-mock` runs every suite on the mock brain; in CI the suites run inside `pytest` through 32 `tests/test_evals_*.py` files, controls included | `Makefile`, `tests/test_evals_*.py` |
 | Phase 0 gate | pass rate ≥ 90 %, p95 turn ≤ 4,000 ms on balanced, mean cost ≤ US$0.01 a turn (≈ ₹0.95); `--mock` on every CI run (plumbing only), for real on `main` when the key is set (`eval-gate`, skipped with a notice otherwise; reports, never blocks the deploy) | `evals/phase0/run.py`, `.github/workflows/ci.yml` |
 | Owner's real runs | Cloud Shell, key read from Secret Manager into memory only, ₹ estimate and typed YES, stop at 1.5 times the estimate; `--all` adds memory, voice, brief and the Google tools | `deploy/run-real-evals.sh` |
@@ -80,8 +83,10 @@ All third-party actions are pinned by commit SHA; Dependabot proposes updates mo
 
 | Check | What it enforces | Scope | Gap |
 |---|---|---|---|
-| `scripts/check_doc_versions.py` | Line 1 is the version line; the last `##` section is `## Change log` with its five-column table | `docs/plans/*.md` and `docs/architecture/*.md`, **not sub-folders** | This document's chapters (`docs/architecture/design/`) are not checked by CI; they were checked by calling the same function on each file (chapter 00, "How this document was checked"). Extending `FOLDERS` is follow-up F3 in chapter 08. |
-| `scripts/arch_coverage.py` | The guide names every package, console module, Scheduler job, outside service and collection; complete cards and technology rows; the secret scan | the guide; the scan covers every file under `docs/architecture/` | Its collection patterns miss 5 names (chapter 04, section 2) |
+| `scripts/check_doc_versions.py` | Line 1 is the version line; the last `##` section is `## Change log` with its five-column table | `docs/plans/*.md`, `docs/architecture/*.md` and, since 27 Nov 2026, `docs/architecture/design/*.md` (no other sub-folder) | — (follow-up F3 closed; `tests/test_check_doc_versions.py` holds every ADD chapter in the check) |
+| `scripts/arch_coverage.py` | The guide names every package, console module, Scheduler job, outside service and collection; complete cards and technology rows; the secret scan | the guide; the scan covers every file under `docs/architecture/` | Its collection patterns miss 5 names (chapter 04, section 2); the fix also touches app code (chapter 12, section 4) |
+| `tests/test_llm_sdk_boundary.py` | No module outside `src/jarvis/llm/` imports an AI vendor's SDK (chapter 01, P7) | every module under `src/jarvis/` | Literal names only: an import built from a variable is out of its reach |
+| `scripts/docs/adds_traceability.py` | Chapter 10 from the requirements workbook; reports a reviewed pointer that no longer fits | the workbook's Requirements sheet; the repository | The workbook is kept outside the repository, so CI cannot run it; the Workshop runs it at each release |
 | `scripts/markdy_export.py` | Diagram privacy, lint, showcase verification, exports current | `docs/architecture/diagrams/*.markdy` | `--check` trusts `exports.json` (CI has no browser) |
 | `python -m jarvis.buildbook.gen pages --check` | Every indexed Book page written, current (stamped against the code it cites) and passing its checks | `src/jarvis/buildbook/book/pages/` | — |
 
@@ -118,3 +123,4 @@ release. Since R6.3.1 JARVIS makes **no AI call** for it (`docs/plans/r6-3-1-boo
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 16:45 IST | R6.4 | First edition: test counts measured (19,530 collected unit items, 1,207 browser test functions, 5 emulator files) and grouped; the 95 % coverage floor; evals, controls and the Phase 0 gate; every CI job and what the deploy waits for; the documentation checks and their gaps; the Build Book's build-time generation; the release process and versioning | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the eval folder count corrected to 46; the test-file count's two figures explained; the per-group test counts marked unverified; the version check now covers this document (F3 closed); the SDK boundary test and the traceability generator added to the documentation checks | 🛠 Mark XXV |

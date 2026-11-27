@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 14:25 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 01 · Architecture principles
 
@@ -20,7 +20,7 @@ plans; the citations below were checked against `main` at `83331a1` on 27 Nov 20
 | P4 | Evals before ship | `evals/`, `tests/test_evals_*.py`, `.github/workflows/ci.yml` (`test`, `eval-gate`) | each suite's negative control must fail |
 | P5 | Free first | `src/jarvis/billing/service.py:Billing.ensure_allowed`, `src/jarvis/quota/ledger.py:Sku.cap`, `src/jarvis/web/allowance.py:MONTHLY_CREDITS` | `evals/budget` |
 | P6 | Never change the console's look | `tests/browser/test_ui_audit.py` (the visual gate), `docs/plans/r7-mobile.md` D0 | the `browser` CI job |
-| P7 | No vendor SDK outside `jarvis.llm` | convention, `CLAUDE.md` | review (no automated check for the whole tree) |
+| P7 | No vendor SDK outside `jarvis.llm` | `CLAUDE.md`; `tests/test_llm_sdk_boundary.py` | `tests/test_llm_sdk_boundary.py` (a syntax-tree scan of all of `src/jarvis/`) |
 | P8 | Tool content is untrusted data | `src/jarvis/tools/gateway.py:GatewayResult.for_model`, `src/jarvis/tools/external.py:wrap_external`, `src/jarvis/tools/taint.py` | `evals/slice6`, `evals/web`, `evals/trust` |
 | P9 | Append-only audit of every tool call | `src/jarvis/tools/audit.py`, `src/jarvis/storage/audit.py:DocAuditLog.append` | `tests/test_storage.py` (tampering, deletion, concurrent appends never fork) |
 
@@ -101,7 +101,7 @@ negative control that must fail when the safety it tests is switched off.
 
 | Where | What it does |
 |---|---|
-| `evals/` (47 folders, one per suite plus the real-run harness) and `evals/run_all_mock.py` | Every suite against the mock brain (`make eval-mock`). |
+| `evals/` (46 folders: 45 suites plus `realrun`, the real-run harness) and `evals/run_all_mock.py` | Every suite against the mock brain (`make eval-mock`). |
 | `tests/test_evals_*.py` (32 files) | Run the suites' mock mode inside `pytest`, controls included, so CI's `test` job runs them. |
 | `evals/phase0/run.py` | The real-model gate: pass rate ≥ 90 %, p95 turn ≤ 4,000 ms, mean cost ≤ US$0.01 a turn (≈ ₹0.95). CI runs it with `--mock` on every change and for real on `main` when a key is set (`eval-gate`). |
 | `deploy/run-real-evals.sh` | The owner's real runs: a ₹ estimate first, a typed YES, a stop at 1.5 times the estimate. |
@@ -153,9 +153,13 @@ design: `google-cloud-firestore` only in `src/jarvis/storage/firestore_docs.py` 
 walk helpers beside it), and `google-auth` for the service account's credentials
 (`src/jarvis/voice/adc.py`; inside a function in `src/jarvis/api/tryon_wiring.py`).
 
-**Weaker than it sounds.** No lint rule or test enforces this for the whole tree; ruff's selected
-rules (`pyproject.toml`, `E F I B UP`) have no import ban. `tests/test_r63_static.py` checks only
-the files on its own list. A tree-wide check is follow-up F1 in chapter 08.
+**Checked by a test since 27 Nov 2026.** `tests/test_llm_sdk_boundary.py` reads every module
+under `src/jarvis/` as a syntax tree and fails on an import of an AI vendor's SDK or wrapper
+(`anthropic`, `openai`, `google.genai`, `vertexai`, `langchain` and others; plain, `from`,
+function-local, `TYPE_CHECKING` and literal `importlib` imports) outside `src/jarvis/llm/`. It
+passes: the one such import is `anthropic` in `src/jarvis/llm/anthropic_provider.py`. ruff's rules
+(`pyproject.toml`, `E F I B UP`) still have no import ban; the test is the check (follow-up F1,
+closed).
 
 ## P8 · Content from tools is untrusted data
 
@@ -192,3 +196,4 @@ other unauthenticated failures are logged, never audited, on purpose (`src/jarvi
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:25 IST | R6.4 | First edition: nine principles, each with its enforcement points (file and symbol), its proof and where it is weaker than it sounds; the three risk classes as built and the absent R0 | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): P7 is now enforced by `tests/test_llm_sdk_boundary.py` (follow-up F1 closed); the eval folder count corrected to 46 (45 suites plus `realrun`) | 🛠 Mark XXV |

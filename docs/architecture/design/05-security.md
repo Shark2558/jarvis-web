@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 16:05 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 05 · Security architecture
 
@@ -24,7 +24,7 @@ Figure 5 (`../diagrams/05-approvals-passkeys.png`) shows a card and a passkey.
 | The phone app's own requests | `X-Jarvis-Phone` header: ECDSA P-256 / SHA-256 over a fixed signing string, key generated in the phone's secure hardware at linking (an 8-character code, 10 minutes, once, 5 tries); checks in order: route, no query, no cookie, header shape, flood (60 a minute per client), linked device, clock skew, body cap, nonce, signature, rate (30 a minute per phone) | `src/jarvis/phone/door.py`, `src/jarvis/mobile/contract.py` | Bare 401 (404 for a route, 429 for flood or rate), logged by check name, never audited |
 | The app lock | After 5 minutes away the phone app asks for the passkey; bound to the phone by a signed `r7_dev` cookie | `src/jarvis/phone/applock.py` | 503 on an unreadable check (never opens) |
 | Cloud Scheduler | A Google-signed OIDC token: RS256 only, Google's JWKS, issuer, audience equal to the exact URL being called, e-mail equal to `jarvis-scheduler`'s and verified, 60 s skew | `src/jarvis/api/scheduler_auth.py` | The same bare 401 for every failure |
-| Telegram | `X-Telegram-Bot-Api-Secret-Token`, constant-time compare; then the paired owner's user and chat id (pairing by an 8-character code, 10 minutes) | `src/jarvis/api/telegram.py`, `src/jarvis/telegram/pairing.py` | Bare 401; anyone else gets no reply and is audited |
+| Telegram | `X-Telegram-Bot-Api-Secret-Token`, constant-time compare; then the paired owner's user and chat id (pairing by an 8-character code, 10 minutes) | `src/jarvis/api/telegram.py`, `src/jarvis/telegram/pairing.py` | Bare 401; anyone else gets no reply and is audited as `telegram_rejected` (at most 20 an hour, then logged only: `src/jarvis/telegram/service.py:REJECTED_AUDIT_PER_HOUR`) |
 | The home bridge (both directions) | `X-Jarvis-Home` header: HMAC-SHA256 with direction-specific keys derived from a 32-byte link seed (`jarvis/home/up/v1`, `jarvis/home/down/v1`), a 16-byte nonce remembered 5 minutes, a ±60 s window; responses signed and bound to the request | `src/jarvis/home/signing.py` (shared by cloud and bridge) | Refused before any parsing |
 | The laptop brain | A bearer key of at least 16 characters at the Caddy gate; only `https://<machine>.<tailnet>.ts.net` addresses are accepted | `deploy/local-brain/Caddyfile`, `src/jarvis/offline/config.py` | Caddy refuses; JARVIS reports "laptop didn't answer" |
 | GitHub Actions (deploy) | Workload Identity Federation: this repository's numeric id, `refs/heads/main`, a push or manual run, `ci.yml` on `main`, a GitHub-hosted runner; impersonates `jarvis-deployer` | `deploy/cloudrun.sh:setup_autodeploy` | Google refuses the token exchange |
@@ -98,7 +98,7 @@ the room may have spoken), except for tools marked `spoken_ok` when no outside c
 - **Storage.** Only in Secret Manager, one grant per secret for `jarvis-run` (chapter 02, 2.3);
   GitHub holds no Google key (Workload Identity Federation). The one GitHub secret is the optional
   `JARVIS_ANTHROPIC_API_KEY` for the main-only eval gate (`.github/workflows/ci.yml`).
-- **In the process.** Held as `SecretStr` (`src/jarvis/config.py`, 13 fields); start-up refuses a
+- **In the process.** Held as `SecretStr` (`src/jarvis/config.py`, 11 fields); start-up refuses a
   session secret under 32 characters and a malformed token key.
 - **Never logged.** Tool errors reach the model and the audit as a fixed sentence plus a redacted
   detail (`src/jarvis/tools/gateway.py:_safe_detail` removes bearer tokens, `sk-` keys and
@@ -157,7 +157,7 @@ or name a top-level file.
 1. **One instance holds security state in memory**: the rate limiter, the per-conversation lock,
    and the home and phone nonce stores (`deploy/cloudrun.sh` header comment;
    `src/jarvis/home/signing.py:NonceCache`). A second instance would weaken replay protection and
-   rate limits until that state moves out (chapter 12's proposed ADR-B).
+   rate limits until that state moves out (ADR-25 in chapter 08).
 2. **No key rotation tool** for `jarvis-token-key`; envelopes carry `KEY_ID` so one can be added.
 3. **Unsealed personal data** (T11).
 4. **Passkeys are opt-in**; until one is added, R3 needs only a signed-in Approve.
@@ -165,7 +165,8 @@ or name a top-level file.
    anchor, which the same administrator could also delete.
 6. **The try-on role** lets `jarvis-run` send prompts to any Agent Platform model (accepted in
    R13.1; the guide's C73), watched by JARVIS's cap and the `jarvis-tryon` budget alert.
-7. **No tree-wide check** that AI vendor SDKs stay inside `jarvis.llm` (chapter 01, P7).
+7. **Closed on 27 Nov 2026:** the tree-wide check that AI vendor SDKs stay inside `jarvis.llm`
+   is `tests/test_llm_sdk_boundary.py` (chapter 01, P7). It passes.
 8. **The owner's Google account is the root of trust** for sign-in, the Google tools and the Cloud
    project; its own 2-step sign-in matters most.
 9. **The wake-word models are CC BY-NC-SA 4.0** (personal, non-commercial use only); a licence
@@ -176,3 +177,4 @@ or name a top-level file.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 16:05 IST | R6.4 | First edition: authentication for every caller (owner, re-sign-in, passkeys, token, phone door, app lock, scheduler, Telegram, home bridge, laptop brain, deploy); the risk tiers, policy, confirmation tokens, taint and provenance, rate limits and caps; secrets; audit; browser hardening; a 15-row threat model; nine residual risks | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11; Telegram's audit of strangers capped at 20 an hour; residual risk 7 closed by `tests/test_llm_sdk_boundary.py`; proposed ADR-B is now ADR-25 | 🛠 Mark XXV |

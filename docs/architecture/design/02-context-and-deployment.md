@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 14:50 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 02 · System context and deployment
 
@@ -46,7 +46,7 @@ written into `src/jarvis/BUILD_DATE`). Deployed by `deploy/cloudrun.sh` step 6 a
 | Instances | `--min-instances 0 --max-instances 1` | `deploy/cloudrun.sh` step 6 | Scales to zero when idle; never two copies (chapter 06, section 4) |
 | Size | `--memory 512Mi --cpu 1` | same | The document extractor's child process is capped at 200 MiB to leave room (`src/jarvis/documents/isolation.py:MEMORY_LIMIT_BYTES`) |
 | Request timeout | `--timeout 300` (seconds) | same | The longest request, a tick included, has 5 minutes |
-| Concurrency | not set | same | Cloud Run's default applies (80 requests per instance; *unverified*: not set or read by any script) |
+| Concurrency | not set | same | Cloud Run's own default applies. *Unverified:* that default (80 requests per instance) is Google's, not set or read anywhere in this repository |
 | CPU allocation | not set | same | The default: CPU only while a request runs; background learning is swept at the start of the next request (`src/jarvis/core/brain.py` module docstring) |
 | Ingress | `--allow-unauthenticated` | same | The URL is public; JARVIS does its own sign-in on every route (section 4) |
 | Identity | `--service-account jarvis-run` | same | No key file anywhere; Google libraries use the service account |
@@ -73,7 +73,10 @@ root of the keyring, 32 random bytes made once), `jarvis-tavily-key`, `jarvis-go
 `jarvis-telegram-bot-token`, `jarvis-telegram-webhook-secret`. The optional ones (web search, Maps
 and YouTube, Telegram) are left unmounted if their grant fails; every other grant failing stops the
 deploy (`grant_failed`). Secrets reach the process as environment variables and are held as
-`SecretStr` in `src/jarvis/config.py` (13 fields).
+`SecretStr` in `src/jarvis/config.py` (11 fields, one per secret: `api_token`,
+`google_client_secret`, `session_secret`, `anthropic_api_key`, `gemini_api_key`,
+`openai_compat_api_key`, `token_key`, `tavily_api_key`, `telegram_bot_token`,
+`telegram_webhook_secret`, `google_api_key`).
 
 ### 2.4 Service accounts
 
@@ -143,7 +146,9 @@ compare) gets a bare 401; only the paired owner's user and chat get a reply
 Firestore, IAM, IAM Credentials and STS, Calendar, Gmail and Tasks; then, each in its own command
 that may fail without stopping the deploy: Text-to-Speech and Speech-to-Text, Drive (the Drive
 feature is on only when this run enabled it), People (contacts), the Photos Picker, and the Agent
-Platform (See it on me). Step 8 enables Cloud Scheduler; the budget alert enables Billing Budgets.
+Platform (See it on me). Step 3, when the owner gives JARVIS Maps and YouTube, enables Places,
+Routes, YouTube Data and API Keys (`MAPS_APIS`, `setup_maps_key`; a failure only leaves Maps off).
+Step 8 enables Cloud Scheduler; the budget alert enables Billing Budgets.
 
 ### 2.10 GitHub CI/CD
 
@@ -177,7 +182,13 @@ canary and deletes it (`src/jarvis/backup/`). Chapter 04, section 6 covers what 
 | `prod` | Cloud Run | Firestore | Google sign-in (token sign-in refused) | as configured |
 
 There is no staging service; the no-traffic `candidate` revision plays that part for one health
-check. `render.yaml` is left from the first hosting on Render (slice 2) and is not used.
+check. `render.yaml` is the Render blueprint of slice 2 (`docs/plans/phase2-slice2-web-console-auth.md`);
+`README.md` still lists it as the alternative host, and neither CI nor any deploy script uses it.
+The Cloud Run script was added 17 minutes after the Render blueprint, on 31 Oct 2026 (UTC),
+before slice 3's Gemini brain (GitHub commits `3e73d81`, `dc93f81`, `db109f3`, `b7037c5`; this
+clone's history is shallow and starts on 18 Nov 2026).
+*Unverified:* why hosting moved from Render to Cloud Run; no commit message, plan or deploy file
+says.
 
 ## 3. Trust boundaries
 
@@ -204,3 +215,4 @@ its label is what the receiving side checks.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:50 IST | R6.4 | First edition: system context, Cloud Run settings and what they imply, Firestore, Secret Manager, service accounts, the two Scheduler jobs, the console and phone app, the home kit, Telegram, the Google APIs, CI/CD, backups, environments, nine trust boundaries; Figures 15 and 16 | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11, named; step 3's Maps and YouTube APIs added; `render.yaml`'s status and the date of the move to Cloud Run from GitHub's history, the reason marked unverified; the concurrency default marked unverified in plain words | 🛠 Mark XXV |

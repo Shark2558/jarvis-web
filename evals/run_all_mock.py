@@ -130,6 +130,14 @@ SUITES = [
     # R6.3: "The Build Book": the facts and tour parts; R6.3.1: the authored pages compile and pass
     # the checks (the runtime writer's parts went with it); each part's control must fail it
     ("r6_3 (gated)", [sys.executable, str(HERE / "r6_3" / "run.py"), "--mock"], True),
+    # R18 B: "Calls from your laptop" -- the calls language check (plan 5.3): scoring, the phone
+    # line, the selection and the check run, all scripted (no network, no paid speech); each
+    # suite's negative control must fail it
+    (
+        "calls_language (gated)",
+        [sys.executable, str(HERE / "calls_language" / "run.py"), "--mock"],
+        True,
+    ),
 ]
 
 

@@ -16,6 +16,8 @@ deploy
 !deploy/home
 deploy/home/bridge-data
 deploy/home/bridge.env
+# R18: the call desk's kit that GET /v1/calls/desk/kit zips
+!deploy/calldesk
 .env
 *.md
 !README.md

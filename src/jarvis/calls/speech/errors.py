@@ -24,7 +24,14 @@ from typing import Literal
 from jarvis.calls.ports import SpeechUnavailable
 
 Reason = Literal[
-    "not_configured", "off", "auth", "upstream_error", "timeout", "budget", "bad_answer"
+    "not_configured",
+    "off",
+    "auth",
+    "upstream_error",
+    "timeout",
+    "budget",
+    "meter_unreadable",
+    "bad_answer",
 ]
 
 _LABEL = {
@@ -41,6 +48,7 @@ _WHY: dict[str, str] = {
     "upstream_error": "could not answer just now; try again shortly",
     "timeout": "took too long to answer",
     "budget": "would cost money and this month's limit does not allow it",
+    "meter_unreadable": "is not used: its usage can't be counted just now",
     "bad_answer": "sent an answer JARVIS could not read",
 }
 

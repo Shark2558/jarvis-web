@@ -161,6 +161,67 @@ def test_the_manifest_pins_or_leaves_out_every_slot_with_a_reason() -> None:
     assert raw["kit_version"] == "1.0.0"
 
 
+WHISPER = (p.EngineSlot.WHISPER_SMALL, p.EngineSlot.WHISPER_MEDIUM)
+WORKSHOP_OUT = {  # left out by the Workshop's decision, whatever their hashes
+    p.EngineSlot.KOKORO: "GPL-3.0",
+    p.EngineSlot.PIPER: "GPL-3.0",
+    p.EngineSlot.INDIC_CONFORMER: "PyTorch",
+    p.EngineSlot.INDIC_PARLER: "PyTorch",
+}
+UNHASHED = ("config.json", "tokenizer.json", "vocabulary.txt")  # plain git files on the Hub
+# model.bin of each Whisper slot, checked on two Hugging Face pages (API tree's lfs.oid and the
+# raw LFS pointer) at the revision; the README keeps them for whoever pins the slot.
+WHISPER_MODEL_BIN = {
+    "whisper-small": (
+        "536b0662742c02347bc0e980a01041f333bce120",
+        "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+        "483,546,902",
+    ),
+    "whisper-medium": (
+        "08e178d48790749d25932bbc082711ddcfdfbc4f",
+        "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+        "1,527,906,378",
+    ),
+}
+MODEL_ROW = r"^\| `([a-z-]+)` \| [^|]+ \| ([^|]+) \| (Pinned|Left out) \|"
+HASH_ROW = (
+    r"^\| `(whisper-[a-z]+)` \| `([0-9a-f]{40})` \| `model\.bin` \| `([0-9a-f]{64})` \|"
+    r" ([0-9,]+) \|"
+)
+
+
+def test_english_hearing_waits_only_for_the_hashes_hugging_face_does_not_publish() -> None:
+    by_slot = {m.slot: m for m in load_manifest(KIT / "models.json").left_out}
+    for slot in WHISPER:
+        entry = by_slot[slot]
+        assert entry.licence == "MIT", slot
+        assert entry.source == f"https://huggingface.co/Systran/faster-{slot.value}"
+        for words in (*UNHASHED, "SHA-256", "SHA-1"):
+            assert words in entry.why, (slot, words)
+
+
+def test_the_workshops_left_out_engines_keep_their_reason() -> None:
+    by_slot = {m.slot: m for m in load_manifest(KIT / "models.json").left_out}
+    for slot, reason in WORKSHOP_OUT.items():
+        assert "Workshop decision" in by_slot[slot].why and reason in by_slot[slot].why, slot
+
+
+def test_the_readmes_model_table_matches_the_manifest() -> None:
+    manifest = load_manifest(KIT / "models.json")
+    rows = {m.group(1): (m.group(2), m.group(3)) for m in re.finditer(MODEL_ROW, README, re.M)}
+    assert {slot: status for slot, (_, status) in rows.items()} == {
+        **{m.slot.value: "Pinned" for m in manifest.models},
+        **{m.slot.value: "Left out" for m in manifest.left_out},
+    }
+    for m in (*manifest.models, *manifest.left_out):
+        assert rows[m.slot.value][0] == (m.licence or "Not checked"), m.slot
+
+
+def test_the_readme_keeps_the_double_checked_whisper_hashes_for_the_next_pin() -> None:
+    found = {m[0]: m[1:] for m in re.findall(HASH_ROW, README, re.M)}
+    assert found == WHISPER_MODEL_BIN
+
+
 # ---- the Windows scripts -------------------------------------------------------------------------
 def test_the_installer_installs_only_hash_pinned_wheels_as_the_owner() -> None:
     code = _code(INSTALL)

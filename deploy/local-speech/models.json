@@ -7,37 +7,37 @@
       "slot": "whisper-small",
       "source": "https://huggingface.co/Systran/faster-whisper-small",
       "licence": "MIT",
-      "why": "The SHA-256 of its files (model.bin, config.json, tokenizer.json, vocabulary.txt) could not be confirmed from Hugging Face when the kit was built; nothing unpinned is ever downloaded."
+      "why": "Licence MIT (model card) and model.bin's SHA-256 at revision 536b066 are confirmed (README), but Hugging Face publishes no SHA-256 for its config.json, tokenizer.json and vocabulary.txt (plain git files, SHA-1 only), and the kit downloads only SHA-256-pinned files."
     },
     {
       "slot": "whisper-medium",
       "source": "https://huggingface.co/Systran/faster-whisper-medium",
-      "licence": null,
-      "why": "Its licence and the SHA-256 of its files could not be confirmed from Hugging Face when the kit was built."
+      "licence": "MIT",
+      "why": "Licence MIT (model card) and model.bin's SHA-256 at revision 08e178d are confirmed (README), but Hugging Face publishes no SHA-256 for its config.json, tokenizer.json and vocabulary.txt (plain git files, SHA-1 only), and the kit downloads only SHA-256-pinned files."
     },
     {
       "slot": "kokoro",
       "source": "https://huggingface.co/hexgrad/Kokoro-82M",
       "licence": null,
-      "why": "Its ONNX model and voices files could not be pinned (SHA-256 unconfirmed), and its runtime's phonemiser (phonemizer, espeak-ng) is GPL-3.0."
+      "why": "Left out by Workshop decision: its runtime's phonemiser (phonemizer with espeak-ng) is GPL-3.0. Its licence and file hashes were not checked."
     },
     {
       "slot": "piper",
       "source": "https://huggingface.co/rhasspy/piper-voices",
       "licence": null,
-      "why": "piper-tts 1.3 and later is GPL-3.0-or-later, and each voice's licence and SHA-256 must be checked one by one."
+      "why": "Left out by Workshop decision: piper-tts 1.3 and later is GPL-3.0-or-later. Its voices' licences and file hashes were not checked."
     },
     {
       "slot": "indic-conformer",
       "source": "https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual",
       "licence": null,
-      "why": "Its licence, files and model code (loaded with trust_remote_code) and its runtime (PyTorch, torchaudio, transformers) could not be pinned with confirmed SHA-256."
+      "why": "Left out by Workshop decision: it needs PyTorch (with torchaudio and transformers) and its own model code (trust_remote_code). Its licence and file hashes were not checked."
     },
     {
       "slot": "indic-parler",
       "source": "https://huggingface.co/ai4bharat/indic-parler-tts",
       "licence": null,
-      "why": "Its licence, files, description tokenizer and runtime (PyTorch, transformers, parler-tts) could not be pinned with confirmed SHA-256."
+      "why": "Left out by Workshop decision: it needs PyTorch (with transformers and parler-tts). Its licence and file hashes were not checked."
     }
   ]
 }

@@ -125,16 +125,18 @@ def shoot(browser, only: str | None) -> int:
 def sheet(browser) -> None:
     sections = []
     for num, page in ((1, "camera-setup"), (2, "desk-coach"), (3, "workout-phone"), (4, "activity-timeline")):
-        cells = []
+        rows = []
         for n, p, view, states in MATRIX:
             if p != page:
                 continue
+            cell = lambda s, theme, tag: (f'<figure class="{view}"><img src="png/{name(n, p, view, s, theme)}" alt="">'
+                                          f'<figcaption><b>{STATE_WORDS[s]}</b>{" \u00b7 " + theme if tag else ""}</figcaption></figure>')
+            if view == "phone":  # phones are narrow: both themes on one row
+                rows.append(f'<div class="row"><p class="lbl">phone</p>{"".join(cell(s, th, True) for th in THEMES for s in states)}</div>')
+                continue
             for theme in THEMES:
-                for s in states:
-                    f = name(n, p, view, s, theme)
-                    cells.append(f'<figure class="{view}"><img src="png/{f}" alt=""><figcaption><b>{STATE_WORDS[s]}</b>'
-                                 f'<span>{view} · {theme}</span></figcaption></figure>')
-        sections.append(f'<section><h2><span>{num}</span>{TITLES[page]}</h2><div class="grid">{"".join(cells)}</div></section>')
+                rows.append(f'<div class="row"><p class="lbl">{theme}<br>{view}</p>{"".join(cell(s, theme, False) for s in states)}</div>')
+        sections.append(f'<section><h2><span>{num}</span>{TITLES[page]}</h2>{"".join(rows)}</section>')
     html = ("<!doctype html><html><head><meta charset='utf-8'><style>"
             "body{margin:0;padding:36px 40px 40px;background:#04070D;color:#E6EDF6;font:15px/1.4 system-ui,sans-serif;width:2480px}"
             "h1{margin:0 0 4px;font:600 26px/1.2 ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase}"
@@ -142,13 +144,12 @@ def sheet(browser) -> None:
             "section{margin:0 0 30px;padding:18px 18px 8px;border:1px solid #1d3550;border-radius:10px;background:#0A111B}"
             "h2{display:flex;align-items:center;gap:12px;margin:0 0 14px;font:600 18px/1 ui-monospace,monospace;letter-spacing:.16em;text-transform:uppercase;color:#2190FF}"
             "h2 span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;border:1px solid #2190FF}"
-            ".grid{display:flex;flex-wrap:wrap;gap:14px 14px;align-items:flex-start}"
-            "figure{margin:0 0 10px;display:flex;flex-direction:column;gap:6px}"
-            "figure.laptop img{width:392px;height:220.5px}figure.phone img{width:150px;height:324.6px}"
+            ".row{display:flex;gap:12px;align-items:flex-start;margin:0 0 12px}.lbl{flex:none;width:64px;margin:6px 0 0;color:#97A4B8;font:12px/1.5 ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}"
+            "figure{margin:0;display:flex;flex-direction:column;gap:6px}"
+            "figure.laptop img{width:320px;height:180px}figure.phone img{width:150px;height:324.6px}"
             "img{display:block;border:1px solid #1d3550;border-radius:6px}"
-            "figcaption{display:flex;flex-direction:column;gap:1px;max-width:392px}figcaption b{font-weight:600;font-size:14px}"
-            "figcaption span{color:#97A4B8;font:12px/1.3 ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase}"
-            "</style></head><body><h1>JARVIS R8 / R8.1 · new screens · mockups</h1>"
+            "figcaption{max-width:320px;font-size:13px;color:#AEBACB}figcaption b{font-weight:600;font-size:14px}figure.phone figcaption{max-width:150px}"
+                        "</style></head><body><h1>JARVIS R8 / R8.1 · new screens · mockups</h1>"
             "<p class='v'>Draft for the owner's approval · 28 Nov 2026 · the console's own look (Workshop theme), Night and Day · laptop 1920 × 1080, phone 390 × 844</p>"
             + "".join(sections) + "</body></html>")
     tmp = MOCKS / "contact-sheet.src.html"

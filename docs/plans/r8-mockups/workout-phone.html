@@ -187,7 +187,7 @@ html[data-surface="night"] .r8-steps b{font:400 12.5px/1.3 var(--tech);letter-sp
 .r8-viewcap{position:absolute;left:10px;right:10px;bottom:8px;text-align:center;font:400 10.5px/1.2 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
 .r8-view .r8-viewmid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;text-align:center}
 .r8-viewmid p{margin:0;font-size:14px;line-height:1.45;color:var(--ink-2)}
-.r8-viewmid .r8-lead{font-size:15px}
+.r8-viewmid .r8-lead{font-size:15px;color:var(--ink)}
 .r8-nums{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:8px;margin-top:12px}
 .r8-num{min-width:0;padding:8px 10px 9px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
 .r8-num .k{display:block}
@@ -476,7 +476,7 @@ html[data-motion="off"] .r8-tg.lit,html[data-motion="off"] .r8-snow{transition:n
   function session() {
     if (st === 'off') {
       return view('<div class="r8-viewmid"><p class="r8-lead">Camera off. Counting is paused.</p><p>Your 8 reps so far are kept.</p>' +
-        `${btn('Start the camera', 'primary', ' style="height:48px;padding:0 18px"')}<p style="font-size:12.5px">Only a tap starts it again.</p></div>`, 'Camera off') +
+        '<p>Tap Resume to start the camera again. Only a tap starts it.</p></div>', 'Camera off') +
         nums('8', 2, '01:12', true) + tempo(false) + ctl(big('Resume', 'primary', 'play'), big('Stop', 'danger', 'stop')) + SAFE + promise();
     }
     if (st === 'error') {

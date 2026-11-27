@@ -283,7 +283,7 @@ async def test_takeover_mid_sentence_hands_over_and_keeps_the_transcript() -> No
     s.on_vad(False)
     for _ in range(100):
         await asyncio.sleep(0)
-    assert s._jarvis_speaking
+    assert s.voice.speaking
     take = asyncio.create_task(s.takeover())
     for _ in range(20):
         await asyncio.sleep(0)
@@ -497,7 +497,7 @@ async def test_barge_in_stops_jarvis() -> None:
     gate = asyncio.Event()
     r.speech.voice_.gate = gate
     task = await connect(r, s)
-    assert s._jarvis_speaking  # the opening line
+    assert s.voice.speaking  # the opening line
     s.on_vad(True)
     await asyncio.sleep(0)
     assert "stop_speaking" in r.desk.types()

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from jarvis.calls.brain import CallBrief, Line, pick_call_brain
 from jarvis.calls.captions import english_of
+from jarvis.calls.models import CallState, EndReason
 from jarvis.llm.base import ChatMessage, Completion, Effort, LLMError, Role
 from jarvis.llm.brains import BrainRegistry
 from jarvis.llm.router import ModelTier
@@ -58,6 +59,37 @@ SYSTEM = (
     '{"summary": "2-4 sentences: who, what was agreed, what happens next", '
     '"agreed": ["..."], "next_steps": ["..."], "needs_you": ["anything the owner must do"]}.'
 )
+
+
+_OUTCOMES: dict[EndReason, str] = {
+    EndReason.OWNER_HANGUP: "hung_up",
+    EndReason.CAP_INR: "cap_rupees",
+    EndReason.CAP_MINUTES: "cap_minutes",
+    EndReason.NO_ANSWER: "no_answer",
+    EndReason.NOT_READY: "desk_not_ready",
+    EndReason.DESK_LOST: "desk_dropped",
+    EndReason.PHONE_LOST: "phone_dropped",
+}
+
+
+def outcome_for(reason: EndReason, *, taken_over: bool, answering: bool) -> str:
+    """The summary's outcome (an `OUTCOME_WORDS` key) for how a call ended."""
+    if taken_over and reason in (EndReason.HUNG_UP, EndReason.OWNER_HANGUP):
+        return "taken_over"
+    if reason is EndReason.HUNG_UP:
+        return "they_hung_up"
+    if reason is EndReason.DONE:
+        return "message_taken" if answering else "completed"
+    return _OUTCOMES.get(reason, "failed")
+
+
+def final_state(reason: EndReason, *, connected: bool) -> CallState:
+    """The record's last state: no answer, failed (never connected) or ended."""
+    if reason is EndReason.NO_ANSWER:
+        return CallState.NO_ANSWER
+    if not connected:
+        return CallState.FAILED
+    return CallState.ENDED
 
 
 class CallSummary(BaseModel):
@@ -194,5 +226,7 @@ __all__ = [
     "Summarizer",
     "build_input",
     "fallback_summary",
+    "final_state",
+    "outcome_for",
     "parse_summary",
 ]

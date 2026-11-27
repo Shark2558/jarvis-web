@@ -32,7 +32,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from jarvis.billing.service import Billing, BudgetError
-from jarvis.calls.engine import CallSession, EngineDeps, Kind
+from jarvis.calls.engine import CallSession
+from jarvis.calls.engine_ports import EngineDeps, Kind
 from jarvis.calls.live import LiveListener
 from jarvis.calls.models import (
     CallCard,

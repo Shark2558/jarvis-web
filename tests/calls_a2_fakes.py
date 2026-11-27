@@ -13,7 +13,8 @@ from typing import Any
 from jarvis.calls.brain import RULES, TRANSLATE_SYSTEM, CallBrain, FixedLines, Line
 from jarvis.calls.captions import SYSTEM as CAPTION_SYSTEM
 from jarvis.calls.captions import Captioner
-from jarvis.calls.engine import BookedSlot, CallSession, EngineDeps, Kind, Timing
+from jarvis.calls.engine import CallSession
+from jarvis.calls.engine_ports import BookedSlot, EngineDeps, Kind, Timing
 from jarvis.calls.models import (
     Booking,
     CallCard,

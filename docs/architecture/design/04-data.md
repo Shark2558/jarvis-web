@@ -1,4 +1,4 @@
-Version v6.6.0 · 27 Nov 2026, 22:06 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.1 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 04 · Data architecture
 
@@ -266,7 +266,14 @@ R18's "Phone calls"; wired by `src/jarvis/api/r52_wiring.py:r52_privacy_sources`
   deleting them deletes the recordings too.
 
 A laptop that can't be reached makes a row say "Couldn't check right now", and a delete fails
-rather than claim something is gone that isn't. Export and delete ask for the passkey like every
+rather than claim something is gone that isn't. With no kit set up at all (its address or key
+taken off the server), "Delete my recordings" still deletes the comparison's transcripts here (the
+`voice_session` document) and clears the profile's session, the owner's decision of 28 Nov 2026
+(R5.2 review, row 18): the laptop's recordings are out of reach, so none is claimed gone (0
+deleted), the profile keeps their count and the dashboard reports them as left, and the answer
+says they stay until the kit is set up again
+(`src/jarvis/voice/session.py:VoiceSessions.delete_recordings`, `475b208`;
+`tests/test_r52_review_delete_here.py`). Export and delete ask for the passkey like every
 row (section 4). The voice print is not a row: it never leaves the browser, and Voice → Speaker
 check forgets it on that device after a confirm.
 
@@ -285,3 +292,4 @@ chooses it, and the screen says that in Chrome that audio goes to the browser's 
 | v6.5.0 | 27 Nov 2026, 19:50 IST | R18 | R18 "Calls from your laptop": the calls' data in plain words; where it lives (the desk's folder, the server's memory, the phone app); 134 + 5 = 139 collections with the Calls row (what is sealed, what is not, how long each is kept); 13 sub-collections; the `calls` key (27 cipher purposes) and how a call's records are sealed (8 kHz WAV, 16 MiB cap); what is not sealed, a waiting call card's number in `approvals` among it; 30-day retention, deletion on objection and the four Privacy rows; who hears a call; backups and the drill; two more things that stay on the laptop | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: a waiting call card's numbers are sealed in `approvals` (`src/jarvis/calls/pending.py:CallNumberSeal`), in the collections table, the `calls` purpose and a new paragraph, its other arguments still in clear; the Wardrobe row as built: plans kept 90 days after their day, at most 250, the calendar's cap 20 ahead and 100 kept | 🛠 Mark XXV |
 | v6.6.0 | 27 Nov 2026, 22:06 IST | R5.2 | R5.2 "Your voice": the voice data in plain words; where it lives (the kit's folder on the laptop, the server's memory, the browser's voice print and wake-word files); 136 + 5 = 141 collections with the "Your voice" row (`voice_profile`, `voice_session`, not sealed, never audio); the voice profile and session transcripts added to what is not sealed; new section 8: the recordings on the laptop only (AES-256-GCM, `clips.secret`, 400 clips and 12 sessions), the wake word's sealed files, the voice print in the browser only, the kit's key, the three Privacy voice rows, and what reaches Google | 🛠 Mark XXV |
+| v6.6.1 | 28 Nov 2026 | R5.2 | The owner's decision of 28 Nov 2026 (R5.2 review, row 18): with no kit set up, "Delete my recordings" deletes the comparison's transcripts here and claims none of the laptop's recordings gone | 🛠 Mark XXV |

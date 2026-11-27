@@ -1,0 +1,66 @@
+{
+ "about": "R18 D: cloud-signed phone commands (src/jarvis/phone/calls.py; android core CallCommands). The private key was discarded.",
+ "scheme": "jarvis-cloud-v1",
+ "public_key": "046a78d1cf7be49fda0cb2251f9c75ed2ad2428b50faa9401321929fbe0efc81320d25672047b4edb8c6161a2f87ce0315c28575ea873e04440d15dff28def52b3",
+ "device_id": "ph_0123456789ab",
+ "now": 1800000000,
+ "good": [
+  {
+   "name": "dial",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEQCIBYKQzXS5JnUMYjgBA23RoeTOuiJSiZOCn1He-4K40ANAiAbHbTo9-RTDFLZmBhheibK2T5DdUn8vnwlBHOE99P3yg"
+  },
+  {
+   "name": "answer",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000002\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.answer\",\"call_id\":\"call_0002\",\"iat\":1800000000,\"exp\":1800000030}",
+   "sig": "MEQCIAlP5rLBtkaTdfFvpl_3YS5m3ITFGf1k7mDfgTaxMCxeAiAKsgiQ7dI154eBawUseoyDtnthV4EXveqTGcKXsytAcw"
+  },
+  {
+   "name": "end",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000003\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.end\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000120}",
+   "sig": "MEUCIQC0Ot0Ij7UxzYyHL9VHLXbDdHbXMedsA0LOCCi7Mz1U7AIgJ2zh33P6g6lnHNLCAjjZSzjySQcgnBHjq3zTtNJKHDk"
+  },
+  {
+   "name": "route",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000004\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.route\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000060,\"to\":\"phone\"}",
+   "sig": "MEUCIBBXCGJOOzN0qO_nyVDGFzlDmsHSmu79h6N-MuYLbk0EAiEAqCe3Fk8NUzceTnfd4V6EkW733C9JjfBQPFfXJ1ixm-0"
+  },
+  {
+   "name": "card",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000005\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.card\",\"call_id\":\"card_0001\",\"iat\":1800000000,\"exp\":1800000600,\"card_id\":\"card_0001\",\"label\":\"Dr \\\"Rao\\\"\",\"purpose\":\"Book Saturday 10:00-12:00no payment\",\"passkey\":true}",
+   "sig": "MEUCIA5ZdU4F3MDtxg1BDnYLglAbyA8i_hXNK3QUhLFDrwMXAiEAplhQj2kktqpnDOyvoMTslfKuFqZHaCxJL_Y1d0mFBMM"
+  }
+ ],
+ "bad_signature": [
+  {
+   "name": "changed_body",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000009\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEQCIBYKQzXS5JnUMYjgBA23RoeTOuiJSiZOCn1He-4K40ANAiAbHbTo9-RTDFLZmBhheibK2T5DdUn8vnwlBHOE99P3yg"
+  },
+  {
+   "name": "other_key",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEUCID6YVTlSQQpnba-tmxOTzKsGgCuIf0wYNuZXZH6ADJ1uAiEAgt8H4rgsSVGBUN4ArRtEOLOCs-EXHU-cRVoR7PWkdvI"
+  },
+  {
+   "name": "no_scheme",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000001\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.dial\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000300,\"number\":\"+919000000001\",\"approval_id\":\"ap_live_000001\",\"label\":\"Laundry ലാ\"}",
+   "sig": "MEYCIQDsLbb0-zgjNGeSrISrRADUVeerUE6Yq_CvKSl0prf86gIhAIghKGgc3n9wq3ZXLH17vg7Bx52IudOaosLViRUYVfRN"
+  }
+ ],
+ "refused": [
+  {
+   "name": "other_device",
+   "body": "{\"v\":1,\"id\":\"pc_00000000000000ff\",\"d\":\"ph_ba9876543210\",\"kind\":\"call.end\",\"call_id\":\"call_0001\",\"iat\":1800000000,\"exp\":1800000120}",
+   "sig": "MEUCIQCc-Vu4BunQs7bgwCiT3k6_uzcJ1E_iE2lysBTkkbSlJwIgVWgJ5eIBKl1YvC5o0bGJE0kqMGb94_jVJOorKx-v548",
+   "why": "device"
+  },
+  {
+   "name": "expired",
+   "body": "{\"v\":1,\"id\":\"pc_0000000000000002\",\"d\":\"ph_0123456789ab\",\"kind\":\"call.answer\",\"call_id\":\"call_0002\",\"iat\":1800000000,\"exp\":1800000030}",
+   "sig": "MEQCIAlP5rLBtkaTdfFvpl_3YS5m3ITFGf1k7mDfgTaxMCxeAiAKsgiQ7dI154eBawUseoyDtnthV4EXveqTGcKXsytAcw",
+   "now": 1800000031,
+   "why": "expired"
+  }
+ ]
+}

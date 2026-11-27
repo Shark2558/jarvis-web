@@ -19,12 +19,16 @@ from jarvis.localspeech.wakeword.formats import VerifierFile  # noqa: E402
 from jarvis.localspeech.wakeword.mlp import Mlp, Recipe  # noqa: E402
 from jarvis.localspeech.wakeword.onnx_write import Activation, Dense, mlp_onnx  # noqa: E402
 from jarvis.localspeech.wakeword.owned_train import phrase_end, train_owned, voicing  # noqa: E402
-from jarvis.localspeech.wakeword.port import WakeClip, WakeJob, WakewordFailed  # noqa: E402
+from jarvis.localspeech.wakeword.port import (  # noqa: E402
+    WakeClip,
+    WakeJob,
+    WakewordFailed,
+    split_wake,
+)
 from jarvis.localspeech.wakeword.streaming import Stream, listen, pad  # noqa: E402
 from jarvis.localspeech.wakeword.verifier_train import (  # noqa: E402
     fit_logistic,
     other_clips,
-    split_wake,
     standardise,
     train_verifier,
 )

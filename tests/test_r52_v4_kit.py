@@ -104,7 +104,9 @@ def test_prepare_needs_ten_hey_jarvis_clips_and_says_how_many(tmp_path: Path) ->
     req = WakeTrainIn(artifact=WakeArtifact.VERIFIER, session_id=SESSION)
     with pytest.raises(KitRefused) as refused:
         wake.prepare(req, _clips(wake=6))
-    assert refused.value.code == "not_found" and "has 6" in refused.value.words
+    assert refused.value.code == "not_found" and "that session has 6" in refused.value.words
+    with pytest.raises(KitRefused, match="no recordings"):
+        wake.prepare(req, ())
     job = wake.prepare(req, _clips())
     assert job.session_id == SESSION and len(job.clips) == 26
 

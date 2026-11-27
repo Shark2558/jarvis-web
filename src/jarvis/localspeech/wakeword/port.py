@@ -20,6 +20,7 @@ text or what was heard.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Final, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -43,7 +44,9 @@ from jarvis.localspeech.protocol import (
     pcm_seconds,
 )
 
-MIN_WAKE_CLIPS: Final = 10  # his "Hey Jarvis" clips needed to train (the session records 30)
+MIN_WAKE_CLIPS: Final = 10  # his "Hey Jarvis" clips to learn from (the session records 30)
+HELD_MIN: Final = 3  # held-out "Hey Jarvis" clips, else every HELD_EVERY-th one is held out
+HELD_EVERY: Final = 5
 CLIPS_MAX: Final = 400  # one session's clips (~120 prompts, redone at most a few times)
 
 Progress = Callable[[float, str], None]  # fraction done (0..1), plain words: never audio or text
@@ -94,6 +97,29 @@ class WakeJob(BaseModel):
         )
 
 
+@dataclass(frozen=True)
+class Split:
+    train: tuple[WakeClip, ...]
+    held: tuple[WakeClip, ...]
+
+
+def split_wake(job: WakeJob) -> Split:
+    """His "Hey Jarvis" clips: V3's held-out ones (never trained on), or every 5th when it marked
+    too few. WakewordFailed when too few are left to learn from."""
+    train, held = job.wake(held_out=False), job.wake(held_out=True)
+    if len(held) < HELD_MIN:
+        ordered = sorted(train, key=lambda c: c.prompt_id)
+        extra = tuple(c for i, c in enumerate(ordered) if i % HELD_EVERY == HELD_EVERY - 1)
+        held += extra
+        train = tuple(c for c in ordered if c not in extra)
+    if len(train) < MIN_WAKE_CLIPS:
+        raise WakewordFailed(
+            f"Training needs at least {MIN_WAKE_CLIPS} Hey Jarvis recordings to learn from, and "
+            f"a few kept apart to check it; that session has {len(train) + len(held)}."
+        )
+    return Split(train=train, held=held)
+
+
 class VoiceInfo(BaseModel):
     """A synthetic voice V1's kit can speak with, and its licence (permissive only)."""
 
@@ -138,13 +164,17 @@ class WakewordKit(Protocol):
 
 __all__ = [
     "CLIPS_MAX",
+    "HELD_EVERY",
+    "HELD_MIN",
     "MIN_WAKE_CLIPS",
     "Progress",
     "Sealer",
+    "Split",
     "VoiceInfo",
     "Voices",
     "WakeClip",
     "WakeJob",
     "WakewordFailed",
     "WakewordKit",
+    "split_wake",
 ]

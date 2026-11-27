@@ -35,12 +35,13 @@ from jarvis.localspeech.wakeword.formats import (
     sha256_hex,
 )
 from jarvis.localspeech.wakeword.port import (
-    MIN_WAKE_CLIPS,
     Progress,
+    Split,
     Voices,
     WakeClip,
     WakeJob,
     WakewordFailed,
+    split_wake,
 )
 from jarvis.localspeech.wakeword.streaming import F32, Stream, listen, pad, scan
 
@@ -50,8 +51,6 @@ RUNS = 5  # its N=5 for the positive clips
 NEWTON_STEPS = 50
 GRAD_TOL = 1e-7
 NEGATIVES_MAX = 8_000  # windows kept (the solve is d^2 n)
-HELD_MIN = 3  # held-out "Hey Jarvis" clips, else every HELD_EVERY-th one is held out
-HELD_EVERY = 5
 OTHER_PHRASES = ("Hey Jarvis", "Hey, Jarvis.", "Hey Jarvis!", "Hey Jarvis, are you there?")
 NOT_HEARD = (
     "Today's detector did not hear Hey Jarvis in your recordings, so the personal check has "
@@ -64,25 +63,6 @@ class Trained:
     data: bytes
     info: ArtifactInfo
     manifest: str = ""
-
-
-@dataclass(frozen=True)
-class Split:
-    train: tuple[WakeClip, ...]
-    held: tuple[WakeClip, ...]
-
-
-def split_wake(job: WakeJob) -> Split:
-    """His "Hey Jarvis" clips: V3's held-out ones, or every 5th when it marked too few."""
-    train, held = job.wake(held_out=False), job.wake(held_out=True)
-    if len(held) < HELD_MIN:
-        ordered = sorted(train, key=lambda c: c.prompt_id)
-        extra = tuple(c for i, c in enumerate(ordered) if i % HELD_EVERY == HELD_EVERY - 1)
-        held += extra
-        train = tuple(c for c in ordered if c not in extra)
-    if len(train) < MIN_WAKE_CLIPS:
-        raise WakewordFailed(f"Training needs at least {MIN_WAKE_CLIPS} Hey Jarvis recordings.")
-    return Split(train=train, held=held)
 
 
 def positive_windows(stream: Stream, pcm: bytes, rng: np.random.Generator) -> list[F32]:
@@ -244,14 +224,12 @@ def train_verifier(
 __all__ = [
     "C",
     "RUNS",
-    "Split",
     "Trained",
     "evaluate",
     "fit_logistic",
     "gated_windows",
     "other_clips",
     "positive_windows",
-    "split_wake",
     "standardise",
     "train_verifier",
 ]

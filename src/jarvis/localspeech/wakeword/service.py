@@ -28,13 +28,13 @@ from jarvis.localspeech.protocol import (
 )
 from jarvis.localspeech.wakeword.formats import EMBEDDING_MODEL
 from jarvis.localspeech.wakeword.port import (
-    MIN_WAKE_CLIPS,
     Progress,
     Sealer,
     Voices,
     WakeClip,
     WakeJob,
     WakewordFailed,
+    split_wake,
 )
 from jarvis.localspeech.wakeword.store import ArtifactStore
 from jarvis.logging import get_logger
@@ -91,14 +91,13 @@ class WakewordService:
     def prepare(self, req: WakeTrainIn, clips: Sequence[WakeClip]) -> WakeJob:
         if self._lock.locked():
             raise KitRefused("busy", BUSY)
+        if not clips:
+            raise KitRefused("not_found", "That session has no recordings on the laptop.")
         job = WakeJob(artifact=req.artifact, session_id=req.session_id, clips=tuple(clips))
-        found = len(job.wake(held_out=False)) + len(job.wake(held_out=True))
-        if found < MIN_WAKE_CLIPS:
-            raise KitRefused(
-                "not_found",
-                f"Training needs at least {MIN_WAKE_CLIPS} Hey Jarvis recordings; "
-                f"that session has {found} on the laptop.",
-            )
+        try:
+            split_wake(job)
+        except WakewordFailed as exc:
+            raise KitRefused("not_found", exc.words) from None
         return job
 
     def train(self, job: WakeJob, progress: Progress) -> ArtifactInfo:

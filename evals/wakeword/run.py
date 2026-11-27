@@ -48,13 +48,9 @@ def _case(name: str, failures: list[str]) -> dict[str, Any]:
 def _stage1(accept_everyone: bool = False) -> dict[str, Any]:
     from jarvis.localspeech.wakeword import fakes
     from jarvis.localspeech.wakeword.formats import VerifierFile
+    from jarvis.localspeech.wakeword.port import split_wake
     from jarvis.localspeech.wakeword.streaming import Stream
-    from jarvis.localspeech.wakeword.verifier_train import (
-        evaluate,
-        other_clips,
-        split_wake,
-        train_verifier,
-    )
+    from jarvis.localspeech.wakeword.verifier_train import evaluate, other_clips, train_verifier
 
     job = WakeJob(
         artifact=WakeArtifact.VERIFIER, session_id=SESSION, clips=fakes.session_clips(30, 40)

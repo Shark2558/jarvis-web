@@ -34,9 +34,9 @@ from jarvis.localspeech.wakeword.formats import (
 )
 from jarvis.localspeech.wakeword.mlp import Mlp, Recipe
 from jarvis.localspeech.wakeword.onnx_write import mlp_onnx
-from jarvis.localspeech.wakeword.port import Progress, Voices, WakeJob, WakewordFailed
+from jarvis.localspeech.wakeword.port import Progress, Voices, WakeJob, WakewordFailed, split_wake
 from jarvis.localspeech.wakeword.streaming import F32, Runner, Stream, listen, pad, scan
-from jarvis.localspeech.wakeword.verifier_train import Trained, split_wake
+from jarvis.localspeech.wakeword.verifier_train import Trained
 
 POS_SPAN = 4  # windows after the phrase's last loud frame that count as "Hey Jarvis"
 VOICED = 0.3  # a frame is loud at this share of the clip's 95th-percentile level
@@ -159,6 +159,46 @@ def compare(
     return result(stream, wakes_now), result(mine, wakes_mine)
 
 
+def _record(
+    data: bytes,
+    job: WakeJob,
+    voiced: Voicing,
+    feature_models: dict[str, str],
+    results: tuple[WakeEval, WakeEval],
+    now: datetime,
+) -> Trained:
+    """The file, its ArtifactInfo and its MANIFEST, from (today's, the owned model's) evals."""
+    current, owned = results
+    wins = beats(owned, current, WAKE_BARS)
+    evals = compact_evals(owned.as_evals())
+    mine = DataSource(
+        name="his recordings",
+        licence=OWNER_LICENCE,
+        detail=f"{len(job.wake(held_out=False))} Hey Jarvis and his other prompts",
+    )
+    made = DataSource(name="generated noise and music", licence=OWNER_LICENCE, detail="synth.py")
+    card = ModelCard(
+        sha256=sha256_hex(data),
+        size=len(data),
+        trained_at=now,
+        feature_models=feature_models,
+        sources=(mine, *voiced.sources, made),
+        evals=evals,
+        current_evals=compact_evals(current.as_evals(counts=False)),
+        beats_current=wins,
+    )
+    info = ArtifactInfo(
+        artifact=WakeArtifact.OWNED,
+        sha256=card.sha256,
+        size=card.size,
+        trained_at=now,
+        licence=OWNER_LICENCE,
+        evals=evals,
+        beats_current=wins,
+    )
+    return Trained(data=data, info=info, manifest=card.text())
+
+
 def train_owned(
     job: WakeJob,
     stream: Stream,
@@ -182,41 +222,14 @@ def train_owned(
     if check is not None:
         checked(data, mlp, x, check)
     progress(0.8, "Comparing it with today's model on audio it never heard.")
-    rng = np.random.default_rng(recipe.seed + 1)
-    tv = synth.tv(voices, voiced.test, recipe.tv_eval_s, rng)
+    tv = synth.tv(voices, voiced.test, recipe.tv_eval_s, np.random.default_rng(recipe.seed + 1))
     held = [c.pcm for c in split_wake(job).held]
-    current, owned = compare(stream, mlp.runner(), held, tv)
-    wins = beats(owned, current, WAKE_BARS)
-    evals = compact_evals(owned.as_evals())
-    card = ModelCard(
-        sha256=sha256_hex(data),
-        size=len(data),
-        trained_at=now,
-        feature_models=feature_models,
-        sources=(
-            DataSource(
-                name="his recordings",
-                licence=OWNER_LICENCE,
-                detail=f"{len(job.wake(held_out=False))} Hey Jarvis and his other prompts",
-            ),
-            *voiced.sources,
-            DataSource(name="generated noise and music", licence=OWNER_LICENCE, detail="synth.py"),
-        ),
-        evals=evals,
-        current_evals=compact_evals(current.as_evals(counts=False)),
-        beats_current=wins,
+    trained = _record(
+        data, job, voiced, feature_models, compare(stream, mlp.runner(), held, tv), now
     )
-    info = ArtifactInfo(
-        artifact=WakeArtifact.OWNED,
-        sha256=card.sha256,
-        size=card.size,
-        trained_at=now,
-        licence=OWNER_LICENCE,
-        evals=evals,
-        beats_current=wins,
-    )
+    wins = trained.info.beats_current
     progress(1.0, "Done: it beats today's model." if wins else "Done: today's model stays.")
-    return Trained(data=data, info=info, manifest=card.text())
+    return trained
 
 
 __all__ = ["POS_SPAN", "Voicing", "compare", "phrase_end", "train_owned", "voicing"]

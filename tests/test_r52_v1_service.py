@@ -150,7 +150,7 @@ async def test_training_makes_the_kit_busy_and_slow_and_delete_stops_it(tmp_path
     deleted = await service.delete(p.DeleteIn(session_id=None, wakeword=True))
     stopped = await service.runner.wait(job.job_id)
     assert stopped.state is p.JobState.CANCELLED and deleted.clips == 2
-    assert trainer.given == [1]  # the wake clip only
+    assert trainer.given == [2]  # I1: every clip of the session (his others: negatives)
     assert not (await service.health()).slow
 
 

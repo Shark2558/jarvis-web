@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,18 +13,22 @@ from jarvis.localspeech.clips import ClipVault
 from jarvis.localspeech.device import DeviceInfo
 from jarvis.localspeech.engines import Heard, LoadArgs, Loader, Slots, Spoken
 from jarvis.localspeech.jobs import JobRunner
-from jarvis.localspeech.ports import ProgressSink, WakeClip
+from jarvis.localspeech.ports import KINDS, Progress, WakeClip, WakeJob
 from jarvis.localspeech.protocol import (
     OWNER_LICENCE,
     SAMPLE_RATE,
     SLOT_KIND,
     ArtifactInfo,
     Device,
+    JobKind,
     EngineSlot,
     Kind,
     KitRefused,
     WakeArtifact,
     WakeModel,
+    WakeModelIn,
+    WakeStatus,
+    WakeTrainIn,
     encode_pcm,
 )
 from jarvis.localspeech.service import KitService
@@ -173,7 +177,8 @@ def make_service(
 
 
 class FakeTrainer:
-    """A V4-shaped trainer: trains instantly into memory, counts the clips it was given."""
+    """V4's `WakewordKit` in miniature (I1): trains instantly into memory, counts the clips it was
+    given. A blocking run reports progress until released, so a cancel stops it at a step."""
 
     def __init__(self, *, block: bool = False) -> None:
         self.files: dict[WakeArtifact, bytes] = {}
@@ -181,21 +186,23 @@ class FakeTrainer:
         self.block = block
         self.released = False
 
-    def unready(self, artifact: WakeArtifact) -> str | None:
-        return None
+    def job_kind(self, artifact: WakeArtifact) -> JobKind:
+        return KINDS[artifact]
 
-    def train(
-        self, artifact: WakeArtifact, clips: Sequence[WakeClip], progress: ProgressSink
-    ) -> ArtifactInfo:
+    def prepare(self, req: WakeTrainIn, clips: Sequence[WakeClip]) -> WakeJob:
+        return WakeJob(artifact=req.artifact, session_id=req.session_id, clips=tuple(clips))
+
+    def train(self, job: WakeJob, progress: Progress) -> ArtifactInfo:
         import time
 
-        self.given.append(len(clips))
-        while self.block and not progress.cancelled and not self.released:
+        self.given.append(len(job.clips))
+        while self.block and not self.released:
+            progress(0.5, "training")  # the kit's report raises once the job is cancelled
             time.sleep(0.01)
-        data = json.dumps({"artifact": artifact.value, "clips": len(clips)}).encode()
-        self.files[artifact] = data
-        progress.set(1.0, "trained")
-        return self._info(artifact, data)
+        data = json.dumps({"artifact": job.artifact.value, "clips": len(job.clips)}).encode()
+        self.files[job.artifact] = data
+        progress(1.0, "trained")
+        return self._info(job.artifact, data)
 
     @staticmethod
     def _info(artifact: WakeArtifact, data: bytes) -> ArtifactInfo:
@@ -207,10 +214,14 @@ class FakeTrainer:
             licence=OWNER_LICENCE,
         )
 
-    def artifacts(self) -> Mapping[WakeArtifact, ArtifactInfo]:
-        return {a: self._info(a, d) for a, d in self.files.items()}
+    def status(self) -> WakeStatus:
+        found = {a: self._info(a, d) for a, d in self.files.items()}
+        return WakeStatus(
+            verifier=found.get(WakeArtifact.VERIFIER), owned=found.get(WakeArtifact.OWNED)
+        )
 
-    def model(self, artifact: WakeArtifact) -> WakeModel:
+    def model(self, req: WakeModelIn) -> WakeModel:
+        artifact = req.artifact
         data = self.files.get(artifact)
         if data is None:
             raise KitRefused("not_found", "That wake-word file has not been trained yet.")

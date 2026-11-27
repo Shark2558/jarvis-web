@@ -1,89 +1,77 @@
 # src/jarvis/localspeech/ports.py
 """The one seam the kit's server calls for the wake word (R5.2 V1 for V4; row 83). Kit-safe.
 
-V4 implements `WakewordTrainer` in `jarvis.localspeech.wakeword` and the join hands it to
-`service.build_service(..., wakeword=...)` (one line in `__main__.serve`). The server owns the
-HTTP side, the job (`jobs.JobRunner`: one at a time, polled, cancellable) and the recordings
-(`clips.ClipVault`); the trainer gets the session's "Hey Jarvis" clips already opened, trains in
-the job's worker thread, and keeps its own files (in `KitConfig.wakeword_dir`).
+The interface is V4's `jarvis.localspeech.wakeword.port.WakewordKit` (the build brief: V1's server
+calls the wake word "through a small interface V4 defines there"); the I1 join adapted V1's
+server to it (`docs/plans/r5-2-integration/I1-NOTES.md`). The server owns the HTTP side, the job
+(`jobs.JobRunner`: one at a time, polled, cancellable) and the recordings (`clips.ClipVault`): it
+hands `prepare` every clip of the session, opened (his "Hey Jarvis" clips and, as the verifier's
+negatives, his other prompts), so a request that can't be trained is refused before a job is
+queued; `train` then runs in the job's worker thread and keeps its own files (sealed, in
+`KitConfig.wakeword_dir`). `__main__.serve` builds it with `wakejoin.kit_wakeword(config)`.
 
-Until V4 joins, `NoWakeword` answers every wake-word request with `engine_not_ready`.
+Without it (`NoWakeword`) every wake-word request answers `engine_not_ready`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import Final, Protocol
+from collections.abc import Sequence
+from typing import Final
 
-from jarvis.localspeech.protocol import ArtifactInfo, KitRefused, WakeArtifact, WakeModel
-
-
-@dataclass(frozen=True)
-class WakeClip:
-    """One "Hey Jarvis" recording of the session, opened: PCM16 16 kHz mono."""
-
-    prompt_id: str
-    pcm: bytes
-    held_out: bool  # scored, never trained on
-
-
-class ProgressSink(Protocol):
-    """What the trainer reports to (`jobs.Progress`)."""
-
-    def set(self, fraction: float, words: str = "") -> None: ...
-
-    @property
-    def cancelled(self) -> bool: ...
-
-
-class WakewordTrainer(Protocol):
-    def unready(self, artifact: WakeArtifact) -> str | None:
-        """None when `artifact` can be trained now; else plain words why not."""
-        ...
-
-    def train(
-        self, artifact: WakeArtifact, clips: Sequence[WakeClip], progress: ProgressSink
-    ) -> ArtifactInfo:
-        """Blocking (runs in the job's thread); stop early when `progress.cancelled`. Raises
-        `KitRefused` with plain words when it can't (the job then fails with those words)."""
-        ...
-
-    def artifacts(self) -> Mapping[WakeArtifact, ArtifactInfo]:
-        """What has been trained and kept on this laptop."""
-        ...
-
-    def model(self, artifact: WakeArtifact) -> WakeModel:
-        """The file for the console; `KitRefused("not_found")` when there is none."""
-        ...
-
-    def delete(self) -> int:
-        """Remove every wake-word file trained here; how many there were."""
-        ...
-
+from jarvis.localspeech.protocol import (
+    ArtifactInfo,
+    JobKind,
+    KitRefused,
+    WakeArtifact,
+    WakeModel,
+    WakeModelIn,
+    WakeStatus,
+    WakeTrainIn,
+)
+from jarvis.localspeech.wakeword.port import (
+    Progress,
+    WakeClip,
+    WakeJob,
+    WakewordFailed,
+    WakewordKit,
+)
 
 NOT_BUILT: Final = "Wake-word training is not part of this kit yet."
+KINDS: Final[dict[WakeArtifact, JobKind]] = {
+    WakeArtifact.VERIFIER: JobKind.VERIFIER,
+    WakeArtifact.OWNED: JobKind.OWNED,
+}
 
 
 class NoWakeword:
-    """The stub until V4's trainer joins: nothing trained, nothing trainable."""
+    """A kit without wake-word training: nothing trained, nothing trainable."""
 
-    def unready(self, artifact: WakeArtifact) -> str | None:
-        return NOT_BUILT
+    def job_kind(self, artifact: WakeArtifact) -> JobKind:
+        return KINDS[artifact]
 
-    def train(
-        self, artifact: WakeArtifact, clips: Sequence[WakeClip], progress: ProgressSink
-    ) -> ArtifactInfo:
+    def prepare(self, req: WakeTrainIn, clips: Sequence[WakeClip]) -> WakeJob:
         raise KitRefused("engine_not_ready", NOT_BUILT)
 
-    def artifacts(self) -> Mapping[WakeArtifact, ArtifactInfo]:
-        return {}
+    def train(self, job: WakeJob, progress: Progress) -> ArtifactInfo:
+        raise WakewordFailed(NOT_BUILT)
 
-    def model(self, artifact: WakeArtifact) -> WakeModel:
+    def status(self) -> WakeStatus:
+        return WakeStatus()
+
+    def model(self, req: WakeModelIn) -> WakeModel:
         raise KitRefused("not_found", "That wake-word file has not been trained yet.")
 
     def delete(self) -> int:
         return 0
 
 
-__all__ = ["NOT_BUILT", "NoWakeword", "ProgressSink", "WakeClip", "WakewordTrainer"]
+__all__ = [
+    "KINDS",
+    "NOT_BUILT",
+    "NoWakeword",
+    "Progress",
+    "WakeClip",
+    "WakeJob",
+    "WakewordFailed",
+    "WakewordKit",
+]

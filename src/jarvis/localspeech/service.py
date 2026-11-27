@@ -9,7 +9,8 @@ self-test drive it directly.
 - An engine that breaks mid-request is put away and the request answers `engine_not_ready`
   (the cloud falls back; the engine reloads next time).
 - Recordings go to `clips.ClipVault` (encrypted); scoring is a job; deleting stops the job.
-- The wake word goes through `ports.WakewordTrainer` (V4), `NoWakeword` until it joins.
+- The wake word goes through V4's `WakewordKit` (`ports`; `NoWakeword` when the kit has none):
+  every clip of the session to `prepare` (refused before a job is queued), `train` in a job.
 Nothing here logs audio, text, a voice or the key.
 """
 
@@ -32,7 +33,13 @@ from jarvis.localspeech.engines import Slots
 from jarvis.localspeech.jobs import JobRunner, Progress
 from jarvis.localspeech.kitconfig import KIT_VERSION_NOW, KitConfig
 from jarvis.localspeech.manager import ModelManager, load_manifest
-from jarvis.localspeech.ports import NoWakeword, WakeClip, WakewordTrainer
+from jarvis.localspeech.ports import (
+    KINDS,
+    NoWakeword,
+    WakeClip,
+    WakewordFailed,
+    WakewordKit,
+)
 from jarvis.localspeech.protocol import (
     MP3_RATES,
     PROTOCOL,
@@ -59,7 +66,6 @@ from jarvis.localspeech.protocol import (
     SttResult,
     TtsRequest,
     TtsResult,
-    WakeArtifact,
     WakeModel,
     WakeModelIn,
     WakeStatus,
@@ -75,10 +81,6 @@ SLOW_QUEUE: Final = 2  # requests waiting for the engines before the kit says it
 MEMORY_CACHE_S: Final = 10.0
 MP3_FALLBACK_RATE: Final = 24_000
 ENGINE_BROKE: Final = "The engine stopped on the laptop; it is reloaded next time."
-_WAKE_JOB: Final[dict[WakeArtifact, JobKind]] = {
-    WakeArtifact.VERIFIER: JobKind.VERIFIER,
-    WakeArtifact.OWNED: JobKind.OWNED,
-}
 
 Memory = Callable[[], tuple[int | None, int]]  # (graphics memory free, memory free) in MB
 
@@ -94,7 +96,7 @@ class KitService:
         slots: Slots,
         vault: ClipVault,
         runner: JobRunner | None = None,
-        wakeword: WakewordTrainer | None = None,
+        wakeword: WakewordKit | None = None,
         mp3: Mp3Encoder | None = None,
         memory: Memory = _memory,
         kit_version: str = KIT_VERSION_NOW,
@@ -102,7 +104,7 @@ class KitService:
         self.slots = slots
         self.vault = vault
         self.runner = runner or JobRunner()
-        self.wakeword: WakewordTrainer = wakeword or NoWakeword()
+        self.wakeword: WakewordKit = wakeword or NoWakeword()
         self._mp3 = mp3
         self._memory = memory
         self._kit_version = kit_version
@@ -285,32 +287,36 @@ class KitService:
 
     # ---- the wake word (row 83, V4's trainer) -------------------------------------------------
     async def wake_train(self, req: WakeTrainIn) -> JobView:
-        reason = self.wakeword.unready(req.artifact)
-        if reason is not None:
-            raise KitRefused("engine_not_ready", reason)
-        stored = await asyncio.to_thread(self.vault.clips, req.session_id, kind=PromptKind.WAKE)
-        if not stored:
+        stored = await asyncio.to_thread(self.vault.clips, req.session_id)
+        if not any(c.kind is PromptKind.WAKE for c in stored):
             raise KitRefused("not_found", "That session has no Hey Jarvis recordings.")
-        clips = tuple(WakeClip(c.prompt_id, c.pcm, c.held_out) for c in stored)
+        clips = tuple(
+            WakeClip(prompt_id=c.prompt_id, kind=c.kind, pcm=c.pcm, held_out=c.held_out)
+            for c in stored
+        )  # his other prompts too: the verifier's negatives (V4)
+        job = self.wakeword.prepare(req, clips)  # KitRefused before a job is queued
 
         def work(progress: Progress) -> str:
-            self.wakeword.train(req.artifact, clips, progress)
+            def report(fraction: float, words: str) -> None:
+                if progress.cancelled:  # "Delete my recordings" stops a run at its next step
+                    raise WakewordFailed("Stopped.")
+                progress.set(fraction, words)
+
+            try:
+                self.wakeword.train(job, report)
+            except WakewordFailed as exc:
+                raise KitRefused("engine_not_ready", exc.words) from None
             return "The wake-word file is trained."
 
-        return self.runner.start(
-            _WAKE_JOB[req.artifact], work, session_id=req.session_id, long=True
-        )
+        kind = self.wakeword.job_kind(req.artifact)
+        return self.runner.start(kind, work, session_id=req.session_id, long=True)
 
     async def wake_status(self) -> WakeStatus:
-        found = await asyncio.to_thread(self.wakeword.artifacts)
-        return WakeStatus(
-            verifier=found.get(WakeArtifact.VERIFIER),
-            owned=found.get(WakeArtifact.OWNED),
-            jobs=self.runner.views(_WAKE_JOB.values()),
-        )
+        found = await asyncio.to_thread(self.wakeword.status)
+        return found.model_copy(update={"jobs": self.runner.views(KINDS.values())})
 
     async def wake_model(self, req: WakeModelIn) -> WakeModel:
-        return await asyncio.to_thread(self.wakeword.model, req.artifact)
+        return await asyncio.to_thread(self.wakeword.model, req)
 
     async def close(self) -> None:
         await self.runner.close()
@@ -329,7 +335,7 @@ def default_mp3() -> Mp3Encoder | None:
 def build_service(
     config: KitConfig,
     *,
-    wakeword: WakewordTrainer | None = None,
+    wakeword: WakewordKit | None = None,
     mp3: Mp3Encoder | None = None,
 ) -> KitService:
     """The kit as installed: its manifest, models, device, recordings and (V4) wake word."""

@@ -31,6 +31,7 @@ from jarvis.localspeech.manager import ModelError, ModelManager, load_manifest, 
 from jarvis.localspeech.protocol import EngineSlot
 from jarvis.localspeech.selftest import GateCalls, report_json, run
 from jarvis.localspeech.service import build_service, default_mp3
+from jarvis.localspeech.wakejoin import kit_wakeword
 
 REQUIREMENTS: Final = ("requirements-kit.txt",)
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)", re.MULTILINE)
@@ -47,7 +48,7 @@ def serve(config: KitConfig) -> int:
     from jarvis.localspeech.server import build_app
 
     key = config.require_key()
-    service = build_service(config)  # I1 / V4: build_service(config, wakeword=<V4's trainer>)
+    service = build_service(config, wakeword=kit_wakeword(config))  # R5.2 I1: V4's wake word
     app = build_app(service, key)
     uvicorn.run(
         app,

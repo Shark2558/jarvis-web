@@ -50,6 +50,8 @@ RUNTIME_DISTS = frozenset(
     }
 )
 CLOUD_MAY_IMPORT = frozenset({"protocol", "memory", "client", "desk"})  # I0's and V2's
+# I1: V4's pure file formats (stdlib + Pydantic), read by the cloud's wakeword_api to check a file
+CLOUD_MAY_IMPORT_MODULES = frozenset({"jarvis.localspeech.wakeword.formats"})
 RUNTIME_HOMES = ("jarvis/localspeech/runtimes/", "jarvis/localspeech/wakeword/")
 KIT_SAFE_JARVIS = ("jarvis.localspeech", "jarvis.calls.models", "jarvis.calls.protocol")
 KIT_THIRD_PARTY = {  # import name -> the distribution requirements-kit.txt pins
@@ -119,7 +121,8 @@ def test_the_cloud_never_imports_the_kits_own_modules() -> None:
         for name, _ in _imports(path):
             parts = name.split(".")
             if parts[:2] == ["jarvis", "localspeech"] and len(parts) > 2:
-                if parts[2] not in CLOUD_MAY_IMPORT and not parts[2][0].isupper():
+                allowed = parts[2] in CLOUD_MAY_IMPORT or parts[2][0].isupper()
+                if not allowed and ".".join(parts[:4]) not in CLOUD_MAY_IMPORT_MODULES:
                     offenders.append(f"{path.relative_to(SRC)}: {name}")
     assert offenders == []
 

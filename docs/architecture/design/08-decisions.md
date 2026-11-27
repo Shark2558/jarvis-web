@@ -1,4 +1,4 @@
-Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.0 · 27 Nov 2026, 22:15 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 08 · Architecture decisions (ADR log)
 
@@ -15,6 +15,13 @@ call's speech in one place, 8 kHz WAV recordings, English "not yet checked" befo
 check, the dock rule at 1920 px, the one-instance call hub, the phone's doorbell and signed
 commands, the one-use grant for every call, and the live socket's ticket.
 
+**R5.2 ("Your voice")** adds ADR-40 to ADR-46: the laptop speech kit as a separate local server
+behind its own key gate (amending ADR-06's listening order), the GPL voices and the PyTorch Indian
+engines left out, the git-blob pins for small text model files (a recorded deviation from
+"SHA-256 only"), Funnel port 10000 for the kit, the speaker check that never approves, the
+wake word's non-commercial front end recorded as a launch blocker, and the speaker model's empty
+slot.
+
 **Format.** Each ADR has a number that never changes, a status (Accepted, Superseded by ADR-n,
 Proposed), the date and the release in which it was taken, and its source plan in `docs/plans/`.
 Dates before R6.1 come from the guide's decisions log (section 5.4).
@@ -28,7 +35,7 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 | 03 | One custom tool gateway with in-process tools over direct REST; no MCP | MCP | Accepted | Slices 1 and 6 |
 | 04 | Firestore behind a small document port, not Postgres | Postgres | Accepted | Slice 5 |
 | 05 | Word matching (BM25) for memory and notes, not a vector database | Chroma or Pinecone | Accepted | Slice 8 |
-| 06 | Google Cloud speech with the browser as fallback; wake word on the device; no voice clone | Whisper or Deepgram; ElevenLabs | Accepted | Slice 9 |
+| 06 | Google Cloud speech with the browser as fallback; wake word on the device; no voice clone | Whisper or Deepgram; ElevenLabs | Accepted (listening order amended by ADR-40) | Slice 9 |
 | 07 | One Cloud Run service, at most one instance, one re-runnable deploy script | Docker → Kubernetes, Terraform | Accepted | Slice 2 (31 Oct 2026; the reason is *unverified*) |
 | 08 | Keyless deploy on merge (Workload Identity Federation), only from `main` | GitHub Actions | Accepted | Slice 5c |
 | 09 | A custom brain loop, not an orchestration framework | LangGraph | Accepted | Phase 0 |
@@ -62,6 +69,13 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 | 37 | The cloud reaches the phone by a Web Push doorbell; the door carries signed commands | — | Accepted | R18 (Part D) |
 | 38 | Placing a call is R3 with a one-use grant per call; never approved from Telegram | — | Accepted | R18 |
 | 39 | The live call socket accepts a one-use ticket in token mode | — | Accepted | R18 (I1) |
+| 40 | Laptop speech is a separate local server behind its own key gate | Whisper or Deepgram in the cloud | Accepted (amends ADR-06) | R5.2 |
+| 41 | GPL engines and the PyTorch Indian-language engines are left out of the kit | — | Accepted (departs from plan D2, D3) | R5.2 (I1) |
+| 42 | Small text model files may be pinned by their git blob id | — | Accepted (a recorded deviation from SHA-256 only) | R5.2 (I1) |
+| 43 | The kit's Funnel port is 10000 | — | Accepted | R5.2 (I1) |
+| 44 | The speaker check is a barge-in filter and a display label only; it never approves | — | Accepted | R5.2 |
+| 45 | openWakeWord's non-commercial models block a public launch; recorded, not fixed | — | Accepted (a launch blocker) | R5.2 |
+| 46 | The speaker model (WeSpeaker CAM++) is not vendored; its slot ships empty | — | Accepted | R5.2 |
 
 ## 2. The decisions
 
@@ -139,6 +153,11 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   "Hey Jarvis" detected in the browser by openWakeWord.
 - **Consequences:** ₹0 inside the allowance; paid above it against the monthly limit; the wake-word
   models are CC BY-NC-SA 4.0 (non-commercial; chapter 12, C8).
+- **Amended by ADR-40 (R5.2):** while the owner's laptop speech kit is healthy, its Whisper listens
+  first (the engine his voice session chose, or Whisper small before a session), then Google, then
+  the browser. Whisper runs on his laptop, not on the server, so this decision's reason against it
+  still holds for the cloud. JARVIS's voice stays Google's while the kit has none (ADR-41). The
+  licence note is widened by ADR-45.
 - **Code:** `src/jarvis/voice/google_cloud.py`, `src/jarvis/voice/service.py`,
   `src/jarvis/api/static/console-wakeword.js`.
 
@@ -419,7 +438,12 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   FLEURS test clips (CC BY 4.0) at run time. The cloud image's one new package, NumPy, is
   BSD-3-Clause and listed (`pyproject.toml`, `requirements.licences.json`); the call desk's laptop
   packages (`deploy/calldesk/requirements-calldesk.txt`, among them `soundcard` and `comtypes`) are
-  not in that list (*unverified:* their licences were not checked for this edition).
+  not in that list (*unverified:* their licences were not checked for this edition). R5.2 adds the
+  first check for models: the speech kit's manager installs a model only with a licence in
+  `src/jarvis/localspeech/protocol.py:PERMISSIVE_LICENCES` (`src/jarvis/localspeech/manager.py`),
+  which is why its GPL voices were left out (ADR-41); the speaker model's empty slot is CC BY 4.0
+  (ADR-46). The wake word's front end is still non-commercial, so this ADR stays "not true today"
+  (ADR-45).
 
 ### ADR-30 · Trading: the owner approves every money movement, or it is not built
 
@@ -602,6 +626,158 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   tickets end at a restart (ADR-36).
 - **Code:** `src/jarvis/api/calls_routes.py:LiveTickets`, `TICKET_TTL_S`, `TICKETS_MAX`.
 
+### ADR-40 · Laptop speech is a separate local server behind its own key gate
+
+- **Status:** Accepted, R5.2 (plan decision D1, approved under the owner's 27 Nov 2026
+  instruction; built by Part V1 and joined at I1). Amends ADR-06's listening order. Source:
+  `docs/plans/r5-2-voice.md` (sections 3.1 and 3.2, D1, D7); `docs/plans/r5-2-integration/I1-NOTES.md`
+  (section 2).
+- **Context:** Row 383 asks for local speech on the laptop to cut voice costs. Whisper is too slow
+  on Cloud Run's one CPU (ADR-06), and a cloud graphics card costs money. The laptop has a 4 GB
+  graphics card and already runs two JARVIS programs that the cloud reaches through Tailscale
+  Funnel behind a key gate: the home bridge (ADR-16) and the laptop brain (ADR-14).
+- **Decision:** A speech kit of its own on the laptop: its own server on `127.0.0.1:11437`, its
+  own Caddy gate on `127.0.0.1:11436` with its own key of at least 32 characters, its own private
+  folder and its own Funnel port (ADR-43), started and stopped apart from the home kit and the
+  laptop brain. It is not a new cloud service and not a tool: the voice parts call it directly
+  (listening, the session's clips and scoring, the wake word's training) through one shared,
+  pinned https client, and the call desk on the same laptop calls it over loopback. The console's
+  listening tries it first while it is healthy, then Google, then the browser (chapter 03,
+  section 1.2).
+- **Consequences:** Listening can cost ₹0 and the session's recordings stay home. It works only
+  while the laptop is on, so every failure falls back silently. The owner runs a third laptop
+  program, with a third key and a third Funnel door (chapter 05, section 9.1; residual risk 13).
+  Calls can use it only after R18's language check passes it (C76), which kit 1.0.0 can't do
+  yet (ADR-41).
+- **Code:** `src/jarvis/localspeech/server.py`, `src/jarvis/localspeech/client.py:cloud_kit`,
+  `loopback_kit`, `src/jarvis/voice/laptop.py:LaptopVoice`, `src/jarvis/voice/routing.py:EngineRoute`,
+  `src/jarvis/api/r52_wiring.py:voice_service`, `deploy/local-speech/Caddyfile`,
+  `deploy/local-speech/start-kit.ps1`.
+
+### ADR-41 · GPL engines and the PyTorch Indian-language engines are left out of the kit
+
+- **Status:** Accepted, R5.2 I1 (the Workshop's decision 1 at the join, 27 Nov 2026). Departs
+  from plan decisions D2 (Kokoro-82M as JARVIS's laptop voice, Piper as the light fallback) and D3
+  (AI4Bharat IndicConformer and Indic Parler-TTS in the same kit). Source:
+  `docs/plans/r5-2-integration/I1-NOTES.md` (section 2, decision 1; known limit 4.1); the plan's
+  change log (v5.2.2).
+- **Context:** The build brief allows only permissive licences for what the kit installs (its
+  rule 9). At the build, Kokoro's runtime phonemiser (phonemizer with espeak-ng) is GPL-3.0 and
+  piper-tts 1.3 and later is GPL-3.0-or-later; the two Indian-language engines need PyTorch, with
+  transformers and, for IndicConformer, the model's own code (`trust_remote_code`). Their
+  licences and file hashes were not checked.
+- **Decision:** Their slots stay empty, each named under `left_out` with its reason; the runtime
+  adapters stay in the code, but nothing installs them. Kit 1.0.0 pins only faster-whisper small
+  and medium (MIT).
+- **Consequences:** The kit has no voice and no Indian-language engine. JARVIS's voice stays
+  Google's (then the browser's); calls use the cloud options R18's check passes; the wake word's
+  stage 1 trains without other speakers' negatives and stage 2 refuses until a permissively
+  licensed voice is pinned; the plan's first-audio and listening-speed bars can't be measured
+  (chapter 07, section 9.4). Revisit when a voice with a permissive runtime can be pinned. Vitals'
+  engine names and the protocol's default voice still name Kokoro and Piper, unused (chapter 12,
+  section 7).
+- **Code:** `deploy/local-speech/models.json` (`left_out`), `src/jarvis/localspeech/manager.py`,
+  `src/jarvis/localspeech/runtimes/kokoro.py`, `src/jarvis/localspeech/runtimes/piper.py`,
+  `src/jarvis/localspeech/runtimes/indic_conformer.py`, `src/jarvis/localspeech/runtimes/indic_parler.py`.
+
+### ADR-42 · Small text model files may be pinned by their git blob id (a deviation from SHA-256 only)
+
+- **Status:** Accepted, R5.2 I1 (the Workshop's decision 4 at the join, 27 Nov 2026). A recorded
+  deviation from the build brief's rule 9 ("every model file ... recorded with its licence and
+  SHA-256"; `docs/plans/r5-2-voice/BUILD-BRIEF.md`). Source:
+  `docs/plans/r5-2-integration/I1-NOTES.md` (section 2, decision 4; known limit 4.5); the plan's
+  change log (v5.2.2).
+- **Context:** Hugging Face's file listing gives a large (LFS) file's SHA-256, but for a small
+  file kept in plain git only its git blob id, a SHA-1. At the build Hugging Face was reachable
+  only through a web reader, so the small files of the Whisper models (`config.json`,
+  `tokenizer.json`, `vocabulary.txt`) could not be downloaded and hashed. Without an exception the
+  Whisper slots could not be pinned at all, and the kit would have had no engine.
+- **Decision:** Only for a `.json` or `.txt` file of at most 5 MB, at a revision that is a full
+  40-character commit appearing in the file's address, the manifest may give `git_blob_sha1`
+  instead of `sha256`. The manager checks it after download exactly as git computes it, refuses a
+  mismatch, and records the file's SHA-256 in `installed.json` and `LICENCE.txt`. Weights
+  (`model.bin`, any LFS file) always need a SHA-256. The blob ids were read twice, by two
+  different requests, with the same answer.
+- **Consequences:** The Whisper slots are pinned. SHA-1 is broken for collisions, but here an
+  attacker would need a second file matching an existing one (a second preimage), which is
+  infeasible, and the full commit pins the content. The later check (`models verify`) re-checks a
+  blob-pinned file by its blob id, not by the SHA-256 recorded at install (chapter 05, section 9.2).
+  A file whose pin is wrong fails the install on the laptop rather than installing anything.
+- **Code:** `src/jarvis/localspeech/manager.py:ModelFile`, `ModelEntry`, `git_blob`,
+  `ModelManager.install`, `ModelManager.verify`; `deploy/local-speech/models.json`;
+  `tests/test_r52_i1_manager_blob.py`.
+
+### ADR-43 · The kit's Funnel port is 10000
+
+- **Status:** Accepted, R5.2 I1 (the Workshop's decision 2 at the join, 27 Nov 2026). Source:
+  `docs/plans/r5-2-integration/I1-NOTES.md` (section 2, decision 2).
+- **Context:** Tailscale Funnel serves only three https ports, 443, 8443 and 10000, and the cloud
+  accepts only those (`src/jarvis/offline/config.py`, `src/jarvis/config_voice.py`). The home
+  bridge's set-up and the laptop brain's start script both already take 8443.
+- **Decision:** The kit uses 10000 everywhere: `src/jarvis/localspeech/protocol.py:FUNNEL_PORT`,
+  the start scripts' default, the Caddyfile's notes, the README, the deploy's prompt and the
+  settings' example. `start-kit.ps1 -HttpsPort 443` is the way out when 10000 already serves
+  something; the script never takes a port that already serves something else, and closes only
+  the port it opened.
+- **Consequences:** The kit never clashes with the bridge or the brain. All three Funnel ports may
+  now be in use on one laptop; the older clash between the bridge and the brain on 8443 stays open
+  (chapter 12, section 7), and 443 is the only port left to resolve it.
+- **Code:** `src/jarvis/localspeech/protocol.py:FUNNEL_PORT`, `deploy/local-speech/start-kit.ps1`,
+  `deploy/cloudrun.sh:ls_url_ok`, `tests/test_r52_v1_deploy.py`.
+
+### ADR-44 · The speaker check is a barge-in filter and a display label only; it never approves
+
+- **Status:** Accepted, R5.2 (plan decision D6, keeping slice 9's decision D11). Source:
+  `docs/plans/r5-2-voice.md` (section 3.5, D6); `docs/plans/r5-2-integration/INTEGRATION-V5.md`.
+- **Context:** Row 84 asks that JARVIS know it's the owner. A voice match is a probability, can be
+  fooled by a recording, and drops with a cold or a new headset. Approvals are confirm-before-commit
+  decisions that must not rest on it.
+- **Decision:** The voice print runs and stays in the browser of each device. With a print active
+  it decides only whether a voice may interrupt JARVIS while he speaks; a slow, failed or missing
+  check is "skip", so barge-in works as before. "Spoken by the owner" may at most be shown as a
+  label. No module that decides an approval, a passkey, an unlock, a permission or a Telegram
+  approval may even mention the label or a voice print.
+- **Consequences:** A wrong match can only let the TV interrupt JARVIS or stop the owner from
+  interrupting him; it can never approve anything. The label is not built yet (chapter 12,
+  section 7).
+- **Code:** `src/jarvis/api/static/console-voiceprint.js`, `src/jarvis/api/static/console-voice-barge.js`,
+  `src/jarvis/voice/profile.py:SPOKEN_BY_HEADER`, `tests/test_r52_v5_never_approves.py`.
+
+### ADR-45 · openWakeWord's non-commercial models block a public launch; recorded, not fixed in R5.2
+
+- **Status:** Accepted as a recorded launch blocker, R5.2 (Part V4's finding; the Workshop's
+  note for R5.2's combined review: record it, don't fix it). Widens ADR-06's licence note and
+  ADR-29 (proposed). Source: `docs/plans/r5-2-integration/I1-NOTES.md` (known limit 4.3).
+- **Context:** ADR-06 recorded that today's "Hey Jarvis" model is CC BY-NC-SA 4.0, and R5.2's
+  plan made its owned model (stage 2) the replacement before any launch. Building it, V4 found that
+  both stages run on openWakeWord's melspectrogram and embedding models, the console's front end,
+  which carry the same non-commercial licence.
+- **Decision:** Personal use goes on as before. R5.2 builds both stages on that front end and
+  changes nothing about the licence. Before R18.1 (the public launch), JARVIS needs a permissive
+  or owned front end as well as stage 2.
+- **Consequences:** Stage 2 alone does not lift the blocker; R18.1's preconditions grow by one
+  (chapter 11). ADR-29 stays "not true today".
+- **Code:** `src/jarvis/api/static/wakeword/LICENSE.txt`, `src/jarvis/localspeech/wakeword/streaming.py`,
+  `src/jarvis/api/static/console-wakeword.js`.
+
+### ADR-46 · The speaker model (WeSpeaker CAM++) is not vendored; its slot ships empty
+
+- **Status:** Accepted, R5.2 (Part V5; I1's known limit 4.4). Source:
+  `docs/plans/r5-2-integration/INTEGRATION-V5.md` ("Model (not shipped)");
+  `docs/plans/r5-2-integration/I1-NOTES.md` (known limit 4.4, owner's step 6).
+- **Context:** The plan named WeSpeaker ResNet34 or 3D-Speaker CAM++. The builder chose WeSpeaker's
+  VoxCeleb CAM++ and confirmed its licence, CC BY 4.0, from WeSpeaker's and VoxCeleb's own pages.
+  Hugging Face and WeNet's mirror were unreachable from the build, so neither the file nor its
+  SHA-256 could be taken from a primary source, and a third-party copy is not acceptable.
+- **Decision:** Ship the slot empty, with the steps to fill it written in its manifest; the model
+  route serves nothing until the manifest lists the file with a matching SHA-256. The threshold
+  stays at a placeholder of 0.45 until the laptop eval measures it.
+- **Consequences:** Until the owner downloads and pins the model on his laptop, the console says
+  "no model", hides the Record button and barge-in is unchanged; the plan's equal-error-rate bar
+  (5 % or less) can't be measured (chapter 07, section 9.4).
+- **Code:** `src/jarvis/api/static/vendor/speaker/spk-1/MANIFEST.json`,
+  `src/jarvis/api/static/console-voiceprint.js`, `src/jarvis/api/speaker_assets.py`.
+
 ## 3. Follow-ups found while writing this document
 
 | # | Follow-up | Why | Where |
@@ -629,3 +805,4 @@ Proposed; it becomes Accepted when the code does what it says, in the same pull 
 | v6.4.3 | 27 Nov 2026 | R6.4 | Follow-up F4 added: outfit plans kept 90 days, as the owner decided | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 20:40 IST | R18 | R18 "Calls from your laptop": ADR-27 accepted and rewritten as built; nine new ADRs, 31 to 39 (free speech first behind the language check, metering in one place, 8 kHz WAV recordings, English "not yet checked", the 1920 px dock rule, the one-instance call hub and the 1800 s timeout, the phone's doorbell and signed commands, the one-use grant and no Telegram approval, the live socket's ticket); ADR-07, ADR-25, ADR-28 and ADR-29 updated for R18; follow-ups F5–F7 | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: follow-ups F4 (outfit plans 90 days, commit `2041978`), F5 (the approvals seal, `9e8b490`), F6 (the deploy's speech keys, `09bb44e`) and F7 (the `free_first` eval, `4c1f66b`) closed; ADR-31 names the eval; ADR-38's consequences and code name the approvals seal | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 22:15 IST | R5.2 | R5.2 "Your voice": what R5.2 adds, in plain words; ADR-06 amended (the laptop listens first while its kit is healthy); ADR-29's code note (the kit's manager checks model licences); seven new ADRs: ADR-40 the laptop speech kit as a separate local server behind its own key gate, ADR-41 GPL engines (Kokoro's phonemiser, piper-tts) and the PyTorch Indian engines left out, ADR-42 git-blob SHA-1 pins for small text files (a recorded deviation from SHA-256 only), ADR-43 Funnel port 10000, ADR-44 the speaker check never approves, ADR-45 openWakeWord's non-commercial front end as a launch blocker, ADR-46 the CAM++ speaker model not vendored | 🛠 Mark XXV |

@@ -21,7 +21,7 @@
 
   const LAYOUT_KEY = 'jarvis_deck_v1';
   const TAB_KEY = 'jarvis_deck_tab';
-  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'media', 'construct', 'book', 'helpers', 'camera'];
+  const ORDER = ['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault', 'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'voice', 'calls', 'media', 'construct', 'book', 'helpers', 'camera'];
   const STEP = 16; // keyboard move (Shift = x4)
   const RADAR_WINDOW_S = 300; // radar shows the last five minutes
   const SPARK_MAX = 20;
@@ -93,6 +93,8 @@
       helpers: { x: col2, y: b.top + 18, w: 420, h: Math.min(availH, 720), open: false },
       // R7: the Camera panel (Look, Results, Cameras; Part B fills it)
       camera: { x: col2, y: b.top + 24, w: 420, h: Math.min(availH, 720), open: false },
+      // R18: the Calls panel (calls, a record, the live call, the language table, settings)
+      calls: { x: Math.max(sL, sR - chatW - 14 - 440), y: b.top + 6, w: 440, h: Math.min(availH, 760), open: false },
     };
   }
   /** Stored layout, validated field by field. Anything malformed falls back to the defaults, and a

@@ -510,8 +510,9 @@ async def test_the_dock_folds_into_a_more_sheet_with_an_entry_per_foldable_tab(
     html = (await client.get("/")).text
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
     names = re.findall(r'<button class="dk(?: wide)?" type="button" data-open="(\w+)"', dock)
-    # R11 D19: Helpers is the 21st tab; R7 I0: Camera the 22nd, last (it folds behind More first)
-    assert len(names) == 22 and names[:3] == ["chat", "brief", "approvals"]
+    # R11 D19: Helpers is the 21st tab; R7 I0: Camera the 22nd, last (it folds behind More first);
+    # R18 E: Calls the 23rd, after Voice
+    assert len(names) == 23 and names[:3] == ["chat", "brief", "approvals"]
     assert names[-2:] == ["helpers", "camera"]
     assert "ovf" not in dock
     assert 'id="dockMore" type="button" aria-haspopup="dialog" aria-expanded="false"' in dock

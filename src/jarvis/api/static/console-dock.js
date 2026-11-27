@@ -61,6 +61,7 @@
     construct: 'The rotating hologram',
     helpers: 'Bills, chores, weather and alerts, nudges and the kitchen',
     camera: 'Look at a photo or the live picture, on this device', // R7
+    calls: 'Calls JARVIS places from your phone: live captions, records, languages', // R18
   };
   function buildSheet() {
     const close = $('moreClose'), into = close ? close.parentNode : null;

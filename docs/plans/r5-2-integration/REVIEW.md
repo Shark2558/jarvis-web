@@ -1,4 +1,4 @@
-Version v5.2.0 · 27 Nov 2026, 23:55 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v5.2.1 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # R5.2 "Your voice": the combined security and code review
 
@@ -17,7 +17,8 @@ final check pass (section 3).
 ## 1. Findings
 
 No CRITICAL was found. Counts: **1 HIGH** (1 fixed), **8 MEDIUM** (8 fixed; rows 20 and 21 came out
-of the final check pass), **12 LOW** (7 fixed, 5 left, each with its reason).
+of the final check pass), **12 LOW** (7 fixed, 5 left, each with its reason; row 18 was then done on the owner's decision
+of 28 Nov 2026, so 4 are left).
 
 | # | Severity | Where | What | Fix | Test |
 |---|---|---|---|---|---|
@@ -38,7 +39,7 @@ of the final check pass), **12 LOW** (7 fixed, 5 left, each with its reason).
 | 15 | LOW | `voice/profile.py` `SPOKEN_BY_HEADER` (BOOK-LIST 4.4) | Defined, never sent or read | **Left**: the "Spoken by the owner" label is not built (I1-NOTES 4.7); `test_r52_v5_never_approves.py` forbids it in every module that decides anything | — |
 | 16 | LOW | `vitals/words.py` `VOICE_ENGINES`, `protocol.DEFAULT_ENGLISH_VOICE` (BOOK-LIST 4.6) | Name Kokoro and Piper, which kit 1.0.0 leaves out | **Left**: never shown while the slots are empty; right again once a permissive voice is pinned | — |
 | 17 | LOW | `buildbook/gen/pages_index.py` docstring (BOOK-LIST 4.7) | Counts 153 pages (now 169) | **Left**: a comment; changing it stales every page that cites the module | — |
-| 18 | LOW | `voice/session.py:567` (`delete_recordings`) | With no kit set up (address or key removed), "Delete my recordings" refuses (503 `laptop_not_set_up`), so the comparison's transcripts in Firestore can't be deleted from Privacy until the kit is back | **Left**: by design nothing claims to be gone that isn't (the row says recordings are deleted only while the laptop is on); the profile row deletes on its own. A cloud-only delete is a follow-up for the owner to decide | — |
+| 18 | LOW | `voice/session.py:567` (`delete_recordings`) | With no kit set up (address or key removed), "Delete my recordings" refuses (503 `laptop_not_set_up`), so the comparison's transcripts in Firestore can't be deleted from Privacy until the kit is back | **Left** by the review: by design nothing claims to be gone that isn't (the row says recordings are deleted only while the laptop is on); the profile row deletes on its own. A cloud-only delete was for the owner to decide. **Done, 28 Nov 2026** (the owner's decision, the safe default, 475b208): with no kit set up the delete clears the session document here and the profile's session; none of the laptop's recordings is claimed gone (0 deleted, their count kept, the dashboard shows them as left); a kit that is set up but down still refuses, nothing deleted | `test_r52_review_delete_here.py` (4, red first) |
 | 19 | LOW | the Book | 26 pages and 3 narrations staled by the fixes (2 more by row 20) | Each diff read; C79, C17, C39 and the Voice screen's words fixed where they had become untrue or incomplete, the rest restamped; `module_voice` retold where its pages changed | `pages --check`, `--narration-check` |
 | 20 | MEDIUM | `pyproject.toml` package data (the final suite's one failure) | `static/vendor/speaker/spk-1/MANIFEST.json` was not package data: the image (`pip install .`) would have no speaker manifest (the route then 404s, safe) and the model V5's `to_ship` list adds later would never ship | `static/vendor/speaker/*/*` beside the mannequin's | `test_r14_i1_join.py::test_every_runtime_data_file_ships_in_the_wheel` (red in the suite, green) |
 | 21 | MEDIUM | `evals/r6_3/facts.py:163,184` | The mock evals failed `r6_3` on R5.2's Book: pins of R18's 78 cards and 197 settings | 83 cards (C79–C83) and 204 settings (`LocalSpeechConfig`'s 7), each commented | `run_all_mock.py`: r6_3 30/30, its control failing |
@@ -120,8 +121,9 @@ Run once, at the end. The suite ran on `r5-2-review` at 8a506f8; its one failure
    the brain's start script once and paste its new address (no `:8443`) into Integrations →
    Offline mode. The home bridge keeps its address.
 2. Everything in I1-NOTES section 5 (install the kit, the session, training, the speaker model).
-3. Row 18: whether "Delete my recordings" should also clear the cloud's comparison words when no
-   kit is set up.
+3. Row 18: **decided, 28 Nov 2026**: "Delete my recordings" also clears the cloud's comparison
+   words when no kit is set up. The safe default is applied (475b208): any recordings on the
+   laptop stay counted until the kit is back; the Workshop tells him.
 4. The merge commit 4f96d79 carries no trailers (made by `git merge --no-edit`, as the setup said;
    pushed, so not rewritten).
 
@@ -130,3 +132,4 @@ Run once, at the end. The suite ran on `r5-2-review` at 8a506f8; its one failure
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v5.2.0 | 27 Nov 2026, 23:55 IST | R5.2 | First edition: the findings (1 HIGH, 8 MEDIUM, 12 LOW), the Workshop's notes item by item, the one final check pass, what is left for the owner | 🛠 Mark XXV |
+| v5.2.1 | 28 Nov 2026 | R5.2 | Row 18 and section 4 item 3: the owner's decision of 28 Nov 2026 applied (with no kit set up, "Delete my recordings" clears the comparison's words here; the laptop's recordings stay counted), 475b208, its test | 🛠 Mark XXV |

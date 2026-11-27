@@ -113,6 +113,10 @@ html[data-surface="night"] .cl-rtitle{font:400 15px/1.3 var(--tech);letter-spaci
   .cl-captions{max-height:38vh}
   .cl-live-acts .btn{flex:1 1 0}
   #p-calls .seg{max-width:none}
+  /* R18 dock: Vitals' calls line opens Calls; a 44 px invisible hit band (console-attach.css's
+     .arm pattern), so the row keeps its look */
+  #sCallsOpen{position:relative}
+  #sCallsOpen::before{content:"";position:absolute;left:0;right:0;top:50%;height:44px;transform:translateY(-50%)}
 }
 html[data-motion="off"] #p-calls *,html[data-motion="off"] .cl-card *{transition:none!important;animation:none!important}
 @media (prefers-reduced-motion:reduce){#p-calls *,.cl-card *{transition:none!important;animation:none!important}}

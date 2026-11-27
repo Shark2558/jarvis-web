@@ -370,7 +370,9 @@ def test_new_call_from_the_laundry_pickup_makes_a_card_and_calls(calls: Calls) -
     assert calls.stub.calls("POST", "/approve")[-1][2] == {}  # a number called before: one press
     calls.page.locator("#clp-calls .cl-live").wait_for(state="visible")  # the live call opens
     until(calls.page, lambda: calls.stub.ws is not None, "the live socket")
-    assert calls.stub.ws_url.endswith("/v1/calls/" + LIVE_ID + "/live")
+    # I1: the socket carries a one-use ticket (token mode: no bearer on a WebSocket)
+    assert calls.stub.ws_url.endswith("/v1/calls/" + LIVE_ID + "/live?ticket=lt_" + "t" * 32)
+    assert calls.stub.calls("POST", "/live/ticket")
     calls.clean()
 
 

@@ -567,6 +567,8 @@ class CallsStub:
                 self.running = True
                 return ok({"running": True}, 202)
             return ok({"estimate_inr": 0, "languages": 3})
+        if re.fullmatch(r"/v1/calls/call_[0-9a-f]{12}/live/ticket", path) and method == "POST":
+            return ok({"ticket": "lt_" + "t" * 32, "expires_in_s": 30})  # I1: the live ticket
         if path == "/v1/calls/desk/kit/info":  # I1: the call desk's kit (Settings)
             return ok({"sha256": "ab" * 32, "size": 4096, "version": "18.0.0"})
         if path == "/v1/calls/desk/code" and method == "POST":

@@ -92,15 +92,24 @@ export function mount(host, ctx) {
   }
 
   // ---- the socket ---------------------------------------------------------------------------------------------------
-  function url() { // the console page in the phone's browser says so: Take over then moves the sound to the phone (A2)
+  function url(ticket) { // the console page in the phone's browser says so: Take over then moves the sound to the phone (A2)
     const D = window.JarvisDeck, phone = !!(D && typeof D.isPhone === 'function' && D.isPhone());
-    return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + PATHS.live(S.id) + (phone ? '?device=phone' : '');
+    const q = [ticket ? 'ticket=' + encodeURIComponent(ticket) : '', phone ? 'device=phone' : ''].filter(Boolean).join('&');
+    return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + PATHS.live(S.id) + (q ? '?' + q : '');
   }
-  function connect() {
+  async function ticket() { // I1: a one-use ticket (a browser can't send the sign-in token on a WebSocket)
+    try {
+      const r = await api(PATHS.live(S.id) + '/ticket', { body: {} });
+      return r && typeof r.ticket === 'string' && /^lt_[A-Za-z0-9_-]{16,64}$/.test(r.ticket) ? r.ticket : '';
+    } catch (_) { return ''; } // the cookie session still opens it
+  }
+  async function connect() {
     clearTimeout(S.timer);
     if (!S.id || S.ended) return;
+    const t = await ticket();
+    if (!S.id || S.ended) return;
     let ws;
-    try { ws = new WebSocket(url()); } catch (e) { say(conn, failed(e), 'bad'); return; }
+    try { ws = new WebSocket(url(t)); } catch (e) { say(conn, failed(e), 'bad'); return; }
     ws.binaryType = 'arraybuffer';
     S.ws = ws;
     say(conn, S.tries ? 'Connecting again\u2026' : 'Connecting to the call\u2026');

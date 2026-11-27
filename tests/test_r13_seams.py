@@ -69,13 +69,13 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name ------------------------------------------------
 def test_the_version_is_thirteen() -> None:
-    assert jarvis.__version__ == "6.4.0"  # R6.4 (6.3.2 at R6.3.1; nothing compares it)
+    assert jarvis.__version__ == "18.0.0"  # R18 (6.4.0 at R6.4; nothing compares)
 
 
 def test_the_real_repository_is_r13_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)  # R6.4: the release is now R6.4 (tests/test_r63_seams.py)
-    assert plans.release_label(repo) == "R6.4"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"
+    assert plans.release_label(repo) == "R18"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r18-calls.md"
     assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 
@@ -103,8 +103,9 @@ def test_the_held_words_the_alerts_card_the_book_and_push_know_every_new_kind() 
 
 # ---- 3 · two key purposes ------------------------------------------------------------------------
 def test_two_key_purposes_make_twenty_four() -> None:
-    assert keyring.PURPOSES[-4:-2] == ("wardrobe", "wardrobe_photos")  # R13.1 + 2 after them
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 26
+    # R13.1 + 2 after them, R18 + 1
+    assert keyring.PURPOSES[-5:-3] == ("wardrobe", "wardrobe_photos")
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
     ring = keyring.Keyring(bytes(range(7, 39)))
     blob = ring.cipher("wardrobe").encrypt(b"x", aad="wardrobe/u/v1")
     with pytest.raises(Exception):  # noqa: B017 - each purpose is its own key
@@ -727,7 +728,8 @@ def test_the_register_files_the_18_wardrobe_tools_in_three_groups() -> None:
 
     reg = SkillRegister(load_catalogue())
     cat = reg.catalogue
-    assert not cat.planned  # I1 emptied `planned`: every tool it named is built
+    # I1 emptied `planned`; R18 I0 lists its two call tools there until R18's I1 builds them
+    assert cat.planned <= {"calls_place", "calls_answer_mode"}
     assert NO_AI_TOOLS <= cat.no_ai and not set(TOOL_OWNER) & set(cat.telegram_open)
     for tool in TOOL_OWNER:
         assert len(reg.filed(tool)) == 1, tool

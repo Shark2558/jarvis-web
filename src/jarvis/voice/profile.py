@@ -111,9 +111,22 @@ _NUMBER_WORDS = (
     "ninety hundred thousand lakh lakhs lac lacs crore crores million billion double triple point "
     "half quarter first second third"
 )
+# R5.2 review: ordinals, plurals and counting words too (a correction once could write "fifth")
+_ORDINAL_WORDS = (
+    "fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth fourteenth "
+    "fifteenth sixteenth seventeenth eighteenth nineteenth twentieth thirtieth fortieth fiftieth "
+    "sixtieth seventieth eightieth ninetieth hundredth thousandth millionth billionth"
+)
+_COUNT_WORDS = (
+    "zeros zeroes ones twos threes fours fives sixes sevens eights nines tens elevens twelves "
+    "dozen dozens hundreds thousands millions billions twenties thirties forties fifties sixties "
+    "seventies eighties nineties nought naught once twice thrice"
+)
 _MONEY_WORDS = "rupee rupees rs inr paise paisa dollar dollars usd euro euros pound pounds"
-_CODE_WORDS = "otp pin code cvv upi ifsc pan aadhaar"
-PROTECTED_WORDS: Final = frozenset(f"{_NUMBER_WORDS} {_MONEY_WORDS} {_CODE_WORDS}".split())
+_CODE_WORDS = "otp pin code cvv cvc upi ifsc pan aadhaar password passcode passkey pincode"
+PROTECTED_WORDS: Final = frozenset(
+    f"{_NUMBER_WORDS} {_ORDINAL_WORDS} {_COUNT_WORDS} {_MONEY_WORDS} {_CODE_WORDS}".split()
+)
 _WORD = re.compile(r"^[^\W\d_]+(?:['-][^\W\d_]+)*$")  # letters, inner ' or -
 HEARD_WORDS_MAX = 3
 MEANT_WORDS_MAX = 5

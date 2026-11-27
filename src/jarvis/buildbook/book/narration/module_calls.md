@@ -3,15 +3,15 @@ chapter: module_calls
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
-  "pg_module_calls": "88855363b6f3c07a"
+  "pg_module_calls": "75d0facd1d85fcf2"
   "pg_card_c74": "276e43fdccd60b6f"
   "pg_card_c75": "9e6d0440cd70e0a9"
-  "pg_card_c76": "9e4e23730822d85d"
-  "pg_card_c77": "aec0238ab86e3938"
+  "pg_card_c76": "1d874ab7fd7f691d"
+  "pg_card_c77": "988fd09276e3e7bc"
   "pg_card_c78": "bd6b45b8791412dd"
   "pg_screen_calls": "60dd09b61813e44c"
   "pg_service_bhashini": "a4bf466c164e02cb"
-  "pg_service_hugging_face": "c867d8c12d15ba0b"
+  "pg_service_hugging_face": "a07c266bd94ade44"
   "pg_service_microsoft_azure_speech": "bd6ab0f24b41a616"
   "pg_service_sarvam": "d8259dec318dc923"
 ---
@@ -61,6 +61,8 @@ pages:
 - [show:fails] Anything missing at the laptop or the phone is named on the card, and nothing is dialled.
 - With the call desk stopped, JARVIS can't call from the laptop.
 - And a restart ends a call in memory, leaving no approval to dial on.
+- Once you set it up, the laptop speech kit joins the calls' speech, but an option passes the language check only with a voice of its own.
+- This first kit has none, so every call still uses cloud speech.
 - [page:pg_card_c74] [show:title] Now the parts, one by one, starting with the card, the approval, the limits and the records.
 - [show:plain] A call speaks for you and can't be undone, so nothing is dialled until you press Call on its card.
 - [show:how] The card checks the number as an Indian number, and refuses emergency, helpline, premium-rate, international and other short numbers.
@@ -100,6 +102,7 @@ pages:
 - [show:how] A request is retried only where the vendor surely didn't take it, so nothing is billed twice.
 - Every rupee goes through JARVIS's billing once, under the label calls.
 - In a call, a language uses the passing option you allow, free first: a paid one only when no free one still covers the call, and never one that didn't pass.
+- With the laptop speech kit set up, a laptop option, free, comes first, but an option passes only as a whole, hearing, voice and speed, and this first kit has no voice.
 - The check plans first, with its price, and sends nothing until you press Run.
 - [count:{{fact:src/jarvis/calls/langcheck/fleurs.py:CLIPS}}] It takes {{fact:src/jarvis/calls/langcheck/fleurs.py:CLIPS}} clips a language from Google's open FLEURS set, and squeezes each into a phone line's narrow band.
 - Hearing must get at least {{fact:src/jarvis/calls/langcheck/scoring.py:HEAR_FACTS_MIN}} of the key facts right, and a voice must be heard back just as well by another option.
@@ -116,9 +119,12 @@ pages:
 - Before every call it checks VB-CABLE, Phone Link, and that no Bluetooth headset is connected to the laptop.
 - It writes down your microphones before changing anything, and undoes a switch that Windows doesn't confirm.
 - A phone menu's key is played into the call as its tone.
+- Since {{fact:release.label}}, the desk finds the laptop speech kit's key in its own folder, where its installer copies it, and can reach the kit on the laptop itself.
+- It offers that speech only for a language the kit both hears and speaks, and this first kit hears English only and has no voice, so every call still uses cloud speech.
 - [show:costs] It costs nothing, and talks only to JARVIS.
 - [show:fails] [count:{{fact:src/jarvis/calldesk/session.py:DISCONNECT_GRACE_S}}] A link lost for more than {{fact:src/jarvis/calldesk/session.py:DISCONNECT_GRACE_S}} seconds during a call releases everything on the laptop.
 - A crash is caught by the watchdog, which gives your microphone back before restarting the desk.
+- [count:{{fact:src/jarvis/calldesk/config.py:SPEECH_KEY_MIN}}] With no kit key, or one under {{fact:src/jarvis/calldesk/config.py:SPEECH_KEY_MIN}} characters, the desk offers cloud speech only.
 - [page:pg_card_c78] [show:title] Then the phone app's part.
 - [show:plain] It places, answers and ends calls from your own number, when the cloud sends it a signed command.
 - It never hears or records a call itself, never reads your call log or contacts, and never calls anyone without your tap.
@@ -160,7 +166,9 @@ pages:
 - [show:plain] Bhashini is the Government of India's language platform, an optional speech option for calls.
 - Its price for this use is unknown, so JARVIS never counts it as free.
 - [page:pg_service_hugging_face] [show:title] Hugging Face is where the language check finds its FLEURS test clips.
-- [show:plain] It is used only by the language check, never during a call.
+- [show:plain] It is never used during a call.
+- Since {{fact:release.label}}, the laptop speech kit also downloads its pinned Whisper listening models from it, once, onto your laptop, when you install the kit.
+- Neither needs a key, and nothing about you goes there.
 - [page:pg_service_microsoft_azure_speech] [show:title] Microsoft Azure Speech is an optional speech option, on its free tier.
 - [show:plain] [count:{{fact:settings.voice_azure_f0_stt_free_seconds}}] Its free tier gives {{fact:settings.voice_azure_f0_stt_free_seconds}} seconds of hearing a month, and it stops at its allowance, so it can never bill.
 - [page:pg_service_sarvam] [show:title] And Sarvam is an Indian speech company, a paid option.

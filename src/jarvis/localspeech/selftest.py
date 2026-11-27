@@ -231,6 +231,8 @@ def check_vault(vault: ClipVault) -> Check:
         sealed = plain[:64] not in on_disk
         private = os.name == "nt" or (vault.key_file.stat().st_mode & 0o077) == 0
         ok = sealed and private and len(back) == 1 and back[0].pcm == plain
+    except (KitRefused, OSError) as err:
+        return Check("recordings", False, f"a test recording could not be stored ({err})")
     finally:
         vault.delete(clip.session_id)
     words = "stored encrypted, read back, deleted" if ok else "recordings are NOT stored safely"

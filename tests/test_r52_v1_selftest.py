@@ -161,3 +161,12 @@ async def test_the_gate_calls_say_offline_when_nothing_listens() -> None:
     with pytest.raises(KitUnavailable):
         await calls.health()
     assert KEY not in repr(calls)
+
+
+def test_a_full_vault_fails_the_check_in_plain_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("numpy")
+    monkeypatch.setattr("jarvis.localspeech.clips.MAX_SESSIONS", 0)
+    check = st.check_vault(ClipVault(tmp_path / "clips", tmp_path / "clips.secret"))
+    assert check.ok is False and "too many sessions" in check.words

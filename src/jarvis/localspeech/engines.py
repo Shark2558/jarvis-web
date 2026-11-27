@@ -306,7 +306,8 @@ class Slots:
 
     def _load(self, spec: EngineSpec) -> Engine:
         model_dir = self._installed(spec.slot)
-        assert model_dir is not None  # why_not_ready checked it
+        if model_dir is None:  # removed since why_not_ready looked
+            raise KitRefused("engine_not_ready", NOT_INSTALLED)
         loader = self._import_loader(spec.loader)
         devices = [Device.CPU]
         if self._device.device is Device.CUDA and self._make_room(spec.vram_mb):

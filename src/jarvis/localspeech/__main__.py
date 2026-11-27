@@ -120,10 +120,10 @@ def installed(config: KitConfig, out: Out) -> int:
 
 
 def selftest(config: KitConfig, as_json: bool, out: Out) -> int:
-    key = config.key.get_secret_value() if config.key is not None else None
-    if key is None:
+    if config.key is None:
         out("No key in this window: run the self-test from start-kit.ps1 -SelfTest.")
         return 1
+    key = config.require_key()
     report = asyncio.run(
         run(
             GateCalls(key),

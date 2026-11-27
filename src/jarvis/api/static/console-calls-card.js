@@ -122,11 +122,27 @@ export function render(c, ctx) {
     if (S.busy) return;
     err.textContent = '';
     S.busy = true; paint();
+    const path = PATHS.cards + '/' + encodeURIComponent(S.c.id) + '/approve';
     const body = {};
     try {
-      if (S.c.passkey) body.passkey = await passkey(S.c); // first: the press still counts as his gesture
+      let r = null;
+      if (S.c.passkey) { // I1: the first press proposes the approval (A1); the passkey is made for its id
+        const first = await api(path, { body: {} });
+        if (first && first.status === 'needs_passkey' && typeof first.approval_id === 'string') {
+          body.approval_id = first.approval_id;
+          body.passkey = await passkey({ ...S.c, approvalId: first.approval_id });
+        } else r = first; // no passkey was asked after all: that press was the approval
+      }
       say(note, 'Asking your laptop and phone to get ready\u2026');
-      const r = await api(PATHS.cards + '/' + encodeURIComponent(S.c.id) + '/approve', { body });
+      if (!r) r = await api(path, { body });
+      if (r && r.status === 'needs_passkey') { // his passkey is in force for every call (I1)
+        S.busy = false;
+        S.c = { ...S.c, passkey: true };
+        say(note, '');
+        paint();
+        err.textContent = 'This call needs your passkey. Press Call with passkey.';
+        return;
+      }
       const cid = r && typeof r.call_id === 'string' ? r.call_id : '';
       const next = checkCard((r && r.card) || r) || { ...S.c, status: 'approved' };
       S.busy = false;

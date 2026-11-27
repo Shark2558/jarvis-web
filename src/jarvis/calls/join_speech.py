@@ -278,9 +278,22 @@ class LanguageCheckJob:
     async def view(self) -> dict[str, Any]:
         return self.progress.view(await self.done())
 
+    @staticmethod
+    def _request(body: Mapping[str, Any]) -> dict[str, Any]:
+        """B's body, or the console's {confirm, estimate_inr}: the estimate, then the run with
+        the rupees he saw accepted (never more)."""
+        if "confirm" not in body:
+            return dict(body)
+        out = {k: v for k, v in body.items() if k not in ("confirm", "estimate_inr")}
+        out["estimate_only"] = body.get("confirm") is not True
+        seen = body.get("estimate_inr")
+        if body.get("confirm") is True and isinstance(seen, int | float) and seen > 0:
+            out["accept_inr"] = float(seen)
+        return out
+
     async def handle(self, uid: str, body: Mapping[str, Any]) -> dict[str, Any]:
         try:
-            req = CheckRequest.model_validate(dict(body))
+            req = CheckRequest.model_validate(self._request(body))
         except ValidationError as exc:
             fields = sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]})
             words = f"Check these fields: {', '.join(fields) or 'the request'}."
@@ -292,8 +305,10 @@ class LanguageCheckJob:
             plan = await check.plan(req.languages, options)
         except ValueError as exc:
             raise CallsRefused(422, "bad_request", str(exc)) from None
+        langs = len({p.lang for p in plan.running})
+        told = {"estimate_inr": plan.total_inr, "languages": langs}  # the console's names
         if req.estimate_only:
-            return {"plan": plan_view(plan), "check": await self.view()}
+            return {"plan": plan_view(plan), "check": await self.view()} | told
         if self.progress.running:
             raise CallsRefused(409, "check_running", MSG_RUNNING)
         if plan.total_inr > req.accept_inr + 0.005:
@@ -303,7 +318,7 @@ class LanguageCheckJob:
             )
             raise CallsRefused(409, "check_refused", words)
         self._start(check, plan, req)
-        return {"plan": plan_view(plan), "check": await self.view()}
+        return {"plan": plan_view(plan), "check": await self.view()} | told
 
     async def score(self, uid: str, body: Mapping[str, Any]) -> dict[str, Any]:
         """The owner's 1-5 scores of a language's samples (`langcheck.api.handle_score`)."""

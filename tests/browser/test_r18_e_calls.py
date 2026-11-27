@@ -357,12 +357,16 @@ def test_a_new_number_asks_for_the_passkey_before_the_approval(calls: Calls) -> 
     assert "your passkey is asked" in text
     calls.button("Call with passkey", "#clp-new .cl-card").click()
     until(calls.page, lambda: calls.stub.calls("POST", "/approve"), "the approval")
-    sent = calls.stub.calls("POST", "/approve")[-1][2]
+    until(calls.page, lambda: len(calls.stub.calls("POST", "/approve")) == 2, "the second press")
+    proposed, sent = (c[2] or {} for c in calls.stub.calls("POST", "/approve"))
+    assert "passkey" not in proposed  # I1: A1's first press proposes the approval
     assert (
-        sent["passkey"]["challenge_id"] == "pc_test1"
+        sent["approval_id"] == "pa_test1"
+        and sent["passkey"]["challenge_id"] == "pc_test1"
         and sent["passkey"]["credential"]["id"] == "cred-test"
     )
-    assert calls.stub.calls("POST", "/v1/passkeys/challenge")[-1][2]["purpose"] == "approve"
+    asked = calls.stub.calls("POST", "/v1/passkeys/challenge")[-1][2]
+    assert asked["purpose"] == "approve" and asked["approval_id"] == "pa_test1"
     calls.page.locator("#clp-calls .cl-live").wait_for(state="visible")
     calls.clean()
 

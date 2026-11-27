@@ -21,14 +21,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 from fastapi import FastAPI
 
 from jarvis.api.calldesk_kit import install_calldesk_kit
-from jarvis.api.calls_handlers_cards import CardsApi
+from jarvis.api.calls_console import ConsoleCardsApi, ready_cards
 from jarvis.api.calls_ws import CallSockets
 from jarvis.calls.answering import AnsweringPolicy, GoogleContactBook
 from jarvis.calls.approvals import CallsService
@@ -71,7 +70,7 @@ from jarvis.calls.langcheck.fleurs import FleursClips
 from jarvis.calls.langcheck.runner import LanguageCheck
 from jarvis.calls.langcheck.sentences import CheckSentences
 from jarvis.calls.limits import BillingBudget, Limits
-from jarvis.calls.models import CallCard, CallSettings, CardStatus, SpeechOption
+from jarvis.calls.models import CallSettings, SpeechOption
 from jarvis.calls.ports import CallStore
 from jarvis.calls.prices import SpeechPrice, speech_prices
 from jarvis.calls.records import RecordKeeper, SealedBlobs
@@ -98,7 +97,6 @@ from jarvis.vault.crypto import VaultCrypto
 log = get_logger(__name__)
 
 SPEECH_TIMEOUT_S = 30.0
-CARD_ON_PHONE_S = 600  # a card waits on the phone as long as an approval lives
 NO_KEY = "R18 calls are not wired: they need JARVIS_TOKEN_KEY (numbers and records are sealed)."
 
 
@@ -351,31 +349,6 @@ def r18_tools(parts: R18Parts | None) -> tuple[Tool, ...]:
     return () if parts is None else parts.tools
 
 
-class JoinedCardsApi(CardsApi):
-    """A1's `CardsApi`, and a card that waits for his tap also waits on his phone (D's
-    Approve / Decline notification). The phone part never blocks or fails a card."""
-
-    phone: Any = None
-
-    async def create_card(self, uid: str, body: dict[str, Any]) -> dict[str, Any]:
-        out = await super().create_card(uid, body)
-        if self.phone is not None and out.get("blocked") is None:
-            await self._offer(uid, str(out.get("id", "")))
-        return out
-
-    async def _offer(self, uid: str, card_id: str) -> None:
-        from jarvis.phone.calls_wire import Card
-
-        try:
-            card: CallCard | None = await self.store.get_card(uid, card_id)
-            if card is None or card.status is not CardStatus.DRAFT:
-                return
-            until = datetime.now(UTC).timestamp() + CARD_ON_PHONE_S
-            await self.phone.send(uid, Card.for_card(card, expires_at=until))
-        except Exception as exc:  # noqa: BLE001 - the console shows the card anyway
-            log.warning("call card not offered on the phone", extra={"error": type(exc).__name__})
-
-
 def finish_r18(app: FastAPI) -> None:
     """After the gateway: the Calls panel's REST work and the phone's card decisions."""
     st = app.state
@@ -389,12 +362,13 @@ def finish_r18(app: FastAPI) -> None:
     parts.records.booking = booking
 
     async def status(uid: str) -> dict[str, Any]:
-        return await status_view(uid, hub=parts.hub, store=parts.store, phone=parts.phone)
+        out = await status_view(uid, hub=parts.hub, store=parts.store, phone=parts.phone)
+        return out | {"templates": ready_cards()}  # the console's ready cards
 
     async def progress(uid: str) -> dict[str, Any]:
         return await parts.check.view()
 
-    api = JoinedCardsApi(
+    api = ConsoleCardsApi(
         store=parts.store,
         builder=parts.builder,
         service=parts.service,
@@ -409,7 +383,7 @@ def finish_r18(app: FastAPI) -> None:
         language_score=parts.check.score,
         check_progress=progress,
     )
-    api.phone = parts.phone
+    api.phone, api.azure_ready = parts.phone, s.azure_speech_key is not None
     st.calls_api = api
     if parts.phone is not None:
         parts.phone.cards = PhoneCardDesk(lambda: getattr(st, "calls_api", None), parts.store)
@@ -422,7 +396,6 @@ def r18_tick_jobs(app: FastAPI) -> tuple[CallRetentionJob, ...]:
 
 
 __all__ = [
-    "JoinedCardsApi",
     "R18Parts",
     "finish_r18",
     "r18_tick_jobs",

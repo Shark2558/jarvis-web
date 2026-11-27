@@ -21,6 +21,7 @@ TODAY = "2026-11-27T08:35:00+00:00"  # 14:05 IST
 YESTERDAY = "2026-11-26T05:00:00+00:00"
 EARLIER = "2026-11-24T11:20:00+00:00"
 LIVE_ID = "call_0000000000c1"
+APPROVAL_ID = "pa_test1"  # the calls_place card A1's first press proposes (I1)
 CARD_ID = "cc_0000000000d1"
 
 STATUS: dict[str, Any] = {
@@ -420,11 +421,13 @@ class CallsStub:
             cid, act = card.group(1), card.group(2)
             c = self.cards.get(cid) or {**card_from({"purpose": "From the chat"}, cid, True)}
             if act == "approve":
-                if c.get("new_number") and not (body or {}).get("passkey"):
-                    return ok(
-                        {"error": "passkey_required", "detail": "This number needs your passkey."},
-                        403,
-                    )
+                b = body or {}
+                if c.get("new_number") and not b.get("passkey"):
+                    # A1 (I1): the first press proposes the gateway's card; the passkey is made
+                    # for that approval's id and sent with it on the second press
+                    return ok({"status": "needs_passkey", "approval_id": APPROVAL_ID})
+                if b.get("passkey") and b.get("approval_id") != APPROVAL_ID:
+                    return ok({"error": "passkey", "detail": "The passkey check failed."}, 403)
                 c = {**c, "status": "approved", "call_id": LIVE_ID}
                 self.cards[cid] = c
                 self.status["active"] = {"call_id": LIVE_ID, "state": "preparing"}

@@ -14,8 +14,8 @@ Communication skill): from the owner's request to the card he approves.
   matches), the languages (his defaults when none; each must have passed the language check with
   an option he allows: Sarvam only with `sarvam_on`, a "needs balanced" result only with
   `allow_balanced`; English before its first check is offered "not yet checked", the Workshop's
-  I1 decision: Google en-IN is JARVIS's own voice path), the limits (never above his settings), "never called before" and the ₹
-  estimate. Refusals are `CardRefused` (plain words, stable code).
+  I1 decision: Google en-IN is JARVIS's own voice path), the limits (never above his settings),
+  "never called before" and the ₹ estimate. Refusals are `CardRefused` (plain words, stable code).
 - `Estimator`: speech (the language's cheapest passing option; within the free allowances, or on
   an option that can't bill, ₹0), the brain (fast tier, about 4 turns a minute) and the summary,
   for the card's full length. A price JARVIS does not know makes the estimate None, never ₹0.

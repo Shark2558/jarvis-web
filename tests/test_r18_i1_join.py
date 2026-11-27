@@ -20,7 +20,8 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
 from jarvis.api import create_app
-from jarvis.api.r18_wiring import JoinedCardsApi, R18Parts
+from jarvis.api.calls_console import ConsoleCardsApi
+from jarvis.api.r18_wiring import R18Parts
 from jarvis.calls.approvals import GrantBook
 from jarvis.calls.brain import Line
 from jarvis.calls.cards import offered, provisional
@@ -73,7 +74,7 @@ async def wired(settings: Any) -> AsyncIterator[Any]:
 
 async def test_the_app_wires_every_calls_slot_tool_route_and_job(wired: Any) -> None:
     st = wired.state
-    assert isinstance(st.r18_parts, R18Parts) and isinstance(st.calls_api, JoinedCardsApi)
+    assert isinstance(st.r18_parts, R18Parts) and isinstance(st.calls_api, ConsoleCardsApi)
     assert st.calls_sockets is not None and st.calls_desk_door is not None
     names = {x.name for x in st.gateway.registry.specs()}
     assert {"calls_place", "calls_answer_mode"} <= names
@@ -490,3 +491,92 @@ async def test_a_language_check_runs_in_the_background_with_its_progress() -> No
     with pytest.raises(CallsRefused) as bad:
         await job.handle(UID, {"languages": ["xx-IN"]})
     assert bad.value.status == 422
+
+
+# ---- the console's names (E's console-calls-shapes.js) -----------------------------------------
+def _console(r: Any) -> ConsoleCardsApi:
+    base = a1_api(r)
+    return ConsoleCardsApi(
+        store=base.store,
+        builder=base.builder,
+        service=base.service,
+        gateway=base.gateway,
+        keeper=base.keeper,
+        booking=base.booking,
+        passkeys=r.passkeys,
+        audit=r.audit,
+    )
+
+
+async def test_the_console_card_body_and_view() -> None:
+    r = await rig()
+    await known(r.store)
+    api = _console(r)
+    body = {
+        "number": NUMBER,
+        "contact_name": "Laundry",
+        "purpose": "Book a pickup",
+        "limits": {"max_minutes": 4},
+    }
+    card = await api.create_card(UID, body)
+    assert card["contact_name"] == "Laundry" and card["limits"]["max_minutes"] == 4
+    assert card["number_last4"] == "0001" and card["passkey_required"] is False
+    assert card["ready"] == {"ok": True, "problems": []} and card["refused"] is None
+    again = await api.create_card(UID, {"purpose": "Ask again", "from_card": card["id"]})
+    assert again["number_e164"] == NUMBER and again["contact_name"] == "Laundry"  # Edit
+    with pytest.raises(CallsRefused) as gone:
+        await api.create_card(UID, {"purpose": "x", "from_card": "cc_000000000000"})
+    assert gone.value.status == 404
+
+
+async def test_a_new_number_or_his_passkey_in_force_asks_for_the_passkey() -> None:
+    r = await rig(passkey=True)
+    api = _console(r)
+    card = await api.create_card(UID, {"number": NUMBER, "purpose": "Book a pickup"})
+    assert card["new_number"] is True and card["passkey_required"] is True
+    first = await api.approve(UID, card["id"], {})  # A1's first press: the approval to prove
+    assert first["status"] == "needs_passkey" and first["approval_id"]
+
+
+async def test_the_console_record_settings_and_language_views() -> None:
+    r = await rig(languages=())
+    api = _console(r)
+    rec = CallRecord(number_e164=NUMBER, started_at=NOW, recorded=False)
+    await r.store.put_record(UID, rec)
+    sink = VaultRecords(api.keeper)
+    await sink.finish(
+        UID, rec, card=None, summary=CallSummary(text="Booked."), lines=LINES, booked=None
+    )
+    one = await api.get_record(UID, rec.id)
+    assert one["summary"] == "Booked." and one["summary_parts"]["english"] == "Booked."
+    assert [ln["who"] for ln in one["transcript"]] == ["jarvis", "them"]
+    assert one["number_last4"] == "0001" and one["booking_event"] is None
+    listed = await api.list_records(UID, 10)
+    assert listed["records"][0]["number_last4"] == "0001"
+    assert (await api.get_settings(UID))["azure_status"] == "off"
+    langs = await api.languages(UID)
+    english = [x for x in langs["results"] if x["lang"] == "en-IN"]
+    assert english and english[0]["passed"] is True and english[0]["not_checked"] is True
+
+
+async def test_the_console_runs_the_check_with_the_rupees_it_showed() -> None:
+    store, gate = MemoryCallStore(), asyncio.Event()
+    check = _Check(store, gate)
+
+    async def make(uid: str, settings: CallSettings) -> Any:
+        return check
+
+    job = LanguageCheckJob(make, store)
+    est = await job.handle(UID, {"confirm": False})
+    assert est["estimate_inr"] == 0 and est["languages"] == 1 and check.runs == 0
+    gate.set()
+    ran = await job.handle(UID, {"confirm": True, "estimate_inr": 0})
+    assert ran["check"]["running"] is True
+
+
+async def test_a_confirmed_settings_change_from_the_console_raises_the_cap(wired: Any) -> None:
+    async with AsyncClient(transport=ASGITransport(app=wired), base_url="http://test") as c:
+        refused = await c.put("/v1/calls/settings", json={"month_cap_inr": 400}, headers=H)
+        assert refused.status_code == 422 and refused.json()["error"] == "confirm_raise"
+        done = await c.put("/v1/calls/settings?confirm=1", json={"month_cap_inr": 400}, headers=H)
+    assert done.status_code == 200 and done.json()["month_cap_inr"] == 400

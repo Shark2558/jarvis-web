@@ -18,6 +18,7 @@ checks the owner, the path and the body's size and shape, then calls the part wi
     POST   /records/{call_id}/booking/undo  the calendar add's Undo        calls_api.undo_booking
     GET    /settings                                                       calls_api.get_settings
     PUT    /settings                        a subset of CallSettings       calls_api.put_settings
+                                            (?confirm=1: {confirm_raise: true}, I1)
     GET    /languages                       the language table             calls_api.languages
     POST   /languages/check                 run the language check         calls_api.run_language_
                                                                            check
@@ -278,7 +279,9 @@ async def get_settings(request: Request, uid: str = Depends(current_user)) -> Re
 
 @router.put("/settings", include_in_schema=False)
 async def put_settings(request: Request, uid: str = Depends(current_user)) -> Response:
-    return await _with_body(request, API_SLOT, lambda api, b: api.put_settings(uid, b))
+    # I1: the console marks a change he confirmed (a raise, answering on) with ?confirm=1
+    confirmed = {"confirm_raise": True} if request.query_params.get("confirm") == "1" else {}
+    return await _with_body(request, API_SLOT, lambda api, b: api.put_settings(uid, b | confirmed))
 
 
 @router.get("/languages", include_in_schema=False)

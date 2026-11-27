@@ -82,7 +82,7 @@ class Rig:
 def test_the_four_routes_are_on_the_bridges_fixed_list(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
     assert set(rig.routes) == {PHOTOS, ENROL, GROUPS, FORGET}
-    assert set(rig.routes) <= BRIDGE_ROUTES and len(BRIDGE_ROUTES) == 11
+    assert set(rig.routes) <= BRIDGE_ROUTES and len(BRIDGE_ROUTES) == 13  # R8 I0: + 2
     assert {"PHOTOS_DIR", "FACE_GROUPS_KEEP_DAYS", "FACE_MODELS_DIR"} <= PLUGIN_ENV_KEYS
     assert DEFAULT_KEEP_DAYS == 90
 

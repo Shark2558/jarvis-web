@@ -37,7 +37,7 @@ def test_the_two_photo_routes_are_allowed_and_nothing_else_changed() -> None:
     assert PHOTOS in BRIDGE_ROUTES and ENROL in BRIDGE_ROUTES
     assert route_allowed(*PHOTOS) and route_allowed(*ENROL)
     assert not route_allowed("GET", "/bridge/v1/faces/photos")
-    assert len(BRIDGE_ROUTES) == 11  # R11.1 C: + GET faces/groups, POST faces/groups/forget
+    assert len(BRIDGE_ROUTES) == 13  # R11.1 C: + faces/groups, groups/forget; R8: + 2
 
 
 def test_only_the_photo_route_gets_the_six_megabyte_cap() -> None:

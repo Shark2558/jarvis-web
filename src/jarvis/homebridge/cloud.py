@@ -35,6 +35,7 @@ from jarvis.home.ports import (
     WEBHOOK_PATH,
     Ack,
     BridgeState,
+    CoachReport,
     Detection,
     FaceSeen,
     Hazard,
@@ -46,7 +47,7 @@ from jarvis.homebridge.state import BridgeStore
 
 log = logging.getLogger(__name__)
 
-Event = Heartbeat | Detection | FaceSeen | Package | Hazard | Ack
+Event = Heartbeat | Detection | FaceSeen | Package | Hazard | Ack | CoachReport  # R8: + coach
 RETRY_DELAYS_S = (2.0, 5.0, 15.0, 30.0)
 OUTBOX_MAX = 100
 OUTBOX_MAX_AGE_S = 60.0

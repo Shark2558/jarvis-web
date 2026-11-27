@@ -75,7 +75,9 @@ def describe(kind: str, n: Nudge) -> str:
 def a_kind(value: Any, *, allow_all: bool = True) -> str:
     kind = kind_of(str(value or ""))
     if kind == ALL and not allow_all:
-        raise ValueError("Name one nudge, Sir: stand-up, water, activity, free time, focus or posture.")
+        raise ValueError(
+            "Name one nudge, Sir: stand-up, water, activity, free time, focus or posture."
+        )
     return kind
 
 

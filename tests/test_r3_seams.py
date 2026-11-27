@@ -665,6 +665,9 @@ def test_bridge_routes_are_the_fixed_list() -> None:
             # R11.1 C (D15, D21-C): the unnamed groups, and forgetting them
             ("GET", "/bridge/v1/faces/groups"),
             ("POST", "/bridge/v1/faces/groups/forget"),
+            # R8 I0 (S14): screen time (C) and the no-cloud camera check (B)
+            ("GET", "/bridge/v1/screentime"),
+            ("POST", "/bridge/v1/camera-check"),
         }
     )
     assert route_allowed("GET", "/bridge/v1/health")
@@ -779,11 +782,15 @@ class _Plugin:
 def test_the_registry_lists_the_camera_and_faces_plugins_and_plugins_satisfy_the_port() -> None:
     # I1: the core plugin is built by the bridge itself; the registry adds B's and C's (and, since
     # R11.1 C, the face groups' plugin, whose factory is also called `create_plugin`)
-    assert [f.__name__ for f in PLUGINS] == ["camera_plugin", "create_plugin", "create_plugin"]
+    # R8 I0 (S14, S24): the home camera's vision, screen time and the camera check, after them
+    assert [f.__name__ for f in PLUGINS] == ["camera_plugin", *["create_plugin"] * 5]
     assert [f.__module__ for f in PLUGINS] == [
         "jarvis.homebridge.camera",
         "jarvis.homebridge.faces",
         "jarvis.homebridge.face_groups",
+        "jarvis.homebridge.homevision",
+        "jarvis.homebridge.activitywatch",
+        "jarvis.homebridge.camcheck",
     ]
     assert isinstance(_Plugin("camera"), BridgePlugin)
     ctx = BridgeContext(env={}, data_dir=ROOT, events=None)  # type: ignore[arg-type]

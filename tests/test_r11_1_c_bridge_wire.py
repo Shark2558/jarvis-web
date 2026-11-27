@@ -66,6 +66,8 @@ async def test_the_route_list_is_exactly_these_eleven() -> None:
             ("POST", ENROL),
             ("GET", GROUPS),
             ("POST", FORGET),
+            ("GET", "/bridge/v1/screentime"),  # R8 I0 (S14): screen time (C)
+            ("POST", "/bridge/v1/camera-check"),  # R8 I0 (S14): the camera check (B)
         }
     )
 

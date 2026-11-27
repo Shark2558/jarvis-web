@@ -34,6 +34,7 @@ from jarvis.home.ports import (
     Ack,
     BridgeMethod,
     BridgeState,
+    CoachReport,
     Detection,
     FaceSeen,
     Hazard,
@@ -67,6 +68,13 @@ PLUGIN_ENV_KEYS = frozenset(
         "FACE_GROUPS_KEEP_DAYS",
         "FACE_MODELS_DIR",
         "FACE_MATCH_SCORE",
+        # R8 I0 (docs/plans/r8-vision.md 4.5a, 4.7): the home camera's sub-stream (its address
+        # and password stay in bridge.env on the laptop), the laptop's pose model folder, and
+        # ActivityWatch's address (default http://host.docker.internal:5600)
+        "HOMEVISION_RTSP_URL",
+        "HOMEVISION_CAMERA",
+        "HOMEVISION_MODELS_DIR",
+        "AW_URL",
     }
 )
 
@@ -94,7 +102,7 @@ class BridgeRoute:
 @runtime_checkable
 class EventSink(Protocol):
     async def post_event(
-        self, event: Heartbeat | Detection | FaceSeen | Package | Hazard | Ack
+        self, event: Heartbeat | Detection | FaceSeen | Package | Hazard | Ack | CoachReport
     ) -> bool: ...
 
 

@@ -19,7 +19,15 @@ from collections.abc import Collection
 from typing import Any, Protocol
 
 from jarvis.home.classes import HAZARD_CLASSES
-from jarvis.home.ports import Ack, Detection, FaceSeen, Hazard, Heartbeat, Package
+from jarvis.home.ports import (
+    Ack,
+    CoachReport,
+    Detection,
+    FaceSeen,
+    Hazard,
+    Heartbeat,
+    Package,
+)
 from jarvis.home.store import HomeStore
 from jarvis.logging import get_logger
 from jarvis.notify.ports import Notifier, Signal
@@ -36,7 +44,7 @@ _WORDS = {
     "moisture": "A water leak",
     "safety": "A safety sensor",
 }
-Event = Heartbeat | Detection | FaceSeen | Package | Hazard | Ack
+Event = Heartbeat | Detection | FaceSeen | Package | Hazard | Ack | CoachReport  # R8: + coach
 
 
 def parts_for_store(event: Heartbeat) -> dict[str, Any]:

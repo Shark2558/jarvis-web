@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -33,6 +34,7 @@ from jarvis.vitals.words import NO_CREDIT
 log = get_logger(__name__)
 
 SOURCE_TIMEOUT_S = 3.0  # each source's deadline: a slow one is "unknown", never a slow board
+LABEL_CHARS = 60
 SECONDS_PER_MINUTE = MINUTES_PER_HOUR = 60  # the board's age words: minutes, then hours
 
 LABELS: Mapping[str, str] = {
@@ -45,13 +47,33 @@ LABELS: Mapping[str, str] = {
     "home_link": "Home laptop link",
     "voice_laptop": "Laptop speech kit",  # R5.2: only when it is set up
     "build_book": "Build book",  # R6 review L2: only when it could not start on this server
+    "screen_time": "Screen time (ActivityWatch)",  # R8 row 183: only once screen time is wired
     **VITALS_IDS,  # R14: backups, the drill, the database size, the clocks, the AI money by part
 }
-OWN_IDS = frozenset(LABELS)
+# R8 S13: screen time's source is builder C's (wired at I1); its id is reserved by its prefix in
+# vitals.service, so it is kept out of the ids every wired board must show
+R8_IDS = frozenset({"screen_time"})
+OWN_IDS = frozenset(LABELS) - R8_IDS
 # Rung elsewhere already, so quiet here; the health brain probe reads only the DEFAULT brain.
 QUIET_IDS = frozenset({"google_link", "telegram_bot", "home_link"})
 # R5.2: a laptop asleep is normal and voice falls back by itself: shown, never alerted
 VOICE_QUIET = frozenset({"voice_laptop"})
+# R8 (docs/plans/r8-vision.md 4.5, rows 217 and 183; seam S13): one item per registered camera
+# (`camera_<its id>`, its label his words) and the screen-time line; shown, never alerted (a
+# camera nobody used today is normal)
+CAMERA_PREFIX = "camera_"
+CAMERA_UNSEEN_S = 24 * 3600.0  # a switched-on camera unseen this long is amber
+CAMERA_STATES = {
+    "ok": ("ok", ""),
+    "unseen": ("amber", "hasn't been seen for a day"),
+    "never": ("amber", "hasn't been seen yet"),
+    "off": ("ok", "is switched off"),
+}
+SCREEN_STATES: Mapping[str, tuple[Status, str]] = {
+    "ok": ("ok", ""),
+    "not_installed": ("ok", "is off until ActivityWatch is installed"),
+    "unreachable": ("amber", "couldn't be read from the laptop"),
+}
 DEFAULT_BRAIN_ITEM: Mapping[str, str] = {"anthropic": "brain_claude", "gemini": "brain_gemini"}
 TELEGRAM_MAX_AGE_S = 2 * 3600.0  # an older stored systems-check result is not trusted
 UNKNOWN_REASON = "can't be read now"
@@ -206,6 +228,31 @@ class VoiceLineReader(Protocol):  # jarvis.voice.laptop.LaptopVoice: None when n
     async def vitals_line(self, uid: str) -> VoiceLineLike | None: ...
 
 
+class CameraLineLike(Protocol):  # R8 S13: jarvis.coach.ports.CameraLine (builder B)
+    @property
+    def camera(self) -> str: ...
+
+    @property
+    def label(self) -> str: ...
+
+    @property
+    def on(self) -> bool: ...
+
+    @property
+    def last_seen(self) -> float | None: ...
+
+    @property
+    def fps(self) -> float | None: ...
+
+
+class CameraLineReader(Protocol):  # R8 S13: jarvis.coach.ports.CameraHealth (B)
+    async def lines(self, uid: str) -> Sequence[CameraLineLike]: ...
+
+
+class ScreenTimeReader(Protocol):  # R8 S13: jarvis.coach.ports.ScreenTime (C)
+    async def state(self, uid: str) -> str: ...
+
+
 @dataclass(frozen=True)
 class OwnSources:
     """Each None means "not wired": a configured key without its reader shows as unknown."""
@@ -218,6 +265,8 @@ class OwnSources:
     github: GithubLike | None = None
     home: HomeReader | None = None
     voice: VoiceLineReader | None = None  # R5.2: the laptop speech kit (`app.state.voice_laptop`)
+    cameras: CameraLineReader | None = None  # R8 S13: one item per registered camera (B)
+    screen: ScreenTimeReader | None = None  # R8 S13: the screen-time line (C)
     # The brain the systems check's probe watches ("anthropic" or "gemini", the router's id).
     # Its item is quiet here; the other brain's key still rings from Vitals. None: both ring.
     default_brain: str | None = None
@@ -307,6 +356,25 @@ def _github_unread(state: str | None) -> OwnItem:
     return unknown("github_token", note=UNREAD_NOTE, reason=UNREAD_REASON)
 
 
+def camera_item(line: CameraLineLike, now_s: float) -> OwnItem | None:
+    """R8 S13: "Desk camera: seen 3 min ago, 1 frame a second" (ok), amber when a switched-on
+    camera is unseen for a day, "is switched off" when it is; None for an id Vitals can't hold."""
+    pid = CAMERA_PREFIX + str(line.camera)
+    if not re.fullmatch(r"[a-z0-9_]{1,24}", str(line.camera)):
+        return None
+    if not line.on:
+        state = "off"
+    elif line.last_seen is None:
+        state = "never"
+    else:
+        state = "unseen" if now_s - line.last_seen >= CAMERA_UNSEEN_S else "ok"
+    status, reason = CAMERA_STATES[state]
+    note = words.camera_note(line.last_seen and max(0.0, now_s - line.last_seen), line.fps, line.on)
+    label = " ".join(str(line.label).split())[:LABEL_CHARS] or "Camera"
+    p = Provider(id=pid, label=label, kind="key", source="auto", note=note)
+    return OwnItem(p, (status, reason), "keys")  # type: ignore[arg-type]
+
+
 class Own:
     """Builds the automatic items for one owner; each source on its own deadline."""
 
@@ -318,7 +386,8 @@ class Own:
     def quiet_ids(self) -> frozenset[str]:
         """Items something else already rings for (never alerted from Vitals)."""
         brain = DEFAULT_BRAIN_ITEM.get(self._src.default_brain or "")
-        return QUIET_IDS | VITALS_QUIET | VOICE_QUIET | ({brain} if brain else frozenset())
+        quiet = QUIET_IDS | VITALS_QUIET | VOICE_QUIET | R8_IDS  # R8: screen time is quiet too
+        return quiet | ({brain} if brain else frozenset())
 
     async def items(self, uid: str, now: datetime, tz: ZoneInfo) -> list[OwnItem]:
         s = self._s
@@ -334,7 +403,29 @@ class Own:
             ("build_book", self._book),
         ]
         got = await asyncio.gather(*(self._guard(pid, job) for pid, job in jobs))
-        return [i for i in got if i is not None] + await self._r14(uid, now, tz)
+        mine = [i for i in got if i is not None] + await self._cameras(uid, now)
+        if (screen := await self._guard("screen_time", lambda: self._screen(uid))) is not None:
+            mine.append(screen)
+        return mine + await self._r14(uid, now, tz)
+
+    async def _cameras(self, uid: str, now: datetime) -> list[OwnItem]:
+        """R8 S13: one item per camera he registered, on its own deadline (none when unwired)."""
+        reader = self._src.cameras
+        if reader is None:
+            return []
+        try:
+            lines = await asyncio.wait_for(reader.lines(uid), SOURCE_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - a failing source is left out, the class logged
+            log.warning("vitals: camera lines unreadable", extra={"error": type(exc).__name__})
+            return []
+        return [item for line in lines[:12] if (item := camera_item(line, now.timestamp()))]
+
+    async def _screen(self, uid: str) -> OwnItem | None:
+        reader = self._src.screen
+        if reader is None:
+            return None
+        base = SCREEN_STATES.get(await reader.state(uid), ("unknown", UNKNOWN_REASON))
+        return _item("screen_time", base, note=words.SCREEN_TIME_NOTE)
 
     async def _r14(self, uid: str, now: datetime, tz: ZoneInfo) -> list[OwnItem]:
         """R14's items, on their own deadline; an id outside R14's is dropped (never a clash)."""
@@ -481,8 +572,13 @@ class Own:
 
 
 __all__ = [
+    "CAMERA_PREFIX",
+    "CameraLineLike",
+    "CameraLineReader",
     "LABELS",
     "R14Reader",
+    "ScreenTimeReader",
+    "camera_item",
     "own_item",
     "OWN_IDS",
     "QUIET_IDS",

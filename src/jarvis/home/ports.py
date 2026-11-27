@@ -58,6 +58,16 @@ MAX_ZONES = 8
 MAX_PEOPLE = 30  # D13
 MAX_EXPOSED = 50  # D6
 MAX_PICTURES = 200
+# R8 I0 (docs/plans/r8-vision.md v8.0.3 4.5a, seam S24): the home camera's coach reports
+USE_ID = r"^[a-z][a-z-]{1,20}$"
+WHO = r"^(?:|me|fp_[0-9a-f]{12})$"  # unknown, the owner, or a consented person: never a name
+SESSION_ID = r"^cs_[0-9a-f]{12}$"
+VIEW_KINDS: tuple[str, ...] = (
+    *("big", "line", "tip", "timer", "pacer", "targets", "checklist", "bar", "paused"),
+)
+MAX_VIEW = 8
+MAX_TALLY_KEYS = 24
+MAX_HOME_USES = 4
 MAX_EVENT_BYTES = 16 * 1024  # D5: any event without an opted-in snapshot
 MAX_WEBHOOK_BYTES = 128 * 1024  # D5: the route's cap
 MAX_SNAPSHOT_BYTES = 80 * 1024  # D12: one JPEG, <= 640 px on the long side
@@ -85,8 +95,15 @@ BRIDGE_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # one, or all of them (the answer is the laptop's own confirmation).
         ("GET", "/bridge/v1/faces/groups"),
         ("POST", "/bridge/v1/faces/groups/forget"),
+        # R8 I0 (docs/plans/r8-vision.md 4.6, 4.7, seam S14): screen time from ActivityWatch on the
+        # laptop (C: per-program minutes, never a window title) and the no-cloud camera check (B:
+        # a private-range address only; the camera's password stays on the laptop)
+        ("GET", "/bridge/v1/screentime"),
+        ("POST", "/bridge/v1/camera-check"),
     }
 )
+SCREENTIME_ROUTE = ("GET", "/bridge/v1/screentime")
+CAMERA_CHECK_ROUTE = ("POST", "/bridge/v1/camera-check")
 
 Label = Literal["person", "car", "motorcycle", "bicycle", "dog", "cat"]
 LABELS: tuple[str, ...] = get_args(Label)
@@ -106,7 +123,8 @@ NEVER_EXPOSED_DOMAINS = frozenset(
         "camera",
     }
 )
-EVENT_TYPES = ("heartbeat", "detection", "face_seen", "package", "hazard", "ack")
+# R8: + coach
+EVENT_TYPES = ("heartbeat", "detection", "face_seen", "package", "hazard", "ack", "coach")
 
 
 def _round2(v: float) -> float:
@@ -153,6 +171,17 @@ class CameraPart(_Wire):
     online: StrictBool
 
 
+class HomeVisionPart(_Wire):
+    """R8 (D3, D4): the home vision plugin's health: which model, how fast, what it runs."""
+
+    running: StrictBool
+    model: Literal["lite", "full"] | None = None
+    fps: Annotated[StrictFloat, Field(ge=0, le=60, allow_inf_nan=False)] | None = None
+    uses: tuple[Annotated[StrictStr, StringConstraints(pattern=USE_ID)], ...] = Field(
+        default=(), max_length=MAX_HOME_USES
+    )
+
+
 class HeartbeatParts(_Wire):
     """What each part of the bridge reports in a heartbeat; None = that part didn't say."""
 
@@ -164,6 +193,7 @@ class HeartbeatParts(_Wire):
     # B (integrated review C1/S1): the bridge is receiving Frigate's events over MQTT. False
     # while the link is down or the camera part could not start: burglar alerts can't arrive.
     mqtt: StrictBool | None = None
+    homevision: HomeVisionPart | None = None  # R8 J: the home camera's coach runtime
 
     def merged(self, other: HeartbeatParts) -> HeartbeatParts:
         """These parts with every part `other` reported laid over them."""
@@ -276,8 +306,40 @@ class Ack(_Event):
         return self
 
 
+Words = Annotated[StrictStr, StringConstraints(max_length=120)]
+Scalar = StrictInt | StrictFloat | StrictBool | Words
+
+
+def _widget(w: dict[str, Any]) -> dict[str, Any]:
+    if w.get("kind") not in VIEW_KINDS or len(w) > MAX_TALLY_KEYS:
+        raise ValueError("a view holds the fixed widget kinds only")
+    return w
+
+
+class CoachReport(_Event):
+    """R8 (D3): what the home laptop's coach saw for one body of one use case: its view (the fixed
+    widgets) and, at a session's end or every 15 minutes, its tally. Never a frame, a point or a
+    box (nothing here can hold one: scalars only, a few keys); the cloud checks the tally against
+    its use case's model (`jarvis.coach.usecases.parse_tally`) and drops what doesn't fit."""
+
+    type: Literal["coach"]
+    at: Epoch
+    camera: CameraId
+    use: Annotated[StrictStr, StringConstraints(pattern=USE_ID)]
+    session: Annotated[StrictStr, StringConstraints(pattern=SESSION_ID)]
+    track: Annotated[StrictInt, Field(ge=0, le=63)]
+    who: Annotated[StrictStr, StringConstraints(pattern=WHO)] = ""
+    view: tuple[Annotated[dict[StrictStr, Scalar], AfterValidator(_widget)], ...] = Field(
+        default=(), max_length=MAX_VIEW
+    )
+    tally: dict[StrictStr, Scalar | tuple[dict[StrictStr, Scalar], ...]] | None = Field(
+        default=None, max_length=MAX_TALLY_KEYS
+    )
+
+
 HomeEvent = Annotated[
-    Heartbeat | Detection | FaceSeen | Package | Hazard | Ack, Field(discriminator="type")
+    Heartbeat | Detection | FaceSeen | Package | Hazard | Ack | CoachReport,
+    Field(discriminator="type"),
 ]
 _EVENTS: TypeAdapter[Any] = TypeAdapter(HomeEvent)
 
@@ -350,11 +412,35 @@ class SettingsState(_Wire):
     heartbeat_s: Annotated[StrictInt, Field(ge=60, le=600)] = 120
 
 
+UseId = Annotated[StrictStr, StringConstraints(pattern=USE_ID)]
+
+
+class CoachState(_Wire):
+    """R8 (D3, D6, D11): the coach part of the state push. Which use cases run on which home camera,
+    the tracking target, and "cameras off". It never carries or changes the alarm's arm state, and
+    the bridge never switches Frigate for it."""
+
+    rev: Rev
+    uses: dict[CameraId, tuple[UseId, ...]] = Field(default_factory=dict, max_length=MAX_CAMERAS)
+    target: Literal["all", "me", "person"] = "all"
+    person: PersonId | None = None
+    all_off: StrictBool = False
+
+    @model_validator(mode="after")
+    def _check(self) -> CoachState:
+        if (self.target == "person") != (self.person is not None):
+            raise ValueError("a person target names one consented id")
+        if any(len(u) > MAX_HOME_USES for u in self.uses.values()):
+            raise ValueError("too many coaches on one camera")
+        return self
+
+
 class BridgeState(_Wire):
     arm: ArmState | None = None
     faces: FacesState | None = None
     devices: DevicesState | None = None
     settings: SettingsState | None = None
+    coach: CoachState | None = None  # R8 S24
 
     def merged(self, other: BridgeState) -> BridgeState:
         """This state with every part `other` carries laid over it."""
@@ -363,6 +449,7 @@ class BridgeState(_Wire):
             faces=other.faces if other.faces is not None else self.faces,
             devices=other.devices if other.devices is not None else self.devices,
             settings=other.settings if other.settings is not None else self.settings,
+            coach=other.coach if other.coach is not None else self.coach,
         )
 
 
@@ -458,6 +545,11 @@ __all__ = [
     "PERSON_ID",
     "WEBHOOK_PATH",
     "Ack",
+    "CAMERA_CHECK_ROUTE",
+    "CoachReport",
+    "CoachState",
+    "HomeVisionPart",
+    "SCREENTIME_ROUTE",
     "ArmMode",
     "ArmReader",
     "ArmState",

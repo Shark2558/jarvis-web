@@ -43,7 +43,7 @@ from jarvis.vitals.words import words_for
 
 log = get_logger(__name__)
 
-AUTO_IDS_PREFIXES = ("quota_", "allowance_")
+AUTO_IDS_PREFIXES = ("quota_", "allowance_", "camera_", "screen_time")  # R8 S13
 RESERVED = "That name is used by a built-in item. Pick another id."
 MESSAGE_MAX = 300
 ALERT_PREFIX = "Vitals — "  # fixed lead: a label can never pose as the sender

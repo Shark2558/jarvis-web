@@ -115,6 +115,34 @@ VOICE_ENGINES: Mapping[str, str] = {
 OTHER_ENGINE = "another engine"
 
 
+# R8 S13 (docs/plans/r8-vision.md 4.5, rows 217 and 183): the cameras' and screen time's words
+CAMERA_PREFIX = "camera_"
+CAMERA_WORDS = (
+    "If this stops: the coaches that use this camera can't look.",
+    "On the device that has it, open Camera, Cameras and run the setup test; for the home "
+    "camera, check the home laptop is on and its link is OK. Or switch it off there.",
+)
+SCREEN_TIME_NOTE = (
+    "Per-program minutes from ActivityWatch on your laptop; window titles stay there."
+)
+SCREEN_WORDS = (
+    "If this stops: the day strip shows no screen time.",
+    "Install ActivityWatch on the laptop (free), then follow the R8 go-live card's one setting.",
+)
+
+
+def camera_note(seen_ago_s: float | None, fps: float | None, on: bool) -> str:
+    """ "Seen 3 min ago, 1 frame a second." (plain numbers; never a picture or a place)."""
+    if not on:
+        return "Switched off. Only a tap switches it back on."
+    if seen_ago_s is None:
+        return "Not seen yet: run its setup test."
+    mins = int(seen_ago_s // 60)
+    ago = "just now" if mins < 1 else f"{mins} min ago" if mins < 120 else f"{mins // 60} hours ago"
+    rate = "" if fps is None else f", {fps:g} frame{'s' if fps != 1 else ''} a second"
+    return f"Seen {ago}{rate}."
+
+
 def voice_note(heard_by: str | None, spoken_by: str | None, inr_per_minute: float) -> str:
     """Vitals' engine line: which engine heard and spoke last, and what the laptop costs."""
     said = [
@@ -243,6 +271,10 @@ def words_for(pid: str, label: str, reason: str = "") -> tuple[str, str]:
         return home.impact, home.fix
     if pid in WORDS:
         return WORDS[pid]
+    if pid.startswith(CAMERA_PREFIX):  # R8 S13
+        return CAMERA_WORDS
+    if pid == "screen_time":
+        return SCREEN_WORDS
     if pid.startswith(ALLOWANCE_PREFIX):
         return ALLOWANCE_WORDS
     if pid.startswith(QUOTA_PREFIX):

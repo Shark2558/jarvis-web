@@ -438,3 +438,209 @@ def test_the_camera_reading_is_a_proposal_until_he_confirms_it() -> None:
     assert bp.category_line(row, src) == (
         "Example (by A publisher, A guideline, 2025). Talk to your doctor about this reading."
     )
+
+
+# ---- S14, S24 · the bridge's two routes, the home camera's reports and the coach state -----------
+def _report(**over: Any) -> dict[str, Any]:
+    base = {
+        "id": "ev-1",
+        "type": "coach",
+        "at": 1764300000.0,
+        "camera": "desk_cam",
+        "use": "posture",
+        "session": "cs_0123456789ab",
+        "track": 0,
+        "who": "me",
+        "view": [{"kind": "big", "n": 3, "word": "slouches"}],
+        "tally": {"started_at": 1764300000, "ended_at": 1764300600, "slouch_spans": 3},
+    }
+    return {**base, **over}
+
+
+def test_a_coach_report_holds_views_and_tallies_and_nothing_like_a_picture() -> None:
+    import json
+
+    from jarvis.home.ports import (
+        BRIDGE_ROUTES,
+        CAMERA_CHECK_ROUTE,
+        EVENT_TYPES,
+        SCREENTIME_ROUTE,
+        CoachReport,
+        EventRejected,
+        parse_event,
+    )
+
+    assert {SCREENTIME_ROUTE, CAMERA_CHECK_ROUTE} <= BRIDGE_ROUTES and len(BRIDGE_ROUTES) == 13
+    assert EVENT_TYPES[-1] == "coach"
+    assert isinstance(parse_event(json.dumps(_report()).encode()), CoachReport)
+    for bad in (
+        _report(view=[{"kind": "frame", "b64": "iVBOR"}]),  # not a widget kind
+        _report(view=[{"kind": "big", "points": [[0.1, 0.2]]}]),  # no nested numbers
+        _report(tally={"points": [[0.1, 0.2, 0.3]]}),
+        _report(who="Shruti"),  # never a name
+        _report(session="today"),
+        _report(snapshot="/9j/4AAQ"),
+        _report(view=[{"kind": "big", "word": "x" * 121}]),
+    ):
+        with pytest.raises(EventRejected):
+            parse_event(json.dumps(bad).encode())
+
+
+def test_the_coach_state_rides_the_push_and_never_carries_the_alarm() -> None:
+    from pydantic import ValidationError
+
+    from jarvis.home.ports import ArmState, BridgeState, CoachState
+
+    coach = CoachState(rev=3, uses={"desk_cam": ("posture", "activity")}, target="me")
+    state = BridgeState(arm=ArmState(armed=True, rev=7)).merged(BridgeState(coach=coach))
+    assert state.coach == coach and state.arm is not None and state.arm.armed  # untouched
+    assert "arm" not in CoachState.model_fields and "armed" not in CoachState.model_fields
+    with pytest.raises(ValidationError):
+        CoachState(rev=1, target="person")
+    with pytest.raises(ValidationError):
+        CoachState(rev=1, uses={"desk_cam": ("posture", "activity", "seated", "bp-posture", "x")})
+
+
+async def test_the_three_r8_plugins_are_registered_stubs_that_refuse_in_plain_words() -> None:
+    from pathlib import Path as P
+
+    from jarvis.home.ports import HomeRefused
+    from jarvis.homebridge.plugins import PLUGIN_ENV_KEYS, BridgeContext, check_routes
+    from jarvis.homebridge.r8_stub import NOT_BUILT
+    from jarvis.homebridge.registry import PLUGINS
+
+    ctx = BridgeContext(env={}, data_dir=P("/tmp"), events=None)  # type: ignore[arg-type]
+    plugins = [f(ctx) for f in PLUGINS[3:]]
+    assert [p.name for p in plugins] == ["homevision", "activitywatch", "camcheck"]
+    check_routes(plugins)
+    assert plugins[0].routes() == () and plugins[0].tasks() == ()  # runs nothing at I0
+    for plugin in plugins[1:]:
+        (route,) = plugin.routes()
+        with pytest.raises(HomeRefused) as refused:
+            await route.handler({}, {})
+        assert refused.value.code == "not_built" and refused.value.message == NOT_BUILT
+    assert {"HOMEVISION_RTSP_URL", "HOMEVISION_CAMERA", "AW_URL"} <= PLUGIN_ENV_KEYS
+    assert "HA_TOKEN" not in PLUGIN_ENV_KEYS
+
+
+# ---- S9 · the coaches' routes --------------------------------------------------------------------
+def _coach_client(*, sealed: bool = True) -> Any:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from jarvis.api import coach as api
+    from jarvis.api.auth import require_auth
+    from jarvis.api.identity import current_user
+    from jarvis.coach.people import PeopleStore
+    from jarvis.coach.store import CoachStore, RoutineStore
+    from jarvis.coach.target import TargetStore
+    from jarvis.keyring import Keyring
+    from jarvis.storage.docs import MemoryDocs
+
+    docs, ring = MemoryDocs(), Keyring(KEY) if sealed else None
+    app = FastAPI()
+    app.include_router(api.router)
+    app.dependency_overrides[require_auth] = lambda: None
+    app.dependency_overrides[current_user] = lambda: "u1"
+    now = _clock()
+    app.state.coach = api.CoachApp(
+        CoachStore(docs, ring, now=now), PeopleStore(docs, ring, now=now),
+        TargetStore(docs, now=now), RoutineStore(docs, ring, now=now),
+    )  # fmt: skip
+    return TestClient(app)
+
+
+def test_the_routes_keep_everyones_tallies_and_an_unknown_body_as_a_guest() -> None:
+    c = _coach_client()
+    assert c.get("/v1/coach/usecases").json()["views"][0] == "big"
+    t = _tally(sips=2, glasses=1)
+    mine = c.post("/v1/coach/results", json={"use": "water", "session": "cs_0123456789ab",
+                                              "who": "me", "tally": t})  # fmt: skip
+    guest = c.post("/v1/coach/results", json={"use": "water", "session": "cs_0123456789ab",
+                                               "who": "", "track": 1, "tally": t})  # fmt: skip
+    assert mine.status_code == guest.status_code == 201
+    assert guest.json()["kept"]["who"].startswith("gst_")
+    assert [g["label"] for g in c.get("/v1/coach/people").json()["guests"]] == ["Guest 1"]
+    bad = c.post(
+        "/v1/coach/results",
+        json={
+            "use": "water",
+            "session": "cs_0123456789ab",
+            "who": "me",
+            "tally": {**t, "frame": "iVBOR"},
+        },
+    )
+    assert bad.status_code == 422 and bad.json()["error"] == "dropped"
+    assert len(c.get("/v1/coach/results").json()["results"]) == 2
+    assert c.get("/v1/coach/results?who=Shruti").status_code == 422
+    assert c.delete("/v1/coach/people/me").status_code == 501  # the passkey's path, at I1
+    assert mine.headers["cache-control"] == "no-store"
+
+
+def test_a_reading_is_stored_only_confirmed_and_the_target_by_kind() -> None:
+    c = _coach_client()
+    reading = {"systolic": 128, "diastolic": 82, "pulse": 71, "taken_at": NOON, "source": "camera"}
+    ok = c.post("/v1/coach/bp/readings", json={"confirmed": True, "reading": reading,
+                                                "session": "cs_0123456789ab"})  # fmt: skip
+    assert ok.status_code == 201
+    no = c.post("/v1/coach/bp/readings", json={"confirmed": False, "reading": reading,
+                                                "session": "cs_0123456789ab"})  # fmt: skip
+    assert no.status_code == 422
+    assert c.get("/v1/coach/target").json()["target"] == {"kind": "all", "person": None}
+    assert c.put("/v1/coach/target", json={"kind": "me"}).json()["target"]["kind"] == "me"
+    assert c.put("/v1/coach/target", json={"name": "Shruti"}).status_code == 501  # Faces at I1
+    assert c.get("/v1/coach/live?use=posture").status_code == 501  # the home laptop's, J
+
+
+def test_without_a_key_nothing_is_kept_and_it_says_so() -> None:
+    c = _coach_client(sealed=False)
+    r = c.post(
+        "/v1/coach/results",
+        json={
+            "use": "water",
+            "session": "cs_0123456789ab",
+            "who": "me",
+            "tally": _tally(sips=1, glasses=0),
+        },
+    )
+    assert r.status_code == 409 and r.json()["error"] == "not_sealed"
+
+
+# ---- S12 · camera spots (B's skeleton) and S13 · Vitals' camera lines ----------------------------
+def test_the_off_switches_and_never_rooms() -> None:
+    from pydantic import ValidationError
+
+    from jarvis.camera.spots import Camera, Room, Spots, coach_allowed, looking_allowed
+
+    desk = Camera(id="desk_cam", kind="home", source="home", label="Desk camera", room="study")
+    phone = Camera(id="tripod", kind="device", source="phone", label="Workout phone", room="bed")
+    spots = Spots(
+        cameras=(desk, phone),
+        rooms=(Room(id="study", label="Study"), Room(id="bed", label="Bedroom", never=True)),
+    )
+    assert looking_allowed(spots, "desk_cam") and not coach_allowed(spots, "tripod")
+    assert not looking_allowed(spots.model_copy(update={"all_off": True}), "desk_cam")
+    assert not looking_allowed(spots, "nobody")
+    with pytest.raises(ValidationError):
+        Camera(id="desk_cam", kind="home", source="browser", label="x")
+    with pytest.raises(ValidationError):
+        Spots(cameras=(desk,))  # its room isn't one of his
+
+
+def test_vitals_has_one_line_per_camera_amber_after_a_day_unseen() -> None:
+    from jarvis.coach.ports import CameraLine
+    from jarvis.vitals.own import camera_item
+    from jarvis.vitals.service import reserved
+    from jarvis.vitals.words import words_for
+
+    now = 1764300000.0
+    seen = camera_item(CameraLine("desk_cam", "Desk camera", "home", True, now - 180, 1.0), now)
+    assert seen is not None and seen.base == ("ok", "") and seen.provider.id == "camera_desk_cam"
+    assert seen.provider.note == "Seen 3 min ago, 1 frame a second."
+    old = camera_item(CameraLine("tripod", "Phone", "phone", True, now - 90_000, 15.0), now)
+    assert old is not None and old.base[0] == "amber"
+    off = camera_item(CameraLine("tripod", "Phone", "phone", False, None, None), now)
+    assert off is not None and off.base == ("ok", "is switched off")
+    assert camera_item(CameraLine("Bad Id!", "x", "phone", True, now, 1.0), now) is None
+    assert words_for("camera_desk_cam", "Desk camera")[0].startswith("If this stops")
+    assert reserved("camera_desk_cam") and reserved("screen_time")  # never a manual record

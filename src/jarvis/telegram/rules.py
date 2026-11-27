@@ -60,6 +60,8 @@ PRIVATE_PATTERNS: tuple[str, ...] = (
     "watch_*",
     "sleep_*",
     "vision_*",
+    # R8 (docs/plans/r8-vision.md 4.4, ADR-51): the coaches' kept results (health numbers)
+    "coach_*",
 )
 REFUSAL = "Not available from Telegram — your choice in Integrations → Telegram; open the console."
 # R2 D12: the owner's vault list (metadata only, never files), notes, memos, links and things.

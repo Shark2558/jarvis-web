@@ -292,8 +292,8 @@ def test_no_row_lets_a_tool_send_an_sos() -> None:
 # ---- 7 · key purposes ---------------------------------------------------------------------------
 def test_three_key_purposes_make_twenty_one() -> None:
     # R14 + 1, R13 + 2, R13.1 + 2, R18 + 1
-    assert keyring.PURPOSES[-9:-6] == ("watch", "sos", "vision")
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
+    assert keyring.PURPOSES[-10:-7] == ("watch", "sos", "vision")  # R8 appended "coach"
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 28
 
 
 # ---- 8, 20 · the parts' contract and wiring -----------------------------------------------------

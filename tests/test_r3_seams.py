@@ -876,6 +876,7 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         "tryon_photos",
         # R18: the numbers on call cards and records, sealed, and their keyed references
         "calls",
+        "coach",  # R8: the coaches' kept results, guests, routines (tests/test_r8_seams.py)
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):

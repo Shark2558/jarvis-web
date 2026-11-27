@@ -33,7 +33,7 @@ def wait(ms: int) -> dict[str, Any]:
     return {"op": "wait", "ms": ms}
 
 
-# ---- S2 · results only to the use cases a live look names -----------------------------------------
+# ---- S2 · results only to the use cases a live look names ----------------------------------------
 def test_results_reach_only_the_use_cases_a_live_look_names() -> None:
     out = _driver(
         use("named", "probe"),
@@ -168,7 +168,10 @@ def test_track_a_person_tells_only_that_person() -> None:
         {"op": "end"},
     )
     assert out["whos"]["coach"] == [f"0:{FP}"]
-    nobody = _driver(use("coach", "pose"), live(["pose"], ["coach"], target={"kind": "person", "person": "Shruti"}))
+    nobody = _driver(
+        use("coach", "pose"),
+        live(["pose"], ["coach"], target={"kind": "person", "person": "Shruti"}),
+    )
     assert nobody["errors"] == ["That vision task is not installed."] and nobody["frames"] == 0
 
 
@@ -186,13 +189,17 @@ def test_things_in_view_reach_every_bodys_session() -> None:
     assert first > len([w for w in out["whos"]["coach"] if w.startswith("0:")])  # pose and probe
 
 
-# ---- S3 · the R8 task module ----------------------------------------------------------------------
+# ---- S3 · the R8 task module ---------------------------------------------------------------------
 def test_hands_and_pose_v2_are_registered_and_say_not_installed() -> None:
     out = run_dom("r8tasks")
     tasks = {t["id"]: t for t in out["tasks"]}
     assert tasks["pose"]["v"] == 2 and tasks["hands"]["v"] == 1 and tasks["digits"]["v"] == 1
     assert out["sealed"] is True
-    assert out["errors"] == {"pose": "not installed", "hands": "not installed", "digits": "not installed"}
+    assert out["errors"] == {
+        "pose": "not installed",
+        "hands": "not installed",
+        "digits": "not installed",
+    }
     broken = run_dom("r8tasks", fetchStatus=500)
     no_load = "The vision tools could not load. Check the connection and try again."
     assert broken["errors"] == {"pose": no_load, "hands": no_load, "digits": "not installed"}
@@ -201,7 +208,15 @@ def test_hands_and_pose_v2_are_registered_and_say_not_installed() -> None:
 def test_the_r8_task_module_holds_bodies_only() -> None:
     js = (STATIC / R8_MODULE).read_text(encoding="utf-8")
     assert js.isascii() and len(js.splitlines()) <= 800
-    for name in ("loadPose", "runPose", "loadHands", "runHands", "loadDigits", "runDigits", "unload"):
+    for name in (
+        "loadPose",
+        "runPose",
+        "loadHands",
+        "runHands",
+        "loadDigits",
+        "runDigits",
+        "unload",
+    ):
         assert f"export function {name}(" in js or f"export async function {name}(" in js, name
     for bad in ("fetch(", "JarvisCamera", "getUserMedia", "JarvisVision", "localStorage",
                 "innerHTML", "XMLHttpRequest", "sendBeacon", "WebSocket", "import("):  # fmt: skip

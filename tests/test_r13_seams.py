@@ -103,9 +103,9 @@ def test_the_held_words_the_alerts_card_the_book_and_push_know_every_new_kind() 
 
 # ---- 3 · two key purposes ------------------------------------------------------------------------
 def test_two_key_purposes_make_twenty_four() -> None:
-    # R13.1 + 2 after them, R18 + 1
-    assert keyring.PURPOSES[-5:-3] == ("wardrobe", "wardrobe_photos")
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
+    # R13.1 + 2 after them, R18 + 1, R8 + 1
+    assert keyring.PURPOSES[-6:-4] == ("wardrobe", "wardrobe_photos")
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 28
     ring = keyring.Keyring(bytes(range(7, 39)))
     blob = ring.cipher("wardrobe").encrypt(b"x", aad="wardrobe/u/v1")
     with pytest.raises(Exception):  # noqa: B017 - each purpose is its own key

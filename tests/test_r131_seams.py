@@ -51,9 +51,9 @@ def test_the_persona_stays_p13_0() -> None:
 
 # ---- 2 · two key purposes ------------------------------------------------------------------------
 def test_two_key_purposes_make_twenty_six() -> None:
-    assert keyring.PURPOSES[-3:-1] == ("tryon", "tryon_photos")  # R18 appended "calls"
-    assert keyring.PURPOSES[-5:-3] == ("wardrobe", "wardrobe_photos")
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
+    assert keyring.PURPOSES[-4:-2] == ("tryon", "tryon_photos")  # R18 "calls", R8 "coach"
+    assert keyring.PURPOSES[-6:-4] == ("wardrobe", "wardrobe_photos")
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 28
     ring = keyring.Keyring(bytes(range(9, 41)))
     blob = ring.cipher("tryon_photos").encrypt(b"x", aad="tryon/person/u/v1")
     with pytest.raises(Exception):  # noqa: B017 - each purpose is its own key
@@ -250,7 +250,7 @@ def test_the_words_and_ids() -> None:
     assert re.fullmatch(m.REQUEST_ID, "tq_" + "0123456789abcdef")
     assert m.aad_person("u") == "tryon/person/u/v1"
     assert m.aad_picture("u", "tp_0123456789ab") == "tryon/picture/u/tp_0123456789ab/v1"
-    assert (m.PURPOSE, m.PHOTO_PURPOSE) == keyring.PURPOSES[-3:-1]
+    assert (m.PURPOSE, m.PHOTO_PURPOSE) == keyring.PURPOSES[-4:-2]
     assert re.fullmatch(m.GARMENT_ID, m.new_garment_id()) and m.GARMENT == "tryon_garment"
     assert m.aad_garment("u", "tg_0123456789ab") == "tryon/garment/u/tg_0123456789ab/v1"
 

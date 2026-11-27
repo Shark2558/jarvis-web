@@ -257,9 +257,9 @@ def test_a_self_health_ring_that_reached_no_channel_gives_its_slot_back() -> Non
 
 # ---- 3 · the key purpose -------------------------------------------------------------------------
 def test_one_key_purpose_makes_twenty_two() -> None:
-    # R13 appended 2 (wardrobe), R13.1 2 (tryon), R18 1 (calls)
-    assert keyring.PURPOSES[-6] == "backup_probe"
-    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 27
+    # R13 appended 2 (wardrobe), R13.1 2 (tryon), R18 1 (calls), R8 1 (coach)
+    assert keyring.PURPOSES[-7] == "backup_probe"
+    assert len(keyring.PURPOSES) == len(set(keyring.PURPOSES)) == 28
 
 
 # ---- 4 · permissions: no new row, the new tools in their rows, the words ------------------------

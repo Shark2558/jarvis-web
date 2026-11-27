@@ -21,6 +21,7 @@ token vault keeps using the raw key, so tokens stored before R2 still decrypt.
   cipher and as a MAC domain, which `mac` keeps apart by its own HKDF info).
 - R11: `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (the helpers' sealed data).
 - R18: `calls` (the numbers on call cards and records; as a MAC domain, their keyed refs).
+- R8: `coach` (the coaches' kept results, guests, routines and confirmed readings: health data).
 """
 
 from __future__ import annotations
@@ -87,6 +88,9 @@ PURPOSES: tuple[str, ...] = (
     # R18 (docs/plans/r18-calls.md section 9, "Data"): the numbers on call cards and records
     # (sealed) and, as a MAC domain, their keyed references (`mac("calls", "number/<uid>/<e164>")`)
     "calls",
+    # R8 (docs/plans/r8-vision.md 4.4, seam S7, ADR-51): the coaches' kept results (everyone's,
+    # the owner's D6), the guests' registry, his reference routines and blood-pressure readings
+    "coach",
 )
 SECRET_PURPOSES: tuple[str, ...] = ("webpush_vapid",)
 MIN_SECRET_BYTES, MAX_SECRET_BYTES = 16, 64

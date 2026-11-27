@@ -77,7 +77,7 @@ def test_r6s_sealing_files_privacy_rows_routes_and_console_html_are_untouched() 
 
 
 def test_the_keyring_keeps_its_27_purposes() -> None:
-    assert len(PURPOSES) == 27  # R18 + 1 (calls); the pages index: `book_index` (fact 16)
+    assert len(PURPOSES) == 28  # R18 + 1 (calls), R8 + 1 (coach); the pages index: fact 16
 
 
 # ---- the size guards -----------------------------------------------------------------------------

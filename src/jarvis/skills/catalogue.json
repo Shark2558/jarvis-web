@@ -296,7 +296,7 @@
     },
     {
       "id": "health",
-      "about": "Water and stand-up nudges, sleep and the watch, SOS, meals, recipes and nutrition.",
+      "about": "Water and stand-up nudges, sleep and the watch, SOS, meals, recipes and nutrition, and the camera coaches.",
       "groups": [
         {
           "id": "nudges",
@@ -312,6 +312,11 @@
           "id": "sos",
           "tools": ["sos_*"],
           "words": ["sos", "emergency", "help me", "danger", "unsafe", "panic"]
+        },
+        {
+          "id": "coach",
+          "tools": ["coach_*"],
+          "words": ["coach", "reps", "exercise", "plank", "yoga", "balance", "blood pressure", "bp reading", "breathing", "slouch", "rehab", "sit to stand", "six minute walk", "kasrat"]
         },
         {
           "id": "kitchen",

@@ -164,8 +164,8 @@ def test_a_disaster_warning_is_never_capped_only_de_duplicated() -> None:
 def test_five_keyring_purposes_each_with_its_own_key() -> None:
     new = ("bills", "spend", "wellbeing", "alerts_place", "kitchen")
     assert (
-        set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 27
-    )  # R7 + 3, R14 + 1, R13 + 2, R13.1 + 2, R18 + 1
+        set(new) <= set(PURPOSES) and len(PURPOSES) == len(set(PURPOSES)) == 28
+    )  # R7 + 3, R14 + 1, R13 + 2, R13.1 + 2, R18 + 1, R8 + 1
     ring = Keyring(KEY)
     for purpose in new:
         blob = ring.cipher(purpose).encrypt(b"x", aad=f"{purpose}/u/v1")

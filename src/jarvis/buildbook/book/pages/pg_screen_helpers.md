@@ -15,7 +15,7 @@ sources:
   "src/jarvis/api/static/console-helpers-wardrobe.js": "acd25c1703c9f832"
   "src/jarvis/api/static/console-helpers-watch.js": "66676faabf8cfcc9"
   "src/jarvis/api/static/console-helpers.js": "38c9179fa5cd2d23"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Helpers gathers the small daily jobs JARVIS does without being asked, in six tabs. Today shows your top priority, what is pending, bills with a prepared UPI payment, and birthdays. Home keeps the chores rota, home upkeep, weather and disaster alerts for your area, and breach notices. Nudges holds the gentle reminders: stand up, drink water, an activity you chose, free time, focus. Kitchen keeps your pantry, tastes, recipes and grocery spend. Watch shows steps, heart rate and sleep from your watch or phone. Wardrobe plans what to wear and tracks the laundry (`src/jarvis/api/static/console-helpers.js`).

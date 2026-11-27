@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/memory.py": "b4f86cb6ed2117cc"
   "src/jarvis/api/static/console-memory.js": "b88a7282d9e272d9"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Memory is everything JARVIS keeps about you, on one page you control. "About you" holds four short notes you write yourself: You, Preferences, People and Work. "Facts" lists the smaller things JARVIS has been told to remember, each one editable, pinnable and deletable. Two switches decide whether memory is used in replies and whether JARVIS may learn facts from your messages. Export, Import and "Forget everything" sit at the bottom, so your memory stays yours (`src/jarvis/api/static/console.html`).

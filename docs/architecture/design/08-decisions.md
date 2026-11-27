@@ -560,7 +560,7 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   or stale command, not against a forged door answer; HTTPS is the root of trust there (this
   edition's reading of the code).
 - **Code:** `src/jarvis/phone/calls.py:PhoneCalls`, `src/jarvis/phone/calls_wire.py:CommandSigner`,
-  `src/jarvis/mobile/ports.py`, `android/core/src/main/kotlin/io/github/shark2558/jarvis/core/Calls.kt`.
+  `src/jarvis/mobile/ports.py`, `android/core/src/main/kotlin/…/Calls.kt`.
 
 ### ADR-38 · Placing a call is R3 with a one-use grant per call; never approved from Telegram
 

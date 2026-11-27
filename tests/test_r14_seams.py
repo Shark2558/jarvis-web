@@ -475,7 +475,7 @@ def test_the_wiring_files_have_their_slots() -> None:
 
 
 def test_the_line_budgets_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
+    assert _lines(SRC / "api" / "app.py") <= 739  # R18 I1 +4; R5.2 I1 +1 (r52_wiring)
     assert _lines(SRC / "tools" / "gateway.py") <= 760
     assert _lines(STATIC / "console.html") <= 782
     assert _lines(SRC / "config.py") < 800

@@ -558,8 +558,8 @@ def test_console_html_is_byte_identical_to_r14s() -> None:
     import hashlib
 
     got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
-    # R18 E: + the Calls panel and its tab; R5.2 V4: + console-wakeword-own.js on the mic's line
-    assert got == "PIN"
+    # R18 E: + the Calls panel and its tab; R5.2: V4's tag on the mic's line, V5's three on barge's
+    assert got == "3f44b48d59176aa53fa0bcec77c7002107b1174a2cd02ed3785f796a302e2d30"
     assert _lines(STATIC / "console.html") == 782
 
 
@@ -598,7 +598,7 @@ def test_the_wardrobe_css_only_places_things() -> None:
 
 # ---- size guards and "no real clock" -------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
+    assert _lines(SRC / "api" / "app.py") <= 739  # R18 I1 +4; R5.2 I1 +1 (r52_wiring)
     assert _lines(SRC / "tools" / "gateway.py") == 760
     assert _lines(SRC / "core" / "brain.py") <= 741
     for path in STATIC.glob("console*.js"):

@@ -246,7 +246,7 @@ def test_the_line_budgets_leave_the_builders_room() -> None:
     assert _lines(SRC / "core" / "brain.py") <= 770  # 779 at R11 (guard < 800): Part A made it 704
     assert _lines(SRC / "tools" / "gateway.py") <= 760  # no part may grow it
     # guard 750; R11.1 I1 made it 731 (the brief's governed inbox read, the one turn guard)
-    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
+    assert _lines(SRC / "api" / "app.py") <= 739  # R18 I1 +4; R5.2 I1 +1 (r52_wiring)
     # guard < 800: 798 at R11, 795 at R11.1, 782 at R7 I0 (console-dock.js builds the More sheet)
     assert _lines(STATIC / "console.html") <= 782
 

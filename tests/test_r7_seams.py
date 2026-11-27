@@ -658,7 +658,7 @@ def test_new_css_stays_small() -> None:
 
 def test_the_line_budgets_hold() -> None:
     assert _lines(SRC / "tools" / "gateway.py") <= 760
-    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
+    assert _lines(SRC / "api" / "app.py") <= 739  # R18 I1 +4; R5.2 I1 +1 (r52_wiring)
     for path in STATIC.glob("console*.js"):
         assert _lines(path) <= 800, path.name
 

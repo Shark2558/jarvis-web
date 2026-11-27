@@ -124,7 +124,11 @@ def test_no_approval_passkey_unlock_or_telegram_screen_reads_the_speaker_check(n
 def test_only_the_barge_in_hook_asks_the_speaker_check() -> None:
     asks = re.compile(r"JarvisVoicePrint\b")
     users = {p.name for p in STATIC.glob("*.js") if asks.search(p.read_text(encoding="utf-8"))}
-    assert users == {"console-voiceprint.js", "console-voiceprint-panel.js", BARGE}
+    # I1: V3's session screen offers each clip (V5's own seam, INTEGRATION-V5.md 5) and nothing else
+    session = "console-voice-session.js"
+    assert users == {"console-voiceprint.js", "console-voiceprint-panel.js", BARGE, session}
+    offered = set(re.findall(r"\bVP\.(\w+)\b", _code(read(session))))
+    assert offered == {"offerSessionClip"}, offered
     barge = _code(read(BARGE))
     calls = set(re.findall(r"JarvisVoicePrint\b(?:\.(\w+))?", barge))
     calls |= set(re.findall(r"\bp\.(\w+)\(", barge))

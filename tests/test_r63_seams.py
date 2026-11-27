@@ -62,7 +62,7 @@ def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
 # `seal.py` and `sealer.py` changed on purpose (tests/test_r631_e_serve.py); the rest still holds.
 UNTOUCHED = {  # 47ee8fc's SHA-256, under src/jarvis/
     # R18 E: the page with the Calls panel and its tab; R5.2 V4, V5: their script tags
-    "api/static/console.html": "PIN",
+    "api/static/console.html": "3f44b48d59176aa53fa0bcec77c7002107b1174a2cd02ed3785f796a302e2d30",
     "buildbook/ports.py": "949354c269f8750488f1662ab6c82dd1b28ee321599563f9a967fa3ec3c3bdbf",
     "buildbook/seal_notices.py": "0d9c979d104a180fc9e5a9f838fc00d51ac86e5154dc160d70d378a73b5d3b49",
     "buildbook/seal_words.py": "a7fc7c409ab81af066a905ddf55a2e7fb0fe55a032fe56da3125958a28bd1f27",
@@ -82,7 +82,7 @@ def test_the_keyring_keeps_its_27_purposes() -> None:
 
 # ---- the size guards -----------------------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") == 738  # R18 +2 (the calls routes), I1 +4 (the join)
+    assert _lines(SRC / "api" / "app.py") == 739  # R18 +2 (routes), I1 +4 (the join); R5.2 I1 +1
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") == 713  # not edited
     assert _lines(SRC / "config.py") == 792  # R18 +2, R5.2 +1 (the base classes' imports)

@@ -420,8 +420,8 @@ def test_console_html_is_unchanged_and_the_dock_stays_22() -> None:
     import hashlib
 
     got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
-    # R18 E: + the Calls panel and its tab
-    assert got == "d26e202e4e9aa526a94aab01b1b85433582482b06c0ad79fced61abebf7d466c"
+    # R18 E: + the Calls panel and its tab; R5.2: V4's and V5's script tags on existing lines
+    assert got == "3f44b48d59176aa53fa0bcec77c7002107b1174a2cd02ed3785f796a302e2d30"
     assert _lines(STATIC / "console.html") == 782
 
 
@@ -902,7 +902,7 @@ def test_the_book_knows_the_mannequins_licences() -> None:
 
 # ---- size guards, "no real clock", ₹ only ------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 738  # not edited by R13.1 (732); R18 I1 +4
+    assert _lines(SRC / "api" / "app.py") <= 739  # not edited by R13.1 (732); R18 I1 +4, R5.2 I1 +1
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") <= 741  # not edited (713)
     assert _lines(SRC / "config.py") <= 792  # R18 +2, R5.2 +1: the base classes' imports
@@ -932,7 +932,7 @@ def test_the_size_guards_hold() -> None:
     assert _lines(SRC / "billing" / "spend.py") <= 100
     # D21, D22 (the owner's scope of 17 Nov): the card's hook, its loader, the share tray's button
     assert _lines(STATIC / "console-media.js") <= 415
-    assert _lines(STATIC / "console-r7.js") <= 95
+    assert _lines(STATIC / "console-r7.js") <= 96  # R5.2 V3: its one registration line
     assert _lines(STATIC / "console-r7-share.js") <= 295
     assert _lines(SRC / "tools" / "reply_cards.py") <= 400
     m1 = STATIC / "vendor" / "mannequin" / "m1"

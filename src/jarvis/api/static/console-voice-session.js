@@ -106,7 +106,10 @@ function buildSection() {
   ui.start = button('btn lift bact primary', 'Start the voice session', 'vProfileStart', () => openSession(ui.start));
   ui.check = button('btn lift bact', 'Check again', 'vProfileCheck', recheck);
   ui.del = button('btn lift bact danger', 'Delete my recordings', 'vProfileDelete', () => confirmDelete(ui.del));
-  ui.acts.append(ui.start, ui.check, ui.del);
+  // R5.2 I1: his own "Hey Jarvis" from the session's clips (V4's console-wakeword-own.js trains it on the laptop)
+  ui.train = button('btn lift bact', 'Train my Hey Jarvis', 'vProfileTrain', () => trainWake('verifier'));
+  ui.own = button('btn lift bact', 'Train my own wake word (2 to 3 hours)', 'vProfileOwn', () => trainWake('owned'));
+  ui.acts.append(ui.start, ui.check, ui.train, ui.own, ui.del);
   ui.corr = toggle('vProfileCorr', 'Correct my usual mishearings', '', (on) => saveProfile({ corrections_on: on }));
   sec.append(mk('p', 'bfine vlead', LEAD), ui.status, ui.rank, ui.corr.row, ui.acts, ui.note);
   slot.append(sec);
@@ -156,7 +159,9 @@ function render() {
   ui.start.disabled = P.busy || !p || state === 'scoring';
   ui.check.hidden = !(p && p.clips > 0 && (state === 'done' || state === 'failed'));
   ui.del.hidden = !(p && p.clips > 0);
-  ui.check.disabled = ui.del.disabled = P.busy;
+  const W = window.JarvisWakeOwn;
+  ui.train.hidden = ui.own.hidden = !(W && typeof W.train === 'function' && p && p.clips > 0 && state === 'done');
+  ui.check.disabled = ui.del.disabled = ui.train.disabled = ui.own.disabled = P.busy;
   ui.corr.row.hidden = !(p && p.corrections > 0);
   if (p) { ui.corr.set(p.correctionsOn); ui.corr.help.textContent = `${p.corrections} learned from your session. Applied after listening; never to numbers, money or codes.`; }
 }
@@ -172,6 +177,17 @@ function say(text, kind) { if (!P.ui) return; P.ui.note.textContent = text || ''
 async function saveProfile(body) {
   P.busy = true; render();
   try { P.profile = normProfile(await api(PREFIX, { method: 'PUT', body })); say('Saved.', 'ok'); } catch (e) { if (e.status !== 401) say('Couldn\'t save. ' + words(e), 'bad'); } finally { P.busy = false; render(); }
+}
+async function trainWake(artifact) {
+  const W = window.JarvisWakeOwn;
+  if (!W || typeof W.train !== 'function' || P.busy) return;
+  P.busy = true; render();
+  try {
+    await W.train(artifact);
+    say(artifact === 'owned'
+      ? 'Your laptop is training your own wake word: 2 to 3 hours, and its speech waits meanwhile (Google listens). It replaces today\'s only if it does better.'
+      : 'Your laptop is training your Hey Jarvis check from your session: a few minutes. It is used once it passes its tests.', 'ok');
+  } catch (e) { if (e.status !== 401) say(words(e, 'The laptop couldn\'t start the training.'), 'bad'); } finally { P.busy = false; render(); }
 }
 async function recheck() {
   P.busy = true; say('Checking your recordings again on the laptop…'); render();
@@ -431,9 +447,21 @@ async function finish(r, frames) {
   D.rec = null;
   if (r.recog) { try { r.recog.rec.stop(); } catch (_) {} await Promise.race([r.recog.ended, new Promise((res) => setTimeout(res, FINAL_WAIT_MS))]); }
   if (!frames || !frames.length) { if (r.recog) try { r.recog.rec.abort(); } catch (_) {} return; }
+  offerPrint(frames);
   const body = { audio: base64(window.JarvisWav.encode(frames)) };
   if (r.heard !== null && r.recog) body.browser_heard = r.heard.slice(0, 2000);
   await send({ id: r.p.id, body });
+}
+// R5.2 I1 (V5's seam): the clip's 16 kHz PCM to the speaker check on this device; it keeps only an
+// embedding in memory until he taps "Use my voice session" there. Nothing is sent or stored here.
+function offerPrint(frames) {
+  const VP = window.JarvisVoicePrint;
+  if (!VP || typeof VP.offerSessionClip !== 'function') return;
+  const list = Array.from(frames).filter((f) => f instanceof Int16Array);
+  const pcm = new Int16Array(list.reduce((n, f) => n + f.length, 0));
+  let at = 0;
+  list.forEach((f) => { pcm.set(f, at); at += f.length; });
+  try { VP.offerSessionClip(pcm); } catch (_) {}
 }
 function base64(buf) {
   const bytes = new Uint8Array(buf);

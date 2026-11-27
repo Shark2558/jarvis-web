@@ -117,11 +117,9 @@ APP_ASSETS: dict[str, str] = {
     "console-connectors.css": "text/css",  # R5.1 A: Connectors as Integrations-style cards
     "console-people.css": "text/css",  # R5.1 A: People panel + the top-bar Brain pill
     "console.css": "text/css",
-    "console-deck.css": "text/css",
-    "console-memory.css": "text/css",
-    "console-voice.css": "text/css",
-    "console-voice-devices.css": "text/css",
-    "console-permissions.css": "text/css",
+    "console-deck.css": "text/css", "console-memory.css": "text/css",
+    "console-voice.css": "text/css", "console-voice-session.css": "text/css",  # + R5.2 V3's
+    "console-voice-devices.css": "text/css", "console-permissions.css": "text/css",
     # R6 (docs/plans/r6-build-book.md D15, D16; builder D): the Book panel in the deck, then the
     # show page (/book/show, book.html). The 3D files are ES modules; the scene modules are
     # imported by console-book-3d.js, never linked.
@@ -192,7 +190,8 @@ APP_ASSETS: dict[str, str] = {
     "console-book-tour.js": _JS,  # R6.3 D: the tour's chapters, owner-only scenes, continue
     # R6.3.1 F: the full book's flowcharts (R6.4: /book/read, imported by console-book-read-page.js)
     "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS, **CALLS_ASSETS,  # + R18 E's
-    "console-voice-session.js": _JS, "console-voice-session.css": "text/css",  # R5.2: Your voice
+    "console-voice-session.js": _JS, "console-voiceprint.js": _JS,  # R5.2 V3, V5 (rows 81, 84)
+    "console-voiceprint-math.js": _JS, "console-voiceprint-panel.js": _JS,  # R5.2 V5
 }
 
 # Self-hosted OFL fonts (licences beside them).

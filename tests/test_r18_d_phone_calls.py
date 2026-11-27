@@ -311,15 +311,24 @@ async def test_an_expired_approval_is_refused_and_a_long_one_is_capped() -> None
     assert json.loads(got["commands"][0]["body"])["exp"] == int(T0 + pc.DIAL_MAX_S)
 
 
-async def test_an_approval_check_that_fails_refuses_the_dial() -> None:
-    r = rig()
-
-    async def broken(*_: Any) -> float | None:
+class BrokenApprovals:
+    async def live_until(self, *_: str) -> float | None:
         raise RuntimeError("store down")
 
-    r.approvals.live_until = broken  # type: ignore[method-assign,assignment]
+
+async def test_an_approval_check_that_fails_refuses_the_dial() -> None:
+    r = rig()
+    r.calls.approvals = BrokenApprovals()
     out = await r.calls.send(UID, dial())
     assert out.status == "refused" and out.code == "approval"
+
+
+async def test_until_the_approvals_are_wired_every_dial_is_refused() -> None:
+    r = rig()
+    r.calls.approvals = None
+    out = await r.calls.send(UID, dial())
+    assert out.status == "refused" and out.code == "approval"
+    assert (await r.calls.send(UID, w.End(call_id=C1))).status == "queued"
 
 
 @pytest.mark.parametrize(

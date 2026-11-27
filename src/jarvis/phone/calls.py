@@ -315,7 +315,7 @@ class PhoneCalls:
         *,
         phones: PhoneDirectory,
         signer: CommandSigner,
-        approvals: ApprovalCheck,
+        approvals: ApprovalCheck | None = None,
         doorbell: Doorbell | None = None,
         sink: PhoneEventSink | None = None,
         cards: CardDesk | None = None,
@@ -324,7 +324,9 @@ class PhoneCalls:
         clock: Callable[[], float] = time.time,
         max_wait_s: float = WAIT_MAX_S,
     ) -> None:
-        self._phones, self._signer, self._approvals = phones, signer, approvals
+        # approvals, sink, cards and answering may be set later (I1 builds this with the phone part,
+        # before the calls engine exists); until approvals is set, every dial is refused
+        self._phones, self._signer, self.approvals = phones, signer, approvals
         self._bell, self.sink, self.cards = doorbell, sink, cards
         self.answering, self._audit, self._clock = answering, audit, clock
         self._max_wait = max_wait_s
@@ -370,8 +372,11 @@ class PhoneCalls:
             return min(until, now + TTL_S["call.card"]) if until > now else None
         if not isinstance(cmd, Dial):
             return now + TTL_S[cmd.type]
+        if self.approvals is None:
+            log.warning("no approval check is wired: the dial is refused")
+            return None
         try:
-            live = await self._approvals.live_until(uid, cmd.approval_id, cmd.call_id, cmd.number)
+            live = await self.approvals.live_until(uid, cmd.approval_id, cmd.call_id, cmd.number)
         except Exception as exc:  # noqa: BLE001 - an approval that can't be read never dials
             log.warning("approval check failed", extra={"error": type(exc).__name__})
             return None

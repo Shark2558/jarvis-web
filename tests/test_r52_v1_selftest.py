@@ -54,6 +54,7 @@ def test_word_error_on_the_test_sentence() -> None:
 
 
 async def test_a_healthy_kit_passes_and_the_report_is_safe_to_paste(tmp_path: Path) -> None:
+    pytest.importorskip("numpy")  # the synthetic tones
     service, engines = make_service(tmp_path, mp3=FakeMp3())
     engines.heard.clear()
     real_stt = service.stt

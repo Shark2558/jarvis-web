@@ -1,4 +1,4 @@
-Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.0 · 27 Nov 2026, 23:45 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 07 · Quality: tests, evals, CI and releases
 
@@ -15,6 +15,14 @@ change log.
 recordings correctly, speak clearly enough to be understood over a phone line, answer fast enough,
 and be scored 4 out of 5 or better by a person who speaks it. No real call is made in any test.
 Section 8 has the details.
+
+**Your voice (R5.2, built, not yet deployed)** adds about 540 checks. A new eval tests your own
+"Hey Jarvis": the version trained on your voice must catch at least 95 % of your test clips, wake
+for the TV at most once every two hours, and be swapped in only when it beats today's model; each
+part has a "broken on purpose" version that must fail. Your voice session is scored the same way:
+every listening engine is ranked by how many words it gets wrong on your voice, and a free laptop
+engine is chosen when it is nearly as good. No test runs a real speech model; those checks run on
+your laptop. Section 9 has the details.
 
 ## 1. Tests
 
@@ -61,8 +69,8 @@ long); the floor is what CI enforces on every change.
 
 | Part | As built | Evidence |
 |---|---|---|
-| Suites | 47 folders under `evals/` since R18 (46 suites, one per slice or release, the newest `calls_language`, plus `realrun`, the real-run harness: injection, privacy, budget, correctness); each has a negative control that must fail when its safety is switched off (for example `policy.TAINTED_WRITES_ASK`, `telegram.service.R3_REFUSAL`, `recall.gate.memory_allowed` are read at call time for exactly that) | `evals/run_all_mock.py` |
-| Mock runs | `make eval-mock` runs every suite on the mock brain; in CI the suites run inside `pytest` through 33 `tests/test_evals_*.py` files (R18 added `tests/test_evals_calls_language.py`), controls included | `Makefile`, `tests/test_evals_*.py` |
+| Suites | 48 folders under `evals/` since R5.2 (47 suites, one per slice or release, the newest `calls_language` (R18) and `wakeword` (R5.2), plus `realrun`, the real-run harness: injection, privacy, budget, correctness); each has a negative control that must fail when its safety is switched off (for example `policy.TAINTED_WRITES_ASK`, `telegram.service.R3_REFUSAL`, `recall.gate.memory_allowed` are read at call time for exactly that) | `evals/run_all_mock.py` |
+| Mock runs | `make eval-mock` runs every suite on the mock brain; in CI the suites run inside `pytest` through 33 `tests/test_evals_*.py` files (R18 added `tests/test_evals_calls_language.py`), controls included. R5.2's `evals/wakeword/run.py --mock` is in `make eval-mock` but has no such file, so CI does not run the eval itself, only the unit tests of the code it drives (section 9.1; chapter 12, section 7) | `Makefile`, `tests/test_evals_*.py` |
 | Phase 0 gate | pass rate ≥ 90 %, p95 turn ≤ 4,000 ms on balanced, mean cost ≤ US$0.01 a turn (≈ ₹0.95); `--mock` on every CI run (plumbing only), for real on `main` when the key is set (`eval-gate`, skipped with a notice otherwise; reports, never blocks the deploy) | `evals/phase0/run.py`, `.github/workflows/ci.yml` |
 | Owner's real runs | Cloud Shell, key read from Secret Manager into memory only, ₹ estimate and typed YES, stop at 1.5 times the estimate; `--all` adds memory, voice, brief and the Google tools | `deploy/run-real-evals.sh` |
 | The visual gate | Every panel, Night and Day, 1440×900 and 390×844, DOM checks (overlap, fonts, overflow, contrast, 44 px targets) | `tests/browser/test_ui_audit.py` |
@@ -116,7 +124,7 @@ release. Since R6.3.1 JARVIS makes **no AI call** for it (`docs/plans/r6-3-1-boo
 | Engineering loop | plan → test first → implement → review in a fresh context (code, Python; security for tools, auth, secrets or the gateway) → verify → remember → improve | `CLAUDE.md` |
 | Plan | Every non-trivial change has `docs/plans/<slice>.md` before code | `CLAUDE.md`; `docs/plans/` |
 | Branch shape | A release's `I0` branch builds the seams (contracts, stubs, wiring); parts A, B, … build on it in parallel; `I1` joins them and runs the integrated reviews; then one pull request to `main` | e.g. `docs/plans/r6-3-1-book-at-build.md` ("Branches"), `docs/plans/r6-4-integration/` |
-| Program version | One source: `src/jarvis/__init__.py:__version__` (`6.4.0` on `main`; `18.0.0` with R18), read by `pyproject.toml`; the image records its build time; Vitals shows both. The number may go down on purpose between release lines (nothing compares it) | `pyproject.toml` (`dynamic = ["version"]`), `src/jarvis/about.py` |
+| Program version | One source: `src/jarvis/__init__.py:__version__` (`6.4.0` on `main`; `18.0.0` with R18; `5.2.0` with R5.2), read by `pyproject.toml`; the image records its build time; Vitals shows both. The number may go down on purpose between release lines (nothing compares it) | `pyproject.toml` (`dynamic = ["version"]`), `src/jarvis/about.py` |
 | Document versions | Line 1 `Version vX.Y.Z · D Mon YYYY, HH:MM IST · Release … · Status: … · Owner: …`; a closing change log | `scripts/check_doc_versions.py` (workshop rules, section 6) |
 | Pull request | Title `v<version> · <release> <name> · Mark <numeral>`; body from the template: version, release, Mark, plan, build log, owner's steps; five plain-words sections (what you get, cost in ₹, checks, reviews, not verified live) | `scripts/check_pr_title.py`, `.github/pull_request_template.md` |
 | Commits | Conventional types; trailers `JARVIS-Version` and `JARVIS-Mark` on release commits | `.claude/rules/ecc/common/git-workflow.md`; `git log` |
@@ -184,6 +192,82 @@ for this edition. *Unverified here:* real Phone Link, Windows sound and Bluetoot
 scripts, the Android build on a phone, FLEURS clips from Hugging Face and Bhashini; none of them
 can run in this environment (`docs/plans/r18-integration/I1-NOTES.md`, 4.7).
 
+## 9. Your voice (R5.2)
+
+Plan: `docs/plans/r5-2-voice.md`, section 5 ("Evals before ship"). No test downloads a model or
+runs a real speech engine; real models run only on the laptop, where the kit's self-test prints a
+report the owner can paste.
+
+### 9.1 The wake-word eval
+
+`evals/wakeword/run.py` (R5.2 Part V4). `--mock`: fake models and synthetic tones, no network,
+every gate hard, each suite with a negative control that must fail it. The bars are
+`src/jarvis/localspeech/wakeword/evals.py:WAKE_BARS`, equal to the plan's
+(`src/jarvis/voice/profile.py:BARS`).
+
+| Suite | What must hold | Negative control |
+|---|---|---|
+| `stage1` | The personal verifier trained on a synthetic session misses at most 5 % of his held-out "Hey Jarvis" clips and rejects at least 90 % of other speakers' "Hey Jarvis", so it is applied | a verifier that accepts everyone |
+| `stage2` | His owned model misses at most 5 %, wakes falsely at most 0.5 times an hour on synthetic TV from voices it never trained on, is no worse than today's model (so it is swapped in), and its file's MANIFEST names its hash | an untrained network |
+
+Run on 27 Nov 2026 for this edition: both suites pass and both controls fail them, as they must.
+`--real` runs today's vendored models on generated music and noise and, if given, his held-out WAV
+clips on the laptop; without onnxruntime it says "skipped". Openly licensed TV and podcast audio
+is not fetched, because none could be pinned with a SHA-256, so the false-wake bar is measured on
+synthetic TV only.
+
+**Where it runs.** `evals/run_all_mock.py` runs it, gated, and `tests/test_r52_i1_join.py` checks
+that it is listed there. No `tests/test_evals_*.py` file runs it, so CI does not run the eval
+itself; CI runs the unit tests of the same training and scoring code
+(`tests/test_r52_v4_train.py`, `tests/test_r52_v4_formats.py`). A gap (chapter 12, section 7).
+
+**On the real kit.** Kit 1.0.0 has no voice engine, so stage 1 trains without other speakers'
+"Hey Jarvis": its result says "other speakers were not measured", and the 90 % rejection bar can't
+be shown there. Stage 2 refuses, in plain words, until a permissively licensed voice is pinned
+(`src/jarvis/localspeech/wakejoin.py`: no voices).
+
+### 9.2 The voice session's scoring
+
+`src/jarvis/voice/session_score.py`, pure functions with no input or output:
+
+| Step | Rule |
+|---|---|
+| What is heard | Every listening engine hears the 80 held-out lines (20 a block): the laptop's Whispers in a job on the kit, Google with his words, and the browser's own listening if he chose it |
+| Made comparable | Both sides normalised as R18's language check does, then the forms an engine may choose for the same words: "2,400" is 2400, "₹450" is "450 rupees", number words become digits ("six forty five" is "6 45") |
+| Ranked | Word error (word edits over reference words, pooled) and command accuracy (the key phrase in what was heard), on the prompts every engine heard, at least 10 an engine (`MIN_PROMPTS`) |
+| Chosen | The best by word error; but a laptop engine within 2 points of it with commands at 95 % or more is chosen instead (free, and his audio stays home), and Whisper medium only when it is at least 2 points better than small (`choose`) |
+| The plan's bar | The chosen engine's word error is at most the best cloud engine's plus 2 points, and commands at 95 % or more (`meets_bar`; `src/jarvis/voice/profile.py:ProfileBars.recognition_ok`) |
+| Learned | Corrections from repeated mishearings (chapter 05, section 9.3) and new words for his "words to recognise", at most 50 in all |
+
+In CI these run on a synthetic set (`tests/test_r52_v3_score.py`). The recognition eval on his
+real voice is the owner's 20-minute session; it has not been run.
+
+### 9.3 The tests
+
+| Where | Files | Count | Covers |
+|---|---|---|---|
+| `tests/test_r52_*.py` | 41 | **540** collected items (`pytest --collect-only` on this branch, 27 Nov 2026) | I0's protocol, profile, routes, settings and seams; the kit's server, service, engines, device, model manager (with the blob-id pins), jobs, clips, self-test, CLI, deploy files and the cloud import guard; the kit's client, the laptop adapters, the routing, the calls bridge, the desk's hook and Vitals' line; the session, prompts, scoring, API and Privacy rows; the wake word's training, kit, formats, streaming port, API and console wiring; the speaker check's arithmetic, console wiring and the never-approves test; I1's join, desk and blob-id manager |
+| `tests/browser/test_r52_*.py` | 3 | 21 test functions (static count; 23 passed at I1 with parametrisation) | the voice session's screen, the owned wake word in the console, the speaker check's panel |
+
+At I1 (`docs/plans/r5-2-integration/I1-NOTES.md`, section 7) the touched and related tests ran
+5,600 passed, 9 skipped and 5 failed (two known, R18's; three fixed and rerun: 1,177 passed),
+`mypy --strict` on the R5.2 packages was clean (112 files) and the browser suites passed.
+
+### 9.4 What is not measured yet
+
+| Plan bar (section 5) | Status | Why |
+|---|---|---|
+| Recognition on his own held-out prompts | not run | needs his 20-minute session |
+| Speaker check: equal error rate ≤ 5 %, TV barge-in ignored | not measurable | no model in the slot; the threshold 0.45 is uncalibrated (ADR-46) |
+| Speaker check never approves anything | **holds** | `tests/test_r52_v5_never_approves.py` |
+| Laptop kit: first audio ≤ 0.7 s on the graphics card (≤ 1.5 s on the CPU), listening ≥ 3 times real time | not measured | the self-test's round trip needs a voice and kit 1.0.0 has none; listening alone is not timed (`src/jarvis/localspeech/selftest.py`) |
+| The gate refuses http and a wrong key; nothing logged | holds in tests | JARVIS refuses an http address (`tests/test_r52_i0_config.py`, `tests/test_r52_v2_client.py`); the server refuses a wrong or missing key and logs nothing of a request (`tests/test_r52_v1_server.py`); the Caddyfile is read and checked as text (`tests/test_r52_v1_deploy.py`), Caddy itself is not run here |
+| Fallback: kit off or slow → Google → browser | holds in tests | `tests/test_r52_v2_service_routing.py`, `tests/test_r52_v2_laptop.py` |
+| Privacy: no audio, print or recording in the cloud; Delete removes them from the laptop | holds in tests | `tests/test_r52_v3_privacy.py`, `tests/test_r52_v1_clips.py` |
+
+*Unverified here:* the kit's real engines, Caddy, Tailscale Funnel, the PowerShell scripts and a
+call heard on the kit; none of them can run in this environment (I1-NOTES, 4.6).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -192,3 +276,4 @@ can run in this environment (`docs/plans/r18-integration/I1-NOTES.md`, 4.7).
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the eval folder count corrected to 46; the test-file count's two figures explained; the per-group test counts marked unverified; the version check now covers this document (F3 closed); the SDK boundary test and the traceability generator added to the documentation checks | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 20:25 IST | R18 | R18 "Calls from your laptop": the calls' quality in plain words; 47 eval folders and 33 eval test files; the Android workflow's R18 vectors and two controls; the program version with R18; new section 8: the language check's bars (the brain step not built; 8 languages without FLEURS clips), the `calls_language` eval's four suites and controls, R18's tests (56 files, 1,003 items; 4 browser files, 29 functions) and what can't be tested here | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the calls eval has five suites, the new `free_first` testing the app's own choice (its control: ranking by list price), so v6.5.0's gap is closed; R18's tests re-counted at `c036ca1` (59 files, 1,027 items; 5 browser files, 31 functions); where voice scores are entered | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 23:45 IST | R5.2 | R5.2 "Your voice": its quality in plain words; 48 eval folders (the new `wakeword`), which CI does not run itself (no `tests/test_evals_*.py` for it); the program version with R5.2; new section 9: the wake-word eval's two suites, bars and controls (run for this edition: pass, controls fail), what the real kit can't show yet; the voice session's scoring (normalising, ranking, the choice rule, the plan's bar); R5.2's tests (41 files, 540 items; 3 browser files, 21 functions); the plan's bars not measured yet | 🛠 Mark XXV |

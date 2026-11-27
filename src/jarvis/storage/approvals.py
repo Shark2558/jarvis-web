@@ -3,11 +3,17 @@
 
 Single use is enforced by a transaction (read → check → delete), so a double click, a retry,
 or two instances can never execute the same approved action twice.
+
+R18 review: a feature may seal what a card holds at rest (`use_seal`, an `ArgumentSeal`): the
+action is sealed on the way in and opened on the way out, so the gate and everything after it
+see the whole arguments. A card that doesn't open is unreadable (never a guess), like a bad
+document. The calls' seal (`jarvis.calls.pending`) keeps a waiting call's number sealed.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Protocol
 
 from jarvis.core.guardrails import ActionMatcher, ApprovalStore, PendingAction
 from jarvis.logging import get_logger
@@ -18,20 +24,32 @@ log = get_logger(__name__)
 LIST_LIMIT = 100
 
 
-def _decode(data: dict[str, object] | None) -> PendingAction | None:
-    if data is None:
-        return None
-    try:
-        return PendingAction.model_validate_json(str(data["json"]))
-    except (KeyError, ValueError):
-        log.error("unreadable approval document")
-        return None
+class ArgumentSeal(Protocol):
+    """Seals a card's arguments for storage and opens them again (raises when they don't)."""
+
+    def seal(self, action: PendingAction) -> PendingAction: ...
+
+    def open(self, action: PendingAction) -> PendingAction: ...
 
 
 class DocApprovalStore(ApprovalStore):
     def __init__(self, docs: Docs, *, prefix: str = "jarvis_") -> None:
         self._d = docs
         self._col = f"{prefix}approvals"
+        self.seal: ArgumentSeal | None = None
+
+    def use_seal(self, seal: ArgumentSeal) -> None:
+        self.seal = seal
+
+    def _decode(self, data: dict[str, object] | None) -> PendingAction | None:
+        if data is None:
+            return None
+        try:
+            action = PendingAction.model_validate_json(str(data["json"]))
+            return self.seal.open(action) if self.seal is not None else action
+        except Exception as exc:  # noqa: BLE001 - unreadable or not opening: never a guess
+            log.error("unreadable approval document", extra={"error": type(exc).__name__})
+            return None
 
     def _path(self, approval_id: str) -> str:
         return f"{self._col}/{approval_id}"
@@ -47,16 +65,19 @@ class DocApprovalStore(ApprovalStore):
                         "scope": action.scope,
                         "created_at": action.created_at,
                         "expires_at": action.expires_at,
-                        "json": action.model_dump_json(),
+                        "json": self._sealed(action).model_dump_json(),
                     },
                 )
             ]
         )
 
+    def _sealed(self, action: PendingAction) -> PendingAction:
+        return self.seal.seal(action) if self.seal is not None else action
+
     async def get(self, approval_id: str) -> PendingAction | None:
         if not safe_id(approval_id):
             return None
-        return _decode(await self._d.get(self._path(approval_id)))
+        return self._decode(await self._d.get(self._path(approval_id)))
 
     async def consume(self, approval_id: str, matches: ActionMatcher) -> PendingAction | None:
         if not safe_id(approval_id):
@@ -64,7 +85,7 @@ class DocApprovalStore(ApprovalStore):
         path = self._path(approval_id)
 
         async def take(tx: DocTx) -> PendingAction | None:
-            a = _decode(await tx.get(path))
+            a = self._decode(await tx.get(path))
             if a is None or a.expired or not matches(a):
                 return None
             tx.delete(path)
@@ -78,7 +99,7 @@ class DocApprovalStore(ApprovalStore):
         path = self._path(approval_id)
 
         async def take(tx: DocTx) -> PendingAction | None:
-            a = _decode(await tx.get(path))
+            a = self._decode(await tx.get(path))
             if a is not None:
                 tx.delete(path)
             return a
@@ -93,7 +114,7 @@ class DocApprovalStore(ApprovalStore):
             return await super().pending_in(scope)
         rows = await self._d.query(Query(self._col, where=("scope", scope), limit=LIST_LIMIT))
         now = datetime.now(UTC)
-        live = [a for _, d in rows if (a := _decode(d)) is not None and a.expires_at >= now]
+        live = [a for _, d in rows if (a := self._decode(d)) is not None and a.expires_at >= now]
         return sorted(live, key=lambda a: a.created_at)
 
     async def list_pending(self) -> list[PendingAction]:
@@ -102,7 +123,7 @@ class DocApprovalStore(ApprovalStore):
         live: list[PendingAction] = []
         expired: list[str] = []
         for aid, data in rows:
-            a = _decode(data)
+            a = self._decode(data)
             if a is None or a.expires_at < now:
                 expired.append(aid)
             else:

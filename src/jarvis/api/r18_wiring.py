@@ -13,7 +13,9 @@ docs/plans/r18-integration/I1-NOTES.md). The adapters between the parts are
 - `r18_tools(parts)`: `calls_place` (R3) and `calls_answer_mode`, for `build_gateway(r18=...)`.
 - `finish_r18(app)` (after the gateway, from `tick_wiring.finish_wiring`): A1's `CardsApi` on
   `app.state.calls_api` (its approvals run the gateway's `calls_place` card), the booking calendar
-  and the phone's Approve / Decline. No gateway (tools off): no `calls_api` (501), no call.
+  and the phone's Approve / Decline; the review's seal on the gateway's approval store (a waiting
+  call's number sealed at rest, `calls/pending.py`). No gateway (tools off): no `calls_api` (501),
+  no call.
 - `r18_tick_jobs(app)`: the 30-day retention job (`calls_retention`).
 - `r18_privacy_sources(app)` (R18 review): the calls' four Privacy rows (`jarvis.calls.privacy`).
 """
@@ -72,6 +74,7 @@ from jarvis.calls.langcheck.runner import LanguageCheck
 from jarvis.calls.langcheck.sentences import CheckSentences
 from jarvis.calls.limits import BillingBudget, Limits
 from jarvis.calls.models import CallSettings, SpeechOption
+from jarvis.calls.pending import seal_pending_calls
 from jarvis.calls.ports import CallStore
 from jarvis.calls.prices import SpeechPrice, speech_prices
 from jarvis.calls.privacy import calls_privacy_sources
@@ -398,6 +401,9 @@ def finish_r18(app: FastAPI) -> None:
     )
     api.phone, api.azure_ready = parts.phone, s.azure_speech_key is not None
     st.calls_api = api
+    ring = Keyring.from_settings(s)
+    if ring is not None:  # R18 review: a waiting call's number sealed at rest (calls/pending.py)
+        seal_pending_calls(gw, ring)
     if parts.phone is not None:
         parts.phone.cards = PhoneCardDesk(lambda: getattr(st, "calls_api", None), parts.store)
     log.info("R18 calls wired", extra={"phone": parts.phone is not None, "env": s.env})

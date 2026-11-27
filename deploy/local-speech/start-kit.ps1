@@ -8,8 +8,8 @@
 #   powershell -ExecutionPolicy Bypass -File .\start-kit.ps1             start
 #   powershell -ExecutionPolicy Bypass -File .\start-kit.ps1 -SelfTest   start, then the self-test
 #   powershell -ExecutionPolicy Bypass -File .\start-kit.ps1 -HttpsPort 443
-#       if Funnel's port 10000 already serves something else on this laptop (the offline brain
-#       keeps 8443)
+#       only if Funnel's port 10000 already serves something else on this laptop and 443 is free
+#       (one door each: the kit 10000, the home bridge 8443, the offline brain 443)
 param(
     [ValidateSet(443, 8443, 10000)][int]$HttpsPort = 10000,
     [switch]$SelfTest
@@ -52,7 +52,8 @@ foreach ($port in @($gatePort, $serverPort)) {
     }
 }
 
-# Never take over a Funnel port that already serves something else (the offline brain keeps 8443).
+# Never take over a Funnel port that already serves something else (one door each: the kit 10000,
+# the home bridge 8443, the offline brain 443; R5.2 review).
 function Test-FunnelTaken([int]$port) {
     try { $cfg = (& tailscale funnel status --json 2>$null | Out-String) | ConvertFrom-Json } catch { return $false }
     if (-not $cfg -or -not $cfg.Web) { return $false }
@@ -65,7 +66,7 @@ function Test-FunnelTaken([int]$port) {
     return $false
 }
 if (Test-FunnelTaken $HttpsPort) {
-    Write-Host "Tailscale Funnel's port $HttpsPort already serves something else on this laptop (the offline brain keeps 8443). Run this again with -HttpsPort 443, and give JARVIS that address."
+    Write-Host "Tailscale Funnel's port $HttpsPort already serves something else on this laptop (the home bridge keeps 8443 and the offline brain 443; the kit's own is 10000). See what uses it with: tailscale funnel status"
     exit 1
 }
 

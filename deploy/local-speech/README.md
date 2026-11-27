@@ -1,8 +1,10 @@
 # The laptop speech kit: your laptop as JARVIS's ears and voice
 
-R5.2 "Your voice" (row 383). A small speech program on your own laptop listens and speaks for
-JARVIS, so Google's free minutes last longer and nothing costs money. It also keeps the voice
-session's recordings, encrypted, and (later) trains your own "Hey Jarvis" there.
+R5.2 "Your voice" (row 383). A small speech program on your own laptop listens for JARVIS (and
+speaks for him once a permissively licensed voice is pinned: kit 1.0.0 has none yet, see below),
+so Google's free minutes last longer and nothing costs money. It also keeps the voice session's
+recordings, encrypted, and trains your own "Hey Jarvis" there: your personal check after the
+voice session, and your fully owned wake word when you choose (that one waits for a pinned voice).
 
 It is **off until you set it up**. Without it, or whenever the laptop is off, asleep or busy,
 JARVIS uses Google as today, then the browser: you see the same messages as before.
@@ -90,10 +92,11 @@ This first version of the kit (1.0.0) is honest about what it could check when i
 Keep the window open and the laptop awake. Ctrl+C stops the kit and closes Funnel on its port
 (nothing else of your Tailscale setup is touched).
 
-**Funnel's ports.** The kit uses Funnel's https port **10000**; the offline brain keeps 8443, so
-both can run on the same laptop. If port 10000 already serves something else, start the kit with
-`.\start-kit.ps1 -HttpsPort 443` and give JARVIS the address it prints. The script refuses to take
-over a port that serves something else.
+**Funnel's ports.** Funnel offers three https ports, and each part on the laptop has its own: the
+kit **10000**, the home bridge 8443 and the offline brain 443, so all three can run on the same
+laptop. Every start script refuses to take over a port that already serves something else. Only if
+something else of yours holds 10000 and you don't use the offline brain on this laptop, start the
+kit with `.\start-kit.ps1 -HttpsPort 443` and give JARVIS the address it prints.
 
 ## Why it is safe
 

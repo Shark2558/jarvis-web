@@ -418,19 +418,20 @@ def test_a_run_makes_a_private_key_and_publishes_only_the_gate(stubs: dict[str, 
     assert f"funnel --bg --https={p.FUNNEL_PORT} {p.GATE_PORT}" in ts
     assert str(p.SERVER_PORT) not in ts
     assert f"funnel --https={p.FUNNEL_PORT} off" in ts and "reset" not in ts
-    assert "8443" not in ts.replace("funnel status", "")  # the offline brain's port is never used
+    assert "8443" not in ts.replace("funnel status", "")  # the home bridge's port is never used
     again = _run(stubs)
     assert key_file.read_text() == key and f"Key: {key}" in again.stdout
 
 
-def test_a_funnel_port_held_by_the_offline_brain_is_never_taken(stubs: dict[str, Path]) -> None:
+def test_a_funnel_port_held_by_the_home_bridge_is_never_taken(stubs: dict[str, Path]) -> None:
+    # R5.2 review: one door each (the bridge 8443, the offline brain 443, the kit 10000)
     (stubs["bin"] / "status").write_text(
-        "https://my-laptop.tail1234.ts.net:8443 (Funnel on)\n|-- / proxy http://127.0.0.1:11435\n"
+        "https://my-laptop.tail1234.ts.net:8443 (Funnel on)\n|-- / proxy http://127.0.0.1:8099\n"
     )
     r = _run(stubs, JARVIS_SPEECH_KIT_HTTPS_PORT="8443")
     assert r.returncode != 0 and "already serves something else" in r.stderr
     assert not (stubs["kit"] / "key").exists() and not (stubs["log"] / "caddy_env").exists()
-    r = _run(stubs)  # I1: the kit's default, 10000, leaves the brain's 8443 alone
+    r = _run(stubs)  # I1: the kit's default, 10000, leaves the bridge's 8443 alone
     assert r.returncode == 0, r.stderr
     assert "Address: https://my-laptop.tail1234.ts.net:10000" in r.stdout
     assert "funnel --bg --https=10000 11436" in (stubs["log"] / "tailscale").read_text()

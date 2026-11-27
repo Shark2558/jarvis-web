@@ -67,7 +67,7 @@ def test_the_gate_passes_only_two_requests_and_only_with_the_key() -> None:
 
 def test_ollama_is_never_published() -> None:
     for text in (UNIX.read_text(), WIN):
-        assert "funnel --bg --https=8443 11435" in text
+        assert "funnel --bg --https=443 11435" in text
         assert not re.search(r"funnel[^\n]*11434", _code(text))
         assert "serve --bg" not in text
 
@@ -98,17 +98,17 @@ def test_the_windows_script_checks_what_it_needs_and_cleans_up() -> None:
         "Need 'caddy'",
         "Need 'tailscale'",
         "api/version",
-        "funnel --bg --https=8443 11435",
+        "funnel --bg --https=443 11435",
         "finally",
     ):
         assert token in WIN
-    assert "funnel --https=8443 off" in WIN
+    assert "funnel --https=443 off" in WIN
 
 
 def test_the_windows_script_only_closes_the_funnel_it_opened_and_refuses_a_taken_port() -> None:
     win = _code(WIN)
     assert "$funnelOn = $false" in win and "$funnelOn = $true" in win
-    assert win.index("$funnelOn = $true") > win.index("funnel --bg --https=8443 11435")
+    assert win.index("$funnelOn = $true") > win.index("funnel --bg --https=443 11435")
     assert win.index("$funnelOn = $true") > win.index("$LASTEXITCODE -ne 0")
     assert "if ($funnelOn)" in win and win.index("if ($funnelOn)") > win.index("finally")
     assert "TcpClient" in win and "$probe.Connect('127.0.0.1', 11435)" in win
@@ -164,7 +164,7 @@ def stubs(tmp_path: Path) -> dict[str, Path]:
         "tailscale",
         f'echo "$@" >> "{log}/tailscale"\n'
         'if [ "$1 $2" = "funnel status" ]; then\n'
-        '  echo "https://my-laptop.tail1234.ts.net:8443 (Funnel on)"; echo "|-- / proxy http://127.0.0.1:11435"\n'
+        '  echo "https://my-laptop.tail1234.ts.net (Funnel on)"; echo "|-- / proxy http://127.0.0.1:11435"\n'
         "fi\nexit 0\n",
     )
     return {"bin": bin_dir, "log": log}
@@ -194,15 +194,15 @@ def test_first_run_makes_a_private_key_and_prints_address_and_key(
     assert len(base64.urlsafe_b64decode(key + "=")) == 32
     assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
     assert stat.S_IMODE(key_file.parent.stat().st_mode) == 0o700
-    assert "Address: https://my-laptop.tail1234.ts.net:8443" in r.stdout
+    assert "Address: https://my-laptop.tail1234.ts.net\n" in r.stdout  # R5.2 review: 443
     assert f"Key: {key}" in r.stdout
     # Caddy got the key through its environment, never as an argument
     assert (stubs["log"] / "caddy_env").read_text().strip() == f"key={key}"
     args = (stubs["log"] / "caddy_args").read_text()
     assert "Caddyfile" in args and key not in args
     ts = (stubs["log"] / "tailscale").read_text()
-    assert "funnel --bg --https=8443 11435" in ts and "11434" not in ts
-    assert "funnel --https=8443 off" in ts  # only this port is closed again on exit
+    assert "funnel --bg --https=443 11435" in ts and "11434" not in ts
+    assert "funnel --https=443 off" in ts  # only this port is closed again on exit
     assert "reset" not in ts  # never wipes the owner's other Funnel / Serve settings
 
 
@@ -247,7 +247,7 @@ def test_funnel_failing_gives_a_hint_and_stops(tmp_path: Path, stubs: dict[str, 
     assert r.returncode != 0 and "Funnel did not start" in r.stderr
     assert "Key:" not in r.stdout
     # M5: this run never turned Funnel on, so it must not turn off one that is already running
-    assert "funnel --https=8443 off" not in (stubs["log"] / "tailscale").read_text()
+    assert "funnel --https=443 off" not in (stubs["log"] / "tailscale").read_text()
 
 
 def test_a_taken_gate_port_stops_the_script_before_it_touches_funnel(
@@ -319,7 +319,7 @@ def test_the_windows_script_refuses_a_short_key_and_never_resets_funnel() -> Non
     win = _code(WIN)
     assert "Length -lt 16" in win
     assert "funnel reset" not in win
-    assert "funnel --https=8443 off" in win
+    assert "funnel --https=443 off" in win
 
 
 def test_the_windows_folder_is_locked_down_before_the_key_is_written() -> None:

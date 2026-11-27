@@ -150,6 +150,22 @@ wsl -d $Distro -- bash -lc 'bash ~/jarvis-home/setup-wsl.sh camera'
 Say 'Making the bridge reachable by JARVIS (Tailscale Funnel, port 8443)'
 $ts = Get-Command tailscale -ErrorAction SilentlyContinue
 if (-not $ts) { throw 'Tailscale is not installed. Install it from tailscale.com/download, sign in, then run this again.' }
+# One door each: the bridge 8443, the offline brain 443, the laptop speech kit 10000. Never take
+# over 8443 while it serves something else (R5.2 review: the brain's script once took it).
+function Test-FunnelTaken([int]$port, [string]$mine) {
+    try { $cfg = (& tailscale funnel status --json 2>$null | Out-String) | ConvertFrom-Json } catch { return $false }
+    if (-not $cfg -or -not $cfg.Web) { return $false }
+    foreach ($site in $cfg.Web.PSObject.Properties) {
+        if ($site.Name -like "*:$port") {
+            $targets = @($site.Value.Handlers.PSObject.Properties | ForEach-Object { $_.Value.Proxy })
+            if ($targets -notcontains $mine) { return $true }
+        }
+    }
+    return $false
+}
+if (Test-FunnelTaken 8443 'http://127.0.0.1:8099') {
+    throw "Tailscale Funnel's port 8443 already serves something else on this laptop (the offline brain keeps 443, the speech kit 10000; 8443 is the bridge's). See what uses it with: tailscale funnel status, stop it, then run this again."
+}
 tailscale funnel --bg --https=8443 http://127.0.0.1:8099
 $name = ((tailscale status --json | ConvertFrom-Json).Self.DNSName).TrimEnd('.')
 $address = "https://${name}:8443"

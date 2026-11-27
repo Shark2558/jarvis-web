@@ -5,7 +5,8 @@
 #
 # Runs the kit's speech server (127.0.0.1:11437) and the gate in front of it (Caddy, 127.0.0.1:11436,
 # checks the key), publishes the gate with Tailscale Funnel on https port 10000 (or
-# JARVIS_SPEECH_KIT_HTTPS_PORT: 443, 8443 or 10000), then prints the address and key to give JARVIS.
+# JARVIS_SPEECH_KIT_HTTPS_PORT: 443, 8443 or 10000, only when that port is free: the home bridge
+# keeps 8443 and the offline brain 443), then prints the address and key to give JARVIS.
 # Leave this window open; Ctrl+C stops the kit and closes Funnel on that port.
 set -euo pipefail
 umask 077
@@ -52,14 +53,19 @@ for port in "$GATE_PORT" "$SERVER_PORT"; do
   fi
 done
 
-# Never take over a Funnel port that already serves something else (the offline brain keeps 8443).
-taken="$(tailscale funnel status 2>/dev/null | awk -v port=":$HTTPS_PORT" -v gate="127.0.0.1:$GATE_PORT" '
-  /^https:\/\// { here = (index($1, port) > 0) }
+# Never take over a Funnel port that already serves something else: one door each, the kit 10000,
+# the home bridge 8443, the offline brain 443 (R5.2 review). Funnel's status names port 443's door
+# with no ":port".
+taken="$(tailscale funnel status 2>/dev/null | awk -v port="$HTTPS_PORT" -v gate="127.0.0.1:$GATE_PORT" '
+  /^https:\/\// {
+    here = ($1 ~ (":" port "/?$")) || (port == "443" && $1 !~ /:[0-9]+\/?$/)
+  }
   here && /proxy/ && index($0, gate) == 0 { print "yes"; exit }
 ' || true)"
 if [ "$taken" = "yes" ]; then
   echo "Tailscale Funnel's port $HTTPS_PORT already serves something else on this laptop" >&2
-  echo "(the offline brain keeps 8443). Run again with JARVIS_SPEECH_KIT_HTTPS_PORT=443." >&2
+  echo "(the home bridge keeps 8443 and the offline brain 443; the kit's own is 10000)." >&2
+  echo "See what uses it with: tailscale funnel status" >&2
   exit 1
 fi
 

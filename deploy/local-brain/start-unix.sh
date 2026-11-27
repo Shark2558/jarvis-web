@@ -7,12 +7,16 @@
 # Needs: Ollama running (ollama.com), Caddy (caddyserver.com), Tailscale signed in with Funnel
 # allowed (see README.md). Leave this window open; Ctrl+C stops the gate and closes Funnel.
 # The key is made on the first run and kept in a file only you can read.
+#
+# Funnel's port: 443, the brain's own (R3 plan D3). The home bridge keeps 8443 and the laptop speech
+# kit 10000; this script never takes a port that already serves something else (R5.2 review).
 set -euo pipefail
 umask 077
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIR="${JARVIS_LOCAL_BRAIN_DIR:-$HOME/.jarvis-local-brain}"
 KEYFILE="$DIR/key"
+GATE="127.0.0.1:11435"
 
 need() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -66,6 +70,20 @@ if [ "${#KEY}" -lt 16 ]; then
   exit 1
 fi
 
+# Never take over a Funnel port that already serves something else: one door each, the brain 443,
+# the home bridge 8443, the laptop speech kit 10000 (R5.2 review: the brain once took the bridge's).
+# Funnel's status names port 443's door with no ":port".
+taken="$(tailscale funnel status 2>/dev/null | awk -v gate="$GATE" '
+  /^https:\/\// { here = ($1 !~ /:[0-9]+\/?$/ || $1 ~ /:443\/?$/) }
+  here && /proxy/ && index($0, gate) == 0 { print "yes"; exit }
+' || true)"
+if [ "$taken" = "yes" ]; then
+  echo "Tailscale Funnel's port 443 already serves something else on this laptop" >&2
+  echo "(the home bridge keeps 8443, the speech kit 10000; 443 is the offline brain's)." >&2
+  echo "See what uses it with: tailscale funnel status" >&2
+  exit 1
+fi
+
 CADDY_PID=""
 FUNNEL_ON=0
 cleanup() {
@@ -78,7 +96,7 @@ cleanup() {
   # close only this port, and only if THIS run opened it; never `funnel reset` (it would wipe the
   # owner's other Funnel/Serve setup)
   if [ "$FUNNEL_ON" = 1 ]; then
-    tailscale funnel --https=8443 off >/dev/null 2>&1 || true
+    tailscale funnel --https=443 off >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT INT TERM
@@ -88,14 +106,15 @@ JARVIS_LOCAL_KEY="$KEY" caddy run --config "$HERE/Caddyfile" --adapter caddyfile
 CADDY_PID=$!
 sleep 1
 
-if ! tailscale funnel --bg --https=8443 11435 >/dev/null 2>&1; then
+if ! tailscale funnel --bg --https=443 11435 >/dev/null 2>&1; then
   echo "Tailscale Funnel did not start. Check that Funnel is allowed for your tailnet" >&2
   echo "(Tailscale admin console -> Access controls) and that you are signed in. See README.md." >&2
   exit 1
 fi
 FUNNEL_ON=1
 
-ADDRESS="$(tailscale funnel status 2>/dev/null | grep -o 'https://[A-Za-z0-9.-]*\.ts\.net\(:[0-9]*\)\{0,1\}' | head -n 1 || true)"
+# its own door: port 443 has no ":port" in Funnel's status (the bridge's :8443 is not it)
+ADDRESS="$(tailscale funnel status 2>/dev/null | awk '/^https:\/\// && $1 !~ /:[0-9]+\/?$/ { print $1; exit }' || true)"
 echo
 echo "Offline mode gate is running."
 echo "Address: ${ADDRESS:-run 'tailscale funnel status' to see it}"

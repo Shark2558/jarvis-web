@@ -3,7 +3,7 @@ page: pg_module_wardrobe
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "567937409974b4a2"
+  "deploy/cloudrun.sh": "76721925b3aca87c"
   "evals/r13/catalog.py": "92b1fd8103cefadc"
   "evals/r13/contract.py": "6a2865d32c4f53f2"
   "evals/r13/e2e.py": "4674cf168867869c"

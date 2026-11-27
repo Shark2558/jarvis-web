@@ -16,7 +16,7 @@ sources:
   "src/jarvis/api/static/console-voice-micoff.js": "08a923d63f6f93f2"
   "src/jarvis/api/static/console-voice-pace.js": "d455ab39738c612b"
   "src/jarvis/api/static/console-voice-phrases.js": "b45dc811d8b70af6"
-  "src/jarvis/api/static/console-voice-session.js": "b2eb59ecd520231a"
+  "src/jarvis/api/static/console-voice-session.js": "9c299abb8bacdcdf"
   "src/jarvis/api/static/console-voice-speech.js": "3ac2e294edcc281c"
   "src/jarvis/api/static/console-voice-wake.js": "906de367b5e856ef"
   "src/jarvis/api/static/console-voice.js": "69224f06a0ee9c0e"
@@ -24,8 +24,8 @@ sources:
   "src/jarvis/api/static/console-voiceprint-panel.js": "60adde7bfeb9da33"
   "src/jarvis/api/static/console-voiceprint.js": "581978076fad5644"
   "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
-  "src/jarvis/api/voice.py": "45227c5b0f4437c3"
-  "src/jarvis/api/voice_profile_routes.py": "e63118737cf04ef2"
+  "src/jarvis/api/voice.py": "ea29027bb0cc3098"
+  "src/jarvis/api/voice_profile_routes.py": "2aceda9e3d8bcd04"
 ---
 ## In plain words
 Voice is how JARVIS sounds and listens. You talk to JARVIS with the microphone button beside the message box, and he answers out loud. The Voice panel holds the choices: which British voice he uses, how fast he speaks, how much dry wit he allows himself, and, for this device, the speech engine, when replies are spoken, whether he keeps listening after a reply, how you interrupt him, your sound devices and the words he should know. "Hey Jarvis" is a separate switch, off until you turn it on. The panel also shows this month's voice use (`src/jarvis/api/static/console-voice.js`). In "Your voice" you read short lines aloud, so JARVIS learns which listening engine hears you best and your laptop trains your own "Hey Jarvis" (`src/jarvis/api/static/console-voice-session.js`). Speaker check lets only your voice interrupt him on this device (`src/jarvis/api/static/console-voiceprint-panel.js`).
@@ -40,4 +40,4 @@ When the panel opens, it reads your voice settings, the voices on offer, the wit
 The cloud voice uses Google's speech service in your own Google Cloud project; the This month section shows how much of the free allowance is used and, beyond it, an estimate in rupees (`GET /v1/voice`). The browser's own recognition and voice cost nothing, though your audio then goes to the browser's maker (`src/jarvis/api/static/console-voice.js`). Past your monthly limit, the speak route refuses rather than spend more (`src/jarvis/api/voice.py:speak`). The voice session's comparison lines use Google's free listening minutes; once they run out it shows the rupees first, and Google hears more only after you type YES, or you go on without it (`src/jarvis/api/static/console-voice-session.js`). Speaker check runs in this browser and costs nothing (`src/jarvis/api/static/console-voiceprint.js`).
 
 ## When it fails
-With no voice service on the server, the panel says it is not available and the browser's own voice is used where it has one. If the cloud voice is off or has no credentials, the panel says so and JARVIS uses this browser's voice. A clip larger than {{fact:src/jarvis/api/voice.py:MAX_AUDIO_BYTES}} bytes is refused (`src/jarvis/api/voice.py:transcribe`). Too many requests in a minute give "Too many requests just now. JARVIS will ask again in a few seconds." If the microphone is blocked, a line under the message box explains how to allow it. With `voice_profile_enabled` off, the profile's routes answer status 503 and "Your voice" says why (`src/jarvis/api/voice_profile_routes.py:_part`). With no speaker-check model, Speaker check says so and any voice interrupts as before, as after a slow or failed check (`src/jarvis/api/static/console-voiceprint.js`).
+With no voice service on the server, the panel says it is not available and the browser's own voice is used where it has one. If the cloud voice is off or has no credentials, the panel says so and JARVIS uses this browser's voice. A clip larger than {{fact:src/jarvis/api/voice.py:MAX_AUDIO_BYTES}} bytes is refused (`src/jarvis/api/voice.py:transcribe`). Too many requests in a minute give "Too many requests just now. JARVIS will ask again in a few seconds." If the microphone is blocked, a line under the message box explains how to allow it. With `voice_profile_enabled` off, or its data out of reach, the profile's routes answer status 503 in plain words and "Your voice" says why (`src/jarvis/api/voice_profile_routes.py`). With no speaker-check model, Speaker check says so and any voice interrupts as before, as after a slow or failed check (`src/jarvis/api/static/console-voiceprint.js`).

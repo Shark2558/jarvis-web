@@ -3,7 +3,7 @@ page: pg_card_c05
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "src/jarvis/api/voice.py": "45227c5b0f4437c3"
+  "src/jarvis/api/voice.py": "ea29027bb0cc3098"
   "src/jarvis/voice/__init__.py": "ba6969e9df92d919"
   "src/jarvis/voice/adc.py": "215d50701bc56fe5"
   "src/jarvis/voice/calls_bridge.py": "dee4357bb0a42ba0"
@@ -13,7 +13,7 @@ sources:
   "src/jarvis/voice/laptop.py": "c05c622c3b08fee0"
   "src/jarvis/voice/ports.py": "5c43ac1ddeeb1566"
   "src/jarvis/voice/privacy.py": "7b3ccf362931cc54"
-  "src/jarvis/voice/profile.py": "8a428dc0d00c93c3"
+  "src/jarvis/voice/profile.py": "1e4413929541d0aa"
   "src/jarvis/voice/profile_ports.py": "313a15e9823c3ad8"
   "src/jarvis/voice/profile_store.py": "432ae0bcf26a64d7"
   "src/jarvis/voice/routing.py": "96b7f27c1fc3c066"

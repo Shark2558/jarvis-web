@@ -8,7 +8,7 @@ sources:
   "Dockerfile": "2b925ebcbd25ec7c"
   "Makefile": "3c446b64c5b9cb98"
   "android/gradle/libs.versions.toml": "eb0839fef229e7ee"
-  "deploy/cloudrun.sh": "567937409974b4a2"
+  "deploy/cloudrun.sh": "76721925b3aca87c"
   "deploy/home/bridge-requirements.txt": "d3cc937b4d00f431"
   "deploy/home/docker-compose.yml": "725207386158f89f"
   "deploy/run-real-evals.sh": "3e7d08fb0a07cf43"

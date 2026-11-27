@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
   "src/jarvis/calls/prices.py": "09530bc93cd5d9f2"
-  "src/jarvis/calls/speech/build.py": "f03b52cba95aad09"
+  "src/jarvis/calls/speech/build.py": "2c70d34548a1d131"
   "src/jarvis/calls/speech/sarvam.py": "bc73208ec89e647f"
   "src/jarvis/config.py": "965b3658da16361e"
 ---

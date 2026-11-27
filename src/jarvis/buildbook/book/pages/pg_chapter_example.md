@@ -29,7 +29,7 @@ sources:
   "src/jarvis/api/static/console-voice.js": "69224f06a0ee9c0e"
   "src/jarvis/api/static/console-wakeword.js": "6dca020ffbb88b58"
   "src/jarvis/api/static/voice-capture-worklet.js": "4b1dbae36264b075"
-  "src/jarvis/api/voice.py": "45227c5b0f4437c3"
+  "src/jarvis/api/voice.py": "ea29027bb0cc3098"
   "src/jarvis/core/approve_all.py": "59f16ea07d5207c5"
   "src/jarvis/core/brain.py": "976861b3c96f073a"
   "src/jarvis/core/brain_decisions.py": "01cc210182d5e7a3"

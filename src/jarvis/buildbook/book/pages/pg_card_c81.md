@@ -3,10 +3,10 @@ page: pg_card_c81
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "src/jarvis/api/static/console-voice-session.css": "b39f61261e644732"
-  "src/jarvis/api/static/console-voice-session.js": "b2eb59ecd520231a"
-  "src/jarvis/api/voice_profile_routes.py": "e63118737cf04ef2"
-  "src/jarvis/voice/profile.py": "8a428dc0d00c93c3"
+  "src/jarvis/api/static/console-voice-session.css": "dfaf4ffbd9310e07"
+  "src/jarvis/api/static/console-voice-session.js": "9c299abb8bacdcdf"
+  "src/jarvis/api/voice_profile_routes.py": "2aceda9e3d8bcd04"
+  "src/jarvis/voice/profile.py": "1e4413929541d0aa"
   "src/jarvis/voice/profile_ports.py": "313a15e9823c3ad8"
   "src/jarvis/voice/profile_store.py": "432ae0bcf26a64d7"
   "src/jarvis/voice/session.py": "7cb5e8c4163664f8"

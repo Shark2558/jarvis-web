@@ -3,8 +3,8 @@ page: pg_chapter_planned
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "docs/architecture/JARVIS-Architecture.md": "9f3ef2051484a5ce"
-  "docs/plans/r5-2-voice.md": "4bb59d9fdc96ed3c"
+  "docs/architecture/JARVIS-Architecture.md": "69618da8491c6b4a"
+  "docs/plans/r5-2-voice.md": "9b366679bbcf9239"
 ---
 ## In plain words
 This chapter lists what isn't part of JARVIS yet, so you know which parts you use today and which exist only on paper; every other page describes the code as it runs now. This release, {{fact:release.label}}, "Your voice", is built and has left the list: a speech kit on your laptop, a voice session that tunes listening to you, your own "Hey Jarvis" and a speaker check.

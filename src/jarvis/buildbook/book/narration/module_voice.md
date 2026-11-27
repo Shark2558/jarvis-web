@@ -6,12 +6,12 @@ pages:
   "pg_module_voice": "d7f75fd0ef844d97"
   "pg_card_c05": "a4b3efc3b7afacce"
   "pg_card_c06": "d97c7b4c4b44e3c2"
-  "pg_card_c79": "97b626af41705a4e"
+  "pg_card_c79": "a393a229fd1fb629"
   "pg_card_c80": "bdc27ce698cb4f24"
   "pg_card_c81": "8406e9a94ac387f3"
   "pg_card_c82": "de40e90ec2469e91"
   "pg_card_c83": "60379190837d546e"
-  "pg_screen_voice": "ebbbac8acd00d1b1"
+  "pg_screen_voice": "6df6420826d63d2f"
   "pg_service_google_cloud_speech_to_text": "0fbd15f4ef36ad77"
   "pg_service_google_cloud_text_to_speech": "f46603ef5546c3ba"
 ---
@@ -68,15 +68,15 @@ pages:
 - It is off until you set it up, and that takes your hands: install it, start it with its self-test, and paste the report into chat.
 - Then you give JARVIS its address and key once, from Cloud Shell, with the deploy script's local speech step.
 - This first kit only listens: its voice and its Indian-language engines are left out, so JARVIS still speaks with Google's voice.
-- [show:example] In the example, Meera installs the kit one Sunday morning, and its self-test passes the files, the encryption and the gate, while the round trip needs an English voice.
+- [show:example] In the example, Meera installs the kit one Sunday morning, and its self-test passes the files, the encryption, the gate and the speed of listening, while the round trip needs a voice.
 - [show:how] The installer adds Python and Caddy only when you type Y, and locks the kit's folder to your account.
-- The start script makes the key, and publishes the kit's gate through Tailscale Funnel on a port of its own, so the offline brain can share the laptop.
+- The start script makes the key, and publishes the kit's gate through Tailscale Funnel on a port of its own, apart from the home bridge's and the offline brain's.
 - The gate passes only the kit's own requests, only with the key, and the server checks the key again and logs nothing you said.
 - [count:{{fact:src/jarvis/localspeech/engines.py:GPU_MARGIN_MB}}] Engines load on demand: one goes on the graphics card if it fits with {{fact:src/jarvis/localspeech/engines.py:GPU_MARGIN_MB}} megabytes to spare, else on the processor.
 - The model manager downloads only pinned files, and keeps a file only when its size and fingerprint match.
 - [show:costs] It costs nothing a month: it runs on your laptop's electricity, and every time it listens, Google's free minutes last longer.
 - [show:fails] When it isn't set up, or the laptop is off, asleep or busy, JARVIS uses Google, then the browser.
-- A download that doesn't match is deleted, and with no voice in this kit, the self-test can't measure its speed yet.
+- A download that doesn't match is deleted, and with no voice in this kit, the self-test times listening alone, on a test tone.
 - [page:pg_card_c80] [show:title] Next, how JARVIS reaches the kit, and which engine hears you.
 - [show:plain] When you speak in the console, the laptop listens first while its kit is healthy, then Google, then the browser, each tried once.
 - Nothing changes until you give JARVIS the kit's address and key, and calls still use cloud speech, because this kit can't yet speak.

@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
   "deploy/backup_setup.sh": "354cd02d8afbcc3f"
-  "deploy/cloudrun.sh": "567937409974b4a2"
+  "deploy/cloudrun.sh": "76721925b3aca87c"
   "evals/r14/backup.py": "163e8845efbe7c01"
   "src/jarvis/api/backup.py": "d9e1d0f24f8d2498"
   "src/jarvis/api/privacy.py": "26b8bb3f25b86ee7"

@@ -61,8 +61,8 @@ def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
 # R6.3.1 D7 seals each release's pages and flows with its book and code, so `seal_index.py`,
 # `seal.py` and `sealer.py` changed on purpose (tests/test_r631_e_serve.py); the rest still holds.
 UNTOUCHED = {  # 47ee8fc's SHA-256, under src/jarvis/
-    # R18 E: the page with the Calls panel and its tab
-    "api/static/console.html": "d26e202e4e9aa526a94aab01b1b85433582482b06c0ad79fced61abebf7d466c",
+    # R18 E: the page with the Calls panel and its tab; R5.2 V4, V5: their script tags
+    "api/static/console.html": "PIN",
     "buildbook/ports.py": "949354c269f8750488f1662ab6c82dd1b28ee321599563f9a967fa3ec3c3bdbf",
     "buildbook/seal_notices.py": "0d9c979d104a180fc9e5a9f838fc00d51ac86e5154dc160d70d378a73b5d3b49",
     "buildbook/seal_words.py": "a7fc7c409ab81af066a905ddf55a2e7fb0fe55a032fe56da3125958a28bd1f27",

@@ -15,6 +15,7 @@ docs/plans/r18-integration/I1-NOTES.md). The adapters between the parts are
   `app.state.calls_api` (its approvals run the gateway's `calls_place` card), the booking calendar
   and the phone's Approve / Decline. No gateway (tools off): no `calls_api` (501), no call.
 - `r18_tick_jobs(app)`: the 30-day retention job (`calls_retention`).
+- `r18_privacy_sources(app)` (R18 review): the calls' four Privacy rows (`jarvis.calls.privacy`).
 """
 
 from __future__ import annotations
@@ -73,6 +74,7 @@ from jarvis.calls.limits import BillingBudget, Limits
 from jarvis.calls.models import CallSettings, SpeechOption
 from jarvis.calls.ports import CallStore
 from jarvis.calls.prices import SpeechPrice, speech_prices
+from jarvis.calls.privacy import calls_privacy_sources
 from jarvis.calls.records import RecordKeeper, SealedBlobs
 from jarvis.calls.retention import CallRetentionJob
 from jarvis.calls.settings import defaults
@@ -89,6 +91,7 @@ from jarvis.contacts.client import ContactsClient
 from jarvis.keyring import Keyring
 from jarvis.llm.router import ModelTier
 from jarvis.logging import get_logger
+from jarvis.privacy.ports import PrivacySource
 from jarvis.storage.docs import Docs
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.base import Tool
@@ -116,6 +119,7 @@ class R18Parts:
     http: httpx.AsyncClient
     phone: Any  # jarvis.phone.calls.PhoneCalls, or None without the phone part
     tools: tuple[Tool, ...]
+    privacy: tuple[PrivacySource, ...] = ()  # the review's four Privacy rows
 
     async def aclose(self) -> None:
         await self.check.aclose()
@@ -312,8 +316,9 @@ def _build(app: FastAPI, s: Settings, docs: Docs, ring: Keyring, audit: AuditTra
     )
     service.starter = EngineStarter(hub, choices.refresh)
     desks = DeskStore(docs, ring.cipher("calls"), prefix=s.firestore_prefix)
+    door = DeskDoorService(desks, hub)
     st.calls_sockets = CallSockets(hub, desks)
-    st.calls_desk_door = DeskDoorService(desks, hub)
+    st.calls_desk_door = door
     phone = _join_phone(app, hub, service, store, choices)
     return R18Parts(
         store=store,
@@ -328,6 +333,7 @@ def _build(app: FastAPI, s: Settings, docs: Docs, ring: Keyring, audit: AuditTra
         http=http,
         phone=phone,
         tools=tuple(calls_tools(service)),
+        privacy=calls_privacy_sources(store, keeper, desks, door),
     )
 
 
@@ -347,6 +353,13 @@ def _join_phone(
 
 def r18_tools(parts: R18Parts | None) -> tuple[Tool, ...]:
     return () if parts is None else parts.tools
+
+
+def r18_privacy_sources(app: FastAPI) -> tuple[PrivacySource, ...]:
+    """The calls' Privacy rows (R18 review), for `api.personal.privacy_sources`; none when
+    calls are not wired."""
+    parts: R18Parts | None = getattr(app.state, "r18_parts", None)
+    return () if parts is None else parts.privacy
 
 
 def finish_r18(app: FastAPI) -> None:
@@ -398,6 +411,7 @@ def r18_tick_jobs(app: FastAPI) -> tuple[CallRetentionJob, ...]:
 __all__ = [
     "R18Parts",
     "finish_r18",
+    "r18_privacy_sources",
     "r18_tick_jobs",
     "r18_tools",
     "wire_r18",

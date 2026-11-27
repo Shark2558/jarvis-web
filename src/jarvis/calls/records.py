@@ -41,7 +41,7 @@ from jarvis.calls.settings import owner_key
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.vault import VaultError
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Docs, Set
+from jarvis.storage.docs import Delete, Docs, Query, Set
 from jarvis.tools.audit import AuditTrail
 from jarvis.vault.crypto import VaultCrypto
 
@@ -55,6 +55,7 @@ MAX_AUDIO_BYTES = 16 * 1024 * 1024  # 30 minutes of compressed audio with room t
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 WRITE_GROUP = 6
 RECORD_TOOL = "calls_record"
+WIPE_BATCH, WIPE_PASSES = 200, 50  # the Privacy panel's delete: at most 10,000 parts a kind
 
 MSG_NO_RECORD = "There is no such call record."
 MSG_NOT_RECORDED = "This call has no recording (it wasn't recorded, or it was deleted)."
@@ -189,6 +190,20 @@ class SealedBlobs:
         paths = [self._chunk(uid, ref, n) for n in range(count)]
         for start in range(0, len(paths), 200):
             await self.docs.write([Delete(p) for p in paths[start : start + 200]])
+
+    async def wipe(self, uid: str) -> int:
+        """Every sealed part of the owner's calls (the Privacy panel's delete): all the headers
+        first (their wrapped keys go: nothing opens again), then the chunks. The parts removed."""
+        root = f"{self._root}/{owner_key(uid)}"
+        gone = 0
+        for coll in (f"{root}/sealed", f"{root}/sealed_chunks"):
+            for _ in range(WIPE_PASSES):
+                rows = await self.docs.query(Query(coll, limit=WIPE_BATCH))
+                if not rows:
+                    break
+                await self.docs.write([Delete(f"{coll}/{doc_id}") for doc_id, _ in rows])
+                gone += len(rows) if coll.endswith("/sealed") else 0
+        return gone
 
 
 # ---- the keeper -------------------------------------------------------------------------------

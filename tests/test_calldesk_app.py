@@ -233,7 +233,7 @@ def test_check_and_restore_now(tmp_path: Path) -> None:
     parts = _parts(Policy(), Devices(), None)
     assert app.check_now(cfg, parts).ready
     assert app.restore_now(cfg, parts).ok
-    assert app.child_command()[1:] == ["-m", "jarvis.calldesk", "run"]
+    assert app.child_command()[1:] == ["-I", "-m", "jarvis.calldesk", "run"]
 
 
 # ---- the commands ------------------------------------------------------------------------------

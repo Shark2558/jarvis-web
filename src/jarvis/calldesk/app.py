@@ -176,7 +176,8 @@ def check_now(cfg: DeskConfig, parts: Parts) -> DeskCheck:
 
 
 def child_command() -> list[str]:
-    return [sys.executable, "-m", "jarvis.calldesk", "run"]
+    """The desk, isolated (-I: no PYTHON* variables, no user site, not the current folder)."""
+    return [sys.executable, "-I", "-m", "jarvis.calldesk", "run"]
 
 
 __all__ = [

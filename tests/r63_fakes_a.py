@@ -218,14 +218,14 @@ TOUR = {
     "release.version": "v5.2.0",  # R5.2 (v18.0.0 at R18, v6.4.0 at R6.4, v6.3.2 at R6.3.1)
     # R5.2: its own plan (by version); R18's was "Calls from your laptop: the plan"
     "release.new": "Your voice: the plan",
-    "cards.count": 73,
-    "modules.count": 18,
-    "modules.else_count": 11,
+    "cards.count": 78,  # R18: C74-C78
+    "modules.count": 19,  # R18: Phone calls
+    "modules.else_count": 12,
     "layers.count": 8,
     "brain.balanced_model": "Claude Sonnet 5.5",
     "undo.keep_days": 30,
     "keys.purposes": 27,  # R18 + 1 (calls)
-    "services.count": 31,
+    "services.count": 35,  # R18: Microsoft Azure Speech, Sarvam, Bhashini, Hugging Face
     "approvals.max_new_cards": 5,
     "memory.facts_per_turn": 12,
     "memory.learn_a_day": 20,
@@ -240,9 +240,10 @@ TOUR = {
     "seeme.inr_a_picture": "₹9",
     "seeme.month_cap_inr": "₹300",
     "costs.rate": 95.24,
-    # the guide's roadmap after this release (R6.3.1's row went at R6.3.1, R6.4's at R6.4: built)
-    "roadmap.next": "Phone calls",
-    "roadmap.after": "R5.2, Voice",
+    # the guide's roadmap after this release (R6.3.1's row went at R6.3.1, R6.4's at R6.4 and
+    # "Phone calls" at R18: built)
+    "roadmap.next": "R5.2, Voice",
+    "roadmap.after": "R8, Home cameras",
 }
 
 
@@ -301,11 +302,13 @@ def i0_repo(root: Path) -> Repo:
     return repo_of(root, dict(FIXTURE_FILES))
 
 
-def a_repo(root: Path, *, c74: bool = False) -> Repo:
-    """I0's fixture with part A's extra files; `c74` adds a fourth card to the guide."""
+def a_repo(root: Path, *, c74: bool = False, card_id: str = "C74") -> Repo:
+    """I0's fixture with part A's extra files; `c74` adds a fourth card to the guide (`card_id`:
+    its id; R18 placed the real C74, so a card in no real module is now another id)."""
     files = {**FIXTURE_FILES, **EXTRA_FILES}
     if c74:
-        guide = GUIDE.replace("\n## 11. Roadmap", "\n" + C74 + "## 11. Roadmap")
+        extra = C74.replace("#### C74 ·", f"#### {card_id} ·")
+        guide = GUIDE.replace("\n## 11. Roadmap", "\n" + extra + "## 11. Roadmap")
         files["docs/architecture/JARVIS-Architecture.md"] = guide
     return repo_of(root, files)
 

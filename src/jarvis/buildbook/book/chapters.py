@@ -8,10 +8,11 @@ A chapter is what the chapter player tells in one go:
   (the index's own order, `gen/modules.MODULES`: a card page's `chapter` is its module), then the
   screens and outside services `HOMES` gives that module, in the index's order. Id `module_<id>`.
 
-The title is the lead page's title. 8 + 18 = 26 chapters on this tree. Every page is in at most one
-chapter; a page `HOMES` doesn't place stays readable in the reader, just not narrated. Pure: the
-same pages give the same chapters, from an `IndexedPage` index (the generator) or a compiled
-`Page` list (a release sealed before narration, `writer/chapters.py`). Standard library only.
+The title is the lead page's title. 8 + 19 = 27 chapters on this tree (R18: Phone calls). Every
+page is in at most one chapter; a page `HOMES` doesn't place stays readable in the reader, just not
+narrated. Pure: the same pages give the same chapters, from an `IndexedPage` index (the
+generator) or a compiled `Page` list (a release sealed before narration, `writer/chapters.py`).
+Standard library only.
 """
 
 from __future__ import annotations
@@ -51,9 +52,11 @@ HOMES: dict[str, str] = {
     "pg_screen_construct": "console",
     "pg_screen_helpers": "helpers",
     "pg_screen_camera": "home",
+    "pg_screen_calls": "calls",  # R18
     "pg_screen_show": "book",
     # outside services
     "pg_service_anthropic": "brain",
+    "pg_service_bhashini": "calls",  # R18
     "pg_service_cloud_run": "delivery",
     "pg_service_cloud_scheduler": "delivery",
     "pg_service_firestore": "console",
@@ -73,12 +76,15 @@ HOMES: dict[str, str] = {
     "pg_service_google_tasks": "integrations",
     "pg_service_google_sign_in": "console",
     "pg_service_home_assistant": "home",
+    "pg_service_hugging_face": "calls",  # R18: the language check's FLEURS clips
+    "pg_service_microsoft_azure_speech": "calls",  # R18
     "pg_service_mosquitto": "home",
     "pg_service_ndma_sachet": "helpers",
     "pg_service_ollama": "brain",
     "pg_service_open_meteo": "helpers",
     "pg_service_openai_compatible": "brain",
     "pg_service_redis": "console",
+    "pg_service_sarvam": "calls",  # R18
     "pg_service_tailscale": "home",
     "pg_service_tavily": "integrations",
     "pg_service_telegram": "integrations",

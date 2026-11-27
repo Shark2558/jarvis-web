@@ -2,9 +2,9 @@ Version v5.2.0 · 27 Nov 2026, 14:30 IST · Release R5.2 · Status: Current · O
 
 # JARVIS Architecture & Technology Guide
 
-This guide was checked against JARVIS's real code. This is edition v13.1.2 of the guide (the first
+This guide was checked against JARVIS's real code. This is edition v18.0.1 of the guide (the first
 edition was v6.1.1; the change log at the end lists every edition). It describes the JARVIS
-program at version v13.1.0: release R6.1 as built, release R11, the free proactive helpers (card
+program at version v18.0.0: release R6.1 as built, release R11, the free proactive helpers (card
 C60), release R11.1, your observations fixed (card C61), release R7 (the phone app, the watch,
 SOS and the phone camera; cards C62 to C65) and release R14, "Free hardening" (backups and a
 restore drill, self-health, cheaper replies and the skill register; cards C66 to C68), all live,
@@ -13,8 +13,9 @@ number goes down from 14.0.2 to 13.0.0 on purpose, as nothing compares it), and 
 "Try-on" (cards C72 and C73), built and joined at its I1 (v13.1.0), and release R6.3, "The Build Book:
 written by AI, short tour and full book" (card C57; v6.3.0, live), and release R6.3.1, "The Build Book
 written at build time" (card C57; v6.3.2, not yet deployed: the Workshop writes the full book while it builds
-JARVIS, and the runtime writer is gone; the version number goes down again on purpose). Anything that is
-planned but not built yet is marked PLANNED.
+JARVIS, and the runtime writer is gone; the version number goes down again on purpose), and release R18,
+"Calls from your laptop" (cards C74 to C78; v18.0.0), built and joined at its I1, not yet deployed. Anything
+that is planned but not built yet is marked PLANNED.
 
 For engineers: it was written from the code, the deploy script, the CI file, the evals and the
 plans in `docs/plans/`, not from memory. A fact that could not be checked against the code says
@@ -174,12 +175,12 @@ silently go stale. Figure 2 in section 4 draws it.
 
 | Layer | What it does, in plain words | Components (cards in section 3) |
 |---|---|---|
-| L1 User Interaction | Where you reach JARVIS: the web console, Telegram, the terminal. | C01 Web console, C02 HTTP API and sign-in, C03 Terminal client, C04 Telegram front door |
-| L2 Input Processing | Turns speech, files and camera sightings into text and facts. | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent |
-| L3 Context & Orchestration | Keeps the conversation, long-term memory, the clock that wakes JARVIS, and the undo bin. | C09 Conversations, C10 Long-term memory, C11 Scheduler ticks and watchdog, C12 Recently deleted |
+| L1 User Interaction | Where you reach JARVIS: the web console, Telegram, the terminal. | C01 Web console, C02 HTTP API and sign-in, C03 Terminal client, C04 Telegram front door, C78 Phone calls on the phone (R18) |
+| L2 Input Processing | Turns speech, files and camera sightings into text and facts. | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent, C76 Call speech and the language check (R18) |
+| L3 Context & Orchestration | Keeps the conversation, long-term memory, the clock that wakes JARVIS, and the undo bin. | C09 Conversations, C10 Long-term memory, C11 Scheduler ticks and watchdog, C12 Recently deleted, C75 Call engine, hub and live listening (R18) |
 | L4 Core Reasoning Engine | The brain: one loop that reads context, asks a model, calls tools and checks every step. | C13 Brain core loop, C14 Persona and prompts, C15 Guardrails and trust, C16 Brain router and LLM layer, C17 Brain switch, No-AI and offline mode, C18 Approval cards and Approve all |
-| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11), C68 Skill register and the turn's tools (R14), C69 Wardrobe catalog and the ledger, C70 Laundry, C71 Outfits (R13, PLANNED), C72 Try-on figure, C73 See it on me (R13.1) |
-| L6 Integration & Tools | The doors to outside services and the house, all through one gateway. | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail and mail read aloud, C32 To-dos, C33 Contacts, C34 Drive folders, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history |
+| L5 Skills & Capabilities | The things JARVIS can do for you. | C19 Morning brief, C20 Web search, C21 People research, C22 WhatsApp drafts, C23 Notes, memos and links, C24 Things, C25 Groceries, C26 Family calendars, C27 Parcels, C60 Helpers (R11), C68 Skill register and the turn's tools (R14), C69 Wardrobe catalog and the ledger, C70 Laundry, C71 Outfits (R13, PLANNED), C72 Try-on figure, C73 See it on me (R13.1), C74 Calls: cards, approvals, limits and records (R18) |
+| L6 Integration & Tools | The doors to outside services and the house, all through one gateway. | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail and mail read aloud, C32 To-dos, C33 Contacts, C34 Drive folders, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history, C77 Call desk on the laptop (R18) |
 | L7 Data & Persistence | Where things are kept, and how much of each free allowance is used. | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger, C66 Backups and restore drill (R14) |
 | L8 Response & Output | How JARVIS tells you things: alerts, browser notifications, the Activity log. | C45 Alerts port, C46 Alert policy, C47 Web Push, C48 Activity log |
 | X Cross-cutting | Settings, logs, keys, permissions, privacy, costs, health, the build book, delivery and quality. | C49 Configuration, C50 Logging, C51 Keyring, C52 Permissions and passkeys, C53 Privacy dashboard, C54 Costs in ₹ and the monthly limit, C55 Vitals, C56 Systems check, C57 Build book, C58 Delivery, C59 Evals and the visual gate |
@@ -295,6 +296,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | A part whose setup fails is left out ("setup failed") and the others still run. Every failed check on a signed request is a bare 401 (404 for an unknown route, 503 when the phone store can't be read), logged by the check's name and never audited, so a flood cannot fill the audit. If Chrome's check of the site and the app fails, its address bar shows and everything else works. An app-lock check that fails answers 503 and never opens; writes the page sends by itself (the brief seen, the show's beat, a photo import step) never count as you being there. A shared item that is not a JPEG, PNG, WebP or PDF, an eleventh item or one over 10 MB is refused in plain words. | |
 | Since | R7 (v7.0.0): I0 the joins, Parts A, C and E the app, the door and the lock, I1 the joins between them |
 
+#### C78 · Phone calls on the phone (R18)
+
+| Field | Value |
+|---|---|
+| Name | Phone calls on the phone (R18) |
+| What it does | Built in R18 (Part D, joined at I1, v18.0.0; not yet deployed; the Android build is compiled in CI but not yet tried on his phone). The JARVIS phone app (C62), version 18.0.0 (versionCode 2), places, answers and ends calls from his own number on the cloud's signed commands; the call's sound reaches the laptop over Bluetooth through Phone Link. The cloud reaches the phone only by Web Push, so a command goes in two steps (`phone/calls.py`): it is signed and put in the phone's outbox (in memory), and a doorbell push of the kind `call_command`, a plain sentence that never carries a number or a name, makes the app ask the door, POST /phone/v1/calls (the door's fifth route, checked like every door request; it may wait up to 25 s for a command; the app also asks on every call-state change and when it opens). A command (`phone/calls_wire.py`, the app's `Calls.kt`, with shared test vectors) is `call.dial`, `call.answer`, `call.end`, `call.route` or `call.card`, signed with ECDSA P-256 by a key made at each start (`CommandSigner.ephemeral()`, I1: the door's every answer carries the key); the phone acts on one only when it verifies, names this phone, is fresh, lives at most 15 minutes and was never acted on. A dial is queued only while his approval is live for that call, number and owner (A1's `live_until`, which spends nothing), at most 2 minutes after the engine's gate took it; the app dials with Android's `placeCall` while the command is fresh, and when Android holds a background dial back it shows "Tap to let JARVIS call (the card's name)". The app reports only JARVIS's own calls (`CallMachine.kt`: dialling, ended; a ringing call only while answering missed calls is on, its number only when the cloud asks) and the result of each command; events have strict shapes, at most 8 a request, a retry is not delivered twice and an old one is dropped. A call card waiting for his tap is also on the phone: Approve first asks him to unlock it, and a number never called before (or his passkey in force) opens the console's Calls panel for the passkey; Decline needs no unlock. Its permissions, each only after his tap on the first-run screen: place calls, answer and end calls, the phone's state, and the call log only for answering with a saved-contacts rule (Android gives the caller's number only then). That screen says what the app never does: hear a call through the phone, read his call log or contacts, or call anyone without his tap. |
+| Layer | L1 User Interaction (the phone; L6 for the cloud's commands) |
+| Skill | Communication |
+| Where in the code | `src/jarvis/phone/calls.py` (`PhoneCalls`: the outbox, the doorbell, the dial's check, events in, `OwnerPhoneLink` for the engine), `src/jarvis/phone/calls_wire.py` (the commands and the door's body byte for byte, `CommandSigner`), `src/jarvis/phone/part.py` (the phone part offers `phone_calls`), `src/jarvis/mobile/contract.py` (the door's signed path), `android/core/` (`Calls.kt`, `CallMachine.kt`), `android/app/src/main/AndroidManifest.xml` (the four permissions, the calls screens and receivers), `android/app/` (its `calls` package: `CallActions.kt`, `CallsLink.kt`, `CallsWake.kt`, `CallNotices.kt`, `CallTapActivity.kt`, `CallDecisionReceiver.kt`, `CallStateReceiver.kt`, `CallsAccess.kt`, `CallsSetupActivity.kt`, `CallsLauncherActivity.kt`, `CallsStore.kt`), `android/version.properties`; `tests/fixtures/r18/phone_calls_vectors.json`, `tests/test_r18_d_phone_calls.py`, `docs/plans/r18-calls/INTEGRATION-D.md` |
+| Depends on | C62 Phone app and the phone's door (R7); C47 Web Push; C74 Calls: cards, approvals, limits and records; C75 Call engine, hub and live listening; C52 Permissions and passkeys |
+| Data it keeps | Nothing new in Firestore: the outbox, the event ids seen and the command key live in the server's memory (gone at a restart, like a call). On the phone, in the app's own private preferences (never backed up): the cloud's public command key, what the last door answer said about answering, the call machine's one line (a caller's number only while the phone rings), the events not yet taken and the commands acted on, by id, until they expire. |
+| Outside services | Web Push (the doorbell `call_command`; on the phone, the app's own "Calls" notification channel) |
+| Cost (₹ a month) | ₹0 (calls are on his own plan; Web Push is free) |
+| When it fails | No phone part (mobile off) → nothing can be dialled; a dial without a live approval is never queued (also when the check fails); a dial the phone couldn't place (`refused`, `no_permission`, `expired`, `no_phone`) ends the call at once; Android holding a dial back → the "Tap to let JARVIS call" notification, until the approval runs out; a lost push only delays a command; the engine failing to take an event → 503, and the phone's retry arrives; an event too old or from the future is answered, never delivered; answering off → an incoming number is dropped on arrival; a command that doesn't verify is never acted on. |
+| Since | R18 (v18.0.0): I0 the commands and events in the protocol; Part D the cloud half and the app; I1 the join (the door's fifth route, the command key made at each start, the phone's Approve and Decline) |
+
 ### Layer 2 — Input Processing
 
 #### C05 · Voice service
@@ -377,6 +394,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | A result outside its task's schema is dropped. A vendored file whose bytes do not match its recorded sum is never served. The camera stops when the page is hidden, the panel closes, the screen locks or nothing used a frame for 10 minutes. Without the model files `pose` and `objects` say "not installed" while `text`, `code` and `quality` work. A picture this browser cannot read is refused in plain words. Read text is fenced as other people's words for the brain. | |
 | Since | R7 (v7.0.0): I0 the port and the door, Part B the panel and the engine, I1 the joins |
 
+#### C76 · Call speech and the language check (R18)
+
+| Field | Value |
+|---|---|
+| Name | Call speech and the language check (R18) |
+| What it does | Built in R18 (Part B, joined at I1, v18.0.0; not yet deployed). A call's hearing and voice, in JARVIS's one call format (16 kHz mono PCM16, `calls/speech/audio.py`), over REST with httpx and no vendor SDK. The options (`calls/speech/catalogue.py`, `build.py`), in the order the check prefers them: the laptop's own models (a hook only, shipped off: C77); Google (Speech-to-Text v1 and Chirp 3: HD voices, reusing JARVIS's voice code, C05, and sharing its one free allowance); Microsoft Azure Speech's free tier F0 (with `azure_speech_key`: 5 hours of hearing and 0.5 million voice characters a month; it cannot bill, so it stops at its allowance; its short-audio API has no language detection); Bhashini (the Government of India's ULCA pipeline, with `bhashini_user_id` and `bhashini_api_key`; no published price, so its use is priced unknown, never ₹0, and a call counts it at Google's paid rate; its callback address must be on Bhashini's own domains); and Sarvam (paid: ₹30 an hour of hearing and ₹30 per 10,000 voice characters by default, only with `sarvam_api_key`, `sarvam_enabled` and his own YES in Calls → Settings). Voices are stock male voices, never a clone of anyone. A request is retried only where the vendor surely did not process it, so nothing is billed twice (`rest.py`); every ₹ goes through `jarvis.billing` once (`meter.py`: Google gated and charged on the voice's allowance, Azure's units held and given back, Sarvam and Bhashini in ₹, all under the label "calls"), and I1's `CallTally` hands the call what was charged, so its ₹ cap sees the same rupees billing holds (`calls/join_speech.py`). The option a call uses for a language is A1's choice (the cheapest passing option he allows, the one its card's estimate used); a checked language never falls back to an option it did not pass; English before its first check uses the first cloud option set up (Google, then Azure). Language detection (`detect.py`): Google and Sarvam detect inside one request, Azure and Bhashini are heard in each candidate in turn, and every answer is checked against its language's script. The language check (`calls/langcheck/`; Calls → Languages) is the gate every language passes, per option. Its plan and ₹ come first and nothing is sent (inside the free allowances ₹0; above what he accepted, refused); then, in one background task and one request at a time: 20 FLEURS test clips a language (`google/fleurs`, CC BY 4.0, from Hugging Face's dataset viewer at run time, audio only from Hugging Face's own hosts) turned into phone-quality audio (`phoneline.py`: 300–3,400 Hz, 8 kHz, G.711 mu-law) and heard by each option (a pass: 90 % of the key facts and a character error rate of 15 % or less, `scoring.py`); the 10 call sentences (translated once by the fast tier, `sentences.py`, `translate.py`) spoken by each voice, through the phone line and heard back by a different option (90 % of the key facts); the speed (half the replies starting within 1.5 s, 9 in 10 within 2.5 s; the brain's part is the fast tier's 0.6 s estimate until it is measured); and his own 1–5 scores of 3 samples (a mean of 4; until then "not yet heard by a native speaker"). Only passing languages appear on call cards (`select.py`). FLEURS has test clips for English, the 12 major Indian languages, Nepali and Sindhi only. |
+| Layer | L2 Input Processing (hearing and detection; L6 for the speech vendors, L8 for the voice) |
+| Skill | Communication |
+| Where in the code | `src/jarvis/calls/speech/` (`audio.py`, `catalogue.py`, `build.py`, `google.py`, `azure.py`, `bhashini.py`, `sarvam.py`, `rest.py`, `errors.py`, `meter.py`, `detect.py`, `lines.py`, `translate.py`, `phoneline.py`), `src/jarvis/calls/langcheck/` (`scoring.py`, `fleurs.py`, `sentences.py`, `runner.py`, `select.py`, `api.py`), `src/jarvis/calls/join_speech.py` (I1: `CallTally`, `CallSpend`, `SpeechChoices`, `CallSpeech`, `LanguageCheckJob`), `src/jarvis/calls/prices.py` (I0: each option's ₹ from the settings; unknown is never ₹0); the console's `console-calls-langs.js`; eval `evals/calls_language/` (`harness.py`, `suites.py`, `run.py`) |
+| Depends on | C05 Voice service; C44 Free allowance ledger; C54 Costs in ₹ and the monthly limit; C16 Brain router and LLM layer; C74 Calls: cards, approvals, limits and records; C77 Call desk on the laptop |
+| Data it keeps | `call_lang_check/{lang}_{option}` (the latest result of each language and option: the key facts heard and spoken, the error rate, the speed, his score, passed or why not, the versions checked; no audio and no transcript), `call_check_sentences/{lang}` (the 10 call sentences translated once, their key facts and the English's hash), `call_lines/{lang}` and `call_line_audio/{lang}__{voice}__{key}` (Part B's cache of the pre-made lines and their audio: in the code, but the joined engine doesn't use it in v18.0.0, so nothing writes them yet), and the allowance and ₹ counters of C44 and C54 (Google's shared free allowance, Azure F0's held seconds and characters, the "calls" label). |
+| Outside services | Google Cloud Speech-to-Text (hearing, in JARVIS's shared free allowance); Google Cloud Text-to-Speech (Chirp 3: HD voices); Microsoft Azure Speech (free tier F0, region `centralindia` by default); Bhashini (optional); Sarvam (paid, off unless he says yes); Hugging Face (FLEURS test clips, the language check only) |
+| Cost (₹ a month) | ₹0 inside the free allowances (Google's hearing and voice allowance, shared with JARVIS's English voice; Azure F0, which cannot bill); past them Google ≈ ₹2.29 a minute of their speech and ≈ ₹2.86 per 1,000 characters; Sarvam only with his YES; the language check shows its ₹ before anything is sent |
+| When it fails | An option not set up is listed with its reason; a vendor's failure is one error in plain words (off, throttled, refused, allowance used up, paid option off, language not offered), never the vendor's text; a request that may have reached the vendor is metered on its estimate; Azure past its allowance stops before any request; Sarvam without his YES sends nothing; a translation that changes a number, a placeholder or a fact is refused whole (English instead); no network, or Hugging Face refusing, leaves that language unchecked, said plainly; fewer than 10 usable clips give no verdict; 3 failed requests in a row end that option's part; a second check while one runs → 409; the store or a meter unreadable → 503 "unreadable" (I1). The 10-turn brain check per language is not built yet, so it never fails a language (an R18 follow-up). |
+| Since | R18 (v18.0.0): I0 the speech ports and the check's result format; Part B the adapters and the check; I1 the join (metering in one place, A1's choice per language, English before its first check, the scores route, the background job) |
+
 ### Layer 3 — Context & Orchestration
 
 #### C09 · Conversations
@@ -442,6 +475,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Cost (₹ a month) | ₹0 |
 | When it fails | If the copy can't be stored, nothing is deleted. A second restore says "already restored" instead of making two copies. The panel lists the newest 100 (a whole calendar batch's "Undo all", R11.1); what the model's `deleted_list` sees stays the newest 50. |
 | Since | Slice 11 (v0.11.0) |
+
+#### C75 · Call engine, hub and live listening (R18)
+
+| Field | Value |
+|---|---|
+| Name | Call engine, hub and live listening (R18) |
+| What it does | Built in R18 (Part A2, joined at I1, v18.0.0; not yet deployed). One call at a time for the owner (one phone line: a second gets "A call is already on: one call at a time."), held in memory (Cloud Run runs one instance). `calls/hub.py` `CallHub` starts the call his approval asked for, takes the phone's events (C78) and the desk's messages and audio (C77), decides whether to answer a ringing call by A1's policy (C74) and keeps the call's live listeners. `calls/engine.py` runs each call as a state machine: preparing (the ready check, the desk's prepare and the dial gate, which spends the approval for that call) → dialling, or ringing for a missed call → opening (the disclosure in the call's first language: "Hello, this is JARVIS, an AI assistant calling on behalf of (his first name). This call is recorded.") → talking ⇄ taken over → wrapping up (summary, record, ₹) → ended, no answer or failed. It never dials on its own and never redials: trying again is a new card and a new tap. A turn (`calls/engine_turns.py`): the other person's utterance, which the desk sends only while they speak, is heard in the call's language; when the hearing is unsure or its script disagrees the language is detected, and a confident other language the card allows takes over from JARVIS's next sentence, while one it doesn't allow gets the polite "unsupported language" line in English and Hindi (the second time, the call ends). The brain (`calls/brain.py`: one call a turn on `jarvis.llm`'s fast tier, the balanced tier only for a language that needs it and that he allowed, never a brain that may train on what it is sent; no tools: its reply is one JSON document whose actions the engine carries out in code) answers within the card, and words that come while it thinks make it think again. The other person's words are untrusted data inside tags they can't close. Every line passes `calls/guard.py` before it is spoken: a digit string of 4 or more digits (in any script, and number words in English, romanised Hindi and the main Indian scripts) unless the value is on the card or the other person said it earlier (at most 11 digits), PAN-, IFSC-, e-mail-, UPI- and link-shaped text, and agreeing to pay are refused, and JARVIS says "I will check with (his first name) and call back" instead. A phone menu's keys pass the same digit rule (never on a call JARVIS answered). JARVIS's voice (`calls/engine_voice.py`) goes to the desk a little ahead of real time and stops when the other person talks over it. Caps: the call's minutes and ₹ and the month's calls ₹; at a cap JARVIS says goodbye and ends. If the other person objects to the recording, it stops and what was kept is deleted. After the call `calls/summary.py` writes the English summary (one fast-tier call; a plain one built in code when the model fails). His controls (`calls/live.py`, `api/calls_ws.py`), in the Calls panel or the console page in the phone's browser: Listen live (both sides mixed, with English captions from `calls/captions.py`: an English line is its own caption, else the brain's own rendering, else one fast-tier translation) or Captions only (the default), Take over (a handover line, then his microphone back at the laptop, or the call's sound to the phone from the phone's browser), Tell JARVIS (a typed instruction the other person doesn't hear, at most 10 a minute) and Hang up. The live socket takes his bearer, his cookie from JARVIS's own page or a one-use 30-second ticket (I1). Notices (the summary, "JARVIS asks: …", "tap Phone") go to his browsers by Web Push, kind `call_notice` (I1). |
+| Layer | L3 Context & Orchestration (the call session; L4 for the in-call brain and its guard, L8 for JARVIS's voice and the summary) |
+| Skill | Communication |
+| Where in the code | `src/jarvis/calls/hub.py` (`CallHub`, `DeskConnection`, `DeskProxy`, `BillingSpend`), `src/jarvis/calls/engine.py`, `engine_ports.py`, `engine_turns.py`, `engine_voice.py`, `brain.py` (the in-call brain and `FixedLines`: English and Hindi written, any other language translated once a process), `guard.py`, `summary.py`, `captions.py`, `live.py` (the listeners and the `Mixer`), `protocol.py` (I0: 16 kHz PCM16 in 20 ms frames behind one prefix byte, 0x01 the other person, 0x02 JARVIS, 0x03 mixed, and every desk, phone and console message), `join.py` (I1: the adapters between the parts and `status_view`, the Calls panel's ready check), `src/jarvis/api/calls_ws.py` (the desk's socket and the live listener's); the console's `console-calls-live.js`, `console-calls-audio.js` and `calls-listen-worklet.js` (Listen live through Web Audio, a recording's player); tests `tests/test_calls_engine.py`, `tests/test_calls_guard.py`, `tests/test_calls_hub_ws.py` |
+| Depends on | C74 Calls: cards, approvals, limits and records; C76 Call speech and the language check; C77 Call desk on the laptop; C78 Phone calls on the phone; C16 Brain router and LLM layer; C15 Guardrails and trust; C47 Web Push; C54 Costs in ₹ and the monthly limit; C01 Web console |
+| Data it keeps | Nothing of its own in Firestore: a call lives in memory while it is on (and is gone at a restart), and what is kept is C74's record (audio, transcript, summary, ₹). Fixed lines translated for a language are kept in memory for the process. |
+| Outside services | Web Push (`call_notice`: the summary, an ask, "tap Phone"); the brain is C16's (a brain that may train on what it is sent is never used for calls) |
+| Cost (₹ a month) | The brain ≈ ₹0.10–0.20 a call minute on the fast tier and the summary ≈ ₹0.10–1 a call (the plan's estimates); captions only when a line needs translating; every ₹ is held to the call's and the month's caps |
+| When it fails | The desk or the phone lost → the call wraps up (`desk_lost`, `phone_lost`); the brain fails twice → the check-back line and the end; a line the voice can't make → a required line ends the call, an optional one is skipped; the guard refuses → the check-back line, never the refused words; a cap → goodbye; a dial the phone couldn't place (refused, no permission, expired, no phone) → the call ends at once, while `needs_tap` keeps it waiting for his tap (I1); a live listener too far behind on captions is closed (it can reconnect) and loses audio first; 5 malformed live messages close it; a summary the model can't make → a plain one from the outcome; a restart → a call in memory is gone, and no grant is left to dial on. |
+| Since | R18 (v18.0.0): I0 the protocol and the ports; Part A2 the engine, hub, brain, guard, summary, captions and live listening; I1 the join (the dial gate per call id, metering once, the live socket's ticket, notices by Web Push) |
 
 ### Layer 4 — Core Reasoning Engine
 
@@ -847,6 +896,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | Not configured, no role or the API off → off, in words; any non-200 → nothing charged, the hold released; a timeout after sending or a cut answer → "may be charged", kept at the hold; a blocked picture → its words (billed); the cap or limit unreadable → refused (fail closed); past the model's end date → off until a newer model and a new YES; Google's text parts are never read. | |
 | Since | R13.1 (v13.1.0): I0 the port, the price table, the money helpers, the door, the deploy's steps and the stubs; Parts C (the server) and D (the console) built it; I1 joined it |
 
+#### C74 · Calls: cards, approvals, limits and records (R18)
+
+| Field | Value |
+|---|---|
+| Name | Calls: cards, approvals, limits and records (R18) |
+| What it does | Built in R18, "Calls from your laptop" (I0's seams and Part A1, joined at I1, v18.0.0; not yet deployed). He says who to call and why, in the chat or in Calls → New call: a blank card, or a ready one (a laundry pickup, the laundry's status, an appointment: `calls/templates.py`, which only writes a draft). `calls/cards.py` makes the call card: the number checked as an Indian number (emergency and helpline numbers such as 100, 108 and 112, premium 1900 numbers, international numbers and other short codes are refused; toll-free 1800 numbers are allowed), or a saved contact's number when exactly one matches; the purpose; what JARVIS may say and agree to; English plus up to 3 Indian languages that passed the language check (C76) with an option he allows (English before its first check is offered "not yet checked", the Workshop's I1 decision); the longest it may last (6 minutes by default, never above his setting); "never called before"; and the ₹ estimate (speech on the cheapest passing option, the fast-tier brain at about 4 turns a minute and the summary; a price JARVIS doesn't know makes the estimate unknown, never ₹0). His free text is read into a draft by the fast tier, and a number is taken only if he typed it. Placing a call is R3: Call on the card (in the Calls panel, under a chat reply as the `call_card` reply card of `calls/chat_card.py`, or on his phone, C78) runs the gateway's `calls_place` card every time (no standing Allow, never Approve all, no "don't ask again"), with his passkey when "Require passkey for irreversible actions" is on; a number never called before needs the passkey and is refused while that requirement is off (`calls/approvals.py`). The card's text shows the number's last four digits only. His approval issues a dial grant, one use and 10 minutes, bound to the number and the card's content (`CallCard.digest`); just before the dial the call engine (C75) spends it for that call, and the day's limits are counted with it in one transaction (`calls/limits.py`: 10 calls a day, 2 to one number, 3 numbers never called before, one redial of a number that did not answer, none from 21:00 to 08:00 IST or that could run past 21:00; the card's own ₹, ₹20 a call, what is left of ₹200 a month for calls and of his overall monthly limit). Grants live in memory only, so after a restart nothing can be dialled on an old approval. After the call `calls/records.py` seals the audio (8 kHz WAV, I1), the transcript (each line in its language and in English) and the English summary with the vault's envelope encryption (C42); if the other person objects, the audio and the transcript kept so far are deleted and only the summary's notes stay. A booking card's slot must start and end inside one of his windows; after the call the appointment goes on his Google Calendar through the gateway's `calendar_create_event`, with Undo (`calls/booking.py`). Records are kept 30 days unless he presses Keep (the `calls_retention` tick job, `calls/retention.py`). Answering the calls he misses (row 104, `calls/answering.py`) is off until he switches it on (`calls_answer_mode`, R2; switching it on is always its own card): only after 5 rings (his setting), for everyone, saved contacts only or everyone but saved contacts, never a withheld number, never without his first name or past the month's calls cap; JARVIS then takes a message and agrees to nothing. A settings change that lets calls spend more (a higher cap, more minutes, Sarvam, the balanced tier) needs his confirmation (`confirm_raise`). |
+| Layer | L5 Skills & Capabilities (L4 for the approval and the limits, L7 for the store and the sealed records) |
+| Skill | Communication (Task & Productivity for a booking) |
+| Where in the code | `src/jarvis/calls/` (the package; I0's seams: `models.py` the cards, records, states, settings and every cap and limit as a constant, `store.py` `DocCallStore` with each number sealed and its counters in one transaction, `settings.py` his settings with their defaults, `tools.py` `calls_place` and `calls_answer_mode`, `ports.py`; Part A1: `cards.py`, `approvals.py`, `limits.py`, `records.py`, `retention.py`, `booking.py`, `templates.py`, `answering.py`; I1: `chat_card.py`), `src/jarvis/config_calls.py` (R18's settings, a base class of `Settings`: the speech keys and prices, the caps, the retention), `src/jarvis/api/calls_routes.py` (I0's routes under /v1/calls: owner only, bodies of at most 16 KB, every answer no-store, the live socket's one-use ticket), `src/jarvis/api/calls_handlers_cards.py` (Part A1's REST work), `src/jarvis/api/calls_console.py` (I1: what the console reads beside A1's views), `src/jarvis/api/r18_wiring.py` (I1: `wire_r18`, `r18_tools`, `finish_r18`, `r18_tick_jobs`), `src/jarvis/tools/reply_cards.py` (the `call_card` kind); the console's `console-calls.js` (the Calls panel, loaded by `console-r7.js`), `console-calls-card.js`, `console-calls-form.js`, `console-calls-list.js`, `console-calls-settings.js`, `console-calls-shapes.js`, `console-calls-api.js`, `console-calls-vitals.js` (Vitals' calls line), `console-calls.css`, `src/jarvis/api/console_calls_assets.py` (their place on the console's allow-list); tests `tests/test_r18_i1_join.py` |
+| Depends on | C28 Tool gateway and audit; C18 Approval cards and Approve all; C52 Permissions and passkeys; C42 Document vault; C51 Keyring; C54 Costs in ₹ and the monthly limit; C30 Calendar and reminders; C33 Contacts; C11 Scheduler ticks and watchdog; C16 Brain router and LLM layer; C75 Call engine, hub and live listening; C76 Call speech and the language check |
+| Data it keeps | `calls/{uid}/cards/{card_id}` (a call card: the number sealed with the `calls` key and a 128-bit HMAC reference beside it; draft, approved, used, cancelled or expired), `calls/{uid}/records/{call_id}` (one call: its state, languages, times, ₹ by part, the references of its audio, transcript and summary, the booking's event id, its retention), `calls/{uid}/sealed/{call_id}_{kind}` and `calls/{uid}/sealed_chunks/{call_id}_{kind}_{nn}` (the audio, the transcript and the summary, each under its own key wrapped by the `vault` key, in 512 KiB chunks; a delete removes the header and its key first), `calls/{uid}/days/{YYYY-MM-DD}` (the day's counters, IST), `calls/{uid}/months/{YYYY-MM}` (the month's calls ₹), `calls/{uid}/numbers/{ref}` (a number called before, by its reference: first and last call, how many), `call_settings/{uid}` (his caps, first name, default languages, answering, retention, the audio switch, Sarvam and the balanced tier). Records 30 days unless kept (a setting of at most 30). The Privacy panel has no calls row yet: a call is deleted in Calls → Calls or by the retention job. |
+| Outside services | Google Calendar (a booking's appointment, through the gateway); Google Contacts (a saved contact's number, the answering rule's contacts) |
+| Cost (₹ a month) | ₹0 for the skill itself (a few Firestore reads and writes a call). A call's own ₹ is its speech (C76) and its brain (C75), held to ₹20 a call and ₹200 a month for calls by default (`config_calls.py`; his settings up to ₹200 a call and ₹3,000 a month); the plan's estimate for 20 calls of 4 minutes is about ₹20–40 a month |
+| When it fails | Calls off → 503; without the token key or a private brain nothing is wired and the routes answer 501; no gateway → no Calls panel work (501). A number or a card that can't be placed says why in plain words with a stable code, and nothing is issued; a number never called before while the passkey requirement is off is refused with how to switch it on; a card changed after its approval no longer matches its grant; after a restart no grant is live; a limit, the month or his overall limit that can't be read refuses (fail closed); a stored card or record that doesn't read back is "unreadable", never "no card"; a sealed part that doesn't open is `RecordUnreadable`, never empty; a part that fails to save is logged and the others are kept (I1); a contacts look-up that fails means "don't answer". |
+| Since | R18 (v18.0.0): I0 the seams (models, protocol, ports, store, settings, prices, tools, routes); Part A1 the skill; I1 the join (`r18_wiring.py`, `join.py`, the chat's call card, English before its first check) |
+
 ### Layer 6 — Integration & Tools
 
 #### C28 · Tool gateway and audit
@@ -1057,6 +1122,22 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | When it fails | An arm the laptop doesn't confirm within 5 minutes sends one alert: "JARVIS couldn't arm your home at (time): the laptop didn't answer." A disarm is audited first; if the audit is down, nothing is switched off. |
 | Since | R3 (v3.0.0) |
 
+#### C77 · Call desk on the laptop (R18)
+
+| Field | Value |
+|---|---|
+| Name | Call desk on the laptop (R18) |
+| What it does | Built in R18 (Part C, joined at I1, v18.0.0; not yet deployed, and not yet run on a real laptop: the plan's S0 test is the owner's). A Windows program on his laptop (Python 3.12 in its own virtual environment, from the call desk kit; never part of the cloud app) that carries a call's audio between Windows Phone Link and JARVIS. Phone Link makes and takes his phone's calls over Bluetooth on Windows' default speaker and microphone. During a JARVIS call only, the desk records what the laptop's speaker plays (WASAPI loopback: the call), sends it to JARVIS only while the other person speaks (`vad.py`: a voice detector without a model, by level and zero crossings, with a pre-roll so the first syllable isn't lost and a longer start while JARVIS talks so a cough doesn't cut it off), plays JARVIS's voice into VB-CABLE's "CABLE Input" and makes "CABLE Output" Windows' default microphone in all three roles, so Phone Link sends that voice into the call (`micguard.py`: the previous defaults are written down before anything changes, each switch is read back and undone if Windows doesn't confirm it, and notification sounds are muted for the call when possible). His microphone comes back at a takeover, at the end, after a crash (the watchdog, `watchdog.py`, restores it before restarting the desk) and at the next start. Before every call it checks (`checks.py`) that VB-CABLE is installed, Phone Link is running, no Bluetooth headset is connected to the laptop (Phone Link refuses calls then) and the audio path moves sound; the report has plain words and no device names. It plays a phone menu's keys as tones (`dtmf.py`). The link: he presses "Link the call desk" in Calls → Settings and types the 8-character code (10 minutes, one use) into `install-calldesk.ps1 -Link`; JARVIS answers the desk's id and a 32-byte seed once (kept sealed with the `calls` key in the cloud, and in his own profile folder on the laptop), and every upgrade of the desk's WebSocket is signed with the key derived from it exactly as the home bridge signs, checked before the socket opens (the clock within 60 s, a nonce not seen in 5 minutes, else closed 4401), with at most 150 audio frames a second. It reconnects with a growing pause, and lets go of everything here if the link is lost for more than 20 s during a call. The kit (Calls → Settings → "Download the call desk", only when JARVIS has an https public address) is a zip built from the repository at request time, byte for byte reproducible, with its SHA-256: the installer, the scripts, the hash-pinned requirements, the README, `desk.env` (JARVIS's address only) and the desk's source with today's copies of the calls protocol, the calls models and the home bridge's signing. Laptop speech (local models) is a hook only, shipped off: every call uses cloud speech in v18.0.0. |
+| Layer | L6 Integration & Tools (at the laptop) |
+| Skill | Communication |
+| Where in the code | `src/jarvis/calldesk/` (`__main__.py` the commands run, supervise, restore, check and link; `app.py`, `config.py`, `credentials.py`, `link.py`, `client.py`, `wsconn.py`, `session.py`, `sound.py`, `audio.py`, `vad.py`, `micguard.py`, `checks.py`, `dtmf.py`, `watchdog.py`, `speech_local.py`, `ports.py`; `kit.py` the kit's zip, cloud side only), `src/jarvis/calldesk/win/` (Windows only: `coreaudio.py`, `policy.py`, `sound.py`, `system.py`), `deploy/calldesk/` (`install-calldesk.ps1`, `start-calldesk.ps1`, `stop-calldesk.ps1`, `restore-microphone.ps1`, `requirements-calldesk.txt`, `README.txt`), `src/jarvis/api/calldesk_kit.py` (the kit on the app), `src/jarvis/calls/hub.py` (`DeskStore` and `DeskDoorService`: the desk's link in the cloud), `src/jarvis/home/signing.py` (reused unchanged); tests `tests/test_calldesk_session.py`, `tests/test_calldesk_micguard.py`, `tests/test_calldesk_kit.py` |
+| Depends on | C75 Call engine, hub and live listening; C38 Home link; C39 Home bridge; C51 Keyring; C74 Calls: cards, approvals, limits and records; C49 Configuration |
+| Data it keeps | In Firestore: `call_desk/{uid}` (the linked desk: its id, the seed sealed with the `calls` key, its version, when it was linked; until he unlinks it), `call_desk_codes/{uid}` (a pending link code as its SHA-256, and its expiry: 10 minutes, one use). On the laptop, in his own profile folder (`%LOCALAPPDATA%\JARVIS\CallDesk`): `secret.json` (the desk's id and seed), `audio-state.json` (the microphone roles it changed: Windows' endpoint ids and flags, never names), `calldesk.log` (never audio, transcripts, numbers or secrets) and `stop.request`. |
+| Outside services | None (the desk talks only to JARVIS; on the laptop it uses VB-CABLE, a free virtual audio cable, and Windows Phone Link) |
+| Cost (₹ a month) | ₹0 (VB-CABLE is donationware; the call is on his own phone plan) |
+| When it fails | Any check failing → the call card says which part is missing and nothing is dialled; three 401s in a row → the link is gone, said in the log, tried every 5 minutes (a single 401 corrects the clock from the cloud's Date header and retries); the cloud's "not built" close (4501) → it waits a minute; the state file can't be written → nothing is switched; a switch Windows doesn't confirm → undone at once; a restore that fails keeps the state file for the watchdog or the next start; an unreadable state file → any role on the cable goes back to his best microphone; a crash → the watchdog restores and restarts it (after 2 to 60 s); no https public address → no kit (501); a kit source with a module outside its set or an unpinned import → refused (`KitError`). |
+| Since | R18 (v18.0.0): I0 the desk protocol and its door; Part C the desk and its kit; I1 the join (Calls → Settings' "Call desk on your laptop": the kit's download and the link code) |
+
 ### Layer 7 — Data & Persistence
 
 #### C41 · Document store
@@ -1244,7 +1325,7 @@ Firestore collection is missing here, or if a card or technology row is incomple
 | Field | Value |
 |---|---|
 | Name | Keyring (one key per purpose) |
-| What it does | Derives a separate key for each kind of data from the one token key in Secret Manager, so a key for notes can never open the vault. Purposes: `vault`, `vault_index`, `notes`, `belongings`, `tickets`, `home`, `home_feed`, `faces`, `webpush`, `notify`, `connectors`, `book_index`, `book_session`, from R11 `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (C60), from R7 `watch`, `sos` and `vision`, from R14 `backup_probe` (C66), from R13 `wardrobe` and `wardrobe_photos` (C69, PLANNED), from R13.1 `tryon` and `tryon_photos` (C72, C73), and one raw secret `webpush_vapid`. |
+| What it does | Derives a separate key for each kind of data from the one token key in Secret Manager, so a key for notes can never open the vault. Purposes: `vault`, `vault_index`, `notes`, `belongings`, `tickets`, `home`, `home_feed`, `faces`, `webpush`, `notify`, `connectors`, `book_index`, `book_session`, from R11 `bills`, `spend`, `wellbeing`, `alerts_place` and `kitchen` (C60), from R7 `watch`, `sos` and `vision`, from R14 `backup_probe` (C66), from R13 `wardrobe` and `wardrobe_photos` (C69, PLANNED), from R13.1 `tryon` and `tryon_photos` (C72, C73), from R18 `calls` (each number of a call card or record sealed, its HMAC reference, the call desk's seed: C74, C77), and one raw secret `webpush_vapid`. |
 | Layer | X Cross-cutting |
 | Skill | Security Advisor |
 | Where in the code | `src/jarvis/keyring.py`, `src/jarvis/integrations/vault.py` (the AES-256-GCM cipher) |
@@ -1628,6 +1709,11 @@ counter sees only its own use (the deploy script warns about this).
 | GitHub API | Your own GitHub, read-only | Free with your token | GitHub's rate limits; Vitals shows them | — |
 | Tailscale | Reaching the laptop | Free personal plan (*unverified* limits) | — | — |
 | Home Assistant, Frigate, Mosquitto, Ollama | Home and offline brain on your laptop | Free, open source, run by you | — | — |
+| Microsoft Azure Speech, free tier F0 (R18, optional) | Hearing and voice in calls, more Indian voices (C76) | 5 hours of hearing and 0.5 million voice characters a month | It stops: F0 cannot bill, and JARVIS holds each request's units before it is sent | Never billed |
+| Sarvam (R18, paid, off unless you say yes) | Hearing and voice in calls (C76) | None counted by JARVIS | Your monthly limit and the calls caps stop it | ₹30 an hour of hearing, ₹30 per 10,000 characters of voice (JARVIS's default prices) |
+| Bhashini (R18, optional) | Hearing and voice in calls, if set up (C76) | No published price for this use | *unverified* | Unknown: never counted as ₹0 (a call counts it at Google's paid rate) |
+| Hugging Face dataset viewer (R18) | The language check's FLEURS test clips (C76) | Free, no key | *unverified*: a refused request leaves that language unchecked | — |
+| Windows Phone Link and VB-CABLE (R18, on your laptop) | The call desk's audio path (C77) | Free (VB-CABLE is donationware) | — | — |
 
 ### 5.3 Original plan vs as built
 
@@ -1764,6 +1850,9 @@ its own key (AES-256-GCM) before it reaches Google, so a reader of the database 
 | `vitals_providers`, `vitals_status`, `vitals_index` | What Vitals tracks and the last status (never a key's value) | No | Until removed | C55 |
 | `book` (and `book_chunks`), `book_lease`, `book_lock`, `book_sessions`, `book_settings`, `book_tickets`, `book_notices`, `book_closed` | Sealed build books, the sealer's lease, the guest lock, book sessions, settings, tickets, content-free notices | Yes (`book_index`, `book_session`) for the books and sessions; tickets hashed (`tickets`) | Books until removed (60 MB cap); sessions 45 minutes | C57 |
 | `book_writer`, `book_write_lease`, `book_write_spend`, `book_drafts`, `book_trial`, `book_pages` (and its `book_chunks`) (R6.3; no longer written from R6.3.1) | The old Book writer trial: his pick, caps and YES records, the run's lease, the ₹ ledger (numbers only), drafts, trial pages, the AI pages' own index | Yes (`book_index`, AAD `book/pages/{uid}/v1`, for the pages index; drafts and trial pages under the release's file keys); the rest ids and numbers | Until the owner deletes them (Privacy, "Book writer (old trial)"); nothing deletes them by itself | C57 |
+| `calls` (its `cards`, `records`, `sealed`, `sealed_chunks`, `days`, `months` and `numbers`), `call_settings` (R18) | Call cards and records; each call's audio, transcript and summary; the day's and the month's counters; the numbers called before (by reference); your call settings | Yes: every number (`calls`), and the audio, transcript and summary each under its own key wrapped by `vault` | Records 30 days unless you keep one | C74 |
+| `call_desk`, `call_desk_codes` (R18) | The linked call desk; a pending link code | Yes (`calls`) for the desk's seed; the code hashed | Until unlinked; the code 10 minutes | C77 |
+| `call_lang_check`, `call_check_sentences`, `call_lines`, `call_line_audio` (R18) | The language check's results (no audio, no transcript) and its translated sentences; the pre-made lines' cache (not written in v18.0.0) | No | Until the next check | C76 |
 
 ### 6.3 Redis
 
@@ -1798,6 +1887,7 @@ the systems check pings Redis only when it is configured.
 | `watch` (R7, PLANNED) | Watch days: steps, heart rate and sleep |
 | `sos` (R7, PLANNED) | Emergency contacts (and the hash of a join word) |
 | `vision` (R7, PLANNED) | Camera results you kept |
+| `calls` (R18) | The numbers of call cards and records (also a MAC domain for their references), the call desk's seed |
 | `webpush_vapid` (raw secret) | The Web Push signing key |
 
 Google tokens, the saved Home and Work and the laptop brain's address and key use the token key
@@ -1816,6 +1906,10 @@ directly (they predate the keyring).
 | Web Push services | Encrypted messages they can't read |
 | Frankfurter | Nothing about you (one rate request a day) |
 | Your laptop | The camera and faces commands the bridge needs |
+| The brain in a call (R18; never a brain that trains on what it is sent) | Each turn: the call card and the transcript so far; after the call, the English transcript for the summary |
+| Call speech: Google, Microsoft Azure Speech, Bhashini, Sarvam (R18) | The other person's speech while they talk and the lines JARVIS speaks, and the language check's test clips and sentences; Azure, Bhashini and Sarvam only once set up, Sarvam only with your YES |
+| Hugging Face (R18) | Requests for public FLEURS test clips during a language check (nothing about you) |
+| Your phone and the call desk (R18) | Signed call commands (the number to dial goes only to your phone, never in a push) and the call's audio to and from the laptop |
 
 ### 6.6 Deleting
 
@@ -1972,6 +2066,7 @@ All figures are **estimates** in ₹ at ₹95.24 to the dollar.
 | Background learning | About ₹5, at most ₹24 (optional) | Runs a day (at most 20) |
 | People research summary, build book questions | A few rupees (about ₹1.5 a book question) | How often you use them |
 | Voice | ₹0 inside 900,000 characters and 54 minutes | Beyond: about ₹2.29 a minute of listening, ₹2,857 per million characters of Chirp 3: HD speech |
+| Phone calls (R18) | About ₹20–40 at 20 calls of 4 minutes (the plan's estimate) | The brain ≈ ₹0.10–0.20 a call minute and the summaries; speech ₹0 inside the free allowances; capped at ₹200 a month and ₹20 a call by default (C74) |
 | Web search, Maps, YouTube, Telegram, Web Push, Frankfurter | ₹0 | JARVIS stops before any paid use |
 | Gemini, laptop brain, No-AI mode | ₹0 | Free |
 
@@ -2022,7 +2117,8 @@ the Cloud project.
 Nothing in the table below is built. R6.3.1's pictures and storage were replaced on 24 Nov 2026 by the
 full book written at build time with its flowcharts (`docs/plans/r6-3-1-book-at-build.md`, built), and
 R6.4, the Book's new look with the full book narrated in chapters and its search, is built
-(`docs/plans/r6-4-book-look.md`); that plan's "Not in R6.4" (a guest-safe full book, print views, a
+(`docs/plans/r6-4-book-look.md`), and R18, "Calls from your laptop" (cards C74 to C78), is built
+and joined, not yet deployed (`docs/plans/r18-calls.md`); R6.4's plan's "Not in R6.4" (a guest-safe full book, print views, a
 Simple / Technical toggle, an interactive architecture map) waits for the owner to ask and has no row.
 The rows follow the owner's order, relayed by the Workshop on 23 Nov 2026 (the project's release plan,
 with each release's full content, is not in this repository). The short tour reads its "next" and
@@ -2030,7 +2126,6 @@ with each release's full content, is not in this repository). The short tour rea
 
 | Release | PLANNED content |
 |---|---|
-| Phone calls | JARVIS making and answering phone calls from the owner's laptop |
 | R5.2 Voice | The voice build: the microphone and listening fixes the owner asked for |
 | R8 Home cameras | The home cameras' setup and the first home vision use cases on R7's on-device engine, each starting after the owner confirms its cameras |
 | R8.1 | The release after R8 in the owner's order (its content is in the project's release plan) |
@@ -2060,10 +2155,13 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Barge-in | Talking over JARVIS to interrupt it |
 | Bearer token | A secret the terminal and the evals send with each request to prove who they are |
 | Billing account | The Google account that pays for a Google Cloud project; its administrators get Google's budget e-mails |
+| Bhashini | The Government of India's language platform; an optional speech option for calls (C76) |
 | Blob | A block of scrambled (encrypted) data that means nothing without its key |
 | BM25 | A classic way to rank text by matching words |
 | Brain | The AI model JARVIS uses for a reply (Claude, Gemini, the laptop's model) |
 | Build book | JARVIS's own generated description of each release, sealed with its source code |
+| Call desk | JARVIS's small Windows program on the laptop that carries a call's audio between Phone Link and JARVIS (C77) |
+| Call card | The card that names a call's number, purpose, limits, languages and ₹ estimate; every call waits for your tap on one (C74) |
 | Capacitor | A tool that wraps a web page as a phone app inside a WebView; R7 uses a Trusted Web Activity instead of Capacitor |
 | Card (component card) | One table in section 3 describing one part of JARVIS |
 | CDN | A network of servers that delivers files for other websites (JARVIS uses none) |
@@ -2097,9 +2195,11 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | FastAPI | The Python web framework JARVIS's server is built on |
 | Fenced (as data) | Wrapped and marked as outside text, so the model treats it as information, never as orders |
 | Firestore | Google's document database |
+| FLEURS | Google's open set of read-speech test clips (CC BY 4.0) the language check uses (C76) |
 | Free tier | What a vendor gives free each day or month (not the same as a model tier) |
 | Frigate | Open-source camera software that detects people and packages at home |
 | Gateway | The one door every tool call passes through |
+| G.711 | The sound coding of an ordinary phone line (8 kHz); the language check imitates it |
 | Gemini | Google's AI models; JARVIS uses the free tier for chat only |
 | GitHub Release / tag / label | On GitHub, a named release page for a version; a tag is the name pinned to the exact code of that version; a label is a coloured word attached to a pull request ("release", "Mark XIII") |
 | GiB | Gibibyte: about 1.07 billion bytes |
@@ -2125,6 +2225,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | LangGraph | A library for building agent workflows as graphs (old blueprint; not used) |
 | Laptop brain (offline backup brain) | The small AI model (Ollama) on your laptop that answers when Claude can't be reached |
 | Layer | One of the eight levels of the architecture (section 2) |
+| Language check | The test every call language passes before a call may use it: hearing, voice, speed and your own score (C76) |
 | Licences (CC-BY-NC-SA-4.0, MPL-2.0, AGPL, copyleft) | Terms for using other people's software. CC-BY-NC-SA-4.0: personal, non-commercial use only. Copyleft (MPL-2.0 for some files, AGPL for whole programs): changes must be shared under the same terms if the software is handed on; AGPL also counts offering it over the internet |
 | LLM | Large language model: the AI behind a brain |
 | MAC | A tamper check made with a key (HMAC is one kind); "MAC only" means the data is checked, not hidden |
@@ -2132,6 +2233,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Markdy | The text format and tool used to draw this guide's diagrams |
 | Matter | A smart-home device standard (not used) |
 | MCP | Model Context Protocol, a standard for connecting AI to tools (not used as built) |
+| Microsoft Azure Speech F0 | Azure's free speech tier: a monthly allowance that cannot bill (C76) |
 | MediaPipe / OpenCV / Tesseract / PaddleOCR / YOLO | Vision libraries that run on the device; R7's engine uses MediaPipe and Tesseract in the browser (C63), not ML Kit (Google's terms), and YOLO is ruled out by its AGPL licence |
 | Mock (brain, eval) | A pretend AI that gives fixed answers, so tests cost nothing |
 | More (button and sheet) | The dock's last button: it opens a sheet listing the panel buttons that didn't fit on this screen, and shows only when something is behind it |
@@ -2153,6 +2255,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | Pacific time | US Pacific time; Google resets some free allowances (YouTube, speech) on Pacific days and months |
 | Passkey | A sign-in key kept on your device (fingerprint or PIN), resistant to phishing |
 | Phase 0–7 | The project's original build plan in eight steps, from the core loop to launch (section 5.3) |
+| Phone Link | Microsoft's Windows app that makes and takes your phone's calls on the laptop over Bluetooth |
 | PITR | Point-in-time recovery: restoring a database to an earlier moment (not set up; billed) |
 | Port (in the code) | A small, fixed interface that a part uses to reach something (for example the `Docs` port to the database), so what sits behind it can change |
 | Postgres | A relational database the old blueprint planned |
@@ -2173,6 +2276,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | SDK | A vendor's ready-made library for calling its API (JARVIS avoids them outside `jarvis.llm`) |
 | Secret Manager | Google's locked store for keys and passwords |
 | SACHET | India's official disaster-warning feed, run by the National Disaster Management Authority (NDMA) |
+| Sarvam | An Indian speech company; a paid option for calls, off unless you say yes (C76) |
 | Service account | A Google identity for a program, with only the permissions it needs |
 | Service worker | A small browser script that receives push notifications |
 | Slice | One build step of the early project (slices 1 to 12, before R1); each slice had its own plan |
@@ -2193,6 +2297,7 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | UPI | India's Unified Payments Interface: you pay from your bank app with your PIN; JARVIS only gets a payment ready |
 | VAPID | The standard key that signs Web Push messages |
 | Vector database | A database that finds text by meaning using number lists (embeddings); not used |
+| VB-CABLE | A free virtual audio cable for Windows; the call desk plays JARVIS's voice into it (C77) |
 | Vendored | A copy of an outside library kept inside JARVIS's own files, so nothing is loaded from elsewhere |
 | Version (v6.1.0) | The number of a JARVIS release: major.minor.patch. It is kept in one place in the code and shown on Vitals' "About JARVIS" line |
 | VIP list | The people (by face, phone number or e-mail) you mark as important for alerts |
@@ -2270,6 +2375,13 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
   drill card is approved in the console only, never with Telegram's buttons; C68 counts 139
   tools (not 136), the Vitals words and the second held-out set; C66, C67 and C68 name the status
   reads' per-owner limit. The diagrams are unchanged.
+- **Edition v18.0.1.** Written at R18's I1 on `r18-i1` (the six parts merged and joined): cards
+  C74 to C78 as built, each with its modules, routes, tools, collections, outside services, cost
+  and how it fails, from the code; the four new outside services in 5.2, 6.5 and the coverage
+  tables (`scripts/arch_coverage.json`), whose inventory now reads `Settings`' base class in
+  `config_calls.py` as the Book's code reader does; the R18 collections in 6.2 and the `calls`
+  purpose in 6.4 and C51; the costs row; the roadmap's "Phone calls" row removed (built).
+  `scripts/arch_coverage.py` passes. The diagrams are unchanged.
 
 ## Change log
 
@@ -2307,3 +2419,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v6.4.2 | 25 Nov 2026, 15:30 IST | R6.4 | R6.4 review: the roadmap's R6.4 row removed (R6.4 is built; its "Not in R6.4" items wait for the owner to ask, no row), its opening says so, and its first row reads "Phone calls" (the tour's "Next:"); C57's R6.4 sentence says built, not yet deployed | 🛠 Mark XXIV |
 | v18.0.0 | 27 Nov 2026, 13:50 IST | R18 | R18 I0 (calls from the laptop): the guide's version moves to R18; nothing else changes yet. The calls cards, the roadmap's "Phone calls" row and the costs come with R18's I1 and the Book refresh (`docs/plans/r18-calls/I0-SEAMS.md`) | 🛠 Mark XXV |
 | v5.2.0 | 27 Nov 2026, 14:30 IST | R5.2 | R5.2 I0 (your voice; built after R18, so the number names the release, not an order): the guide's version moves to R5.2; nothing else changes yet. The laptop speech kit's card (`src/jarvis/localspeech`), the voice profile (`voice_profile` in Firestore) and the speaker check come with R5.2's I1 and the Book refresh (`docs/plans/r5-2-integration/I0-SEAMS.md`) | 🛠 Mark XXV |
+| v18.0.1 | 27 Nov 2026, 16:40 IST | R18 | R18 I1 (the six parts merged and joined): cards C74 Calls: cards, approvals, limits and records, C75 Call engine, hub and live listening, C76 Call speech and the language check, C77 Call desk on the laptop and C78 Phone calls on the phone, with I0's seams and I1's join placed among them, the 11 `console-calls*.js` modules and every R18 collection; Microsoft Azure Speech, Sarvam, Bhashini and Hugging Face as outside services (5.2, 6.5, `arch_coverage.json`); the layers table, C51 and 6.4 (`calls`), 6.2, section 9's calls row, the roadmap's "Phone calls" row removed, the glossary; this edition line | 🛠 Mark XXV |

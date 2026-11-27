@@ -1,5 +1,6 @@
 // src/jarvis/api/static/console-calls.js -- R18 E (docs/plans/r18-calls.md; BUILD-BRIEF.md row E): the Calls panel
-// (#p-calls, its shell in console.html, opened from the dock, from a call card and by ?open=calls) and the call cards
+// (#p-calls, its shell in console.html, opened from the dock where it fits, from a call card, Vitals' calls line and
+// by ?open=calls: at 1920 px its tab is not in the bar, console-dock.js) and the call cards
 // in the chat. Loaded by console-r7.js; it brings its stylesheet (console-calls.css: places only, existing tokens and
 // classes) and its parts:
 //   console-calls-api.js      paths, checks, words, the shared builders      console-calls-shapes.js  the server's shapes
@@ -103,7 +104,7 @@ const ctx = {
   languages: () => langs.rows(),
   settings: () => settings.data(),
   openLive: (callId) => openLive(callId),
-  openRecord: (rid) => { live.close(false); choose('calls', false); list.show(rid); },
+  openRecord: (rid) => { openPanel(); live.close(false); choose('calls', false); list.show(rid); }, // the chat's card too
   closedLive: () => { list.load(); const f = panes.calls.querySelector('button'); if (f) f.focus(); },
   ended: () => { document.dispatchEvent(new CustomEvent('jarvis:calls', { detail: { ended: true } })); status(); },
   edit: (card) => { openPanel(); choose('new', true); form.edit(card); },
@@ -117,7 +118,7 @@ const list = mountList(panes.calls, ctx);
 const langs = mountLangs(panes.langs, ctx);
 const settings = mountSettings(panes.settings, ctx);
 const form = mountForm(panes.new, ctx);
-const vitals = mountVitals();
+const vitals = mountVitals(() => { const D = Deck(); if (D) D.open('calls', { focus: true }); }); // its line opens Calls
 if (host) host.append(ready, tabsEl, ...TABS.map(([t]) => panes[t]));
 
 function choose(tid, load) {

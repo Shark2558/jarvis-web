@@ -50,14 +50,41 @@ def py_files(repo: Path) -> list[Path]:
     return sorted((repo / "src/jarvis").rglob("*.py"))
 
 
+def _class_body(tree: ast.Module, name: str) -> list[ast.stmt] | None:
+    found = next((c for c in tree.body if isinstance(c, ast.ClassDef) and c.name == name), None)
+    return None if found is None else found.body
+
+
+def _base_body(repo: Path, tree: ast.Module, name: str) -> list[ast.stmt]:
+    """The body of a base class config.py imports from a `jarvis` module (R18:
+    `config_calls.CallsConfig`), as `gen/code.py`'s `settings_nodes` reads it; else nothing."""
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or not (node.module or "").startswith("jarvis."):
+            continue
+        if not any(a.name == name and a.asname is None for a in node.names):
+            continue
+        path = repo.joinpath("src", *str(node.module).split(".")).with_suffix(".py")
+        if not path.is_file():
+            return []
+        return _class_body(ast.parse(path.read_text(encoding="utf-8")), name) or []
+    return []
+
+
 def settings_fields(repo: Path) -> list[tuple[str, str]]:
-    """(field name, annotation) of `class Settings` in config.py, read as an AST."""
+    """(field name, annotation) of `class Settings` in config.py, read as an AST: its `jarvis`
+    base classes' fields first (the last base first, Pydantic's order), then its own."""
     tree = ast.parse((repo / "src/jarvis/config.py").read_text(encoding="utf-8"))
+    cls = next((c for c in tree.body if isinstance(c, ast.ClassDef) and c.name == "Settings"), None)
+    if cls is None:
+        return []
     body = [
-        n for c in tree.body if isinstance(c, ast.ClassDef) and c.name == "Settings" for n in c.body
+        n
+        for base in reversed(cls.bases)
+        if isinstance(base, ast.Name)
+        for n in _base_body(repo, tree, base.id)
     ]
     out: list[tuple[str, str]] = []
-    for n in body:
+    for n in [*body, *cls.body]:
         if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name):
             out.append((n.target.id, ast.unparse(n.annotation)))
     return out

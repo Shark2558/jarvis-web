@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "evals/r7/body.py": "b65be7b48b9d80ec"
-  "src/jarvis/api/r7_wiring.py": "6550ccbb04997884"
+  "src/jarvis/api/r7_wiring.py": "3c5071faac3bda6b"
   "src/jarvis/api/static/console-brief-sections.js": "e11e4eafe28cf198"
   "src/jarvis/api/static/console-helpers-watch.js": "66676faabf8cfcc9"
   "src/jarvis/api/watch.py": "a632cfa03931c5d3"

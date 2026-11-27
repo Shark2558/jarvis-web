@@ -1,6 +1,6 @@
 # R8 / R8.1 mockups: the four new screens and the bar
 
-Version v8.0.2 · 28 Nov 2026, 04:55 IST · Release R8 · Status: Draft · Owner: 🛠 Mark XXVI
+Version v8.0.2 · 28 Nov 2026, 04:57 IST · Release R8 · Status: Draft · Owner: 🛠 Mark XXVI
 
 Mockups only, for the owner's approval stop. No product code. They show where each new screen lives, what it says and
 how it looks in every key state, in the console's own look (Workshop theme), Night and Day.
@@ -151,4 +151,4 @@ Screen 5, 26 shots (the bar, its toolbar, tips, the Move panel and the More shee
 | Version | Date | Change |
 |---|---|---|
 | v8.0.1 | 28 Nov 2026 | First draft: four screens, 50 states (Night and Day), contact sheet, the kit and the checks. |
-| v8.0.2 | 28 Nov 2026, 04:55 IST | Screen 5, "your bar, your way" (R8 part I): the bar as today, edit mode, dragging, dropping on More, More with Put back, the hidden bar, the keyboard way; laptop and phone, Night and Day (26 shots), `contact-sheet-bar.png`, `tools/r8-bar.css`, `tools/squash.py`. |
+| v8.0.2 | 28 Nov 2026, 04:57 IST | Screen 5, "your bar, your way" (R8 part I): the bar as today, edit mode, dragging, dropping on More, More with Put back, the hidden bar, the keyboard way; laptop and phone, Night and Day (26 shots), `contact-sheet-bar.png`, `tools/r8-bar.css`, `tools/squash.py`. |

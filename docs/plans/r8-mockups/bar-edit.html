@@ -784,7 +784,7 @@ html[data-surface="night"] .r8b-row b{font:400 12.5px/1.25 var(--tech);letter-sp
     laptop({ panels: [], log: st === 'hidden' ? 'Bar hidden' : 'Console online' });
     const LIVE = {
       edit: 'Drag an item to move it. Its ✕, or dropping it on More, takes it off the bar. <b>Camera and Calls wait in More:</b> no room for them at this width.',
-      drag: '<b>Moving Vitals.</b> Let go to put it between Brief and Approvals. Esc puts it back where it was.',
+      drag: '<b>Moving Vitals.</b> Let go to put it between Brief and Approvals; Esc puts it back.',
       tomore: '<b>Construct over More.</b> Let go to take it off the bar; it waits in More, with Put back.',
       keyboard: `<b>Vitals, 3rd of 21.</b> ${kbd('Shift')} + ${kbd('←')} or ${kbd('→')} moves it, ${kbd('Delete')} puts it in More, ${kbd('Esc')} ends editing.`,
     };
@@ -841,7 +841,7 @@ html[data-surface="night"] .r8b-row b{font:400 12.5px/1.25 var(--tech);letter-sp
     const WORDS = {
       edit: `Hold ${HOLD} and drag to move an item. ✕ takes it off the bar. The top of the list is the left of the bar; More is always last.`,
       drag: '<b>Moving Vitals.</b> Let go to put it 3rd, between Brief and Approvals.',
-      keyboard: `<b>Vitals is 3rd.</b> Use the buttons, or on a keyboard ${kbd('Shift')} + ${kbd('↑')} or ${kbd('↓')} and ${kbd('Delete')}.`,
+      keyboard: `<b>Vitals is 3rd.</b> Use the buttons, or on a keyboard <span style="white-space:nowrap">${kbd('Shift')} + ${kbd('↑')} or ${kbd('↓')}</span> and ${kbd('Delete')}.`,
     };
     return () => {
       if (st === 'edit') editSheet(DEFAULT, { words: WORDS.edit });

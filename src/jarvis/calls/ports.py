@@ -206,12 +206,36 @@ class CallsApi(Protocol):
 
 
 class CallsSockets(Protocol):
-    """`app.state.calls_sockets` (A2's `jarvis.api.calls_ws`): it accepts or closes the socket
-    itself (desk: the home bridge's signed device credentials; live: the owner's session)."""
+    """`app.state.calls_sockets` (A2's `jarvis.api.calls_ws`). It accepts or closes the socket
+    itself. `desk`: unauthenticated here; A2 checks the desk's signed device credentials (the home
+    bridge's signing, `jarvis.home.signing`) before `accept`. `live`: the route has already checked
+    the owner (bearer token, or his session cookie from JARVIS's own origin) and passes his id."""
 
     async def desk(self, ws: WebSocket) -> None: ...
 
-    async def live(self, ws: WebSocket, call_id: str) -> None: ...
+    async def live(self, ws: WebSocket, uid: str, call_id: str) -> None: ...
+
+
+class DeskDoor(Protocol):
+    """`app.state.calls_desk_door` (A2): linking the call desk, like the home bridge's link code.
+    `code` and `unlink` are the owner's (console); `link` is the desk's own request with the code
+    (no owner session), answering the desk's signing keys once."""
+
+    async def code(self, uid: str) -> BaseModel | dict[str, Any]: ...
+
+    async def link(self, body: dict[str, Any]) -> BaseModel | dict[str, Any]: ...
+
+    async def unlink(self, uid: str) -> BaseModel | dict[str, Any]: ...
+
+
+class DeskKit(Protocol):
+    """`app.state.calls_desk_kit` (C): the call desk's kit zip, built like the home kit
+    (reproducible bytes, so its SHA-256 shown in the console can be checked)."""
+
+    def build(self) -> bytes: ...
+
+    @property
+    def version(self) -> str: ...
 
 
 SPEECH_OPTIONS: tuple[SpeechOption, ...] = tuple(SpeechOption)
@@ -224,6 +248,8 @@ __all__ = [
     "CallsRefused",
     "CallsSockets",
     "DayCounts",
+    "DeskDoor",
+    "DeskKit",
     "DeskLink",
     "Hearing",
     "LanguageDetector",

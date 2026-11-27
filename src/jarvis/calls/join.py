@@ -317,7 +317,9 @@ _GONE = frozenset({"gone", "not_found", "not_waiting", "changed"})
 
 class PhoneCardDesk:
     """D's `CardDesk`: Approve / Decline tapped on the phone is his press in the Calls panel
-    (the same gateway card; a new number, or his passkey in force, opens the console)."""
+    (the same gateway card, sent with no passkey proof). A never-called number, his passkey in
+    force or a rule that can't be read, and a press the approval guard refused all answer
+    `passkey_needed`: the phone opens the console, where the passkey is asked (R18 review)."""
 
     def __init__(self, cards: Callable[[], _Cards | None], store: CallStore) -> None:
         self._cards, self._store = cards, store
@@ -337,6 +339,8 @@ class PhoneCardDesk:
                 return "passkey_needed"
             out = await cards.approve(uid, card_id, {})
         except CallsRefused as exc:
+            if exc.code == "passkey":  # the approval guard wants his passkey: the console asks
+                return "passkey_needed"
             return "gone" if exc.code in _GONE else "unavailable"
         except Exception as exc:  # noqa: BLE001 - the phone says "try in JARVIS"
             log.error("phone card decision failed", extra={"error": type(exc).__name__})

@@ -316,6 +316,44 @@ async def test_the_phones_approve_is_his_press_and_a_new_number_needs_the_consol
     )
 
 
+async def test_review_the_phone_s_approve_never_skips_his_passkey() -> None:
+    # R18 review: Approve on the phone is his Calls-panel press with no proof; when his passkey is
+    # in force (or the rule can't be read) it opens the console and nothing is dialled
+    from jarvis.calls.tools import PlaceArgs
+
+    class _Unreadable:
+        async def passkey_required(self, uid: str) -> bool:
+            raise RuntimeError("permissions down")
+
+    for passkeys in ("required", "unreadable"):
+        r = await rig(passkey=True)
+        await known(r.store)
+        cards = a1_api(r)
+        if passkeys == "unreadable":
+            cards.passkeys = _Unreadable()
+        card = await r.service.builder.build(
+            UID, PlaceArgs(number=NUMBER, purpose="Book a pickup", languages=("en-IN",))
+        )
+        await r.store.put_card(UID, card)
+        desk = PhoneCardDesk(lambda c=cards: c, r.store)
+        assert await desk.decide(UID, card.id, "approve", "d1") == "passkey_needed"
+        assert r.starter.started == [] and r.service.grants._grants == {}
+        assert (await r.store.get_card(UID, card.id)).status.value == "draft"  # type: ignore[union-attr]
+    # the guard is the last word: a press the policy thought free still meets the passkey guard
+    r = await rig(passkey=True)
+    await known(r.store)
+    cards = a1_api(r)
+    cards.passkeys = None  # the press can't tell the rule: it proposes and runs at once
+    card = await r.service.builder.build(
+        UID, PlaceArgs(number=NUMBER, purpose="Book a pickup", languages=("en-IN",))
+    )
+    await r.store.put_card(UID, card)
+    assert await PhoneCardDesk(lambda: cards, r.store).decide(UID, card.id, "approve", "d") == (
+        "passkey_needed"  # the guard refused it without his passkey: the console asks for it
+    )
+    assert r.starter.started == []
+
+
 class _Hub:
     def __init__(self) -> None:
         self.events: list[CallStateEvent] = []

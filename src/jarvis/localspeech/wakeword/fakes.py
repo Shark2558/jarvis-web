@@ -6,13 +6,14 @@ tones only.
 - `tone_models()`: three `Runner`s shaped like the console's ONNX models. Loud audio makes today's
   "detector" fire; the embeddings carry loudness and pitch (zero crossings), so a verifier can
   learn a voice: the owner is `OWNER_HZ`, other speakers higher.
-- `ToneVoices`: a `Voices` whose voices are tones at fixed pitches ("say" ignores the words).
+- `words()`, `ToneVoices`: speech as tone patterns, one per word, at a speaker's pitch.
 - `session_clips()`: a voice session's clips (his "Hey Jarvis" and other prompts).
 Needs NumPy (kit and tests only).
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 
 import numpy as np
@@ -43,6 +44,17 @@ def silence(seconds: float) -> bytes:
     return b"\0\0" * int(SAMPLE_RATE * seconds)
 
 
+def words(text: str, hz: float, *, seed: int = 0) -> bytes:
+    """Speech in the fake world: each word a tone whose length, pitch step and gap come from the
+    word (so "Hey Travis" never sounds like "Hey Jarvis"), at the speaker's pitch `hz`."""
+    out = []
+    for i, word in enumerate(text.lower().split()):
+        d = hashlib.sha256(word.strip(".,!?").encode()).digest()[1:4]  # no near miss collides
+        seconds, step, gap = 0.18 + 0.04 * (d[0] % 8), 1 + (d[1] % 6) / 10, 0.06 + 0.02 * (d[2] % 4)
+        out.append(tone(hz * step, seconds, seed=seed + i) + silence(gap))
+    return b"".join(out)
+
+
 def bursts(hz: float, count: int, amplitude: float = SOFT, *, seed: int = 0) -> bytes:
     """Short syllable-like bursts: his other prompts."""
     return b"".join(tone(hz, 0.12, amplitude, seed=seed + i) + silence(0.1) for i in range(count))
@@ -57,7 +69,7 @@ def session_clips(
         WakeClip(
             prompt_id=f"wake_{i:02d}",
             kind=PromptKind.WAKE,
-            pcm=tone(hz, 0.9, seed=i),
+            pcm=words("Hey Jarvis", hz, seed=i),
             held_out=i % held_every == 0,
         )
         for i in range(wake)
@@ -116,8 +128,7 @@ class ToneVoices:
 
     def say(self, voice: str, text: str) -> bytes:
         self.said.append(voice)
-        seconds = min(2.0, 0.35 + 0.05 * len(text))
-        return tone(self._pitch[voice], seconds, seed=len(self.said))
+        return words(text, self._pitch[voice], seed=len(self.said))
 
 
 __all__ = [
@@ -131,4 +142,5 @@ __all__ = [
     "silence",
     "tone",
     "tone_models",
+    "words",
 ]

@@ -287,6 +287,32 @@ telegram_answer() {
 }
 telegram_answer
 
+# R18 (review): the calls' optional speech keys - Azure's free tier F0, Sarvam (paid, off until the
+# owner's yes), Bhashini. No question: the owner stores a key in Secret Manager himself
+# (deploy/calldesk/README.txt, "On the server"), and it is mounted only when its secret exists,
+# never a value in this repository. A quick re-run unmounts one whose secret is gone.
+SPEECH_SECRET=""; SPEECH_REMOVE=()
+SPEECH_KEYS="JARVIS_AZURE_SPEECH_KEY=jarvis-azure-speech-key JARVIS_SARVAM_API_KEY=jarvis-sarvam-key JARVIS_BHASHINI_API_KEY=jarvis-bhashini-key"
+speech_keys() {
+  local pair gone=""
+  SPEECH_SECRET=""; SPEECH_REMOVE=()
+  for pair in $SPEECH_KEYS; do
+    if secret_exists "${pair#*=}"; then
+      SPEECH_SECRET="${SPEECH_SECRET}${pair}:latest,"
+    elif case "${SVC_JSON:-}" in *"\"${pair%%=*}\""*) true ;; *) false ;; esac; then
+      gone="${gone:+${gone},}${pair%%=*}"
+    fi
+  done
+  if [ -n "$gone" ]; then SPEECH_REMOVE=(--remove-secrets "$gone"); fi
+}
+speech_unmount() { # secret: its key stays out of this deploy (a grant that failed)
+  local pair
+  for pair in $SPEECH_KEYS; do
+    if [ "${pair#*=}" = "$1" ]; then SPEECH_SECRET="${SPEECH_SECRET//${pair}:latest,/}"; fi
+  done
+}
+speech_keys
+
 # Maps + YouTube (slice 12 D2): ONE API key, jarvis-maps-yt, restricted to Places (New), Routes and
 # YouTube Data v3 — not Geocoding: Routes geocodes address waypoints itself. No question: made (or
 # reused) here, its string kept only in Secret Manager (jarvis-google-api-key, readable by
@@ -560,6 +586,9 @@ grant_failed() { # secret
       WEB_SECRET=""; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=false"; WEB_REMOVE=(--remove-secrets JARVIS_TAVILY_API_KEY) ;;
     jarvis-google-api-key)
       maps_off "could not let JARVIS read the secret $1" ;;
+    jarvis-azure-speech-key|jarvis-sarvam-key|jarvis-bhashini-key)
+      echo "  Note: could not let JARVIS read the secret $1, so that speech key is left out this time; re-run this script to try again."
+      speech_unmount "$1" ;;
     jarvis-telegram-bot-token|jarvis-telegram-webhook-secret)
       echo "  Note: could not let JARVIS read the secret $1, so Telegram stays off this time; re-run this script to try again."
       TG_SECRET=""; TG_ENV="JARVIS_TELEGRAM=off"
@@ -570,7 +599,8 @@ grant_failed() { # secret
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
               jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key \
               jarvis-tavily-key jarvis-google-api-key jarvis-telegram-bot-token \
-              jarvis-telegram-webhook-secret; do
+              jarvis-telegram-webhook-secret jarvis-azure-speech-key jarvis-sarvam-key \
+              jarvis-bhashini-key; do
   secret_exists "$secret" || continue
   ok=no
   for _ in 1 2 3 4 5 6; do
@@ -606,13 +636,13 @@ INFRA_ENV="${INFRA_ENV},JARVIS_TRYON_PICTURES=${TRYON_STATE},JARVIS_TRYON_CACHE=
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
-    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
-    "${MAPS_REMOVE[@]}" "${WEB_REMOVE[@]}" "${TG_REMOVE[@]}"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${SPEECH_SECRET}${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    "${MAPS_REMOVE[@]}" "${WEB_REMOVE[@]}" "${TG_REMOVE[@]}" "${SPEECH_REMOVE[@]}"
   )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
-    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${SPEECH_SECRET}${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
 # an earlier book must never ride along as this release's when make or Python is missing

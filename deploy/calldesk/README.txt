@@ -75,6 +75,20 @@ If anything goes wrong
  - A newer kit: extract it over C:\JARVIS-CallDesk, then:
         powershell -ExecutionPolicy Bypass -File .\install-calldesk.ps1 -Update
 
+On the server (optional speech keys)
+------------------------------------
+Calls use Google's free speech allowance first, with nothing to set up. For Microsoft Azure's free
+tier (F0: it stops at its allowance and can never bill), Sarvam (paid: used only after your yes in
+Calls -> Settings) or Bhashini, store the key in Secret Manager from Cloud Shell, then run
+deploy/cloudrun.sh again: it mounts only the keys it finds there (never put a key in a file):
+    read -r -s K && printf '%s' "$K" | gcloud secrets create jarvis-azure-speech-key --data-file=-
+(jarvis-sarvam-key for Sarvam, jarvis-bhashini-key for Bhashini). Three plain settings go on the
+service itself, only if you need them (a deploy run with --reconfigure clears them; set them again):
+    gcloud run services update jarvis --region asia-south1 --update-env-vars \
+      JARVIS_AZURE_SPEECH_REGION=<your Azure region>,JARVIS_SARVAM_ENABLED=true,JARVIS_BHASHINI_USER_ID=<your id>
+Azure's region is centralindia unless you set it; Sarvam stays off on the server until
+JARVIS_SARVAM_ENABLED=true; Bhashini needs its user id beside the key.
+
 Laptop speech (later)
 ---------------------
 JARVIS can one day hear and speak on the laptop itself, so no sound leaves it. That part is not

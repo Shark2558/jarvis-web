@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 20:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 07 · Quality: tests, evals, CI and releases
 
@@ -140,7 +140,7 @@ Every language, for every speech option, must pass before it is offered on a cal
 | Hearing over a phone line | 20 FLEURS test clips a language (CC BY 4.0, fetched from Hugging Face at run time), turned into phone audio (300–3,400 Hz, 8 kHz, G.711 mu-law: `src/jarvis/calls/speech/phoneline.py`) and heard by the option | at least 90 % of the key facts (numbers, times, dates, names, yes or no) and a character error rate of 15 % or less; fewer than 10 usable clips give no verdict |
 | Speaking over a phone line | 10 call sentences (translated once), spoken by the voice, through the phone line, heard back by a different option | at least 90 % of the key facts survive |
 | Speed | the option's own hearing of short call turns, plus the brain's part | half the replies start within 1.5 s, 9 in 10 within 2.5 s. The brain's part is the fast tier's 0.6 s estimate (`BRAIN_ESTIMATE_S`) until it is measured |
-| A person listens | 3 samples a language, scored 1 to 5 by the owner or a native speaker (`POST /v1/calls/languages/score`) | a mean of 4; until scored, "not yet heard by a native speaker" |
+| A person listens | 3 samples a language, scored 1 to 5 by the owner or a native speaker in Calls → Languages, "Score the voice" (`POST /v1/calls/languages/score`; `src/jarvis/api/static/console-calls-langs.js`) | a mean of 4; until scored, "not yet heard by a native speaker" |
 | The brain | a 10-turn mock call per language with the safety cases (`brain_turns` in the bars) | **not built**: never fails a language (chapter 12, section 6) |
 
 English before its first check is offered "not yet checked" on the first cloud option set up
@@ -150,7 +150,7 @@ checked and are never offered.
 
 ### 8.2 The calls eval
 
-`evals/calls_language/` (`run.py`, `suites.py`, `harness.py`): four mock suites with no network,
+`evals/calls_language/` (`run.py`, `suites.py`, `harness.py`): five mock suites with no network,
 no vendor and no model, every gate hard (100 %), each with a negative control that must fail
 it. Run by `evals/run_all_mock.py` and in CI by `tests/test_evals_calls_language.py`.
 
@@ -159,22 +159,24 @@ it. Run by `evals/run_all_mock.py` and in CI by `tests/test_evals_calls_language
 | `scoring` | the bars at their edges; the normaliser on Indian scripts | the bars switched off |
 | `phoneline` | speech frequencies kept, what a phone can't carry cut, the codec's known codes | a "phone line" that changes nothing |
 | `selection` | the option order (laptop, Google, Azure, Bhashini, Sarvam only when on), the balanced tier only with his YES, a stored pass re-read against the bars | the order reversed |
+| `free_first` (R18 review) | the app's own choice, `src/jarvis/calls/cards.py:offered` with `Estimator.free_options`: Google while its free allowance covers the call, before cheaper paid Sarvam; with the allowance used, the cheapest paid option he allows; Sarvam off, never; Azure's free tier before paid Sarvam; an unknown price (Bhashini) after a known one, never as free | ranking by list price alone (the first build's ranking) |
 | `check` | the whole check on scripted options: passes stored; lost numbers, slow replies, no clips and a low score fail in plain words; a paid plan refused before any ₹; Sarvam off not run | the ₹ gate bypassed |
 
 The plan's other suites (mock calls, safety, gates, the call desk, costs: plan section 11) were
-built as unit tests, not as eval suites (section 8.3). One gap in what the eval proves: its
-`selection` suite tests the language check's own order (`src/jarvis/calls/langcheck/select.py:choose`,
-the first passing option), but the joined app chooses a call's option with
-`src/jarvis/calls/cards.py:offered` (free now first, then the cheapest), which the eval does not
-run; unit tests cover that choice (`tests/test_calls_cards.py`, `tests/test_r18_i1_join.py`).
-Chapter 12, section 6 lists it.
+built as unit tests, not as eval suites (section 8.3). The `selection` suite tests the language
+check's own order (`src/jarvis/calls/langcheck/select.py:choose`, the first passing option); the
+joined app chooses a call's option with `offered` (free now first, then the cheapest). This
+edition first found that the eval did not run that choice; the combined review added the
+`free_first` suite for it (`evals/calls_language/suites.py:suite_free_first`;
+`docs/plans/r18-integration/REVIEW.md`, item 24: 6 of 6 cases pass and the control fails, as it
+must). Unit tests cover the same choice (`tests/test_calls_cards.py`, `tests/test_r18_i1_join.py`).
 
 ### 8.3 The tests
 
 | Where | Files | Count | Covers |
 |---|---|---|---|
-| `tests/test_calls_*.py`, `tests/test_calldesk_*.py`, `tests/test_r18_*.py`, `tests/test_evals_calls_language.py` | 56 | **1,003** collected items (`pytest --collect-only` on R18's code, 27 Nov 2026) | cards, approvals and the grant, limits and quiet hours, records and objection, retention, booking, answering, the engine and the reply guard (OTP, payment, injected instructions), captions and summary, the hub and its sockets, speech adapters and metering, the language check, the call desk (micguard, watchdog, kit, link), the phone's commands, the I0 seams, the I1 join, the combined review's fixes (masking, Privacy rows, routes, Telegram) |
-| `tests/browser/test_r18_*.py` | 4 | 29 test functions (static count) | the Calls panel and its look, the ways into Calls at 1920 px, the review's console fixes; with `tests/browser/test_dock_fit.py`'s pixel comparison of the 1920 px bar with the bar before R18 |
+| `tests/test_calls_*.py`, `tests/test_calldesk_*.py`, `tests/test_r18_*.py`, `tests/test_evals_calls_language.py` | 59 | **1,027** collected items (`pytest --collect-only` on the R18 release branch at `c036ca1`, 27 Nov 2026; 56 files and 1,003 items before the review's last fixes) | cards, approvals and the grant, limits and quiet hours, records and objection, retention, booking, answering, the engine and the reply guard (OTP, payment, injected instructions), captions and summary, the hub and its sockets, speech adapters and metering, the language check, the call desk (micguard, watchdog, kit, link), the phone's commands, the I0 seams, the I1 join, the combined review's fixes (masking, Privacy rows, routes, Telegram, the approvals seal, the deploy's speech keys, outfit plans kept 90 days) |
+| `tests/browser/test_r18_*.py` | 5 | 31 test functions (static count) | the Calls panel and its look, the ways into Calls at 1920 px, the review's console fixes and its visual gate at 1920 and 2560 px, Night and Day (`tests/browser/test_r18_review_look.py`); with `tests/browser/test_dock_fit.py`'s pixel comparison of the 1920 px bar with the bar before R18 |
 | Android `core` | `CallMachineTest.kt`, `CallsTest.kt` | not counted here | the call state machine and command verification against the shared vectors |
 
 The figure of 19,530 collected items in section 1 was measured before R18 and was not re-measured
@@ -189,3 +191,4 @@ can run in this environment (`docs/plans/r18-integration/I1-NOTES.md`, 4.7).
 | v6.4.1 | 27 Nov 2026, 16:45 IST | R6.4 | First edition: test counts measured (19,530 collected unit items, 1,207 browser test functions, 5 emulator files) and grouped; the 95 % coverage floor; evals, controls and the Phase 0 gate; every CI job and what the deploy waits for; the documentation checks and their gaps; the Build Book's build-time generation; the release process and versioning | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the eval folder count corrected to 46; the test-file count's two figures explained; the per-group test counts marked unverified; the version check now covers this document (F3 closed); the SDK boundary test and the traceability generator added to the documentation checks | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 20:25 IST | R18 | R18 "Calls from your laptop": the calls' quality in plain words; 47 eval folders and 33 eval test files; the Android workflow's R18 vectors and two controls; the program version with R18; new section 8: the language check's bars (the brain step not built; 8 languages without FLEURS clips), the `calls_language` eval's four suites and controls, R18's tests (56 files, 1,003 items; 4 browser files, 29 functions) and what can't be tested here | 🛠 Mark XXV |
+| v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the calls eval has five suites, the new `free_first` testing the app's own choice (its control: ranking by list price), so v6.5.0's gap is closed; R18's tests re-counted at `c036ca1` (59 files, 1,027 items; 5 browser files, 31 functions); where voice scores are entered | 🛠 Mark XXV |

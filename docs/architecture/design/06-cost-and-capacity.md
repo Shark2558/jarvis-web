@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 20:15 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 06 · Cost and capacity
 
@@ -75,7 +75,7 @@ voice.
 |---|---|---|---|
 | Cloud Run | 2 million requests a month | none needed at one owner's use | the guide, 5.2 |
 | Firestore | 1 GiB stored; 50,000 reads, 20,000 writes, 20,000 deletes a day; one free database a project | none; a named database (e.g. a real restore target) has no free quota | `docs/plans/phase2-slice5-persistence.md`; the guide, section 8 |
-| Secret Manager | 6 active secret versions a billing account | JARVIS keeps 4–11 secrets: about ₹5.7 a month for each above 6 (₹0–30) | the guide, 5.2 (R2 plan) |
+| Secret Manager | 6 active secret versions a billing account | JARVIS keeps 4–11 secrets, up to 14 with R18's three optional speech keys: about ₹5.7 a month for each above 6 (₹0–30; ₹0–46 with all three speech keys, an estimate) | the guide, 5.2 (R2 plan); `deploy/cloudrun.sh:speech_keys` |
 | Cloud Scheduler | 3 jobs a billing account | JARVIS uses 2 | `deploy/cloudrun.sh` step 8 |
 | Artifact Registry | 0.5 GB | keep the newest 10 images, delete older ones after 30 days | `deploy/cloudrun.sh:setup_autodeploy` |
 | Tavily web search | 1,000 credits a month, no card | 900 (`MONTHLY_CREDITS`) | `src/jarvis/web/allowance.py` |
@@ -103,7 +103,7 @@ From the guide's section 9, which R14's token ledger will re-measure after a wee
 | Item | ₹ a month | What drives it |
 |---|---|---|
 | Cloud Run, Firestore, Scheduler, Artifact Registry, Logging, GitHub Actions | ₹0 | inside the free tiers |
-| Secret Manager | ₹0–30 | number of secrets above 6 |
+| Secret Manager | ₹0–30 (₹0–46 with R18's three speech keys stored) | number of secrets above 6 |
 | Claude replies | about ₹100 at 20 replies a day (₹0.17 a reply in the Phase 0 run; R14's estimate for today's larger turns is ≈ ₹3.0 a reply until the ledger measures it) | replies a day, tier, web search, tools offered |
 | Brief summary, learning | about ₹3 and ₹5 (learning at most ₹24) | optional |
 | Backups (after the owner's step) | ≈ ₹3.8 at 100 MB, ≈ ₹39 at 1 GB | database size; the monthly drill's restore |
@@ -187,3 +187,4 @@ rupees for it. Model calls (the brain, captions, summary, line translations) kee
 | v6.4.1 | 27 Nov 2026, 16:25 IST | R6.4 | First edition: the metering design (before and after each call, months, shared allowances, unpriced models, the rate, the ledger); the AI and voice price tables in ₹; free allowances, stops and caps; a typical month; Cloud Run's capacity settings and what each implies | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): cold start and concurrency marked unverified in plain words, with the bridge heartbeat that keeps the instance warm; proposed ADR-B is now ADR-25; `add_units` cited as the method it is (`UsageMeter.add_units`) | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 20:15 IST | R18 | R18 "Calls from your laptop": calls' costs in plain words; metering rows for a call's speech and brain; the calls' speech price table; the calls caps, their raise rule and the language check's ₹ gate; calls in a typical month (the plan's estimate); `--timeout 1800`; new section 6: the caps (an unknown estimate is refused), free speech first (the review's ranking fix), metering in one place, and what a call adds to the one instance (CPU and the background check marked unverified) | 🛠 Mark XXV |
+| v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: Secret Manager holds up to 14 secrets with the three optional speech keys the deploy now mounts (₹0–46 a month with all three, an estimate) | 🛠 Mark XXV |

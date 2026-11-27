@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 20:05 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 05 · Security architecture
 
@@ -158,7 +158,7 @@ or name a top-level file.
 | T8 | Private data reaching a brain that trains | `tools_allowed`, history cutoff, memory gate, no pictures | `llm/brains.py`, `core/brain.py`, `recall/gate.py` | Anthropic sees the window, notes and tool results by design |
 | T9 | Supply chain | `requirements.lock` hash-checked; actions pinned by commit SHA and updated by reviewed Dependabot pull requests; vendored files pinned by hash | `Dockerfile`, `.github/workflows/*.yml`, `.github/dependabot.yml` | Dependabot watches only GitHub Actions, not Python packages |
 | T10 | A malicious change merged to `main` | Pull requests and CI; deploy only from `main` | `deploy/cloudrun.sh` (comment on step 7) | Anyone who can change `main` can ship code that runs as `jarvis-run`; the owner's GitHub account needs 2-step sign-in |
-| T11 | A reader of the Firestore project | Sealing for the most private collections (chapter 04) | `keyring.py` | Conversations, memory, attachment text and the audit are not sealed |
+| T11 | A reader of the Firestore project | Sealing for the most private collections (chapter 04); from R18's review also a waiting call card's numbers in `approvals` | `keyring.py`, `calls/pending.py` | Conversations, memory, attachment text and the audit are not sealed; a waiting call card's other arguments are in clear for its 10 minutes (residual risk 11) |
 | T12 | Runaway spend | Monthly limit before every paid call; free-allowance stops at 90 %; ₹1 budget alert; try-on cap and its own budget alert | `billing/`, `quota/ledger.py`, `deploy/cloudrun.sh` | No JARVIS limit until the owner sets one; the budget alert warns, it doesn't stop |
 | T13 | Denial of service | Rate limits, body caps, flood limits, `--max-instances 1` bounds the bill | `api/ratelimit.py`, `api/body.py` | One instance is also one point of failure |
 | T14 | The laptop compromised | The bridge runs hardened; only its signed door is funnelled; the cloud never trusts a picture or a name it didn't ask for | `deploy/home/docker-compose.yml`, `home/` | The laptop holds the camera recordings and face library |
@@ -190,14 +190,21 @@ or name a top-level file.
    project; its own 2-step sign-in matters most.
 9. **The wake-word models are CC BY-NC-SA 4.0** (personal, non-commercial use only); a licence
    risk, not a security one, but it blocks any public release.
-10. **A waiting call card's number is in clear in `approvals`** (R18; found while writing this
-    edition). The gateway keeps a card's full arguments, which are what runs on approval, in the
-    unsealed `approvals` collection until the card is decided or tidied after its 10 minutes
-    (`src/jarvis/storage/approvals.py:DocApprovalStore.put`). The console shows them masked
-    (`src/jarvis/core/models.py:shown_arguments`); the call store itself seals every number. Left
-    for the review to decide (chapter 12, section 6).
+10. **Closed on 27 Nov 2026 (R18 review, item 12): a waiting call card's number is sealed in
+    `approvals`.** The gateway keeps a card's full arguments, which are what runs on approval, in
+    `approvals` until the card is decided or tidied after its 10 minutes. This edition first found
+    the number in clear there; now the store seals a card's arguments on the way in and opens them
+    on the way out (`src/jarvis/storage/approvals.py:DocApprovalStore.use_seal`, `ArgumentSeal`),
+    and for `calls_place` `src/jarvis/calls/pending.py:CallNumberSeal` seals the number to call
+    and a booking's number to give under the `calls` key, bound to the approval id and the field;
+    `src/jarvis/api/r18_wiring.py:finish_r18` puts it on the gateway's store
+    (`seal_pending_calls`). The console still shows them masked
+    (`src/jarvis/core/models.py:shown_arguments`). Test:
+    `tests/test_r18_review_approval_seal.py` (commit `9e8b490`).
 11. **A call card's other fields are not sealed** (R18): the purpose, the lines, the contact's
-    name and a booking's name and number to give, kept until the Privacy delete (chapter 04).
+    name and a booking's name and number to give, kept until the Privacy delete (chapter 04). A
+    waiting `calls_place` card in `approvals` holds the same purpose, lines, contact's name and
+    booking name in clear for up to 10 minutes; only its numbers are sealed (risk 10).
 12. **Nothing of R18 has run on real devices** (R18): Phone Link, the Windows sound path,
     Bluetooth, the Android build on the owner's phone and real Web Push were tested with fakes only
     (`docs/plans/r18-integration/I1-NOTES.md`, 4.7).
@@ -213,6 +220,7 @@ Built in R18 (`v18.0.0`), not yet deployed. Plan: `docs/plans/r18-calls.md`, sec
 | A card every time | `calls_place` is irreversible (R3): never an Allow, never Approve all, no "don't ask again"; the passkey whenever "Require passkey for irreversible actions" is on | `src/jarvis/calls/tools.py:calls_tools`, `src/jarvis/core/guardrails.py:NO_BULK_TOOLS` |
 | A new number needs the passkey | A number never called before needs the passkey; while the passkey requirement is off JARVIS can't ask for one, so such a call is refused with words saying how to switch it on (fail closed) | `src/jarvis/calls/approvals.py:CallsService.preview` |
 | The number is masked | The card's text and the Approvals panel show the last four digits only, a booking's number to give too | `src/jarvis/calls/cards.py:card_text`, `src/jarvis/core/models.py:MASKED_ARGUMENTS` |
+| The number is sealed while the card waits | The waiting card's number to call and a booking's number to give are sealed in `approvals` under the `calls` key, bound to the approval id and the field (a sealed number moved to another card does not open), and opened only on the way out, so the gate and the call see them whole; a card that does not open is unreadable, never a guess (review fix) | `src/jarvis/calls/pending.py:CallNumberSeal`, `src/jarvis/storage/approvals.py:DocApprovalStore.use_seal`, `tests/test_r18_review_approval_seal.py` |
 | The one-use grant | His approval issues a dial grant: one use, 10 minutes (`APPROVAL_TTL_S`), bound to the number and the card's content (`CallCard.digest`), so a card changed after approval no longer matches. The engine spends it for that call id just before the dial, counting the day's limits in the same transaction. Grants live in memory: after a restart nothing can be dialled on an old approval | `src/jarvis/calls/approvals.py:GrantBook`, `CallsService.take_for_dial`, `src/jarvis/calls/models.py:APPROVAL_TTL_S` |
 | The phone dials only for that grant | The phone side looks at the grant without spending it and queues `call.dial` only for that call, number and owner, at most 2 minutes after the engine took it | `src/jarvis/calls/approvals.py:GrantBook.live_until`, `src/jarvis/calls/join.py:PhoneApprovals` |
 | Telegram can't approve a call | `calls_place` is in `CONSOLE_ONLY_TOOLS`, so even an old or forged Telegram button, or the R3 rule switched off for an eval's control, never places a call | `src/jarvis/telegram/service.py`, `tests/test_r18_review_telegram_calls.py` |
@@ -307,7 +315,9 @@ This is the plan's safe-side reading, not legal advice (`docs/plans/r18-calls.md
 ### 8.6 Secrets
 
 The three speech keys are `SecretStr` (`src/jarvis/config_calls.py:CallsConfig`), never logged;
-speech vendors are called over REST with `httpx`, no vendor SDK. The desk keeps no speech key in
+speech vendors are called over REST with `httpx`, no vendor SDK. The deploy mounts each from
+Secret Manager only when the owner has stored it, and no key value is in the repository
+(`deploy/cloudrun.sh:speech_keys`; chapter 02, section 2.3). The desk keeps no speech key in
 cloud mode, which is every call in v18.0.0.
 
 ## Change log
@@ -317,3 +327,4 @@ cloud mode, which is every call in v18.0.0.
 | v6.4.1 | 27 Nov 2026, 16:05 IST | R6.4 | First edition: authentication for every caller (owner, re-sign-in, passkeys, token, phone door, app lock, scheduler, Telegram, home bridge, laptop brain, deploy); the risk tiers, policy, confirmation tokens, taint and provenance, rate limits and caps; secrets; audit; browser hardening; a 15-row threat model; nine residual risks | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11; Telegram's audit of strangers capped at 20 an hour; residual risk 7 closed by `tests/test_llm_sdk_boundary.py`; proposed ADR-B is now ADR-25 | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 20:05 IST | R18 | R18 "Calls from your laptop": the call desk and the live view as callers; the console-only tools; the calls' limits among the caps; threats T15 widened and T16–T20 added; residual risks 1 widened and 10–12 added (a waiting call card's number in clear in `approvals`, a card's unsealed fields, nothing tried on real devices); new section 8: R3 `calls_place`, the one-use grant, the passkey for new numbers, Telegram can't approve a call, the phone's Approve, the desk's signed socket and link code, the live socket's one-use ticket, the phone's signed commands, the reply guard, limits and quiet hours, the TRAI and DPDP reasoning, the speech keys | 🛠 Mark XXV |
+| v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: T11 names the sealed approval numbers; residual risk 10 closed (the approvals seal, commit `9e8b490`); risk 11 adds a waiting card's other arguments; section 8.1 adds the number sealed while the card waits; section 8.6 says the deploy mounts a speech key only when stored | 🛠 Mark XXV |

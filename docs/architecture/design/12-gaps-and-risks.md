@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 21:00 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 12 · Gaps, conflicts and risks
 
@@ -71,10 +71,15 @@ From the handoff's carried-over list and the R6.4 review (left on purpose, docum
     SDK import is `anthropic` inside `src/jarvis/llm/`. Nothing is marked to fail.
   - `README.md` still offers `render.yaml` as an alternative host; nothing deploys it.
   - Outfit plans: R13's plan (`docs/plans/r13-wardrobe.md`, the data table) keeps
-    `wardrobe_plans` "90 days after the event"; the code drops a plan 14 days after its day
-    (`src/jarvis/wardrobe/styling/plans.py:StylingDoc.pruned`). The owner decided on 27 Nov 2026:
-    keep plans 90 days after their day, as R13 planned. The code changes in the next app release
-    (follow-up F4); until then it keeps 14 days.
+    `wardrobe_plans` "90 days after the event"; the code dropped a plan 14 days after its day. The
+    owner decided on 27 Nov 2026: keep plans 90 days after their day, as R13 planned. **Done in
+    R18's review** (follow-up F4 closed; commit `2041978`,
+    `tests/test_r18_review_outfit_plans.py`): `src/jarvis/wardrobe/styling/plans.py:StylingDoc.pruned`
+    keeps a plan 90 days after its day (`KEEP_DAYS`); `MAX_PLANS` is 250 (60 would have filled
+    in 60 days at one plan a day), and the calendar's cap is split so kept past plans never stop
+    it: at most 20 calendar plans from today on (`MAX_CAL_AHEAD`) and 100 kept in all
+    (`MAX_CAL_PLANS`; `src/jarvis/wardrobe/styling/calendar.py:_room`). A new plan's day is still
+    14 days back to 30 ahead (`BACK_DAYS`).
 
 ## 5. Proposed ADRs
 
@@ -83,10 +88,11 @@ Moved to chapter 08 on 27 Nov 2026: ADR-A is ADR-01, and ADR-B to ADR-G are ADR-
 ## 6. R18 "Calls from your laptop": gaps, limits and risks
 
 From the join's known limits (`docs/plans/r18-integration/I1-NOTES.md`, section 4), the combined
-review's fixes so far, and what this edition found reading the code. The combined review has not
-written its report yet (no REVIEW.md in the R18 integration folder on 27 Nov 2026, 21:00 IST), so
-this list is to be checked again against it. Items marked *found here* were not in the join's
-notes.
+review's fixes, and what this edition found reading the code. This list was first written before
+the combined review's report existed; it has since been checked against that report
+(`docs/plans/r18-integration/REVIEW.md`, its findings 1–25 and section 2) on the R18 release
+branch at `c036ca1`, and the gaps the review closed say so. Items marked *found here* were not in
+the join's notes.
 
 ### 6.1 Not built, or built differently from the plan
 
@@ -95,7 +101,7 @@ notes.
 | G1 | **The brain check per language** (plan 5.3, step 4: a 10-turn mock call with the safety cases) is not built; the check leaves it empty, never a failure, and the speed bar uses the fast tier's 0.6 s estimate (`src/jarvis/calls/langcheck/runner.py:BRAIN_ESTIMATE_S`) | A language can be offered without proof that the brain holds a conversation in it within the card | The first R18.x follow-up |
 | G2 | **Laptop speech mode can't be chosen**: no laptop hearing or voice reaches the desk from the cloud, so the check never passes a laptop option and every call is cloud mode (`src/jarvis/calldesk/speech_local.py`) | The call's audio always goes to a cloud speech service; the plan's most private option is not available | R5.2's speech kit and its bridge to R18's ports (chapter 11) |
 | G3 | **FLEURS untested here**: the clips come from Hugging Face at run time, and nothing in this environment fetched them. FLEURS has no clips for 8 of the 22 scheduled languages (Konkani, Maithili, Bodo, Dogri, Manipuri, Santali, Sanskrit, Kashmiri), and the plan's second source, AI4Bharat IndicVoices, was not built | The first real check is the owner's; those 8 languages can never pass, so they are never offered, although row 395 asks for any free language | A second clip source for the 8, with its licence checked (ADR-29) |
-| G4 | **Bhashini is opt-in only**: with no published price it runs only when a check request sets `accept_unknown`, which the console never sends (`src/jarvis/calls/langcheck/api.py:CheckRequest`); the plan's "its data terms are read before any use" has no record (*unverified*) | Bhashini is in effect never offered from the console | Read Bhashini's terms; decide in the console whether to offer it |
+| G4 | **Bhashini is opt-in only**: with no published price it runs only when a check request sets `accept_unknown`, which the console never sends (`src/jarvis/calls/langcheck/api.py:CheckRequest`); the plan's "its data terms are read before any use" has no record (*unverified*) | Bhashini is in effect never offered from the console; since the review the check's estimate says so in plain words | Read Bhashini's terms; decide in the console whether to offer it |
 | G5 | **The opening lines' audio is not cached**: their text is, their voice is made per call | A few hundred characters of Google's free voice allowance a call | R18.x |
 | G6 | **Recordings are 8 kHz WAV** (ADR-33) and stop at about 17 minutes (16 MiB), while a call may be set to last up to 30 | A very long call keeps only its first 17 minutes of audio | A compressed format when an encoder is acceptable |
 | G7 | **Detection on Azure tries each language**: up to 4 hearings an utterance for a call with more than one language | Azure's 5 free hours go up to four times faster on multi-language calls | Prefer Google for multi-language calls, or a detector on the desk |
@@ -106,23 +112,42 @@ notes.
 
 | # | Gap | Evidence | Do |
 |---|---|---|---|
-| G10 | **The speech keys have no deploy step**: `deploy/cloudrun.sh` creates and mounts no secret for `azure_speech_key`, `sarvam_api_key` or `bhashini_api_key`, although the setting's own description says Secret Manager | `src/jarvis/config_calls.py:CallsConfig`; chapter 02, section 2.3 | Follow-up F6: a deploy step like the optional web-search key's |
-| G11 | **A waiting call card's number is in clear** in the unsealed `approvals` collection for up to 10 minutes (the console shows it masked) | `src/jarvis/storage/approvals.py:DocApprovalStore.put`; chapter 05, residual risk 10 | Follow-up F5, for the review to decide |
+| G10 | **The speech keys had no deploy step**: `deploy/cloudrun.sh` created and mounted no secret for `azure_speech_key`, `sarvam_api_key` or `bhashini_api_key`, although the setting's own description says Secret Manager | `src/jarvis/config_calls.py:CallsConfig`; chapter 02, section 2.3 | Closed 27 Nov 2026 (REVIEW item 23, follow-up F6): `deploy/cloudrun.sh:speech_keys` mounts each key only when its secret is stored; `tests/test_r18_review_deploy_speech.py`. The go-live guide's step is the owner's (REVIEW, section 4) |
+| G11 | **A waiting call card's number was in clear** in the unsealed `approvals` collection for up to 10 minutes (the console showed it masked) | `src/jarvis/storage/approvals.py:DocApprovalStore.put`; chapter 05, residual risk 10 | Closed 27 Nov 2026 (REVIEW item 12, follow-up F5): sealed under the `calls` key by `src/jarvis/calls/pending.py:CallNumberSeal`; `tests/test_r18_review_approval_seal.py`. Sealing every R3 card at rest is left as a follow-up (REVIEW, section 4) |
 | G12 | **A call card's other fields are not sealed** (purpose, lines, the contact's name, a booking's name and number to give), and cards and the numbers called before are kept until the Privacy delete; only records have the 30-day retention | `src/jarvis/calls/store.py:DocCallStore` (`_sealed` seals the number only); chapter 04, section 2 | Seal the card's text, or give cards a retention |
-| G13 | **The calls eval proves a choice the app doesn't make**: its `selection` suite tests the language check's own order; the app chooses by `cards.offered` (free now first) | `evals/calls_language/suites.py`; chapter 07, section 8.2 | Follow-up F7 |
+| G13 | **The calls eval proved a choice the app doesn't make**: its `selection` suite tests the language check's own order; the app chooses by `cards.offered` (free now first) | `evals/calls_language/suites.py`; chapter 07, section 8.2 | Closed 27 Nov 2026 (REVIEW item 24, follow-up F7): the `free_first` suite runs the app's own choice (`evals/calls_language/suites.py:suite_free_first`), its list-price control failing as it must |
 | G14 | **The background language check under request-only CPU**: it runs after its request returns, so it gets CPU while the console's table polls it (*unverified* that a long check finishes when the console is closed) | chapter 06, section 6.4 | Measure on the deployed service |
 | G15 | **The deploy script's warning** about raising `--max-instances` names the rate limits, the write queue and the home nonce cache, not the call hub | `deploy/cloudrun.sh` (header comment) | Add it in the next app release (ADR-25) |
 | G16 | **The call desk's laptop packages** (`soundcard`, `comtypes` and others) are hash-pinned but not in the licence list | `deploy/calldesk/requirements-calldesk.txt`, `requirements.licences.json` | Add them before R18.1 (ADR-29) |
 | G17 | **The guide's card C74 says the Privacy panel has no calls row**; the combined review added four | `docs/architecture/JARVIS-Architecture.md` (C74), `src/jarvis/calls/privacy.py` | The guide's next edition |
 
-### 6.3 Fixed by the combined review so far (27 Nov 2026)
+### 6.3 Fixed by the combined review (27 Nov 2026)
 
-On branch `r18-review`, before this edition: speech options ranked free first (a HIGH finding: paid
-Sarvam could beat free Google); Telegram can never approve a call card and the phone's Approve
-keeps the passkey; a pending call's number masked in the Approvals panel; the calls' four Privacy
-rows; no bare 500 from a calls route; the restore drill counts the calls' sub-collections; the
-Build Book reads the console's calls assets; a live ticket is taken only when the socket brought no
-other credential. Each is described as built in chapters 04–07.
+The review's report is `docs/plans/r18-integration/REVIEW.md`: 3 HIGH, 12 MEDIUM and 10 LOW
+findings, 22 fixed and 3 left (its rows 19–21), and the owner's outfit-plans decision carried out.
+
+- **Before this edition was first written** (branch `r18-review`): speech options ranked free
+  first (a HIGH finding: paid Sarvam could beat free Google); Telegram can never approve a call
+  card, because `calls_place` is in `src/jarvis/core/guardrails.py:CONSOLE_ONLY_TOOLS`, and the
+  phone's Approve keeps the passkey; a pending call's number masked in the Approvals panel; the
+  calls' four Privacy rows (`src/jarvis/calls/privacy.py:calls_privacy_sources`); no bare 500
+  from a calls route (any other failure is a 503 in plain words, a bad voice score a 422); the
+  restore drill counts the calls' six sub-collections
+  (`src/jarvis/backup/walk_checks.py:KNOWN_SUBCOLLECTIONS`); the console reads the calls' limits,
+  ranges and prices from the server instead of typing them
+  (`src/jarvis/api/calls_handlers_cards.py:settings_view`, `src/jarvis/api/static/console-calls-settings.js`);
+  "Score the voice" in Calls → Languages; Unlink for the call desk, which also spends an unused
+  link code (`src/jarvis/calls/hub.py:DeskDoorService.unlink`); the Build Book reads the console's
+  calls assets; a live ticket is taken only when the socket brought no other credential.
+- **After it** (the three items this edition raised, and the owner's decision): a waiting call
+  card's numbers sealed in `approvals` (G11); the deploy's step for the speech keys (G10); the
+  calls eval's `free_first` suite (G13); outfit plans kept 90 days (section 4); and the `r6_3`
+  mock eval's Book pins moved to R18's Book (`evals/r6_3/facts.py`).
+
+Chapters 02–08 describe them as built where they touch the design. Left by the review for the owner or a follow-up: the
+go-live guide's step for the speech keys, his live checks and voice scores, the opening lines'
+audio cache (G5), the brain check per language (G1), and sealing every R3 card at rest the way
+calls now are.
 
 ### 6.4 Risks
 
@@ -142,3 +167,4 @@ other credential. Each is described as built in chapters 04–07.
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): conflict C10 (the slice 1 plan's R0 tier against the code's three classes); C1's source and C6's resolution; the one-instance row says what is really in memory; the timeout is set, not a default; three debt items the verification found; the proposed ADRs moved to chapter 08 with a pointer left here | 🛠 Mark XXV |
 | v6.4.3 | 27 Nov 2026 | R6.4 | Outfit plans: the owner chose 90 days; the code change is follow-up F4 | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 21:00 IST | R18 | R18 "Calls from your laptop": C1, C2 and C5 as built; conflicts C11 (recording size, ADR-33) and C12 (the 23rd tab, ADR-35); the one-instance, timeout and storage rows as built; new section 6: what is not built or differs from the plan (the brain check per language, laptop speech mode, FLEURS untested and 8 languages without clips, Bhashini opt-in, and five more), eight gaps found while writing this edition, the review's fixes so far, and R18's risks | 🛠 Mark XXV |
+| v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | Checked against the R18 review's report (`docs/plans/r18-integration/REVIEW.md`): G10, G11 and G13 closed (follow-ups F6, F5, F7); G4 notes the console's Bhashini words; section 4's outfit-plans item done (90 days, 250 plans, the calendar's cap split); section 6.3 lists every review fix, before and after this edition, and what the review left | 🛠 Mark XXV |

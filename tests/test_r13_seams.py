@@ -558,7 +558,8 @@ def test_console_html_is_byte_identical_to_r14s() -> None:
     import hashlib
 
     got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
-    assert got == "9f4c0c68f45e46fe150e65e182f4d2ba1132eb556b3ddee0ba3491e4c85450a2"  # 9a8392b
+    # R5.2 V4: + the console-wakeword-own.js tag, on the mic's line (I1 re-pins after V3, V5)
+    assert got == "d024427611608ec6e458dc3b5506dc80732741e2e07ed25bbbe6438da5a10403"
     assert _lines(STATIC / "console.html") == 782
 
 

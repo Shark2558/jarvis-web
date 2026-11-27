@@ -1,20 +1,22 @@
 ---
 chapter: module_console
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_module_console": "df072ac9862073c3"
-  "pg_card_c01": "4324712b3fcf1d31"
-  "pg_card_c02": "550c8b34167298f0"
+  "pg_module_console": "0e35e40e9a4da2bf"
+  "pg_card_c01": "f73461620e64d4ab"
+  "pg_card_c02": "d18f1b7b46b1e73a"
   "pg_card_c03": "773a566ba7590934"
-  "pg_card_c41": "8336130889fc3e26"
+  "pg_card_c41": "9cd53fc6bf0dfa5f"
   "pg_screen_construct": "199bad85a6e6ff3a"
-  "pg_service_firestore": "c0fa9cd8ff2d6ced"
+  "pg_service_firestore": "f097f10230e841db"
   "pg_service_google_sign_in": "fde5db99cea41a26"
   "pg_service_redis": "fb4824e2028bff31"
 ---
 - [page:pg_module_console] [show:title] This chapter is about the console you use JARVIS from, and the server that stands behind it.
 - [show:plain] The console is one web page, on a laptop or a phone: the chat, a dock of panels, the brain picker, and the Night and Day looks.
+- The Calls button never takes another button's place in the dock: it joins the bar only where it fits beside all the others.
+- Otherwise you open Calls from More while More shows, from Vitals' calls line, from a call card in the chat, or from its own link.
 - Behind it sits JARVIS's server, which lets in only the Google accounts you listed as owners, and limits how fast anyone may call it.
 - It keeps your conversations, approvals and audit trail in Google's Firestore database, and engineers have a terminal client too.
 - [show:overview] Here is the whole path, from signing in to a reply on your screen.
@@ -46,9 +48,12 @@ pages:
 - [show:how] Every script and stylesheet has its own fixed address, so a request can never name a file outside that list.
 - The dock is measured at every width, and buttons that don't fit fold into the More sheet, last ones first.
 - Chat, Brief and Approvals never fold for lack of room, and if Approvals folds on a mid-size laptop, More carries its waiting count.
+- Calls never takes another button's place: the others are fitted as if it weren't there, and it joins the bar only when none of them folds for lack of room.
+- It waits in the More sheet while More shows, and otherwise it opens from Vitals' calls line, a call card in the chat, or its own link.
 - Under each reply the console shows the model, the time and the rupees, or price unknown when JARVIS has no price for that model.
 - [show:example] In the example, you open JARVIS on your phone one morning, tap More, choose Things, and ask where Rohan left the spare car key.
-- That evening on your laptop the dock has room for nearly every button, you switch the look from Night to Day, and your layout and look are still there the next morning.
+- That evening your laptop's screen shows every button but Calls, each where it always was, so you open Calls from the calls line in Vitals.
+- You switch the look from Night to Day, and your layout and look are still there the next morning.
 - [show:costs] It costs nothing in rupees, and the console keeps no data of its own on the server; your browser keeps only small conveniences, like your layout.
 - [show:fails] A panel whose data can't be fetched shows a plain line, such as: Couldn't load approvals, with a Retry button.
 - If the browser can't draw 3D, the flat emblems stay in place, and if measuring the dock goes wrong, every button shows again.
@@ -59,6 +64,8 @@ pages:
 - Your user id is a short hash of your address, made from the sign-in, and a user id sent by a client is never read.
 - [count:{{fact:src/jarvis/api/auth.py:FRESH_SIGN_IN_S}}] A sensitive step, such as opening the Build Book, asks you to sign in again, and that counts as fresh for {{fact:src/jarvis/api/auth.py:FRESH_SIGN_IN_S}} seconds.
 - The full book's own page holds no data: it reads the book with your session's token, kept in that tab alone.
+- A call's live listening opens only with the terminal's token, your sign-in from JARVIS's own page, or a one-use ticket.
+- And the call desk on your laptop must sign its connection before it opens.
 - [count:{{fact:src/jarvis/api/body.py:MAX_BODY_BYTES}}] A request over {{fact:src/jarvis/api/body.py:MAX_BODY_BYTES}} bytes is refused before it is read, with larger caps only for uploads.
 - Errors become a short answer with an error code, and an AI vendor's own words stay in the log.
 - [show:example] In the example, a script on a stranger's computer floods the server; after {{fact:settings.rate_limit_per_minute}} requests in that minute it must wait, while your chat carries on.
@@ -94,6 +101,8 @@ pages:
 - [show:how] Once you run the one-time backup setup, Google keeps a copy every day, and each month JARVIS restores the newest one into a throw-away database to check it.
 - Billing's month records live there too: the rupees spent and, kept apart, the replies whose price JARVIS doesn't know.
 - [count:{{fact:src/jarvis/storage/firestore_admin.py:CALL_S}}] Each call to those copies has a deadline of {{fact:src/jarvis/storage/firestore_admin.py:CALL_S}} seconds, and one aimed at any database but the throw-away one is refused.
+- Phone calls keep their cards, settings and records there as well, with the numbers and each call's recording, transcript and summary sealed by JARVIS's own key.
+- Without that key, calls are not built at all.
 - [show:costs] [count:₹{{fact:settings.backup_drill_max_inr}}] It is ₹0 inside the free allowance, whose size is Unverified here, and a drill is refused when its restore would cost more than ₹{{fact:settings.backup_drill_max_inr}}.
 - [show:fails] If Firestore is down, a request that needs it fails, and the systems check shows the database as not answering.
 - [page:pg_service_google_sign_in] [show:title] Next, Google sign-in: how you prove to JARVIS that you are you.

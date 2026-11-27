@@ -12,6 +12,7 @@
 //   console-r7-sos.js       D   the SOS sheet and Integrations -> Emergency SOS
 //   console-wardrobe-scan.js R13 D  Camera -> Wardrobe (the second pixel panel, D9), and console-wardrobe.css
 //   console-tryon-card.js   R13.1 D  the try-on card under a "what should I wear?" reply (row 388), console-tryon.css
+//   console-calls.js        R18 E    the Calls panel and the call cards (it loads console-calls.css and its parts)
 // (Helpers -> Watch and Wardrobe are loaded by the Helpers frame.) Each part's stylesheet may only
 // place things: existing tokens and classes, no new colours, fonts, radii or shadows (plan D0), at most 150
 // lines. No build step; CSP script-src 'self' and style-src 'self'; textContent only. A module asks the server
@@ -73,12 +74,13 @@ const MODULES = [
   ['console-r7-sos.js', 'Emergency SOS', 'integrations', () => import('./console-r7-sos.js')],
   ['console-wardrobe-scan.js', 'Camera, Wardrobe', 'camera', () => import('./console-wardrobe-scan.js')], // R13 D: a pixel panel
   ['console-tryon-card.js', 'The try-on card', '', () => import('./console-tryon-card.js')], // R13.1 D21: row 388
+  ['console-calls.js', 'Calls', 'calls', () => import('./console-calls.js')], // R18 E: the Calls panel and the call cards
 ];
 function noLoad(file, label, where, err) {
   console.warn('JARVIS: ' + file + ' could not load (' + (err && err.message ? err.message : 'unknown') + ').');
   const words = label + ' could not load, Sir. Reload the page to try again.';
-  if (where === 'camera') {
-    const body = document.getElementById('cameraBody');
+  if (where === 'camera' || where === 'calls') { // R18: the Calls panel says so in its body, as Camera does
+    const body = document.getElementById(where + 'Body');
     if (body && !body.querySelector('.r7-noload')) body.append(mk('p', 'bnote r7-noload', words));
   } else if (where === 'integrations') {
     const host = document.getElementById('integrations');

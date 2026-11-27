@@ -16,9 +16,14 @@ document `wardrobe_plans/{uid}` (`StylingDoc`, through `sealed.SealedDoc`).
   (off). No "alert lead": D19 fixes the evening alert at 20:00, so it was dropped before the
   first deploy (code review M8). Plan review note: the plan put these in A's index; Part C
   can't write A's index through the contract, so they live here (INTEGRATION-C, "Needs I1").
-At most 60 plans, 14 days back to 30 ahead (older ones are dropped on the next change); at most
-20 of them made by his calendar, and an event whose plan he removed is not made again
-(`dismissed`, until its day is past): strangers' invites can't take his slots (security H1).
+A plan's day is 14 days back to 30 ahead when it is made or moved (`in_range`); a plan is kept 90
+days after its day (`KEEP_DAYS`, the owner's decision of 27 Nov 2026, made in R18: R13's plan and
+the Privacy row say 90 days; older ones are dropped on the next change). At most 250 plans, two a
+day over every day one is kept; at most 100 of them made by his calendar, and at most 20 of those
+not yet past (what a flood of invites can make at once), so his own always have room for one a
+day, and an event whose plan he removed is not made again (`dismissed`, until its
+day is past): strangers' invites can't take his slots (security H1). A full document stays well
+under Firestore's 1 MiB.
 """
 
 from __future__ import annotations
@@ -35,8 +40,10 @@ from jarvis.wardrobe.model import COLOURS, PieceId
 
 PLAN_ID = re.compile(r"^op_[0-9a-f]{8}$")
 EVENT_KEY = re.compile(r"^[0-9a-f]{16}$")
-MAX_PLANS, BACK_DAYS, AHEAD_DAYS = 60, 14, 30
-MAX_CAL_PLANS = 20  # plans his calendar makes: the other 40 stay his (security review H1)
+MAX_PLANS, BACK_DAYS, AHEAD_DAYS = 250, 14, 30  # R18: 60 held 14 days back, not 90
+KEEP_DAYS = 90  # R18 (the owner, 27 Nov 2026): a plan is kept 90 days after its day
+MAX_CAL_AHEAD = 20  # calendar plans not yet past: what invites can make at once (security H1)
+MAX_CAL_PLANS = 100  # calendar plans kept in all (R18: 90 days of them); the other 150 stay his
 MAX_DISMISSED = 200
 MAX_NEVER, MAX_EXCLUDED, MAX_COLOURS = 20, 50, 10
 Field_ = Literal["title", "location"]
@@ -168,7 +175,7 @@ class StylingDoc(_M):
         """This doc with `plan` added or replaced (a new one past the cap: `PlanRefused`)."""
         others = tuple(p for p in self.plans if p.id != plan.id)
         if len(others) >= MAX_PLANS:
-            raise PlanRefused("You have 60 plans: remove an old one first.")
+            raise PlanRefused(f"You have {MAX_PLANS} plans: remove an old one first.")
         return self.model_copy(update={"plans": tuple(sorted((*others, plan), key=_order))})
 
     def drop(self, pid: str) -> StylingDoc:
@@ -182,16 +189,17 @@ class StylingDoc(_M):
         gone = (*self.dismissed, Dismissed(k=plan.event, day=plan.day))[-MAX_DISMISSED:]
         return out.model_copy(update={"dismissed": gone})
 
-    def made(self) -> int:
-        """How many plans his calendar made (a draft too: they take his slots until pruned)."""
-        return sum(1 for p in self.plans if not p.manual)
+    def made(self, since: date | None = None) -> int:
+        """How many plans his calendar made (a draft too: they take his slots until pruned); with
+        `since`, only those on that day or later (the ones invites can still add to)."""
+        return sum(1 for p in self.plans if not p.manual and (since is None or p.day >= since))
 
     def pruned(self, today: date) -> StylingDoc:
-        """Plans older than 14 days go; a cancelled calendar draft once its day is past; a
-        dismissed event once its day is past (security review H1)."""
+        """Plans more than 90 days past their day go (`KEEP_DAYS`); a cancelled calendar draft
+        once its day is past; a dismissed event once its day is past (security review H1)."""
         keep = tuple(
             p for p in self.plans
-            if p.day >= today - timedelta(days=BACK_DAYS)
+            if p.day >= today - timedelta(days=KEEP_DAYS)
             and not (not p.manual and p.cancelled and p.day < today)
         )  # fmt: skip
         gone = tuple(d for d in self.dismissed if d.day >= today)
@@ -238,6 +246,8 @@ __all__ = [
     "AHEAD_DAYS",
     "CHANGED",
     "BACK_DAYS",
+    "KEEP_DAYS",
+    "MAX_CAL_AHEAD",
     "MAX_CAL_PLANS",
     "MAX_PLANS",
     "PLAN_ID",

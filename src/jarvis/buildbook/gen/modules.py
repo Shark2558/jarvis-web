@@ -1,9 +1,10 @@
 # src/jarvis/buildbook/gen/modules.py
 """R6.3 D3 (docs/plans/r6-3-book-content.md; Phase A §9.4): the module map. Every catalogue card of
 the guide (`docs/architecture/JARVIS-Architecture.md`, `#### Cnn · …`) belongs to exactly ONE of
-the 18 modules below, Phase A's 17 plus Wardrobe & Try-on (C69-C73, R13 and R13.1). The full book
-has a chapter page for each module (`pg_module_<id>`) with its cards' pages under it; the tour's
-"what else" scene (T14) lists the modules that are not one of his seven highlights.
+the 19 modules below, Phase A's 17 plus Wardrobe & Try-on (C69-C73, R13 and R13.1) and Phone calls
+(C74-C78, R18). The full book has a chapter page for each module (`pg_module_<id>`) with its cards'
+pages under it; the tour's "what else" scene (T14) lists the modules that are not one of his seven
+highlights.
 
 `check(cards)` is the generator's gate: a card in no module, a card in two, or a module naming a
 card the guide does not have is a `GenError`, so a new card must be placed here before its
@@ -60,6 +61,7 @@ MODULES: tuple[Module, ...] = (
     _m("delivery", "Delivery, CI and backups", 49, 50, 58, 59, 66),
     _m("book", "The Build Book", 57),
     _m("wardrobe", "Wardrobe & Try-on", 69, 70, 71, 72, 73),
+    _m("calls", "Phone calls", 74, 75, 76, 77, 78),
 )
 # his seven highlights (the tour's T07-T13), as modules, in his order
 TOUR_HIGHLIGHTS: tuple[str, ...] = (

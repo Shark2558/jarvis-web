@@ -7,7 +7,7 @@ sources:
   "src/jarvis/api/home.py": "cd0a9f3557a74808"
   "src/jarvis/api/static/console-home-panel.js": "bb7fd758c81f6d63"
   "src/jarvis/api/static/console-home.js": "5694fc12065091f8"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Home is your burglar alarm and gate camera in one panel. A large line says whether the alarm is Armed, Disarmed or still Arming; Arm (Away) and Arm (Night) switch it on, and Disarm switches it off after checking it is really you. Below are your cameras, a list of what the camera noted today or yesterday, and a search through the camera's history. It works through a laptop at your home; video and faces stay on that laptop (`src/jarvis/api/static/console-home.js`). It is a home helper, not a monitored alarm service, as the panel itself warns (`src/jarvis/api/static/console-home-panel.js`).

@@ -185,7 +185,7 @@
     },
     {
       "id": "communication",
-      "about": "Mail, parcels, contacts and WhatsApp drafts (you send them).",
+      "about": "Mail, parcels, contacts, WhatsApp drafts (you send them) and phone calls (each after your tap).",
       "groups": [
         {
           "id": "email",
@@ -206,6 +206,11 @@
           "id": "whatsapp",
           "tools": ["whatsapp_*"],
           "words": ["whatsapp", "text him", "text her", "message him", "message her", "msg", "message to", "tell him", "tell her", "ping", "bata do", "bol do"]
+        },
+        {
+          "id": "calls",
+          "tools": ["calls_*"],
+          "words": ["call", "phone call", "ring up", "dial", "call the", "call him", "call her", "book an appointment", "missed call", "missed calls", "answer my calls", "phone kar", "call karo"]
         }
       ]
     },

@@ -1,0 +1,40 @@
+# R18 call desk: the only packages it installs, pinned and hash-checked (Windows, 64-bit, Python
+# 3.12). install-calldesk.ps1 installs them into the desk's private environment with
+# --require-hashes --only-binary=:all: (wheels only: nothing is compiled on the laptop).
+# Hashes from `pip download --platform win_amd64 --python-version 3.12 --only-binary=:all:` and
+# `pip hash`, checked against PyPI's own digests on 27 Nov 2026. Where PyPI has two wheels pip
+# could pick for this laptop, both hashes are listed.
+#
+# soundcard (BSD-3-Clause): WASAPI loopback recording and playback; needs numpy and cffi
+soundcard==0.4.6 \
+    --hash=sha256:ab44b8c1033ac6ec49c5d618ce096dab9b60c7d7a427c92bef15856e5ebb3e09
+# numpy (BSD-3-Clause and bundled permissive licences)
+numpy==2.5.5 \
+    --hash=sha256:919eb420662b0b4ba34889df503f3d5329775b0c1d5f7e5f5af4fba8315b1e30
+# cffi (MIT-0) and pycparser (BSD-3-Clause): soundcard's and cryptography's C bindings
+cffi==2.1.1 \
+    --hash=sha256:f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a
+pycparser==3.12 \
+    --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e
+# comtypes (MIT): Windows Core Audio, the default-microphone switch (IPolicyConfig)
+comtypes==1.5.0 \
+    --hash=sha256:c648ed3b243b1eb3b7cb893a873d1b35104ca1c8922061f4b1efafeb255bacb5
+# websockets (BSD-3-Clause): the desk's one connection to JARVIS
+websockets==17.4 \
+    --hash=sha256:dde9cd67f18803949ebf96de8aba12b8ec5ee3115e34c75a2db85a3b0a6c20d5 \
+    --hash=sha256:c6bd2c9781915592b209160d0f017d4c7c82ad53075e6b0c24d2a89299e7f9e9
+# cryptography (Apache-2.0 OR BSD-3-Clause): the signing keys (jarvis/home/signing.py, HKDF)
+cryptography==50.0.2 \
+    --hash=sha256:7afa5a6602a9f29af1f3a2965f831bae7c9d5d597b7cbb716d41ab3b7d89879c \
+    --hash=sha256:4e81d95e5bafc2d6e34e4bed780e53e4d5b9a2f928573428aa4d35fbec1eb0de
+# pydantic (MIT) and what it needs: the message contract (jarvis/calls/protocol.py, models.py)
+pydantic==2.14.4 \
+    --hash=sha256:653a2ad9f6d8858529c77c72717d0ea991d6c6837fe683246b2f4b2bbfc3fadc
+pydantic-core==2.50.5 \
+    --hash=sha256:baa107902f8e38011a5f79836d905eb6bfaac1d4b0bd09fc86509b711d0b09c8
+annotated-types==0.8.0 \
+    --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+typing-inspection==0.4.5 \
+    --hash=sha256:bc210535442b39e1bf2805e0c7a17dfd6a4ace760c84c7f7d16245d23a6b1c39

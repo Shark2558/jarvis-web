@@ -1,11 +1,11 @@
 ---
 chapter: module_home
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
   "pg_module_home": "84ab717f3a1d6615"
   "pg_card_c38": "878bdff01668da4f"
-  "pg_card_c39": "5d5deb1214c188d2"
+  "pg_card_c39": "facffb4d93b62f5b"
   "pg_card_c40": "92ceecbea281d688"
   "pg_card_c63": "1ec495ec172f1e84"
   "pg_screen_home": "c5657891cbd889b1"
@@ -61,6 +61,7 @@ pages:
 - [count:{{fact:src/jarvis/homebridge/snapshot.py:MAX_LONG_SIDE}}] One small snapshot may go with an alert, only if you opted in, cleaned of all metadata, at most {{fact:src/jarvis/homebridge/snapshot.py:MAX_LONG_SIDE}} pixels on its long side.
 - [count:{{fact:src/jarvis/homebridge/retention.py:UNKNOWN_HOURS}}] Face attempts of strangers are deleted after {{fact:src/jarvis/homebridge/retention.py:UNKNOWN_HOURS}} hours, and the others after {{fact:src/jarvis/homebridge/retention.py:KEPT_DAYS}} days.
 - Your photos folder is mounted read-only, and unknown faces seen in at least {{fact:src/jarvis/homebridge/face_types.py:MIN_GROUP_PICS}} pictures form a group for you to name or forget.
+- When you sign in on the laptop, the home kit starts, and the call desk with it when it is installed on the same laptop.
 - [show:example] In the example, a person walks into the driveway zone in the small hours, and the bridge sends one short detection; a cat a minute later sends nothing.
 - [show:costs] The software costs nothing; the laptop's electricity is yours, and its amount is Unverified here.
 - [show:fails] A face model that is missing, or not the pinned one, is never loaded; the camera keeps working, and the photos wait.

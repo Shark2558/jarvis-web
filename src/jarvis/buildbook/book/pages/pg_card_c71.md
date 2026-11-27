@@ -22,7 +22,7 @@ sources:
   "src/jarvis/wardrobe/styling/__init__.py": "0c7e42c16ad32f78"
   "src/jarvis/wardrobe/styling/actions.py": "4cd977b6364b3f89"
   "src/jarvis/wardrobe/styling/answers.py": "7a20f123cb05ae74"
-  "src/jarvis/wardrobe/styling/calendar.py": "1e3164447a117fad"
+  "src/jarvis/wardrobe/styling/calendar.py": "31a1c7498bd0995c"
   "src/jarvis/wardrobe/styling/cards.py": "45ea0d2b75d0cbd9"
   "src/jarvis/wardrobe/styling/data.py": "2e2b422cfd39ee1d"
   "src/jarvis/wardrobe/styling/engine.py": "da45a027ccc76538"
@@ -30,7 +30,7 @@ sources:
   "src/jarvis/wardrobe/styling/look.py": "49d14273ff8e7f5b"
   "src/jarvis/wardrobe/styling/outlook.py": "ba7798e4d73256fc"
   "src/jarvis/wardrobe/styling/part.py": "2384375983e34cc4"
-  "src/jarvis/wardrobe/styling/plans.py": "852d833343dbe946"
+  "src/jarvis/wardrobe/styling/plans.py": "f2d89b8ae3afc926"
   "src/jarvis/wardrobe/styling/prefs.py": "4c954007ab01e1ec"
   "src/jarvis/wardrobe/styling/rank.py": "474d652195b37cde"
   "src/jarvis/wardrobe/styling/ready.py": "c2364da92205f632"
@@ -57,7 +57,7 @@ Rahul has a client meeting at 10:00 tomorrow and his calendar title says "Board 
 `src/jarvis/wardrobe/styling/rules.json` holds the rules as data: slots, dress codes, words that name an occasion, colour pairs and which pieces go to the laundry after one wear; `src/jarvis/wardrobe/styling/rules.py` refuses a file that names an unknown type or code.
 `suggest` fills each slot of the dress code: pieces go through fixed exclusions in order (formality, your "never" rules, rain, only ready pieces, whole pairs and sets, pieces another plan holds), and what is left is ranked by `best`.
 It returns a main look and up to {{fact:src/jarvis/wardrobe/styling/engine.py:MAX_ALTERNATIVES}} alternatives, each with reasons naming the actual pieces, and a gap with a next action when a slot stays empty (`src/jarvis/wardrobe/styling/rank.py`).
-A plan's picks are its reservations, so the same shirt is never picked for two events the same day (`src/jarvis/wardrobe/styling/reserve.py`).
+A plan's picks are its reservations, so the same shirt is never picked for two events the same day (`src/jarvis/wardrobe/styling/reserve.py`). A plan is kept {{fact:src/jarvis/wardrobe/styling/plans.py:KEEP_DAYS}} days after its day, up to {{fact:src/jarvis/wardrobe/styling/plans.py:MAX_PLANS}} plans, and invites can make at most {{fact:src/jarvis/wardrobe/styling/plans.py:MAX_CAL_AHEAD}} at once (`src/jarvis/wardrobe/styling/plans.py`).
 `Calendar` reads only the one calendar you pick, only start, end and the fields you allow, through the governed background read on Allow only, and never stores a title.
 `Outlook` fetches the forecast for your Helpers place at most twice a day and says what a look assumed.
 `OutfitClock` runs on the regular clock: it reads your calendar about every {{fact:settings.wardrobe_calendar_refresh_min}} minutes, makes or refreshes plans, and sends the ready note from {{fact:settings.wardrobe_plan_evening}} the evening before.

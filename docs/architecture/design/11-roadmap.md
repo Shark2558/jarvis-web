@@ -1,14 +1,16 @@
-Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.4 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 11 · Target architecture: the roadmap by release
 
-Chapters 01–08 describe JARVIS as built (live release `v6.4.0`). This chapter describes where it is going: for each planned release, the components it adds, the existing ports and services it reuses, and where it bends or conflicts with the as-built design. The order is the owner's (17 Nov, reaffirmed 27 Nov): **R18 calls → R5.2 voice → R8 → R8.1 → R9**, then R10, R12, the subscription releases R15–R17, the launch (R18.1) and the deferred trading desk (R19). Requirement rows are the workbook's serials (chapter 10).
+Chapters 01–08 describe JARVIS as built (live release `v6.4.0`, plus R18 `v18.0.0`, built and
+joined with this edition, not yet deployed). This chapter describes where it is going: for each planned release, the components it adds, the existing ports and services it reuses, and where it bends or conflicts with the as-built design. The order is the owner's (17 Nov, reaffirmed 27 Nov): **R18 calls → R5.2 voice → R8 → R8.1 → R9**, then R10, R12, the subscription releases R15–R17, the launch (R18.1) and the deferred trading desk (R19). Requirement rows are the workbook's serials (chapter 10).
 
 ## Summary
 
 | Release | Version | Rows | Main layers | New runtime surface | Status (27 Nov) |
 |---|---|---|---|---|---|
-| R18 Calls from your laptop | `v18.0.0` | 387, 395, 396, 104, 195–197 | 1, 2, 3, 4, 5, 6, 7, 8 | Windows **call desk** on the laptop; phone app call permissions | Building (branches `r18-*`) |
+| R18 Calls from your laptop | `v18.0.0` | 387, 395, 396, 104, 195–197 | 1, 2, 3, 4, 5, 6, 7, 8 | Windows **call desk** on the laptop; phone app call permissions | Built and joined; in its combined review; not yet deployed |
+| R18.x follow-ups | — | (within R18's rows) | 2, 4, 6 | — | Planned: the brain check per language first (below) |
 | R5.2 Your voice | `v5.2.0` | 81, 83, 84, 383 | 1, 2, 6, 7, 8 | Laptop **speech kit** behind the local gate | Planned (`r5-2-plan`) |
 | R8 Vision core & desk camera | `v8.0.0` | R8's 25 (with R13's activity rows) | 2, 5, 6 | Vision engine on the home laptop | Planned; cameras in |
 | R8.1 Workout spot | `v8.1.0` | the workout-spot rows | 2, 5 | Pose models on the tripod phone | Planned; camera in |
@@ -22,7 +24,7 @@ Chapters 01–08 describe JARVIS as built (live release `v6.4.0`). This chapter 
 
 ## R18 · Calls from your laptop (`v18.0.0`)
 
-Plan: `docs/plans/r18-calls.md` (approved 25 Nov; D8 keeps the audio recordings). Build brief and contracts: `docs/plans/r18-calls/BUILD-BRIEF.md`. Both are on the `r18-*` branches (for example `r18-a1`), not yet in `main`.
+Plan: `docs/plans/r18-calls.md` (approved 25 Nov; D8 keeps the audio recordings). Build brief and contracts: `docs/plans/r18-calls/BUILD-BRIEF.md`; the join: `docs/plans/r18-integration/I1-NOTES.md`. **Status (27 Nov 2026):** built on the `r18-*` branches, joined, in its combined review and joined with this edition of the ADD; not yet merged to `main` or deployed. The as-built design is in chapters 02–08 (components C74–C78, ADR-27 and ADR-31 to ADR-39); the table below is the plan's design delta, kept for the record.
 
 | Layer | Adds | Reuses |
 |---|---|---|
@@ -41,6 +43,31 @@ Plan: `docs/plans/r18-calls.md` (approved 25 Nov; D8 keeps the audio recordings)
 - **Personal SIM, personal volume:** every call starts with the owner's tap (TRAI's 2026 rules on automated calls; chapter 12).
 - The **Gemini free tier is excluded** from calls (third parties' voices and details), extending the existing "free brains never see tools" rule.
 
+**Where the build differs from the plan** (each in chapter 12, section 6):
+
+| Plan | As built in `v18.0.0` |
+|---|---|
+| Laptop speech mode, chosen per language by the check | A hook only; every call uses cloud speech |
+| The check's step 4: a 10-turn mock call per language | Not built; never fails a language |
+| Test clips from FLEURS and AI4Bharat IndicVoices | FLEURS only: English and 14 Indian languages can be checked, 8 can't |
+| Bhashini tried when a language fails the others | Checked only when a request asks for it (the console never does), so never offered from the console |
+| Recordings compressed, about 0.1 MB a minute | 8 kHz WAV, about 0.96 MB a minute (ADR-33) |
+| The opening lines pre-made once per language | Their text is cached; their audio is made per call |
+| Calls in the dock | No tab at 1920 px; Vitals' line, the chat's card and `?open=calls` (ADR-35) |
+| A Privacy row for calls | Four rows, added by the combined review |
+
+**Done by the combined review** (27 Nov 2026, `docs/plans/r18-integration/REVIEW.md`), so no
+longer next: the deploy step for the speech keys (`deploy/cloudrun.sh:speech_keys`, mounted only
+when stored) and sealing a waiting call card's number in `approvals`
+(`src/jarvis/calls/pending.py:CallNumberSeal`).
+
+**Next for R18 (R18.x, planned):** the brain check per language (the first follow-up); caching the
+opening lines' audio; sealing every R3 card at rest the way calls now are; a compressed recording
+format once an encoder is acceptable; laptop speech through R5.2's speech kit. The go-live guide
+(a project document) needs the speech keys' step. Then the owner's live checks of plan step 6:
+install the new phone app and the call desk, run the language check and score each voice, one
+English call, one call with a language switch.
+
 ## R5.2 · Your voice (`v5.2.0`)
 
 Plan: `docs/plans/r5-2-voice.md`, on branch `r5-2-plan` (not yet in `main`).
@@ -53,7 +80,7 @@ Plan: `docs/plans/r5-2-voice.md`, on branch `r5-2-plan` (not yet in `main`).
 | L7 | Voice profile results; recordings only on the laptop, encrypted | — |
 | L8 | Laptop English voice before Google, then the browser | `jarvis.voice` fallback order |
 
-**Reuses R18, never copies it:** R18 owns `jarvis.calls.speech`, the language check and the call desk; R5.2 adds a bridge that satisfies R18's `Hearing`/`Voice` ports through the kit. **Conflict to close before launch:** today's wake-word model is licensed CC BY-NC-SA (personal use only); stage 2 replaces it.
+**Reuses R18, never copies it:** R18 owns `jarvis.calls.speech`, the language check and the call desk; R5.2 adds a bridge that satisfies R18's `Hearing`/`Voice` ports through the kit (`src/jarvis/calls/ports.py`), which is also what makes the call desk's laptop speech mode, a hook in `v18.0.0` (`src/jarvis/calldesk/speech_local.py`), selectable. **Conflict to close before launch:** today's wake-word model is licensed CC BY-NC-SA (personal use only); stage 2 replaces it.
 
 ## R8 and R8.1 · Vision core, desk camera and workout spot (`v8.0.0`, `v8.1.0`)
 
@@ -117,3 +144,5 @@ Layer 6 work on the home bridge: Home Assistant devices the owner lists (robot c
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:20 IST | R6.4 | First edition: every planned release's design delta by layer, what it reuses and where it bends the as-built design; the hardware note for the no-cloud camera; the rows not placed yet | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the R18 and R5.2 plans named as branch files, not yet in `main`; the paper-trading period marked unverified; rows 35 and 386 carry their workbook release; R5.2's speech-kit folder marked planned | 🛠 Mark XXV |
+| v6.4.3 | 27 Nov 2026, 20:50 IST | R18 | R18 "Calls from your laptop" built and joined: its status and where the as-built design lives; where the build differs from the plan; R18.x's follow-ups; R5.2 makes the desk's laptop speech selectable | 🛠 Mark XXV |
+| v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the speech keys' deploy step and the approvals seal moved from "next" to done; R18.x adds sealing every R3 card at rest and the go-live guide's speech-key step; the live checks include scoring each voice | 🛠 Mark XXV |

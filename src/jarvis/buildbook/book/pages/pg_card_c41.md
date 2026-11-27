@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/storage/__init__.py": "2dedb3cc1fb619bd"
-  "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
+  "src/jarvis/storage/approvals.py": "093f10af05d87010"
   "src/jarvis/storage/audit.py": "d268e84d6aa87ab5"
   "src/jarvis/storage/docs.py": "561064f51e6e084f"
   "src/jarvis/storage/firestore_admin.py": "342edf56ae911283"
@@ -25,4 +25,4 @@ At 21:05 you ask JARVIS to send Neha the guest list. Before anything goes out, t
 Nothing while JARVIS stays inside Firestore's free daily allowance, which this store is built to respect: a conversation already in memory costs one read, and nothing is removed by an expiry rule because those deletes are billed (`src/jarvis/storage/sessions.py`). The size of that allowance is set by Google and is Unverified here. In development everything stays in memory, with no bill (`build_storage`).
 
 ## When it fails
-When Firestore still lacks the index a list of conversations needs, `IndexNotReady` is raised and the list is sorted in the app from up to {{fact:src/jarvis/storage/sessions.py:LIST_FALLBACK_SCAN}} conversations meanwhile (`src/jarvis/storage/sessions.py`). If another window changed or deleted the same conversation, the save writes nothing and you see a plain line saying so (`DocSessionStore`). A record that can't be read is logged and skipped (`src/jarvis/storage/approvals.py:_decode`). A busy transaction is retried up to {{fact:src/jarvis/storage/firestore_docs.py:TX_ATTEMPTS}} times (`FirestoreDocs`). The health check reuses its last answer for {{fact:src/jarvis/storage/sessions.py:PING_TTL_S}} seconds, so it never hammers the database (`src/jarvis/storage/sessions.py`).
+When Firestore still lacks the index a list of conversations needs, `IndexNotReady` is raised and the list is sorted in the app from up to {{fact:src/jarvis/storage/sessions.py:LIST_FALLBACK_SCAN}} conversations meanwhile (`src/jarvis/storage/sessions.py`). If another window changed or deleted the same conversation, the save writes nothing and you see a plain line saying so (`DocSessionStore`). A record that can't be read, or a sealed card that doesn't open, is logged and skipped (`src/jarvis/storage/approvals.py:DocApprovalStore`). A busy transaction is retried up to {{fact:src/jarvis/storage/firestore_docs.py:TX_ATTEMPTS}} times (`FirestoreDocs`). The health check reuses its last answer for {{fact:src/jarvis/storage/sessions.py:PING_TTL_S}} seconds, so it never hammers the database (`src/jarvis/storage/sessions.py`).

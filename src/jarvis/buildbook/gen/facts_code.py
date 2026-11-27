@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from jarvis.buildbook.facts_model import FactValue, Setting
-from jarvis.buildbook.gen.code import clip, module_path, tree
+from jarvis.buildbook.gen.code import clip, settings_nodes, tree
 from jarvis.buildbook.gen.repo import Repo
 from jarvis.buildbook.gen.scrub import Scrubber
 
@@ -163,15 +163,11 @@ def _setting(node: ast.AnnAssign, name: str, scrub: Scrubber) -> Setting:
 
 
 def settings(repo: Repo, scrub: Scrubber) -> tuple[Setting, ...]:
-    module = tree(repo, module_path(repo, "config"))
-    body = module.body if module else []
-    cls = next((n for n in body if isinstance(n, ast.ClassDef) and n.name == "Settings"), None)
-    if cls is None:
-        return ()
+    """Every `Settings` field, its `jarvis` base classes' too (R18: `config_calls.CallsConfig`)."""
     found = {
         n.target.id: _setting(n, n.target.id, scrub)
-        for n in cls.body
-        if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name)
+        for n in settings_nodes(repo)
+        if isinstance(n.target, ast.Name)
     }
     return tuple(found[k] for k in sorted(found))
 

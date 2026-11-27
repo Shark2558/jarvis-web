@@ -70,8 +70,8 @@ def _lines(path: Path) -> int:
 
 
 def test_the_version_is_eleven_point_one() -> None:
-    # R6.4 (6.3.2 at R6.3.1, 13.1.0 at R13.1, 13.0.0 at R13, 6.2.0 at R6.2; nothing compares it)
-    assert jarvis.__version__ == "6.4.0"
+    # R18 (6.4.0 at R6.4, 13.1.0 at R13.1, 13.0.0 at R13, 6.2.0 at R6.2; nothing compares it)
+    assert jarvis.__version__ == "18.0.0"
 
 
 # ---- settings -----------------------------------------------------------------------------------
@@ -246,7 +246,7 @@ def test_the_line_budgets_leave_the_builders_room() -> None:
     assert _lines(SRC / "core" / "brain.py") <= 770  # 779 at R11 (guard < 800): Part A made it 704
     assert _lines(SRC / "tools" / "gateway.py") <= 760  # no part may grow it
     # guard 750; R11.1 I1 made it 731 (the brief's governed inbox read, the one turn guard)
-    assert _lines(SRC / "api" / "app.py") <= 735
+    assert _lines(SRC / "api" / "app.py") <= 738  # R18 I1: the calls join (+4)
     # guard < 800: 798 at R11, 795 at R11.1, 782 at R7 I0 (console-dock.js builds the More sheet)
     assert _lines(STATIC / "console.html") <= 782
 

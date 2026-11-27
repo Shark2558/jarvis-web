@@ -3,7 +3,7 @@ page: pg_module_wardrobe
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "8fd20146ba1568b4"
+  "deploy/cloudrun.sh": "603e230e96a462c8"
   "evals/r13/catalog.py": "92b1fd8103cefadc"
   "evals/r13/contract.py": "6a2865d32c4f53f2"
   "evals/r13/e2e.py": "4674cf168867869c"
@@ -30,7 +30,7 @@ sources:
   "src/jarvis/api/static/console-privacy.js": "7184a1fe77763ae0"
   "src/jarvis/api/static/console-r111-files.js": "1fec6c5ad6de99be"
   "src/jarvis/api/static/console-r7-send.js": "545d6c2abaf1e8c6"
-  "src/jarvis/api/static/console-r7.js": "696313364fb2e895"
+  "src/jarvis/api/static/console-r7.js": "0613adea76dca0a6"
   "src/jarvis/api/static/console-tryon-3d.js": "c3c07a9cd8e4edf9"
   "src/jarvis/api/static/console-tryon-card.js": "7735889bded44c4b"
   "src/jarvis/api/static/console-tryon-cloth.js": "7a78ee65b5efce5f"
@@ -56,7 +56,7 @@ sources:
   "src/jarvis/llm/tryon.py": "839f8746d75d6c7d"
   "src/jarvis/llm/tryon_gemini.py": "3e233dc06019ff0c"
   "src/jarvis/offline/phrases_r13.py": "2fbd4988328c6be8"
-  "src/jarvis/tools/reply_cards.py": "7a72a7250223da81"
+  "src/jarvis/tools/reply_cards.py": "97b29df16f9aceb2"
   "src/jarvis/wardrobe/http.py": "c1a70011ef487bdc"
   "src/jarvis/wardrobe/http_parts.py": "96d1a5078296e1b7"
   "src/jarvis/wardrobe/http_views.py": "883a930f6a55241a"

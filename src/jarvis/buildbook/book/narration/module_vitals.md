@@ -1,15 +1,15 @@
 ---
 chapter: module_vitals
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
   "pg_module_vitals": "9cf1677df06d9523"
   "pg_card_c44": "82626a80cc75e907"
   "pg_card_c54": "c0fb0155b89ba5f3"
-  "pg_card_c55": "db30a6e13f2c6481"
+  "pg_card_c55": "7693f31fd1511d36"
   "pg_card_c56": "1014d9b2e02dfb36"
   "pg_card_c67": "d886a2ba380e16b0"
-  "pg_screen_vitals": "d82f96d2d0d69fdd"
+  "pg_screen_vitals": "bbbc0b0b328a9bbb"
   "pg_service_frankfurter": "572319c24dce3f86"
 ---
 - [page:pg_module_vitals] [show:title] This chapter is about JARVIS keeping an eye on itself, and on everything that has a limit.
@@ -113,10 +113,13 @@ pages:
 - [show:fails] If both clocks stop, nothing can speak up, but the Vitals item for the clocks shows when they stopped, the moment you look.
 - [page:pg_screen_vitals] [show:title] Now the Vitals screen in your console.
 - [show:plain] At the top it shows how quickly replies arrive, then "This month": the paid AI's cost so far in rupees, and your monthly limit.
+- A Calls this month line shows what phone calls have cost this month, and pressing its name opens the Calls panel.
 - Below is the board, each line with a plain status: OK, Watch, Act now or Unknown.
 - [show:how] The board groups keys and connections, allowances and quotas, and bills, with the worst first, in words, never colour alone.
 - The board's answer carries the month's replies with no known price too, at an upper estimate, never as nothing.
 - "Track something JARVIS can't see" adds your own item; it never asks for a key's value, and refuses one if pasted.
+- Under This conversation, Calls this month shows the rupees calls have used this month and the calls cap, or a dash when they can't be read.
+- Its name is a link to the Calls panel: the way in on a screen whose tab bar has no room for Calls.
 - [show:example] In the example, late in the month, you see a domain renewal marked Act now, and raise your limit, confirming it before it is saved.
 - [show:costs] The rupee figures are estimates, because Anthropic bills in US dollars and your bank converts.
 - [show:fails] [count:{{fact:src/jarvis/vitals/api.py:GET_PER_MINUTE}}] If an outside service doesn't answer, its chip says Unknown, and reading the board is limited to {{fact:src/jarvis/vitals/api.py:GET_PER_MINUTE}} times a minute.

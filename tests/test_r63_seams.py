@@ -36,11 +36,11 @@ def _load(path: Path, name: str) -> ModuleType:
 
 # ---- 1 · the version and the release ------------------------------------------------------------
 def test_the_version_is_six_point_three() -> None:
-    # R6.4 (6.3.2 at R6.3.1, 13.1.0 at R13.1); the persona is unchanged
-    assert jarvis.__version__ == "6.4.0"
+    # R18 (6.4.0 at R6.4, 6.3.2 at R6.3.1, 13.1.0 at R13.1); the persona is unchanged
+    assert jarvis.__version__ == "18.0.0"
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R6.4"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r6-4-book-look.md"
+    assert plans.release_label(repo) == "R18"
+    assert plans.plan_paths(repo)[0] == "docs/plans/r18-calls.md"
 
 
 # ---- 12 · the staged eval runner ----------------------------------------------------------------
@@ -61,7 +61,8 @@ def test_the_eval_runner_is_staged_until_i1_and_gated() -> None:
 # R6.3.1 D7 seals each release's pages and flows with its book and code, so `seal_index.py`,
 # `seal.py` and `sealer.py` changed on purpose (tests/test_r631_e_serve.py); the rest still holds.
 UNTOUCHED = {  # 47ee8fc's SHA-256, under src/jarvis/
-    "api/static/console.html": "9f4c0c68f45e46fe150e65e182f4d2ba1132eb556b3ddee0ba3491e4c85450a2",
+    # R18 E: the page with the Calls panel and its tab
+    "api/static/console.html": "d26e202e4e9aa526a94aab01b1b85433582482b06c0ad79fced61abebf7d466c",
     "buildbook/ports.py": "949354c269f8750488f1662ab6c82dd1b28ee321599563f9a967fa3ec3c3bdbf",
     "buildbook/seal_notices.py": "0d9c979d104a180fc9e5a9f838fc00d51ac86e5154dc160d70d378a73b5d3b49",
     "buildbook/seal_words.py": "a7fc7c409ab81af066a905ddf55a2e7fb0fe55a032fe56da3125958a28bd1f27",
@@ -75,16 +76,16 @@ def test_r6s_sealing_files_privacy_rows_routes_and_console_html_are_untouched() 
         assert hashlib.sha256((SRC / rel).read_bytes()).hexdigest() == sha, rel
 
 
-def test_the_keyring_keeps_its_26_purposes() -> None:
-    assert len(PURPOSES) == 26  # the pages index is sealed under `book_index` (fact 16)
+def test_the_keyring_keeps_its_27_purposes() -> None:
+    assert len(PURPOSES) == 27  # R18 + 1 (calls); the pages index: `book_index` (fact 16)
 
 
 # ---- the size guards -----------------------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") == 732  # not edited
+    assert _lines(SRC / "api" / "app.py") == 738  # R18 +2 (the calls routes), I1 +4 (the join)
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") == 713  # not edited
-    assert _lines(SRC / "config.py") == 789  # not edited (790 is its guard)
+    assert _lines(SRC / "config.py") == 791  # R18 +2 (CallsConfig's import; its guard is 791)
     assert _lines(STATIC / "console.html") == 782
     assert _lines(SRC / "api" / "r6_wiring.py") <= 300
     assert _lines(SRC / "api" / "console.py") <= 473
@@ -108,9 +109,11 @@ def test_the_old_writers_collections_are_flat_and_the_books_own() -> None:
 # ---- 14, 15 · the guide -------------------------------------------------------------------------
 def test_the_guide_names_the_full_book_the_old_writers_data_and_the_roadmap() -> None:
     guide = GUIDE.read_text(encoding="utf-8")
-    # the guide moves forward with each release (v6.3.x / R6.3 at R6.3, v6.4.x / R6.4 at R6.4)
+    # the guide moves forward with each release (v6.4.x / R6.4 at R6.4, v18.0.x / R18 at R18)
     now = ".".join(jarvis.__version__.split(".")[:2])
-    assert guide.splitlines()[0].startswith(f"Version v{now}.") and f"Release R{now}" in guide[:200]
+    label = "R" + now.removesuffix(".0")  # 6.4 -> R6.4, 18.0 -> R18 (`plans.release_label`)
+    assert guide.splitlines()[0].startswith(f"Version v{now}.")
+    assert f"Release {label} " in guide[:200]
     c57 = guide[guide.index("#### C57 · Build book") : guide.index("#### C58")]
     for name in COLLECTIONS:
         assert f"`{name}/" in c57, name  # each with its document id, as the card names R6's

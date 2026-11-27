@@ -325,8 +325,8 @@ def test_the_console_has_the_helpers_tab_last_its_panel_and_its_frame() -> None:
     html = (STATIC / "console.html").read_text(encoding="utf-8")
     assert len(html.splitlines()) < 800
     dock = html[html.index('<nav class="dock card"') : html.index("</nav>")]
-    # R7 I0: Camera is the last tab now, Helpers the one before it; the sheet is console-dock.js's
-    assert re.findall(r'data-open="(\w+)"', dock)[-2:] == ["helpers", "camera"]
+    # R7 I0: Camera after Helpers; R18 E: Calls is the last tab now; the sheet is console-dock.js's
+    assert re.findall(r'data-open="(\w+)"', dock)[-3:] == ["helpers", "camera", "calls"]
     dock_js = (STATIC / "console-dock.js").read_text(encoding="utf-8")
     assert "    helpers: '" in dock_js and "    camera: '" in dock_js
     assert 'id="p-helpers" data-panel="helpers" aria-labelledby="t-helpers" hidden' in html
@@ -335,7 +335,8 @@ def test_the_console_has_the_helpers_tab_last_its_panel_and_its_frame() -> None:
         'src="/static/console-helpers.js"'
     )
     deck = (STATIC / "console-deck.js").read_text(encoding="utf-8")
-    assert "'book', 'helpers', 'camera']" in deck and "helpers: { x: col2" in deck  # R7: + Camera
+    assert "'book', 'helpers', 'camera', 'calls']" in deck  # R7: + Camera; R18: + Calls
+    assert "helpers: { x: col2" in deck
     shell = (STATIC / "console-helpers.js").read_text(encoding="utf-8")
     for name in PART_MODULES:
         assert name in APP_ASSETS and f"import('./{name}')" in shell

@@ -1,15 +1,26 @@
 ---
 page: pg_card_c62
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  ".github/workflows/android.yml": "3a93b9484acbf38a"
+  ".github/workflows/android.yml": "dd6e606a744ecafd"
   "android/.gitattributes": "0362f0d666c28575"
   "android/app/build.gradle.kts": "8824bb4eb6137d1d"
-  "android/app/src/main/AndroidManifest.xml": "b3f005b63609b4a8"
+  "android/app/src/main/AndroidManifest.xml": "807a7d1e1afca1f8"
   "android/app/src/main/assets/fonts/OFL-orbitron.txt": "075b0137b7a19be5"
   "android/app/src/main/assets/fonts/OFL-rajdhani.txt": "078e327eb0052521"
   "android/app/src/main/assets/fonts/OFL-share-tech-mono.txt": "9909bc951ab73dcf"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallActions.kt": "570ff6d424b6c5ce"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallDecisionReceiver.kt": "c28ff38bf7c488c1"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallNotices.kt": "bdcc792bbf315223"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallStateReceiver.kt": "52bc430e9d7fde1d"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallTapActivity.kt": "cf73b01ef5e204ee"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallsAccess.kt": "7096f9c3f27e02e7"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallsLauncherActivity.kt": "4c2b77bb07bc5339"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallsLink.kt": "3af52f41e34ab4e8"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallsSetupActivity.kt": "0a97b75b61321d7b"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallsStore.kt": "4816b285e982e836"
+  "android/app/src/main/java/io/github/[removed]/jarvis/calls/CallsWake.kt": "330cb82e9792caf9"
   "android/app/src/main/java/io/github/[removed]/jarvis/health/Await.kt": "df47c7b9d24e68c1"
   "android/app/src/main/java/io/github/[removed]/jarvis/health/HealthAccess.kt": "09aa61db94580003"
   "android/app/src/main/java/io/github/[removed]/jarvis/health/HealthPermissions.kt": "3e419e78f008e207"
@@ -27,8 +38,8 @@ sources:
   "android/app/src/main/java/io/github/[removed]/jarvis/link/SetupActivity.kt": "24f8f9b2bfdaeaa1"
   "android/app/src/main/java/io/github/[removed]/jarvis/shell/Background.kt": "01c5688cd2fe72ce"
   "android/app/src/main/java/io/github/[removed]/jarvis/shell/IconLauncherActivity.kt": "550a88a56d9b895e"
-  "android/app/src/main/java/io/github/[removed]/jarvis/shell/JarvisDelegationService.kt": "2c36b077c48012cd"
-  "android/app/src/main/java/io/github/[removed]/jarvis/shell/LaunchGate.kt": "bb5befb417afb5bb"
+  "android/app/src/main/java/io/github/[removed]/jarvis/shell/JarvisDelegationService.kt": "6166f8da9f7c89df"
+  "android/app/src/main/java/io/github/[removed]/jarvis/shell/LaunchGate.kt": "2b6a2daefe6f6b07"
   "android/app/src/main/java/io/github/[removed]/jarvis/shell/NoBrowserActivity.kt": "d261c37b7c61140e"
   "android/app/src/main/java/io/github/[removed]/jarvis/shell/NotifyChannels.kt": "59678acada010632"
   "android/app/src/main/java/io/github/[removed]/jarvis/shell/ScreenLauncherActivity.kt": "ebdf7751751643c3"
@@ -47,6 +58,7 @@ sources:
   "android/app/src/main/res/drawable/ic_notification.xml": "e146117f35f520ff"
   "android/app/src/main/res/drawable/ic_tile_sos.xml": "4b8fcc4e528250d7"
   "android/app/src/main/res/drawable/ic_tile_talk.xml": "d4946bba8e45af91"
+  "android/app/src/main/res/layout/activity_calls_setup.xml": "81c60ba059a8bb9a"
   "android/app/src/main/res/layout/activity_no_browser.xml": "78d270b969ceb1f6"
   "android/app/src/main/res/layout/activity_privacy.xml": "a19355d89e28a83e"
   "android/app/src/main/res/layout/activity_setup.xml": "5757f17806bb60e7"
@@ -55,23 +67,28 @@ sources:
   "android/app/src/main/res/mipmap-anydpi/ic_launcher_round.xml": "950b420b183223f4"
   "android/app/src/main/res/values/colors.xml": "1ac225a3ba6af711"
   "android/app/src/main/res/values/dimens.xml": "8825990e70d52449"
-  "android/app/src/main/res/values/strings.xml": "020573b0737de1cf"
+  "android/app/src/main/res/values/strings.xml": "5f1962f91db99860"
   "android/app/src/main/res/values/themes.xml": "5817ebed5030e11a"
   "android/app/src/main/res/xml/backup_rules.xml": "3b7d51ce26650f9c"
   "android/app/src/main/res/xml/data_extraction_rules.xml": "0258cb4a662db92a"
   "android/app/src/main/res/xml/network_security_config.xml": "24c9228739856171"
   "android/app/src/main/res/xml/shortcuts.xml": "6cee4e99f14b963f"
   "android/build.gradle.kts": "cc4861d0bf846038"
-  "android/core/build.gradle.kts": "7ad7bb007b68a357"
+  "android/core/build.gradle.kts": "17f3c4cfcc61f900"
+  "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/CallMachine.kt": "211954ccb70c04f5"
+  "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/Calls.kt": "b094face97ad260f"
   "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/DayBuilder.kt": "8f072e54797501c2"
-  "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/Door.kt": "a5658b298b1f9266"
+  "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/Door.kt": "4e6d139373779c34"
   "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/Json.kt": "c2abca70be757e20"
+  "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/JsonRead.kt": "c76c7f1c5fdbe485"
   "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/Payloads.kt": "13e8758e6cfc2328"
   "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/Replies.kt": "e3250356ee76ad95"
   "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/Rules.kt": "40587d358af78304"
   "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/SosMachine.kt": "446e64e03fcaf53d"
   "android/core/src/main/kotlin/io/github/[removed]/jarvis/core/SosText.kt": "a68f6d761db837d4"
-  "android/core/src/test/kotlin/io/github/[removed]/jarvis/core/CoreTests.kt": "177828d9b29ab2e3"
+  "android/core/src/test/kotlin/io/github/[removed]/jarvis/core/CallMachineTest.kt": "9fc936e916459ee8"
+  "android/core/src/test/kotlin/io/github/[removed]/jarvis/core/CallsTest.kt": "0a5db7f9273a4d83"
+  "android/core/src/test/kotlin/io/github/[removed]/jarvis/core/CoreTests.kt": "61d614e325c456bc"
   "android/core/src/test/kotlin/io/github/[removed]/jarvis/core/DayBuilderTest.kt": "ac96212313bf76ca"
   "android/core/src/test/kotlin/io/github/[removed]/jarvis/core/JsonDoorTest.kt": "c563b8e703e95a38"
   "android/core/src/test/kotlin/io/github/[removed]/jarvis/core/MiniJson.kt": "d4337bfd38b58fa5"
@@ -86,35 +103,37 @@ sources:
   "android/gradlew": "e01b5c97892572c8"
   "android/gradlew.bat": "d228565307df93fc"
   "android/settings.gradle.kts": "bfc114919cc11f30"
-  "android/version.properties": "e2e7153d6476a16b"
+  "android/version.properties": "66eb9900970345d4"
   "docs/plans/r7-integration/phone-contract.md": "08cd487a0078ba59"
   "evals/r7/contract.py": "e81b73234d12198d"
   "evals/r7/needles.py": "c4a71d20be0d05a4"
   "evals/r7/phone.py": "cd674bc43b02c44d"
   "evals/r7/shell.py": "be19b9a909195d13"
-  "scripts/apk_check.py": "03907e0b64dbb950"
+  "scripts/apk_check.py": "e58c085367221731"
   "scripts/app_icons.py": "66cf88ac19f8dfd8"
   "src/jarvis/api/app_shell.py": "055e85c13c45108e"
   "src/jarvis/api/mobile_status.py": "9e940d6b6f4a7153"
   "src/jarvis/api/phone.py": "3d46a2c2ed03ba6a"
-  "src/jarvis/api/r7_wiring.py": "6550ccbb04997884"
+  "src/jarvis/api/r7_wiring.py": "3c5071faac3bda6b"
   "src/jarvis/api/static/app-share-sw.js": "43e5b0c467b1cfde"
-  "src/jarvis/api/static/console-r7-links.js": "1be5e6c95f2f85c3"
+  "src/jarvis/api/static/console-r7-links.js": "dc1960f66f82bbd7"
   "src/jarvis/api/static/console-r7-lock.js": "054a4c0131ee84cf"
   "src/jarvis/api/static/console-r7-phone.css": "e27eb2c98c16b43c"
   "src/jarvis/api/static/console-r7-phone.js": "39e038d8237ad7b4"
   "src/jarvis/api/static/console-r7-share.css": "5b933aaf0b8d7034"
   "src/jarvis/api/static/console-r7-share.js": "ab846cef6ffe4167"
-  "src/jarvis/api/static/console-r7.js": "696313364fb2e895"
+  "src/jarvis/api/static/console-r7.js": "0613adea76dca0a6"
   "src/jarvis/api/static/console-sw.js": "8998e220b800ebcc"
   "src/jarvis/mobile/__init__.py": "c511816f99985bb6"
-  "src/jarvis/mobile/contract.py": "4ceca1395460fc25"
-  "src/jarvis/mobile/ports.py": "a1518ba7f9584d94"
+  "src/jarvis/mobile/contract.py": "6dfc15ad9e07a5a8"
+  "src/jarvis/mobile/ports.py": "1715d5e8251ff5b8"
   "src/jarvis/phone/__init__.py": "9be415daac56c96f"
   "src/jarvis/phone/applock.py": "7e71acd21cdef363"
+  "src/jarvis/phone/calls.py": "2b20c0e9fed52998"
+  "src/jarvis/phone/calls_wire.py": "512eac2611f265c5"
   "src/jarvis/phone/door.py": "ab8b59add7d96386"
   "src/jarvis/phone/handlers.py": "fd6c504bae8191d1"
-  "src/jarvis/phone/part.py": "40b3578d797071f7"
+  "src/jarvis/phone/part.py": "651b3567f394c7c7"
   "src/jarvis/phone/privacy.py": "d01b0b502884a563"
   "src/jarvis/phone/service.py": "df810d687109baa0"
   "src/jarvis/phone/store.py": "855ca94f94e9df14"
@@ -122,7 +141,7 @@ sources:
   "tests/fixtures/r7/phone_vectors.json": "8609e0c92f7c1280"
 ---
 ## In plain words
-JARVIS on your Android phone is a small app that shows this same console full screen in Chrome, with no browser bar, plus a few phone-only parts: a "Talk to JARVIS" tile, alerts sorted by urgency, the health sync, the SOS screen and a DigiLocker folder you pick, whose new files it sends in. You link the phone once with a short code. After that it reaches JARVIS only through a narrow "door" of signed requests that can't read your chats, vault or mail, approve anything or run a tool (`src/jarvis/phone/door.py`). An app lock asks for your passkey when you come back after a while away (`src/jarvis/phone/applock.py`).
+JARVIS on your Android phone is a small app that shows this same console full screen in Chrome, with no browser bar, plus a few phone-only parts: a "Talk to JARVIS" tile, alerts sorted by urgency, the health sync, the SOS screen, a DigiLocker folder you pick, whose new files it sends in, and the phone calls JARVIS places once you approve them. You link the phone once with a short code. After that it reaches JARVIS only through a narrow "door" of signed requests that can't read your chats, vault or mail or run a tool, and whose one approval is your tap on a call card (`src/jarvis/phone/door.py`, `src/jarvis/phone/calls.py`). An app lock asks for your passkey when you come back after a while away (`src/jarvis/phone/applock.py`).
 
 ## Example (made up)
 Meher installs the app on her new phone. On her laptop she opens Integrations, Phone app, touches her passkey and gets the code K7M2Q9XR, good for 10 minutes. She types it into the app's set-up screen; the phone makes its own key inside its secure chip and sends only the public half. Her laptop shows "A phone was linked to JARVIS at 18:42." That night the app sends a DigiLocker PDF of her driving licence through the door, and it waits in the vault under "Check details". When she opens the app after lunch the next day, it asks for her fingerprint before showing anything.
@@ -135,13 +154,15 @@ Every link rings an alert on every channel and is audited by device id only (`sr
 Each later request carries a signed header (`parse_header`), and `DoorGate` checks it in a fixed order: the route, no query, no cookie, the header's shape, a flood limit of {{fact:src/jarvis/phone/door.py:PER_CLIENT_MINUTE}} a minute, a linked phone, the clock within {{fact:settings.phone_clock_skew_s}} seconds, the body cap, a fresh nonce, the signature, then {{fact:src/jarvis/phone/door.py:PER_PHONE_MINUTE}} a minute per phone.
 The signature covers the path, the time, the nonce and a hash of the body (`signing_string`), and the body must be the one exact JSON form (`canonical_json`).
 Only then does a handler run: `DoorHandlers` answers hello with the app's settings and the SOS contacts, and takes an inbox file only if its size and SHA-256 match its first line.
+`PhoneCalls` adds the door's calls route: the cloud signs each call command and rings the phone with a Web Push that names no number, and the phone fetches the command through the door and acts only on one that checks out (`src/jarvis/phone/calls.py`).
+Approve or Decline on a call card's notice comes back the same way as your press in the Calls panel, and a new number, or your passkey rule, opens the console for the passkey (`CardDesk`).
 The app lock (`AppLock`) applies only to the app's own sessions, marked by a signed device cookie, and only once a passkey was added from the app.
 After {{fact:settings.app_lock_minutes}} minutes with no tap from you, every route outside the never-locked list answers with status 423 until a passkey check bound to that session (`install_app_lock`).
 `src/jarvis/api/app_shell.py` serves the installable manifest with its shortcuts and share target, and a shared photo, PDF or text waits in the phone's own browser tray (`src/jarvis/api/static/app-share-sw.js`).
 `.github/workflows/android.yml` builds and tests the app on every change, signed with a throwaway key, while the app you install is built on your laptop.
 
 ## What it costs
-Nothing. The door, the link and the lock run inside JARVIS's own server, and the app talks to no outside service of its own (`src/jarvis/phone/service.py`). The Android build check runs on GitHub's free runners for a public repository (`.github/workflows/android.yml`).
+Nothing. The door, the link and the lock run inside JARVIS's own server, and the app talks to no outside service of its own (`src/jarvis/phone/service.py`). A call the phone places for you is charged by your mobile plan, as any call you make. The Android build check runs on GitHub's free runners for a public repository (`.github/workflows/android.yml`).
 
 ## When it fails
 A part that fails at set-up is left out as "setup failed" and the others still run (`src/jarvis/api/r7_wiring.py`). Any failed door check gets a bare status 401; an unknown route gets status 404, a flood status 429 and an unreadable phone store status 503; each is logged by the check's name but never audited, so a flood can't fill the audit (`src/jarvis/phone/door.py`). If Chrome can't confirm from `GET /.well-known/assetlinks.json` that the site and the app belong together, the address bar shows and the rest still works. A lock check that fails answers with status 503 and never opens (`install_app_lock`). You are never locked out: from your laptop you can switch the lock off with your passkey or unlink the phone (`src/jarvis/phone/applock.py`).

@@ -1,0 +1,168 @@
+---
+chapter: module_calls
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
+pages:
+  "pg_module_calls": "88855363b6f3c07a"
+  "pg_card_c74": "276e43fdccd60b6f"
+  "pg_card_c75": "9e6d0440cd70e0a9"
+  "pg_card_c76": "9e4e23730822d85d"
+  "pg_card_c77": "aec0238ab86e3938"
+  "pg_card_c78": "bd6b45b8791412dd"
+  "pg_screen_calls": "60dd09b61813e44c"
+  "pg_service_bhashini": "a4bf466c164e02cb"
+  "pg_service_hugging_face": "c867d8c12d15ba0b"
+  "pg_service_microsoft_azure_speech": "bd6ab0f24b41a616"
+  "pg_service_sarvam": "d8259dec318dc923"
+---
+- [show:title] This chapter is about phone calls: JARVIS calling for you, from your own mobile number, through your laptop.
+- [show:plain] You say who to call and why, and JARVIS writes a call card.
+- It dials only after your press on that card, never before.
+- It says first that it is an AI assistant calling for you, and that the call is recorded.
+- It speaks English, and the Indian languages that passed its language check, and it stays within the card.
+- When the call ends, you get a short summary in English.
+- If you switch it on, it can also answer the calls you miss, and take a message.
+- Before the first call, you set up four things once.
+- The call desk on your laptop, with VB-CABLE, a free virtual microphone.
+- Phone Link on the laptop, set up for calls.
+- The new phone app, with one tap on Allow calls.
+- And the language check, in Calls, Languages.
+- [show:overview] Here is one call, from your press to its record.
+- [node:ask] It starts with you, saying who to call and why, in the chat or in Calls, New call.
+- [edge:ask>card] Your words become a card.
+- [node:card] The call card names the number, the purpose, what JARVIS may say and agree to, the languages, the longest it may last, and its estimate in rupees.
+- [edge:card>press] Then it waits for you.
+- [node:press] Nothing moves until you press Call, every time, with no standing permission and no "don't ask again".
+- [edge:press>passkey] A number JARVIS has never called takes a side step.
+- [node:passkey] It needs your passkey as well.
+- [edge:passkey>limits] With the passkey given, it joins the main path.
+- [edge:press>limits] Every call then meets the limits.
+- [node:limits] [count:{{fact:src/jarvis/calls/models.py:CALLS_PER_DAY}}] At most {{fact:src/jarvis/calls/models.py:CALLS_PER_DAY}} calls a day, none at night, and never an emergency, premium-rate or international number.
+- [edge:limits>phone] What passes is one dial grant, for that number and that card only.
+- [node:phone] Your phone dials from your own SIM, woken by a signed command that never carries the number in its push.
+- [edge:phone>desk] The call's sound travels to the laptop over Bluetooth.
+- [node:desk] There, the call desk carries it: it makes the virtual cable the microphone for that call only.
+- [edge:desk>talk] It sends the other person's voice to JARVIS only while they speak.
+- [edge:phone>talk] And the conversation begins.
+- [node:talk] JARVIS hears them, thinks with a brain that has no tools, passes every line through a guard, and speaks.
+- The guard refuses anything that looks like an OTP, a PAN or bank details, a link, or a promise to pay.
+- [edge:talk>live] All the while, captions flow to you.
+- [node:live] You can listen live, take over, tell JARVIS something the other person doesn't hear, or hang up.
+- [edge:talk>record] At the end, the summary is written.
+- [node:record] [count:{{fact:settings.calls_retention_days}}] The audio, the transcript and the summary are sealed, and kept {{fact:settings.calls_retention_days}} days unless you press Keep.
+- [edge:talk>object] And if the other person objects to the recording, the path turns aside.
+- [node:object] What was recorded is deleted, and only notes for the summary stay.
+- [edge:object>record] The record then holds no audio.
+- [show:costs] The phone line is your own plan, and the call desk is free.
+- Speech costs nothing inside the free allowances; the brain and the summary are small paid calls on the fast tier.
+- [count:₹{{fact:settings.calls_call_cap_inr}}] By default one call may spend at most {{fact:settings.calls_call_cap_inr}} rupees, and last {{fact:settings.calls_max_minutes}} minutes.
+- [count:₹{{fact:settings.calls_month_cap_inr}}] All calls together may spend {{fact:settings.calls_month_cap_inr}} rupees a month, inside your overall monthly limit.
+- At a cap, JARVIS says goodbye and ends the call.
+- [show:fails] Anything missing at the laptop or the phone is named on the card, and nothing is dialled.
+- With the call desk stopped, JARVIS can't call from the laptop.
+- And a restart ends a call in memory, leaving no approval to dial on.
+- [page:pg_card_c74] [show:title] Now the parts, one by one, starting with the card, the approval, the limits and the records.
+- [show:plain] A call speaks for you and can't be undone, so nothing is dialled until you press Call on its card.
+- [show:how] The card checks the number as an Indian number, and refuses emergency, helpline, premium-rate, international and other short numbers.
+- [count:{{fact:src/jarvis/calls/models.py:MAX_INDIAN_LANGUAGES_PER_CARD}}] It allows English plus up to {{fact:src/jarvis/calls/models.py:MAX_INDIAN_LANGUAGES_PER_CARD}} Indian languages that passed the language check.
+- Its estimate counts the speech, the brain and the summary; a price JARVIS doesn't know makes the estimate unknown, never zero.
+- Your Call press is the same in the Calls panel, under a chat reply, or on your phone.
+- With your passkey required for irreversible actions, a second press signs the call with it.
+- A number never called before is refused while that requirement is off, with words saying how to switch it on.
+- [count:{{fact:src/jarvis/calls/models.py:APPROVAL_TTL_S}}] Your approval becomes one dial grant, alive for {{fact:src/jarvis/calls/models.py:APPROVAL_TTL_S}} seconds and used once.
+- The limits are checked at your press, and again at the dial, in one go.
+- [count:{{fact:src/jarvis/calls/models.py:CALLS_PER_NUMBER_PER_DAY}}] At most {{fact:src/jarvis/calls/models.py:CALLS_PER_NUMBER_PER_DAY}} calls a day to one number, and {{fact:src/jarvis/calls/models.py:NEW_NUMBERS_PER_DAY}} numbers never called before.
+- After the call, the audio, the transcript and the summary are each sealed under their own key.
+- A booking goes on your Google Calendar through JARVIS's gateway, with an Undo.
+- [count:{{fact:src/jarvis/calls/models.py:ANSWER_AFTER_RINGS}}] Answering missed calls is off until you switch it on; then JARVIS answers after {{fact:src/jarvis/calls/models.py:ANSWER_AFTER_RINGS}} rings and only takes a message.
+- The Calls panel opens from the dock where its tab fits beside the others, from Vitals' calls line, from a call card in the chat, and from its own link.
+- [show:costs] [count:₹{{fact:src/jarvis/calls/models.py:CALL_CAP_CEILING_INR}}] You can raise a call's cap up to {{fact:src/jarvis/calls/models.py:CALL_CAP_CEILING_INR}} rupees in Calls, Settings, and a raise always waits for your confirmation.
+- [show:fails] A day's count or a month's spend that can't be read refuses the call, and a sealed part that doesn't open is called unreadable, never empty.
+- The Privacy panel has a Phone calls section: your calls, their settings, the desk's link and the language check, each with Export and Delete.
+- [page:pg_card_c75] [show:title] Next, the engine that runs a call while it is on.
+- [show:plain] It holds one call at a time, in memory, and never dials on its own or redials.
+- [show:example] In the example, Leela's clinic answers in Tamil, which her card allows, so JARVIS speaks Tamil from its next sentence.
+- [show:how] A call moves through its steps: preparing, dialling, opening, talking or taken over, wrapping up, and ended.
+- [count:{{fact:src/jarvis/calls/engine_turns.py:SWITCH_CONFIDENCE}}] Another language the card allows takes over once the detector is {{fact:src/jarvis/calls/engine_turns.py:SWITCH_CONFIDENCE}} sure.
+- A language the card doesn't allow gets a polite line in English and Hindi.
+- The brain makes one call a turn, with no tools, and the other person's words sit inside tags they can't close.
+- [count:{{fact:src/jarvis/calls/guard.py:MIN_SECRET_DIGITS}}] Every line is checked before it is spoken: a run of {{fact:src/jarvis/calls/guard.py:MIN_SECRET_DIGITS}} or more digits is refused unless it is on the card or the other person said it.
+- A refused line is never spoken; JARVIS says it will check with you and call back instead.
+- Listen live mixes both sides into one stream, sent only after you ask; captions only is the default.
+- Take over makes JARVIS say one handover line and go quiet, and your microphone comes back at the laptop.
+- [count:{{fact:src/jarvis/api/calls_ws.py:TELLS_PER_MINUTE}}] Tell JARVIS takes up to {{fact:src/jarvis/api/calls_ws.py:TELLS_PER_MINUTE}} lines a minute, and never widens the card.
+- [show:fails] If the desk or the phone is lost, the call wraps up.
+- [count:{{fact:src/jarvis/calls/engine_turns.py:MAX_BRAIN_FAILURES}}] The brain failing {{fact:src/jarvis/calls/engine_turns.py:MAX_BRAIN_FAILURES}} times brings the check-back line and the end.
+- A summary the model can't write is written plainly from the outcome.
+- [page:pg_card_c76] [show:title] Then the speech, and the language check that decides which languages a call may use.
+- [show:plain] The speech is cloud speech, free first: Google's free allowance, Azure's free tier if you add it, Bhashini if set up, and Sarvam only with your yes.
+- A language reaches a call card only after it passes the check.
+- [show:how] A request is retried only where the vendor surely didn't take it, so nothing is billed twice.
+- Every rupee goes through JARVIS's billing once, under the label calls.
+- In a call, a language uses the passing option you allow, free first: a paid one only when no free one still covers the call, and never one that didn't pass.
+- The check plans first, with its price, and sends nothing until you press Run.
+- [count:{{fact:src/jarvis/calls/langcheck/fleurs.py:CLIPS}}] It takes {{fact:src/jarvis/calls/langcheck/fleurs.py:CLIPS}} clips a language from Google's open FLEURS set, and squeezes each into a phone line's narrow band.
+- Hearing must get at least {{fact:src/jarvis/calls/langcheck/scoring.py:HEAR_FACTS_MIN}} of the key facts right, and a voice must be heard back just as well by another option.
+- [count:{{fact:src/jarvis/calls/langcheck/scoring.py:SPEED_FAST_S}}] Half of the replies must start within {{fact:src/jarvis/calls/langcheck/scoring.py:SPEED_FAST_S}} seconds.
+- Until you score its samples, with Score the voice in Languages, a passing language is offered as not yet heard by a native speaker.
+- [show:costs] [count:₹{{fact:src/jarvis/calls/langcheck/api.py:MAX_ACCEPT_INR}}] Inside the free allowances the check costs nothing, and you can accept at most {{fact:src/jarvis/calls/langcheck/api.py:MAX_ACCEPT_INR}} rupees for one run.
+- [show:fails] No network leaves a language unchecked, said plainly, and the brain's own check of each language is not built, so it never fails one.
+- [page:pg_card_c77] [show:title] Now the call desk on your laptop.
+- [show:plain] It carries a call's sound between Phone Link and JARVIS, and your own microphone always comes back.
+- [show:example] In the example, Rohan links the desk with a short code, and his tailor's words reach JARVIS only while she speaks.
+- [show:how] The kit downloads from Calls, Settings, only when JARVIS has a secure public address.
+- [count:{{fact:src/jarvis/calls/hub.py:CODE_LEN}}] Linking takes a code of {{fact:src/jarvis/calls/hub.py:CODE_LEN}} characters, good for {{fact:src/jarvis/calls/hub.py:CODE_TTL_S}} seconds and only once.
+- Every connection of the desk is signed, the way the home bridge signs.
+- Before every call it checks VB-CABLE, Phone Link, and that no Bluetooth headset is connected to the laptop.
+- It writes down your microphones before changing anything, and undoes a switch that Windows doesn't confirm.
+- A phone menu's key is played into the call as its tone.
+- [show:costs] It costs nothing, and talks only to JARVIS.
+- [show:fails] [count:{{fact:src/jarvis/calldesk/session.py:DISCONNECT_GRACE_S}}] A link lost for more than {{fact:src/jarvis/calldesk/session.py:DISCONNECT_GRACE_S}} seconds during a call releases everything on the laptop.
+- A crash is caught by the watchdog, which gives your microphone back before restarting the desk.
+- [page:pg_card_c78] [show:title] Then the phone app's part.
+- [show:plain] It places, answers and ends calls from your own number, when the cloud sends it a signed command.
+- It never hears or records a call itself, never reads your call log or contacts, and never calls anyone without your tap.
+- [show:how] A push rings the app's doorbell with a plain sentence, and the app then asks JARVIS for the command.
+- The phone acts on a command only when it verifies, names this phone, and is fresh.
+- A dial is queued only while your approval is still live for that call and that number.
+- A call card waiting for you shows on the phone too, with Approve and Decline.
+- [show:costs] It costs nothing: the call is on your own plan, and the doorbell is free.
+- [show:fails] When Android holds a dial back, the app asks for one tap to let JARVIS call.
+- [page:pg_screen_calls] [show:title] Now the Calls screen itself, where all of this meets you.
+- [show:plain] A line at the top says whether the laptop and the phone are ready, how many calls you made today, and what calls have cost this month.
+- Under it are four tabs: Calls, with your recent calls and their records; New call; Languages; and Settings, with your caps and choices.
+- What the other person says is shown as their words, and never taken as an order.
+- [show:how] Calls opens from the Calls this month line in Vitals, from a call card in the chat, and from its own link.
+- Its tab joins the bar only where it fits beside all the others: on a full-HD laptop screen it has none, and on a wider screen it is last in the bar.
+- On a narrower screen or a phone, it waits behind More.
+- [show:overview] Here is the road from a call card to its record.
+- [node:card] It starts with a call card, showing only the number's last digits, its limits, its languages and its rupee estimate.
+- [edge:card>ready] [node:ready] While the panel is open, the top line keeps checking the desk and the phone, and lists anything that stops a call.
+- [edge:ready>fix] [node:fix] If something isn't ready, such as a Bluetooth headset on the laptop, Call stays greyed until you fix what the list says.
+- [edge:fix>press] Once that is fixed, the card is yours to press.
+- [edge:ready>press] [node:press] With both ready, you press Call, and that press is your approval.
+- [edge:press>passkey] [node:passkey] For a number JARVIS has never called, your passkey is asked first.
+- [edge:passkey>dial] [node:dial] Then your phone dials, and the laptop carries the talking.
+- [edge:dial>live] [node:live] [count:{{fact:src/jarvis/api/calls_routes.py:TICKET_TTL_S}}] The live view opens with a ticket that lasts {{fact:src/jarvis/api/calls_routes.py:TICKET_TTL_S}} seconds, and shows the captions with their English.
+- [edge:live>you] [node:you] From there you choose Listen live or Captions only, Tell JARVIS, Take over, or Hang up.
+- [edge:live>record] When the call ends, its record takes over.
+- [node:record] Open shows the English summary, with what was agreed and what needs you, the transcript with each line in English too, and the recording's player.
+- [edge:record>keep] [node:keep] And you press Keep, or Delete, which asks you first.
+- Settings sends only what you change, asks first before a raise or a dearer choice, and gives the call desk's kit with a one-use link code.
+- [show:example] In the made-up example, you click Calls this month in Vitals on your laptop, and Calls opens.
+- You make a card for a laundry pickup, press Call, and follow the Malayalam call with English under each line.
+- When it ends, you open the record, see the pickup on your calendar with Undo, and press Keep this call.
+- [show:costs] The panel itself costs nothing; a call costs its speech and its brain, and the card shows the estimate before you press Call.
+- Captions only uses less data than Listen live.
+- [show:fails] If calls aren't set up, or are switched off, the panel says so in plain words.
+- If the live view drops, it connects again a few times, and a browser that can't play the call keeps the captions.
+- [page:pg_service_bhashini] [show:title] Last, the outside services that calls add.
+- [show:plain] Bhashini is the Government of India's language platform, an optional speech option for calls.
+- Its price for this use is unknown, so JARVIS never counts it as free.
+- [page:pg_service_hugging_face] [show:title] Hugging Face is where the language check finds its FLEURS test clips.
+- [show:plain] It is used only by the language check, never during a call.
+- [page:pg_service_microsoft_azure_speech] [show:title] Microsoft Azure Speech is an optional speech option, on its free tier.
+- [show:plain] [count:{{fact:settings.voice_azure_f0_stt_free_seconds}}] Its free tier gives {{fact:settings.voice_azure_f0_stt_free_seconds}} seconds of hearing a month, and it stops at its allowance, so it can never bill.
+- [page:pg_service_sarvam] [show:title] And Sarvam is an Indian speech company, a paid option.
+- [show:plain] [count:₹{{fact:settings.voice_price_sarvam_inr_per_hour}}] It costs {{fact:settings.voice_price_sarvam_inr_per_hour}} rupees an hour of hearing, and it stays off unless you say yes.
+- That is phone calls: your press on every call, your number, your limits, and a sealed record you control.

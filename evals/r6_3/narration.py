@@ -151,7 +151,7 @@ def checkout() -> list[str]:
     written = {p.id for p in f.pages if p.meta is not None}
     whole = [p.id for p in plans if all(pid in written for pid in p.pages)]
     told = {c.id for c in (f.narration.chapters if f.narration is not None else ()) if c.narrated}
-    out += _need(len(plans) == 26, f"{len(plans)} chapters, not 26")
+    out += _need(len(plans) == 27, f"{len(plans)} chapters, not 27")  # R18: module_calls
     return out + _need(set(whole) <= told, f"not narrated: {sorted(set(whole) - told)[:5]}")
 
 

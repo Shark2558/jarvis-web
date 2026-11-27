@@ -1,4 +1,4 @@
-Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.3 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 13 · Verification of the design document
 
@@ -73,6 +73,13 @@ used. Its remarks never leave it.
 | 12 | The 300-second timeout | "Default deploy" | set by step 6 (`--timeout 300`) | `deploy/cloudrun.sh` |
 | 10 | Done rows' pointers | 186 of 215 located, with wrong matches (row 19, web search, pointed at people research) | 213 of 215; 72 pointers replaced; 19 rows located for the first time; 68 use-case rows at their tests; 2 not located with their reason | section 4 |
 
+The rows above are what this verification found at `83331a1` and stay as they were. One has
+changed since: **the code now matches the owner's outfit-plan decision** (row 04, "How long outfit
+plans are kept"). Since R18's review a plan is kept 90 days after its day
+(`src/jarvis/wardrobe/styling/plans.py:KEEP_DAYS`), at most 250 (`MAX_PLANS`), with the calendar's
+cap split into 20 from today on and 100 kept (`MAX_CAL_AHEAD`, `MAX_CAL_PLANS`): commit `2041978`,
+`tests/test_r18_review_outfit_plans.py`; chapter 04's Wardrobe row says so.
+
 **B. Statements updated because this verification added a check or moved a decision.**
 
 | Ch. | What | Now |
@@ -127,9 +134,10 @@ Done, or the path was removed) is reported when the generator runs.
 - **Follow-up F2** (the inventory's two missed idioms) needs `src/jarvis/buildbook/gen/facts_code.py`
   changed together with `scripts/arch_inventory.py`, because a test holds their counts equal. That
   is app code, so it was recorded (chapter 12, section 4), not done.
-- **Outfit plans:** R13's plan keeps them 90 days after the event; the code keeps them 14 days
-  after their day. The owner decided on 27 Nov 2026 for 90 days; the code changes in the next app
-  release (chapter 12, section 4, follow-up F4).
+- **Outfit plans:** R13's plan keeps them 90 days after the event; the code kept them 14 days
+  after their day when this was checked. The owner decided on 27 Nov 2026 for 90 days (chapter 12,
+  section 4, follow-up F4). **The code now matches** (R18's review, commit `2041978`): 90 days
+  after their day (`KEEP_DAYS`), at most 250 plans; follow-up F4 is closed.
 - **The guide** (`docs/architecture/JARVIS-Architecture.md`, not part of this document) still dates
   the move to Cloud Run "by Slice 4 (*unverified*)" in its technology table; the date is now known
   (31 Oct 2026). Its next edition can take it.
@@ -173,3 +181,4 @@ the chapter's earlier change-log rows are kept.
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026 | R6.4 | First edition: the independent verification of chapters 00–12 against the code and the workbook: method, counts, every fix, the traceability review, what stays unverified, what is left for the owner, how to re-run | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | The three Build Book pages re-stamped with the owner's approval; the owner's outfit-plan decision recorded | 🛠 Mark XXV |
+| v6.4.3 | 27 Nov 2026, 21:25 IST | R18 | The code now matches the owner's outfit-plan decision (R18 review, commit `2041978`): a line after table A, whose row stays as verified, and section 6's item; follow-up F4 closed | 🛠 Mark XXV |

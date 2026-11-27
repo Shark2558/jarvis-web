@@ -1,15 +1,15 @@
 ---
 chapter: module_delivery
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_module_delivery": "c8525dceae272802"
-  "pg_card_c49": "8bf25ccf825ae5ea"
+  "pg_module_delivery": "ee2e80350cb454a1"
+  "pg_card_c49": "7d91c3c4a0265261"
   "pg_card_c50": "8d10c4707cf79f68"
   "pg_card_c58": "e4273faf9414f2bd"
-  "pg_card_c59": "6c77e8d0bd7ac9f5"
+  "pg_card_c59": "12e0d42ed0159fca"
   "pg_card_c66": "c86cb20aa78e3fe9"
-  "pg_service_cloud_run": "7ffda53a17a616d0"
+  "pg_service_cloud_run": "c7e63aa0eb3d8a41"
   "pg_service_cloud_scheduler": "dfd852efa753ba2d"
 ---
 - [page:pg_module_delivery] [show:title] This chapter is about how a change becomes the JARVIS you use, safely, and how your data survives a bad day.
@@ -20,6 +20,7 @@ pages:
 - [node:pr] It starts with a pull request: a proposed change to JARVIS's code.
 - [edge:pr>tests] The change goes straight to the checks.
 - [node:tests] The unit tests run on both supported Python versions, beside a Firestore emulator, the browser tests, the mock evals and the visual gate.
+- The mock evals include the phone calls' language check, run scripted, with no network and no paid speech.
 - [edge:tests>blocked] When any check fails, the merge is blocked until the change is fixed.
 - [edge:tests>build] Once every check passes and the change is merged, it moves on to be built.
 - [node:build] The new image is built with the exact package versions written in a locked list.
@@ -44,6 +45,7 @@ pages:
 - [show:plain] Settings are read from the server's environment when JARVIS starts, and secret values are held in a type that never prints them.
 - [show:how] On Cloud Run, JARVIS refuses unsafe settings at start-up, such as developer mode, token-only sign-in, or an AI choice without its key.
 - [count:{{fact:src/jarvis/config.py:MIN_SESSION_SECRET_LEN}}] Google sign-in also needs a session secret of at least {{fact:src/jarvis/config.py:MIN_SESSION_SECRET_LEN}} characters.
+- The phone calls' settings, their speech keys, prices, caps and keeping time, sit in a group of their own, loaded and checked the same way.
 - [show:example] In the made-up example, Imran forgets that secret, and the server stops at once with a message naming the setting, before it serves a single page.
 - [show:costs] Reading settings costs nothing; a few extra secrets in Google's Secret Manager may cost a few rupees a month, which is Unverified.
 - [show:fails] A failed check names the setting, never its value, and a missing optional key just leaves its feature off.
@@ -67,6 +69,7 @@ pages:
 - [show:plain] Each skill has fixed cases for right answers, tricks hidden in e-mails or web pages, privacy, and staying inside your budget.
 - Each exam also holds a deliberately broken version that must fail, which proves the exam really catches problems.
 - [show:how] The mock evals run every suite against a fake AI that always answers the same way, so the results repeat and cost nothing.
+- The suites cover the core loop, the calendar, the brief, memory, voice, attached documents, the phone calls' language check and more.
 - A run against the real AI shows a rupee estimate and waits for your typed YES; a safety stop ends it if spending goes well past that.
 - The visual gate opens each console panel at desktop and phone size, in Night and Day.
 - It fails on overlaps, low contrast, and touch targets too small for a finger.
@@ -95,9 +98,11 @@ pages:
 - It starts JARVIS when a request arrives, and lets it sleep when nobody is using it.
 - [show:how] [count:{{fact:settings.rate_limit_per_minute}}] Each address may make up to {{fact:settings.rate_limit_per_minute}} requests a minute, and every request must be signed in.
 - For Drive, JARVIS asks Cloud Run's own metadata server for a read-only token, so no key exists at all.
+- The call desk on your laptop links once, then talks to JARVIS over one open connection.
 - [show:example] In the made-up example, JARVIS is asleep at dawn; Google's clock calls, Cloud Run starts it in a few seconds, and the brief is made.
 - [show:costs] It costs nothing inside Cloud Run's free monthly allowance; the charge beyond it is Unverified, and a budget alert e-mails you at the first rupee.
 - [show:fails] After a long sleep, the first request waits a few seconds while JARVIS starts, and a part that fails to start is simply left off.
+- Without a secure public address, the call desk's kit is not offered, because the kit must name that address.
 - [page:pg_service_cloud_scheduler] [show:title] Last, Cloud Scheduler: Google's alarm clock for internet services.
 - [show:plain] It wakes the sleeping server on time: through the morning for your brief and the daily jobs.
 - And every few minutes all day, to watch your home laptop and run the helpers' reminders.

@@ -288,7 +288,7 @@ async def test_the_app_builds_six_parts_and_v1_r13_lists_them(settings: Settings
     async with running(_owner(settings)) as (app, c):
         assert tuple(app.state.r13_parts) == PARTS
         body = (await c.get("/v1/r13", headers=AUTH)).json()
-        assert body["version"] == "v6.4.0"  # R6.4 (6.3.2 at R6.3.1, 6.3.0 at R6.3 I0)
+        assert body["version"] == "v18.0.0"  # R18 (6.4.0 at R6.4, 6.3.0 at R6.3)
         assert [p["part"] for p in body["parts"]] == list(PARTS)
         # I1: A's and C's routes are built; this app has no keyring, so each says Off in words
         assert body["parts"][-2] == {"part": "tryon", "ready": tryon_part.OFF_NO_KEY}

@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/activity.py": "039fe358ea1af9ad"
   "src/jarvis/api/static/console-activity.js": "531a9ab9aa75238e"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Activity is JARVIS's diary of what it did for you, in plain words. Each line says when, what, and how it ended: Done, Waiting for you, Blocked, Failed or Declined. Lines that came from Telegram or your voice carry a small tag. When JARVIS deleted something that is still in Recently deleted, the line has an Undo button. The badge in the title bar says whether the tamper-proof log still checks out (`src/jarvis/api/static/console-activity.js`).

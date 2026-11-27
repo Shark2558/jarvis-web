@@ -11,7 +11,7 @@ sources:
   "src/jarvis/api/static/console-book-script.js": "b05346ce9a31efc5"
   "src/jarvis/api/static/console-book-show.js": "3a53ebbcf354215b"
   "src/jarvis/api/static/console-book-talk.js": "17d0515bfbb34ddf"
-  "src/jarvis/api/static/console-book-tour.js": "21e2972a31775060"
+  "src/jarvis/api/static/console-book-tour.js": "72eec1b2c26a8eaa"
   "src/jarvis/api/static/console-book-voice.js": "d8758d303187cdc6"
   "src/jarvis/api/static/console-fx.js": "bb9dd7f373411a5f"
   "src/jarvis/api/static/console-permissions.js": "eb3446689d3bd5f1"

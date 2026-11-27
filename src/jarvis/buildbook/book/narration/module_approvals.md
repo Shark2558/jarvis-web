@@ -1,17 +1,18 @@
 ---
 chapter: module_approvals
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_module_approvals": "178743f9bda25535"
-  "pg_card_c18": "d6c001daf7baf35a"
-  "pg_card_c28": "6d86fa4ce30366a8"
-  "pg_card_c51": "d6b728ee331b13d5"
+  "pg_module_approvals": "37fc50a9574728ce"
+  "pg_card_c18": "21a00a9000fa2fc7"
+  "pg_card_c28": "3bbaf5446ea9dd7b"
+  "pg_card_c51": "1d9c01b7bdf49831"
   "pg_card_c52": "1d94e343328a1fef"
-  "pg_screen_approvals": "86326e0b75ab9329"
+  "pg_screen_approvals": "dda38ef437489da7"
 ---
 - [page:pg_module_approvals] [show:title] This chapter is about JARVIS's conscience: how it asks before it acts, and how you say yes.
 - [show:plain] Every action JARVIS takes for you passes one door, the tool gateway, which may do it, ask you first, or refuse.
+- Placing a phone call is one of those actions, and a call's card asks every time.
 - When it asks, you see a card written by code, not by the AI, saying exactly what will happen.
 - You choose Allow, Ask first or Never for each group of tools, and anything final always asks.
 - With a passkey, the fingerprint or face check on your own phone or laptop, those final cards need you in person.
@@ -57,6 +58,7 @@ pages:
 - [node:call] [edge:call>args] [node:args] The brain asks for a tool, and its arguments are checked.
 - [edge:args>policy] [node:policy] By default a read is allowed, an undoable change too, and an irreversible one asks.
 - There is never a standing allow for sending, paying or deleting for good.
+- Every part's tools sit behind this one gate, the phone calls' among them, and placing a call is irreversible.
 - [edge:policy>deny] [node:deny] A refusal always wins, and the brain is told in plain words when you switched something off.
 - [edge:policy>card] An ask goes straight to an approval card.
 - [edge:policy>taint] [node:taint] An allowed call meets one more question: was the turn spoken, or did other people's text reach the brain?
@@ -72,11 +74,13 @@ pages:
 - [show:fails] An irreversible action whose diary line can't be written is not done, and a chain that no longer checks out loses its verified badge.
 - [page:pg_card_c51] [show:title] The third part is the Keyring.
 - [show:plain] It gives each kind of sealed data its own lock, so the key for your notes can't open your vault.
+- Those kinds now include the numbers on your call cards.
 - The keys are never stored anywhere; they live only in the server's memory while it runs.
 - [show:how] [count:{{fact:src/jarvis/integrations/vault.py:KEY_BYTES}}] It starts from one master key of exactly {{fact:src/jarvis/integrations/vault.py:KEY_BYTES}} bytes, and with no master key, the sealed features stay off.
-- A separate key is worked out for each purpose on a fixed list, and an unknown purpose is an error, never a fresh key.
+- A separate key is worked out for each purpose on a fixed list, phone calls among them, and an unknown purpose is an error, never a fresh key.
 - [count:{{fact:src/jarvis/integrations/vault.py:NONCE_BYTES}}] Every seal uses AES-256-GCM, a fresh random value of {{fact:src/jarvis/integrations/vault.py:NONCE_BYTES}} bytes, and the record's own label.
 - So a sealed value moved onto another record fails to open.
+- The references that tell JARVIS a number was called before use a keyed hash, whose key comes from a separate label, never from a sealing key.
 - [show:example] In the example, a careless script copies the key of Ravi's rent agreement onto another record; the stamp doesn't match, and neither file is shown.
 - [show:costs] It costs nothing: every key is worked out inside JARVIS's server, with a standard cryptography library.
 - [show:fails] It fails closed: a wrong key, a wrong label or a tampered record is refused, and nothing is shown.
@@ -105,6 +109,8 @@ pages:
 - [edge:send>gateway] [node:gateway] The tool runs through the gateway, carrying the card's token.
 - [edge:gateway>chat] [node:chat] The outcome arrives as a reply in that card's conversation, which the panel opens for you.
 - [edge:chat>list] [node:list] And the card leaves the list.
+- A phone call JARVIS proposes waits here as a calls place card: Approve places the same call as Call on its call card in Chat or Calls.
+- Whichever you press first, the stored card is used once.
 - [show:example] In the example, a card to e-mail Meera the agenda has a typo, so you press Decline and ask JARVIS to fix it.
 - The new card looks right, you press Approve, and Chat confirms the mail went.
 - [show:costs] Approving costs nothing by itself, and a paid reply after it shows its rupees in Chat, or price unknown when its model has no known price.

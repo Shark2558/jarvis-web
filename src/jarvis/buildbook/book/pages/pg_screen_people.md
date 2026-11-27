@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/static/console-people.js": "90b76851b4821be7"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
   "src/jarvis/people/routes.py": "1a14f337e5c1b049"
 ---
 ## In plain words

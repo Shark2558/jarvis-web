@@ -1,16 +1,17 @@
 ---
 page: pg_service_firestore
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  "src/jarvis/api/app.py": "51eaf37fbe6a89cf"
+  "src/jarvis/api/app.py": "2f8821679b892d33"
   "src/jarvis/api/book_show_wiring.py": "41f136cc471cf3a2"
   "src/jarvis/api/feature_wiring.py": "473760847cb35d03"
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
   "src/jarvis/api/permissions.py": "42dc725d201a9c43"
-  "src/jarvis/api/personal.py": "7a9aa32e08b7d084"
+  "src/jarvis/api/personal.py": "8874aeec850037d6"
   "src/jarvis/api/r11_wiring.py": "4cfa5b25282b147c"
   "src/jarvis/api/r13_wiring.py": "4228b2005530a17c"
+  "src/jarvis/api/r18_wiring.py": "9c0a9b872566617c"
   "src/jarvis/api/r4_wiring.py": "379192618b74836f"
   "src/jarvis/api/r6_wiring.py": "933facfd96a82b79"
   "src/jarvis/api/selfcheck_wiring.py": "fb7336391ffa3727"
@@ -19,12 +20,12 @@ sources:
   "src/jarvis/backup/part.py": "acc12e13dbcb26b4"
   "src/jarvis/billing/service.py": "f8cd9507563514e1"
   "src/jarvis/buildbook/unlock.py": "a8cc9e601703c920"
-  "src/jarvis/config.py": "e223e4b9e6e6333b"
+  "src/jarvis/config.py": "8c3c0b7f0890ff99"
   "src/jarvis/drive/service.py": "dc7c305c68c1aca4"
   "src/jarvis/fixes/ports.py": "19c609bda735565b"
   "src/jarvis/kb/service.py": "352c0e4f7d8c5c66"
   "src/jarvis/media/service.py": "b536d789f9f47be8"
-  "src/jarvis/mobile/ports.py": "a1518ba7f9584d94"
+  "src/jarvis/mobile/ports.py": "1715d5e8251ff5b8"
   "src/jarvis/offline/service.py": "d8859988abef45c7"
   "src/jarvis/selfwatch/jobs.py": "a1b5cdedafe3b4b3"
   "src/jarvis/skills/part.py": "f67e6ee91d243b74"
@@ -51,7 +52,7 @@ Firestore is Google's database in the cloud, and it is where JARVIS keeps everyt
 On a Tuesday Maya tells JARVIS to remember that her car insurance renews in March. That fact and the conversation go into Firestore under JARVIS's own name prefix. Overnight a new version of JARVIS starts, and in the morning both are still there. On the 1st of the month JARVIS restores last night's copy into a throw-away database, checks it over two mornings, deletes it, and the Vitals backup line says the drill passed.
 
 ## How it works
-`build_storage` picks Firestore when `session_backend` says so, in the project and database that `firestore_project` and `firestore_database` name, and keeps conversations, approval cards and the audit trail there (`src/jarvis/storage/__init__.py`). Every other part uses the same document store, handed round by `app_docs`, so the brief, billing, memory and voice settings live in the one database (`src/jarvis/api/app.py`). Billing's month records there hold the rupees spent and, apart, the replies whose price JARVIS doesn't know (`src/jarvis/billing/service.py`). Every collection's name starts with `firestore_prefix`, {{fact:settings.firestore_prefix}} by default, so JARVIS's records never mix with anything else in the database (`src/jarvis/config.py`). Each part's wiring builds its own stores on that database, such as the helpers' in `src/jarvis/api/r11_wiring.py`, the wardrobe's in `src/jarvis/api/r13_wiring.py`, and the Build Book's sealed copies and sessions in `src/jarvis/api/r6_wiring.py`. The vault is built only with JARVIS's encryption key; without it the vault stays off rather than store anything in clear (`src/jarvis/vault/build.py`). The systems check reads one document to prove the database answers (`src/jarvis/api/selfcheck_wiring.py`). Backups are Firestore's own daily copies after your one-time setup, and the monthly drill restores the newest copy into a throw-away database to check it (`src/jarvis/backup/part.py`). `FirestoreAdmin` is the only way to those copies: each call has a deadline of at most {{fact:src/jarvis/storage/firestore_admin.py:CALL_S}} seconds, and a call that would act on any database but the throw-away one is refused before it is sent (`src/jarvis/storage/firestore_admin.py`). `Settings` refuses to start JARVIS on the throw-away database, so the live one is never the copy the next drill deletes (`src/jarvis/config.py`). If you lose your passkey during a guest show, the emergency unlock works straight on Firestore with the server's own Google Cloud access, never through a browser (`src/jarvis/buildbook/unlock.py`). What the Book's earlier writer trial stored, `book_pages` among it, stays until you delete it in Privacy (`src/jarvis/api/r6_wiring.py`).
+`build_storage` picks Firestore when `session_backend` says so, in the project and database that `firestore_project` and `firestore_database` name, and keeps conversations, approval cards and the audit trail there (`src/jarvis/storage/__init__.py`). Every other part uses the same document store, handed round by `app_docs`, so the brief, billing, memory and voice settings live in the one database (`src/jarvis/api/app.py`). Billing's month records there hold the rupees spent and, apart, the replies whose price JARVIS doesn't know (`src/jarvis/billing/service.py`). Every collection's name starts with `firestore_prefix`, {{fact:settings.firestore_prefix}} by default, so JARVIS's records never mix with anything else in the database (`src/jarvis/config.py`). Each part's wiring builds its own stores on that database, such as the helpers' in `src/jarvis/api/r11_wiring.py`, the wardrobe's in `src/jarvis/api/r13_wiring.py`, and the Build Book's sealed copies and sessions in `src/jarvis/api/r6_wiring.py`. Phone calls keep their cards, settings and records there too, with numbers and each call's recording, transcript and summary sealed by JARVIS's own key; without that key calls are not built at all (`src/jarvis/api/r18_wiring.py:wire_r18`). The vault is built only with JARVIS's encryption key; without it the vault stays off rather than store anything in clear (`src/jarvis/vault/build.py`). The systems check reads one document to prove the database answers (`src/jarvis/api/selfcheck_wiring.py`). Backups are Firestore's own daily copies after your one-time setup, and the monthly drill restores the newest copy into a throw-away database to check it (`src/jarvis/backup/part.py`). `FirestoreAdmin` is the only way to those copies: each call has a deadline of at most {{fact:src/jarvis/storage/firestore_admin.py:CALL_S}} seconds, and a call that would act on any database but the throw-away one is refused before it is sent (`src/jarvis/storage/firestore_admin.py`). `Settings` refuses to start JARVIS on the throw-away database, so the live one is never the copy the next drill deletes (`src/jarvis/config.py`). If you lose your passkey during a guest show, the emergency unlock works straight on Firestore with the server's own Google Cloud access, never through a browser (`src/jarvis/buildbook/unlock.py`). What the Book's earlier writer trial stored, `book_pages` among it, stays until you delete it in Privacy (`src/jarvis/api/r6_wiring.py`).
 
 ## What it costs
 ₹0 while JARVIS stays inside Firestore's free daily allowance of reads, writes and storage; the size of that allowance is Google's and is Unverified here. Once backups are set up, Google bills the daily copies and each drill's restore, and a drill is refused when its restore would cost more than ₹{{fact:settings.backup_drill_max_inr}} (`backup_drill_max_inr`).

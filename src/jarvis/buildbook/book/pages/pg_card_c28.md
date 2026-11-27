@@ -1,7 +1,7 @@
 ---
 page: pg_card_c28
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
   "src/jarvis/storage/audit.py": "d268e84d6aa87ab5"
   "src/jarvis/tools/__init__.py": "809787380f69a17f"
@@ -31,8 +31,8 @@ sources:
   "src/jarvis/tools/r1_tools.py": "4d7f8f07d7292b33"
   "src/jarvis/tools/registry.py": "41c4ea0f5dade1a6"
   "src/jarvis/tools/reminders.py": "71b05fbd96e5a679"
-  "src/jarvis/tools/reply_cards.py": "7a72a7250223da81"
-  "src/jarvis/tools/setup.py": "b430d38a376cac97"
+  "src/jarvis/tools/reply_cards.py": "97b29df16f9aceb2"
+  "src/jarvis/tools/setup.py": "ed7411bf67783b50"
   "src/jarvis/tools/spoken.py": "1c3db255f7c0e5f8"
   "src/jarvis/tools/taint.py": "fffb2835e3b38bed"
   "src/jarvis/tools/task_marks.py": "86c9e4daa64cb47e"
@@ -49,6 +49,7 @@ At 10 am you type "what's on tomorrow?": the calendar read passes the gate, runs
 
 ## How it works
 `ToolRegistry` holds every tool, each a `Tool` with its risk class: read-only, reversible or irreversible (`src/jarvis/tools/registry.py`).
+`build_gateway` puts every part's tools into that one registry, the phone calls' among them, where placing a call is irreversible (`_register_parts`).
 `Gateway` is the one door: it checks the arguments, asks `Policy` for allow, ask or deny, and a deny always wins; your own Permissions choices arrive per call as `OwnerRules` (`src/jarvis/tools/gateway.py`).
 By default a read is allowed, an undoable change is allowed and an irreversible one asks, and there is never a standing "allow" for sending, paying or deleting for good (`default_effect`).
 An allowed change is tightened to a card when the turn was spoken, or when other people's text reached the brain this round (`content_tainted`), and your "Allow" never relaxes that (`src/jarvis/tools/policy.py`).

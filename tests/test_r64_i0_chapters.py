@@ -1,8 +1,8 @@
 # tests/test_r64_i0_chapters.py
-"""R6.4 D5 (docs/plans/r6-4-book-look.md): the full book's 26 narrated chapters, deterministic from
-the pages index: 8 story chapters (each its `pg_chapter_*` page) and 18 module chapters (the
-`pg_module_*` page, its parts' cards in the module map's order, then the screens and outside
-services `HOMES` gives it). No page is in two chapters; a page in none stays readable."""
+"""R6.4 D5 (docs/plans/r6-4-book-look.md): the full book's 27 narrated chapters (26 before R18),
+deterministic from the pages index: 8 story chapters (each its `pg_chapter_*` page) and 19 module
+chapters (the `pg_module_*` page, its parts' cards in the module map's order, then the screens and
+outside services `HOMES` gives it). No page is in two chapters; a page in none stays readable."""
 
 from __future__ import annotations
 
@@ -57,9 +57,9 @@ def real() -> FactPack:
     return pack
 
 
-def test_the_real_book_has_26_chapters_covering_every_page_once(real: FactPack) -> None:
+def test_the_real_book_has_27_chapters_covering_every_page_once(real: FactPack) -> None:
     got = ch.chapters(real.pages)
-    assert len(got) == 26
+    assert len(got) == 27  # 8 stories and 19 modules (R18: Phone calls)
     assert [c.id for c in got[:8]] == [f"story_{cid}" for cid, _ in CHAPTERS]
     assert [c.id for c in got[8:]] == [f"module_{m.id}" for m in MODULES]
     every = [p for c in got for p in c.pages]

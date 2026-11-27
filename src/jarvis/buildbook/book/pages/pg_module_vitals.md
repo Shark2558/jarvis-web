@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "evals/r14/selfwatch.py": "1dadce66510eae7e"
-  "src/jarvis/__init__.py": "c0533b5bcdc55981"
+  "src/jarvis/__init__.py": "e7c19ff56bddba24"
   "src/jarvis/about.py": "c310b3bdce51c135"
   "src/jarvis/api/r14_status.py": "efb328e795d63aa9"
   "src/jarvis/api/r14_wiring.py": "9a389842728e9471"
@@ -15,7 +15,7 @@ sources:
   "src/jarvis/api/static/console-systems.js": "b2a348eb9c0bd6eb"
   "src/jarvis/api/static/console-usage.js": "1595a84e680dde87"
   "src/jarvis/api/static/console-vitals.js": "dd7cc4ee3cec2353"
-  "src/jarvis/api/tick_wiring.py": "ab30c19996a2944c"
+  "src/jarvis/api/tick_wiring.py": "315ae398f136c29a"
   "src/jarvis/api/usage.py": "9f60c602bd371c86"
   "src/jarvis/home/heartbeat.py": "028d88e299dd4f48"
   "src/jarvis/llm/pricing.py": "a2d1278419157236"

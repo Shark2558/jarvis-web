@@ -1,0 +1,33 @@
+{
+  "title": "From a call card to its record",
+  "dir": "down",
+  "nodes": [
+    {"id": "card", "label": "A call card", "kind": "step", "rank": 0, "col": 0,
+     "ref": "src/jarvis/api/static/console-calls-card.js"},
+    {"id": "ready", "label": "Laptop and phone ready?", "kind": "guard", "rank": 1, "col": 0,
+     "ref": "src/jarvis/api/static/console-calls.js"},
+    {"id": "fix", "label": "Fix what the list says", "kind": "person", "rank": 1, "col": 1},
+    {"id": "press", "label": "You press Call", "kind": "person", "rank": 2, "col": 0},
+    {"id": "passkey", "label": "Passkey when asked", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/api/static/console-calls-card.js"},
+    {"id": "dial", "label": "Phone dials, laptop talks", "kind": "service", "rank": 4, "col": 0},
+    {"id": "live", "label": "Live view and captions", "kind": "step", "rank": 5, "col": 0,
+     "ref": "src/jarvis/api/static/console-calls-live.js"},
+    {"id": "you", "label": "Listen, tell, take over", "kind": "person", "rank": 5, "col": 1},
+    {"id": "record", "label": "The call's record", "kind": "store", "rank": 6, "col": 0,
+     "ref": "src/jarvis/api/static/console-calls-list.js"},
+    {"id": "keep", "label": "Keep or delete", "kind": "person", "rank": 7, "col": 0}
+  ],
+  "edges": [
+    {"from": "card", "to": "ready"},
+    {"from": "ready", "to": "press", "label": "yes"},
+    {"from": "ready", "to": "fix", "label": "no", "style": "side"},
+    {"from": "fix", "to": "press", "style": "side"},
+    {"from": "press", "to": "passkey"},
+    {"from": "passkey", "to": "dial"},
+    {"from": "dial", "to": "live"},
+    {"from": "live", "to": "you", "style": "side"},
+    {"from": "live", "to": "record", "label": "the call ends"},
+    {"from": "record", "to": "keep"}
+  ]
+}

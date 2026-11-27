@@ -1,0 +1,10 @@
+# R18 S0 laptop test: the only packages it installs, pinned and hash-checked
+# (Windows, 64-bit, Python 3.12; s0.ps1 installs them with --require-hashes --only-binary=:all:).
+soundcard==0.4.6 \
+    --hash=sha256:ab44b8c1033ac6ec49c5d618ce096dab9b60c7d7a427c92bef15856e5ebb3e09
+numpy==2.5.5 \
+    --hash=sha256:919eb420662b0b4ba34889df503f3d5329775b0c1d5f7e5f5af4fba8315b1e30
+cffi==2.1.1 \
+    --hash=sha256:f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a
+pycparser==3.12 \
+    --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e

@@ -534,6 +534,7 @@
     if (window.JarvisMedia) window.JarvisMedia.cards(row, r.cards); // places / route / videos
     if (window.JarvisWhatsApp) window.JarvisWhatsApp.render(row, r.cards); // whatsapp drafts
     if (window.JarvisUpi) window.JarvisUpi.render(row, r.cards); // R11: an approved UPI payment, once
+    if (window.JarvisCalls) window.JarvisCalls.cards(row, r.cards); // R18: a call card (Call, Edit, Cancel)
     renderStats(r, rttMs);
     emit('jarvis:reply', { refused: false, tools: Number.isFinite(r.tool_calls) ? r.tool_calls : 0 });
     // slice 9: the voice module speaks it (per "Speak replies"); an approval left waiting after a

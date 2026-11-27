@@ -873,6 +873,8 @@ def test_r3_cipher_purposes_are_pinned() -> None:
         # R13.1: his measurements and his YES; his photo and the pictures (test_r131_seams.py)
         "tryon",
         "tryon_photos",
+        # R18: the numbers on call cards and records, sealed, and their keyed references
+        "calls",
     }
     ring = Keyring(KEY)
     for purpose in ("home", "home_feed", "faces", "webpush"):
@@ -1123,11 +1125,16 @@ def test_the_bridge_extra_is_optional_and_the_cloud_image_unchanged() -> None:
         'opencv-python-headless==5.0.0.93; python_version >= "3.12"',
         'numpy==2.5.4; python_version >= "3.12"',
     ]
-    bridge_only = ("aiomqtt", "paho", "opencv", "numpy")
+    bridge_only = ("aiomqtt", "paho", "opencv")
     assert not any(d.startswith(bridge_only) for d in cfg["project"]["dependencies"])
     lock = (ROOT / "requirements.lock").read_text(encoding="utf-8")
-    for name in ("aiomqtt", "paho-mqtt", "opencv-python-headless", "numpy=="):
+    for name in ("aiomqtt", "paho-mqtt", "opencv-python-headless"):
         assert name not in lock, name
+    # R18 B: NumPy joined the cloud image (the calls' phone line, resampling and recordings),
+    # hash-locked there; the range keeps Python 3.11 installable (NumPy 2.5 needs 3.12, CI's 3.11
+    # resolves a 2.4); the bridge's own pin above stays as it was
+    assert "numpy>=2.0,<3" in cfg["project"]["dependencies"]
+    assert "numpy==2.5.4 \\" in lock
 
 
 # ---- Telegram: the home group ----------------------------------------------------------------

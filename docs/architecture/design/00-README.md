@@ -1,4 +1,4 @@
-Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.4 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 00 · The JARVIS Architecture Design Document
 
@@ -24,6 +24,11 @@ step, as it already does for the guide.
 against on 27 Nov 2026. Anything that could not be checked says *unverified*. Anything not built
 yet says PLANNED. Money is in rupees (₹) and every ₹ figure is an estimate.
 
+**R18 in this edition.** Release R18, "Calls from your laptop", is built but not yet live: JARVIS
+can place a call from your own phone number after your tap, speak in the call through your laptop,
+and keep a sealed recording and summary. Chapters 02–08, 11 and 12 describe it, each part marked
+"(R18)"; chapter 12, section 6 lists what is not finished.
+
 ## How to use this document
 
 | You are | Read first | Then |
@@ -46,6 +51,12 @@ workshop rules' section 6 format, which `scripts/check_doc_versions.py` defines.
 **How to cite.** A citation is `path` or `path:Symbol`, relative to the repository root, for
 example `src/jarvis/tools/gateway.py:Gateway.execute`. "As built" means present in `main` at
 merge `83331a1` (27 Nov 2026), program version `6.4.0` (`src/jarvis/__init__.py:__version__`).
+For what is marked R18, "as built" means R18's code with its combined review's fixes, program
+version `18.0.0`; it is not yet in `main` or deployed. This edition was first written on the ADD's
+own branch (`main` at `8e95780` plus the `r18-review` branch at `7d7ce19`); the review's later
+fixes (`docs/plans/r18-integration/REVIEW.md`: the approvals seal, the deploy's speech keys, the
+free-first eval, outfit plans kept 90 days) were then checked into chapters 02, 04–08 and 11–13 on
+the R18 release branch (`r18-release` at `c036ca1`).
 
 ## Chapters
 
@@ -127,6 +138,18 @@ repository as *Unverified*; chapter 13 lists every fix and how to repeat the che
 | Home kit | The programs on the owner's laptop: Home Assistant, Frigate, Mosquitto, the home bridge (and optionally the laptop brain). |
 | TWA | Trusted Web Activity: an Android app whose screen is the website drawn by Chrome. |
 | No-AI mode | A saved switch under which no AI model is called at all; fixed phrases still run tools. |
+| Phone Link (R18) | Microsoft's Windows app that lets a laptop make and take a phone's calls over Bluetooth, like a car kit. |
+| Call desk (R18) | JARVIS's Windows program on the laptop that hears a call through Phone Link and speaks into it. |
+| VB-CABLE (R18) | A free virtual audio cable for Windows; during a JARVIS call it is the microphone Phone Link hears. |
+| Loopback recording (R18) | Recording what the laptop's own speaker plays (Windows' WASAPI loopback); how the desk hears the call. |
+| Language check (R18) | The test every call language must pass before it is offered: hearing and speaking over a simulated phone line, speed, and a person's score. |
+| FLEURS (R18) | Google's public set of recorded test sentences in many languages (CC BY 4.0) that the language check uses. |
+| Speech option (R18) | One way to hear and speak a language on a call: Google, Azure's free tier, Bhashini, Sarvam (paid), or the laptop's own models. |
+| Dial grant (R18) | What the owner's approval of a call card issues: it lets exactly one call be dialled, within 10 minutes. |
+| Reply guard (R18) | The check every line JARVIS is about to say in a call passes: no codes, account numbers or promises to pay. |
+| Doorbell (R18) | A Web Push message with no details that tells the phone app to fetch its signed commands. |
+| A2P call (R18) | TRAI's term for a call started by software without a person dialling it. |
+| DPDP Act (R18) | India's Digital Personal Data Protection Act, 2023. |
 
 ## Change log
 
@@ -134,3 +157,5 @@ repository as *Unverified*; chapter 13 lists every fix and how to repeat the che
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:05 IST | R6.4 | First edition: what the ADD is, the canonical-reference rule, how conflicts are settled, the chapter list (00–12), the three new figures, the single-file copy, how it was checked, the shared glossary | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): chapter 13 added to the list; how the document was verified; the proposed ADRs now in chapter 08 | 🛠 Mark XXV |
+| v6.4.3 | 27 Nov 2026, 21:10 IST | R18 | R18 "Calls from your laptop": what this edition adds, in plain words; what "as built" means for R18 (not yet in `main`); twelve terms added to the glossary | 🛠 Mark XXV |
+| v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: what "as built" means for R18 now (the release branch `r18-release` at `c036ca1`, after `docs/plans/r18-integration/REVIEW.md`) and which chapters took the approvals seal, the deploy's speech keys, the free-first eval and outfit plans kept 90 days | 🛠 Mark XXV |

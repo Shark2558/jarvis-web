@@ -13,6 +13,8 @@ from typing import Annotated, Literal
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from jarvis.config_calls import CallsConfig
+
 
 class LLMBackend(StrEnum):
     ANTHROPIC = "anthropic"
@@ -51,7 +53,7 @@ def _is_private_host(host: str) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
-class Settings(BaseSettings):
+class Settings(CallsConfig, BaseSettings):  # R18's calls settings: `config_calls.py`
     model_config = SettingsConfigDict(
         env_prefix="JARVIS_",
         env_file=".env",

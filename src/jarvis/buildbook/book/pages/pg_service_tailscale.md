@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
-  "src/jarvis/config.py": "e223e4b9e6e6333b"
+  "src/jarvis/config.py": "8c3c0b7f0890ff99"
 ---
 ## In plain words
 Tailscale is a free service that gives your home laptop a safe public address without touching your home router. Its Funnel feature publishes one door of the laptop on the internet over HTTPS, and the encryption ends on the laptop itself, not at Tailscale. JARVIS uses two such doors: the home bridge (cameras, devices, faces) and, if you set it up, the offline brain (Ollama). What passes through: JARVIS's signed calls to the bridge and the laptop's answers, and, in offline mode, your chat with the laptop's brain. Tailscale carries the traffic but sees only encrypted data.

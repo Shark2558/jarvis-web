@@ -82,5 +82,5 @@ async def test_other_r2_cards_keep_their_buttons() -> None:
 
 
 def test_the_console_only_set_is_the_drill_and_is_never_bulk() -> None:
-    assert frozenset({START}) == CONSOLE_ONLY_TOOLS
+    assert frozenset({START, "calls_place"}) == CONSOLE_ONLY_TOOLS  # R18 review: + a phone call
     assert CONSOLE_ONLY_TOOLS <= NO_BULK_TOOLS

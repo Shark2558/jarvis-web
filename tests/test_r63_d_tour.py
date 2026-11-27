@@ -116,9 +116,9 @@ def test_what_else_lists_the_other_modules_from_the_map() -> None:
     else_ = _tour().guest.scenes[13]
     titles = {m.id: m.title for m in modules.MODULES}
     assert [f.label for f in else_.picture.facts] == [titles[m] for m in modules.others()]
-    assert len(else_.picture.facts) == 11 and {f.group for f in else_.picture.facts} == {"modules"}
+    assert len(else_.picture.facts) == 12 and {f.group for f in else_.picture.facts} == {"modules"}
     with pytest.raises(GenError, match="else_count"):
-        built(pack({**PLAN_VALUES, "modules.else_count": 12}))
+        built(pack({**PLAN_VALUES, "modules.else_count": 13}))
 
 
 def test_own_pictures_are_filled_from_the_pack() -> None:

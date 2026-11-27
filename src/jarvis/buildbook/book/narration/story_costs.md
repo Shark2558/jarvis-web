@@ -1,14 +1,15 @@
 ---
 chapter: story_costs
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_chapter_costs": "dc9213e929de159e"
+  "pg_chapter_costs": "5262d45e48dc3745"
 ---
 - [show:title] This chapter is about money: what JARVIS costs you, and how it keeps that number small and in plain sight.
 - [show:plain] Most of JARVIS runs on free allowances and free services.
 - What does cost money, mainly the paid AI brains and Google's voices beyond their free share, is metered in rupees.
 - You may set a monthly limit, and once it is reached, no paid call is made.
+- Phone calls have caps of their own, for one call and for a month of calls, inside that limit.
 - The Vitals board watches everything else that has a limit or a renewal date, so nothing runs out or renews by surprise.
 - The Voice and Vitals pages tell the detail; this chapter is the overview.
 - [show:how] Here is how a single paid call turns into the rupees you see.
@@ -36,6 +37,8 @@ pages:
 - [node:view] In Vitals, This month shows the month's rupees, the share of your limit, the number of calls, and the spend for each brain.
 - It speaks in rupees only.
 - You set the limit there too, and raising or removing it needs an explicit confirmation, because it lets JARVIS spend more.
+- A phone call's rupees count in this month, and in a calls month of their own.
+- And a phone call whose estimate would pass a cap or your limit is refused before it is dialled.
 - [edge:view>vitals] Beside it, the board watches everything else.
 - [node:vitals] The Vitals board tracks every other limit and renewal: JARVIS's keys and connections, free allowances, quotas, and the bills you add yourself.
 - Each one carries its status in words.

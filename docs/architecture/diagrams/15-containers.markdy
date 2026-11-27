@@ -1,0 +1,36 @@
+scene "Figure 15 · JARVIS as built: the containers" theme=paper type=architecture
+layout LR
+
+browser Console "Console" sub="web page: plain JS, strict CSP"
+mobile Phone "Phone app" sub="Android TWA: Chrome draws it"
+app Telegram "Telegram" sub="chat and alerts by webhook"
+scheduler Clock "Cloud Scheduler" sub="brief clock, 5-minute watchdog"
+service Api "JARVIS on Cloud Run" sub="FastAPI, 1 instance, 512 MiB"
+cloud Brains "AI brains" sub="Claude; free Gemini, no tools"
+secret Secrets "Secret Manager" sub="API keys and the root key"
+database Store "Firestore" sub="asia-south1, one database"
+gateway Gateway "Tool gateway" sub="policy, cards, passkeys, audit"
+cloud Google "Google APIs" sub="Calendar, Gmail, Drive, speech"
+external Search "Tavily" sub="web search, 900 credits"
+proxy Home "Laptop behind Tailscale Funnel" sub="home kit; laptop brain"
+
+beat reach "1. Ways in":
+  show $nodes stagger=30ms
+  Console -> Api "sign-in cookie"
+  Phone -> Api "signed routes"
+  Telegram -> Api "webhook"
+  Clock ~> Api "signed ticks"
+
+beat work "2. Thinking and acting":
+  Api -> Brains "a tier"
+  Api -> Secrets "at start"
+  Api -> Store "read, write"
+  Api -> Gateway "tool calls"
+  Gateway -> Google "REST"
+  Gateway -> Search "fenced"
+  Gateway -> Home "HMAC both ways"
+  glow Gateway color=#22c55e
+
+player:
+  chrome:
+    badge false

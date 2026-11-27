@@ -2,7 +2,8 @@
 # scripts/check_doc_versions.py
 """R6.1 D4 (acceptance check 3): every plan and architecture document is versioned.
 
-Each `docs/plans/*.md` and `docs/architecture/*.md` (not their sub-folders) must:
+Each `docs/plans/*.md`, `docs/architecture/*.md` and `docs/architecture/design/*.md` (the
+Architecture Design Document's chapters; no other sub-folder) must:
 
   1. open with its version line, as its FIRST line:
        Version v6.1.1 · 11 Nov 2026, 12:00 IST · Release R6.1 · Status: Current · Owner: 🛠 Mark XIII
@@ -25,7 +26,7 @@ import re
 import sys
 from pathlib import Path
 
-FOLDERS = ("docs/plans", "docs/architecture")
+FOLDERS = ("docs/plans", "docs/architecture", "docs/architecture/design")
 _MONTH = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec"
 VERSION_LINE = re.compile(
     rf"^Version v\d+\.\d+\.\d+ · \d{{1,2}} (?:{_MONTH}) \d{{4}}(?:, \d{{1,2}}:\d{{2}} IST)?"

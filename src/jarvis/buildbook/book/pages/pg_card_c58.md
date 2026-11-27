@@ -12,7 +12,7 @@ sources:
   "docs/github-backfill.tsv": "08260a54febc5a52"
   "render.yaml": "f4d4dcab2c0f7920"
   "requirements.lock": "9c015550bb6a8ae7"
-  "scripts/check_doc_versions.py": "3bb43ca65ad791d7"
+  "scripts/check_doc_versions.py": "d5acf001aa9fe82d"
   "scripts/check_pr_title.py": "8a7d9975cdae0f81"
   "scripts/github_backfill.sh": "a988b2892ffcc3aa"
 ---

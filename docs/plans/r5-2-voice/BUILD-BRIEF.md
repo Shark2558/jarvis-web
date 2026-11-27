@@ -1,4 +1,4 @@
-Version v5.2.0 · 27 Nov 2026, 15:00 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v5.2.1 · 27 Nov 2026, 22:20 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # R5.2 Your voice — build brief for the builder agents
 
@@ -29,7 +29,7 @@ Read first: `docs/plans/r5-2-voice.md` (the approved plan, v5.2.1+), `docs/plans
 |---|---|
 | Release | R5.2 "Your voice", `v5.2.0`; the About line reads v5.2.0. It ships after R18 (v18.0.0): the number names the release, not an order (R6.3 followed R13.1 the same way); nothing compares `jarvis.__version__` |
 | Rows | 81 (recognition on his voice), 83 (his own "Hey Jarvis"), 84 (the speaker check), 383 (local speech on the laptop) |
-| The kit (D1) | A speech server on the laptop at `127.0.0.1:11437`, behind a Caddy gate at `127.0.0.1:11436` with the kit's key (≥ 32 characters, fail closed), published by Tailscale Funnel on https port **10000** (the offline brain keeps its 8443; I1, the Workshop's decision of 27 Nov); the cloud reaches it only by `JARVIS_LOCAL_SPEECH_URL` (https `*.ts.net`, http refused) with `JARVIS_LOCAL_SPEECH_KEY`; the call desk on the same laptop uses `http://127.0.0.1:11436/v1` |
+| The kit (D1) | A speech server on the laptop at `127.0.0.1:11437`, behind a Caddy gate at `127.0.0.1:11436` with the kit's key (≥ 32 characters, fail closed), published by Tailscale Funnel on https port **10000** (I1, the Workshop's decision of 27 Nov; one door each: the home bridge keeps 8443 and the offline brain 443, and each start script refuses a port that serves something else: R5.2 review); the cloud reaches it only by `JARVIS_LOCAL_SPEECH_URL` (https `*.ts.net`, http refused) with `JARVIS_LOCAL_SPEECH_KEY`; the call desk on the same laptop uses `http://127.0.0.1:11436/v1` |
 | Engines (D2, D3) | English: faster-whisper small int8 (medium int8 if the session shows it clearly better), Kokoro-82M British male (`bm_george` by default), Piper fallback. Indian languages: IndicConformer 600M int8 ONNX, Indic Parler-TTS, licensed Piper voices; R18's language check decides which languages use them. Loaded on demand (4 GB graphics card), CPU fallback; the kit reports `slow` so routing falls back |
 | API | JSON; audio as base64 of 16 kHz mono PCM16 (R18's format); MP3 for the console's voice (`format: "mp3"`, since `POST /v1/voice/speak` answers `audio/mpeg`); requests and audio never logged |
 | Recordings (D4) | The session's clips are stored on the kit only, encrypted at rest with a key only the kit holds; the cloud passes them through and keeps nothing; "Delete my recordings" removes them (and, if asked, the wake-word files trained from them) |
@@ -66,3 +66,4 @@ I1 join (`r5-2-i1`): merge R18's final branch if not yet in, merge all, wire `ap
 |---|---|---|---|---|
 | v5.2.0 | 27 Nov 2026, 15:00 IST | R5.2 | First edition: ground rules, decisions fixed for the build, ownership for I0 and V1–V5 (V2 also owns the kit's client and the call desk's hook in `localspeech/`), the join | 🛠 Mark XXV |
 | v5.2.0 | 27 Nov 2026, 19:00 IST | R5.2 | I1: the kit's Funnel port is 10000 (the offline brain keeps 8443) | 🛠 Mark XXV |
+| v5.2.1 | 27 Nov 2026, 22:20 IST | R5.2 | Combined review: the offline brain's Funnel port is 443, not 8443 (the home bridge's); one door each: the home bridge 8443, the offline brain 443, the kit 10000 | 🛠 Mark XXV |

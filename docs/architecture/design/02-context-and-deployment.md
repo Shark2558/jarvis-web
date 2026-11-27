@@ -1,4 +1,4 @@
-Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.5.2 · 27 Nov 2026, 22:20 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 02 · System context and deployment
 
@@ -162,7 +162,10 @@ Docker Compose (`deploy/home/docker-compose.yml`, project `jarvis-home`).
 **Tailscale Funnel** gives the laptop one public HTTPS name; TLS ends on the laptop. JARVIS accepts
 only a `<machine>.<tailnet>.ts.net` address: port 8443 for the bridge
 (`src/jarvis/home/client.py`), and 443, 8443 or 10000 for the laptop brain
-(`src/jarvis/offline/config.py`). **The laptop brain** is Ollama behind a Caddy gate on
+(`src/jarvis/offline/config.py`). Each part on the laptop has its own Funnel port: the bridge 8443
+(`deploy/home/setup-windows.ps1`), the laptop brain 443 (`deploy/local-brain/start-*`) and, since
+R5.2, the speech kit 10000 (`deploy/local-speech/start-kit.*`); each script refuses a port that
+already serves something else (R5.2 review: the brain's scripts had taken the bridge's 8443). **The laptop brain** is Ollama behind a Caddy gate on
 `127.0.0.1:11435` that wants a bearer key of at least 16 characters and allows only
 `POST /v1/chat/completions` and `GET /v1/models`, bodies up to 2 MB
 (`deploy/local-brain/Caddyfile`).
@@ -277,3 +280,4 @@ its label is what the receiving side checks. Redrawn for R18 with the call desk'
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11, named; step 3's Maps and YouTube APIs added; `render.yaml`'s status and the date of the move to Cloud Run from GitHub's history, the reason marked unverified; the concurrency default marked unverified in plain words | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 19:30 IST | R18 | R18 "Calls from your laptop": the calls' actors in the context table; `--timeout 1800`; the image carries the call desk kit and NumPy; 139 collections; the three speech keys (not mounted by the deploy, how to add them unverified); the phone app's calls (version 18.0.0, the door's fifth route, signed commands, CI's two new controls); when calls are wired; new section 2.13, the call desk, VB-CABLE and Phone Link; trust boundaries B1 and B2 widened, B10–B12 added; Figures 15 and 16 redrawn for R18 (the call desk, the speech services); the capacity pointer fixed to chapter 06, section 5 | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the deploy now mounts each optional speech key when its secret is stored (`deploy/cloudrun.sh:speech_keys`, both deploy paths, a failed grant never fatal), so v6.5.0's "not mounted" and "how to add them unverified" no longer hold; how to add one is in the call desk README; up to 14 secrets; the go-live guide's step is left for the owner | 🛠 Mark XXV |
+| v6.5.2 | 27 Nov 2026, 22:20 IST | R5.2 | R5.2 review: Funnel's ports, one door each (the bridge 8443, the laptop brain 443, the speech kit 10000), and every start script refuses a taken port | 🛠 Mark XXV |

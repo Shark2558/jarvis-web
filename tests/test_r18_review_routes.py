@@ -83,3 +83,39 @@ async def test_review_a_bad_voice_score_is_422_not_500() -> None:
             "u", {"lang": "ml-IN", "option": "google", "scores": [4]}
         )
     assert gone.value.status == 503 and SECRET not in gone.value.words
+
+
+def test_review_a_live_ticket_is_taken_only_when_no_other_credential_came(
+    settings: Settings,
+) -> None:
+    # R18 review: ?ticket= is the token mode's way in only when the socket brought no bearer and
+    # no session cookie; a wrong bearer beside a good ticket is refused (and spends no ticket)
+    from fastapi import WebSocket
+    from starlette.websockets import WebSocketDisconnect
+    from test_r18_i0_routes import CALL
+
+    from jarvis.calls import protocol as p
+
+    class _Sockets:
+        async def live(self, ws: WebSocket, uid: str, call_id: str) -> None:
+            await ws.accept()
+            await ws.close()
+
+        async def desk(self, ws: WebSocket) -> None:
+            await ws.close()
+
+    s = settings.model_copy(update={"env": "prod", "api_token": SecretStr(TOKEN)})
+    app = FastAPI()
+    app.state.settings = s
+    app.state.calls_sockets = _Sockets()
+    cr.install_calls_routes(app)
+    origin = {"Origin": "http://testserver"}
+    with TestClient(app) as c:
+        ticket = c.post(f"/v1/calls/{CALL}/live/ticket", json={}, headers=AUTH).json()["ticket"]
+        wrong = origin | {"Authorization": "Bearer " + "w" * 32}
+        with pytest.raises(WebSocketDisconnect) as refused:
+            with c.websocket_connect(f"/v1/calls/{CALL}/live?ticket={ticket}", headers=wrong) as ws:
+                ws.receive_text()
+        assert refused.value.code == p.WS_UNAUTHORIZED
+        with c.websocket_connect(f"/v1/calls/{CALL}/live?ticket={ticket}", headers=origin):
+            pass  # not spent by the refused try

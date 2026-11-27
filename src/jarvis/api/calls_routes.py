@@ -443,6 +443,10 @@ def ws_owner(ws: WebSocket, s: Settings) -> str | None:
     return None
 
 
+def _other_credential(ws: WebSocket, s: Settings) -> bool:
+    return bool(ws.headers.get("authorization")) or session_email(cast(Request, ws), s) is not None
+
+
 @open_router.websocket(DESK_WS_PATH)
 async def desk_socket(ws: WebSocket) -> None:
     sockets = getattr(ws.app.state, SOCKETS_SLOT, None)
@@ -457,7 +461,9 @@ async def live_socket(ws: WebSocket, call_id: str) -> None:
     s = _settings(ws.app)
     uid = ws_owner(ws, s)
     ticket = ws.query_params.get("ticket")
-    if uid is None and ticket and same_origin(ws, s):  # I1: token mode, from JARVIS's own page
+    # I1: token mode, from JARVIS's own page; R18 review: only when the socket brought no other
+    # credential (a bearer or a session cookie that didn't let him in is refused, not bypassed)
+    if uid is None and ticket and same_origin(ws, s) and not _other_credential(ws, s):
         uid = tickets(ws.app).take(ticket, call_id)
     if uid is None:
         await ws.close(code=WS_UNAUTHORIZED)

@@ -1,4 +1,4 @@
-Version v6.4.3 · 27 Nov 2026, 20:50 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.4 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 11 · Target architecture: the roadmap by release
 
@@ -56,11 +56,17 @@ Plan: `docs/plans/r18-calls.md` (approved 25 Nov; D8 keeps the audio recordings)
 | Calls in the dock | No tab at 1920 px; Vitals' line, the chat's card and `?open=calls` (ADR-35) |
 | A Privacy row for calls | Four rows, added by the combined review |
 
-**Next for R18 (R18.x, planned):** the brain check per language (the first follow-up); a deploy
-step for the speech keys; keeping a waiting call card's number out of `approvals`; caching the
-opening lines' audio; a compressed recording format once an encoder is acceptable; laptop speech
-through R5.2's speech kit. Then the owner's live checks of plan step 6: install the new phone app
-and the call desk, run the language check, one English call, one call with a language switch.
+**Done by the combined review** (27 Nov 2026, `docs/plans/r18-integration/REVIEW.md`), so no
+longer next: the deploy step for the speech keys (`deploy/cloudrun.sh:speech_keys`, mounted only
+when stored) and sealing a waiting call card's number in `approvals`
+(`src/jarvis/calls/pending.py:CallNumberSeal`).
+
+**Next for R18 (R18.x, planned):** the brain check per language (the first follow-up); caching the
+opening lines' audio; sealing every R3 card at rest the way calls now are; a compressed recording
+format once an encoder is acceptable; laptop speech through R5.2's speech kit. The go-live guide
+(a project document) needs the speech keys' step. Then the owner's live checks of plan step 6:
+install the new phone app and the call desk, run the language check and score each voice, one
+English call, one call with a language switch.
 
 ## R5.2 · Your voice (`v5.2.0`)
 
@@ -139,3 +145,4 @@ Layer 6 work on the home bridge: Home Assistant devices the owner lists (robot c
 | v6.4.1 | 27 Nov 2026, 14:20 IST | R6.4 | First edition: every planned release's design delta by layer, what it reuses and where it bends the as-built design; the hardware note for the no-cloud camera; the rows not placed yet | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the R18 and R5.2 plans named as branch files, not yet in `main`; the paper-trading period marked unverified; rows 35 and 386 carry their workbook release; R5.2's speech-kit folder marked planned | 🛠 Mark XXV |
 | v6.4.3 | 27 Nov 2026, 20:50 IST | R18 | R18 "Calls from your laptop" built and joined: its status and where the as-built design lives; where the build differs from the plan; R18.x's follow-ups; R5.2 makes the desk's laptop speech selectable | 🛠 Mark XXV |
+| v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the speech keys' deploy step and the approvals seal moved from "next" to done; R18.x adds sealing every R3 card at rest and the go-live guide's speech-key step; the live checks include scoring each voice | 🛠 Mark XXV |

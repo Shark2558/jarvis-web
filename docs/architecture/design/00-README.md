@@ -1,4 +1,4 @@
-Version v6.4.3 · 27 Nov 2026, 21:10 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.4 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 00 · The JARVIS Architecture Design Document
 
@@ -51,9 +51,12 @@ workshop rules' section 6 format, which `scripts/check_doc_versions.py` defines.
 **How to cite.** A citation is `path` or `path:Symbol`, relative to the repository root, for
 example `src/jarvis/tools/gateway.py:Gateway.execute`. "As built" means present in `main` at
 merge `83331a1` (27 Nov 2026), program version `6.4.0` (`src/jarvis/__init__.py:__version__`).
-For what is marked R18, "as built" means R18's code with its review fixes so far, joined with
-this edition on the ADD's own branch (`main` at `8e95780` plus the `r18-review` branch), program
-version `18.0.0`; it is not yet in `main` or deployed.
+For what is marked R18, "as built" means R18's code with its combined review's fixes, program
+version `18.0.0`; it is not yet in `main` or deployed. This edition was first written on the ADD's
+own branch (`main` at `8e95780` plus the `r18-review` branch at `7d7ce19`); the review's later
+fixes (`docs/plans/r18-integration/REVIEW.md`: the approvals seal, the deploy's speech keys, the
+free-first eval, outfit plans kept 90 days) were then checked into chapters 02, 04–08 and 11–13 on
+the R18 release branch (`r18-release` at `c036ca1`).
 
 ## Chapters
 
@@ -155,3 +158,4 @@ repository as *Unverified*; chapter 13 lists every fix and how to repeat the che
 | v6.4.1 | 27 Nov 2026, 14:05 IST | R6.4 | First edition: what the ADD is, the canonical-reference rule, how conflicts are settled, the chapter list (00–12), the three new figures, the single-file copy, how it was checked, the shared glossary | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): chapter 13 added to the list; how the document was verified; the proposed ADRs now in chapter 08 | 🛠 Mark XXV |
 | v6.4.3 | 27 Nov 2026, 21:10 IST | R18 | R18 "Calls from your laptop": what this edition adds, in plain words; what "as built" means for R18 (not yet in `main`); twelve terms added to the glossary | 🛠 Mark XXV |
+| v6.4.4 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: what "as built" means for R18 now (the release branch `r18-release` at `c036ca1`, after `docs/plans/r18-integration/REVIEW.md`) and which chapters took the approvals seal, the deploy's speech keys, the free-first eval and outfit plans kept 90 days | 🛠 Mark XXV |

@@ -25,9 +25,11 @@ JARVIS uses Google as today, then the browser: you see the same messages as befo
 This first version of the kit (1.0.0) is honest about what it could check when it was built:
 
 - **No model file is pinned yet.** The kit only ever downloads a file whose SHA-256 is written in
-  `models.json`, and the builders could not confirm those hashes from Hugging Face. Until someone
-  adds them, `models install` says "nothing to install" and every engine says "Not installed".
-  The engines' list, with the reason for each, is in `models.json` under `left_out`.
+  `models.json`. For the two English listening models, Hugging Face publishes the SHA-256 of the
+  big `model.bin` but not of their three small files (`config.json`, `tokenizer.json`,
+  `vocabulary.txt`), so they wait. Until they are pinned, `models install` says "nothing to
+  install" and every engine says "Not installed". The table below, and `models.json` under
+  `left_out`, give the reason for each.
 - **The English voice (Kokoro) and Piper are not installed.** Kokoro's helper that turns words into
   sounds (espeak-ng, through `phonemizer`) and today's Piper are GPL-3.0, so they are left out of
   the pinned packages. JARVIS keeps using Google's voice.
@@ -35,6 +37,15 @@ This first version of the kit (1.0.0) is honest about what it could check when i
   model code; they are left out until they can be pinned. R18's calls keep using cloud speech.
 - **The graphics card** is used only if NVIDIA's CUDA 12 and cuDNN 9 are already installed on the
   laptop (NVIDIA's own licence); otherwise the kit uses the CPU, which is fine for listening.
+
+| Engine slot | Model | Licence | In kit 1.0.0 | Why |
+|---|---|---|---|---|
+| `whisper-small` | faster-whisper small, English listening (float16 weights, run as int8) | MIT | Left out | Its three small files have no published SHA-256 |
+| `whisper-medium` | faster-whisper medium, if the voice session shows it is better | MIT | Left out | The same |
+| `kokoro` | Kokoro-82M, English voice | Not checked | Left out | Its phonemiser is GPL-3.0 (Workshop decision) |
+| `piper` | Piper voices, the light fallback voice | Not checked | Left out | piper-tts is GPL-3.0 (Workshop decision) |
+| `indic-conformer` | IndicConformer 600M, Indian-language listening | Not checked | Left out | Needs PyTorch (Workshop decision) |
+| `indic-parler` | Indic Parler-TTS, Indian-language voice | Not checked | Left out | Needs PyTorch (Workshop decision) |
 
 ## One-time setup (about 30 minutes, mostly downloads)
 
@@ -127,6 +138,24 @@ A model goes into `models.json` under `models` only with: its slot, a short mode
 `jarvis.localspeech.protocol.PERMISSIVE_LICENCES`), and every file with its https address **at
 that revision**, its size and its SHA-256 taken from the source itself. Remove it from
 `left_out` in the same change. `tests/test_r52_v1_deploy.py` checks the manifest.
+
+**Checked for the two Whisper slots (27 Nov 2026, nothing downloaded).** Each `model.bin` SHA-256
+below was read from two Hugging Face pages that agree, and their sizes agree too: the API tree
+(`https://huggingface.co/api/models/Systran/faster-whisper-<size>/tree/<revision>`, `lfs.oid`)
+and the raw LFS pointer (`https://huggingface.co/Systran/faster-whisper-<size>/raw/<revision>/model.bin`).
+Licence: `license: mit` in each model card; the repos ship no LICENSE file. They are conversions
+of `openai/whisper-small` and `openai/whisper-medium`, which Hugging Face lists as Apache-2.0
+(both permissive).
+
+| Engine slot | Revision | File | SHA-256 | Size (bytes) |
+|---|---|---|---|---|
+| `whisper-small` | `536b0662742c02347bc0e980a01041f333bce120` | `model.bin` | `3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671` | 483,546,902 |
+| `whisper-medium` | `08e178d48790749d25932bbc082711ddcfdfbc4f` | `model.bin` | `9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae` | 1,527,906,378 |
+
+Still missing for both: `config.json` (2,370 and 2,257 bytes), `tokenizer.json` (2,203,239) and
+`vocabulary.txt` (459,861). The Hub keeps them as plain git files, so it publishes only their git
+blob id (SHA-1), and every pinned file needs a SHA-256. Both slots stay in `left_out` until each of
+those files has a SHA-256 from a primary source, or the model manager learns to check git blob ids.
 
 ## Not on Windows?
 

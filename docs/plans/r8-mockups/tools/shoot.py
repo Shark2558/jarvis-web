@@ -59,7 +59,7 @@ CHECK_JS = r"""
     const own = [...el.childNodes].some((t) => t.nodeType === 3 && t.textContent.trim());
     const r = el.getBoundingClientRect();
     if (!own || r.width === 0 || r.height === 0) return;
-    if (el.closest('[aria-hidden="true"]') || el.closest('svg') || el.disabled || el.closest('[disabled]')) return;
+    if (el.closest('[aria-hidden="true"]') || el.closest('svg') || el.closest('.sr-only') || el.disabled || el.closest('[disabled]') || el.closest('[aria-disabled="true"]')) return; // WCAG 1.4.3: inactive controls are exempt
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden') return;
     const bg = bgOf(el), fg0 = rgba(cs.color), op = opacityOf(el);

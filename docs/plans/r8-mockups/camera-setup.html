@@ -62,7 +62,7 @@ html[data-surface="day"] .r8-field{opacity:.28}
 .r8-sess .hp-txt b{display:flex;align-items:center;gap:8px}
 .r8-sess .vt-chip{font-size:10.5px}
 .r8-need{color:var(--ink-3)}
-.r8-add{margin-top:6px}
+.r8-add{margin-top:12px}
 
 /* ---- cards: the "This month" material (.vt-card), amber and red the way .spend shows warn / reached ----------- */
 .r8-card{margin:10px 0 0}
@@ -71,7 +71,7 @@ html[data-surface="day"] .r8-field{opacity:.28}
 .r8-card.r8-bad{background:var(--bad-tint);border-color:var(--bad-line)}
 html[data-surface="night"] .r8-card.r8-warn{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
 html[data-surface="night"] .r8-card.r8-bad{background:color-mix(in srgb,#E5484D 12%,var(--panel-solid))}
-.r8-card.r8-dim .r8-fig,.r8-card.r8-dim .tiles{opacity:.55}
+.r8-card.r8-dim .r8-fig{opacity:.55}  /* only the drawing dims: words and numbers keep their contrast */
 .r8-lead{margin:0;font-size:14px;font-weight:600;line-height:1.4;color:var(--ink)}
 .r8-warn .r8-lead{color:var(--amber-ink)}
 .r8-bad .r8-lead{color:var(--bad-ink)}
@@ -144,7 +144,7 @@ html[data-surface="night"] .r8-steps b{font:400 12.5px/1.3 var(--tech);letter-sp
 .r8-tg.lit{border-color:var(--accent-2);background:color-mix(in srgb,var(--accent-2) 30%,transparent);box-shadow:0 0 22px -2px var(--accent-2)}
 .r8-hand{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2.5px solid var(--accent-ink);background:color-mix(in srgb,var(--accent) 22%,transparent)}
 .r8-playcap{position:absolute;left:0;right:0;bottom:8px;text-align:center;font:400 11px/1 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
-.r8-play .r8-body{position:absolute;left:50%;top:50%;width:120px;height:150px;margin:-62px 0 0 -60px;opacity:.6}
+.r8-play .r8-body{position:absolute;inset:0;width:100%;height:100%;opacity:.7}
 
 /* ---- the day strip (Vitals): pattern + colour + words; a list of totals beside it ------------------------------ */
 .r8-day{margin-top:6px}

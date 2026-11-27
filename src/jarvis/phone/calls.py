@@ -542,11 +542,11 @@ class PhoneCalls:
             self._states.popitem(last=False)
 
     async def _wait(self, device_id: str, wait_s: int, now: float) -> list[Sealed]:
+        bell = self._outbox.bell(device_id)
+        bell.clear()  # before looking: a command queued from here on sets it again
         pending = self._outbox.pending(device_id, now)
         if pending or wait_s <= 0:
             return pending
-        bell = self._outbox.bell(device_id)
-        bell.clear()
         try:
             await asyncio.wait_for(bell.wait(), timeout=min(float(wait_s), self._max_wait))
         except TimeoutError:

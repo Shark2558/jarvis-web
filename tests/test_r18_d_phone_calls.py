@@ -428,6 +428,25 @@ async def test_a_waiting_phone_gets_a_command_sent_while_it_waits() -> None:
     assert status == 200 and len(got["commands"]) == 1
 
 
+async def test_a_command_queued_after_an_earlier_ring_is_not_lost_by_the_wait() -> None:
+    r = rig(max_wait_s=0.5)
+    await r.calls.send(UID, w.End(call_id=C1))  # rings the bell, then is taken and acked
+    _, got = await answer(r, body())
+    cid = json.loads(got["commands"][0]["body"])["id"]
+    await answer(r, body(acks=[cid]))
+
+    async def later() -> None:
+        await asyncio.sleep(0.05)
+        await r.calls.send(UID, w.End(call_id=C2))
+
+    task = asyncio.create_task(later())
+    started = asyncio.get_running_loop().time()
+    _, waited = await answer(r, body(wait=5))
+    await task
+    assert len(waited["commands"]) == 1
+    assert asyncio.get_running_loop().time() - started < 0.4  # woken, not timed out
+
+
 async def test_a_wait_with_nothing_to_send_ends_on_time() -> None:
     r = rig(max_wait_s=0.05)
     status, got = await answer(r, body(wait=25))

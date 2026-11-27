@@ -413,3 +413,11 @@ object CallPayloads {
         )
     }
 }
+
+/** The console's Calls panel, for a card whose number needs his passkey (one fixed address: the
+ *  launcher that opens it reads nothing from an intent). */
+object CallLaunch {
+    const val PANEL = "calls"
+
+    fun panelUrl(host: String): String = "${Launch.iconUrl(host)}&open=$PANEL"
+}

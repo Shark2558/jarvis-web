@@ -135,4 +135,36 @@
     <string name="sos_safe_not_now">Not now</string>
     <string name="sos_safe_sent">They have been told you are safe.</string>
     <string name="sos_not_a_service">This is a message to your family, not an emergency service. In danger, call 112. Set up Android\'s own Emergency SOS too: press the power button five times.</string>
+
+    <!-- calls (R18 D): the Calls channel, its notifications and the first-run calls screen -->
+    <string name="channel_calls">Calls</string>
+    <string name="channel_calls_about">JARVIS\'s phone calls: a call waiting for your tap, a call card to approve.</string>
+    <string name="calls_locked_title">JARVIS has a call for you</string>
+    <string name="calls_the_number">the number you approved</string>
+    <string name="calls_tap_title">Tap to let JARVIS call %1$s</string>
+    <string name="calls_tap_body">Android held the call back. One tap and JARVIS places it now.</string>
+    <string name="calls_card_title">Approve JARVIS\'s call to %1$s?</string>
+    <string name="calls_card_passkey">%1$s. A number JARVIS has not called before: approve it with your passkey in JARVIS.</string>
+    <string name="calls_passkey_body">This one needs your passkey, Sir. Tap to approve it in JARVIS.</string>
+    <string name="calls_approve">Approve</string>
+    <string name="calls_decline">Decline</string>
+    <string name="calls_permission_title">Allow JARVIS to place calls</string>
+    <string name="calls_permission_body">JARVIS could not place the call you approved without your permission, Sir. Tap to choose.</string>
+    <string name="calls_expired">That JARVIS call has run out, Sir. Ask JARVIS again.</string>
+    <string name="calls_not_placed">Android did not start the call, Sir. Please try again from JARVIS.</string>
+    <string name="calls_approved">Approved, Sir. JARVIS will place the call.</string>
+    <string name="calls_not_reached">JARVIS could not be reached just now, Sir. Approve it in JARVIS instead.</string>
+    <string name="calls_setup_title">Calls from your laptop</string>
+    <string name="calls_setup_intro">JARVIS can make and answer phone calls for you from your own number, Sir. This phone dials; the call\'s sound goes to your laptop through Phone Link, where JARVIS listens and speaks.</string>
+    <string name="calls_setup_will">What JARVIS does with this phone</string>
+    <string name="calls_setup_will_list">• Places a call only after you approve its card.\n• Answers a ringing call only if you switched on answering missed calls.\n• Ends only the calls it placed or answered, never yours.\n• Tries to move a call\'s sound to this phone when you take over.</string>
+    <string name="calls_setup_never">What it never does</string>
+    <string name="calls_setup_never_list">• Hear or record a call through this phone.\n• Read your call log or your contacts.\n• Call anyone without your tap.</string>
+    <string name="calls_setup_allow">Allow calls</string>
+    <string name="calls_setup_allowed">Allowed.</string>
+    <string name="calls_setup_not_yet">Not allowed yet. Android asks for three things: make calls, answer calls, and see when the phone rings.</string>
+    <string name="calls_setup_number">Who is calling (optional)</string>
+    <string name="calls_setup_number_why">Only for answering missed calls from saved contacts only, or from everyone except them. Android shows an app the caller\'s number only with its call-log permission; JARVIS uses it for that number alone and sends it only while answering is on.</string>
+    <string name="calls_setup_number_off">Off. Not needed unless you choose a contacts rule for answering.</string>
+    <string name="calls_setup_done">Done, open JARVIS</string>
 </resources>

@@ -191,6 +191,13 @@ fun callCases(): List<Case> = cases(
         same("**", CallRules.mask("12"), "short")
         yes(CallWire.DIAL_NUMBER.matches("+919000000001") && !CallWire.DIAL_NUMBER.matches("+91112"), "the dial shape")
     },
+    "the calls route is a door path, signed like the others, and opens the Calls panel" to {
+        same("/phone/v1/calls", Door.path(CallWire.ROUTE), "the path")
+        yes(Door.isDoorPath("/phone/v1/calls") && !Door.isDoorPath("/phone/v1/calls?x=1"), "no query")
+        val text = String(Door.signingString("ph_0123456789ab", 1L, "0".repeat(32), "POST", "/phone/v1/calls", ByteArray(0)), Charsets.US_ASCII)
+        yes(text.startsWith("jarvis-phone-v1\nph_0123456789ab\n1\n"), "the phone's own signing string")
+        same("https://jarvis.invalid/?source=app&open=calls", CallLaunch.panelUrl("jarvis.invalid"), "the Calls panel")
+    },
     "rings are counted from the first, every three seconds" to {
         same(1, CallRules.rings(1_000L, 1_000L), "the first")
         same(1, CallRules.rings(1_000L, 3_999L), "still the first")

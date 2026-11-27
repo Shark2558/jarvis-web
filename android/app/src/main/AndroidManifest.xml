@@ -3,6 +3,10 @@
   android/app/src/main/AndroidManifest.xml - R7 D1, D4, D8-D10, D15-D17, D19, D22. The app asks for
   little: the internet, notifications, location while in use (precise and approximate together,
   for SOS), Health Connect's steps, heart rate and sleep (and the background read), and vibrate.
+  R18 D adds JARVIS's calls: place a call he approved, answer and end a call, see the phone's call
+  state, and (asked apart, only for answering missed calls by a contacts rule) the caller's number.
+  Every new part is the app's own (exported="false"); the system's PHONE_STATE broadcast reaches
+  a receiver that is not exported.
   Reachable from outside: the icon (which ignores any address an intent carries) with the share
   entry, the notification service Chrome calls, the two tiles, and Health Connect's two
   privacy-page entries; everything else is the app's own. No App Links, no backups, no plain
@@ -16,6 +20,15 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- R18 D: calls (calls/CallsAccess.kt says why each one, READ_CALL_LOG above all) -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <!-- a phone without telephony (a tablet) still installs JARVIS; calls are simply off there -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
@@ -143,6 +156,44 @@
             android:launchMode="singleTop"
             android:showWhenLocked="true"
             android:turnScreenOn="true" />
+
+        <!-- R18 D: calls. The first-run screen, the tap on a calls notification (it checks the
+             cloud's signed command again), the Calls panel's launcher (one fixed address), the
+             Decline action and the system's PHONE_STATE broadcast. None reachable from other apps. -->
+        <activity
+            android:name=".calls.CallsSetupActivity"
+            android:exported="false" />
+        <activity
+            android:name=".calls.CallTapActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.Jarvis.Launch" />
+        <activity
+            android:name=".calls.CallsLauncherActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Jarvis.Launch">
+            <meta-data
+                android:name="android.support.customtabs.trusted.DEFAULT_URL"
+                android:value="https://${jarvisHost}/?source=app&amp;open=calls" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/jarvis_bg" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/jarvis_bg" />
+        </activity>
+        <receiver
+            android:name=".calls.CallDecisionReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".calls.CallStateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
 
         <!-- Health Connect's privacy page (D17): Android 13 and older -->
         <activity

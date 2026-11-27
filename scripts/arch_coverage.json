@@ -28,7 +28,14 @@
     ["public_base_url", ["Cloud Run"]],
     ["local_brain_", ["Ollama"]],
     ["home_enabled", ["Home Assistant", "Frigate", "Mosquitto", "Tailscale"]],
-    ["webpush_", ["Web Push"]]
+    ["webpush_", ["Web Push"]],
+    ["azure_speech_", ["Microsoft Azure Speech"]],
+    ["voice_price_azure_", ["Microsoft Azure Speech"]],
+    ["voice_azure_f0_", ["Microsoft Azure Speech"]],
+    ["sarvam_", ["Sarvam"]],
+    ["voice_price_sarvam_", ["Sarvam"]],
+    ["bhashini_", ["Bhashini"]],
+    ["voice_price_bhashini_", ["Bhashini"]]
   ],
   "internal_secrets": ["api_token", "session_secret", "token_key"],
   "api_hosts": {
@@ -54,7 +61,10 @@
     "texttospeech.googleapis.com": "Google Cloud Text-to-Speech",
     "metadata.google.internal": "Cloud Run",
     "api.open-meteo.com": "Open-Meteo",
-    "sachet.ndma.gov.in": "NDMA SACHET"
+    "sachet.ndma.gov.in": "NDMA SACHET",
+    "api.sarvam.ai": "Sarvam",
+    "meity-auth.ulcacontrib.org": "Bhashini",
+    "datasets-server.huggingface.co": "Hugging Face"
   },
   "not_services": {
     "www.googleapis.com": "shared by Calendar, Drive, YouTube and sign-in; each is covered by its setting",

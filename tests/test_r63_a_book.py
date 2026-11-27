@@ -43,10 +43,10 @@ def test_g7_firestore_lists_its_daily_free_reads_writes_and_deletes(tmp_path: Pa
 
 
 # ---- G3: the integrations -------------------------------------------------------------------
-def test_g3_the_book_names_every_one_of_the_checker_s_31_services(real: Repo) -> None:
+def test_g3_the_book_names_every_one_of_the_checker_s_35_services(real: Repo) -> None:
     names = services_mod.inventory(real.root).names
     rows = code.integrations(real, S).services
-    assert len(names) == 31
+    assert len(names) == 35  # R18: Azure Speech, Sarvam, Bhashini, Hugging Face
     assert code.services_named(rows, services_mod.tables(real.root)) == set(names)
     ids = [r.id for r in rows]
     assert len(ids) == len(set(ids))

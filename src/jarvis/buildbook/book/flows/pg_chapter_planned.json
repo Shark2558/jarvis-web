@@ -2,30 +2,31 @@
   "title": "The roadmap, in your order",
   "dir": "down",
   "nodes": [
-    {"id": "built", "label": "R18 built: phone calls", "kind": "store", "rank": 0, "col": 0,
-     "ref": "docs/plans/r18-calls.md"},
-    {"id": "left", "label": "Not in R18: call box, more", "kind": "step", "rank": 0, "col": 1,
-     "ref": "docs/plans/r18-calls.md"},
+    {"id": "built", "label": "R5.2 built: your voice", "kind": "store", "rank": 0, "col": 0,
+     "ref": "docs/plans/r5-2-voice.md"},
+    {"id": "left", "label": "Left out: laptop voice, more", "kind": "step", "rank": 0, "col": 1,
+     "ref": "docs/plans/r5-2-voice.md"},
     {"id": "guide", "label": "The guide's roadmap", "kind": "store", "rank": 1, "col": 0,
      "ref": "docs/architecture/JARVIS-Architecture.md"},
     {"id": "tour", "label": "Tour reads the first rows", "kind": "step", "rank": 1, "col": 1,
      "ref": "docs/architecture/JARVIS-Architecture.md"},
-    {"id": "voice", "label": "R5.2 Voice fixes", "kind": "step", "rank": 2, "col": 0},
-    {"id": "cams", "label": "R8 Home cameras", "kind": "step", "rank": 3, "col": 0},
-    {"id": "confirm", "label": "You confirm the cameras", "kind": "person", "rank": 3, "col": 1},
-    {"id": "next", "label": "R8.1 next in your order", "kind": "step", "rank": 4, "col": 0},
-    {"id": "kitchen", "label": "R9 Kitchen vision", "kind": "step", "rank": 5, "col": 0},
-    {"id": "later", "label": "Later: care, fitness, more", "kind": "step", "rank": 6, "col": 0}
+    {"id": "cams", "label": "R8 Home cameras", "kind": "step", "rank": 2, "col": 0},
+    {"id": "confirm", "label": "You confirm the cameras", "kind": "person", "rank": 2, "col": 1},
+    {"id": "next", "label": "R8.1 next in your order", "kind": "step", "rank": 3, "col": 0},
+    {"id": "kitchen", "label": "R9 Kitchen vision", "kind": "step", "rank": 4, "col": 0},
+    {"id": "later", "label": "Later: care, fitness, more", "kind": "step", "rank": 5, "col": 0},
+    {"id": "launch", "label": "Before launch: own wake word", "kind": "guard", "rank": 5, "col": 1,
+     "ref": "docs/architecture/JARVIS-Architecture.md"}
   ],
   "edges": [
     {"from": "built", "to": "left", "label": "left for later", "style": "side"},
     {"from": "built", "to": "guide", "label": "then, in your order"},
     {"from": "guide", "to": "tour", "label": "next two", "style": "side"},
-    {"from": "guide", "to": "voice"},
-    {"from": "voice", "to": "cams"},
+    {"from": "guide", "to": "cams"},
     {"from": "confirm", "to": "cams", "style": "side"},
     {"from": "cams", "to": "next"},
     {"from": "next", "to": "kitchen"},
-    {"from": "kitchen", "to": "later"}
+    {"from": "kitchen", "to": "later"},
+    {"from": "left", "to": "launch", "label": "needs you", "style": "side"}
   ]
 }

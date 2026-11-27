@@ -6,7 +6,7 @@ sources:
   "src/jarvis/api/brief.py": "384e3c31e281a98b"
   "src/jarvis/api/static/console-brief-sections.js": "e11e4eafe28cf198"
   "src/jarvis/api/static/console-brief.js": "11856702dcd2439c"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Brief is your morning page: one look at today before the day starts. It lists today's calendar with its clashes and free gaps, the first thing tomorrow, your unread mail, to-dos due, parcels on the way, the family calendars and how many approvals are waiting. JARVIS makes it at the time you choose, and the Brief button shows a dot until you have looked at it. The facts are written by code, not by an AI; the short AI summary is a separate switch that stays off until you confirm it (`src/jarvis/api/static/console-brief.js`).

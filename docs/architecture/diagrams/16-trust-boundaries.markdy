@@ -8,14 +8,15 @@ scheduler Clock "Cloud Scheduler" sub="an account with no roles"
 service Project "Owner's Cloud project" sub="Cloud Run, Firestore, secrets"
 gateway Gateway "Tool gateway" sub="risk tiers, cards, taint, audit"
 cloud Brains "AI brains" sub="a training brain: no tools, no data"
-desktop Laptop "Owner's laptop" sub="home bridge behind Funnel"
+cloud Speech "Speech services" sub="R18: other people's voices"
+desktop Laptop "Owner's laptop" sub="home bridge; call desk (R18)"
 external Outside "Mail, web, documents" sub="other people's words"
 
 beat callers "1. Every way in proves itself":
   show $nodes stagger=30ms
   Devices -> Project "sign-in, CSRF header"
   Telegram -> Project "secret token"
-  Clock -> Project "OIDC token"
+  Clock -> Project "OIDC"
   Actions -> Project "Workload Identity"
 
 beat outward "2. Every way out is checked":
@@ -23,7 +24,11 @@ beat outward "2. Every way out is checked":
   Gateway -> Outside "fenced as data"
   Gateway -> Laptop "HMAC both ways"
   Project -> Brains "by tier"
+  Project -> Speech "calls: passed options"
   glow Gateway color=#22c55e
+
+beat calls "3. A phone call (R18)":
+  Project <- Laptop "call desk: signed socket"
 
 player:
   chrome:

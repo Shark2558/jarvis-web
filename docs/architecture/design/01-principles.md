@@ -1,4 +1,4 @@
-Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.3 · 27 Nov 2026, 21:15 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # 01 · Architecture principles
 
@@ -39,6 +39,7 @@ JARVIS seals the most private records with its own keys.
 | `src/jarvis/web/guard.py:query_problem` | A web search whose words hold private details (long numbers and the like) is refused before Tavily sees it. |
 | `src/jarvis/keyring.py:Keyring` | One key per purpose (26 cipher purposes and 1 secret purpose in `PURPOSES` / `SECRET_PURPOSES`) for the sealed collections (chapter 04). |
 | `deploy/home/docker-compose.yml` | Camera media and the face library live in the laptop's volumes; the bridge's only published ports are bound to `127.0.0.1`. |
+| `src/jarvis/calls/brain.py:pick_call_brain` (R18) | A call carries other people's voices and details, so the in-call brain is never one that may train on prompts; with none configured, calls are not wired at all. A call's number is sealed and its recording, transcript and summary are sealed like vault files (chapter 04). |
 
 **Weaker than it sounds.** Conversations, long-term memory facts, attachment text and the audit
 are protected by Google's encryption at rest only, not sealed by JARVIS (chapter 04,
@@ -86,7 +87,8 @@ There is no separate **R0** in the code: the slice 1 plan's "R0/R1 ALLOW"
 | `src/jarvis/permissions/service.py:PermissionsService.check_approval` | With passkeys in force, an R3 card needs a passkey assertion bound to exactly that card (`approval_binding`); unreadable passkey data fails closed (`passkey_required` returns true). |
 | `src/jarvis/permissions/service.py:PermissionsService.check_purpose` | The same for non-tool actions: vault unlock, privacy export and delete, the alarm's disarm (`home_disarm`). |
 | `src/jarvis/core/guardrails.py:PendingAction.bulk_ok` | Approve all never runs an irreversible card, a draft to an address the owner did not type, a memory write, or a tool in `NO_BULK_TOOLS`. |
-| `src/jarvis/telegram/service.py` (`R3_REFUSAL`, `CONSOLE_ONLY_TOOLS`) | Telegram's buttons approve only R2 cards; an R3 or console-only card waits for the console. |
+| `src/jarvis/telegram/service.py` (`R3_REFUSAL`, `CONSOLE_ONLY_TOOLS`) | Telegram's buttons approve only R2 cards; an R3 or console-only card waits for the console. Since R18 `calls_place` is console-only too. |
+| `src/jarvis/calls/approvals.py:GrantBook` (R18) | Placing a call is R3; the approval issues a grant for one call, within 10 minutes, bound to the number and the card's content; a never-called number also needs the passkey (chapter 05, section 8.1). |
 | `src/jarvis/tools/budget.py:MAX_NEW_CARDS` | One owner message may propose at most 5 new cards. |
 | `src/jarvis/billing/budget.py` | Raising or removing the monthly limit needs `confirm_raise: true`; lowering does not. |
 
@@ -124,6 +126,7 @@ owner's monthly limit.
 | `src/jarvis/web/allowance.py:MONTHLY_CREDITS` | Web search stops at 900 of Tavily's 1,000 free credits. |
 | `src/jarvis/offline/mode.py` | No-AI mode: a saved switch that guarantees no model spend; unreadable reads as "none" (fail closed). |
 | `deploy/cloudrun.sh:setup_budget_alert` | A ₹1 (`--budget-amount=1`) Google budget alert, `jarvis-any-charge`: it warns, it never stops. |
+| `src/jarvis/calls/cards.py:offered` (R18) | A call uses a speech option that costs ₹0 now before any paid one; paid Sarvam only with the owner's YES; calls have their own caps, ₹200 a month and ₹20 a call (chapter 06, section 6). |
 
 ## P6 · Never change the console's look
 
@@ -197,3 +200,4 @@ other unauthenticated failures are logged, never audited, on purpose (`src/jarvi
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:25 IST | R6.4 | First edition: nine principles, each with its enforcement points (file and symbol), its proof and where it is weaker than it sounds; the three risk classes as built and the absent R0 | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): P7 is now enforced by `tests/test_llm_sdk_boundary.py` (follow-up F1 closed); the eval folder count corrected to 46 (45 suites plus `realrun`) | 🛠 Mark XXV |
+| v6.4.3 | 27 Nov 2026, 21:15 IST | R18 | R18 "Calls from your laptop": where calls enforce P1 (no training brain on a call; sealed numbers and records), P3 (`calls_place` console-only; the one-use grant) and P5 (free speech first; the calls caps) | 🛠 Mark XXV |

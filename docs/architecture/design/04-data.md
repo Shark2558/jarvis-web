@@ -1,4 +1,4 @@
-Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.0 · 27 Nov 2026, 22:55 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 04 · Data architecture
 
@@ -16,6 +16,15 @@ your vault's files and kept 30 days, unless you press Keep. If the person on the
 be recorded, JARVIS deletes what it had recorded of that call and keeps only notes for the
 summary. Calls have four rows in the Privacy panel, under "Phone calls" (section 4).
 
+**Your voice (R5.2, built, not yet deployed).** The recordings of your 20-minute voice session
+stay on your laptop, locked with a key only the laptop's speech kit holds; the cloud never keeps
+any audio. The cloud keeps your **voice profile**: how well each listening engine understood you,
+which one was chosen, and the corrections it learned (words only, never numbers). Your **voice
+print**, which lets a device tell your voice from others, is made and kept only in that device's
+browser, locked, and is never sent anywhere. The wake-word files trained from your voice are kept
+on the laptop, locked with their own key. Three new rows in the Privacy panel let you see and
+delete each of these (section 8).
+
 ## 1. Where data lives
 
 | Place | What is there | Who can read it | Evidence |
@@ -24,24 +33,25 @@ summary. Calls have four rows in the Privacy panel, under "Phone calls" (section
 | Secret Manager, same project | API keys, the session secret, the API token, the root token key | `jarvis-run`, one grant per secret | `deploy/cloudrun.sh` step 5 |
 | Cloud Logging, same project | JSON logs with a trace id; the audit chain's `(seq, hash)` anchor; never a secret, a message's text or audio | the project's owner | `src/jarvis/logging.py`, `src/jarvis/storage/audit.py` |
 | Firestore backups (after the owner's step) | A daily copy of the whole database, kept 7 days | Google, the project's owner, the drill | `deploy/backup_setup.sh` |
-| The owner's laptop | Camera recordings and events, the face library, face attempts, the face groups' SQLite file, Home Assistant's own data; from R18 the call desk's folder (its id and link seed, the microphone roles it changed, a log without sound, words, numbers or keys) | the owner; only the bridge's signed door is reachable from outside (the call desk opens its own socket out, nothing reaches it) | `deploy/home/docker-compose.yml` (volumes); the guide's C77 |
-| JARVIS's memory, one instance (R18) | A call in progress, the dial grants, the live socket's tickets, the phone's command outbox and its signing key | the running server only; gone at a restart (so no old approval can dial) | `src/jarvis/calls/approvals.py:GrantBook`, `src/jarvis/api/calls_routes.py:LiveTickets`, `src/jarvis/phone/calls.py:PhoneCalls` |
-| The owner's browser | Wake-word detection, camera frames, the share tray (Cache Storage `jarvis-share-v1`, each item at most 24 hours), the camera-off switch, small conveniences (open conversation, look, sound devices) | the owner | C06, C62, C63 in the guide |
+| The owner's laptop | Camera recordings and events, the face library, face attempts, the face groups' SQLite file, Home Assistant's own data; from R18 the call desk's folder (its id and link seed, the microphone roles it changed, a log without sound, words, numbers or keys); from R5.2 the speech kit's folder (its key, the voice session's recordings and what the laptop engines heard, encrypted; the pinned model files; the wake word's trained files, sealed) and, in the call desk's folder, a copy of the kit's key | the owner; only the bridge's signed door and the kit's keyed gate are reachable from outside (the call desk opens its own socket out, nothing reaches it) | `deploy/home/docker-compose.yml` (volumes); the guide's C77 and C79; `src/jarvis/localspeech/kitconfig.py` |
+| JARVIS's memory, one instance (R18) | A call in progress, the dial grants, the live socket's tickets, the phone's command outbox and its signing key; from R5.2 the kit's last health and which engine heard and spoke last | the running server only; gone at a restart (so no old approval can dial) | `src/jarvis/calls/approvals.py:GrantBook`, `src/jarvis/api/calls_routes.py:LiveTickets`, `src/jarvis/phone/calls.py:PhoneCalls`, `src/jarvis/voice/laptop.py:LaptopVoice` |
+| The owner's browser | Wake-word detection, camera frames, the share tray (Cache Storage `jarvis-share-v1`, each item at most 24 hours), the camera-off switch, small conveniences (open conversation, look, sound devices); from R5.2 the voice print (IndexedDB `jarvis-voiceprint`, encrypted), its on/off switch, and the owned wake-word files in the tab's memory only | the owner | C06, C62, C63, C82, C83 in the guide |
 | The phone | The phone's P-256 key in secure hardware; the SOS numbers sealed for the offline SMS screen; from R18, in the app's private preferences (never backed up), the cloud's public command key, the call machine's one line (a caller's number only while the phone rings) and the commands acted on, until they expire | the owner | C62, C65, C78 |
 | The owner's Google account | Calendar, Gmail, Tasks, Contacts, Drive, Photos, as always | Google and the owner; JARVIS through his link | C29 |
 
 ## 2. Firestore collections
 
-**How many.** `scripts/arch_inventory.py` finds **134** collection names in the code (re-run on
-R18's code, 27 Nov 2026; 126 before R18, whose 8 are `calls`, `call_settings`, `call_lang_check`,
-`call_check_sentences`, `call_lines`, `call_line_audio`, `call_desk` and `call_desk_codes`).
+**How many.** `scripts/arch_inventory.py` finds **136** collection names in the code (re-run on
+R5.2's code, 27 Nov 2026; 126 before R18, whose 8 are `calls`, `call_settings`, `call_lang_check`,
+`call_check_sentences`, `call_lines`, `call_line_audio`, `call_desk` and `call_desk_codes`; R5.2
+added 2, `voice_profile` and `voice_session`).
 A wider search found **5 more** that its patterns miss: `wardrobe_outlook`, `wardrobe_plans` and
 `wardrobe_cal`, named through a helper (`src/jarvis/wardrobe/styling/part.py:_sealed`, lines 50,
 53 and 54; also `src/jarvis/wardrobe/kept.py:PLANS_SINGLES`), and `bills_told` and
 `birthdays_told`, named in a tuple assignment (`src/jarvis/helpers/today/part.py`, line 36; also
-`src/jarvis/helpers/kinds.py`). So the code names **139** top-level collections, and the table
-below lists all 139 (the 131 checked name by name against the inventory on 27 Nov 2026, R18's 8
-read from the inventory's own list). The coverage
+`src/jarvis/helpers/kinds.py`). So the code names **141** top-level collections, and the table
+below lists all 141 (the 131 checked name by name against the inventory on 27 Nov 2026, R18's 8
+and R5.2's 2 read from the inventory's own list). The coverage
 check passes all the same, because the guide happens to name all five. Teaching the inventory both
 idioms is not a docs-only change: the Build Book's fact pack uses the same patterns
 (`src/jarvis/buildbook/gen/facts_code.py:COLLECTION`) and `tests/test_r63_a_facts_real.py` holds
@@ -75,7 +85,8 @@ morning sweeps delete what expires, because Firestore TTL policies are billed an
 | People research | `people_last` | The last research | No | Replaced by the next |
 | Permissions and passkeys | `permissions`, `passkeys`, `webauthn_challenges` | Allow / Ask first / Never choices; passkey public keys; one-time challenges | No (public keys only) | Until changed; challenges 2 minutes |
 | Costs and allowances | `usage`, `allowance`, `budget`, `fx`, `api_quota`, `web_usage`, `web_vendor_usage`, `token_ledger` | ₹ per month; voice allowance used; the limit; the day's rate; Maps and YouTube counters; web searches; tokens by part (counts only) | No | Months kept; the ledger 90 days |
-| Voice and brain | `voice_settings`, `settings`, `local_brain` | Voice choices and words to recognise; the No-AI switch; the laptop brain's address and key | `local_brain`: token key | Until changed |
+| Voice and brain | `voice_settings`, `settings`, `local_brain` | Voice choices and words to recognise (from R5.2 also the new words the voice session found); the No-AI switch; the laptop brain's address and key | `local_brain`: token key | Until changed |
+| Your voice (R5.2) | `voice_profile`, `voice_session` | The profile: each listening engine's word error and command accuracy on his voice, the chosen engine, the corrections and their switch, the session's state, the number of clips recorded and the Google seconds the comparison used. The session in progress: its prompts (his own words among them), which are recorded, what the browser and Google heard for the held-out lines (at most 400 characters each) and the comparison's ₹ answer (his YES, the ₹ shown). Never audio, never a voice print | No | The profile until the Privacy delete or a new session; the session until "Delete my recordings" (`src/jarvis/voice/profile_store.py:DocProfileStore`, `src/jarvis/voice/session_store.py:DocSessionStore`) |
 | Telegram | `telegram`, `telegram_users`, `telegram_pairing`, `telegram_pairing_tries`, `telegram_updates`, `telegram_alerts` | Pairing, reverse look-up, codes, update claims, alert counters | No | Updates 48 h, counters 3 days, codes 10 minutes |
 | Alerts | `notify`, `notify_held`, `notify_rate`, `webpush` | Alert settings and VIPs; held alerts; storm counters; browser subscriptions | `notify` (VIPs), `webpush` | Held until quiet hours end; counters 3 days |
 | Home | `home`, `home_link`, `home_claims`, `home_devices`, `home_arm`, `home_cameras`, `home_feed` | The home link, a pending code, event claims, devices, alarm state, camera settings, the home feed | `home`, `home_feed` (not the arm state) | Claims 48 h; feed 7 days |
@@ -140,7 +151,8 @@ permissions and the cost counters. Anyone who can open the Cloud project can rea
 guide, section 10). From R18 also: a call card's purpose, its lines, the contact's name and a
 booking's name and number to give; a call record's times, languages and ₹; the call settings (the
 owner's first name among them); the language check's results. Chapter 12, section 6 lists them
-(G12).
+(G12). From R5.2 also the voice profile (his corrections are words he says) and, while a session
+is kept, what the browser and Google heard for its held-out lines.
 
 **A waiting call card in `approvals`** (R18). The gateway keeps a waiting `calls_place` card's
 arguments, which are what runs on approval, in `approvals` until it is decided or tidied after its
@@ -228,6 +240,41 @@ reasoning under India's data law is in chapter 05, section 8.
 | A call's sound while the other person is silent (R18) | the laptop | The call desk's voice detector sends sound only while they speak | `src/jarvis/calldesk/vad.py` |
 | The call desk's link seed (R18) | the laptop and the cloud (sealed) | Shown once at linking; the cloud keeps it sealed with `calls` and never shows it again | `src/jarvis/calls/hub.py:DeskStore` |
 
+## 8. Your voice (R5.2)
+
+Built in R5.2 (`v5.2.0`), not yet deployed. Plan: `docs/plans/r5-2-voice.md`, sections 3.3–3.5
+and D4. The rule is the plan's: no audio, recording or voice print is ever kept in the cloud.
+
+| Data | Where | Protection | Kept | Evidence |
+|---|---|---|---|---|
+| The voice session's recordings (WAV clips) and what the laptop engines heard | the speech kit's folder on the laptop only; each clip passes through the cloud in memory on its way there and is not kept | AES-256-GCM, a fresh 96-bit nonce per file, the session and prompt bound in as associated data (a file moved to another name doesn't open), under a 32-byte key in `clips.secret` that only the owner's account can read and the cloud never has | at most 400 clips a session and 12 sessions; until "Delete my recordings", which also replaces the key | `src/jarvis/localspeech/clips.py` (`MAX_CLIPS_PER_SESSION`, `MAX_SESSIONS`) |
+| The wake word's trained files (stage 1's verifier, stage 2's model) | the kit's folder, under `wakeword/` | sealed with AES-256-GCM under their own key, `wakeword.secret`, so the recordings' delete can leave them | until he deletes them (their Privacy row); deleting them deletes the recordings too | `src/jarvis/localspeech/wakejoin.py`, `src/jarvis/localspeech/wakeword/store.py` |
+| The same files in the console | the browser tab's memory, after each SHA-256 matches the one the kit announced | never stored by the browser; no audio, score or feature leaves the tab | until the tab closes | `src/jarvis/api/static/console-wakeword-own.js` |
+| The voice print | the browser of each device where he enrolled, never uploaded | AES-GCM with a key the browser makes and cannot export, both in this origin's IndexedDB (`jarvis-voiceprint`); the page shows no score and no number of the print | until he forgets it or clears the site's data | `src/jarvis/api/static/console-voiceprint.js` |
+| The voice profile and the session in progress | Firestore, `voice_profile` and `voice_session` (section 2) | Google's encryption; not sealed by JARVIS (section 3) | as in section 2 | `src/jarvis/voice/profile_store.py`, `src/jarvis/voice/session_store.py` |
+| The kit's key | the kit's folder (`key`), the secret `jarvis-local-speech-key`, and, for the call desk, `local-speech.key` in the desk's folder or its environment | readable by the owner's account only on the laptop; Secret Manager in the cloud; never in the kit zip or the repository | until he makes a new one | `deploy/local-speech/start-kit.ps1`, `src/jarvis/calldesk/config.py:speech_key` |
+
+**The Privacy panel's voice rows** (`src/jarvis/voice/session_privacy.py`, after R13's rows and
+R18's "Phone calls"; wired by `src/jarvis/api/r52_wiring.py:r52_privacy_sources`):
+
+- *Your voice profile* (`voice_profile`): look and export give the ranking, the chosen engine and
+  the corrections; delete puts listening back to the usual order.
+- *Voice session recordings* (`voice_recordings`): the clips on the laptop and the comparison's
+  transcripts here; export gives the profile's fields and the transcripts, never audio; delete is
+  "Delete my recordings".
+- *Wake-word files from your voice* (`voice_wakeword_files`): the trained files on the laptop;
+  deleting them deletes the recordings too.
+
+A laptop that can't be reached makes a row say "Couldn't check right now", and a delete fails
+rather than claim something is gone that isn't. Export and delete ask for the passkey like every
+row (section 4). The voice print is not a row: it never leaves the browser, and Voice → Speaker
+check forgets it on that device after a confirm.
+
+**What crosses to Google.** Only the session's comparison: Google, with his words, hears the 80
+held-out lines once, inside the free minutes or after his typed YES (chapter 06, section 7), and
+keeps nothing for JARVIS. The browser's own listening is used for the comparison only if he
+chooses it, and the screen says that in Chrome that audio goes to the browser's maker.
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -237,3 +284,4 @@ reasoning under India's data law is in chapter 05, section 8.
 | v6.4.3 | 27 Nov 2026 | R6.4 | Outfit plans: the owner's decision (90 days after their day) recorded; the code change is pending | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 19:50 IST | R18 | R18 "Calls from your laptop": the calls' data in plain words; where it lives (the desk's folder, the server's memory, the phone app); 134 + 5 = 139 collections with the Calls row (what is sealed, what is not, how long each is kept); 13 sub-collections; the `calls` key (27 cipher purposes) and how a call's records are sealed (8 kHz WAV, 16 MiB cap); what is not sealed, a waiting call card's number in `approvals` among it; 30-day retention, deletion on objection and the four Privacy rows; who hears a call; backups and the drill; two more things that stay on the laptop | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: a waiting call card's numbers are sealed in `approvals` (`src/jarvis/calls/pending.py:CallNumberSeal`), in the collections table, the `calls` purpose and a new paragraph, its other arguments still in clear; the Wardrobe row as built: plans kept 90 days after their day, at most 250, the calendar's cap 20 ahead and 100 kept | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 22:55 IST | R5.2 | R5.2 "Your voice": the voice data in plain words; where it lives (the kit's folder on the laptop, the server's memory, the browser's voice print and wake-word files); 136 + 5 = 141 collections with the "Your voice" row (`voice_profile`, `voice_session`, not sealed, never audio); the voice profile and session transcripts added to what is not sealed; new section 8: the recordings on the laptop only (AES-256-GCM, `clips.secret`, 400 clips and 12 sessions), the wake word's sealed files, the voice print in the browser only, the kit's key, the three Privacy voice rows, and what reaches Google | 🛠 Mark XXV |

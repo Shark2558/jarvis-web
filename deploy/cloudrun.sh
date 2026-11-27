@@ -293,13 +293,20 @@ telegram_answer
 # address stays on the live service), or a remembered skip (JARVIS_LOCAL_SPEECH_ENABLED=false).
 # The address must be the laptop's Tailscale https name, as JARVIS checks it (*.ts.net, Funnel's
 # port 443, 8443 or 10000, no path); the key goes straight to Secret Manager, never to a file,
-# the log or the screen. Off: voice uses Google, then the browser, as before.
+# the log or the screen. Off: voice uses Google, then the browser, as before. An optional part
+# never stops the deploy (R5.2 review): a bad address, a short key or a key Secret Manager won't
+# store says why and leaves the kit off this time (`ls_skip`); re-run with --local-speech.
 LS_SECRET=""; LS_ENV="JARVIS_LOCAL_SPEECH_ENABLED=false"; LS_REMOVE=()
 ls_url_ok() {
   printf '%s' "$1" | grep -Eq '^https://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.ts\.net(:(443|8443|10000))?/?$'
 }
 ls_unmount() {
   case "${SVC_JSON:-}" in *JARVIS_LOCAL_SPEECH_KEY*) LS_REMOVE=(--remove-secrets JARVIS_LOCAL_SPEECH_KEY) ;; esac
+}
+ls_skip() { # why
+  echo "  Note: $1 The laptop speech kit stays off this time (voice uses Google's speech, then the"
+  echo "  browser's); the deploy goes on. Re-run with --local-speech to try again."
+  LS_SECRET=""; LS_ENV="JARVIS_LOCAL_SPEECH_ENABLED=false"; ls_unmount
 }
 local_speech_answer() {
   local v="" u=""
@@ -316,15 +323,24 @@ local_speech_answer() {
   read -r -p "Laptop speech kit address (Enter = skip, JARVIS uses Google's speech as today): " u || true
   u="$(printf '%s' "$u" | tr 'A-Z' 'a-z')"
   if [ -z "$u" ]; then echo "  (skipped: the laptop speech kit stays off)"; ls_unmount; return 0; fi
-  ls_url_ok "$u" || die "That is not the kit's Tailscale https address (https://<laptop>.<tailnet>.ts.net:10000)."
+  if ! ls_url_ok "$u"; then
+    ls_skip "That is not the kit's Tailscale https address (https://<laptop>.<tailnet>.ts.net:10000)."
+    return 0
+  fi
   if secret_exists jarvis-local-speech-key; then
     read -r -s -p "The kit's key (Enter keeps the saved key): " v || true; echo
   else
     read -r -s -p "The kit's key (printed by start-kit.ps1): " v || true; echo
   fi
   if [ -n "$v" ]; then
-    [ "${#v}" -ge 32 ] || die "The kit's key is at least 32 characters: copy it from start-kit.ps1's window again."
-    put_secret jarvis-local-speech-key "$v" || die "Could not store the kit's key in Secret Manager (jarvis-local-speech-key)."
+    if [ "${#v}" -lt 32 ]; then
+      v=""; ls_skip "The kit's key is at least 32 characters: copy it from start-kit.ps1's window again."
+      return 0
+    fi
+    if ! put_secret jarvis-local-speech-key "$v"; then
+      v=""; ls_skip "Could not store the kit's key in Secret Manager (jarvis-local-speech-key)."
+      return 0
+    fi
   elif ! secret_exists jarvis-local-speech-key; then
     echo "  (no key: the laptop speech kit stays off)"; ls_unmount; return 0
   fi

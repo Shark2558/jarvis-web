@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 17:05 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 08 · Architecture decisions (ADR log)
 
@@ -23,7 +23,7 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 | 04 | Firestore behind a small document port, not Postgres | Postgres | Accepted | Slice 5 |
 | 05 | Word matching (BM25) for memory and notes, not a vector database | Chroma or Pinecone | Accepted | Slice 8 |
 | 06 | Google Cloud speech with the browser as fallback; wake word on the device; no voice clone | Whisper or Deepgram; ElevenLabs | Accepted | Slice 9 |
-| 07 | One Cloud Run service, at most one instance, one re-runnable deploy script | Docker → Kubernetes, Terraform | Accepted | Slice 4 (*unverified* date of the move from Render) |
+| 07 | One Cloud Run service, at most one instance, one re-runnable deploy script | Docker → Kubernetes, Terraform | Accepted | Slice 2 (31 Oct 2026; the reason is *unverified*) |
 | 08 | Keyless deploy on merge (Workload Identity Federation), only from `main` | GitHub Actions | Accepted | Slice 5c |
 | 09 | A custom brain loop, not an orchestration framework | LangGraph | Accepted | Phase 0 |
 | 10 | No event bus: Cloud Scheduler ticks, in-process gateway observers and an alerts port | Kafka or NATS | Accepted | Slice 7 onward |
@@ -41,6 +41,12 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 | 22 | Structured JSON logs and Vitals now; OpenTelemetry later | OpenTelemetry and Grafana | Accepted (OpenTelemetry PLANNED) | Phase 0 |
 | 23 | One plain-JavaScript console served by the API, no build step, strict CSP | Next.js and Tailwind | Accepted | Slice 2 |
 | 24 | Backups are Google's managed copies after an owner step, proved by a monthly restore drill | — | Accepted | R14 |
+| 25 | One instance with its state in memory while JARVIS has one owner (was proposed ADR-B) | — | Accepted | 27 Nov 2026 |
+| 26 | The laptop is the home server for now; an always-on box later (was ADR-C) | — | Proposed | — |
+| 27 | Calls from the owner's own SIM through Phone Link; a Windows call desk (was ADR-D) | a business call provider | Proposed | — |
+| 28 | Only a brain that doesn't train on prompts sees tools or other people's data (was ADR-E) | — | Proposed | — |
+| 29 | Shipped models and datasets carry permissive licences (was ADR-F) | — | Proposed | — |
+| 30 | Trading: the owner approves every money movement, or it is not built (was ADR-G) | — | Proposed | — |
 
 ## 2. The decisions
 
@@ -53,8 +59,8 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   (this log). The plain-language guide explains parts, not rules.
 - **Decision:** `docs/architecture/design/` is the reference for planning, building and review;
   the PDF is historical. A conflict is flagged and resolved by an ADR here before work goes on.
-- **Consequences:** Every release's paperwork updates the chapters it changed. The version-line
-  check does not yet scan this folder (chapter 07, section 5).
+- **Consequences:** Every release's paperwork updates the chapters it changed. Since 27 Nov 2026
+  the version-line check scans this folder too (chapter 07, section 5).
 - **Code:** none; `docs/architecture/design/00-README.md`.
 
 ### ADR-02 · Model-agnostic core
@@ -65,7 +71,8 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   implements one provider interface. Only `jarvis.llm` imports an AI vendor's SDK.
 - **Consequences:** Gemini, an OpenAI-compatible slot, the laptop and a mock run behind the same
   interface; degradation and fallback live in one router. Only Claude is proved by the real eval
-  gate. No automated check enforces the SDK boundary tree-wide (follow-up F1).
+  gate. `tests/test_llm_sdk_boundary.py` enforces the SDK boundary across `src/jarvis/` (follow-up
+  F1, closed 27 Nov 2026).
 - **Code:** `src/jarvis/llm/base.py:LLMProvider`, `src/jarvis/llm/router.py:ModelRouter`,
   `tiers_for`, `src/jarvis/llm/brains.py`.
 
@@ -122,8 +129,10 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 
 ### ADR-07 · One Cloud Run service, at most one instance
 
-- **Status:** Accepted. Hosting moved from Render (slice 2, `render.yaml`) to Cloud Run by slice 4
-  (*unverified*: no plan records why). Source: `deploy/cloudrun.sh` header.
+- **Status:** Accepted, slice 2 (31 Oct 2026, UTC). The Render blueprint (`render.yaml`, GitHub
+  commit `3e73d81`) was followed 17 minutes later by the Cloud Run script (`db109f3`), before slice
+  3. *Unverified:* why; no commit message, plan or deploy file records the reason. Source:
+  `deploy/cloudrun.sh` header.
 - **Context:** One owner; free first; no server to patch. Kubernetes and Terraform cost money and
   time for one owner.
 - **Decision:** One service in `asia-south1`, `--min-instances 0 --max-instances 1`, 512 MiB, one
@@ -132,7 +141,7 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   live in memory; one instance is also one point of failure and the capacity ceiling (chapter 06,
   section 5). "Raise --max-instances only after sessions gain a cross-process concurrency check,
   and the home nonce cache moves out of process" (the script's own words). The conditions for
-  moving out are chapter 12's proposed ADR-B.
+  moving out are ADR-25.
 - **Code:** `deploy/cloudrun.sh` step 6, `src/jarvis/api/ratelimit.py`,
   `src/jarvis/home/signing.py:NonceCache`.
 
@@ -158,8 +167,8 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 
 ### ADR-10 · No event bus
 
-- **Status:** Accepted as built. No plan records this as a decision; the context is reconstructed
-  from the code (*unverified* rationale).
+- **Status:** Accepted as built. *Unverified:* the reason; no plan, commit or deploy file records
+  it as a decision, and the context below is read from the code, not from a record.
 - **Context:** One instance, scale to zero, free first: a broker would be a paid, always-on
   service.
 - **Decision:** Time-driven work rides two Cloud Scheduler jobs; in-process observers hear every
@@ -172,8 +181,7 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 ### ADR-11 · A training brain gets no tools and no personal data
 
 - **Status:** Accepted, Slice 3 (1 Nov 2026). Source: `docs/plans/phase2-slice3-gemini-free-brain.md`.
-  Chapter 12's proposed ADR-E would extend it (paid tier only for any brain that sees tools or
-  third parties' data).
+  ADR-28 (proposed) would extend it to other people's data (calls, row 389).
 - **Decision:** `tools_allowed` is `not trains_on_content`; such a brain sees only turns after its
   cutoff, never tool output, memory, files or pictures.
 - **Code:** `src/jarvis/llm/brains.py:BrainSpec`, `src/jarvis/core/brain.py:Brain._tools_on`,
@@ -224,7 +232,7 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   reached through Tailscale Funnel with HMAC both ways; pictures and the face library stay home;
   one small opt-in burglar snapshot may go to Telegram. Matter is not used.
 - **Consequences:** ₹0 and private; home features stop when the laptop sleeps; WSL is not an
-  officially supported host for either program (chapter 12, proposed ADR-C).
+  officially supported host for either program (ADR-26, proposed).
 - **Code:** `deploy/home/`, `src/jarvis/home/`, `src/jarvis/homebridge/`.
 
 ### ADR-17 · A persisted No-AI mode that fails closed
@@ -307,24 +315,103 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   key, which share it.
 - **Code:** `deploy/backup_setup.sh`, `src/jarvis/backup/`.
 
+### ADR-25 · One instance with its state in memory while JARVIS has one owner
+
+- **Status:** Accepted, as built (27 Nov 2026; chapter 12's proposed ADR-B). The steps for moving
+  the state out are recorded here; none of them is built.
+- **Context:** ADR-07 chose one Cloud Run instance. Chapter 06, section 5 lists what lives in that
+  one process because of it; R18's call hub would add more.
+- **Decision:** Keep `--max-instances 1` while JARVIS has one owner. Before a second user, a second
+  instance or a load one instance can't carry, move out of the process, each with a test that two
+  processes agree: the per-conversation lock and the rate limits (to Firestore transactions or
+  Redis), the home and phone nonce stores, and any call hub.
+- **Consequences:** ₹0 and simple; one point of failure and one capacity ceiling. The deploy
+  script's own warning stays the gate for raising the limit.
+- **Code:** `deploy/cloudrun.sh` (header comment and step 6), `src/jarvis/api/ratelimit.py`,
+  `src/jarvis/core/brain.py:Brain._serialised`, `src/jarvis/home/signing.py:NonceCache`,
+  `src/jarvis/phone/door.py`.
+
+### ADR-26 · The laptop is the home server for now; an always-on box later
+
+- **Status:** Proposed (27 Nov 2026; chapter 12's proposed ADR-C). The laptop half is as built
+  (ADR-16); the always-on box is not.
+- **Context:** The home kit, the laptop brain and, when built, R5.2's speech kit and R18's call
+  desk all run on the owner's laptop; when it sleeps, they stop. WSL is not an officially supported
+  host for Home Assistant or Frigate.
+- **Decision (proposed):** Keep the laptop until "the laptop must be on" hurts or a third camera
+  arrives; then an always-on box (a Raspberry Pi 5 with an accelerator, or a mini-PC). Which parts
+  move first is decided then (candidates in chapter 12, section 3).
+- **Consequences:** No new spend now; the watchdog and Vitals already say when the laptop is off.
+- **Code:** as built, `deploy/home/` and `src/jarvis/home/watchdog.py`; nothing yet for the box.
+
+### ADR-27 · Calls from the owner's own SIM through Phone Link; a Windows call desk
+
+- **Status:** Proposed in this log (27 Nov 2026; chapter 12's proposed ADR-D). Decided in the R18
+  plan at its approval stop 1 (25 Nov 2026) and being built on the `r18-*` branches; nothing of it
+  is in `main`.
+- **Context:** The owner has no registered business (17 Nov), so a business call provider is out;
+  WSL can't reach Windows audio or Bluetooth; automated calls from a personal number fall under
+  TRAI's rules (chapter 12, C5).
+- **Decision:** The owner's own number through Windows Phone Link, with JARVIS's call desk as a
+  Windows program outside the home kit; every call starts with the owner's tap.
+- **Consequences:** ₹0 a minute on an unlimited plan; calls need the laptop on; a second laptop
+  runtime beside the home kit.
+- **Code:** none in `main`; the plan is `docs/plans/r18-calls.md` on branch `r18-a1`.
+
+### ADR-28 · Only a brain that doesn't train on prompts sees tools or other people's data
+
+- **Status:** Proposed (27 Nov 2026; chapter 12's proposed ADR-E; covers C4 and the calls
+  exclusion). The tools half is as built (ADR-11); the other-people's-data half is not.
+- **Context:** Calls carry third parties' voices and details; row 389 asks for Gemini as the brain
+  for Google tasks.
+- **Decision (proposed):** A brain that sees tools, memory or other people's data (call audio,
+  contacts, mail) must be one that does not train on prompts: the free Gemini tier stays tool-less
+  and is excluded from calls; a Gemini brain for Google tasks only on the paid tier, with each
+  Google tool's evals passing on it first.
+- **Consequences:** Some free options stay closed to the features that would use them.
+- **Code:** as built, `src/jarvis/llm/brains.py:BrainSpec` (`tools_allowed = not
+  trains_on_content`) and `src/jarvis/core/brain.py:Brain._tools_on`.
+
+### ADR-29 · Shipped models and datasets carry permissive licences
+
+- **Status:** Proposed (27 Nov 2026; chapter 12's proposed ADR-F; covers C8). Not true today: the
+  wake-word models are CC BY-NC-SA 4.0 (`src/jarvis/api/static/wakeword/LICENSE.txt`).
+- **Decision (proposed):** Only permissive licences in the parts JARVIS ships; a non-commercial
+  part is replaced before any public launch (R5.2 stage 2's owned wake-word model, before
+  R18.1); a licence audit of every model and dataset is an R18.1 precondition.
+- **Consequences:** R5.2 stage 2 becomes required work before launch.
+- **Code:** the Python packages' licences are already listed (`requirements.licences.json`); no
+  check covers models or datasets yet.
+
+### ADR-30 · Trading: the owner approves every money movement, or it is not built
+
+- **Status:** Proposed (27 Nov 2026; chapter 12's proposed ADR-G; covers C3). Nothing is built
+  (R19 is deferred).
+- **Context:** The owner's first ask was fully autonomous trading, which breaks confirm before
+  commit.
+- **Decision (proposed):** Any trading design keeps every order and money movement behind an
+  irreversible-class card (R3) with the passkey, with no "don't ask again"; paper trading first.
+- **Consequences:** A trading desk is slower than an autonomous one; it is built only on these terms.
+- **Code:** none; it would rely on `src/jarvis/core/guardrails.py:ActionRisk` and
+  `src/jarvis/tools/policy.py`.
+
 ## 3. Follow-ups found while writing this document
 
 | # | Follow-up | Why | Where |
 |---|---|---|---|
-| F1 | A tree-wide check that only `jarvis.llm` imports an AI vendor SDK | ADR-02 is enforced by review only | `tests/` or ruff's banned-import rule; an ADR if the rule changes |
-| F2 | Teach `scripts/arch_inventory.py` the two idioms it misses (a helper-named collection; a tuple assignment) | 5 collections are invisible to the coverage check | chapter 04, section 2 |
-| F3 | Extend `scripts/check_doc_versions.py` to `docs/architecture/design/` | This document's version lines are not checked in CI | chapter 07, section 5 |
+| F1 | A tree-wide check that only `jarvis.llm` imports an AI vendor SDK | ADR-02 was enforced by review only | Closed 27 Nov 2026: `tests/test_llm_sdk_boundary.py` |
+| F2 | Teach `scripts/arch_inventory.py` the two idioms it misses (a helper-named collection; a tuple assignment) | 5 collections are invisible to the coverage check | Open: needs the Build Book's `src/jarvis/buildbook/gen/facts_code.py:COLLECTION` changed with it (chapter 04, section 2; chapter 12, section 4) |
+| F3 | Extend `scripts/check_doc_versions.py` to `docs/architecture/design/` | This document's version lines were not checked in CI | Closed 27 Nov 2026: `FOLDERS` includes the folder; `tests/test_check_doc_versions.py` |
 
 ## 4. Proposed ADRs
 
-Chapter 12 (section 5) holds the proposals not yet decided: ADR-B (conditions for moving off one
-instance; ADR-07 records the current decision), ADR-C (an always-on home box), ADR-D (calls from
-a personal SIM), ADR-E (paid tier only for a brain that sees tools or third parties' data; extends
-ADR-11), ADR-F (model and dataset licences) and ADR-G (the trading desk). ADR-A is settled by
-ADR-01. When one is decided it moves here with the next free number.
+Chapter 12's seven proposals now live in section 2: ADR-A is ADR-01, and ADR-B to ADR-G are
+ADR-25 to ADR-30. A new proposal is written in section 2 with the next free number and the status
+Proposed; it becomes Accepted when the code does what it says, in the same pull request.
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 17:05 IST | R6.4 | First edition: 24 ADRs with context, decision, consequences, status and code, every departure from the reference architecture included; three follow-ups found while writing; the link to chapter 12's proposed ADRs | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): chapter 12's proposals B–G recorded as ADR-25 to ADR-30 (25 Accepted as built, the rest Proposed; A was already ADR-01); ADR-07's date and source from GitHub's history, its reason and ADR-10's marked unverified; F1 and F3 closed, F2 left open with the reason | 🛠 Mark XXV |

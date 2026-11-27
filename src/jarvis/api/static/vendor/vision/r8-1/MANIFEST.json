@@ -1,0 +1,17 @@
+{
+ "release": "r8-1",
+ "files": {},
+ "licences": {},
+ "models": {
+  "hand_landmarker.task": {
+   "url": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+   "licence": "Apache-2.0",
+   "state": "not installed"
+  },
+  "pose_landmarker_full.task": {
+   "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
+   "licence": "Apache-2.0",
+   "state": "not installed"
+  }
+ }
+}

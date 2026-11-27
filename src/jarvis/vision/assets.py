@@ -13,6 +13,14 @@ fallback, only if vendored), UltraFace for `face`, SSD-MobileNetV1 for `person`;
 arithmetic. `scripts/wardrobe_assets.py` fetches, checks and cuts them and writes that folder's
 MANIFEST.json. `installed(served)` answers R7's five tasks as before; with the wardrobe release's
 files too (`installed(served, served13)`) it answers the four wardrobe tasks as well.
+
+R8 I0 (docs/plans/r8-vision.md v8.0.3 4.2, 4.11, seam S4; builder A from I0 on): the release
+`r8-1` (`R8_RELEASE`, `R8_FILES`) for the two new model files, the hand landmarker (`hands`) and
+the full pose model (`pose`'s upgrade on the workout phone and the home laptop, D4); both
+Apache-2.0, fetched and hashed twice by CI (`.github/workflows/vision-models.yml`, ADR-50).
+`installed(served, served13, served8)` answers `hands` only when given the r8-1 files too, and
+`digits` (D7) needs no file at I0 (builder D's method decides; until then its body says "not
+installed"). The home laptop's pose runtime (builder J) reads the same pinned files.
 """
 
 from __future__ import annotations
@@ -43,6 +51,10 @@ TASK_FILES: Mapping[str, tuple[str, ...]] = {
     "pose": (*MEDIAPIPE, POSE_MODEL),
     "quality": (),
 }
+R8_RELEASE = "r8-1"
+HAND_MODEL = "hand_landmarker.task"
+POSE_FULL_MODEL = "pose_landmarker_full.task"
+R8_FILES: Mapping[str, tuple[str, ...]] = {"hands": (HAND_MODEL,), "pose_full": (POSE_FULL_MODEL,)}
 WARDROBE_RELEASE = "r13-1"
 EMBED_INT8 = "mobilenetv2-int8-embed.onnx"
 EMBED_FP32 = "mobilenetv2-fp32-embed.onnx"  # the fallback (D8): not vendored unless needed
@@ -55,11 +67,17 @@ WARDROBE_FILES: Mapping[str, tuple[str, ...]] = {
 
 
 def installed(
-    served: Mapping[str, str], served13: Mapping[str, str] | None = None
+    served: Mapping[str, str],
+    served13: Mapping[str, str] | None = None,
+    served8: Mapping[str, str] | None = None,
 ) -> dict[str, bool]:
     """{task: every file it needs is served} (`served`: the route's `vision_files(RELEASE)`;
-    `served13`, when given: `vision_files(WARDROBE_RELEASE)`, for the four wardrobe tasks)."""
+    `served13`, when given: `vision_files(WARDROBE_RELEASE)`, for the four wardrobe tasks;
+    `served8`, when given: `vision_files(R8_RELEASE)`, for `hands`, which also needs MediaPipe's
+    runtime from `served`)."""
     out = {task: all(name in served for name in files) for task, files in TASK_FILES.items()}
+    if served8 is not None:
+        out["hands"] = all(n in served for n in MEDIAPIPE) and HAND_MODEL in served8
     if served13 is None:
         return out
     for task, files in WARDROBE_FILES.items():
@@ -77,6 +95,10 @@ __all__ = [
     "EMBED_FP32",
     "EMBED_INT8",
     "FOLDER",
+    "HAND_MODEL",
+    "POSE_FULL_MODEL",
+    "R8_FILES",
+    "R8_RELEASE",
     "MEDIAPIPE",
     "NOT_INSTALLED",
     "OBJECT_MODEL",

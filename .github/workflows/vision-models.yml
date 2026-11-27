@@ -1,0 +1,74 @@
+# .github/workflows/vision-models.yml -- R8 I0 seam S5 (docs/plans/r8-vision.md v8.0.3 4.11, D8, ADR-50; builder A
+# owns it from I0 on). The Workshop's sandbox can't reach Google's model storage, so CI fetches the MediaPipe model
+# files and pins them: each release's models are fetched TWICE from fresh downloads, the run fails if any SHA-256
+# differs between the two, every file's name, size and SHA-256 goes to the job summary, and the files are uploaded
+# as a 7-day artifact. The Workshop reads the hashes, downloads the artifact (`gh run download`), runs
+# `python scripts/vision_assets.py check` (and `--release r8-1`) and commits the files and manifests on the R8
+# branch. Google publishes no hash, so the pins are "read twice" (trust on first use, R7 section 5). The object
+# model (EfficientDet-Lite0) is fetched only with its licence read and passed as OBJECT_LICENCE (a repository
+# variable; D9: else the vendored SSD-MobileNet v1 serves `objects`). No secret; contents: read only.
+name: vision-models
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["src/jarvis/api/static/vendor/vision/**", ".github/workflows/vision-models.yml", "scripts/vision_assets.py"]
+permissions:
+  contents: read
+concurrency:
+  group: vision-models-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  fetch-and-hash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OBJECT_LICENCE: ${{ vars.OBJECT_LICENCE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Fetch every release's models twice, from fresh copies
+        run: |
+          set -euo pipefail
+          licence=()
+          if [ -n "${OBJECT_LICENCE}" ]; then licence=(--object-licence "${OBJECT_LICENCE}"); fi
+          for run in one two; do
+            rm -rf "/tmp/vision-${run}"
+            cp -r src/jarvis/api/static/vendor/vision "/tmp/vision-${run}"
+            python scripts/vision_assets.py fetch --models "${licence[@]}" --folder "/tmp/vision-${run}"
+            python scripts/vision_assets.py fetch --models --release r8-1 --folder "/tmp/vision-${run}"
+          done
+      - name: The two fetches agree, byte for byte
+        run: |
+          set -euo pipefail
+          {
+            echo "| File | Bytes | SHA-256 |"
+            echo "|---|---|---|"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          bad=0
+          for f in r7-1/pose_landmarker_lite.task r7-1/efficientdet_lite0.tflite r8-1/hand_landmarker.task \
+                   r8-1/pose_landmarker_full.task; do
+            [ -f "/tmp/vision-one/${f}" ] || continue
+            a=$(sha256sum "/tmp/vision-one/${f}" | cut -d' ' -f1)
+            b=$(sha256sum "/tmp/vision-two/${f}" | cut -d' ' -f1)
+            size=$(stat -c %s "/tmp/vision-one/${f}")
+            echo "| ${f} | ${size} | ${a} |" >> "${GITHUB_STEP_SUMMARY}"
+            if [ "${a}" != "${b}" ]; then echo "::error::${f}: the two fetches differ (${a} vs ${b})"; bad=1; fi
+          done
+          exit "${bad}"
+      - name: Both releases check against their manifests
+        run: |
+          python scripts/vision_assets.py check --folder /tmp/vision-one
+          python scripts/vision_assets.py check --release r8-1 --folder /tmp/vision-one
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vision-models
+          retention-days: 7
+          path: |
+            /tmp/vision-one/r7-1/MANIFEST.json
+            /tmp/vision-one/r7-1/*.task
+            /tmp/vision-one/r7-1/*.tflite
+            /tmp/vision-one/r8-1/MANIFEST.json
+            /tmp/vision-one/r8-1/*.task
+            /tmp/vision-one/LICENSE-mediapipe-models.txt

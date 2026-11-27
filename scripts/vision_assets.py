@@ -8,6 +8,11 @@
     python scripts/vision_assets.py fetch --models [--object-licence Apache-2.0]
                                               also MediaPipe's model files (Google storage: run
                                               on CI or the owner's laptop)
+    python scripts/vision_assets.py fetch --models --release r8-1
+                                              R8 (docs/plans/r8-vision.md 4.11, ADR-50): the hand
+                                              model and the full pose model into r8-1 (models
+                                              only: r8-1 has no library of its own)
+    python scripts/vision_assets.py check --release r8-1
 
 Every source is pinned before a byte is kept: an npm tarball by its registry `sha512` integrity, a
 GitHub file by a tag or commit address and its SHA-256. A model file has no recorded sum until its
@@ -51,7 +56,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from jarvis.vision.assets import FOLDER, OBJECT_MODEL, POSE_MODEL, RELEASE  # noqa: E402
+from jarvis.vision.assets import (  # noqa: E402
+    FOLDER,
+    HAND_MODEL,
+    OBJECT_MODEL,
+    POSE_FULL_MODEL,
+    POSE_MODEL,
+    R8_RELEASE,
+    RELEASE,
+)
+
+RELEASES = (RELEASE, R8_RELEASE)
 
 REGISTRY = "https://registry.npmjs.org"
 RAW = "https://raw.githubusercontent.com"
@@ -84,6 +99,7 @@ class Source:
     sha256: str = ""
     name: str = ""
     licence: str = ""  # model: the licence a person read ("" = not read yet)
+    release: str = RELEASE  # R8: the release folder a model file is pinned in
 
 
 SOURCES: tuple[Source, ...] = (
@@ -187,6 +203,23 @@ SOURCES: tuple[Source, ...] = (
         name=OBJECT_MODEL,
         licence="",  # its page links no model card: a person reads the licence first (D14)
     ),
+    # R8 (r8-1): the addresses on MediaPipe's model pages; builder A confirms them (4.2)
+    Source(
+        "model",
+        url="https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+        "hand_landmarker/float16/1/hand_landmarker.task",
+        name=HAND_MODEL,
+        licence="Apache-2.0",  # the Hand Landmarker model card
+        release=R8_RELEASE,
+    ),
+    Source(
+        "model",
+        url="https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+        "pose_landmarker_full/float16/1/pose_landmarker_full.task",
+        name=POSE_FULL_MODEL,
+        licence="Apache-2.0",  # the Pose Landmarker model card
+        release=R8_RELEASE,
+    ),
 )
 LICENCE_NAMES = frozenset(
     {
@@ -274,10 +307,13 @@ def npm_files(src: Source, data: bytes) -> dict[str, bytes]:
     return out
 
 
-def plan_models(object_licence: str | None) -> list[Source]:
+def plan_models(object_licence: str | None, release: str = RELEASE) -> list[Source]:
     """The model files to fetch: the pose model always; the object model only once a person has
-    read its licence (`object_licence`: its name, one of RECOGNISED_LICENCES). Else it refuses."""
-    models = [s for s in SOURCES if s.kind == "model"]
+    read its licence (`object_licence`: its name, one of RECOGNISED_LICENCES). Else it refuses.
+    R8: only the models of `release` (r8-1: the hand and full pose models, both read)."""
+    models = [s for s in SOURCES if s.kind == "model" and s.release == release]
+    if release != RELEASE:
+        return models
     if object_licence is None:
         return [m for m in models if m.name != OBJECT_MODEL]
     if not object_licence.strip():
@@ -299,11 +335,11 @@ def _entry(name: str, data: bytes, source: str, licence: str) -> dict[str, objec
     }
 
 
-def _pending_models(files: Mapping[str, object]) -> dict[str, object]:
+def _pending_models(files: Mapping[str, object], release: str = RELEASE) -> dict[str, object]:
     return {
         s.name: {"url": s.url, "licence": s.licence or "to be read", "state": "not installed"}
         for s in SOURCES
-        if s.kind == "model" and s.name not in files
+        if s.kind == "model" and s.release == release and s.name not in files
     }
 
 
@@ -315,7 +351,7 @@ def write_manifest(folder: Path, release: str, files: Mapping[str, object]) -> N
         "release": release,
         "files": dict(sorted(files.items())),
         "licences": licences,
-        "models": _pending_models(files),
+        "models": _pending_models(files, release),
     }
     text = json.dumps(doc, indent=1, sort_keys=False, ensure_ascii=True) + "\n"
     _write_atomic(folder / release / "MANIFEST.json", text.encode("utf-8"))
@@ -397,7 +433,7 @@ def stage_models(
     pinned = pinned if isinstance(pinned, dict) else {}
     writes: dict[Path, bytes] = {}
     files: dict[str, object] = {}
-    picked = plan_models(object_licence)
+    picked = plan_models(object_licence, release)
     for src in picked:
         data = get(src.url)
         before = pinned.get(src.name)
@@ -457,7 +493,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--models", action="store_true", help="also fetch MediaPipe's model files")
     ap.add_argument("--object-licence", default=None, help="the object model's licence, as read")
     ap.add_argument("--folder", type=Path, default=FOLDER)
+    ap.add_argument("--release", choices=RELEASES, default=RELEASE, help="r8-1: R8's models only")
     args = ap.parse_args(argv)
+    if args.release != RELEASE:
+        return _release_only(args)
     if args.command == "fetch":
         # everything is downloaded and verified in memory first; files are written after, the
         # manifest last, so a failed run leaves the folder and its manifest as they were
@@ -479,6 +518,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     shelf = args.folder / RELEASE
     total = sum(p.stat().st_size for p in shelf.iterdir() if p.is_file()) if shelf.is_dir() else 0
     print(f"{RELEASE}: {'OK' if not problems else 'PROBLEMS'} ({total / 1024 / 1024:.1f} MB)")
+    return 1 if problems else 0
+
+
+def _release_only(args: argparse.Namespace) -> int:
+    """R8: a release with models only (r8-1): fetch them (with --models) or check them."""
+    release = str(args.release)
+    if args.command == "fetch":
+        if not args.models:
+            raise SystemExit(f"{release} holds model files only: pass --models")
+        old = _read_manifest(args.folder, release).get("files")
+        files = {k: v for k, v in (old if isinstance(old, dict) else {}).items()}
+        writes, more = stage_models(args.folder, release, None)
+        files.update(more)
+        print(PIN_NOTE, end="")
+        write_staged(writes)
+        write_manifest(args.folder, release, files)
+    problems = check(args.folder, release)
+    for line in problems:
+        print(line)
+    print(f"{release}: {'OK' if not problems else 'PROBLEMS'}")
     return 1 if problems else 0
 
 

@@ -178,7 +178,9 @@ def test_every_source_is_pinned() -> None:
             assert len(src.sha256) == 64, src.url
         else:
             assert src.kind == "model" and src.url.startswith("https://storage.googleapis.com/")
-            assert src.name in (assets.POSE_MODEL, assets.OBJECT_MODEL)
+            # R8 I0 (S4): the hand and full pose models, pinned into r8-1
+            assert src.name in (assets.POSE_MODEL, assets.OBJECT_MODEL, *assets.R8_FILES["hands"],
+                                assets.POSE_FULL_MODEL)  # fmt: skip
     models = {s.name: s for s in va.SOURCES if s.kind == "model"}
     assert models[assets.POSE_MODEL].licence == "Apache-2.0"  # its model card [S24]
     assert models[assets.OBJECT_MODEL].licence == ""  # still to be read (D14)

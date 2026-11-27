@@ -644,3 +644,56 @@ def test_vitals_has_one_line_per_camera_amber_after_a_day_unseen() -> None:
     assert camera_item(CameraLine("Bad Id!", "x", "phone", True, now, 1.0), now) is None
     assert words_for("camera_desk_cam", "Desk camera")[0].startswith("If this stops")
     assert reserved("camera_desk_cam") and reserved("screen_time")  # never a manual record
+
+
+# ---- S4 · the r8-1 release, S5 · the fetch-and-hash workflow ------------------------------------
+def test_the_r8_release_lists_its_two_models_not_installed() -> None:
+    import json
+
+    from jarvis.vision import assets
+
+    assert assets.R8_RELEASE == "r8-1"
+    assert assets.R8_FILES == {"hands": ("hand_landmarker.task",),
+                               "pose_full": ("pose_landmarker_full.task",)}  # fmt: skip
+    doc = json.loads((assets.FOLDER / "r8-1" / "MANIFEST.json").read_text(encoding="utf-8"))
+    assert doc["release"] == "r8-1" and doc["files"] == {}
+    assert set(doc["models"]) == {assets.HAND_MODEL, assets.POSE_FULL_MODEL}
+    assert {m["licence"] for m in doc["models"].values()} == {"Apache-2.0"}
+    r7 = {n: "x" for n in (*assets.MEDIAPIPE, assets.POSE_MODEL)}
+    assert "hands" not in assets.installed(r7)  # R7's answer is unchanged without r8-1
+    assert assets.installed(r7, None, {})["hands"] is False
+    assert assets.installed(r7, None, {assets.HAND_MODEL: "x"})["hands"] is True
+    assert assets.installed({}, None, {assets.HAND_MODEL: "x"})["hands"] is False  # no runtime
+
+
+def test_the_script_fetches_r8_models_only_into_r8_1() -> None:
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(
+        "vision_assets_r8", ROOT / "scripts" / "vision_assets.py"
+    )
+    assert spec is not None and spec.loader is not None
+    va = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = va  # a dataclass module must be importable by its own name
+    spec.loader.exec_module(va)
+    picked = va.plan_models(None, "r8-1")
+    assert [s.name for s in picked] == ["hand_landmarker.task", "pose_landmarker_full.task"]
+    assert all(
+        s.release == "r8-1" and s.url.startswith("https://storage.googleapis.com/") for s in picked
+    )
+    assert [s.name for s in va.plan_models(None)] == ["pose_landmarker_lite.task"]  # R7 unchanged
+    assert va.main(["check", "--release", "r8-1"]) == 0
+
+
+def test_the_workflow_fetches_twice_compares_and_keeps_the_files_a_week() -> None:
+    import re
+
+    wf = (ROOT / ".github" / "workflows" / "vision-models.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in wf and "src/jarvis/api/static/vendor/vision/**" in wf
+    assert re.search(r"^permissions:\n  contents: read$", wf, re.M)
+    assert "for run in one two; do" in wf and "the two fetches differ" in wf
+    assert "--release r8-1" in wf and "retention-days: 7" in wf and "GITHUB_STEP_SUMMARY" in wf
+    for use in re.findall(r"uses: (\S+)", wf):
+        assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", use), use  # every action pinned by its commit
+    assert "secrets." not in wf

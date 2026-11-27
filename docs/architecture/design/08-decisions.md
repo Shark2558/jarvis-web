@@ -1,4 +1,4 @@
-Version v6.6.0 · 27 Nov 2026, 22:12 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.1 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 08 · Architecture decisions (ADR log)
 
@@ -672,8 +672,8 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
 - **Consequences:** The kit has no voice and no Indian-language engine. JARVIS's voice stays
   Google's (then the browser's); calls use the cloud options R18's check passes; the wake word's
   stage 1 trains without other speakers' negatives and stage 2 refuses until a permissively
-  licensed voice is pinned; the plan's first-audio and listening-speed bars can't be measured
-  (chapter 07, section 9.4). Revisit when a voice with a permissive runtime can be pinned. Vitals'
+  licensed voice is pinned; the plan's first-audio bar can't be measured, and listening speed is
+  timed by the self-test on its own (since the R5.2 review; chapter 07, section 9.4). Revisit when a voice with a permissive runtime can be pinned. Vitals'
   engine names and the protocol's default voice still name Kokoro and Piper, unused (chapter 12,
   section 7).
 - **Code:** `deploy/local-speech/models.json` (`left_out`), `src/jarvis/localspeech/manager.py`,
@@ -693,8 +693,10 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   `tokenizer.json`, `vocabulary.txt`) could not be downloaded and hashed. Without an exception the
   Whisper slots could not be pinned at all, and the kit would have had no engine.
 - **Decision:** Only for a `.json` or `.txt` file of at most 5 MB, at a revision that is a full
-  40-character commit appearing in the file's address, the manifest may give `git_blob_sha1`
-  instead of `sha256`. The manager checks it after download exactly as git computes it, refuses a
+  40-character commit, fetched from exactly the host's raw file at that commit (plain segments, no
+  port, query or fragment, ending in the pinned name; tightened by the R5.2 review, `2d487fd`,
+  where I1 had only asked that the commit appear somewhere in the address), the manifest may give
+  `git_blob_sha1` instead of `sha256`. The manager checks it after download exactly as git computes it, refuses a
   mismatch, and records the file's SHA-256 in `installed.json` and `LICENCE.txt`. Weights
   (`model.bin`, any LFS file) always need a SHA-256. The blob ids were read twice, by two
   different requests, with the same answer.
@@ -704,8 +706,8 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   blob-pinned file by its blob id, not by the SHA-256 recorded at install (chapter 05, section 9.2).
   A file whose pin is wrong fails the install on the laptop rather than installing anything.
 - **Code:** `src/jarvis/localspeech/manager.py:ModelFile`, `ModelEntry`, `git_blob`,
-  `ModelManager.install`, `ModelManager.verify`; `deploy/local-speech/models.json`;
-  `tests/test_r52_i1_manager_blob.py`.
+  `_at_commit`, `ModelManager.install`, `ModelManager.verify`; `deploy/local-speech/models.json`;
+  `tests/test_r52_i1_manager_blob.py`, `tests/test_r52_review_manager.py`.
 
 ### ADR-43 · The kit's Funnel port is 10000
 
@@ -713,17 +715,22 @@ Dates before R6.1 come from the guide's decisions log (section 5.4).
   `docs/plans/r5-2-integration/I1-NOTES.md` (section 2, decision 2).
 - **Context:** Tailscale Funnel serves only three https ports, 443, 8443 and 10000, and the cloud
   accepts only those (`src/jarvis/offline/config.py`, `src/jarvis/config_voice.py`). The home
-  bridge's set-up and the laptop brain's start script both already take 8443.
+  bridge's set-up and, at the join, the laptop brain's start script both took 8443 (R3's plan D3
+  had left 443 to the brain).
 - **Decision:** The kit uses 10000 everywhere: `src/jarvis/localspeech/protocol.py:FUNNEL_PORT`,
   the start scripts' default, the Caddyfile's notes, the README, the deploy's prompt and the
   settings' example. `start-kit.ps1 -HttpsPort 443` is the way out when 10000 already serves
   something; the script never takes a port that already serves something else, and closes only
   the port it opened.
 - **Consequences:** The kit never clashes with the bridge or the brain. All three Funnel ports may
-  now be in use on one laptop; the older clash between the bridge and the brain on 8443 stays open
-  (chapter 12, section 7), and 443 is the only port left to resolve it.
+  now be in use on one laptop. The R5.2 review closed the older clash the same way (its finding
+  1, `7ed07a8`): one door each, the brain 443, the bridge 8443, the kit 10000, and every start
+  script (the brain's, the bridge's set-up, the kit's) refuses its port while it serves something
+  else (`tests/test_r52_review_ports.py`). A further laptop program has no port of its own left.
 - **Code:** `src/jarvis/localspeech/protocol.py:FUNNEL_PORT`, `deploy/local-speech/start-kit.ps1`,
-  `deploy/cloudrun.sh:ls_url_ok`, `tests/test_r52_v1_deploy.py`.
+  `deploy/local-speech/start-kit.sh`, `deploy/local-brain/start-windows.ps1`,
+  `deploy/home/setup-windows.ps1`, `deploy/cloudrun.sh:ls_url_ok`, `tests/test_r52_v1_deploy.py`,
+  `tests/test_r52_review_ports.py`.
 
 ### ADR-44 · The speaker check is a barge-in filter and a display label only; it never approves
 
@@ -806,3 +813,4 @@ Proposed; it becomes Accepted when the code does what it says, in the same pull 
 | v6.5.0 | 27 Nov 2026, 20:40 IST | R18 | R18 "Calls from your laptop": ADR-27 accepted and rewritten as built; nine new ADRs, 31 to 39 (free speech first behind the language check, metering in one place, 8 kHz WAV recordings, English "not yet checked", the 1920 px dock rule, the one-instance call hub and the 1800 s timeout, the phone's doorbell and signed commands, the one-use grant and no Telegram approval, the live socket's ticket); ADR-07, ADR-25, ADR-28 and ADR-29 updated for R18; follow-ups F5–F7 | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: follow-ups F4 (outfit plans 90 days, commit `2041978`), F5 (the approvals seal, `9e8b490`), F6 (the deploy's speech keys, `09bb44e`) and F7 (the `free_first` eval, `4c1f66b`) closed; ADR-31 names the eval; ADR-38's consequences and code name the approvals seal | 🛠 Mark XXV |
 | v6.6.0 | 27 Nov 2026, 22:12 IST | R5.2 | R5.2 "Your voice": what R5.2 adds, in plain words; ADR-06 amended (the laptop listens first while its kit is healthy); ADR-29's code note (the kit's manager checks model licences); seven new ADRs: ADR-40 the laptop speech kit as a separate local server behind its own key gate, ADR-41 GPL engines (Kokoro's phonemiser, piper-tts) and the PyTorch Indian engines left out, ADR-42 git-blob SHA-1 pins for small text files (a recorded deviation from SHA-256 only), ADR-43 Funnel port 10000, ADR-44 the speaker check never approves, ADR-45 openWakeWord's non-commercial front end as a launch blocker, ADR-46 the CAM++ speaker model not vendored | 🛠 Mark XXV |
+| v6.6.1 | 28 Nov 2026 | R5.2 | Brought in line with R5.2's combined review: ADR-41's speed bars (listening timed by the self-test); ADR-42's decision tightened to the host's raw file at the pinned commit (`_at_commit`); ADR-43's consequences: the bridge-and-brain clash on 8443 closed (the brain 443), every start script refusing a taken port | 🛠 Mark XXV |

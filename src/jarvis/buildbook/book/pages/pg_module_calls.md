@@ -29,7 +29,7 @@ sources:
   "src/jarvis/api/static/console-calls-settings.js": "3159d528730c21d5"
   "src/jarvis/api/static/console-calls-shapes.js": "89915dbab755e8fe"
   "src/jarvis/api/static/console-calls-vitals.js": "63efa45173e7bab2"
-  "src/jarvis/api/static/console-calls.css": "8fc50ded39f7f054"
+  "src/jarvis/api/static/console-calls.css": "44de438f9258bf00"
   "src/jarvis/api/static/console-calls.js": "5820e269aee5d868"
   "src/jarvis/api/static/console-r7.js": "0613adea76dca0a6"
   "src/jarvis/calldesk/__main__.py": "b52cff184c6aaccd"

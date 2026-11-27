@@ -1,9 +1,9 @@
 ---
 chapter: story_example
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_chapter_example": "8693debfa8ef5509"
+  "pg_chapter_example": "144a5c09e0610394"
 ---
 - [show:title] This chapter follows one everyday request through the whole of JARVIS, so you can see how the parts fit together.
 - [show:plain] You tap the microphone and ask for a dentist appointment on Friday evening.
@@ -24,6 +24,8 @@ pages:
 - [edge:say>stt] The recording travels to be turned into words.
 - [node:stt] Google's speech service turns it into text, in the language set for it, {{fact:settings.voice_language}}.
 - Without Google's voice, the browser's own recogniser does the same job.
+- Once you set up the laptop speech kit, your laptop hears you first while it is awake, for nothing, unless your voice session found Google better.
+- Google steps in whenever the laptop can't.
 - [edge:stt>brain] The text then reaches the brain.
 - [node:brain] The brain loads the conversation, and adds what JARVIS remembers about you.
 - It asks the router for the {{fact:settings.default_tier}} tier, which is {{fact:brain.balanced_model}} unless you picked another brain.

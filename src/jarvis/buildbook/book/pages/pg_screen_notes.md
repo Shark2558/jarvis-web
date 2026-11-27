@@ -6,7 +6,7 @@ sources:
   "src/jarvis/api/notes.py": "267fb7b9484f51ea"
   "src/jarvis/api/static/console-notes-memo.js": "611c96f51b3ebd97"
   "src/jarvis/api/static/console-notes.js": "92a47b642b64b6a6"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Notes is your notebook inside JARVIS. It holds three kinds of thing: notes you type, voice memos you record and read through before saving, and links to web pages with a line on why you kept them. A search box finds any of them by their words, and the All, Notes, Memos and Links buttons narrow the list. Everything is stored encrypted, and JARVIS reads your notes when you ask it about them in a conversation (`src/jarvis/api/notes.py`).

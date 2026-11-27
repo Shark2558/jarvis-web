@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/integrations.py": "849076061558773f"
   "src/jarvis/api/static/console-integrations.js": "2c3f17926e3d8d44"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Integrations is where you link JARVIS to your accounts and your home. Its first card is your Google account: once linked, JARVIS reads your calendar, finds free time, and searches, drafts and sends mail, with anything that sends or deletes still waiting for your approval. Extra Grants add your to-do list, contacts, YouTube playlists and the photos you pick, each only when you press its Grant. Further down sit WhatsApp drafts, Telegram, your home laptop, alerts, Drive, Maps places and the systems check (`src/jarvis/api/static/console.html`).

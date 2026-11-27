@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/faces.py": "8b85cb39cc0a41c4"
   "src/jarvis/api/static/console-faces.js": "05194ce7820b117e"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Faces is the list of people your home camera may recognise by name, and only with their consent. Nobody is on it until you add them. Adding someone asks you to confirm a consent statement: their own agreement, or a parent's or guardian's for a child. Here you keep only names, how you know them and the consent record; the pictures are added on your home laptop and never leave it. Deleting someone removes them from the laptop too (`src/jarvis/api/static/console-faces.js`).

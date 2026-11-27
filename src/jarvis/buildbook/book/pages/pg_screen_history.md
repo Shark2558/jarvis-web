@@ -3,7 +3,7 @@ page: pg_screen_history
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 History is the list of your saved conversations with JARVIS, newest first. Each row shows the conversation's title, when it was last used and how many messages it holds; the one open in Chat is highlighted. Tap a row to carry on where you left off, on this device or another one. The bin beside a row deletes that conversation for good, after asking you first (`src/jarvis/api/static/console.html`).

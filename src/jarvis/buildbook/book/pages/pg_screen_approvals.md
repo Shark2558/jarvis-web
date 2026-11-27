@@ -5,7 +5,7 @@ written_on: 2026-11-27
 sources:
   "src/jarvis/api/routes.py": "4086daa780722d3f"
   "src/jarvis/api/static/console-approvals.js": "78988c35de701d28"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Approvals is where JARVIS waits for your yes. Whenever it wants to do something that sends, pays, deletes or changes your accounts, it stops and puts a card here instead of doing it. Each card says which tool, how risky it is, what exactly it would do, and has two buttons: Approve and Decline. Nothing on a card happens until you press Approve. Under the cards, Permissions lets you choose what JARVIS may do without asking (`src/jarvis/api/static/console.html`).

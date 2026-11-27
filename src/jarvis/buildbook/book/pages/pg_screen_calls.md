@@ -15,7 +15,7 @@ sources:
   "src/jarvis/api/static/console-calls-shapes.js": "89915dbab755e8fe"
   "src/jarvis/api/static/console-calls-vitals.js": "63efa45173e7bab2"
   "src/jarvis/api/static/console-calls.js": "5820e269aee5d868"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Calls is where JARVIS makes phone calls for you: the call goes out from your own phone, and the call desk on your laptop carries the talking. A line at the top says whether the laptop and the phone are ready, how many calls you made today and what calls have cost this month. Under it are four tabs: Calls lists your recent calls and their records, New call makes a call card, Languages shows which Indian languages JARVIS may use on a call, and Settings holds your caps and choices. Nothing is dialled until you press Call on a card, and while a call is on you read it live, listen in, step in or hang up (`src/jarvis/api/static/console-calls.js`). What the other person says is shown as their words and never taken as an order (`src/jarvis/api/static/console-calls-shapes.js`).

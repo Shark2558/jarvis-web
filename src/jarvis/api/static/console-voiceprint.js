@@ -38,12 +38,14 @@
   const CHECK_MS = 1200;                  // a barge-in check clip lasts 1.2 s, the 320 ms before the gate opened included
   const CHECK_TIMEOUT_MS = 2500;          // a check slower than this is 'skip': JARVIS is never stuck half-ducked
   const MAX_CHECK_S = 4;                  // only the last 4 s of a clip are judged
-  const READ_MS = 60000;                  // the reading: one minute
-  const ENROL_MIN = 8;                    // pieces of 3 s with enough voice before a print is made
+  // A test page may set window.__jarvisVoicePrintTest = {model: {...}, readMs, enrolMin} before this file runs;
+  // nothing else does.
+  const hooks = window.__jarvisVoicePrintTest && typeof window.__jarvisVoicePrintTest === 'object' ? window.__jarvisVoicePrintTest : null;
+  const tuned = (k, v) => (hooks && Number.isInteger(hooks[k]) && hooks[k] > 0 ? hooks[k] : v);
+  const READ_MS = tuned('readMs', 60000); // the reading: one minute
+  const ENROL_MIN = tuned('enrolMin', 8); // pieces of 3 s with enough voice before a print is made
   const SESSION_MAX = 200;                // embeddings kept from a voice session
   const WEAK_MARGIN = 0.1;                // a print whose pieces agree less than threshold + this is 'weak'
-  // A test page may set window.__jarvisVoicePrintTest = {model: {...}} before this file runs; nothing else does.
-  const hooks = window.__jarvisVoicePrintTest && typeof window.__jarvisVoicePrintTest === 'object' ? window.__jarvisVoicePrintTest : null;
   const MODEL = Object.freeze(Object.assign({}, SLOT, slotOverride(hooks && hooks.model)));
   const AAD = new TextEncoder().encode(AAD_PREFIX + MODEL.id);
 

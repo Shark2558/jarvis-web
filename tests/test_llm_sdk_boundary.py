@@ -88,7 +88,7 @@ def offenders(package: Path, allowed: Path) -> list[str]:
         "from google.genai import types\n",
         "import vertexai\n",
         "def f():\n    import cohere\n",
-        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from anthropic import Anthropic\n",
+        "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from anthropic import Client\n",
         "import importlib\nm = importlib.import_module('openai')\n",
         "m = __import__('langchain_core.messages')\n",
     ],

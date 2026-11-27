@@ -49,7 +49,7 @@ Plan: `docs/plans/r5-2-voice.md`, on branch `r5-2-plan` (not yet in `main`).
 |---|---|---|
 | L1 | "Your voice" session screen; results page | Console theme |
 | L2 | Personal wake-word verifier (stage 1) and an owned wake-word model (stage 2); in-browser speaker check (barge-in only, **never approvals**); engine choice by measured word error | Today's wake word and barge-in console modules |
-| L6 | **Laptop speech kit** (`jarvis.localspeech`, `deploy/local-speech/`): English and Indian-language engines behind Caddy + Tailscale **https** | The local-brain gate pattern (row 392's https rule) |
+| L6 | **Laptop speech kit** (planned: `jarvis.localspeech`, `deploy/local-speech/`): English and Indian-language engines behind Caddy + Tailscale **https** | The local-brain gate pattern (row 392's https rule) |
 | L7 | Voice profile results; recordings only on the laptop, encrypted | — |
 | L8 | Laptop English voice before Google, then the browser | `jarvis.voice` fallback order |
 
@@ -116,4 +116,4 @@ Layer 6 work on the home bridge: Home Assistant devices the owner lists (robot c
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:20 IST | R6.4 | First edition: every planned release's design delta by layer, what it reuses and where it bends the as-built design; the hardware note for the no-cloud camera; the rows not placed yet | 🛠 Mark XXV |
-| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the R18 and R5.2 plans named as branch files, not yet in `main`; the paper-trading period marked unverified; rows 35 and 386 carry their workbook release | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the R18 and R5.2 plans named as branch files, not yet in `main`; the paper-trading period marked unverified; rows 35 and 386 carry their workbook release; R5.2's speech-kit folder marked planned | 🛠 Mark XXV |

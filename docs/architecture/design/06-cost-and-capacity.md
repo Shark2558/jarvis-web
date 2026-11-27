@@ -18,7 +18,7 @@ dollar (the stored fallback rate).
 | Before a paid call | `Billing.ensure_allowed(uid, brain)`: refuses at the owner's limit (`BudgetReached`), and when the limit or the month can't be read (`BudgetUnavailable`); No-AI mode spends nothing and is never refused | `src/jarvis/billing/service.py:Billing.ensure_allowed`, `src/jarvis/core/brain.py:Brain._admit`, `Brain.check_budget` |
 | After the call | Tokens priced from the price table, converted at the moment's rate, added to the owner's month in one transaction (never fails the reply) | `src/jarvis/billing/meter.py`, `src/jarvis/llm/pricing.py` |
 | The month | `usage/{uid}_{YYYY-MM}` in the owner's time zone (₹, US$, calls, by brain) | `src/jarvis/billing/meter.py` |
-| Free allowances shared by the deployment | One `allowance/{YYYY-MM}` document on Pacific-time months (Google's reset); only the part of a call above the allowance is priced, in the same transaction | `src/jarvis/billing/meter.py:add_units` |
+| Free allowances shared by the deployment | One `allowance/{YYYY-MM}` document on Pacific-time months (Google's reset); only the part of a call above the allowance is priced, in the same transaction | `src/jarvis/billing/meter.py:UsageMeter.add_units` |
 | A model with no known price | Counted as "price unknown" tokens; the limit counts them at the dearest known price (an upper estimate) | `src/jarvis/billing/meter.py`, `src/jarvis/llm/pricing.py:FREE_PROVIDERS` |
 | The exchange rate | Frankfurter, at most once a day, 5 s deadline, a number between 50 and 200; cached in memory and `fx/usd_inr`; on failure the last value, else `JARVIS_USD_INR_RATE` (₹95.24) | `src/jarvis/billing/fx.py` |
 | Where the money goes | The token ledger counts each chat reply's model calls by part (persona, tools, history, tool results, memory, trailer) and the tools offered; it covers chat replies only | `src/jarvis/billing/ledger.py`, `token_ledger` |
@@ -111,4 +111,4 @@ changes; the call desk planned for R18 already needs a longer timeout (chapter 1
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 16:25 IST | R6.4 | First edition: the metering design (before and after each call, months, shared allowances, unpriced models, the rate, the ledger); the AI and voice price tables in ₹; free allowances, stops and caps; a typical month; Cloud Run's capacity settings and what each implies | 🛠 Mark XXV |
-| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): cold start and concurrency marked unverified in plain words, with the bridge heartbeat that keeps the instance warm; proposed ADR-B is now ADR-25 | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): cold start and concurrency marked unverified in plain words, with the bridge heartbeat that keeps the instance warm; proposed ADR-B is now ADR-25; `add_units` cited as the method it is (`UsageMeter.add_units`) | 🛠 Mark XXV |

@@ -223,6 +223,7 @@ class CallSpeech:
 MakeCheck = Callable[[str, CallSettings], Awaitable[LanguageCheck]]
 MSG_RUNNING = "A language check is already running: its progress is in the language table."
 MSG_UNPLANNED = "JARVIS can't work out the language check just now. Try again in a moment."
+MSG_UNSCORED = "JARVIS couldn't save the scores just now. Try again in a moment."
 
 
 @dataclass
@@ -328,9 +329,18 @@ class LanguageCheckJob:
         return {"plan": plan_view(plan), "check": await self.view()} | told
 
     async def score(self, uid: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        """The owner's 1-5 scores of a language's samples (`langcheck.api.handle_score`)."""
-        check = await self._make(uid, await self._store.settings(uid))
-        return await handle_score(check, body)
+        """The owner's 1-5 scores of a language's samples (`langcheck.api.handle_score`). A bad
+        score is 422 and a store that can't be read 503, in plain words (R18 review)."""
+        try:
+            check = await self._make(uid, await self._store.settings(uid))
+            return await handle_score(check, body)
+        except CallsRefused:
+            raise
+        except ValueError as exc:  # the runner's own words ("Score at least one sample, 1 to 5.")
+            raise CallsRefused(422, "bad_request", str(exc)[:200]) from None
+        except Exception as exc:  # noqa: BLE001 - nothing was scored
+            log.error("voice scores not saved", extra={"error": type(exc).__name__})
+            raise CallsRefused(503, "unreadable", MSG_UNSCORED) from None
 
     def _start(self, check: LanguageCheck, plan: CheckPlan, req: CheckRequest) -> None:
         self.progress = CheckProgress(

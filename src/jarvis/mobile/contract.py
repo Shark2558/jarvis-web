@@ -38,7 +38,7 @@ SIGNATURE_B64_MAX = 120  # a DER P-256 signature is at most 72 bytes (96 base64u
 _HEADER = re.compile(
     r"^v1;d=(ph_[0-9a-f]{12});t=([0-9]{1,12});n=([0-9a-f]{32});s=([A-Za-z0-9_-]{8,120})$"
 )
-_PATH = re.compile(r"^/phone/v1/(?:hello|health|inbox|sos)$")  # the door's four routes (D6)
+_PATH = re.compile(r"^/phone/v1/(?:hello|health|inbox|sos|calls)$")  # D6; R18 I1: + calls
 METHODS = frozenset({"GET", "POST"})
 
 

@@ -28,13 +28,13 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
+from jarvis.calls.protocol import FRAME_BYTES, FRAME_MS, AudioKind
 from jarvis.logging import get_logger
 
 log = get_logger(__name__)
 
-FRAME_BYTES = 640  # 20 ms of 16 kHz mono signed 16-bit PCM
-FRAME_S = 0.020
-LIVE_AUDIO = 0x03  # the prefix of a mixed live-audio frame (cloud -> listener)
+FRAME_S = FRAME_MS / 1000
+LIVE_AUDIO = int(AudioKind.MIXED)  # the prefix of a mixed live-audio frame (cloud -> listener)
 AUDIO_BACKLOG_FRAMES = 25  # 500 ms
 TEXT_BACKLOG = 200
 SEND_TIMEOUT_S = 5.0

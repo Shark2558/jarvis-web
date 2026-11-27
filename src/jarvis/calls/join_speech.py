@@ -14,11 +14,13 @@ also asks `Spend.speech` after each hearing and voice, to hold the call to its �
 - `CallSpend.model` and `allowed` are A2's `BillingSpend` (the brain, captions, summary and line
   translations: the only place their ₹ is recorded).
 
-**Which speech.** `SpeechChoices` reads the language table (the latest result per language and
-option, `langcheck.select.choose`) for an owner before a call starts; `CallSpeech` (A2's
+**Which speech.** `SpeechChoices` reads the language table for an owner before a call starts and
+takes A1's choice (`cards.offered`: the cheapest passing option he allows, the one the card's ₹
+estimate was made with); `CallSpeech` (A2's
 `SpeechKit`) serves that choice, and English before its first check (the Workshop's decision)
 the first cloud option that is set up, Google first. A language with no option gets a stand-in
-that refuses (`SpeechUnavailable`), which the engine treats as a failed line.
+that refuses (`SpeechUnavailable`), which the engine treats as a failed line; a language the check
+chose never falls back to an option it did not pass (that option's key gone: the stand-in).
 
 **The language check** (`LanguageCheckJob`): the estimate answers at once; a run (minutes) goes
 to a background task, one at a time, and its progress is read from the results it writes.
@@ -34,11 +36,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from jarvis.calls.cards import offered, provisional
 from jarvis.calls.engine_ports import Kind
 from jarvis.calls.hub import BillingSpend
 from jarvis.calls.langcheck.api import CheckRequest, handle_score, plan_view
 from jarvis.calls.langcheck.runner import CheckPlan, LanguageCheck
-from jarvis.calls.langcheck.select import choose, latest
+from jarvis.calls.langcheck.select import latest
 from jarvis.calls.models import ENGLISH, CallSettings, SpeechOption
 from jarvis.calls.ports import (
     CallsRefused,
@@ -128,23 +131,16 @@ class SpeechChoices:
         """Before a call: its languages (None: his defaults, for an answered call)."""
         try:
             settings = await self._store.settings(uid)
-            results = latest(await self._store.language_results())
+            results = list(latest(await self._store.language_results()).values())
         except Exception as exc:  # noqa: BLE001 - the call goes on with the last table read
             log.warning("language table unreadable", extra={"error": type(exc).__name__})
             self._languages[uid] = tuple(languages or (ENGLISH,))
             return
         self._languages[uid] = tuple(languages or settings.default_languages or (ENGLISH,))
-        chosen: dict[str, str] = {}
-        balanced: set[str] = set()
-        for lang in {r_lang for r_lang, _ in results}:
-            r = choose(
-                results, lang, sarvam_on=settings.sarvam_on, allow_balanced=settings.allow_balanced
-            )
-            if r is not None:
-                chosen[lang] = r.option.value
-                if r.needs_balanced:
-                    balanced.add(lang)
-        self._chosen[uid], self._balanced[uid] = chosen, frozenset(balanced)
+        # A1's choice (the card's estimate was made with it): the cheapest passing option he allows
+        picked = {k: r for k, r in offered(results, settings).items() if not provisional(r)}
+        self._chosen[uid] = {k: r.option.value for k, r in picked.items()}
+        self._balanced[uid] = frozenset(k for k, r in picked.items() if r.needs_balanced)
 
     def snapshot(self, uid: str) -> tuple[dict[str, str], frozenset[str], tuple[str, ...]]:
         """(language -> option, the languages needing the balanced tier, the call's languages)."""
@@ -186,8 +182,8 @@ class CallSpeech:
 
     def _pick(self, lang: str, built: Mapping[str, Any], fits: Callable[[str, str], bool]) -> Any:
         option = self._chosen.get(lang)
-        if option is not None and option in built:
-            return built[option]
+        if option is not None:  # the check's choice, or nothing: never an option it didn't pass
+            return built.get(option)
         for fallback in CLOUD_FALLBACK:
             if fallback in built and fits(fallback, lang):
                 return built[fallback]
@@ -218,6 +214,7 @@ class CallSpeech:
 # ---- the language check, in the background -------------------------------------------------------
 MakeCheck = Callable[[str, CallSettings], Awaitable[LanguageCheck]]
 MSG_RUNNING = "A language check is already running: its progress is in the language table."
+MSG_UNPLANNED = "JARVIS can't work out the language check just now. Try again in a moment."
 
 
 @dataclass
@@ -298,13 +295,15 @@ class LanguageCheckJob:
             fields = sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]})
             words = f"Check these fields: {', '.join(fields) or 'the request'}."
             raise CallsRefused(422, "bad_request", words) from None
-        settings = await self._store.settings(uid)
-        check = await self._make(uid, settings)
         options = [o.value for o in req.options] if req.options is not None else None
         try:
+            check = await self._make(uid, await self._store.settings(uid))
             plan = await check.plan(req.languages, options)
         except ValueError as exc:
             raise CallsRefused(422, "bad_request", str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 - the store or a meter can't be read: nothing ran
+            log.error("language check not planned", extra={"error": type(exc).__name__})
+            raise CallsRefused(503, "unreadable", MSG_UNPLANNED) from None
         langs = len({p.lang for p in plan.running})
         told = {"estimate_inr": plan.total_inr, "languages": langs}  # the console's names
         if req.estimate_only:

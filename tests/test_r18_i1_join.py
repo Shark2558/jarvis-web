@@ -412,6 +412,9 @@ async def test_the_check_chooses_and_english_falls_back_to_the_cloud() -> None:
     assert kit.voice("hi-IN").name == "google"  # the "unsupported" line's Hindi half
     assert kit.needs_balanced("ml-IN") and not kit.needs_balanced("en-IN")
     assert kit.detector() is None  # one language
+    gone = CallSpeech(_options("google"), {"ml-IN": "azure"})  # Azure's key was taken away
+    with pytest.raises(SpeechUnavailable):  # never Google, which Malayalam did not pass on
+        await gone.hearing("ml-IN").transcribe(b"", ["ml-IN"])
     nothing = CallSpeech(_options(), {})
     with pytest.raises(SpeechUnavailable):
         await nothing.hearing("en-IN").transcribe(b"", ["en-IN"])
@@ -628,3 +631,22 @@ async def test_a_dial_is_queued_for_the_phone_only_for_the_call_the_gate_let_thr
     other = dial.model_copy(update={"call_id": "call_0000000000bb"})
     with pytest.raises(PhoneCommandRefused):
         await link.send(other)
+
+
+async def test_the_call_speaks_with_the_option_its_card_was_estimated_with() -> None:
+    from jarvis.calls.join_speech import SpeechChoices
+
+    store = MemoryCallStore()
+    for option, inr in ((SpeechOption.GOOGLE, 1.2), (SpeechOption.AZURE, 0.0)):
+        await store.put_language_result(
+            LanguageResult(
+                lang="ml-IN", option=option, checked_at=NOW, passed=True, inr_per_minute=inr
+            )
+        )
+    choices = SpeechChoices(store)
+    await choices.refresh(UID, ("en-IN", "ml-IN"))
+    chosen, balanced, langs = choices.snapshot(UID)
+    assert chosen == {"ml-IN": "azure"}  # A1's cheapest; English "not yet checked": the fallback
+    assert langs == ("en-IN", "ml-IN") and balanced == frozenset()
+    await choices.refresh(UID, None)  # an answered call: his default languages
+    assert choices.snapshot(UID)[2] == ("en-IN",)

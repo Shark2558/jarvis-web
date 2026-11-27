@@ -2,7 +2,7 @@
 """Live listeners of a call (R18 A2; docs/plans/r18-calls.md 4.7; Layers 1 and 8).
 
 A listener is one owner's browser (the console's Calls panel, or the console page in the phone's
-browser) on `GET /api/calls/{call_id}/live`. It gets, from the server:
+browser) on `GET /v1/calls/{call_id}/live`. It gets, from the server:
 - JSON text messages: `caption {who, lang, text, english}` and `state {...}`. These always arrive,
   in order. A listener more than `TEXT_BACKLOG` messages behind is too slow and is closed
   (`WS_TOO_SLOW`); it can reconnect and read the transcript afterwards.

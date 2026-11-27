@@ -1,13 +1,13 @@
 # src/jarvis/calls/langcheck/api.py
 """What the Calls panel's language routes call (R18 B; I1 wires them into `CallsApi`).
 
-    POST /api/calls/languages/check  `handle_check(check, body)`
+    POST /v1/calls/languages/check   `handle_check(check, body)`
         {languages?, options?, estimate_only = true, accept_inr = 0, accept_unknown = false}
         estimate_only (the default): the plan and its ₹, nothing sent to any vendor; else the run
         (minutes: run it as a background task), refused with 409 when its ₹ is above
         `accept_inr` or a check is already running
-    POST /api/calls/languages/score  `handle_score(check, body)` {lang, option, scores: [1-5]}
-    GET  /api/calls/languages        `languages_view(results, settings)`: the table
+    POST /v1/calls/languages/score   `handle_score(check, body)` {lang, option, scores: [1-5]}
+    GET  /v1/calls/languages         `languages_view(results, settings)`: the table
 
 Bodies are validated strictly (unknown fields, a language JARVIS does not list, a score outside
 1-5: 422 with plain words, never the value echoed). Answers carry no audio and no transcript.

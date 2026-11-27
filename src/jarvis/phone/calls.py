@@ -20,8 +20,9 @@ travels in two steps:
 
 **The cloud's signature** (`calls_wire`). The phone acts on a command only when it verifies with the
 key the door's answer gave (`key`), names this phone, has not expired and was never acted on. The
-key comes from the keyring (`CommandSigner.from_secret`, the same key on every start, like the VAPID
-key) or, until that purpose exists, `CommandSigner.ephemeral()`.
+joined phone part (I1-NOTES 2.7) uses `CommandSigner.ephemeral()`, a key made at each start: every
+door answer carries it with the commands and the outbox is in memory too, so no keyring secret is
+kept for it (`CommandSigner.from_secret` stays for a future key that must outlive a restart).
 
 **A dial** needs a live approval: `ApprovalCheck.live_until(uid, approval_id, call_id, number)` must
 give a time in the future, else nothing is queued (fail closed, also when the check fails). The

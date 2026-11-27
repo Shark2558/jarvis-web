@@ -2,11 +2,12 @@
 """Call records in the vault (R18 A1; docs/plans/r18-calls.md section 4 step 8, section 7 item 3;
 BUILD-BRIEF.md "Records"; Layer 7 data, cross-cutting security).
 
-A call's audio (Opus or compressed 16 kHz mono, D8), its transcript (each line in the language it
-was spoken and in English), its English summary and its ₹ are sealed with the vault's envelope
-encryption (`jarvis.vault.crypto.VaultCrypto`: a random data key per file, AES-256-GCM in 512 KiB
-chunks, the key wrapped by the keyring's `vault` key; every AAD names the owner, the call and the
-kind, so a chunk moved to another call, kind or owner fails to open):
+A call's audio (8 kHz mono WAV in v18.0.0, the narrowband phone line: `calls.join.RECORD_RATE`;
+Opus needs an encoder JARVIS doesn't ship yet, I1-NOTES 4.4), its transcript (each line in the
+language it was spoken and in English), its English summary and its ₹ are sealed with the vault's
+envelope encryption (`jarvis.vault.crypto.VaultCrypto`: a random data key per file, AES-256-GCM in
+512 KiB chunks, the key wrapped by the keyring's `vault` key; every AAD names the owner, the call
+and the kind, so a chunk moved to another call, kind or owner fails to open):
 
     {prefix}calls/{uid}/sealed/{call_id}_{kind}             {wrapped, count, size, media, at}
     {prefix}calls/{uid}/sealed_chunks/{call_id}_{kind}_{nn} {blob, n, of}

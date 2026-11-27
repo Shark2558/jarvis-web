@@ -13,7 +13,7 @@ pages:
   "pg_service_frigate": "6ae656a399dd6aaf"
   "pg_service_home_assistant": "d38f3d1da741a5f1"
   "pg_service_mosquitto": "1b5bf6f3e7f572ff"
-  "pg_service_tailscale": "d38eeceb2364b8c8"
+  "pg_service_tailscale": "b9ba8ed4591fc12f"
 ---
 - [page:pg_module_home] [show:title] This chapter is about how JARVIS reaches your home: the alarm, the cameras, your devices, and the camera on your phone.
 - [show:plain] A small bridge runs on your home laptop, beside Home Assistant for your devices, Frigate for your cameras, and Mosquitto for the messages between them.
@@ -119,6 +119,8 @@ pages:
 - [show:fails] When the bridge loses it, the Vitals board says so, and the bridge keeps trying again, with a growing pause.
 - [page:pg_service_tailscale] [show:title] Last, Tailscale.
 - [show:plain] Its Funnel feature gives the laptop one safe public door, and the encryption ends on the laptop, so Tailscale sees only encrypted data.
-- [show:how] [count:{{fact:settings.local_brain_timeout_s}}] JARVIS uses two such doors: the bridge, and the offline brain, where a call may take up to {{fact:settings.local_brain_timeout_s}} seconds because the laptop is slow.
+- [show:how] [count:{{fact:settings.local_brain_timeout_s}}] JARVIS uses up to three such doors: the bridge, and the offline brain, where a call may take up to {{fact:settings.local_brain_timeout_s}} seconds because the laptop is slow.
+- The third is the laptop speech kit's, on a port of its own, used only once you give JARVIS its address and key.
+- [count:{{fact:settings.local_speech_health_s}}] JARVIS trusts the kit's health for {{fact:settings.local_speech_health_s}} seconds, and a kit that fails is left alone until then, while Google's speech takes over.
 - [show:costs] JARVIS uses Tailscale's free personal plan; Unverified: the exact limits of that plan.
 - That is the Home chapter: a bridge that keeps your home at home, a link that is always signed, and an alarm only you switch off.

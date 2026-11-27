@@ -9,7 +9,7 @@ pages:
   "pg_card_c03": "773a566ba7590934"
   "pg_card_c41": "9cd53fc6bf0dfa5f"
   "pg_screen_construct": "199bad85a6e6ff3a"
-  "pg_service_firestore": "f097f10230e841db"
+  "pg_service_firestore": "7b2ab2641ad4a4ce"
   "pg_service_google_sign_in": "fde5db99cea41a26"
   "pg_service_redis": "fb4824e2028bff31"
 ---
@@ -103,6 +103,7 @@ pages:
 - [count:{{fact:src/jarvis/storage/firestore_admin.py:CALL_S}}] Each call to those copies has a deadline of {{fact:src/jarvis/storage/firestore_admin.py:CALL_S}} seconds, and one aimed at any database but the throw-away one is refused.
 - Phone calls keep their cards, settings and records there as well, with the numbers and each call's recording, transcript and summary sealed by JARVIS's own key.
 - Without that key, calls are not built at all.
+- Your voice profile and your voice sessions live there too, but never any audio.
 - [show:costs] [count:₹{{fact:settings.backup_drill_max_inr}}] It is ₹0 inside the free allowance, whose size is Unverified here, and a drill is refused when its restore would cost more than ₹{{fact:settings.backup_drill_max_inr}}.
 - [show:fails] If Firestore is down, a request that needs it fails, and the systems check shows the database as not answering.
 - [page:pg_service_google_sign_in] [show:title] Next, Google sign-in: how you prove to JARVIS that you are you.

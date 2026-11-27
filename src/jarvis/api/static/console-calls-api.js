@@ -5,13 +5,11 @@
 // need), money stays in rupees and a phone number is never shown whole (only its last 4 digits). Nothing here writes
 // HTML: textContent only. Transport is the console's own api() (auth, X-Requested-With; 401 -> the gate).
 // ASCII source.
-const BASE = '/v1/calls'; // jarvis.calls.protocol: "the brief's /api/calls/...: JARVIS's routes are /v1"
+const BASE = '/v1/calls'; // I0-SEAMS.md: every JARVIS route is /v1 (the brief's /api/calls/...)
 export const PATHS = Object.freeze({
   status: BASE + '/status', // the desk, the phone, today's count, this month's rupees, the call that is on
-  cards: BASE + '/cards', // POST (make); /{id}; /{id}/approve, /{id}/cancel (POST)
-  estimate: BASE + '/estimate', // POST: a card's rupees before it is made
-  records: BASE + '/records', // ?limit=N; /{id}; DELETE /{id}; /{id}/keep {keep}; /{id}/audio; /{id}/undo-booking
-  templates: BASE + '/templates', // the ready cards (Laundry, rows 195-197)
+  cards: BASE + '/cards', // POST (make; the ready cards, Laundry among them, come with the status); /{id}/approve, /cancel
+  records: BASE + '/records', // ?limit=N; /{id} (GET, DELETE); /{id}/keep (PUT {keep}); /{id}/audio; /{id}/booking/undo
   settings: BASE + '/settings', // GET; PUT {changed fields} (?confirm=1 when it raises a cap or switches on)
   languages: BASE + '/languages', // GET; /check (POST {confirm: false} -> the estimate, {confirm: true} -> runs)
   live: (id) => BASE + '/' + encodeURIComponent(id) + '/live', // the live WebSocket (owner session)

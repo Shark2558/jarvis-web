@@ -143,6 +143,7 @@ async function status() {
     S.status = readiness(await api(PATHS.status));
     say(readyState, '');
     if (vitals) vitals.show(S.status.month);
+    form.templates(S.status.templates); // the ready cards (Laundry among them) come with the status
     const a = S.status.active;
     if (a && isLive(a.state) && !live.shown() && S.tab === 'calls') live.open(a.callId, { state: a.state });
   } catch (e) { say(readyState, failed(e), 'bad'); }

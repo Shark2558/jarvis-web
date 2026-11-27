@@ -419,7 +419,7 @@ def test_console_html_is_unchanged_and_the_dock_stays_22() -> None:
     import hashlib
 
     got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
-    assert got == "9f4c0c68f45e46fe150e65e182f4d2ba1132eb556b3ddee0ba3491e4c85450a2"
+    assert got == "4baf2a7895ab7c4eae4814ae3df24bf0bf02d50dab2fe77452ba25e35a073606"  # R18 E: + the Calls panel and tab
     assert _lines(STATIC / "console.html") == 782
 
 

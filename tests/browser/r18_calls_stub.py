@@ -175,10 +175,10 @@ class CallsStub:
         def ok(data: Any, status: int = 200) -> None:
             route.fulfill(status=status, json=data)
 
-        rec = re.fullmatch(r"/v1/calls/records/(call_[0-9a-f]{12})(/[a-z-]+)?", path)
+        rec = re.fullmatch(r"/v1/calls/records/(call_[0-9a-f]{12})(/[a-z/-]+)?", path)
         card = re.fullmatch(r"/v1/calls/cards/(cc_[0-9a-f]{12})/(approve|cancel)", path)
         if path == "/v1/calls/status":
-            return ok(self.status)
+            return ok({**self.status, "templates": TEMPLATES if self.templates else []})
         if path == "/v1/calls/records":
             limit = int(q.get("limit", ["50"])[0])
             return ok({"records": [{k: v for k, v in r.items() if k != "transcript"} for r in self.records][:limit]})
@@ -190,19 +190,15 @@ class CallsStub:
             if method == "DELETE" and not tail:
                 self.records = [x for x in self.records if x["id"] != rid]
                 return ok({"deleted": True})
-            if tail == "/keep":
+            if tail == "/keep" and method == "PUT":
                 r["keep"] = bool((body or {}).get("keep"))
                 return ok(r)
             if tail == "/audio":
                 return route.fulfill(status=200, body=wav_bytes(), headers={"content-type": "audio/wav"})
-            if tail == "/undo-booking":
+            if tail == "/booking/undo" and method == "POST":
                 r["booking_event"]["undone"] = True
                 return ok({"undone": True})
             return ok(r)
-        if path == "/v1/calls/templates":
-            if not self.templates:
-                return ok({"error": "not_found", "detail": "Not Found"}, 404)
-            return ok({"templates": TEMPLATES})
         if path == "/v1/calls/cards" and method == "POST":
             cid = f"cc_{self.next_card:012x}"
             self.next_card += 1

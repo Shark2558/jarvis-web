@@ -110,7 +110,9 @@ export function mount(host, ctx) {
     else au.append(mk('p', 'sfine', r.objected ? 'They asked not to be recorded: the audio was deleted, and only notes were kept for the summary.'
       : !r.recorded ? 'The audio was not recorded for this call.' : 'No recording is kept for this call.'));
     parts.push(au, keepBox(r));
+    const had = recView.contains(document.activeElement);
     recView.replaceChildren(...parts);
+    if (had) h.focus(); // the record has loaded: the keyboard (and a screen reader) lands on its title
   }
   function eventBox(r) {
     const box = mk('div', 'bnote');
@@ -120,7 +122,7 @@ export function mount(host, ctx) {
     const undo = button('Undo', 'bact', async (b) => {
       b.disabled = true;
       try {
-        await api(PATHS.records + '/' + encodeURIComponent(r.id) + '/undo-booking', { body: {} });
+        await api(PATHS.records + '/' + encodeURIComponent(r.id) + '/booking/undo', { body: {} });
         box.replaceChildren(mk('span', '', 'Removed from your calendar.'));
       } catch (e) { b.disabled = false; box.append(mk('span', 'lerr', ' ' + failed(e))); }
     });
@@ -143,7 +145,7 @@ export function mount(host, ctx) {
   async function keep(r, on, b, err) {
     b.disabled = true; err.textContent = '';
     try {
-      const got = checkRecord(await api(PATHS.records + '/' + encodeURIComponent(r.id) + '/keep', { body: { keep: on } }));
+      const got = checkRecord(await api(PATHS.records + '/' + encodeURIComponent(r.id) + '/keep', { method: 'PUT', body: { keep: on } }));
       const next = got && got.id === r.id ? { ...r, keep: got.keep, deleteAfter: got.deleteAfter || r.deleteAfter } : { ...r, keep: on };
       S.open = next;
       paintRecord(next, recView.querySelector('button'));

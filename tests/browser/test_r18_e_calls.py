@@ -70,11 +70,6 @@ class Calls(Console):
         self.page.clock.set_system_time(PAGE_NOW)
         self.stub = CallsStub(self.page, status=status, templates=templates)
 
-    def _on_console(self, msg: Any) -> None:
-        if msg.type == "error" and "/v1/calls/templates" in str(msg.location.get("url", "")) + msg.text and "404" in msg.text:
-            return  # a server without templates: New call says nothing (asserted where it matters)
-        super()._on_console(msg)
-
     def calls(self) -> None:
         self.open()
         self.open_panel("calls")
@@ -166,6 +161,149 @@ def test_a_bluetooth_headset_and_a_missing_desk_say_so_and_the_card_cannot_call(
         card.wait_for()
         assert "Phone Link refuses calls" in str(card.text_content())
         assert c.button("Call", "#clp-new .cl-card").is_disabled()
+        c.clean()
+    finally:
+        c.close()
+
+
+# ---- a call's record --------------------------------------------------------------------------
+def test_a_record_shows_its_summary_both_languages_audio_and_keep_delete_undo(calls: Calls) -> None:
+    calls.calls()
+    calls.page.locator("#clp-calls .hp-row").first.wait_for()
+    calls.page.get_by_role("button", name="Open the record of Laundry").click()
+    rec = calls.page.locator("#clp-calls .cl-record")
+    rec.locator(".cl-transcript .cl-line").first.wait_for()
+    assert calls.page.evaluate("document.activeElement.className") == "cl-rtitle"  # its title, once loaded
+    text = calls.text("#clp-calls .cl-record")
+    assert "The laundry will pick up tomorrow at 10:00." in text and "JARVIS said goodbye." in text
+    said = rec.locator(".cl-said span").nth(1)
+    assert said.get_attribute("lang") == "ml" and said.get_attribute("dir") == "auto"
+    assert "നാളെ" in str(said.text_content())
+    assert "In English: We can come tomorrow at ten." in text
+    assert "Deleted by itself on 27 Dec" in text
+    # the recording: fetched on the first Play only, decoded with Web Audio (no <audio>: CSP media-src)
+    assert not calls.stub.calls("GET", "/audio") and rec.locator("audio").count() == 0
+    play = calls.button("Play", "#clp-calls .cl-record")
+    play.click()
+    until(calls.page, lambda: calls.button("Pause", "#clp-calls .cl-record").count() == 1, "the recording playing")
+    assert calls.stub.calls("GET", "/v1/calls/records/call_0000000000a1/audio")
+    seek = rec.locator("input.cl-seek")
+    assert seek.get_attribute("aria-label") == "Position in the recording"
+    calls.button("Pause", "#clp-calls .cl-record").click()
+    # Undo the calendar entry the booking added
+    calls.page.get_by_role("button", name="Undo: remove the calendar entry this call added").click()
+    until(calls.page, lambda: "Removed from your calendar." in calls.text("#clp-calls .cl-record"), "the undo")
+    assert calls.stub.calls("POST", "/booking/undo")
+    # Keep, then Stop keeping
+    calls.button("Keep this call", "#clp-calls .cl-record").click()
+    until(calls.page, lambda: "Kept: it stays until you delete it." in calls.text("#clp-calls .cl-record"), "kept")
+    assert calls.stub.calls("PUT", "/keep")[-1][2] == {"keep": True}
+    # Delete asks first; Keep (Esc) leaves it; Delete deletes and goes back to the list
+    calls.button("Delete", "#clp-calls .cl-record").click()
+    box = rec.locator(".confirm")
+    assert "This can’t be undone." in str(box.text_content())
+    assert calls.page.evaluate("document.activeElement.textContent") == "Keep"
+    calls.page.keyboard.press("Escape")
+    assert rec.locator(".confirm").count() == 0 and not calls.stub.calls("DELETE", "/v1/calls/records/")
+    calls.button("Delete", "#clp-calls .cl-record").click()
+    rec.locator(".confirm .btn.danger").click()
+    until(calls.page, lambda: calls.page.locator("#clp-calls .hp-row").count() == 2, "the list without the call")
+    assert calls.stub.calls("DELETE", "/v1/calls/records/call_0000000000a1")
+    calls.clean()
+
+
+def test_an_objection_says_why_there_is_no_recording(calls: Calls) -> None:
+    calls.calls()
+    calls.page.locator("#clp-calls .hp-row").nth(2).locator(".btn").click()
+    calls.page.locator("#clp-calls .cl-record .cl-transcript").wait_for()
+    text = calls.text("#clp-calls .cl-record")
+    assert "They asked not to be recorded" in text and "Answered for you" in text
+    assert "Kept: it stays until you delete it." in text and calls.button("Stop keeping", "#clp-calls .cl-record").count() == 1
+    hindi = calls.page.locator("#clp-calls .cl-said span").first
+    assert hindi.get_attribute("lang") == "hi"
+    calls.clean()
+
+
+# ---- New call: a template, the booking, the languages, the card, Call with a passkey -----------
+def test_new_call_from_the_laundry_template_makes_a_card_and_calls_with_a_passkey(calls: Calls) -> None:
+    calls.calls()
+    calls.tab("New call")
+    pane = calls.pane("new")
+    sel = pane.locator("select").first
+    until(calls.page, lambda: sel.locator("option").count() == 4, "the three Laundry templates")
+    assert "Laundry: book a pickup" in str(sel.text_content()) and "Laundry: deliver it back" in str(sel.text_content())
+    sel.select_option("laundry_pickup")
+    assert pane.get_by_label("Purpose").input_value() == "Book a laundry pickup"
+    assert "Leave it empty to call the number ending 0001." in calls.text("#clp-new")
+    assert pane.get_by_label("Name to give").input_value() == "Arun"
+    assert pane.get_by_label("Day 1").input_value() == "2026-11-28"
+    # only the languages that passed; Odia failed and is not offered; at most 3 Indian languages
+    langs = calls.text("#clp-new .cl-langs")
+    assert "Malayalam (not yet heard by a native speaker)" in langs and "Hindi" in langs and "Odia" not in langs
+    assert pane.get_by_label("Malayalam (not yet heard by a native speaker)").is_checked()
+    pane.get_by_label("Hindi").check()
+    pane.get_by_label("Tamil").check()
+    assert pane.get_by_label("Kannada (not yet heard by a native speaker)").is_disabled()  # three already
+    pane.get_by_label("Tamil").uncheck()
+    pane.get_by_label("It opens in").select_option("ml-IN")
+    # a second time window, then remove it
+    calls.button("Add a time", "#clp-new").click()
+    pane.get_by_label("Day 2").fill("2026-11-29")
+    calls.button("Remove time 2", "#clp-new").click()
+    calls.button("Make the card", "#clp-new").click()
+    card = pane.locator(".cl-card")
+    card.wait_for()
+    body = calls.stub.calls("POST", "/v1/calls/cards")[-1][2]
+    assert body["template"] == "laundry_pickup" and "number" not in body
+    assert body["languages"] == ["ml-IN", "en-IN", "hi-IN"] and body["limits"] == {"max_minutes": 5}
+    assert body["booking"]["windows"] == [{"day": "2026-11-28", "start": "10:00", "end": "12:00"}]
+    assert body["booking"]["no_payment"] is True and body["booking"]["give_name"] == "Arun"
+    text = str(card.text_content())
+    assert "•••••• 0001" in text and "Book a laundry pickup" in text
+    assert "Sat 28 Nov, 10:00–12:00" in text and "Malayalam (opens), English, Hindi" in text
+    assert "₹1.35" in text and "never agrees to pay" in text and "AI assistant" in text
+    assert calls.page.evaluate("document.activeElement.textContent") == "Call"
+    calls.button("Call", "#clp-new .cl-card").click()
+    until(calls.page, lambda: calls.stub.calls("POST", "/approve"), "the approval")
+    assert "passkey" not in (calls.stub.calls("POST", "/approve")[-1][2] or {})  # a number called before
+    calls.page.locator("#clp-calls .cl-live").wait_for(state="visible")  # the live call opens
+    until(calls.page, lambda: calls.stub.ws is not None, "the live socket")
+    assert calls.stub.ws_url.endswith("/v1/calls/" + LIVE_ID + "/live")
+    calls.clean()
+
+
+def test_a_new_number_asks_for_the_passkey_before_the_approval(calls: Calls) -> None:
+    calls.calls()
+    calls.tab("New call")
+    pane = calls.pane("new")
+    calls.button("Make the card", "#clp-new").click()
+    assert calls.text("#clp-new .lerr") == "Type the number to call."
+    assert pane.get_by_label("Number to call").get_attribute("aria-invalid") == "true"
+    pane.get_by_label("Number to call").fill("90000 00007")
+    pane.get_by_label("Purpose").fill("Ask whether the shop is open on Sunday")
+    calls.button("Make the card", "#clp-new").click()
+    pane.locator(".cl-card").wait_for()
+    assert calls.stub.calls("POST", "/v1/calls/cards")[-1][2]["number"] == "+919000000007"
+    text = str(pane.locator(".cl-card").text_content())
+    assert "•••••• 0007" in text and "90000" not in calls.text("#clp-new .cl-card")
+    assert "your passkey is asked" in text
+    calls.button("Call with passkey", "#clp-new .cl-card").click()
+    until(calls.page, lambda: calls.stub.calls("POST", "/approve"), "the approval")
+    sent = calls.stub.calls("POST", "/approve")[-1][2]
+    assert sent["passkey"]["challenge_id"] == "pc_test1" and sent["passkey"]["credential"]["id"] == "cred-test"
+    assert calls.stub.calls("POST", "/v1/passkeys/challenge")[-1][2]["purpose"] == "approve"
+    calls.page.locator("#clp-calls .cl-live").wait_for(state="visible")
+    calls.clean()
+
+
+def test_a_server_without_ready_cards_still_makes_blank_cards(browser: Any, server_url: str, token: str) -> None:
+    c = Calls(browser, server_url, token, templates=False)
+    try:
+        c.calls()
+        c.tab("New call")
+        c.page.wait_for_timeout(300)
+        assert c.pane("new").locator("select").first.locator("option").count() == 1
+        assert c.text("#clp-new .snote") == ""
         c.clean()
     finally:
         c.close()

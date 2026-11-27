@@ -8,7 +8,7 @@
 // approval) and cancels the old one. A card's number stays on the server: only its last 4 digits are shown, and a
 // number typed here replaces it. ASCII source; textContent only.
 import { MAX_INDIAN, PATHS, api, button, failed, field, input, langName, lastFourOf, mk, option, say, toggle, uid } from './console-calls-api.js';
-import { card as checkCard, template as checkTemplate } from './console-calls-shapes.js';
+import { card as checkCard } from './console-calls-shapes.js';
 import { render } from './console-calls-card.js';
 
 const NUMBER_HELP = 'An Indian number. JARVIS never calls emergency, premium-rate or international numbers.';
@@ -30,7 +30,7 @@ export function e164(typed) {
 const splitLines = (v) => v.split('\n').map((s) => s.trim()).filter(Boolean);
 
 export function mount(host, ctx) {
-  const S = { templates: [], editing: null, busy: false, drawn: null, booking: false, calendar: true, number4: '', loaded: false };
+  const S = { templates: [], editing: null, busy: false, drawn: null, booking: false, calendar: true, number4: '', wanted: [], first: 'en-IN' };
   const intro = mk('p', 'sfine', 'Tell JARVIS who to call and why, here or in the chat. Nothing is dialled until you press Call on the card.');
   const tplSel = mk('select', 'bsel cl-wide');
   tplSel.append(new Option('A blank call', ''));
@@ -143,7 +143,8 @@ export function mount(host, ctx) {
     numberNote.textContent = S.number4 ? 'Leave it empty to call the number ending ' + S.number4 + '.' : '';
     minutes.value = String(Math.min(v.maxMinutes || caps(), caps()));
     const ls = v.languages || [];
-    paintLangs(ls.filter((l) => l !== 'en-IN'), ls[0] || 'en-IN');
+    S.wanted = ls.filter((l) => l !== 'en-IN'); S.first = ls[0] || 'en-IN'; // kept until the language table arrives
+    paintLangs(S.wanted, S.first);
   }
   function reset(focus) {
     S.editing = null; tplSel.value = ''; fill({}); err.textContent = ''; say(note, ''); make.textContent = 'Make the card';
@@ -220,19 +221,14 @@ export function mount(host, ctx) {
     out.replaceChildren();
     purpose.focus();
   }
-  async function load() {
-    if (S.loaded) { paintLangs(picked(), opens.value); return; }
-    const fromStatus = ctx.ready() ? ctx.ready().templates : [];
-    try {
-      const r = await api(PATHS.templates);
-      S.templates = (r && Array.isArray(r.templates) ? r.templates : []).slice(0, 20).map(checkTemplate).filter(Boolean);
-    } catch (e) { S.templates = fromStatus; if (!(e && (e.status === 404 || e.status === 501))) say(note, failed(e), 'bad'); }
-    S.loaded = true;
-    S.templates.forEach((t) => { if (![...tplSel.options].some((o) => o.value === t.id)) tplSel.append(new Option(t.title, t.id)); });
-    if (!S.editing) paintLangs(picked(), opens.value);
+  function templates(list) { // the ready cards come with GET /v1/calls/status (console-calls.js hands them here)
+    S.templates = list;
+    list.forEach((t) => { if (![...tplSel.options].some((o) => o.value === t.id)) tplSel.append(new Option(t.title, t.id)); });
   }
+  function now() { return langBox.querySelector('input[value]') ? [picked(), opens.value] : [S.wanted, S.first]; }
+  function load() { const st = ctx.ready(); if (st) templates(st.templates); paintLangs(...now()); }
   reset(false);
-  return Object.freeze({ load, edit, languagesChanged: () => paintLangs(picked(), opens.value), useTemplate: (tid) => {
+  return Object.freeze({ load, templates, edit, languagesChanged: () => paintLangs(...now()), useTemplate: (tid) => {
     const t = S.templates.find((x) => x.id === tid); if (t) { tplSel.value = t.id; useTemplate(t); }
   } });
 }

@@ -381,6 +381,13 @@ def _speech_kit() -> set[str]:
     return _names(re.findall(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", text, re.M))
 
 
+def _call_desk() -> set[str]:
+    """R18's call desk (found missing at R5.2's join): its own hash-pinned packages
+    (deploy/calldesk/requirements-calldesk.txt, the laptop's, never the cloud image's)."""
+    text = (ROOT / "deploy" / "calldesk" / "requirements-calldesk.txt").read_text()
+    return _names(re.findall(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", text, re.M))
+
+
 KIT_RUNTIMES = ("jarvis/localspeech/runtimes/", "jarvis/localspeech/wakeword/")
 
 
@@ -396,6 +403,8 @@ def test_every_third_party_top_level_import_in_src_is_in_pyproject() -> None:
         allowed = bridge if "homebridge" in path.parts else declared
         if "localspeech" in path.parts:
             allowed = kit
+        if "calldesk" in path.parts:
+            allowed = declared | _call_desk()
         for node in ast.walk(ast.parse(path.read_text())):
             mods: list[str] = []
             if isinstance(node, ast.Import):

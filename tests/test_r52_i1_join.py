@@ -278,5 +278,5 @@ def test_the_deploy_script_takes_only_the_kits_tailscale_https_address(url: str,
 def test_the_deploy_script_grants_and_mounts_the_kits_key() -> None:
     script = (ROOT / "deploy" / "cloudrun.sh").read_text(encoding="utf-8")
     assert "jarvis-telegram-webhook-secret jarvis-local-speech-key; do" in script
-    assert script.count("${LS_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest") == 2
+    assert script.count("${LS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest") == 2
     assert 'INFRA_ENV="${INFRA_ENV},${LS_ENV}"' in script

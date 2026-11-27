@@ -558,8 +558,8 @@ def test_console_html_is_byte_identical_to_r14s() -> None:
     import hashlib
 
     got = hashlib.sha256((STATIC / "console.html").read_bytes()).hexdigest()
-    # R18 E: + the Calls panel and its tab; R5.2: V4's tag on the mic's line, V5's three on barge's
-    assert got == "3f44b48d59176aa53fa0bcec77c7002107b1174a2cd02ed3785f796a302e2d30"
+    # R18 E: + the Calls panel and its tab; R5.2: V4's and V5's tags on the mic's line
+    assert got == "6bf7eb0ad6bc821cc6c36fd1392b131ffb7183ebb89268d9d0d88cf22e64d668"
     assert _lines(STATIC / "console.html") == 782
 
 

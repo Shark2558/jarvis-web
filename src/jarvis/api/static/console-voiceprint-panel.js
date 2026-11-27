@@ -135,6 +135,7 @@
     UI.actions.hidden = !!recording || confirming;
     UI.record.textContent = saved ? 'Record again' : 'Record 1 minute';
     UI.record.disabled = !canRecord;
+    UI.record.hidden = !canRecord; // I1: no model yet: the status line says so (no faded button)
     const kept = p.sessionCount();
     UI.session.hidden = !(canRecord && kept >= p.ENROL_MIN);
     UI.forget.hidden = !saved;

@@ -282,18 +282,18 @@ def test_the_voice_session_main_path(
         c.close()
 
 
-def test_the_section_fits_a_phone_and_says_when_it_is_not_built(
+def test_the_section_fits_a_phone_on_the_real_routes(
     browser: Any, server_url: str, token: str
 ) -> None:
-    c = _console(browser, server_url, token, "night", PHONE)  # the real routes: 501 until I1
+    c = _console(browser, server_url, token, "night", PHONE)  # I1: the real, wired routes
     try:
         c.open()
         c.open_panel("voice")
-        c.page.locator("#vSlotProfile").get_by_text("not ready yet").wait_for()
-        assert c.page.locator("#vProfileStart").is_disabled()
+        c.page.locator("#vSlotProfile").get_by_text("No voice session yet").wait_for()
+        assert c.page.locator("#vProfileStart").is_enabled()
+        assert c.page.locator("#vProfileTrain").is_hidden()  # no scored session yet
         width = c.page.evaluate("document.documentElement.scrollWidth")
         assert width <= PHONE["width"]
-        c.errors[:] = [e for e in c.errors if "501" not in e]  # the not-built answer, by design
         assert not c.errors and not c.csp_violations()
     finally:
         c.close()

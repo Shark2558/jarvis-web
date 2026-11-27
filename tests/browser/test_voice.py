@@ -248,6 +248,8 @@ class FakeVoice:
     def _handle(self, route: Any) -> None:
         req = route.request
         path = urlsplit(req.url).path
+        if path.startswith("/v1/voice/profile"):  # R5.2 I1: "Your voice" is the server's (wired)
+            return route.fallback()
         raw = req.post_data_buffer or b""
         body: Any = None
         if path != "/v1/voice/transcribe" and raw:

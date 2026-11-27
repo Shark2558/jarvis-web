@@ -81,6 +81,9 @@ def _link(route: Any) -> None:
     resp = route.fetch()
     html = resp.text()
     assert ANCHOR in html
+    if all(f'<script src="/static/{n}" defer></script>' in html for n in OWN):
+        route.fulfill(response=resp)  # I1 linked them (after the mic, R5's order kept)
+        return
     tags = "".join(f'\n<script src="/static/{n}" defer></script>' for n in OWN)
     route.fulfill(response=resp, body=html.replace(ANCHOR, ANCHOR + tags))
 
@@ -162,7 +165,7 @@ def test_with_the_slot_still_empty_it_says_no_model_and_fetches_nothing(make: Ca
     sec = _panel(c)
     assert _state(c) == "no_model"
     assert "isn't installed on JARVIS yet" in str(sec.locator("#vPrintStatus").text_content())
-    assert sec.locator("#vPrintRecord").is_disabled()
+    assert sec.locator("#vPrintRecord").is_disabled() and sec.locator("#vPrintRecord").is_hidden()
     assert c.page.evaluate("JarvisVoicePrint.offerSessionClip(JarvisTestVoices.utter('owner', 4, 1))") is False
     assert c.page.evaluate("JarvisVoicePrint.verify([new Int16Array(1280)])") == "skip"
     assert gets == [] and c.errors == []
@@ -312,6 +315,9 @@ def _barge(make: Callable[..., Console], by: str, scripts: tuple[str, ...] = (ST
     c = make(device={"interruptBy": by, "speak": "always", "keepListening": True}, scripts=(TONE_MIC, RECORD_BARGE, *scripts), barge=True)
     fake = FakeVoice(c.page)
     _route(c)
+    if STUB in scripts:  # I1 links the real check on every page: the stand-in must stay the one
+        for name in OWN:
+            c.page.route(f"**/static/{name}", _script(""))
     c.open()
     c.page.evaluate("window.__kind = 'headphones'")
     _start(c, fake)

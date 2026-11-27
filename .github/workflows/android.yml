@@ -16,10 +16,12 @@ name: android
 on:
   push:
     paths:
-      ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py", "tests/fixtures/r7/phone_vectors.json"]
+      ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py", "tests/fixtures/r7/phone_vectors.json",
+       "tests/fixtures/r18/phone_calls_vectors.json"]
   pull_request:
     paths:
-      ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py", "tests/fixtures/r7/phone_vectors.json"]
+      ["android/**", ".github/workflows/android.yml", "scripts/apk_check.py", "tests/fixtures/r7/phone_vectors.json",
+       "tests/fixtures/r18/phone_calls_vectors.json"]
 permissions:
   contents: read
 concurrency:
@@ -129,6 +131,7 @@ jobs:
             mkdir -p "${dir}/tests/fixtures"
             cp -r android "${dir}/android"
             cp -r tests/fixtures/r7 "${dir}/tests/fixtures/r7"
+            cp -r tests/fixtures/r18 "${dir}/tests/fixtures/r18"
             python3 - "${dir}/android/${src}/$2" "$3" "$4" <<'PY'
           import sys
           path, needle, replacement = sys.argv[1:4]
@@ -147,3 +150,5 @@ jobs:
           control cancel_ignored SosMachine.kt 'state = SosState.Cancelled' 'Unit'
           control json_form Json.kt "out.append(':')" 'out.append(": ")'
           control launch_words_open Rules.kt 'if (word != null && word in WORDS)' 'if (word != null)'
+          control call_signature_off Calls.kt 'if (!verify(keyHex, body, sig)) return' 'if (false) return'
+          control call_number_leaks CallMachine.kt 'known.takeIf { sendNumber }, 1)' 'known, 1)'

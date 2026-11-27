@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android/app/src/main/res/layout/activity_calls_setup.xml - R18 D: the first-run screen for JARVIS's
+     calls. What JARVIS will and will not do with the phone, then two choices: the three permissions
+     calls need, and (separately) who is calling, for answering missed calls only. The console's Night
+     look; it pads itself inside the system bars (SystemBars.pad). -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/calls_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:padding="@dimen/screen_padding">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            style="@style/Jarvis.Title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:tag="title"
+            android:text="@string/calls_setup_title" />
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/calls_setup_intro" />
+
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:tag="strong"
+            android:text="@string/calls_setup_will" />
+        <TextView
+            style="@style/Jarvis.Small"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/calls_setup_will_list" />
+
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:tag="strong"
+            android:text="@string/calls_setup_never" />
+        <TextView
+            style="@style/Jarvis.Small"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/calls_setup_never_list" />
+
+        <TextView
+            android:id="@+id/calls_state"
+            style="@style/Jarvis.Small"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:textColor="@color/jarvis_accent_ink" />
+        <Button
+            android:id="@+id/calls_allow"
+            style="@style/Jarvis.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/calls_setup_allow" />
+
+        <TextView
+            style="@style/Jarvis.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:tag="strong"
+            android:text="@string/calls_setup_number" />
+        <TextView
+            style="@style/Jarvis.Small"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/calls_setup_number_why" />
+        <TextView
+            android:id="@+id/calls_number_state"
+            style="@style/Jarvis.Small"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/jarvis_accent_ink" />
+        <Button
+            android:id="@+id/calls_number"
+            style="@style/Jarvis.Button.Quiet"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/action_allow" />
+
+        <Button
+            android:id="@+id/calls_done"
+            style="@style/Jarvis.Button.Quiet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/row_gap"
+            android:text="@string/calls_setup_done" />
+    </LinearLayout>
+</ScrollView>

@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/static/console-vault-add.js": "741e210463e7aaeb"
   "src/jarvis/api/static/console-vault.js": "7693be82eb53b3c8"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
   "src/jarvis/api/vault.py": "cc8daba16d847fd1"
   "src/jarvis/api/vault_inbox.py": "26546b663f03b975"
 ---

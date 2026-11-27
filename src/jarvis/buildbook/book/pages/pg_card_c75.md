@@ -2,6 +2,26 @@
 page: pg_card_c75
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
+sources:
+  "src/jarvis/api/calls_ws.py": "1963a0a1fef6419e"
+  "src/jarvis/api/static/calls-listen-worklet.js": "652d3339bf8b5fa9"
+  "src/jarvis/api/static/console-calls-audio.js": "4d3e16c6b71d771e"
+  "src/jarvis/api/static/console-calls-live.js": "2998aca9a7690d85"
+  "src/jarvis/calls/brain.py": "f741c4f2234f0b37"
+  "src/jarvis/calls/captions.py": "8a531f5a22e1a8b7"
+  "src/jarvis/calls/engine.py": "5cf42570e813ff4b"
+  "src/jarvis/calls/engine_ports.py": "366a3fcfbd2253a0"
+  "src/jarvis/calls/engine_turns.py": "e3dd50d216e63efb"
+  "src/jarvis/calls/engine_voice.py": "cac890f0a4d3bff9"
+  "src/jarvis/calls/guard.py": "d300d7c800d4f2c2"
+  "src/jarvis/calls/hub.py": "eecd1fae04642ee0"
+  "src/jarvis/calls/join.py": "813b02128da9a631"
+  "src/jarvis/calls/live.py": "b4590b77f80ee087"
+  "src/jarvis/calls/protocol.py": "3bc2ebd613b92b89"
+  "src/jarvis/calls/summary.py": "ad280e3f27d4930f"
+  "tests/test_calls_engine.py": "ad38764f0b3f5a8d"
+  "tests/test_calls_guard.py": "050f3e56e8305335"
+  "tests/test_calls_hub_ws.py": "a490620b43f33413"
 ---
 ## In plain words
 This is the part that runs a call while it is on. It holds one call at a time, in memory, and takes it through its steps: the ready check, the dial, JARVIS's opening words saying it is an AI assistant calling for you and that the call is recorded, the conversation, and the wrap-up with an English summary (`src/jarvis/calls/engine.py`). It never dials on its own and never redials: trying again is a new card and a new tap from you (`CallSession`). While the call is on you can listen live to both sides with English captions, follow the captions only, take over, tell JARVIS something the other person doesn't hear, or hang up, from the Calls panel or the console in your phone's browser (`src/jarvis/calls/live.py`).

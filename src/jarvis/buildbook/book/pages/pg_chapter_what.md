@@ -1,14 +1,14 @@
 ---
 page: pg_chapter_what
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
   "README.md": "8f3d449131471024"
-  "src/jarvis/__init__.py": "c0533b5bcdc55981"
+  "src/jarvis/__init__.py": "e7c19ff56bddba24"
   "src/jarvis/api/book.py": "856e2f5276d6cb59"
   "src/jarvis/api/book_pages.py": "cfe9fd9ab5712b04"
   "src/jarvis/api/book_read.py": "3681ad948c006e52"
-  "src/jarvis/api/console.py": "03b9b870e751911f"
+  "src/jarvis/api/console.py": "5f89470424a0a10a"
   "src/jarvis/api/r6_wiring.py": "933facfd96a82b79"
   "src/jarvis/api/static/book-read-reader.css": "fa82f28854915f3d"
   "src/jarvis/api/static/book-read.css": "e35f4fae32cd8663"
@@ -39,34 +39,34 @@ sources:
   "src/jarvis/api/static/console-book-script.js": "b05346ce9a31efc5"
   "src/jarvis/api/static/console-book-show.js": "3a53ebbcf354215b"
   "src/jarvis/api/static/console-book-talk.js": "17d0515bfbb34ddf"
-  "src/jarvis/api/static/console-book-tour.js": "21e2972a31775060"
+  "src/jarvis/api/static/console-book-tour.js": "72eec1b2c26a8eaa"
   "src/jarvis/api/static/console-book-voice.js": "d8758d303187cdc6"
   "src/jarvis/api/static/console-book.js": "1ca3680249aaf9d0"
-  "src/jarvis/api/static/console-deck.js": "cfb441c3101b8045"
-  "src/jarvis/api/static/console-dock.js": "0798faf0a39ad778"
+  "src/jarvis/api/static/console-deck.js": "9068fb0d30f872de"
+  "src/jarvis/api/static/console-dock.js": "7172e71a34e29998"
   "src/jarvis/api/static/console-fx.js": "bb9dd7f373411a5f"
   "src/jarvis/api/static/console-helpers.js": "38c9179fa5cd2d23"
   "src/jarvis/api/static/console-text.js": "be5a5239bbffae37"
   "src/jarvis/api/static/console.css": "6a8f96e9bcd21971"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
-  "src/jarvis/api/static/console.js": "ac49b62db99514f8"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.js": "7f64b41a454a9ea7"
   "src/jarvis/buildbook/facts_model.py": "8bea9de2df6fc757"
   "src/jarvis/buildbook/gen/compile_narration.py": "e37073158afa808c"
   "src/jarvis/buildbook/gen/compile_pages.py": "90eb61f2a1dde943"
   "src/jarvis/buildbook/gen/facts.py": "25ec594fecdba061"
   "src/jarvis/buildbook/gen/facts_cache.py": "bd6bf85ae50fed31"
-  "src/jarvis/buildbook/gen/facts_code.py": "c781a59d4e00f8a3"
+  "src/jarvis/buildbook/gen/facts_code.py": "937942a4b5e66f52"
   "src/jarvis/buildbook/gen/facts_guide.py": "6607c03e4c48accf"
   "src/jarvis/buildbook/gen/facts_routes.py": "75e71f796eeceea2"
   "src/jarvis/buildbook/gen/facts_values.py": "3f353b0cd2766d66"
   "src/jarvis/buildbook/gen/inventory.py": "ac5493391a2b37d9"
   "src/jarvis/buildbook/gen/loc.py": "72deb29b5ea46235"
-  "src/jarvis/buildbook/gen/modules.py": "91d1d05ab6410b2e"
+  "src/jarvis/buildbook/gen/modules.py": "48ffd4a71324ed18"
   "src/jarvis/buildbook/gen/narration_cli.py": "391a57476632a8d1"
   "src/jarvis/buildbook/gen/pages_cli.py": "396d8bacb1a01500"
   "src/jarvis/buildbook/gen/pages_index.py": "94f193a0b07136a3"
   "src/jarvis/buildbook/gen/refs.py": "43dc033f10d15d81"
-  "src/jarvis/buildbook/gen/services.py": "8d8f7cd86b58c405"
+  "src/jarvis/buildbook/gen/services.py": "1b7fbf7155bb0bc3"
   "src/jarvis/buildbook/gen/tour.json": "66d7c8cd3a45e4d9"
   "src/jarvis/buildbook/gen/tour.py": "f1d4843259ac521a"
   "src/jarvis/buildbook/tour_model.py": "aff987eaf7866af6"
@@ -103,7 +103,7 @@ JARVIS is your own personal assistant, running on a server of its own in the clo
 On Monday at 8:10 Leela opens JARVIS on her phone and types "What's on today? Put a call with the plumber at 4." JARVIS reads her calendar and answers with the day's three meetings. Under the answer a card waits: "Add event: Call the plumber, today 16:00 to 16:30", with Approve and Decline. She taps Approve, and the event is in her calendar. That evening she opens the Book panel to see how all of this works, and starts with this chapter.
 
 ## How it works
-The console is one page served by JARVIS itself, `src/jarvis/api/static/console.html`, with its scripts, fonts and libraries from JARVIS, never from another website (`src/jarvis/api/console.py`). `src/jarvis/api/static/console.js` runs the chat, the brain picker and the approval cards, and `src/jarvis/api/static/console-deck.js` lays out the dock of panels. Each message goes to `Brain`, which handles one message at a time per conversation and checks your monthly limit before any paid call (`src/jarvis/core/brain.py`). `build_window` adds the recent conversation, at most {{fact:settings.session_max_turns}} turns and about {{fact:settings.session_max_chars}} characters (`src/jarvis/core/window.py`), and `DocSessionStore` keeps each conversation until you delete it (`src/jarvis/storage/sessions.py`). The brain may ask for tools for at most `tool_max_rounds` rounds ({{fact:settings.tool_max_rounds}}), and every call goes through the tool gateway, where a change waits for your approval (`src/jarvis/core/brain.py`). When an answer is cut off it is asked for once more, and one with no words at all becomes a fixed, honest line chosen by code from what happened (`src/jarvis/core/finish.py`, `src/jarvis/core/fixed_lines.py`). `src/jarvis/core/saving.py` saves the turn, and `src/jarvis/core/channel.py` notes whether it came from the console or Telegram, so that surface's own rules apply. The running version comes from one place, `src/jarvis/__init__.py`. The Build Book is JARVIS describing itself: the generator builds it from the code at each release, and the full book's pages, written by the Workshop while it builds JARVIS, are checked and compiled in by `src/jarvis/buildbook/gen/compile_pages.py`. `src/jarvis/api/static/console-book.js` opens it behind your passkey and a fresh Google sign-in, and Read the full book opens this full book on a page of its own, `src/jarvis/api/static/book-read.html`, with its contents, search and a flowchart for each chapter and module (`src/jarvis/api/static/console-book-read-app.js`); Play tells a chapter aloud while its flowchart lights up (`src/jarvis/api/static/console-book-chapter.js`).
+The console is one page served by JARVIS itself, `src/jarvis/api/static/console.html`, with its scripts, fonts and libraries from JARVIS, never from another website (`src/jarvis/api/console.py`). `src/jarvis/api/static/console.js` runs the chat, the brain picker and the approval cards, and `src/jarvis/api/static/console-deck.js` lays out the dock of panels. A reply that offers a phone call shows a call card under it, with Call, Edit and Cancel (`src/jarvis/api/static/console.js`). Each message goes to `Brain`, which handles one message at a time per conversation and checks your monthly limit before any paid call (`src/jarvis/core/brain.py`). `build_window` adds the recent conversation, at most {{fact:settings.session_max_turns}} turns and about {{fact:settings.session_max_chars}} characters (`src/jarvis/core/window.py`), and `DocSessionStore` keeps each conversation until you delete it (`src/jarvis/storage/sessions.py`). The brain may ask for tools for at most `tool_max_rounds` rounds ({{fact:settings.tool_max_rounds}}), and every call goes through the tool gateway, where a change waits for your approval (`src/jarvis/core/brain.py`). When an answer is cut off it is asked for once more, and one with no words at all becomes a fixed, honest line chosen by code from what happened (`src/jarvis/core/finish.py`, `src/jarvis/core/fixed_lines.py`). `src/jarvis/core/saving.py` saves the turn, and `src/jarvis/core/channel.py` notes whether it came from the console or Telegram, so that surface's own rules apply. The running version comes from one place, `src/jarvis/__init__.py`. The Build Book is JARVIS describing itself: the generator builds it from the code at each release, and the full book's pages, written by the Workshop while it builds JARVIS, are checked and compiled in by `src/jarvis/buildbook/gen/compile_pages.py`. `src/jarvis/api/static/console-book.js` opens it behind your passkey and a fresh Google sign-in, and Read the full book opens this full book on a page of its own, `src/jarvis/api/static/book-read.html`, with its contents, search and a flowchart for each chapter and module (`src/jarvis/api/static/console-book-read-app.js`); Play tells a chapter aloud while its flowchart lights up (`src/jarvis/api/static/console-book-chapter.js`).
 
 ## What it costs
 The console and the Build Book cost nothing to use, and JARVIS calls no AI to write the Book (`src/jarvis/buildbook/gen/compile_pages.py`). Each reply uses paid AI time, counted in rupees against the monthly limit you set; with the AI switched off, nothing is spent (`src/jarvis/core/brain.py`). A reply from a model whose price JARVIS doesn't know is marked "price unknown" under it, never ₹0 (`src/jarvis/api/static/console.js`).

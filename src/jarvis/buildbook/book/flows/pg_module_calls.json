@@ -1,0 +1,43 @@
+{
+  "title": "One call, from your press to its record",
+  "dir": "down",
+  "nodes": [
+    {"id": "ask", "label": "You ask: who and why", "kind": "person", "rank": 0, "col": 0,
+     "ref": "src/jarvis/calls/cards.py"},
+    {"id": "card", "label": "Call card: limits and ₹", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/calls/cards.py"},
+    {"id": "press", "label": "Your Call press", "kind": "person", "rank": 2, "col": 0,
+     "ref": "src/jarvis/calls/approvals.py"},
+    {"id": "passkey", "label": "Passkey for a new number", "kind": "guard", "rank": 2, "col": 1,
+     "ref": "src/jarvis/calls/approvals.py"},
+    {"id": "limits", "label": "Day limits and ₹ caps", "kind": "guard", "rank": 3, "col": 0,
+     "ref": "src/jarvis/calls/limits.py"},
+    {"id": "phone", "label": "Phone dials your SIM", "kind": "service", "rank": 4, "col": 0,
+     "ref": "src/jarvis/phone/calls.py"},
+    {"id": "desk", "label": "Laptop desk: the sound", "kind": "step", "rank": 4, "col": 1,
+     "ref": "src/jarvis/calldesk/session.py"},
+    {"id": "talk", "label": "Hear, think, guard, speak", "kind": "step", "rank": 5, "col": 0,
+     "ref": "src/jarvis/calls/engine.py"},
+    {"id": "live", "label": "Listen, take over, hang up", "kind": "person", "rank": 5, "col": 1,
+     "ref": "src/jarvis/calls/live.py"},
+    {"id": "object", "label": "They object: deleted", "kind": "guard", "rank": 6, "col": 1,
+     "ref": "src/jarvis/calls/records.py"},
+    {"id": "record", "label": "Sealed record, then gone", "kind": "store", "rank": 6, "col": 0,
+     "ref": "src/jarvis/calls/records.py"}
+  ],
+  "edges": [
+    {"from": "ask", "to": "card"},
+    {"from": "card", "to": "press"},
+    {"from": "press", "to": "passkey", "label": "never called", "style": "side"},
+    {"from": "passkey", "to": "limits", "style": "side"},
+    {"from": "press", "to": "limits"},
+    {"from": "limits", "to": "phone", "label": "one dial grant"},
+    {"from": "phone", "to": "desk", "label": "sound by Bluetooth", "style": "side"},
+    {"from": "phone", "to": "talk"},
+    {"from": "desk", "to": "talk", "label": "their voice", "style": "side"},
+    {"from": "talk", "to": "live", "label": "captions", "style": "side"},
+    {"from": "talk", "to": "object", "label": "no recording", "style": "side"},
+    {"from": "talk", "to": "record", "label": "summary"},
+    {"from": "object", "to": "record", "style": "side"}
+  ]
+}

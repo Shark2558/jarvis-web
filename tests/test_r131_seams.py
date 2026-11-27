@@ -33,13 +33,13 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name -----------------------------------------------
 def test_the_version_is_thirteen_point_one() -> None:
-    assert jarvis.__version__ == "18.0.0"  # R18 (13.1.0 at R13.1); persona p13.0
+    assert jarvis.__version__ == "5.2.0"  # R5.2 (18.0.0 at R18, 13.1.0 at R13.1); persona p13.0
 
 
 def test_the_real_repository_is_r13_1_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R18"  # R6.4 (R6.3 at R6.3 I0)
-    assert plans.plan_paths(repo)[0] == "docs/plans/r18-calls.md"
+    assert plans.release_label(repo) == "R5.2"  # R18 at R18, R6.4 (R6.3 at R6.3 I0)
+    assert plans.plan_paths(repo)[0] == "docs/plans/r5-2-voice.md"
     assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 
@@ -107,8 +107,9 @@ def test_the_settings_edges_are_accepted() -> None:
 
 
 def test_config_stays_under_its_guard() -> None:
-    # R18 +2: the import of its settings' base class (`config_calls.py`, where R18's keys live)
-    assert _lines(SRC / "config.py") <= 791
+    # R18 +2: the import of its settings' base class (`config_calls.py`, where R18's keys live);
+    # R5.2 +1: `config_voice.LocalSpeechConfig`'s import
+    assert _lines(SRC / "config.py") <= 792
 
 
 # ---- 8 · money: the try-on label, tax and the overall limit -------------------------------------
@@ -903,7 +904,7 @@ def test_the_size_guards_hold() -> None:
     assert _lines(SRC / "api" / "app.py") <= 735  # not edited by R13.1 (732)
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") <= 741  # not edited (713)
-    assert _lines(SRC / "config.py") <= 791  # R18 +2: the import of `config_calls.CallsConfig`
+    assert _lines(SRC / "config.py") <= 792  # R18 +2, R5.2 +1: the base classes' imports
     assert _lines(STATIC / "console-helpers.js") <= 238  # not edited
     assert _lines(STATIC / "console-helpers-wardrobe.js") <= 306
     assert _lines(STATIC / "console-r7-send.js") <= 165

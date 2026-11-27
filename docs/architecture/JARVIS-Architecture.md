@@ -1,4 +1,4 @@
-Version v18.0.0 · 27 Nov 2026, 13:50 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v5.2.0 · 27 Nov 2026, 14:30 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # JARVIS Architecture & Technology Guide
 
@@ -2306,3 +2306,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v6.4.1 | 25 Nov 2026, 15:00 IST | R6.4 | R6.4 W7a (the Book's pages refreshed): C57's "Where in the code" names the chapter player's view and the effects engine's three modules (`console-book-chapter-view.js`, `console-book-fx-plan.js`, `console-book-fx-chart.js`, `console-book-fx-cards.js`) and the reader's own stylesheet (`book-read-reader.css`) | 🛠 Mark XXIV |
 | v6.4.2 | 25 Nov 2026, 15:30 IST | R6.4 | R6.4 review: the roadmap's R6.4 row removed (R6.4 is built; its "Not in R6.4" items wait for the owner to ask, no row), its opening says so, and its first row reads "Phone calls" (the tour's "Next:"); C57's R6.4 sentence says built, not yet deployed | 🛠 Mark XXIV |
 | v18.0.0 | 27 Nov 2026, 13:50 IST | R18 | R18 I0 (calls from the laptop): the guide's version moves to R18; nothing else changes yet. The calls cards, the roadmap's "Phone calls" row and the costs come with R18's I1 and the Book refresh (`docs/plans/r18-calls/I0-SEAMS.md`) | 🛠 Mark XXV |
+| v5.2.0 | 27 Nov 2026, 14:30 IST | R5.2 | R5.2 I0 (your voice; built after R18, so the number names the release, not an order): the guide's version moves to R5.2; nothing else changes yet. The laptop speech kit's card (`src/jarvis/localspeech`), the voice profile (`voice_profile` in Firestore) and the speaker check come with R5.2's I1 and the Book refresh (`docs/plans/r5-2-integration/I0-SEAMS.md`) | 🛠 Mark XXV |

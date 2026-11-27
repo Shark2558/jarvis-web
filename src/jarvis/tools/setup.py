@@ -219,12 +219,13 @@ def _register_parts(
     r7: Sequence[Tool] = (),
     r14: Sequence[Tool] = (),
     r13: Sequence[Tool] = (),
+    r18: Sequence[Tool] = (),
 ) -> None:
     if r11:  # R11 D2: each helper part's own tools (its `kinds.TOOL_FAMILIES`), checked at wiring
         from jarvis.api.r11_wiring import register_r11_tools
 
         register_r11_tools(reg, r11)
-    for t in (*r111, *r7, *r14, *r13):  # R11.1, R7, R14, R13: the parts' tools, checked at wiring
+    for t in (*r111, *r7, *r14, *r13, *r18):  # R11.1, R7, R14, R13, R18: checked at wiring
         reg.register(t)
 
 
@@ -252,13 +253,15 @@ def build_gateway(
     r7: Sequence[Tool] = (),
     r14: Sequence[Tool] = (),
     r13: Sequence[Tool] = (),
+    r18: Sequence[Tool] = (),
     pictures: TurnGuard | None = None,
 ) -> Gateway:
     """`marks`: the owner's to-dos JARVIS wrote from outside content (slice 11 D8) on the Docs
     port; give it in production, or the set lives only as long as the process. `drive` (slice 12
     D1): the chosen-folders Drive tools, only when Drive is configured (`JARVIS_DRIVE=on`).
     `pictures` (R11.1 D21-D, I1): ONE turn guard for research_person, web_search, YouTube and
-    Maps; without it they fail closed (every Brain turn counts as a picture turn)."""
+    Maps; without it they fail closed (every Brain turn counts as a picture turn). `r18`: the
+    calls tools (`jarvis.calls.tools.calls_tools`: calls_place R3, calls_answer_mode)."""
     reg = _builtins(google)
     if r4 is not None:  # R4 W6: vitals_show / systems_check are always-on (no-AI mode needs them)
         from jarvis.api.r4_wiring import register_r4_tools
@@ -271,7 +274,7 @@ def build_gateway(
     _register_services(reg, memory, web, documents, drive, media, pictures)
     _register_personal(reg, vault, notes, belongings)
     _register_home(reg, home)
-    _register_parts(reg, r11, r111, r7, r14, r13)
+    _register_parts(reg, r11, r111, r7, r14, r13, r18)
     return Gateway(
         registry=reg,
         policy=Policy(),

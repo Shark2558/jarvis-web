@@ -140,7 +140,7 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _check_languages(codes: tuple[str, ...]) -> tuple[str, ...]:
+def check_languages(codes: tuple[str, ...]) -> tuple[str, ...]:
     if not codes:
         raise ValueError("a call needs at least one language")
     if len(set(codes)) != len(codes):
@@ -309,7 +309,7 @@ class CallCard(_Frozen):
     @field_validator("languages")
     @classmethod
     def _langs(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        return _check_languages(v)
+        return check_languages(v)
 
     @field_validator("may_say", "may_agree")
     @classmethod
@@ -432,7 +432,7 @@ class CallSettings(_Frozen):
     @field_validator("default_languages")
     @classmethod
     def _langs(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        return _check_languages(v)
+        return check_languages(v)
 
 
 __all__ = [
@@ -482,6 +482,7 @@ __all__ = [
     "SpeechMode",
     "SpeechOption",
     "TimeWindow",
+    "check_languages",
     "is_language",
     "new_call_id",
     "new_card_id",

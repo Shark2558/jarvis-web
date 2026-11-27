@@ -397,7 +397,8 @@ LFS file's blob id is its pointer's, not its data's. faster-whisper small and me
 this way: `model.bin` by SHA-256, `config.json`, `tokenizer.json` and `vocabulary.txt` by blob id.
 
 How it is checked: `tests/test_r52_i1_manager_blob.py`, `tests/test_r52_v1_manager.py` and
-`tests/test_r52_review_manager.py` (which also loads the real `deploy/local-speech/models.json`). The
+`tests/test_r52_review_manager.py`; the real `deploy/local-speech/models.json` still loads under
+the stricter rule (`tests/test_r52_v1_deploy.py`). The
 later check (`ModelManager.verify`, the `models verify` command) re-hashes every installed file
 against its pin, so a blob-pinned file is re-checked by its blob id, not by the SHA-256 recorded
 at install. The blob ids were read twice from Hugging Face's API listing at each revision through

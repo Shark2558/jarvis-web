@@ -279,3 +279,118 @@ async def test_an_unusable_reply_asks_for_the_fields(reply: str | None) -> None:
 
 def test_typed_calls_reads_only_numbers_jarvis_may_call() -> None:
     assert typed_calls("ring 90000 00001 or 112 or +44 20 7946 0958") == frozenset({NUMBER})
+
+
+# ---- the helpers I1 wires -------------------------------------------------------------------
+class _Use:
+    def __init__(self, units: dict[str, float]) -> None:
+        self.units = units
+
+    def used(self, key: str) -> float:
+        return self.units.get(key, 0.0)
+
+
+class _AllowanceBilling:
+    def __init__(self, units: dict[str, float]) -> None:
+        self.units = units
+
+    async def allowance(self, keys: Any) -> _Use:
+        return _Use(self.units)
+
+
+async def test_the_google_allowance_left_is_read_from_billing() -> None:
+    from jarvis.calls.cards import GOOGLE_KEYS, BillingAllowance
+
+    left = BillingAllowance(
+        _AllowanceBilling({GOOGLE_KEYS[0]: 600.0, GOOGLE_KEYS[1]: 1000}), PRICES
+    )
+    assert await left.left(SpeechOption.GOOGLE) == (3000.0, 999_000)
+    assert await left.left(SpeechOption.AZURE) is None
+
+
+def test_token_rate_prices_the_model_in_rupees() -> None:
+    from jarvis.calls.cards import token_rate
+
+    rate = token_rate("claude-haiku-5-5", 88.0)
+    assert rate is not None and rate.input_inr == pytest.approx(8.8)
+    assert token_rate("no-such-model", 88.0) is None
+
+
+class _Spec:
+    id, tools_allowed = "b1", True
+
+
+class _Registry:
+    default = _Spec()
+
+    def list(self) -> list[_Spec]:
+        return [self.default]
+
+    def __init__(self, router: Any) -> None:
+        self.router = router
+
+    def router_for(self, brain_id: str) -> Any:
+        return self.router
+
+
+class _Done:
+    text, cost_usd, model = '{"purpose": "x"}', 0.0001, "claude-haiku-5-5"
+    usage = None
+
+
+class _Router:
+    def __init__(self, blocked: bool = False) -> None:
+        self.blocked, self.calls = blocked, 0
+
+    async def blocked_now(self) -> bool:
+        return self.blocked
+
+    async def complete(self, **kw: Any) -> _Done:
+        self.calls += 1
+        assert kw["tier"].value == "fast" and kw["tools"] is None
+        return _Done()
+
+
+class _Meter:
+    def __init__(self, over: bool = False) -> None:
+        self.over, self.recorded = over, 0.0
+
+    async def ensure_allowed(self, uid: str, spec: Any) -> None:
+        if self.over:
+            raise RuntimeError("limit reached")
+
+    async def record(self, uid: str, brain_id: str, cost_usd: float) -> float:
+        self.recorded += cost_usd
+        return cost_usd
+
+
+async def test_the_router_fast_text_is_admitted_and_metered() -> None:
+    from jarvis.calls.cards import RouterFastText
+
+    router, meter = _Router(), _Meter()
+    fast = RouterFastText(_Registry(router), meter)
+    assert await fast.complete(UID, system="s", prompt="p", max_tokens=10) == '{"purpose": "x"}'
+    assert meter.recorded == pytest.approx(0.0001)
+    assert (
+        await RouterFastText(_Registry(_Router(True)), _Meter()).complete(
+            UID, system="s", prompt="p", max_tokens=10
+        )
+        is None
+    )
+    assert (
+        await RouterFastText(_Registry(router), _Meter(over=True)).complete(
+            UID, system="s", prompt="p", max_tokens=10
+        )
+        is None
+    )
+
+    async def off(uid: str) -> bool:
+        return True
+
+    assert (
+        await RouterFastText(_Registry(router), meter, ai_off=off).complete(
+            UID, system="s", prompt="p", max_tokens=10
+        )
+        is None
+    )
+    assert router.calls == 1

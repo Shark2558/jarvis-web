@@ -49,11 +49,12 @@ from jarvis.calls.ports import CallStore
 from jarvis.calls.prices import PriceUnknown, SpeechPrice
 from jarvis.calls.tools import PlaceArgs
 from jarvis.llm.base import ChatMessage, LLMError, Role
-from jarvis.llm.pricing import cost_usd
+from jarvis.llm.pricing import cost_usd, price_of
 from jarvis.llm.router import ModelTier
 from jarvis.logging import get_logger
 from jarvis.tools.card import one_line
 from jarvis.tools.external import wrap_external
+from jarvis.voice.catalogue import STT_KEY, TTS_KEYS
 
 log = get_logger(__name__)
 
@@ -252,6 +253,49 @@ class AllowanceLeft(Protocol):
     async def left(self, option: SpeechOption) -> tuple[float, float] | None: ...
 
 
+def token_rate(model: str, inr_per_usd: float) -> TokenRate | None:
+    """The fast tier's model priced in ₹ (`jarvis.llm.pricing`), or None when its price is
+    unknown (the estimate is then unknown, never ₹0)."""
+    price = price_of(model)
+    if price is None or inr_per_usd <= 0:
+        return None
+    return TokenRate(
+        input_inr=price.input_per_mtok * inr_per_usd,
+        output_inr=price.output_per_mtok * inr_per_usd,
+        cache_read_inr=price.cache_read_per_mtok * inr_per_usd,
+    )
+
+
+class _AllowanceUse(Protocol):
+    def used(self, key: str) -> float: ...
+
+
+class _AllowanceReader(Protocol):
+    async def allowance(self, keys: Sequence[str]) -> _AllowanceUse: ...
+
+
+# Google's free allowance is the deployment's, shared with JARVIS's own voice (`jarvis.voice`):
+# its hearing seconds and Chirp 3 HD characters this Pacific month
+GOOGLE_KEYS = (STT_KEY, TTS_KEYS["chirp3-hd"])
+
+
+class BillingAllowance:
+    """`AllowanceLeft` over `Billing.allowance` for the options metered there (Google)."""
+
+    def __init__(
+        self, billing: _AllowanceReader, prices: Mapping[SpeechOption, SpeechPrice]
+    ) -> None:
+        self.billing, self.prices = billing, prices
+
+    async def left(self, option: SpeechOption) -> tuple[float, float] | None:
+        price = self.prices.get(option)
+        if option is not SpeechOption.GOOGLE or price is None:
+            return None
+        use = await self.billing.allowance(GOOGLE_KEYS)
+        hear, voice = (use.used(k) for k in GOOGLE_KEYS)
+        return price.hear_free_seconds - hear, price.voice_free_chars - voice
+
+
 class Estimator:
     def __init__(
         self,
@@ -392,6 +436,12 @@ class CardBuilder:
 
     async def build(self, uid: str, draft: PlaceArgs, *, card_id: str | None = None) -> CallCard:
         """The card for `draft`, or CardRefused / NumberRefused. Reads only: nothing is stored."""
+        return (await self.estimate_for(uid, draft, card_id=card_id))[0]
+
+    async def estimate_for(
+        self, uid: str, draft: PlaceArgs, *, card_id: str | None = None
+    ) -> tuple[CallCard, Estimate]:
+        """The card and its estimate's parts (the Calls panel's ₹ breakdown)."""
         number, name = await self._number(uid, draft)
         try:
             settings = await self.store.settings(uid)
@@ -430,7 +480,7 @@ class CardBuilder:
         if card_id is not None:
             fields["id"] = card_id
         try:
-            return CallCard(**fields)
+            return CallCard(**fields), estimate
         except ValidationError as exc:
             names = sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]})
             raise CardRefused("invalid", MSG_DRAFT.format(words=", ".join(names))) from None
@@ -643,7 +693,9 @@ class RouterFastText:
 __all__ = [
     "EMERGENCY_CODES",
     "PARSE_SYSTEM",
+    "GOOGLE_KEYS",
     "AllowanceLeft",
+    "BillingAllowance",
     "CardBuilder",
     "CardParser",
     "CardRefused",
@@ -662,4 +714,6 @@ __all__ = [
     "masked",
     "offered",
     "read_draft",
+    "token_rate",
+    "typed_calls",
 ]

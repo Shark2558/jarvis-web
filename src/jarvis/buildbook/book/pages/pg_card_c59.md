@@ -1,9 +1,9 @@
 ---
 page: pg_card_c59
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  "evals/run_all_mock.py": "71170909a3d7921a"
+  "evals/run_all_mock.py": "71d648c70abd6a51"
   "evals/run_real.py": "ce0ae50e362c19f3"
   "scripts/arch_coverage.py": "16b033ee883f89d6"
   "scripts/ui_snapshots.py": "f7ee1329fa9806d1"
@@ -17,7 +17,7 @@ A builder changes how JARVIS reads attached PDFs. The mock evals run 31 suites i
 
 ## How it works
 `evals/run_all_mock.py` runs every eval suite against a mock AI that always answers the same way, so the results are repeatable and cost nothing; the Makefile's eval-mock command runs it.
-Suites cover the core loop, the calendar, the brief, the monthly limit, memory, voice, web search, to-dos, permissions, attached documents and more, each with its negative controls (`evals/run_all_mock.py`).
+Suites cover the core loop, the calendar, the brief, the monthly limit, memory, voice, web search, to-dos, permissions, attached documents, the phone calls' language check and more, each with its negative controls (`evals/run_all_mock.py`).
 `evals/run_real.py` runs chosen suites against the real AI: it first gives an estimate in rupees, runs only after you type YES, and a safety stop ends the run if the spending goes well past that estimate.
 `tests/browser/test_ui_audit.py` opens each console panel with realistic sample data at desktop and phone size, on Night and Day, and checks for overlapping controls, sideways overflow, off-theme fonts, unnamed controls, low contrast and touch targets too small for a finger.
 `scripts/ui_snapshots.py` takes screenshots of every panel in the same sizes and themes, with a summary of the same checks, so a person can look at them before a release.

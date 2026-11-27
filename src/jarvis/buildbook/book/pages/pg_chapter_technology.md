@@ -13,7 +13,7 @@ sources:
   "deploy/home/docker-compose.yml": "725207386158f89f"
   "deploy/run-real-evals.sh": "3e7d08fb0a07cf43"
   "docs/github-backfill.tsv": "08260a54febc5a52"
-  "pyproject.toml": "bf64410b4b1dc6ea"
+  "pyproject.toml": "9444b848ad331d79"
   "render.yaml": "f4d4dcab2c0f7920"
   "requirements.lock": "9c015550bb6a8ae7"
   "scripts/check_doc_versions.py": "d5acf001aa9fe82d"

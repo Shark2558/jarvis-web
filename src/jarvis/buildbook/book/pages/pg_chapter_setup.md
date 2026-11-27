@@ -5,7 +5,7 @@ written_on: 2026-11-25
 sources:
   "Makefile": "3c446b64c5b9cb98"
   "docker-compose.yml": "a9301e2740ef32ca"
-  "pyproject.toml": "bf64410b4b1dc6ea"
+  "pyproject.toml": "9444b848ad331d79"
   "src/jarvis/api/app.py": "a739af3f1d029daa"
   "src/jarvis/api/auth.py": "02a9e121c2585fd8"
   "src/jarvis/api/body.py": "94feeb1db871c289"

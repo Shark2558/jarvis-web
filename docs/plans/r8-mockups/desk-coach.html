@@ -86,7 +86,7 @@ html[data-surface="night"] .r8-card.r8-bad{background:color-mix(in srgb,#E5484D 
 /* the body lines (never the picture): SVG strokes in the accents; amber where the warning is; the upright as a ghost */
 .r8-post{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:center;margin-top:4px}
 .r8-fig{position:relative;width:96px;height:112px;border-radius:var(--r-sm);background:var(--well);border:1px solid var(--line-2)}
-.r8-fig svg,.r8-view svg.r8-body{display:block;width:100%;height:100%;overflow:visible}
+.r8-fig svg{display:block;width:100%;height:100%;overflow:visible}
 .r8-body .bone{fill:none;stroke:var(--accent-2);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .r8-body .head{fill:none;stroke:var(--accent-2);stroke-width:2.4}
 .r8-body .joint{fill:var(--accent-ink)}
@@ -181,8 +181,8 @@ html[data-surface="night"] .r8-steps b{font:400 12.5px/1.3 var(--tech);letter-sp
 .r8-back{flex:none;display:inline-flex;align-items:center;gap:2px;height:44px;padding:0 10px 0 6px;font-size:12px}
 .r8-back svg{width:16px;height:16px}
 .r8-full .ptitle .status{height:44px;padding:0 12px;font-size:12px;letter-spacing:.08em;cursor:pointer}
-.r8-view{position:relative;flex:none;height:262px;border-radius:var(--r-md);background:var(--well);border:1px solid var(--line-2)}
-.r8-view .r8-body{position:absolute;inset:14px 0 26px}
+.r8-view{position:relative;flex:none;height:300px;border-radius:var(--r-md);background:var(--well);border:1px solid var(--line-2)}
+.r8-view svg.r8-body{display:block;overflow:visible;position:absolute;left:0;top:12px;width:100%;height:calc(100% - 40px)}
 .r8-viewcap{position:absolute;left:10px;right:10px;bottom:8px;text-align:center;font:400 10.5px/1.2 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
 .r8-view .r8-viewmid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;text-align:center}
 .r8-viewmid p{margin:0;font-size:14px;line-height:1.45;color:var(--ink-2)}
@@ -191,7 +191,7 @@ html[data-surface="night"] .r8-steps b{font:400 12.5px/1.3 var(--tech);letter-sp
 .r8-num{min-width:0;padding:8px 10px 9px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
 .r8-num .k{display:block}
 .r8-num b{display:block;margin-top:4px;font:400 30px/1 var(--tech);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
-.r8-num.reps b{font-size:64px;line-height:.92}
+.r8-num.reps b{font-size:72px;line-height:.9}
 .r8-num.reps b small{font-size:20px;letter-spacing:.04em;color:var(--ink-2)}
 .r8-num i{display:block;margin-top:5px;font:400 11px/1.3 var(--tech);font-style:normal;letter-spacing:.08em;color:var(--ink-2)}
 .r8-tempo{margin-top:8px;padding:8px 10px 9px;border-radius:var(--r-sm);background:var(--well-2);border:1px solid var(--line-2)}

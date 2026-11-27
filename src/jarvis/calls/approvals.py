@@ -25,6 +25,9 @@ This module adds what is particular to calls:
   `CallsService.confirm_dial` is the phone side's check of the `approval_id` it was sent: true
   once, for that call and number, within 2 minutes of the dial.
 - `CallsService.answer_mode`: the `calls_answer_mode` tool (answering missed calls, row 104).
+- I1: a chat's proposal stores its card as a waiting card and shows it under the reply
+  (`chat_card.CallReplyCard`: Call there is his Calls-panel press); approving the gateway's own
+  card for it uses that stored card, so either way the card is used once.
 
 Grants live in this process only (Cloud Run runs one instance; the call hub is in memory too):
 after a restart no grant is live, so nothing can be dialled on an old approval. Every step is in
@@ -59,6 +62,7 @@ from jarvis.logging import get_logger
 from jarvis.tools.audit import AuditTrail
 from jarvis.tools.base import Preview
 from jarvis.tools.context import require_tool_context
+from jarvis.tools.reply_cards import add_card, showing_cards
 
 log = get_logger(__name__)
 
@@ -66,6 +70,7 @@ AGENT = "communication"
 SCOPE_SESSION = "calls"  # a console press's gateway scope: "<uid>:calls"
 PHONE_CONFIRM_S = 120
 GRANT_TTL = timedelta(seconds=APPROVAL_TTL_S)
+CHAT_CARDS_MAX = 256  # the chat's proposals remembered (owner, card digest) -> its stored card
 
 MSG_NEEDS_PASSKEY = (
     "This number hasn't been called before, so the call needs your passkey. Set one up and "
@@ -272,6 +277,7 @@ class CallsService:
         self.store, self.builder, self.limits = store, builder, limits
         self.grants = grants or GrantBook()
         self.passkeys, self.starter, self.audit = passkeys, starter, audit
+        self._chat: dict[tuple[str, str], str] = {}  # I1: (uid, digest) -> the chat's card id
 
     # ---- the card ---------------------------------------------------------------------------
     async def _card_for(self, uid: str, args: Mapping[str, Any]) -> CallCard:
@@ -321,7 +327,39 @@ class CallsService:
         uid = require_tool_context().user_id
         card = await self._card_for(uid, args)
         await self.gates(uid, card)
+        if _console_card.get() is None and showing_cards():
+            await self._show_in_chat(uid, card)
         return Preview(summary=card_text(card))
+
+    async def _show_in_chat(self, uid: str, card: CallCard) -> None:
+        """I1: the chat's proposal as a waiting card under the reply. Never raises."""
+        from jarvis.calls.chat_card import CallReplyCard
+
+        key = (uid, card.digest())
+        try:
+            known = self._chat.get(key)
+            stored = await self.store.get_card(uid, known) if known else None
+            if stored is not None and stored.status is CardStatus.DRAFT:
+                card = stored  # the same proposal looked up again: one card
+            else:
+                await self.store.put_card(uid, card)
+                self._chat.pop(key, None)
+                while len(self._chat) >= CHAT_CARDS_MAX:
+                    self._chat.pop(next(iter(self._chat)))
+                self._chat[key] = card.id
+            add_card(CallReplyCard.of(card, masked(card.number_e164)))
+        except Exception as exc:  # noqa: BLE001 - the gateway's own card still asks him
+            log.warning("call card not shown in the chat", extra={"error": type(exc).__name__})
+
+    async def _chat_card(self, uid: str, card: CallCard) -> CallCard:
+        """I1: approving the chat's proposal uses the card shown under it (once)."""
+        known = self._chat.get((uid, card.digest()))
+        if known is None:
+            return card
+        stored = await self._stored(uid, known)
+        if stored.status is not CardStatus.DRAFT or stored.digest() != card.digest():
+            raise CardRefused("not_waiting", MSG_NOT_WAITING)
+        return stored
 
     async def place(self, args: dict[str, Any]) -> dict[str, Any]:
         """Runs only on his approval (the gateway spent the token and, when in force, checked
@@ -331,6 +369,8 @@ class CallsService:
             raise PermissionError(MSG_NOT_APPROVED)
         uid = ctx.user_id
         card = await self._card_for(uid, args)
+        if _console_card.get() is None:
+            card = await self._chat_card(uid, card)
         await self.gates(uid, card)
         approved = card.model_copy(update={"status": CardStatus.APPROVED})
         await self.store.put_card(uid, approved)

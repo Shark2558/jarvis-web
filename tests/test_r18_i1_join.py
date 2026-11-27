@@ -627,3 +627,62 @@ async def test_the_call_speaks_with_the_option_its_card_was_estimated_with() -> 
     assert langs == ("en-IN", "ml-IN") and balanced == frozenset()
     await choices.refresh(UID, None)  # an answered call: his default languages
     assert choices.snapshot(UID)[2] == ("en-IN",)
+
+
+# ---- the chat's call card (E draws `call_card`; A1's press either way, once) ---------------------
+async def test_a_chat_proposal_shows_its_card_and_either_approval_uses_it_once() -> None:
+    from jarvis.llm.base import ToolCall
+    from jarvis.tools.gateway import GatewayOutcome
+    from jarvis.tools.reply_cards import CallReplyCard, collecting_cards
+    from jarvis.tools.taint import context_trust
+
+    r = await rig()
+    await known(r.store)
+    api = a1_api(r)
+    chat = f"{UID}:session1"
+    args = {"number": NUMBER, "purpose": "Book a laundry pickup"}
+    cards: list[Any] = []
+    with context_trust(untrusted=False), collecting_cards(cards):
+        asked = await r.gateway.execute(
+            ToolCall(id="t1", name="calls_place", arguments=args), scope=chat
+        )
+    assert asked.outcome is GatewayOutcome.AWAITING_CONFIRMATION and asked.pending is not None
+    (shown,) = cards
+    assert isinstance(shown, CallReplyCard) and shown.kind == "call_card"
+    assert shown.number_masked.endswith("0001") and shown.estimate_inr is not None
+    stored = await r.store.get_card(UID, shown.id)
+    assert stored is not None and stored.status.value == "draft"
+    # his Call under the reply: the panel's press; the chat's own approval card is withdrawn
+    done = await api.approve(UID, shown.id, {})
+    assert done["status"] == "placing" and done["card_id"] == shown.id
+    assert not [p for p in await r.gateway.pending() if p.scope == chat]
+    with context_trust(untrusted=False):
+        late = await r.gateway.execute(
+            ToolCall(id="t1", name="calls_place", arguments=args),
+            confirmation_id=asked.pending.id,
+            scope=chat,
+        )
+    assert late.outcome is not GatewayOutcome.EXECUTED  # never a second call
+    assert len(r.starter.started) == 1
+
+
+async def test_approving_the_chats_own_card_uses_the_card_shown_under_it() -> None:
+    from jarvis.llm.base import ToolCall
+    from jarvis.tools.gateway import GatewayOutcome
+    from jarvis.tools.reply_cards import collecting_cards
+    from jarvis.tools.taint import context_trust
+
+    r = await rig()
+    await known(r.store)
+    api = a1_api(r)
+    chat = f"{UID}:session1"
+    call = ToolCall(id="t1", name="calls_place", arguments={"number": NUMBER, "purpose": "Ask"})
+    cards: list[Any] = []
+    with context_trust(untrusted=False), collecting_cards(cards):
+        asked = await r.gateway.execute(call, scope=chat)
+        assert asked.pending is not None
+        done = await r.gateway.execute(call, confirmation_id=asked.pending.id, scope=chat)
+    assert done.outcome is GatewayOutcome.EXECUTED and done.result["card_id"] == cards[0].id
+    with pytest.raises(CallsRefused) as again:  # the card under the reply is used
+        await api.approve(UID, cards[0].id, {})
+    assert again.value.code == "not_waiting"

@@ -43,6 +43,7 @@ from jarvis.calls.cards import (
     NumberRefused,
     card_args,
     card_text,
+    check_number,
     masked,
     offered,
     provisional,
@@ -326,7 +327,9 @@ class CardsApi:
                             "card_text": asked.pending.summary,
                         }
                 done = await self._run(call, approval_id, scope, proof)
-            return self._approved(card, done)
+            out = self._approved(card, done)
+            await self._withdraw(uid, card)  # I1: the chat's own card for it goes too
+            return out
         except _KNOWN as exc:
             raise refused(exc) from None
 
@@ -404,11 +407,14 @@ class CardsApi:
             raise refused(exc) from None
 
     async def _withdraw(self, uid: str, card: CallCard) -> None:
-        """A waiting `calls_place` card for it is withdrawn too. Never raises."""
+        """A waiting `calls_place` card for it is withdrawn too (the panel's, or I1: the chat's,
+        under any of his scopes). Never raises."""
         try:
-            args, scope = card_args(card), f"{uid}:{SCOPE_SESSION}"
+            args, mine = card_args(card), f"{uid}:"
             for p in await self.gateway.pending():
-                if p.tool == PLACE and p.scope == scope and p.arguments == args:
+                if p.tool != PLACE or not (p.scope or "").startswith(mine):
+                    continue
+                if p.arguments == args or _same_call(p.arguments, card):
                     await self.gateway.gate.cancel(p.id)
         except Exception as exc:  # noqa: BLE001 - tidying only: it expires in 10 minutes
             log.warning("waiting call approval not withdrawn", extra={"error": type(exc).__name__})
@@ -538,6 +544,16 @@ def _words(r: GatewayResult) -> str:
     text = r.error or r.outcome.value
     inner = _INNER.search(text)
     return MSG_NOT_DONE.format(words=(inner.group(1) if inner else text)[:200])
+
+
+def _same_call(args: Mapping[str, Any], card: CallCard) -> bool:
+    """I1: a chat's proposal (the model's own arguments) for this card's number and purpose."""
+    try:
+        draft = read_draft(args)
+        number = check_number(draft.number) if draft.number else None
+    except (CardRefused, NumberRefused):
+        return False
+    return number == card.number_e164 and draft.purpose.strip() == card.purpose.strip()
 
 
 def _raises(current: CallSettings, changes: Mapping[str, Any]) -> bool:

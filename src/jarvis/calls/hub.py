@@ -41,6 +41,7 @@ from jarvis.calls.models import (
     CallSettings,
     CallState,
     Direction,
+    EndReason,
     SpeechMode,
     SpeechOption,
 )
@@ -74,6 +75,8 @@ MAX_WRONG_CODES = 20  # a 10-minute window, every client together (the route is 
 WRONG_WINDOW_S = 600.0
 DESK_COLL, CODE_COLL = "call_desk", "call_desk_codes"
 SEND_TIMEOUT_S = 5.0
+STOP_END_S = 5.0  # a restart: at most this long to end a running call and keep its record
+STOP_SETTLE_S = 2.0  # then at most this long for its background work, which is then cancelled
 _FIX = str.maketrans({"I": "1", "L": "1", "O": "0"})
 _CODE_RE = re.compile(r"[0-9A-Z]{8}")
 _VERSION_RE = re.compile(r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}")
@@ -459,11 +462,20 @@ class CallHub:
 
     def _run(self, uid: str, session: CallSession, start: Any) -> None:
         async def go() -> None:
+            stopping = False
             try:
                 await start
-            finally:
                 await session.done.wait()
-                await session.settle()
+            except asyncio.CancelledError:  # the hub is closing (a restart): end the call now
+                stopping = True
+                await _stop_call(session)
+                raise
+            finally:
+                if stopping:  # never wait for a call that can no longer finish on its own
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(session.settle(), STOP_SETTLE_S)
+                else:
+                    await session.settle()
                 if self._active.get(uid) == session.call_id:
                     del self._active[uid]
                 self._calls.pop(session.call_id, None)
@@ -549,6 +561,19 @@ class CallHub:
             await self.drop_desk(uid)
         for task in list(self._tasks):
             task.cancel()
+
+
+async def _stop_call(session: CallSession) -> None:
+    """End a call the closing hub can't keep: no goodbye (the line may be gone), its record kept.
+    Bounded, so a restart is never held up by one call."""
+    try:
+        await asyncio.wait_for(
+            session.end(EndReason.ERROR, outcome="server_stopped", say_goodbye=False), STOP_END_S
+        )
+    except TimeoutError:
+        log.warning("a call did not end in time while the hub closed")
+    except Exception as exc:  # the hub must still close: logged by class, never the text
+        log.warning("ending a call at close failed", extra={"error": type(exc).__name__})
 
 
 # ---- metering ----------------------------------------------------------------------------------

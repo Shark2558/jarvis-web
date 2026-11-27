@@ -66,7 +66,7 @@ sources:
   "src/jarvis/calls/engine_turns.py": "e3dd50d216e63efb"
   "src/jarvis/calls/engine_voice.py": "cac890f0a4d3bff9"
   "src/jarvis/calls/guard.py": "d300d7c800d4f2c2"
-  "src/jarvis/calls/hub.py": "ab86515269baf371"
+  "src/jarvis/calls/hub.py": "436e3b281b7c1603"
   "src/jarvis/calls/join.py": "f68ef2ff854983c4"
   "src/jarvis/calls/join_speech.py": "b980962416104ee6"
   "src/jarvis/calls/langcheck/api.py": "cd308acf41ba25df"
@@ -115,7 +115,7 @@ sources:
   "tests/test_calldesk_session.py": "7ff50c044bcda227"
   "tests/test_calls_engine.py": "ad38764f0b3f5a8d"
   "tests/test_calls_guard.py": "050f3e56e8305335"
-  "tests/test_calls_hub_ws.py": "a490620b43f33413"
+  "tests/test_calls_hub_ws.py": "0823049bca06b82e"
   "tests/test_r18_d_phone_calls.py": "1a3925f2fa1f0569"
   "tests/test_r18_i1_join.py": "ba91d59e7f0251df"
 ---

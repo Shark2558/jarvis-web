@@ -34,7 +34,7 @@ sources:
   "src/jarvis/calldesk/win/sound.py": "e95e276a93673c3e"
   "src/jarvis/calldesk/win/system.py": "89c7222ce83d9dcf"
   "src/jarvis/calldesk/wsconn.py": "03de617fa79d0676"
-  "src/jarvis/calls/hub.py": "ab86515269baf371"
+  "src/jarvis/calls/hub.py": "436e3b281b7c1603"
   "src/jarvis/home/signing.py": "4499c07dbb6aa847"
   "tests/test_calldesk_kit.py": "9f7359a5aaff8c42"
   "tests/test_calldesk_micguard.py": "affa38e4f83057ac"

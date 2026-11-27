@@ -6,7 +6,7 @@ sources:
   "src/jarvis/calls/prices.py": "09530bc93cd5d9f2"
   "src/jarvis/calls/speech/build.py": "f03b52cba95aad09"
   "src/jarvis/calls/speech/sarvam.py": "bc73208ec89e647f"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
 ---
 ## In plain words
 Sarvam is an Indian company's paid speech service, made for Indian languages: its Saaras model hears and its Bulbul model speaks. JARVIS can use it on phone calls, and it is the only speech option JARVIS treats as paid (`src/jarvis/calls/prices.py:speech_prices`). It is off by default and stays off until three things are true: a Sarvam key in `sarvam_api_key`, the server's switch `sarvam_enabled` on ({{fact:settings.sarvam_enabled}} by default), and your own yes to "Sarvam speech (paid)" in Calls → Settings. A call uses Sarvam for a language only when it passed the language check and you said yes, and only once no free option still covers the call: free comes first (`src/jarvis/calls/cards.py:offered`). What goes to Sarvam: each short clip of the other person's voice, with the call's language or a request to say which language it is, and the text of each line JARVIS says, with its language and a stock male voice.

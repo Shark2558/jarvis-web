@@ -70,6 +70,19 @@ def main(
         _say(str(exc))
         return EXIT_CONFIG
     app.setup_logging(cfg)
+    try:
+        return _run(command, args, cfg, parts, opener)
+    finally:
+        app.close_logging()
+
+
+def _run(
+    command: str,
+    args: list[str],
+    cfg: config.DeskConfig,
+    parts: app.Parts | None,
+    opener: Opener | None,
+) -> int:
     if command == "link":
         return link(cfg, args[1], opener)
     parts = parts or app.windows_parts()

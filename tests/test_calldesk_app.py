@@ -322,10 +322,7 @@ def test_the_log_never_holds_audio_or_secrets(tmp_path: Path) -> None:
             )
         )
     finally:
-        import logging
-
-        for handler in logging.getLogger().handlers:
-            handler.flush()
+        app.close_logging()
     text = cfg.log_file.read_text(encoding="utf-8")
     assert "connected to JARVIS" in text
     assert base64.b64encode(SEED).decode() not in text and "v1;h=" not in text

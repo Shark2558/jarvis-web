@@ -71,13 +71,25 @@ def windows_parts() -> Parts:  # pragma: no cover - Windows only
     )
 
 
+class _DeskLog(RotatingFileHandler):
+    """The desk's own log file handler (one at a time)."""
+
+
 def setup_logging(cfg: DeskConfig) -> None:
+    close_logging()
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(cfg.log_file, maxBytes=LOG_BYTES, backupCount=2, encoding="utf-8")
+    handler = _DeskLog(cfg.log_file, maxBytes=LOG_BYTES, backupCount=2, encoding="utf-8")
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
     root = logging.getLogger()
-    root.handlers[:] = [handler]
+    root.addHandler(handler)
     root.setLevel(logging.INFO)
+
+
+def close_logging() -> None:
+    root = logging.getLogger()
+    for handler in [h for h in root.handlers if isinstance(h, _DeskLog)]:
+        root.removeHandler(handler)
+        handler.close()
 
 
 def guard_for(cfg: DeskConfig, parts: Parts) -> MicGuard:
@@ -171,6 +183,7 @@ __all__ = [
     "Parts",
     "check_now",
     "child_command",
+    "close_logging",
     "guard_for",
     "restore_now",
     "run_desk",

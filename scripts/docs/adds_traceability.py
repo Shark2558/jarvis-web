@@ -691,7 +691,7 @@ def _change_row(version_line: str, workbook_name: str, change: str | None = None
 
 
 DEFAULT_VERSION = (
-    "Version v6.4.2 · 27 Nov 2026, 19:30 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV"
+    "Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV"
 )
 
 

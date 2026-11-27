@@ -37,6 +37,7 @@ REST = [
     ("PUT", "/v1/calls/settings"),
     ("GET", "/v1/calls/languages"),
     ("POST", "/v1/calls/languages/check"),
+    ("POST", "/v1/calls/languages/score"),  # I1: his 1-5 scores of a language's samples
     ("POST", "/v1/calls/desk/code"),
     ("DELETE", "/v1/calls/desk"),
     ("GET", "/v1/calls/desk/kit"),

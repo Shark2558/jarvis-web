@@ -202,6 +202,10 @@ class CallsApi(Protocol):
         self, uid: str, body: dict[str, Any]
     ) -> BaseModel | dict[str, Any]: ...
 
+    async def score_language(
+        self, uid: str, body: dict[str, Any]
+    ) -> BaseModel | dict[str, Any]: ...  # I1: {lang, option, scores}
+
     async def status(self, uid: str) -> BaseModel | dict[str, Any]: ...  # desk + phone ready
 
 

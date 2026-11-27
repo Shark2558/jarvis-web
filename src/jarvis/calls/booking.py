@@ -74,9 +74,15 @@ def accept_slot(
     card: CallCard, start: datetime, *, now: datetime, minutes: int | None = None
 ) -> SlotVerdict:
     """Is the offered slot inside the card's limits? A slot without a zone is read as IST."""
-    booking = card.booking
-    if booking is None:
+    if card.booking is None:
         return SlotVerdict(False, "no_booking", "This call isn't for a booking.")
+    return booking_slot(card.booking, start, now=now, minutes=minutes)
+
+
+def booking_slot(
+    booking: Booking, start: datetime, *, now: datetime, minutes: int | None = None
+) -> SlotVerdict:
+    """`accept_slot` for the booking alone (the call engine's `SlotCheck`, I1)."""
     begin = _ist(start)
     end = begin + timedelta(minutes=minutes or booking.duration_minutes)
     if begin < _ist(now):
@@ -198,6 +204,7 @@ __all__ = [
     "CalendarOutcome",
     "SlotVerdict",
     "accept_slot",
+    "booking_slot",
     "event_args",
     "windows_text",
 ]

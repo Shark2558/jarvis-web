@@ -55,9 +55,12 @@ class SpeechKit(Protocol):
 class DialGate(Protocol):
     """A1 (approvals + limits): redeem the approval (one use, 10 minutes, bound to the number and
     `card.digest()`), check the limits and count the call, in one go. None: dial. Otherwise the
-    owner's plain words for the refusal; nothing is dialled."""
+    owner's plain words for the refusal; nothing is dialled. `call_id` (I1): the grant is spent
+    for this call, so the phone's check of the dial (`call.dial`'s approval id) names it."""
 
-    async def before_dial(self, uid: str, card: CallCard, approval_id: str) -> str | None: ...
+    async def before_dial(
+        self, uid: str, card: CallCard, approval_id: str, call_id: str
+    ) -> str | None: ...
 
 
 class SlotCheck(Protocol):

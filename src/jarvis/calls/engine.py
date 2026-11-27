@@ -368,7 +368,7 @@ class CallSession(Turns):
         refusal = (
             "no dial gate"
             if gate is None
-            else await gate.before_dial(self.uid, self.card, approval_id)
+            else await gate.before_dial(self.uid, self.card, approval_id, self.call_id)
         )
         if refusal is not None:
             await self._audit("dial", "refused", "gate")

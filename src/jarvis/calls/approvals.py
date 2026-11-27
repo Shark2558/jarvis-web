@@ -195,6 +195,27 @@ class GrantBook:
                 self._grants[grant_id] = replace(g, confirmed=True)
             return ok
 
+    async def live_until(
+        self, uid: str, grant_id: str, call_id: str, number: str
+    ) -> datetime | None:
+        """The phone side's look at a `call.dial` (I1, `jarvis.phone.calls.ApprovalCheck`): until
+        when this grant may still be dialled for this owner, call and number, or None. Spends
+        nothing: the grant was taken for this call by `take` just before the dial."""
+        async with self._lock:
+            now = self._clock()
+            self._sweep(now)
+            g = self._grants.get(grant_id)
+            if (
+                g is None
+                or g.uid != uid
+                or g.call_id != call_id
+                or g.taken_at is None
+                or not secrets.compare_digest(g.number, number)
+            ):
+                return None
+            until = min(g.expires_at, g.taken_at + timedelta(seconds=PHONE_CONFIRM_S))
+            return until if until > now else None
+
     async def drop_card(self, uid: str, card_id: str) -> int:
         async with self._lock:
             gone = [k for k, g in self._grants.items() if g.uid == uid and g.card_id == card_id]

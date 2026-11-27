@@ -45,6 +45,7 @@ from jarvis.calls.cards import (
     card_text,
     masked,
     offered,
+    provisional,
     read_draft,
 )
 from jarvis.calls.limits import LimitRefused
@@ -219,11 +220,14 @@ class CardsApi:
         audit: AuditTrail | None = None,
         status: Delegate | None = None,
         language_check: BodyDelegate | None = None,
+        language_score: BodyDelegate | None = None,
+        check_progress: Delegate | None = None,
     ) -> None:
         self.store, self.builder, self.service, self.gateway = store, builder, service, gateway
         self.keeper, self.booking, self.parser = keeper, booking, parser
         self.passkeys, self.audit = passkeys, audit
         self._status, self._language_check = status, language_check
+        self._language_score, self._check_progress = language_score, check_progress
 
     # ---- cards ------------------------------------------------------------------------------
     async def _draft(self, uid: str, body: Mapping[str, Any]) -> PlaceArgs:
@@ -500,16 +504,25 @@ class CardsApi:
                 "offered": code in offer,
                 "option": offer[code].option.value if code in offer else None,
                 "inr_per_minute": offer[code].inr_per_minute if code in offer else None,
+                "checked": code in offer and not provisional(offer[code]),
                 "results": [r.model_dump(mode="json") for r in results if r.lang == code],
             }
             for code, name in LANGUAGE_NAMES.items()
         ]
-        return {"languages": rows}
+        out: dict[str, Any] = {"languages": rows}
+        if self._check_progress is not None:  # I1: a check running in the background
+            out["check"] = await self._check_progress(uid)
+        return out
 
     async def run_language_check(self, uid: str, body: dict[str, Any]) -> dict[str, Any]:
         if self._language_check is None:
             raise CallsRefused(501, "not_built", NOT_BUILT)
         return await self._language_check(uid, body)
+
+    async def score_language(self, uid: str, body: dict[str, Any]) -> dict[str, Any]:
+        if self._language_score is None:
+            raise CallsRefused(501, "not_built", NOT_BUILT)
+        return await self._language_score(uid, body)
 
     async def status(self, uid: str) -> dict[str, Any]:
         if self._status is None:

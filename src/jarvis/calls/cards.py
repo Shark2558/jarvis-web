@@ -13,7 +13,8 @@ Communication skill): from the owner's request to the card he approves.
   panel's form) becomes a `CallCard`: the number checked (or a saved contact's, when exactly one
   matches), the languages (his defaults when none; each must have passed the language check with
   an option he allows: Sarvam only with `sarvam_on`, a "needs balanced" result only with
-  `allow_balanced`), the limits (never above his settings), "never called before" and the ₹
+  `allow_balanced`; English before its first check is offered "not yet checked", the Workshop's
+  I1 decision: Google en-IN is JARVIS's own voice path), the limits (never above his settings), "never called before" and the ₹
   estimate. Refusals are `CardRefused` (plain words, stable code).
 - `Estimator`: speech (the language's cheapest passing option; within the free allowances, or on
   an option that can't bill, ₹0), the brain (fast tier, about 4 turns a minute) and the summary,
@@ -32,12 +33,14 @@ import json
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
 from pydantic import ValidationError
 
 from jarvis.brief.summarize import choose_brain
 from jarvis.calls.models import (
+    ENGLISH,
     LANGUAGE_NAMES,
     CallCard,
     CallSettings,
@@ -182,10 +185,31 @@ def _allowed(result: LanguageResult, settings: CallSettings) -> bool:
     return not (result.needs_balanced and not settings.allow_balanced)
 
 
+NOT_YET_CHECKED = "not yet checked"
+# I1 (the Workshop's decision): English is offered before its first language check, marked "not
+# yet checked", on Google en-IN (JARVIS's own voice path). Once English has ANY result, the check
+# decides as for every language; every Indian language still needs a pass.
+PROVISIONAL_ENGLISH = LanguageResult(
+    lang=ENGLISH,
+    option=SpeechOption.GOOGLE,
+    checked_at=datetime(1970, 1, 1, tzinfo=UTC),
+    passed=True,
+    versions={"check": NOT_YET_CHECKED},
+)
+
+
+def provisional(result: LanguageResult) -> bool:
+    """Is this the "not yet checked" English stand-in (never a stored result)?"""
+    return result.versions.get("check") == NOT_YET_CHECKED
+
+
 def offered(results: Sequence[LanguageResult], settings: CallSettings) -> dict[str, LanguageResult]:
     """Each language JARVIS may use on a call → its cheapest passing option he allows (a known
-    price before an unknown one, then the option's order)."""
+    price before an unknown one, then the option's order); English "not yet checked" until it has
+    a result of its own."""
     best: dict[str, LanguageResult] = {}
+    if not any(r.lang == ENGLISH for r in results):
+        best[ENGLISH] = PROVISIONAL_ENGLISH
     for r in results:
         if not _allowed(r, settings):
             continue
@@ -704,6 +728,8 @@ __all__ = [
     "Estimator",
     "FastText",
     "GoogleContactNumbers",
+    "NOT_YET_CHECKED",
+    "PROVISIONAL_ENGLISH",
     "NumberRefused",
     "RefusedCode",
     "RouterFastText",
@@ -713,6 +739,7 @@ __all__ = [
     "check_number",
     "masked",
     "offered",
+    "provisional",
     "read_draft",
     "token_rate",
     "typed_calls",

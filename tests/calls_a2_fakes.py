@@ -331,9 +331,13 @@ class FakeGate:
     def __init__(self, refusal: str | None = None) -> None:
         self.refusal = refusal
         self.asked: list[tuple[str, str]] = []
+        self.call_ids: list[str] = []
 
-    async def before_dial(self, uid: str, card: CallCard, approval_id: str) -> str | None:
+    async def before_dial(
+        self, uid: str, card: CallCard, approval_id: str, call_id: str
+    ) -> str | None:
         self.asked.append((card.digest(), approval_id))
+        self.call_ids.append(call_id)
         return self.refusal
 
 

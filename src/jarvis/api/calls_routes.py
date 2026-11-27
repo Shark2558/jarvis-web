@@ -21,6 +21,7 @@ checks the owner, the path and the body's size and shape, then calls the part wi
     GET    /languages                       the language table             calls_api.languages
     POST   /languages/check                 run the language check         calls_api.run_language_
                                                                            check
+    POST   /languages/score                 his 1-5 scores of samples (I1) calls_api.score_language
     POST   /desk/code                       a link code for the desk       calls_desk_door.code
     DELETE /desk                            unlink the desk                calls_desk_door.unlink
     GET    /desk/kit, /desk/kit/info        the call desk's kit zip        calls_desk_kit
@@ -98,6 +99,7 @@ ROUTES: tuple[tuple[str, str], ...] = (
     ("PUT", f"{PREFIX}/settings"),
     ("GET", f"{PREFIX}/languages"),
     ("POST", f"{PREFIX}/languages/check"),
+    ("POST", f"{PREFIX}/languages/score"),
     ("POST", f"{PREFIX}/desk/code"),
     ("DELETE", f"{PREFIX}/desk"),
     ("GET", f"{PREFIX}/desk/kit"),
@@ -287,6 +289,11 @@ async def languages(request: Request, uid: str = Depends(current_user)) -> Respo
 @router.post("/languages/check", include_in_schema=False)
 async def language_check(request: Request, uid: str = Depends(current_user)) -> Response:
     return await _with_body(request, API_SLOT, lambda api, b: api.run_language_check(uid, b))
+
+
+@router.post("/languages/score", include_in_schema=False)
+async def language_score(request: Request, uid: str = Depends(current_user)) -> Response:
+    return await _with_body(request, API_SLOT, lambda api, b: api.score_language(uid, b))
 
 
 # ---- the call desk -------------------------------------------------------------------------------

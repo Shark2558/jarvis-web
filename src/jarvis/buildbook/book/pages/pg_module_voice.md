@@ -1,9 +1,16 @@
 ---
 page: pg_module_voice
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  "src/jarvis/api/static/console-voice-barge.js": "bf50083732d8c6e4"
+  "deploy/local-speech/README.md": "29e7dff7da9ca847"
+  "deploy/local-speech/models.json": "19a18faa552c8603"
+  "deploy/local-speech/requirements-kit.txt": "be70ad8a87ce81f3"
+  "deploy/local-speech/start-kit.sh": "728d2bb9f7e233a6"
+  "evals/wakeword/run.py": "d01cdade86bcf329"
+  "src/jarvis/api/r52_wiring.py": "db7440401d1030dd"
+  "src/jarvis/api/speaker_assets.py": "0e7f9e6e41e69dc3"
+  "src/jarvis/api/static/console-voice-barge.js": "e6f3f5f38f7a27fe"
   "src/jarvis/api/static/console-voice-capture.js": "09f45d685b4b5ea0"
   "src/jarvis/api/static/console-voice-commands.js": "5fce1e68f0de2831"
   "src/jarvis/api/static/console-voice-conversation.js": "a38e545b0e8e0fa3"
@@ -16,31 +23,119 @@ sources:
   "src/jarvis/api/static/console-voice-micoff.js": "08a923d63f6f93f2"
   "src/jarvis/api/static/console-voice-pace.js": "d455ab39738c612b"
   "src/jarvis/api/static/console-voice-phrases.js": "b45dc811d8b70af6"
+  "src/jarvis/api/static/console-voice-session.css": "b39f61261e644732"
+  "src/jarvis/api/static/console-voice-session.js": "b2eb59ecd520231a"
   "src/jarvis/api/static/console-voice-speech.js": "3ac2e294edcc281c"
   "src/jarvis/api/static/console-voice-wake.js": "906de367b5e856ef"
   "src/jarvis/api/static/console-voice.js": "69224f06a0ee9c0e"
-  "src/jarvis/api/static/console-wakeword.js": "f339e7c5c064c699"
+  "src/jarvis/api/static/console-voiceprint-math.js": "83f681b57d604b50"
+  "src/jarvis/api/static/console-voiceprint-panel.js": "60adde7bfeb9da33"
+  "src/jarvis/api/static/console-voiceprint.js": "581978076fad5644"
+  "src/jarvis/api/static/console-wakeword-own.js": "b7dbfaba4c3cd8eb"
+  "src/jarvis/api/static/console-wakeword.js": "6dca020ffbb88b58"
+  "src/jarvis/api/static/vendor/speaker/spk-1/MANIFEST.json": "5e308c06cd676057"
   "src/jarvis/api/static/voice-capture-worklet.js": "4b1dbae36264b075"
-  "src/jarvis/api/voice.py": "12fae33259cea1d6"
+  "src/jarvis/api/voice.py": "45227c5b0f4437c3"
+  "src/jarvis/api/voice_profile_routes.py": "e63118737cf04ef2"
+  "src/jarvis/calldesk/config.py": "216730706a264a3f"
+  "src/jarvis/config_voice.py": "cc7af41e22be3757"
+  "src/jarvis/localspeech/__main__.py": "7ae3619b855132f0"
+  "src/jarvis/localspeech/audio.py": "5a4cb7f4b792a6a3"
+  "src/jarvis/localspeech/client.py": "6e6755da76ff1a32"
+  "src/jarvis/localspeech/clips.py": "5b45b1254b5d26e0"
+  "src/jarvis/localspeech/desk.py": "2bd10408f3800e30"
+  "src/jarvis/localspeech/device.py": "c34efb3500c1bcd2"
+  "src/jarvis/localspeech/engines.py": "2fe6537333bdf222"
+  "src/jarvis/localspeech/jobs.py": "5a5bb9edae50072c"
+  "src/jarvis/localspeech/kitconfig.py": "20c3f6f6670fc014"
+  "src/jarvis/localspeech/manager.py": "b05c565b11eb5238"
+  "src/jarvis/localspeech/memory.py": "aaf249a96a512bb3"
+  "src/jarvis/localspeech/ports.py": "633f3e386df8f548"
+  "src/jarvis/localspeech/protocol.py": "45896adc88e845aa"
+  "src/jarvis/localspeech/runtimes/indic_conformer.py": "ebf31ed703047953"
+  "src/jarvis/localspeech/runtimes/indic_parler.py": "9cd1d36614478251"
+  "src/jarvis/localspeech/runtimes/kokoro.py": "d829c9a586cd46dd"
+  "src/jarvis/localspeech/runtimes/mp3.py": "200cf2925b6a2c94"
+  "src/jarvis/localspeech/runtimes/piper.py": "2637207e212352a8"
+  "src/jarvis/localspeech/runtimes/whisper.py": "d8a5d5dffba8ad74"
+  "src/jarvis/localspeech/selftest.py": "0fed98854ca37549"
+  "src/jarvis/localspeech/server.py": "8bceea0c8985ec4d"
+  "src/jarvis/localspeech/service.py": "8af314be4e6a2165"
+  "src/jarvis/localspeech/wakejoin.py": "55ab52012d456166"
+  "src/jarvis/localspeech/wakeword/evals.py": "508884210a4c2429"
+  "src/jarvis/localspeech/wakeword/fakes.py": "2eab54f51ba55b76"
+  "src/jarvis/localspeech/wakeword/formats.py": "589784d27b03c6ba"
+  "src/jarvis/localspeech/wakeword/mlp.py": "9408c56e5401e62f"
+  "src/jarvis/localspeech/wakeword/onnx_write.py": "d285464bd431ae48"
+  "src/jarvis/localspeech/wakeword/owned_train.py": "b02cf713ad5d9974"
+  "src/jarvis/localspeech/wakeword/port.py": "6ed44c0b2de39c96"
+  "src/jarvis/localspeech/wakeword/runtime.py": "a6cb9a3920082c71"
+  "src/jarvis/localspeech/wakeword/service.py": "43c3dc8cf2eba8ef"
+  "src/jarvis/localspeech/wakeword/store.py": "59b93d0c6f816a0e"
+  "src/jarvis/localspeech/wakeword/streaming.py": "f40214e50c0c63c1"
+  "src/jarvis/localspeech/wakeword/synth.py": "854c11974d520e49"
+  "src/jarvis/localspeech/wakeword/verifier_train.py": "0fac06005967adc4"
+  "src/jarvis/vitals/own.py": "9f8aef630fa0d168"
+  "src/jarvis/vitals/words.py": "ea17cbb15bd165ae"
+  "src/jarvis/voice/calls_bridge.py": "dee4357bb0a42ba0"
   "src/jarvis/voice/catalogue.py": "a7d5423e32e6e4ec"
   "src/jarvis/voice/commands.py": "f332fa895b7fb4d0"
   "src/jarvis/voice/google_cloud.py": "70b3d0637df4a58b"
-  "src/jarvis/voice/service.py": "3bdab151205a517d"
+  "src/jarvis/voice/laptop.py": "c05c622c3b08fee0"
+  "src/jarvis/voice/profile.py": "8a428dc0d00c93c3"
+  "src/jarvis/voice/profile_ports.py": "313a15e9823c3ad8"
+  "src/jarvis/voice/profile_store.py": "432ae0bcf26a64d7"
+  "src/jarvis/voice/routing.py": "96b7f27c1fc3c066"
+  "src/jarvis/voice/service.py": "61380b913e4265cf"
+  "src/jarvis/voice/session.py": "7cb5e8c4163664f8"
+  "src/jarvis/voice/session_api.py": "adb4e002a290f925"
+  "src/jarvis/voice/session_compare.py": "6e54e7e25fdb3556"
+  "src/jarvis/voice/session_privacy.py": "39bde552817991a3"
+  "src/jarvis/voice/session_prompts.py": "2955f892f2e17b17"
+  "src/jarvis/voice/session_score.py": "f4b2689cc3a36a17"
+  "src/jarvis/voice/session_store.py": "ba2767fcf7779019"
   "src/jarvis/voice/settings.py": "d54739fc34d24078"
   "src/jarvis/voice/speakable.py": "ad9c138afcb8137b"
+  "src/jarvis/voice/wakeword_api.py": "270a5741613f3b8f"
   "src/jarvis/voice/wav.py": "a96c3a9747fcada4"
+  "tests/test_r52_i0_routes.py": "a50b4eba830d75ce"
+  "tests/test_r52_i1_join.py": "64548bd43cf6264c"
+  "tests/test_r52_i1_manager_blob.py": "084078c1c7033627"
+  "tests/test_r52_v1_clips.py": "048f57aa71d1c35b"
+  "tests/test_r52_v1_deploy.py": "943384953353dda4"
+  "tests/test_r52_v1_import_guard.py": "2d172fd0bca32d48"
+  "tests/test_r52_v1_manager.py": "e2bd5ff656baa373"
+  "tests/test_r52_v1_server.py": "ed2199a53b1bf5a2"
+  "tests/test_r52_v1_service.py": "91caca7e65786194"
+  "tests/test_r52_v2_calls_bridge.py": "98a03a9a0b8a779c"
+  "tests/test_r52_v2_client.py": "5393c7ea06dbfe5f"
+  "tests/test_r52_v2_desk.py": "e4cb8680b3b902cb"
+  "tests/test_r52_v2_laptop.py": "9bc9b35a6d3f245a"
+  "tests/test_r52_v2_service_routing.py": "d899e396ea1be836"
+  "tests/test_r52_v3_api.py": "77c231c644361f21"
+  "tests/test_r52_v3_privacy.py": "eaffd2dc03fea02f"
+  "tests/test_r52_v3_score.py": "a5a2cdefc5c8b1f5"
+  "tests/test_r52_v3_session.py": "bc4df7991097b14c"
+  "tests/test_r52_v4_console_wake.py": "b124720853d8e178"
+  "tests/test_r52_v4_formats.py": "feaa1187bc2913fa"
+  "tests/test_r52_v4_kit.py": "cfbdf7474f1e62b0"
+  "tests/test_r52_v4_train.py": "8acf155934644b09"
+  "tests/test_r52_v4_wakeword_api.py": "b9e7b084941baecb"
+  "tests/test_r52_v5_console.py": "263303cdd8a3e50f"
+  "tests/test_r52_v5_never_approves.py": "55843cf2b5201865"
+  "tests/test_r52_v5_voiceprint_math.py": "ac10df050e9d96c8"
 ---
 ## In plain words
-Voice lets you talk to JARVIS and hear it answer, in the console on your laptop or phone. Say "Hey Jarvis" and it listens; the wake word is spotted on your own device, so no sound leaves it before then. You interrupt JARVIS by speaking, switch the microphone off with one click or by saying "mic off", and choose which speaker and microphone it uses. Your words become text, and its replies become speech, through Google's cloud voices inside their free allowance, with the browser's own voice standing in whenever Google's is off.
+Voice lets you talk to JARVIS and hear it answer, in the console on laptop or phone. Say "Hey Jarvis" and it listens; the wake word is spotted on your own device, so no sound leaves it before then. You interrupt JARVIS by speaking, switch the microphone off with one click or by saying "mic off", and choose which speaker and microphone it uses. Your words become text, and its replies speech, through Google's cloud voices inside their free allowance, with the browser's own voice standing in when Google's is off. Since {{fact:release.label}}, a speech kit on your own laptop can listen first, free, once you install it (`deploy/local-speech/README.md`). A voice session tunes listening to your voice, and its recordings train your own "Hey Jarvis" (`src/jarvis/voice/session.py`). A speaker check lets only your voice interrupt JARVIS, once its model is installed (`src/jarvis/api/static/console-voiceprint.js`).
 
 ## Example (made up)
-Meenu is cooking with flour on her hands. She says "Hey Jarvis, what's on my calendar this afternoon?" Her laptop chimes, records 3 seconds, and the console shows the words it heard. JARVIS answers in a calm British voice: "You have the school meeting at 4, Ma'am." Halfway through the next sentence she says "stop" and it goes quiet at once. Later she says "mic off"; the mic button turns grey and nothing is captured until she taps it again. Her afternoon used 41 seconds of listening and 380 characters of speech, all inside the free allowance.
+Meenu is cooking with flour on her hands. She says "Hey Jarvis, what's on my calendar this afternoon?" Her laptop chimes, records 3 seconds, its speech kit turns them into words for free, and the console shows what it heard. JARVIS answers in a calm British voice: "You have the school meeting at 4, Ma'am." Halfway through the next sentence she says "stop" and it goes quiet at once. Later she says "mic off"; the mic button turns grey and nothing is captured until she taps it again. Her afternoon used 380 characters of Google's speech, inside the free allowance, and no Google listening at all.
 
 ## How it works
-The microphone is opened once by `src/jarvis/api/static/console-voice-capture.js`, which passes the sound from `src/jarvis/api/static/voice-capture-worklet.js` to everything that listens. `src/jarvis/api/static/console-wakeword.js` runs the openWakeWord models in your browser to spot "Hey Jarvis", so the wake word never leaves your device. A spoken clip goes as a WAV file to `POST /v1/voice/transcribe`, and `parse_wav` accepts only mono sound between {{fact:src/jarvis/voice/wav.py:MIN_SECONDS}} and {{fact:src/jarvis/voice/wav.py:MAX_SECONDS}} seconds long. `transcribe` adds this turn's hints through `turn_hints`: your attached files' names and nouns from your own messages. `GoogleSTT` then asks Google's Speech-to-Text for up to {{fact:src/jarvis/voice/google_cloud.py:MAX_ALTERNATIVES}} guesses in the language set by `voice_language`. `src/jarvis/api/static/console-voice-commands.js` checks every spoken transcript first, so "mic off", "stop" and "switch to my earphones" work locally, with or without the AI. Everything else goes to the chat like typed text, and `src/jarvis/api/static/console-voice-speech.js` cuts the reply into pieces to read aloud. The server's `speakable` strips markdown, code, tables and links ("the link on screen") and caps each piece at {{fact:src/jarvis/voice/speakable.py:MAX_SPEAK_CHARS}} characters. `speak` sends it to `GoogleTTS` in the voice you chose, at a speed between {{fact:src/jarvis/voice/catalogue.py:RATE_MIN}} and {{fact:src/jarvis/voice/catalogue.py:RATE_MAX}} times normal. Before any priced call, `VoiceService` checks the free allowance and your monthly limit, then meters what Google bills. `src/jarvis/api/static/console-voice-barge.js` lets you interrupt: by speaking when you wear earphones, by saying JARVIS's name on speakers, or with a tap. Mic off is a hard lock (`src/jarvis/api/static/console-voice-micoff.js`): nothing is captured until you switch it back. `VoiceSettingsStore` keeps your voice, speed, wit and words to recognise, changed with `PUT /v1/voice/settings`; audio itself is never stored. `src/jarvis/api/static/console-voice-devices.js` chooses the speaker and microphone.
+The microphone is opened once by `src/jarvis/api/static/console-voice-capture.js`, which passes the sound to everything that listens. `src/jarvis/api/static/console-wakeword.js` spots "Hey Jarvis" in your browser, and runs your own check or model from the laptop only when it was trained and checks out (`src/jarvis/api/static/console-wakeword-own.js`). A spoken clip goes as a WAV file to `POST /v1/voice/transcribe`, and `parse_wav` accepts only mono sound between {{fact:src/jarvis/voice/wav.py:MIN_SECONDS}} and {{fact:src/jarvis/voice/wav.py:MAX_SECONDS}} seconds long. Your listening follows your voice profile: the engine your voice session chose, on the laptop's speech kit while it is healthy, then Google, then the browser, each once, with your corrections after (`src/jarvis/voice/routing.py`). `GoogleSTT` adds this turn's hints from `turn_hints` and asks for up to {{fact:src/jarvis/voice/google_cloud.py:MAX_ALTERNATIVES}} guesses in the language set by `voice_language`. `src/jarvis/api/static/console-voice-commands.js` checks every transcript first, so "mic off", "stop" and "switch to my earphones" work locally, with or without the AI. Everything else goes to the chat like typed text; `speakable` strips markdown, code, tables and links and caps each piece at {{fact:src/jarvis/voice/speakable.py:MAX_SPEAK_CHARS}} characters. `speak` sends it to `GoogleTTS` in the voice you chose, at {{fact:src/jarvis/voice/catalogue.py:RATE_MIN}} to {{fact:src/jarvis/voice/catalogue.py:RATE_MAX}} times normal speed, since the laptop kit has no voice yet (`src/jarvis/voice/service.py`). Before any priced call `VoiceService` checks the free allowance and your monthly limit, then meters what Google bills; the laptop is never metered. `src/jarvis/api/static/console-voice-barge.js` lets you interrupt by speaking, by saying JARVIS's name, or with a tap; with a voice print on this device, only your voice stops him (`src/jarvis/api/static/console-voiceprint.js`). Mic off is a hard lock (`src/jarvis/api/static/console-voice-micoff.js`). `VoiceSettingsStore` keeps your voice, speed, wit and words to recognise; audio is never stored on the server. The voice session's recordings are kept only on your laptop, encrypted (`VoiceSessions`).
 
 ## What it costs
-Nothing inside the free allowance JARVIS claims each month: {{fact:settings.voice_tts_free_chars}} characters of speech per voice type and {{fact:settings.voice_stt_free_seconds}} seconds of listening (`Allowance`). Above it, speech costs {{fact:settings.voice_price_chirp3_hd_usd_per_m}} US dollars per million characters for the HD voices or {{fact:settings.voice_price_studio_usd_per_m}} for the Studio voices, and listening {{fact:settings.voice_price_stt_usd_per_min}} dollars a minute, shown in rupees and counted against your monthly limit (`src/jarvis/voice/catalogue.py`). The wake word, local commands and the browser's own voice are free (`src/jarvis/api/static/console-wakeword.js`).
+Nothing inside the free allowance JARVIS claims each month: {{fact:settings.voice_tts_free_chars}} characters of speech per voice type and {{fact:settings.voice_stt_free_seconds}} seconds of listening (`Allowance`). Above it, speech costs {{fact:settings.voice_price_chirp3_hd_usd_per_m}} US dollars per million characters for the HD voices or {{fact:settings.voice_price_studio_usd_per_m}} for the Studio voices, and listening {{fact:settings.voice_price_stt_usd_per_min}} dollars a minute, shown in rupees within your monthly limit (`src/jarvis/voice/catalogue.py`). The wake word, local commands, the browser's voice and the laptop kit are free (`src/jarvis/voice/routing.py`). The voice session's one Google comparison uses about {{fact:settings.voice_session_compare_minutes}} free minutes, or shows the rupees first and waits for your YES (`src/jarvis/voice/session_compare.py`).
 
 ## When it fails
-If Google's speech can't be reached or isn't switched on, the console uses the browser's own voice and recognition (`src/jarvis/api/static/console-voice.js`). A Google refusal or missing credentials marks that service off for {{fact:src/jarvis/voice/service.py:DOWN_TTL_S}} seconds, so JARVIS stops retrying (`VoiceService`). At your monthly limit a priced call is refused with status 402 and nothing is spent (`speak`). A clip that isn't valid audio gets status 422 "bad_audio" (`transcribe`). A blocked microphone gets a plain line on how to allow it, and typed chat still works (`src/jarvis/api/static/console-voice-capture.js`).
+If Google's speech can't be reached or isn't switched on, the console uses the browser's own voice and recognition (`src/jarvis/api/static/console-voice.js`). A Google refusal or missing credentials marks that service off for {{fact:src/jarvis/voice/service.py:DOWN_TTL_S}} seconds, so JARVIS stops retrying (`VoiceService`). A laptop kit that is off, asleep or slow is skipped without a word (`LaptopVoice`). At your monthly limit a priced call is refused with status 402 and nothing is spent (`speak`). A clip that isn't valid audio gets status 422 "bad_audio" (`transcribe`). A blocked microphone gets a plain line on how to allow it, and typed chat still works (`src/jarvis/api/static/console-voice-capture.js`).

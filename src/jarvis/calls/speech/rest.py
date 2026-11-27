@@ -64,7 +64,7 @@ def _retry_after(r: httpx.Response) -> float | None:
     return value if value >= 0 else None
 
 
-def _pause(
+def backoff(
     policy: RetryPolicy, attempt: int, hint: float | None, rng: Callable[[], float]
 ) -> float:
     if hint is not None:
@@ -131,7 +131,7 @@ async def _loop(
         if r is None and last:
             raise OptionUnavailable(option, "upstream_error")
         hint = _retry_after(r) if r is not None else None
-        await sleep(_pause(policy, attempt, hint, rng))
+        await sleep(backoff(policy, attempt, hint, rng))
     raise AssertionError("unreachable")
 
 
@@ -189,6 +189,7 @@ __all__ = [
     "IN_CALL",
     "RetryPolicy",
     "Sleep",
+    "backoff",
     "json_body",
     "send",
 ]

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 from kit_fakes import ENGLISH_ONLY, KEY, FakeMp3, FakeTrainer, make_service, pcm, sha
+from starlette.routing import Route
 
 from jarvis.localspeech import protocol as p
 from jarvis.localspeech.server import STATUS, build_app
@@ -19,6 +20,7 @@ from jarvis.localspeech.service import KitService
 
 AUTH = {"Authorization": f"Bearer {KEY}"}
 SID = "vs_0123456789ab"
+Kit = tuple[AsyncClient, KitService]
 
 
 @pytest.fixture
@@ -30,7 +32,9 @@ async def kit(tmp_path: Path) -> AsyncIterator[tuple[AsyncClient, KitService]]:
     await service.close()
 
 
-def clip(prompt: str, audio: bytes, *, kind: str = "command", held_out: bool = True) -> dict:
+def clip(
+    prompt: str, audio: bytes, *, kind: str = "command", held_out: bool = True
+) -> dict[str, object]:
     return {
         "session_id": SID,
         "prompt_id": prompt,
@@ -40,17 +44,19 @@ def clip(prompt: str, audio: bytes, *, kind: str = "command", held_out: bool = T
     }
 
 
-async def test_the_server_serves_exactly_the_protocols_routes(kit) -> None:  # noqa: ANN001
-    client, _ = kit
+async def test_the_server_serves_exactly_the_protocols_routes(tmp_path: Path) -> None:
+    service, _ = make_service(tmp_path)
+    app = build_app(service, KEY)
     app_routes = {
-        (m, r.path)  # type: ignore[attr-defined]
-        for r in client._transport.app.routes  # type: ignore[attr-defined]
-        for m in r.methods - {"HEAD"}  # type: ignore[attr-defined]
+        (m, r.path)
+        for r in app.routes
+        if isinstance(r, Route)
+        for m in (r.methods or set()) - {"HEAD"}
     }
     assert app_routes == {(m, f"/v1{path}") for m, path in p.ROUTES}
 
 
-async def test_every_route_needs_the_key(kit) -> None:  # noqa: ANN001
+async def test_every_route_needs_the_key(kit: Kit) -> None:
     client, _ = kit
     for method, path in p.ROUTES:
         url = "/v1" + path.format(job_id="job_0123456789ab")
@@ -70,7 +76,7 @@ async def test_a_server_without_a_proper_key_refuses_everything(tmp_path: Path) 
             assert r.status_code == 503 and r.json()["error"] == "unauthorized"
 
 
-async def test_unknown_addresses_and_methods_are_404(kit) -> None:  # noqa: ANN001
+async def test_unknown_addresses_and_methods_are_404(kit: Kit) -> None:
     client, _ = kit
     for method, url in (("GET", "/v1/stt"), ("POST", "/v1/health"), ("GET", "/v1/models")):
         r = await client.request(method, url, headers=AUTH)
@@ -79,7 +85,7 @@ async def test_unknown_addresses_and_methods_are_404(kit) -> None:  # noqa: ANN0
     assert r.status_code == 404 and r.json()["error"] == "not_found"
 
 
-async def test_health_answers_the_protocol_with_no_store(kit) -> None:  # noqa: ANN001
+async def test_health_answers_the_protocol_with_no_store(kit: Kit) -> None:
     client, _ = kit
     r = await client.get("/v1/health", headers=AUTH)
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
@@ -89,7 +95,7 @@ async def test_health_answers_the_protocol_with_no_store(kit) -> None:  # noqa: 
     assert {e.slot for e in health.engines} == set(p.EngineSlot)
 
 
-async def test_listening_and_speaking_over_http(kit) -> None:  # noqa: ANN001
+async def test_listening_and_speaking_over_http(kit: Kit) -> None:
     client, _ = kit
     req = p.SttRequest.of_pcm(pcm(1.0, 3), lang="en-IN", phrases=("JARVIS",))
     r = await client.post("/v1/stt", headers=AUTH, content=req.model_dump_json())
@@ -109,7 +115,7 @@ async def test_listening_and_speaking_over_http(kit) -> None:  # noqa: ANN001
     assert p.TtsResult.model_validate_json(r.content).audio_bytes().startswith(b"ID3")
 
 
-async def test_bad_bodies_are_refused_in_fixed_words_that_never_quote_them(kit) -> None:  # noqa: ANN001
+async def test_bad_bodies_are_refused_in_fixed_words_that_never_quote_them(kit: Kit) -> None:
     client, _ = kit
     secret = "my bank PIN is 4321"
     bodies = [
@@ -124,7 +130,7 @@ async def test_bad_bodies_are_refused_in_fixed_words_that_never_quote_them(kit) 
         assert secret not in r.text and "4321" not in r.text
 
 
-async def test_a_body_over_the_cap_is_413(kit) -> None:  # noqa: ANN001
+async def test_a_body_over_the_cap_is_413(kit: Kit) -> None:
     client, _ = kit
     r = await client.post("/v1/stt", headers=AUTH, content=b" " * (p.BODY_MAX + 1))
     assert r.status_code == 413 and r.json()["error"] == "too_large"
@@ -158,7 +164,7 @@ async def test_refusals_carry_the_seams_statuses(tmp_path: Path) -> None:
     assert STATUS["unsupported_language"] == 422 and STATUS["busy"] == 503
 
 
-async def test_the_session_flow_over_http(kit) -> None:  # noqa: ANN001
+async def test_the_session_flow_over_http(kit: Kit) -> None:
     client, service = kit
     for i in range(3):
         r = await client.post(
@@ -180,7 +186,7 @@ async def test_the_session_flow_over_http(kit) -> None:  # noqa: ANN001
     assert p.SessionHeard.model_validate_json(r.content).rows == ()
 
 
-async def test_the_wake_word_routes_reach_the_trainer(kit) -> None:  # noqa: ANN001
+async def test_the_wake_word_routes_reach_the_trainer(kit: Kit) -> None:
     client, service = kit
     await client.post(
         "/v1/session/clip",
@@ -202,7 +208,7 @@ async def test_the_wake_word_routes_reach_the_trainer(kit) -> None:  # noqa: ANN
     assert r.status_code == 404
 
 
-async def test_nothing_of_a_request_is_logged(kit, caplog: pytest.LogCaptureFixture) -> None:  # noqa: ANN001
+async def test_nothing_of_a_request_is_logged(kit: Kit, caplog: pytest.LogCaptureFixture) -> None:
     client, service = kit
     caplog.set_level(logging.DEBUG)
     audio = pcm(1.0, 7)
@@ -217,7 +223,9 @@ async def test_nothing_of_a_request_is_logged(kit, caplog: pytest.LogCaptureFixt
         assert leak not in text
 
 
-async def test_an_unexpected_failure_is_a_plain_500(kit, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+async def test_an_unexpected_failure_is_a_plain_500(
+    kit: Kit, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client, service = kit
 
     async def boom() -> p.KitHealth:

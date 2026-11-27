@@ -41,7 +41,8 @@ def confidence_of(avg_logprobs: Sequence[float]) -> float:
 
 
 def _cuda_libraries() -> None:
-    """On Windows, let CTranslate2 find NVIDIA's cuBLAS / cuDNN wheels (requirements-gpu.txt)."""
+    """On Windows, let CTranslate2 find NVIDIA's cuBLAS / cuDNN when they were pip-installed (the
+    kit doesn't install them: README "What this kit leaves out"); a system install needs nothing."""
     if sys.platform != "win32":
         return
     for base in map(Path, sys.path):

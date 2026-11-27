@@ -1,0 +1,96 @@
+# deploy/local-speech/Caddyfile -- the gate in front of the laptop speech kit (R5.2 row 383, plan
+# D1). Same pattern as the offline brain's gate (deploy/local-brain/Caddyfile).
+#
+# Listens on 127.0.0.1:11436 ONLY. Tailscale Funnel forwards the kit's public https address
+# (https://<machine>.<tailnet>.ts.net:8443) to it and TLS ends on this laptop; the call desk on the
+# same laptop uses http://127.0.0.1:11436/v1. The kit's own server (127.0.0.1:11437) is never
+# published.
+#
+# The site address is deliberately ":11436" with no host: Tailscale keeps the original Host header
+# (<machine>.<tailnet>.ts.net) when it proxies, and Caddy picks a site by Host. The loopback-only
+# promise is kept by `bind 127.0.0.1`, not by the address.
+#
+# Passes exactly the kit's API (jarvis/localspeech/protocol.py ROUTES), and only with the key:
+#     GET  /v1/health                 GET  /v1/jobs/job_<12 hex>
+#     POST /v1/stt  /v1/tts  /v1/session/clip  /v1/session/score  /v1/session/results
+#          /v1/session/delete  /v1/wakeword/train  /v1/wakeword/status  /v1/wakeword/model
+# Those addresses without the key get 401, everything else 404, a body over 3 MB 413, all as the
+# kit's JSON refusal ({"error", "detail"}). The key arrives in the environment
+# (JARVIS_LOCAL_SPEECH_KEY, set by start-kit.ps1), never in this file. Fail closed: with no key
+# (unset, empty or under 32 characters) every request gets 503, so the header match can never
+# degrade to a bare "Bearer ". The key is passed on to the kit's server, which checks it again.
+{
+	admin off
+	auto_https off
+}
+
+:11436 {
+	bind 127.0.0.1
+
+	request_body {
+		max_size 3MB
+	}
+
+	@nokey expression `size({env.JARVIS_LOCAL_SPEECH_KEY}) < 32`
+
+	@get {
+		method GET
+		path /v1/health
+		header Authorization "Bearer {env.JARVIS_LOCAL_SPEECH_KEY}"
+	}
+	@job {
+		method GET
+		path_regexp ^/v1/jobs/job_[0-9a-f]{12}$
+		header Authorization "Bearer {env.JARVIS_LOCAL_SPEECH_KEY}"
+	}
+	@post {
+		method POST
+		path /v1/stt /v1/tts /v1/session/clip /v1/session/score /v1/session/results /v1/session/delete /v1/wakeword/train /v1/wakeword/status /v1/wakeword/model
+		header Authorization "Bearer {env.JARVIS_LOCAL_SPEECH_KEY}"
+	}
+	@gated {
+		path /v1/health /v1/jobs/* /v1/stt /v1/tts /v1/session/clip /v1/session/score /v1/session/results /v1/session/delete /v1/wakeword/train /v1/wakeword/status /v1/wakeword/model
+	}
+
+	header Cache-Control no-store
+
+	handle @nokey {
+		header Content-Type application/json
+		respond `{"error":"unauthorized","detail":"The laptop speech kit's gate has no key; start it with start-kit.ps1."}` 503
+	}
+	handle @get {
+		reverse_proxy 127.0.0.1:11437 {
+			header_up Host {upstream_hostport}
+		}
+	}
+	handle @job {
+		reverse_proxy 127.0.0.1:11437 {
+			header_up Host {upstream_hostport}
+		}
+	}
+	handle @post {
+		reverse_proxy 127.0.0.1:11437 {
+			header_up Host {upstream_hostport}
+		}
+	}
+	handle @gated {
+		header Content-Type application/json
+		respond `{"error":"unauthorized","detail":"The laptop speech kit needs its key."}` 401
+	}
+	handle {
+		header Content-Type application/json
+		respond `{"error":"not_found","detail":"The laptop speech kit has no such address."}` 404
+	}
+
+	handle_errors {
+		@too_large expression `{err.status_code} == 413`
+		handle @too_large {
+			header Content-Type application/json
+			respond `{"error":"too_large","detail":"Requests are limited to 3,000,000 bytes."}` 413
+		}
+		handle {
+			header Content-Type application/json
+			respond `{"error":"internal","detail":"The laptop speech kit is not answering behind its gate."}` 502
+		}
+	}
+}

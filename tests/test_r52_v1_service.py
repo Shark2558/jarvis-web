@@ -91,7 +91,7 @@ async def test_a_broken_engine_is_put_away_and_refused_as_not_ready(tmp_path: Pa
     service, engines = make_service(tmp_path)
     service.slots.stt(p.EngineSlot.WHISPER_SMALL)
     broken = engines.made[p.EngineSlot.WHISPER_SMALL]
-    broken.broken = True  # type: ignore[union-attr]
+    broken.broken = True
     with pytest.raises(p.KitRefused) as refused:
         await service.stt(p.SttRequest.of_pcm(pcm(), lang="en-IN"))
     assert refused.value.code == "engine_not_ready" and "secret" not in refused.value.words

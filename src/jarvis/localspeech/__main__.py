@@ -32,7 +32,7 @@ from jarvis.localspeech.protocol import EngineSlot
 from jarvis.localspeech.selftest import GateCalls, report_json, run
 from jarvis.localspeech.service import build_service, default_mp3
 
-REQUIREMENTS: Final = ("requirements-kit.txt", "requirements-gpu.txt")
+REQUIREMENTS: Final = ("requirements-kit.txt",)
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;\\]+)", re.MULTILINE)
 Out = Callable[[str], None]
 

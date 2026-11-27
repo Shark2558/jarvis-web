@@ -14,7 +14,8 @@ from jarvis.localspeech.device import DeviceInfo
 from jarvis.localspeech.engines import GPU_MARGIN_MB, NO_RUNTIME, NOT_INSTALLED, SPECS
 
 S = p.EngineSlot
-CARD_4GB = DeviceInfo(p.Device.CUDA, gpu_free_mb=3_500, gpu_total_mb=4_096)
+CARD_FREE_MB = 3_500
+CARD_4GB = DeviceInfo(p.Device.CUDA, gpu_free_mb=CARD_FREE_MB, gpu_total_mb=4_096)
 
 
 def test_every_slot_has_one_spec_with_a_permissive_licence() -> None:
@@ -35,7 +36,7 @@ def test_nothing_is_loaded_until_it_is_used(tmp_path: Path) -> None:
 
 def test_engines_share_the_card_and_the_oldest_is_put_away(tmp_path: Path) -> None:
     slots, engines = make_slots(tmp_path, device=CARD_4GB)
-    budget = CARD_4GB.gpu_free_mb - GPU_MARGIN_MB  # 3,000 MB
+    budget = CARD_FREE_MB - GPU_MARGIN_MB  # 3,000 MB
     slots.stt(S.WHISPER_SMALL)  # 1,000
     slots.tts(S.KOKORO)  # 600
     slots.stt(S.INDIC_CONFORMER)  # 1,500: 3,100 > budget, so whisper-small goes

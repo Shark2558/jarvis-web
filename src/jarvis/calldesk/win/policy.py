@@ -28,6 +28,10 @@ _ROLE = {
 _BLUETOOTH_ENUMERATORS = frozenset({"BTHENUM", "BTHHFENUM", "BTHLEDEVICE", "BTHLE"})
 _COM_ERRORS: tuple[type[BaseException], ...] = (comtypes.COMError, OSError, ValueError)
 _E_NOTFOUND = 0x80070490  # HRESULT_FROM_WIN32(ERROR_NOT_FOUND)
+_POLICY_INTERFACES = (
+    (ca.CLSID_PolicyConfigClient, ca.IPolicyConfig),
+    (ca.CLSID_PolicyConfigVistaClient, ca.IPolicyConfigVista),
+)
 
 
 def _enumerator() -> Any:
@@ -79,13 +83,15 @@ class WinAudioPolicy:
             raise PolicyError("Windows' default sound device could not be read") from None
 
     def set_default(self, device_id: str, role: Role) -> None:
-        try:
-            policy = comtypes.CoCreateInstance(
-                ca.CLSID_PolicyConfigClient, ca.IPolicyConfig, ca.CLSCTX_ALL
-            )
-            policy.SetDefaultEndpoint(device_id, _ROLE[role])
-        except _COM_ERRORS:
-            raise PolicyError("Windows did not change the default sound device") from None
+        """IPolicyConfig, else the older IPolicyConfigVista; `micguard` reads the result back."""
+        for clsid, interface in _POLICY_INTERFACES:
+            try:
+                policy = comtypes.CoCreateInstance(clsid, interface, ca.CLSCTX_ALL)
+                policy.SetDefaultEndpoint(device_id, _ROLE[role])
+                return
+            except _COM_ERRORS:
+                log.info("a default-device interface refused; trying the next one")
+        raise PolicyError("Windows did not change the default sound device")
 
 
 class WinSystemSounds:

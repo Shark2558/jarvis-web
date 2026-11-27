@@ -27,6 +27,7 @@ VT_EMPTY, VT_UI4, VT_LPWSTR = 0, 19, 31
 
 CLSID_MMDeviceEnumerator = GUID("{BCDE0395-E52F-467C-8E3D-C4579291692E}")
 CLSID_PolicyConfigClient = GUID("{870AF99C-171D-4F9E-AF0D-E63DF40C2BC9}")
+CLSID_PolicyConfigVistaClient = GUID("{294935CE-F637-4E7C-A41B-AB255460B862}")
 
 
 class PROPERTYKEY(Structure):
@@ -159,6 +160,32 @@ class IPolicyConfig(IUnknown):  # type: ignore[misc]
         STDMETHOD(HRESULT, "GetMixFormat", [LPCWSTR, c_void_p]),
         STDMETHOD(HRESULT, "GetDeviceFormat", [LPCWSTR, c_int, c_void_p]),
         STDMETHOD(HRESULT, "ResetDeviceFormat", [LPCWSTR]),
+        STDMETHOD(HRESULT, "SetDeviceFormat", [LPCWSTR, c_void_p, c_void_p]),
+        STDMETHOD(HRESULT, "GetProcessingPeriod", [LPCWSTR, c_int, c_void_p, c_void_p]),
+        STDMETHOD(HRESULT, "SetProcessingPeriod", [LPCWSTR, c_void_p]),
+        STDMETHOD(HRESULT, "GetShareMode", [LPCWSTR, c_void_p]),
+        STDMETHOD(HRESULT, "SetShareMode", [LPCWSTR, c_void_p]),
+        STDMETHOD(HRESULT, "GetPropertyValue", [LPCWSTR, c_void_p, c_void_p]),
+        STDMETHOD(HRESULT, "SetPropertyValue", [LPCWSTR, c_void_p, c_void_p]),
+        COMMETHOD(
+            [],
+            HRESULT,
+            "SetDefaultEndpoint",
+            (["in"], LPCWSTR, "wszDeviceId"),
+            (["in"], DWORD, "eRole"),
+        ),
+        STDMETHOD(HRESULT, "SetEndpointVisibility", [LPCWSTR, c_int]),
+    ]
+
+
+class IPolicyConfigVista(IUnknown):  # type: ignore[misc]
+    """The older interface (no ResetDeviceFormat slot): the fallback when IPolicyConfig is not
+    there or refuses, as the common device-switching tools do."""
+
+    _iid_ = GUID("{568B9108-44BF-40B4-9006-86AFE5B5A620}")
+    _methods_ = [
+        STDMETHOD(HRESULT, "GetMixFormat", [LPCWSTR, c_void_p]),
+        STDMETHOD(HRESULT, "GetDeviceFormat", [LPCWSTR, c_int, c_void_p]),
         STDMETHOD(HRESULT, "SetDeviceFormat", [LPCWSTR, c_void_p, c_void_p]),
         STDMETHOD(HRESULT, "GetProcessingPeriod", [LPCWSTR, c_int, c_void_p, c_void_p]),
         STDMETHOD(HRESULT, "SetProcessingPeriod", [LPCWSTR, c_void_p]),

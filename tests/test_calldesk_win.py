@@ -124,6 +124,13 @@ def test_policy_config_vtable_order(win: types.SimpleNamespace) -> None:
     assert ca.CLSID_PolicyConfigClient.text() == "{870AF99C-171D-4F9E-AF0D-E63DF40C2BC9}"
 
 
+def test_the_vista_fallback_vtable_order(win: types.SimpleNamespace) -> None:
+    ca = win.ca
+    assert _names(ca.IPolicyConfigVista)[9] == "SetDefaultEndpoint"
+    assert len(_names(ca.IPolicyConfigVista)) == 11  # no ResetDeviceFormat slot
+    assert ca.IPolicyConfigVista._iid_.text() == "{568B9108-44BF-40B4-9006-86AFE5B5A620}"
+
+
 def test_core_audio_vtable_orders(win: types.SimpleNamespace) -> None:
     ca = win.ca
     assert _names(ca.IMMDeviceEnumerator)[:3] == [
@@ -225,9 +232,20 @@ class PolicyConfig:
         self.enum.defaults[(flow, role)] = device
 
 
-def _wire(win: types.SimpleNamespace, enum: Enumerator, policy: PolicyConfig) -> None:
+def _wire(
+    win: types.SimpleNamespace,
+    enum: Enumerator,
+    policy: PolicyConfig,
+    vista: PolicyConfig | None = None,
+) -> None:
     def create(clsid: Any, interface: Any, ctx: int) -> Any:
-        return enum if interface is win.ca.IMMDeviceEnumerator else policy
+        if interface is win.ca.IMMDeviceEnumerator:
+            return enum
+        if interface is win.ca.IPolicyConfigVista:
+            if vista is None:
+                raise COMError(-2147221164)  # REGDB_E_CLASSNOTREG
+            return vista
+        return policy
 
     win.comtypes.CoCreateInstance = create
     win.policy.comtypes.CoCreateInstance = create
@@ -253,6 +271,18 @@ def test_endpoints_defaults_and_switching(win: types.SimpleNamespace) -> None:
     assert policy.default_id("capture", "communications") == "{cable}"
     assert policy.default_id("render", "console") is None  # no speaker at all: not an error
     assert win.dll.CoTaskMemFree.calls and win.dll.PropVariantClear.calls
+
+
+def test_the_older_interface_is_tried_when_the_newer_one_refuses(
+    win: types.SimpleNamespace,
+) -> None:
+    ca = win.ca
+    mic = Device(ca, "{mic}", "Microphone", "HDAUDIO", 4)
+    cable = Device(ca, "{cable}", "CABLE Output (VB-Audio Virtual Cable)", "ROOT", 10)
+    enum = Enumerator({0: [], 1: [mic, cable]}, {(1, r): mic for r in (0, 1, 2)})
+    _wire(win, enum, PolicyConfig(enum, fail=True), vista=PolicyConfig(enum))
+    win.policy.WinAudioPolicy().set_default("{cable}", "console")
+    assert enum.defaults[(1, 0)] is cable
 
 
 def test_com_failures_become_policy_errors(win: types.SimpleNamespace) -> None:

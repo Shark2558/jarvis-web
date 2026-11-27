@@ -20,8 +20,10 @@ from jarvis.integrations.google import GoogleConnector
 from jarvis.keyring import Keyring
 from jarvis.llm.mock_provider import MockProvider
 from jarvis.llm.router import ModelRouter, ModelTier
+from jarvis.localspeech.memory import MemoryKit
 from jarvis.storage.docs import MemoryDocs
 from jarvis.vitals.own import OWN_IDS, OwnSources
+from jarvis.voice.laptop import LaptopVoice
 from jarvis.web.ports import VendorUsage
 
 UID = "u_owner"  # the same owner as google_fakes.GOOGLE_UID
@@ -57,6 +59,7 @@ async def test_real_classes_fill_every_item(connected: GoogleConnector) -> None:
         github=github,
         home=home,
         book=lambda: "RuntimeError",  # R6 review L2: the book item shows only when it failed
+        voice=LaptopVoice(MemoryKit(), health_s=30),  # R5.2: the laptop speech kit's line
     )
     rig = OwnRig(own, settings=with_keys())
     rig.clock.now = NOW

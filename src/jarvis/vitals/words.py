@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import combinations
 
+from jarvis.billing.service import rupees
 from jarvis.vitals.auto import SPEND_ID
 
 ALLOWANCE_PREFIX = "allowance_"
@@ -54,6 +55,12 @@ WORDS: Mapping[str, tuple[str, str]] = {
     "home_link": (
         "If this stops: the home camera, devices and alarm can't reach JARVIS.",
         "Check the home laptop is on, awake and online, then restart the JARVIS bridge on it.",
+    ),
+    "voice_laptop": (  # R5.2: the laptop speech kit, shown only when it is set up
+        "If this stops: JARVIS listens and speaks with Google's free minutes, then the "
+        "browser's; nothing else stops.",
+        "Check the laptop is on, awake and online, and that its speech kit is running (its "
+        "README says how to start it).",
     ),
     "build_book": (  # R6 review L2: shown only when the book could not start
         "If this stops: the build book is off on this server; the rest of JARVIS keeps working.",
@@ -96,6 +103,29 @@ BY_REASON: Mapping[tuple[str, str], tuple[str, str]] = {
         "Top up at console.anthropic.com → Plans & billing",
     ),
 }
+
+# R5.2: which engine served the owner's voice (the names `jarvis.voice.laptop` reports)
+VOICE_ENGINES: Mapping[str, str] = {
+    "laptop-whisper-small": "the laptop (Whisper small)",
+    "laptop-whisper-medium": "the laptop (Whisper medium)",
+    "laptop-kokoro": "the laptop (Kokoro)",
+    "laptop-piper": "the laptop (Piper)",
+    "google": "Google",
+}
+OTHER_ENGINE = "another engine"
+
+
+def voice_note(heard_by: str | None, spoken_by: str | None, inr_per_minute: float) -> str:
+    """Vitals' engine line: which engine heard and spoke last, and what the laptop costs."""
+    said = [
+        f"Last {what} by {VOICE_ENGINES.get(engine, OTHER_ENGINE)}."
+        for what, engine in (("heard", heard_by), ("spoken", spoken_by))
+        if engine
+    ]
+    if not said:
+        said = ["Nothing heard or spoken since JARVIS started."]
+    return " ".join([*said, f"The laptop costs {rupees(inr_per_minute)} a minute."])
+
 
 ALLOWANCE_WORDS = (
     "If this runs out: voice keeps working but each use costs rupees, counted in this "
@@ -224,9 +254,11 @@ __all__ = [
     "BY_REASON",
     "HOME_FAULTS",
     "NO_CREDIT",
+    "VOICE_ENGINES",
     "WORDS",
     "HomeFault",
     "HomeWords",
     "home_fault",
+    "voice_note",
     "words_for",
 ]

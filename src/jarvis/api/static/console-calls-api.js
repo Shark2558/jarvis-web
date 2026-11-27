@@ -103,7 +103,8 @@ export async function bytes(path) {
 export function failed(e) {
   if (navigator.onLine === false || (e && e.name === 'TypeError' && typeof e.status !== 'number')) return OFFLINE;
   const m = txt(e && e.message, 300);
-  if (e && (e.status === 404 || e.status === 501)) return 'Calls are not set up on this JARVIS yet.';
+  if (e && e.status === 501) return 'Calls are not set up on this JARVIS yet.';
+  if (e && e.status === 503 && e.code === 'calls_off') return 'Calls are switched off on this JARVIS.';
   if (e && typeof e.status === 'number' && e.status >= 500) return 'JARVIS couldn\u2019t do that just now. Try again in a moment.';
   return m && !/^[a-z0-9_.-]+$/i.test(m) && !m.startsWith('[object') ? m : DIDNT;
 }

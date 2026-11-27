@@ -15,7 +15,7 @@ const ANSWER_NOTE = 'JARVIS answers only a call you haven\u2019t picked up, says
 const LIMITS = '10 calls a day \u00b7 2 a day to one number \u00b7 3 new numbers a day \u00b7 one redial a day to a number that didn\u2019t answer \u00b7 no calls 21:00\u201308:00 IST. Never emergency, premium-rate or international numbers.';
 
 export function mount(host, ctx) {
-  const S = { data: null, busy: false };
+  const S = { data: null, busy: false, painted: false };
   const state = mk('p', 'snote'); state.setAttribute('role', 'status'); state.setAttribute('aria-live', 'polite');
   const err = mk('p', 'lerr'); err.setAttribute('role', 'alert');
   const ask = mk('div', 'mbox'); ask.hidden = true; ask.setAttribute('role', 'group');
@@ -62,17 +62,21 @@ export function mount(host, ctx) {
   const speech = sec('Speech and brain', [azureEl, sarvam.row, balanced.row]);
   host.append(state, caps, limits, opening, langs, answering, records, speech, ask, err);
 
+  const FIELDS = { month_cap_inr: () => { month.value = S.data.month !== null ? String(S.data.month) : ''; },
+    call_cap_inr: () => { call.value = S.data.call !== null ? String(S.data.call) : ''; },
+    call_max_minutes: () => { minutes.value = S.data.minutes !== null ? String(S.data.minutes) : ''; },
+    owner_first_name: () => { first.value = S.data.firstName; }, answer_after_rings: () => { rings.value = String(S.data.rings); },
+    retention_days: () => { keep.value = String(S.data.retention); } };
+  /** The text boxes take the server's values when they load, and a box only after its own save: never while he types. */
+  function fill(keys) { if (S.data) keys.forEach((k) => FIELDS[k] && FIELDS[k]()); }
   function paint() {
     const d = S.data;
     if (!d) return;
-    month.value = d.month !== null ? String(d.month) : ''; call.value = d.call !== null ? String(d.call) : '';
-    minutes.value = d.minutes !== null ? String(d.minutes) : ''; first.value = d.firstName;
-    paintLangs(d.defaults);
+    if (!S.painted) { S.painted = true; paintLangs(d.defaults); }
     ans.t.set(d.answering); ansMore.hidden = !d.answering;
-    rings.value = String(d.rings);
     const fresh = choice('clpol', polLabel.id, POLICIES, d.policy, (v) => put({ answer_policy: v }, 'Saved.'));
     pol.replaceWith(fresh); pol = fresh;
-    audio.t.set(d.recordAudio); keep.value = String(d.retention);
+    audio.t.set(d.recordAudio);
     sarvam.t.set(d.sarvam); balanced.t.set(d.balanced);
     azureEl.textContent = 'Azure free tier: ' + (d.azure === 'ready' ? 'ready. It stops at its free allowance and can never bill.' : 'not set up. Add its key on the server for 5 free hours a month.');
     [capsSave, firstSave, langSave, ringsSave, keepSave].forEach((b) => { b.disabled = S.busy; });
@@ -101,6 +105,7 @@ export function mount(host, ctx) {
     try {
       const d = checkSettings(await api(PATHS.settings + (confirmed ? '?confirm=1' : ''), { method: 'PUT', body: changes }));
       S.data = d; say(state, ok, 'ok');
+      fill(Object.keys(changes));
       return true;
     } catch (e) { err.textContent = failed(e); return false; }
     finally { S.busy = false; paint(); }
@@ -165,7 +170,7 @@ export function mount(host, ctx) {
     if (S.busy) return;
     S.busy = true;
     if (!S.data) say(state, 'Loading the settings\u2026');
-    try { S.data = checkSettings(await api(PATHS.settings)); say(state, ''); } catch (e) { say(state, failed(e), 'bad'); }
+    try { S.data = checkSettings(await api(PATHS.settings)); say(state, ''); fill(Object.keys(FIELDS)); S.painted = false; } catch (e) { say(state, failed(e), 'bad'); }
     S.busy = false;
     paint();
   }

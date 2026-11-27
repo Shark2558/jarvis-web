@@ -8,13 +8,13 @@ Branch `r18-e`. The console only reads and sends what is listed here; every fiel
 
 | File | Edit |
 |---|---|
-| `console.html` | one line for `#p-calls` (after Camera), one dock tab (after Voice); the R2 comment joined to keep 782 lines |
-| `console-deck.js` | `calls` in `ORDER` and `defaults()` |
+| `console.html` | one line for `#p-calls` (after Camera), one dock tab (last, after Camera: every older tab shows where it did); the R2 comment joined to keep 782 lines |
+| `console-deck.js` | `calls` at the end of `ORDER` (a test pins the middle) and in `defaults()` |
 | `console-dock.js` | `DESCRIBE.calls` (More sheet) |
 | `console-r7-links.js` | `calls` in `PANELS` (`?open=calls`) |
 | `console-r7.js` | loads `console-calls.js`; `noLoad` also says so in `#callsBody` |
 | `console.js` | `JarvisCalls.cards(row, r.cards)` beside the other card renderers |
-| `api/console.py` | the 13 new files in `APP_ASSETS` |
+| `api/console.py` | `**CALLS_ASSETS` (the 13 new files, listed in the new `api/console_calls_assets.py`; console.py keeps its 473-line guard) |
 | tests | dock count 22 → 23 (`test_console_assets`, `test_arch_coverage`, `test_r7_seams`), `console.html` SHA pins (R6.3, R13, R13.1 seams), `NOT_IN_PAGE` entries; guide C01 lists Calls |
 
 ## What the console sends and reads (A1's `CallsApi` views)

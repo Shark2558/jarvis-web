@@ -224,6 +224,8 @@ def test_session_and_job_models() -> None:
         p.ScoreIn(session_id=SESSION, slots=(p.EngineSlot.KOKORO,))  # only listening engines
     with pytest.raises(ValidationError):
         p.ScoreIn(session_id=SESSION, slots=())
+    with pytest.raises(ValidationError):  # each word to recognise is 1 to 40 characters
+        p.ScoreIn(session_id=SESSION, slots=(p.EngineSlot.WHISPER_SMALL,), phrases=("x" * 41,))
     assert score.phrases == ()
     job = p.JobView(job_id="job_0123456789ab", kind=p.JobKind.SCORE, state=p.JobState.RUNNING)
     assert not job.finished and job.model_copy(update={"state": p.JobState.DONE}).finished

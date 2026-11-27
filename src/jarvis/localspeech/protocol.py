@@ -228,6 +228,7 @@ def _permissive(licence: str) -> str:
 Lang = Annotated[str, AfterValidator(_language)]
 EngineLicence = Annotated[str, AfterValidator(_permissive)]
 FileLicence = Annotated[str, AfterValidator(_shipped)]
+Phrase = Annotated[str, Field(min_length=1, max_length=PHRASE_CHARS)]  # one word to recognise
 
 
 def _slot_of(slot: EngineSlot | None, kind: Kind) -> EngineSlot | None:
@@ -292,7 +293,7 @@ class SttRequest(_Request):
     lang: Lang
     audio: str  # base64 PCM16 16 kHz mono, MIN_AUDIO_S..STT_MAX_S
     slot: EngineSlot | None = None  # None: the kit's first ready engine for `lang`
-    phrases: tuple[str, ...] = Field(default=(), max_length=PHRASES_MAX)  # words to recognise
+    phrases: tuple[Phrase, ...] = Field(default=(), max_length=PHRASES_MAX)  # words to recognise
 
     @field_validator("audio")
     @classmethod
@@ -304,13 +305,6 @@ class SttRequest(_Request):
     @classmethod
     def _stt(cls, v: EngineSlot | None) -> EngineSlot | None:
         return _slot_of(v, Kind.STT)
-
-    @field_validator("phrases")
-    @classmethod
-    def _phrases(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        if any(not 1 <= len(w) <= PHRASE_CHARS for w in v):
-            raise ValueError(f"each word is 1 to {PHRASE_CHARS} characters")
-        return v
 
     @classmethod
     def of_pcm(
@@ -413,7 +407,7 @@ class ScoreIn(_Request):
 
     session_id: str = Field(pattern=SESSION_ID)
     slots: tuple[EngineSlot, ...] = Field(min_length=1, max_length=4)
-    phrases: tuple[str, ...] = Field(default=(), max_length=PHRASES_MAX)
+    phrases: tuple[Phrase, ...] = Field(default=(), max_length=PHRASES_MAX)
 
     @field_validator("slots")
     @classmethod

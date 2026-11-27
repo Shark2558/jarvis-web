@@ -166,6 +166,23 @@ def test_every_plan_and_architecture_doc_is_checked(tmp_path: Path) -> None:
     assert all(len(v) == 2 for v in found.values())  # both the line and the log are missing
 
 
+def test_the_design_documents_chapters_are_checked_too(tmp_path: Path) -> None:
+    """The ADD (docs/architecture/design/*.md) follows the same standard (ADD chapter 13)."""
+    doc(tmp_path, "docs/plans/good.md", GOOD)
+    doc(tmp_path, "docs/architecture/design/00-README.md", GOOD)
+    doc(tmp_path, "docs/architecture/design/13-verification.md", "# No version\n")
+    doc(tmp_path, "docs/architecture/design/notes/scratch.md", "# not checked: below design/\n")
+
+    assert sorted(cdv.check(tmp_path)) == ["docs/architecture/design/13-verification.md"]
+
+
+def test_the_repositorys_design_chapters_are_among_the_documents() -> None:
+    names = {p.relative_to(ROOT).as_posix() for p in cdv.documents(ROOT)}
+    chapters = sorted(p.name for p in (ROOT / "docs/architecture/design").glob("[0-9][0-9]-*.md"))
+    assert len(chapters) >= 13
+    assert {f"docs/architecture/design/{c}" for c in chapters} <= names
+
+
 def test_a_tree_without_an_architecture_folder_is_fine(tmp_path: Path) -> None:
     doc(tmp_path, "docs/plans/good.md", GOOD)
     assert cdv.check(tmp_path) == {}

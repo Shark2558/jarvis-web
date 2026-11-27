@@ -192,6 +192,7 @@ APP_ASSETS: dict[str, str] = {
     "console-book-tour.js": _JS,  # R6.3 D: the tour's chapters, owner-only scenes, continue
     # R6.3.1 F: the full book's flowcharts (R6.4: /book/read, imported by console-book-read-page.js)
     "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS, **CALLS_ASSETS,  # + R18 E's
+    "console-voice-session.js": _JS, "console-voice-session.css": "text/css",  # R5.2: Your voice
 }
 
 # Self-hosted OFL fonts (licences beside them).

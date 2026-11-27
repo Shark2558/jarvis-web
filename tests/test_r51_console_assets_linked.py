@@ -123,6 +123,9 @@ NOT_IN_PAGE = {
     "console-calls-settings.js": ("console-calls.js", "from './console-calls-settings.js'"),
     "console-calls-vitals.js": ("console-calls.js", "from './console-calls-vitals.js'"),
     "console-calls-audio.js": ("console-calls-live.js", "from './console-calls-audio.js'"),
+    # R5.2 V3: Voice -> Your voice and the voice session, brought by the R7 loader
+    "console-voice-session.js": ("console-r7.js", "import('./console-voice-session.js')"),
+    "console-voice-session.css": ("console-r7.js", "'/static/console-voice-session.css'"),
 }
 # R6.4: linked from the full book's page (book-read.html), served by api/book_read.READ_ASSETS
 ON_READ_PAGE = {"console-book-read.js", "console-book-chapter.js"}

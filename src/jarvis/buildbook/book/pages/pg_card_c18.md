@@ -7,7 +7,7 @@ sources:
   "src/jarvis/api/static/console-approve-all.js": "1cd7335bb2a31ec1"
   "src/jarvis/core/approve_all.py": "59f16ea07d5207c5"
   "src/jarvis/core/brain_decisions.py": "01cc210182d5e7a3"
-  "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
+  "src/jarvis/storage/approvals.py": "093f10af05d87010"
   "src/jarvis/tools/calendar_cards.py": "d85a1179488c9292"
   "src/jarvis/tools/card.py": "5a9985efcfe0b89a"
   "src/jarvis/tools/tasks_cards.py": "18cb6c64d784d443"
@@ -21,7 +21,7 @@ You forward a school circular and say "add these three events". Because the circ
 ## How it works
 `one_line` and `quoted` flatten every value on a card to one honest line, removing characters that render as nothing or reorder their neighbours, because a title may come from someone else (`src/jarvis/tools/card.py`).
 `create_card`, `update_card` and `delete_card` write calendar cards with the event's real title and time, each change as old to new, and the people Google will e-mail (`src/jarvis/tools/calendar_cards.py`); `src/jarvis/tools/tasks_cards.py` does the same for to-dos.
-`DocApprovalStore` keeps waiting cards in `approvals`, so they survive the server going to sleep, and a single-use transaction means a double click never runs one twice (`src/jarvis/storage/approvals.py`).
+`DocApprovalStore` keeps waiting cards in `approvals`, so they survive the server going to sleep, and a single-use transaction means a double click never runs one twice; a waiting call's number is sealed there (`src/jarvis/storage/approvals.py`).
 On Approve, `approved` runs the call through the tool gateway with the card's token; if the action changed since you saw it, say an event gained guests, the card is withdrawn and proposed again and nothing runs (`src/jarvis/core/brain_decisions.py`).
 `declined` cancels the card and records that you said no, and the conversation stores what happened before any AI words are added (`record_exchange`).
 `run` handles Approve all: at most {{fact:src/jarvis/core/approve_all.py:MAX_IDS}} cards from one conversation, only undoable ones, each run exactly as a single approval would be (`src/jarvis/core/approve_all.py`).

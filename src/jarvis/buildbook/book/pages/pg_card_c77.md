@@ -3,7 +3,7 @@ page: pg_card_c77
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "deploy/calldesk/README.txt": "3d5a68f345eee0b0"
+  "deploy/calldesk/README.txt": "a66d301dad97e353"
   "deploy/calldesk/install-calldesk.ps1": "741fdee2f685fc2c"
   "deploy/calldesk/requirements-calldesk.txt": "9b9300f3947589a0"
   "deploy/calldesk/restore-microphone.ps1": "408f2d95d3c53da1"

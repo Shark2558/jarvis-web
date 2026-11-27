@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
   "deploy/backup_setup.sh": "354cd02d8afbcc3f"
-  "deploy/cloudrun.sh": "768853b09894305d"
+  "deploy/cloudrun.sh": "603e230e96a462c8"
   "evals/r14/backup.py": "163e8845efbe7c01"
   "src/jarvis/api/backup.py": "d9e1d0f24f8d2498"
   "src/jarvis/api/privacy.py": "26b8bb3f25b86ee7"
@@ -35,7 +35,7 @@ sources:
   "src/jarvis/core/guardrails.py": "bf48636f731d056c"
   "src/jarvis/integrations/vault.py": "b766226c56672432"
   "src/jarvis/keyring.py": "092c625e649b4b88"
-  "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
+  "src/jarvis/storage/approvals.py": "093f10af05d87010"
   "src/jarvis/storage/audit.py": "d268e84d6aa87ab5"
   "src/jarvis/storage/docs.py": "561064f51e6e084f"
   "src/jarvis/storage/firestore_admin.py": "342edf56ae911283"

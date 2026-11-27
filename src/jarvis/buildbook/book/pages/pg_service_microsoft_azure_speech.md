@@ -3,7 +3,7 @@ page: pg_service_microsoft_azure_speech
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "src/jarvis/api/r18_wiring.py": "acff61a46325e99b"
+  "src/jarvis/api/r18_wiring.py": "bec007fcf7d6ee6c"
   "src/jarvis/calls/prices.py": "09530bc93cd5d9f2"
   "src/jarvis/calls/speech/build.py": "f03b52cba95aad09"
   "src/jarvis/config.py": "8c3c0b7f0890ff99"

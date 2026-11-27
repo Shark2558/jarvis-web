@@ -13,7 +13,7 @@ sources:
   "src/jarvis/core/brain_decisions.py": "01cc210182d5e7a3"
   "src/jarvis/integrations/vault.py": "b766226c56672432"
   "src/jarvis/keyring.py": "092c625e649b4b88"
-  "src/jarvis/storage/approvals.py": "0091801c464bb3d8"
+  "src/jarvis/storage/approvals.py": "093f10af05d87010"
   "src/jarvis/storage/audit.py": "d268e84d6aa87ab5"
   "src/jarvis/tools/audit.py": "adc1ede80eab2146"
   "src/jarvis/tools/background.py": "c4d540d4ab2f2eb3"

@@ -3,7 +3,7 @@ page: pg_card_c73
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "768853b09894305d"
+  "deploy/cloudrun.sh": "603e230e96a462c8"
   "src/jarvis/api/r13_status.py": "af7163933e6796e4"
   "src/jarvis/api/seeme.py": "7e11a9d91c1d664c"
   "src/jarvis/api/static/console-r111-files.js": "1fec6c5ad6de99be"

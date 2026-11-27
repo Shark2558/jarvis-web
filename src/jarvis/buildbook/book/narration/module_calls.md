@@ -4,9 +4,9 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
   "pg_module_calls": "88855363b6f3c07a"
-  "pg_card_c74": "3ce8af10ae94f2d3"
+  "pg_card_c74": "276e43fdccd60b6f"
   "pg_card_c75": "9e6d0440cd70e0a9"
-  "pg_card_c76": "7c744d389bfadc64"
+  "pg_card_c76": "9e4e23730822d85d"
   "pg_card_c77": "aec0238ab86e3938"
   "pg_card_c78": "bd6b45b8791412dd"
   "pg_screen_calls": "60dd09b61813e44c"

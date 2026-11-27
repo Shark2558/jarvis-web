@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
   "pg_module_approvals": "37fc50a9574728ce"
-  "pg_card_c18": "d6c001daf7baf35a"
+  "pg_card_c18": "21a00a9000fa2fc7"
   "pg_card_c28": "3bbaf5446ea9dd7b"
   "pg_card_c51": "1d9c01b7bdf49831"
   "pg_card_c52": "1d94e343328a1fef"

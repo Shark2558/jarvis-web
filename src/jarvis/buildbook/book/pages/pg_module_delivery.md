@@ -8,7 +8,7 @@ sources:
   "Dockerfile": "2b925ebcbd25ec7c"
   "Makefile": "3c446b64c5b9cb98"
   "deploy/backup_setup.sh": "354cd02d8afbcc3f"
-  "deploy/cloudrun.sh": "768853b09894305d"
+  "deploy/cloudrun.sh": "603e230e96a462c8"
   "deploy/run-real-evals.sh": "3e7d08fb0a07cf43"
   "docs/github-backfill.tsv": "08260a54febc5a52"
   "evals/r14/backup.py": "163e8845efbe7c01"

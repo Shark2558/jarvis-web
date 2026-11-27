@@ -3,7 +3,7 @@ page: pg_card_c11
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "768853b09894305d"
+  "deploy/cloudrun.sh": "603e230e96a462c8"
   "src/jarvis/api/brief.py": "384e3c31e281a98b"
   "src/jarvis/api/scheduler_auth.py": "346bb43278c2d8f2"
   "src/jarvis/home/watchdog.py": "5ed83e7a835b50e2"

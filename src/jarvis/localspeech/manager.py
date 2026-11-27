@@ -10,8 +10,9 @@ a mismatch deletes it and installs nothing.
 
 The one exception to "a SHA-256 per file" (the Workshop's decision at the R5.2 join, a recorded
 deviation from the build brief's rule 9): a small text file that the model's host keeps in plain
-git (JSON or TXT, at most `BLOB_PIN_MAX` bytes), at a revision that is a full commit id, may be
-pinned by its git blob id (`git_blob_sha1`, the SHA-1 Hugging Face publishes) instead. It is
+git (JSON or TXT, at most `BLOB_PIN_MAX` bytes), fetched at a revision that is a full commit id
+(its address is exactly the host's raw file at that commit: `_at_commit`), may be pinned by its
+git blob id (`git_blob_sha1`, the SHA-1 Hugging Face publishes) instead. It is
 checked after download as git computes it (SHA-1 of "blob <size>", a zero byte, then the data)
 and refused on a mismatch; its SHA-256 is then recorded in `installed.json` and `LICENCE.txt`.
 The commit pins the content and a second preimage on SHA-1 is infeasible. Weights (`model.bin`,
@@ -55,6 +56,8 @@ GIT_BLOB: Final = r"^[0-9a-f]{40}$"
 COMMIT: Final = re.compile(r"[0-9a-f]{40}")
 BLOB_PIN_SUFFIXES: Final = (".json", ".txt")  # small text files kept in plain git
 BLOB_PIN_MAX: Final = 5_000_000
+RAW_PATH: Final = {"huggingface.co": "resolve", "github.com": "raw"}  # each host's raw-file path
+_SEGMENT: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")  # never ".", "..", "" or "%"
 USER_AGENT: Final = f"jarvis-speech-kit/{KIT_VERSION_NOW}"
 
 
@@ -67,6 +70,26 @@ def _https(url: str) -> str:
     if parts.scheme != "https" or parts.hostname not in ALLOWED_HOSTS or parts.username:
         raise ValueError("model files come only from https addresses of the pinned hosts")
     return url
+
+
+def _at_commit(url: str, revision: str, name: str) -> bool:
+    """A blob-pinned file's address is the host's raw file at exactly `revision` (R5.2 review: the
+    commit anywhere else in the address, such as a query or a folder under a moving ref, is not
+    the commit the file is fetched at): `/<owner>/<repo>/<resolve|raw>/<revision>/.../<name>`,
+    plain segments only, no port, query or fragment."""
+    parts = urlsplit(url)
+    try:
+        port = parts.port
+    except ValueError:
+        return False
+    if port is not None or parts.query or parts.fragment or not parts.path.startswith("/"):
+        return False
+    segments = parts.path[1:].split("/")
+    if len(segments) < 5 or not all(_SEGMENT.fullmatch(s) for s in segments):
+        return False
+    _owner, _repo, kind, at, *_ = segments
+    raw = RAW_PATH.get(parts.hostname or "")
+    return kind == raw and at == revision and segments[-1] == name
 
 
 def _permissive(licence: str) -> str:
@@ -124,8 +147,8 @@ class ModelEntry(_Strict):
         for f in self.files:
             if f.git_blob_sha1 is None:
                 continue
-            if not COMMIT.fullmatch(self.revision) or f"/{self.revision}/" not in f.url:
-                raise ValueError("a blob id pins a file only at a full commit, in its address")
+            if not COMMIT.fullmatch(self.revision) or not _at_commit(f.url, self.revision, f.name):
+                raise ValueError("a blob id pins a file only when it is fetched at a full commit")
         return self
 
 

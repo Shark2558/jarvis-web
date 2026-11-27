@@ -89,27 +89,25 @@ class EngineRoute:
 
     async def listen(
         self,
-        profile: VoiceProfile,
+        engine: ListenEngine,
         pcm: bytes,
         *,
         sample_rate: int,
         language: str,
         phrases: tuple[str, ...],
-    ) -> tuple[Transcript, ListenEngine] | None:
-        """The laptop's engine hears it when his order says so; None to fall back to Google."""
-        first = await self.laptop_first(profile)
-        if first is None or self.laptop is None:
+    ) -> Transcript | None:
+        """`engine` (from `laptop_first`) hears it on the laptop; None to fall back to Google."""
+        if self.laptop is None or not engine.on_laptop:
             return None
         try:
-            heard = await self.laptop.stt.recognize(
-                pcm, sample_rate=sample_rate, language=language, phrases=phrases, slot=first.slot
+            return await self.laptop.stt.recognize(
+                pcm, sample_rate=sample_rate, language=language, phrases=phrases, slot=engine.slot
             )
         except LaptopUnavailable as exc:
             log.info(
                 "voice: the laptop could not listen; Google listens", extra={"why": exc.reason}
             )
             return None
-        return heard, first
 
     async def speak(self, spoken: str, *, language: str, rate: float) -> tuple[bytes, str] | None:
         """The console's voice on the laptop while it is healthy: (MP3, engine) or None."""

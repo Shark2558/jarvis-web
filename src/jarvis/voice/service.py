@@ -75,6 +75,7 @@ from jarvis.voice.ports import (
     VoiceRejected,
     VoiceUnavailable,
 )
+from jarvis.voice.profile import VoiceProfile
 from jarvis.voice.profile_ports import ProfileStore
 from jarvis.voice.routing import EngineRoute, corrected
 from jarvis.voice.settings import (
@@ -597,21 +598,30 @@ class VoiceService:
                 uid, audio, owner_phrases, turn_hints, public_hints, free_only
             )
         profile = await self.route.profile_of(uid)
-        owner = (await self.settings_of(uid)).phrases  # never raises
-        words = kit_phrases((*self.hints_for(owner), *public_hints, *turn_hints))  # his first
-        got = await self.route.listen(
-            profile, audio.pcm, sample_rate=audio.sample_rate, language=self.language, phrases=words
-        )
-        if got is not None:
-            t, engine = got
-            text = t.text.strip()
-            log.info("voice: transcribed", extra={"chars": len(text), "engine": engine.value})
-            heard = self._view(text, t, audio, 0.0)
-        else:
+        heard = await self._listen_on_laptop(uid, audio, profile, (*public_hints, *turn_hints))
+        if heard is None:
             heard = await self._transcribe_google(uid, audio, True, turn_hints, public_hints, False)
             self.route.google_served(Kind.STT)
         text, alternatives = corrected(heard.text, heard.alternatives, profile)
         return heard.model_copy(update={"text": text, "alternatives": alternatives})
+
+    async def _listen_on_laptop(
+        self, uid: str, audio: Audio, profile: VoiceProfile, turn: tuple[str, ...]
+    ) -> TranscriptView | None:
+        """His listening order's laptop engine, while the kit is healthy (₹0); None: Google."""
+        engine = await self.route.laptop_first(profile)
+        if engine is None:
+            return None
+        owner = (await self.settings_of(uid)).phrases  # never raises
+        words = kit_phrases((*self.hints_for(owner), *turn))  # the base list and his words first
+        t = await self.route.listen(
+            engine, audio.pcm, sample_rate=audio.sample_rate, language=self.language, phrases=words
+        )
+        if t is None:
+            return None
+        text = t.text.strip()
+        log.info("voice: transcribed", extra={"chars": len(text), "engine": engine.value})
+        return self._view(text, t, audio, 0.0)
 
     def _view(self, text: str, t: Transcript, audio: Audio, cost_inr: float) -> TranscriptView:
         return TranscriptView(

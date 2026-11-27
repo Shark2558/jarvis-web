@@ -3,7 +3,7 @@
 and evals"): the fact pack and pages index the generator builds for THIS checkout (built once,
 about 25 s) and for fixtures (tests/r63_fakes_a.py). Each case is the eval case of a named test in
 tests/test_r63_a_*.py: `--check` twice identical (two processes, two hash seeds); every tour key
-known (row 380); the module map's 78 cards once (R18); the index; the counter's hand count; the
+known (row 380); the module map's 83 cards once (R5.2); the index; the counter's hand count; the
 inventory's SPDX rows; the scrubber's kinds and phrases; the constants (H5); every page's refs;
 H6; the 35 services (M7); the routes against the app built with mock settings (M9); G3 and G4; a
 new card's page (row 380, grows). Controls, each turning its own case red: a set iterated
@@ -159,8 +159,8 @@ def module_map(table: tuple[Module, ...] = modules_mod.MODULES) -> list[str]:
     cards = [c.id for c in facts_guide.guide_cards(repo())]
     modules_mod.check(cards, table)  # a card in no module or two: GenError
     placed = [c for m in table for c in m.cards]
-    # R18: + C74-C78 (73 -> 78)
-    out = _need(len(cards) == len(placed) == len(set(placed)) == 78, "not 78 cards once")
+    # R18: + C74-C78 (73 -> 78); R5.2: + C79-C83 (78 -> 83)
+    out = _need(len(cards) == len(placed) == len(set(placed)) == 83, "not 83 cards once")
     loose = tuple(Module(m.id, m.title, m.cards[1:]) if m.cards else m for m in table[:1])
     try:
         modules_mod.check(cards, (*loose, *table[1:]))
@@ -180,8 +180,8 @@ def index() -> list[str]:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
     }
     out = _need(ix.paths == tuple(sorted({S.clean(f) for f in rp.files})), "paths")
-    # R18: CallsConfig's settings (179 -> 197)
-    out += _need(set(ix.symbols) == tops, "symbols") + _need(len(ix.settings) == 197, "settings")
+    # R18: CallsConfig's settings (179 -> 197); R5.2: LocalSpeechConfig's 7 (197 -> 204)
+    out += _need(set(ix.symbols) == tops, "symbols") + _need(len(ix.settings) == 204, "settings")
     out += [
         f"{f} not sorted"
         for f in FactIndex.model_fields

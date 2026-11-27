@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from jarvis.calldesk import client as cl
-from jarvis.calldesk.credentials import CredentialStore, DeskCredentials, NotLinked, parse_secret
+from jarvis.calldesk.credentials import CredentialStore, DeskCredentials, NotLinked, parse_link
 from jarvis.calls import protocol as p
 from jarvis.home import signing
 
@@ -294,40 +294,45 @@ async def test_stop_ends_the_loop_and_closes_the_link() -> None:
 # ---- credentials -------------------------------------------------------------------------------
 
 
-def _bridge_secret(home_id: str = HOME, seed: bytes = SEED) -> str:
-    return json.dumps({"home_id": home_id, "seed": base64.b64encode(seed).decode()})
-
-
-def test_link_from_the_bridges_secret_and_load_it_back(tmp_path: Path) -> None:
+def test_save_and_load_the_desks_link(tmp_path: Path) -> None:
     store = CredentialStore(tmp_path / "secret.json")
     assert store.load() is None
-    assert store.link_from_bridge(_bridge_secret()) == HOME
+    store.save(HOME, SEED)
     loaded = store.load()
-    assert loaded is not None and loaded.home_id == HOME
+    assert loaded is not None and loaded.desk_id == HOME
     assert loaded.keys.up == signing.derive_keys(SEED).up
-    assert "h_0123abcd" in repr(loaded) and "seed" not in repr(loaded)
+    assert HOME in repr(loaded) and "seed" not in repr(loaded)
     store.forget()
     assert store.load() is None
 
 
+def test_link_answers_in_either_base64() -> None:
+    url = base64.urlsafe_b64encode(SEED).decode().rstrip("=")
+    assert parse_link({"desk_id": HOME, "seed": url}) == (HOME, SEED)
+    std = base64.b64encode(SEED).decode()
+    assert parse_link({"home_id": HOME, "seed": std}) == (HOME, SEED)
+
+
 @pytest.mark.parametrize(
-    "text",
+    "data",
     [
-        "",
-        "{}",
-        json.dumps({"home_id": "nope", "seed": base64.b64encode(SEED).decode()}),
-        json.dumps({"home_id": HOME, "seed": base64.b64encode(b"short").decode()}),
-        json.dumps({"home_id": HOME, "seed": "!!!"}),
+        {},
+        {"desk_id": "nope", "seed": base64.b64encode(SEED).decode()},
+        {"desk_id": HOME, "seed": base64.b64encode(b"short").decode()},
+        {"desk_id": HOME, "seed": "!!!"},
+        {"desk_id": HOME, "seed": 7},
     ],
 )
-def test_anything_else_is_not_a_link(text: str) -> None:
+def test_anything_else_is_not_a_link(data: dict[str, Any]) -> None:
     with pytest.raises(NotLinked):
-        parse_secret(text)
+        parse_link(data)
 
 
 def test_an_unreadable_secret_means_not_linked(tmp_path: Path) -> None:
     path = tmp_path / "secret.json"
     path.write_text("garbage", encoding="utf-8")
+    assert CredentialStore(path).load() is None
+    path.write_text("[1, 2]", encoding="utf-8")
     assert CredentialStore(path).load() is None
 
 

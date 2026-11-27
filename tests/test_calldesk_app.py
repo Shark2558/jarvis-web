@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import io
 import json
 import math
 import struct
@@ -257,15 +256,46 @@ def test_usage_and_a_broken_kit(
     assert cli.main(["check"]) == 2 and "JARVIS_URL" in capsys.readouterr().out
 
 
-def test_link_home_from_stdin(
-    kit: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    secret = json.dumps({"home_id": "h_0123abcd", "seed": base64.b64encode(SEED).decode()})
-    monkeypatch.setattr(sys, "stdin", io.StringIO(secret + "\r\n"))
-    assert cli.main(["link-home"]) == 0 and "JARVIS Home's link" in capsys.readouterr().out
+class Answer:
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status, self.body = status, body
+
+    def __enter__(self) -> Answer:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        pass
+
+    def read(self, n: int) -> bytes:
+        return self.body[:n]
+
+
+def test_link_with_the_code_from_the_console(kit: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    sent: list[Any] = []
+
+    def opener(req: Any, timeout: float) -> Answer:
+        sent.append(req)
+        seed = base64.urlsafe_b64encode(SEED).decode().rstrip("=")
+        return Answer(201, json.dumps({"desk_id": "h_0123abcd", "seed": seed}).encode())
+
+    assert cli.main(["link", "abcd-2345"], opener=opener) == 0
+    assert "linked to JARVIS" in capsys.readouterr().out
+    assert sent[0].full_url == "https://jarvis.example/v1/calls/desk/link"
+    assert json.loads(sent[0].data) == {"code": "ABCD2345", "desk_version": "18.0.0"}
     assert (kit / "data" / "secret.json").exists()
-    monkeypatch.setattr(sys, "stdin", io.StringIO("cat: No such file or directory"))
-    assert cli.main(["link-home"]) == 3 and "JARVIS Home" in capsys.readouterr().out
+
+
+def test_link_refusals_speak_plainly(kit: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import urllib.error
+
+    def refused(req: Any, timeout: float) -> Answer:
+        raise urllib.error.HTTPError(req.full_url, 401, "no", {}, None)  # type: ignore[arg-type]
+
+    assert cli.main(["link", "ABCD2345"], opener=refused) == 3
+    assert "wrong, used or out of time" in capsys.readouterr().out
+    assert cli.main(["link", "??"], opener=refused) == 3
+    assert "does not look like a link code" in capsys.readouterr().out
+    assert not (kit / "data" / "secret.json").exists()
 
 
 def test_check_and_restore_commands_speak_plainly(

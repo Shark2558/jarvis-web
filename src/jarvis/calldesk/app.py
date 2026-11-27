@@ -7,7 +7,7 @@ the client, and the commands `python -m jarvis.calldesk` offers.
     supervise   the watchdog (what the Start-menu shortcut and sign-in start)
     restore     puts the owner's microphone and notification sounds back now
     check       the checks before a call, in plain words (the installer's last step)
-    link-home   reads JARVIS Home's link (its secret.json) from stdin and keeps it for the desk
+    link CODE   links the desk to JARVIS with the code the console shows (`link.py`)
 
 The Windows parts are imported only by `windows_parts()`, so everything here is tested on Linux
 with fakes.

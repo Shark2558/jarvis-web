@@ -2,8 +2,8 @@
 """The desk's one WebSocket to JARVIS (R18 build brief, "Desk <-> cloud"; mirrors the home
 bridge's `cloud.py`).
 
-- `wss://<JARVIS>/v1/calls/desk/ws`, the upgrade signed with the home link's UP key
-  (`credentials`); TLS is checked against Windows' certificate store.
+- `wss://<JARVIS>/v1/calls/desk/ws`, the upgrade signed with the desk's UP key the way the home
+  bridge signs (`credentials`); TLS is checked against Windows' certificate store.
 - On connect the session sends `hello` and its `state`; JSON from the cloud is parsed by
   `jarvis.calls.protocol` (anything else is dropped and logged by kind only), 0x02 audio goes to
   the session, and the session's messages and 0x01 audio go out through a bounded queue (audio is
@@ -11,7 +11,7 @@ bridge's `cloud.py`).
   something changed.
 - Reconnects with a growing, jittered pause (1, 2, 5, 10, 30, 60 s; back to 1 s after a minute
   online). A 401 corrects the clock from the cloud's `Date` header and retries at once; three in
-  a row mean the home link is gone: the desk says so in its log and tries every 5 minutes. The
+  a row mean the desk's link is gone: the desk says so in its log and tries every 5 minutes. The
   cloud's "not built yet" close (4501) waits a minute. No message for 90 s: reconnect.
 - Nothing here logs a message body, audio or a header.
 """
@@ -192,7 +192,7 @@ class DeskClient:
                 refused += 1
                 self.linked = refused < NOT_LINKED_AFTER
                 if not self.linked:
-                    log.warning("JARVIS does not know this laptop's link: run install -Link")
+                    log.warning("JARVIS does not know this desk's link: run install -Link")
                     delay = NOT_LINKED_RETRY_S
                 else:
                     delay = self._backoff(failures)

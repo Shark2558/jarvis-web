@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
-  "src/jarvis/config.py": "e223e4b9e6e6333b"
+  "src/jarvis/config.py": "8c3c0b7f0890ff99"
 ---
 ## In plain words
 Mosquitto is a small, free message post office that runs on your laptop at home. It carries the camera's news from Frigate, the camera watcher, to the JARVIS bridge on the same laptop: "a person at the gate", "a parcel appeared". It is the camera's messenger. It lives only inside the home kit's own private network on the laptop: nothing on the internet reaches it, and it refuses anyone without a name and password. Frigate may post camera news; the bridge may only read it. Nothing of yours leaves the laptop through Mosquitto.

@@ -1,4 +1,4 @@
-Version v13.0.1 · 15 Nov 2026, 18:40 IST · Release R13 · Status: Current · Owner: 🛠 Mark XXI
+Version v8.0.1 · 28 Nov 2026, 04:20 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
 
 # R7 — Part B integration notes (camera and the vision engine)
 
@@ -71,6 +71,23 @@ brain ─▶ gateway ─▶ vision_results (R1) ─▶ kept results, read text f
 ## 3. Contract files
 
 - `src/jarvis/vision/results.py`: **unchanged**.
+- **R8 I0's contract lines (28 Nov 2026, `docs/plans/r8-vision.md` section 4.2, seams S1 and S2;
+  `docs/plans/r8-integration/I0-SEAMS.md`).** `vision/results.py` gains a sixth task, `hands` v1
+  (`TASKS` and `TaskName` include it; `HandsData`: at most `HANDS_MAX` 2 `Hand`s, each `side`
+  left or right, `score` 0..1 and exactly `HAND_POINTS` 21 `HandPoint`s {x, y, z}, nothing else),
+  and `pose` v2: `PoseData.others` (0 or 1, strict: whether another body is in view; the task
+  drops that body's points itself, so a second body never reaches a use case: ADR-48). A v1
+  pose result (no `others`) still fits. `console-vision.js`'s `CHECKS` match both. The port core
+  changes by four contract lines (section 7a's driver, built): **(3)** `JarvisVision.live(taskIds,
+  {uses, rate, people, onError}) -> {end(), paused()}` pulls frames from `JarvisCamera` while a
+  tap-started look is live and tells **only the use cases named in `uses`**; **(4)** `run()` and
+  `stream()` tell no use case any more (the Look tab's results reach none); **(5)**
+  `JarvisVision.tally(id) -> {view, tally}` (frozen plain data; `view` holds only the fixed widget
+  kinds) and `JarvisVision.reset(id)`; **(6)** `stream` honours `opts.rate` (never above the
+  task's own). The pose and hands task shells are registered before the seal in Part B's block;
+  their bodies live in `console-vision-r8.js` (R8 builder A), imported on first use like R13's
+  `console-vision-r13.js`. The new core's SHA-256 is pinned by
+  `tests/test_r7_b_console.py::test_the_port_core_is_the_agreed_one_byte_for_byte`.
 - **R13 I0's contract lines (15 Nov 2026, `docs/plans/r13-wardrobe.md` D8, D9, plan review H6,
   M7).** `vision/results.py` gains `WARDROBE_TASKS` (embed, colour, person, face) with their
   schemas (`WARDROBE_DATA`) and `parse_result(raw, wardrobe=True)`; `TASKS` stays the five and a
@@ -327,6 +344,7 @@ engine and guard, `dc7aba6` eval and Part B tests, `976853a` browser tests.
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v8.0.1 | 28 Nov 2026, 04:20 IST | R8 | R8 I0: the contract lines section 3 requires for the `hands` task, `pose` v2's `others`, the live driver (`live`, `tally`, `reset`, results only to the named use cases, `stream`'s `opts.rate`) and the R8 task shells | 🛠 Mark XXVI |
 | v13.0.1 | 15 Nov 2026, 18:40 IST | R13 | R13 I0: the contract lines section 3 requires for the wardrobe tasks, the `r13-1` release and the two named pixel panels (plan review H6) | 🛠 Mark XXI |
 | v7.0.3 | 13 Nov 2026, 23:40 IST | R7 | I1: section 5's restart line dropped, since `vision_files` is now checked again whenever the folder changes (Needs I1 item 12, done at I1) | 🛠 Mark XVII |
 | v7.0.2 | 13 Nov 2026, 23:30 IST | R7 | Review follow-ups: package-data for a non-editable install, a day under Firestore's limit, pagination, a bad day blocks nothing, atomic `vision_assets.py`, the engine sealed and `stream` reporting (two contract lines in the port core), the camera stopping unconditionally, newest look wins, plain errors, a real tap on the camera's own buttons, a fail-closed use-case guard, eval with seven controls, section 7a for R8, Needs I1 items 11 to 14 | 🛠 Mark XVII |

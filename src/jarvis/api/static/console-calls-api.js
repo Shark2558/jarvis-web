@@ -10,7 +10,7 @@ export const PATHS = Object.freeze({
   status: BASE + '/status', // the desk, the phone, today's count, this month's rupees, the call that is on
   cards: BASE + '/cards', // POST (make; the ready cards, Laundry among them, come with the status); /{id}/approve, /cancel
   records: BASE + '/records', // ?limit=N; /{id} (GET, DELETE); /{id}/keep (PUT {keep}); /{id}/audio; /{id}/booking/undo
-  settings: BASE + '/settings', // GET; PUT {changed fields} (?confirm=1 when it raises a cap or switches on)
+  settings: BASE + '/settings', // GET (with the ready cards); PUT {changed fields, confirm_raise?}
   languages: BASE + '/languages', // GET; /check (POST {confirm: false} -> the estimate, {confirm: true} -> runs)
   live: (id) => BASE + '/' + encodeURIComponent(id) + '/live', // the live WebSocket (owner session)
 });

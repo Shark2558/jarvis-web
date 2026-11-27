@@ -92,7 +92,10 @@ export function mount(host, ctx) {
   }
 
   // ---- the socket ---------------------------------------------------------------------------------------------------
-  function url() { return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + PATHS.live(S.id); }
+  function url() { // the console page in the phone's browser says so: Take over then moves the sound to the phone (A2)
+    const D = window.JarvisDeck, phone = !!(D && typeof D.isPhone === 'function' && D.isPhone());
+    return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + PATHS.live(S.id) + (phone ? '?device=phone' : '');
+  }
   function connect() {
     clearTimeout(S.timer);
     if (!S.id || S.ended) return;

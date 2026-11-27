@@ -108,6 +108,7 @@ const ctx = {
   ended: () => { document.dispatchEvent(new CustomEvent('jarvis:calls', { detail: { ended: true } })); status(); },
   edit: (card) => { openPanel(); choose('new', true); form.edit(card); },
   changed: () => {},
+  settingsLoaded: (d) => form.templates(d.templates), // the ready cards (Laundry among them) come with the settings
   languagesChanged: () => { form.languagesChanged(); settings.languagesChanged(); },
 };
 // the order matters: the form reads the language table and the settings as it starts
@@ -143,7 +144,6 @@ async function status() {
     S.status = readiness(await api(PATHS.status));
     say(readyState, '');
     if (vitals) vitals.show(S.status.month);
-    form.templates(S.status.templates); // the ready cards (Laundry among them) come with the status
     const a = S.status.active;
     if (a && isLive(a.state) && !live.shown() && S.tab === 'calls') live.open(a.callId, { state: a.state });
   } catch (e) { say(readyState, failed(e), 'bad'); }

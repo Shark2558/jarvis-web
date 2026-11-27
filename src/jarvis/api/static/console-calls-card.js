@@ -5,7 +5,7 @@
 // entry; never a payment), the languages (the first is the one it opens in), the longest it may last and its rupee
 // estimate, and says plainly when the laptop or the phone is not ready (a Bluetooth headset on the laptop included).
 // Call is the owner's approval (R3: a call speaks for him and cannot be undone): one press, a passkey first for a
-// number JARVIS has never called (or when the cloud asks), never a "don't ask again". Edit puts the card back in
+// number JARVIS has never called (the cloud answers needs_passkey with the approval to sign), never a "don't ask again". Edit puts the card back in
 // Calls -> New call; Cancel drops it. Nothing is dialled by this file: the cloud places the call after the approval.
 // ASCII source; textContent only.
 import { PATHS, api, button, chip, failed, langName, masked, mk, rupees, say, uid, wholeRupees } from './console-calls-api.js';
@@ -73,7 +73,7 @@ export function render(c, ctx) {
     const k = S.c, num = mk('span', 'cl-v cl-num', masked(k.number4));
     num.setAttribute('aria-label', k.number4 ? 'Number ending ' + k.number4.split('').join(' ') : 'A number');
     body.replaceChildren(row('Number', num));
-    if (k.newNumber) body.append(row('', 'JARVIS hasn\u2019t called this number before: your passkey is asked.', 'cl-fine'));
+    if (k.passkey) body.append(row('', 'JARVIS hasn\u2019t called this number before: your passkey approves it.', 'cl-fine'));
     body.append(row('Purpose', k.purpose || '\u2014'));
     if (k.maySay.length) body.append(row('May tell them', lines(k.maySay)));
     if (k.mayAgree.length) body.append(row('May agree to', lines(k.mayAgree)));
@@ -103,7 +103,7 @@ export function render(c, ctx) {
     }
     const list = [];
     if (waiting) {
-      const go = button(k.passkey ? 'Call with passkey' : 'Call', 'primary sact', () => place());
+      const go = button(k.needsKey ? 'Approve with passkey' : 'Call', 'primary sact', () => place(!!k.needsKey));
       go.setAttribute('aria-describedby', title.id);
       go.disabled = S.busy || k.estimate === null || problems.length > 0;
       list.push(go, button('Edit', 'sact', () => { if (ctx && ctx.edit) ctx.edit(S.c); }), button('Cancel', 'sact', () => cancel()));
@@ -118,29 +118,33 @@ export function render(c, ctx) {
     sec.setAttribute('aria-busy', S.busy ? 'true' : 'false');
   }
   function set(next) { if (next) { S.c = next; paintBody(); } paint(); }
-  async function place() {
+  async function place(withKey) {
     if (S.busy) return;
     err.textContent = '';
     S.busy = true; paint();
     const body = {};
     try {
-      if (S.c.passkey) body.passkey = await passkey(S.c); // first: the press still counts as his gesture
+      if (withKey) { // his press on Approve with passkey: the check first, while the press counts as his gesture
+        body.approval_id = S.c.approvalId;
+        body.passkey = await passkey(S.c.approvalId);
+      }
       say(note, 'Asking your laptop and phone to get ready\u2026');
       const r = await api(PATHS.cards + '/' + encodeURIComponent(S.c.id) + '/approve', { body });
+      if (r && r.status === 'needs_passkey' && typeof r.approval_id === 'string' && /^[A-Za-z0-9_:.-]{1,128}$/.test(r.approval_id)) {
+        S.busy = false;
+        S.c = { ...S.c, approvalId: r.approval_id, needsKey: true };
+        paint();
+        say(note, 'Your passkey approves this call. Press Approve with passkey.');
+        const go = acts.querySelector('.btn.primary'); if (go) go.focus();
+        return;
+      }
       const cid = r && typeof r.call_id === 'string' ? r.call_id : '';
-      const next = checkCard((r && r.card) || r) || { ...S.c, status: 'approved' };
       S.busy = false;
-      set(cid && !next.callId ? { ...next, callId: cid } : next);
+      set({ ...S.c, status: 'approved', needsKey: false, callId: cid || S.c.callId });
       say(note, 'Approved. JARVIS is placing the call from your phone.', 'ok');
       if (ctx && S.c.callId) ctx.openLive(S.c.callId);
     } catch (e) {
       S.busy = false;
-      if (e && e.code === 'passkey_required' && !body.passkey) {
-        S.c = { ...S.c, passkey: true };
-        paint();
-        err.textContent = 'This call needs your passkey. Press Call with passkey.';
-        return;
-      }
       say(note, '');
       paint();
       err.textContent = e && e.passkeyMessage ? e.passkeyMessage : failed(e);
@@ -161,10 +165,10 @@ export function render(c, ctx) {
   return Object.freeze({ el: sec, update: (next) => set(next), card: () => S.c, repaint: paint });
 }
 
-function passkey(c) { // the existing passkey door (console-permissions.js), bound to this card's approval
+function passkey(approvalId) { // the existing passkey door (console-permissions.js): purpose "approve", this call's approval
   const P = window.JarvisPasskey;
   if (!P || typeof P.approve !== 'function') return Promise.reject(new Error('Passkeys are still loading. Try again in a moment.'));
-  return P.approve(c.approvalId || c.id).catch((e) => {
+  return P.approve(approvalId).catch((e) => {
     const words = typeof P.message === 'function' ? P.message(e) : 'The passkey check wasn\u2019t completed.';
     throw Object.assign(new Error(words), { passkeyMessage: words });
   });

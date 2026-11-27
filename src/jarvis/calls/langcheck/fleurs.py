@@ -12,7 +12,8 @@ viewer for rows of the test split and downloads each clip's audio.
 
 Clips with numbers in their transcript come first (up to 60 % of the set: the key facts), the rest
 in order; at most `n` (20). Everything that comes back is untrusted: an audio URL must be https on
-Hugging Face's own hosts (huggingface.co, hf.co and their subdomains), redirects too; a clip over
+Hugging Face's own hosts (huggingface.co, hf.co and their subdomains), every redirect hop checked
+before it is followed (at most 3); a clip over
 MAX_CLIP_BYTES or MAX_CLIP_S, or not a readable WAV, is skipped. Without the network (or when
 Hugging Face refuses) `FleursUnavailable` says so in plain words and nothing is scored.
 """
@@ -48,6 +49,7 @@ MIN_CLIPS = 10  # fewer usable clips than this: no verdict
 MAX_TEXT = 1_000
 HF_HOSTS = ("huggingface.co", "hf.co")
 AUDIO_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
+MAX_REDIRECTS = 3
 
 
 class FleursUnavailable(RuntimeError):
@@ -131,15 +133,25 @@ class FleursClips:
         return [x for x in rows if isinstance(x, dict)] if isinstance(rows, list) else []
 
     async def _audio(self, url: str) -> bytes | None:
-        try:
-            r = await self.http.get(url, follow_redirects=True, timeout=AUDIO_TIMEOUT)
-        except httpx.HTTPError as exc:
-            log.warning("test clip not fetched", extra={"why": type(exc).__name__})
-            return None
-        if r.status_code != 200 or not hf_url(str(r.url)) or len(r.content) > MAX_CLIP_BYTES:
-            log.warning("test clip refused", extra={"status": r.status_code})
-            return None
-        return r.content
+        """The clip's bytes; every hop (redirects followed by hand) checked before it is asked."""
+        for _ in range(MAX_REDIRECTS + 1):
+            if not hf_url(url):
+                log.warning("test clip refused: not a Hugging Face URL")
+                return None
+            try:
+                r = await self.http.get(url, follow_redirects=False, timeout=AUDIO_TIMEOUT)
+            except httpx.HTTPError as exc:
+                log.warning("test clip not fetched", extra={"why": type(exc).__name__})
+                return None
+            if r.is_redirect and "location" in r.headers:
+                url = str(r.url.join(r.headers["location"]))
+                continue
+            if r.status_code != 200 or len(r.content) > MAX_CLIP_BYTES:
+                log.warning("test clip refused", extra={"status": r.status_code})
+                return None
+            return r.content
+        log.warning("test clip refused: too many redirects")
+        return None
 
     async def clips(self, lang: str, n: int = CLIPS) -> list[Clip]:
         entry = LANGUAGES.get(lang)

@@ -95,6 +95,27 @@ async def test_oversize_unreadable_and_redirected_away_clips_are_skipped() -> No
     assert len(clips) == 10
 
 
+async def test_a_redirect_is_followed_only_to_hugging_face_hop_by_hop() -> None:
+    cdn = "https://cas-bridge.xethub.hf.co/clip.wav"
+    rows = [row(i, f"s {i}") for i in range(11)]
+    good = wav_from_pcm(tone(0.5))
+    audio = {ASSET.format(i=i): httpx.Response(302, headers={"Location": cdn}) for i in range(10)}
+    audio[cdn] = httpx.Response(200, content=good)
+    inner = "http://169.254.169.254/computeMetadata/v1/"
+    audio[ASSET.format(i=10)] = httpx.Response(302, headers={"Location": inner})
+    seen: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(str(req.url))
+        if str(req.url).startswith(ROWS_URL):
+            return httpx.Response(200, json={"rows": rows})
+        return audio.get(str(req.url), httpx.Response(404))
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    clips = await FleursClips(http, policy=FAST, sleep=no_sleep).clips("hi-IN")
+    assert len(clips) == 10 and inner not in seen  # the inner hop was never asked
+
+
 async def test_no_network_is_said_plainly() -> None:
     def down(_req: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route to host")

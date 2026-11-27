@@ -213,6 +213,14 @@ class VoiceSessions:
         self._health = (now, ok)
         return ok
 
+    async def wakeword_files(self) -> int:
+        """The wake-word files trained from his recordings that the laptop holds (0 without a
+        kit). A kit that can't answer raises: the dashboard then says it couldn't check."""
+        if self.p.kit is None:
+            return 0
+        status = await self.p.kit.wakeword_status()
+        return (status.verifier is not None) + (status.owned is not None)
+
     async def preview(self, uid: str) -> Compare:
         """What the comparison would be if he started now (no question asked)."""
         count = sum(scored(p) for p in build_prompts().prompts)

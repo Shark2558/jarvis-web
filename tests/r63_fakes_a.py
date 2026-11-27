@@ -214,17 +214,17 @@ INVENTORY_FILES: dict[str, str] = {
 
 # the plan's "The tour's facts" table, on this branch (the release's own values)
 TOUR = {
-    "release.label": "R6.4",
-    "release.version": "v6.4.0",  # R6.4 (v6.3.2 at R6.3.1, v6.3.1 at R6.3 hotfix 1, v6.3.0 at R6.3)
-    # R6.4: its own plan (by version)
-    "release.new": "Build Book Part 3: the Book's own look and the full book in narrated chapters",
+    "release.label": "R18",  # R18 (R6.4 at R6.4)
+    "release.version": "v18.0.0",  # R18 (v6.4.0 at R6.4, v6.3.2 at R6.3.1, v6.3.0 at R6.3)
+    # R18: its own plan (by version); R6.4's was "Build Book Part 3: the Book's own look ..."
+    "release.new": "Calls from your laptop: the plan",
     "cards.count": 73,
     "modules.count": 18,
     "modules.else_count": 11,
     "layers.count": 8,
     "brain.balanced_model": "Claude Sonnet 5.5",
     "undo.keep_days": 30,
-    "keys.purposes": 26,
+    "keys.purposes": 27,  # R18 + 1 (calls)
     "services.count": 31,
     "approvals.max_new_cards": 5,
     "memory.facts_per_turn": 12,

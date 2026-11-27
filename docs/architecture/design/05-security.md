@@ -1,4 +1,4 @@
-Version v6.6.0 · 27 Nov 2026, 22:07 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.1 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 05 · Security architecture
 
@@ -182,9 +182,9 @@ or name a top-level file.
 | T20 | The owner's microphone left on the virtual cable (R18) | The desk writes the old defaults first, reads every switch back, restores at takeover, end, crash (watchdog) and next start | `calldesk/micguard.py`, `calldesk/watchdog.py` | Not yet tried on a real laptop (S0 not run) |
 | T21 | A stranger reaching the laptop speech kit through its public Funnel address (R5.2) | The gate passes only the kit's API with the key; no key at all → 503 for everything; the server checks the key again and binds 127.0.0.1 only; bodies capped at 3 MB; nothing logs a body, audio, text, header or key | `deploy/local-speech/Caddyfile`, `localspeech/server.py`, `localspeech/kitconfig.py` | Whoever holds the key can do what JARVIS can (residual risk 13) |
 | T22 | JARVIS sent to a look-alike address, or a redirect, instead of the owner's kit (R5.2) | Only a `*.ts.net` https name with a Funnel port; every address it resolves to must be public; the pinned transport connects to the address just checked; no redirects; at most 4 MB read; the kit's text never reaches the console (fixed words only) | `config_voice.py`, `localspeech/client.py`, `offline/config.py` | — |
-| T23 | A tampered or swapped model file (R5.2) | Only files pinned in `models.json`, https from two hosts at a fixed revision, size and SHA-256 checked before a file is renamed into place; small text files by their git blob id at a full commit (ADR-42); a permissive licence or nothing; the wake word's files checked by hash, licence and format before the console uses them | `localspeech/manager.py`, `voice/wakeword_api.py` | The blob-id files were pinned from Hugging Face's API listing read through a web reader, not computed from downloaded files (section 9.2) |
+| T23 | A tampered or swapped model file (R5.2) | Only files pinned in `models.json`, https from two hosts at a fixed revision, size and SHA-256 checked before a file is renamed into place; small text files by their git blob id, fetched as the host's raw file at exactly the pinned commit (ADR-42); a permissive licence or nothing; the wake word's files checked by hash, licence and format before the console uses them | `localspeech/manager.py`, `voice/wakeword_api.py` | The blob-id files were pinned from Hugging Face's API listing read through a web reader, not computed from downloaded files (section 9.2) |
 | T24 | A voice (a recording, a TV, another person) used to approve something (R5.2) | The speaker check is a barge-in filter and, at most, a display label; no approval, passkey, unlock or Telegram decision reads it, and a test fails if one ever mentions it | `api/static/console-voiceprint.js`, `voice/profile.py`, `tests/test_r52_v5_never_approves.py` | — (ADR-44) |
-| T25 | A learned correction changing a number, an amount or a code the owner said (R5.2) | Corrections are whole words of letters only; a correction with a digit, a currency sign or a number, money or code word is refused, and none is learned from the numbers block | `voice/profile.py:Correction`, `voice/session_score.py` | A mishearing of an ordinary word can still be corrected into another ordinary word |
+| T25 | A learned correction changing a number, an amount or a code the owner said (R5.2) | Corrections are whole words of letters only; a correction with a digit, a currency sign or a number, ordinal, counting, money or code word is refused, and none is learned from the numbers block | `voice/profile.py:Correction`, `voice/session_score.py` | A mishearing of an ordinary word can still be corrected into another ordinary word |
 
 ## 7. Known residual risks
 
@@ -232,8 +232,10 @@ or name a top-level file.
     engines heard in his session's clips (`/v1/session/results`), delete his recordings, start a
     training job and fetch the wake word's files; there is no route that returns a clip's audio.
     The key lives in three places: the kit's folder, Secret Manager and, when he copies it, the
-    call desk's folder. A new key is one `start-kit.ps1` away after the old file is removed
-    (*unverified*: no rotation step is written down in `deploy/local-speech/README.md`).
+    call desk's folder. A new key is one `start-kit.ps1` away after the old file is removed, as
+    `deploy/local-speech/README.md` ("Why it is safe") says;
+    `bash deploy/cloudrun.sh --local-speech` then stores the new one over the saved key, and
+    `install-calldesk.ps1 -SpeechKit` copies it to the desk again.
 14. **The speaker check does nothing yet** (R5.2): its model slot is empty and its threshold
     (0.45) is not calibrated (ADR-46). That is safe, because it only ever blocks a barge-in, but
     the plan's promise that only his voice can interrupt JARVIS is not kept until the model is in.
@@ -361,7 +363,7 @@ the join's decisions: `docs/plans/r5-2-integration/I1-NOTES.md`, section 2.
 
 | Rule | As built | Code |
 |---|---|---|
-| A key that fails closed | The kit's key is at least 32 characters (`KEY_MIN_CHARS`; start-kit makes 32 random bytes, 43 characters). With no key, or a shorter one, the gate answers 503 to every request and the server refuses to serve. JARVIS refuses a shorter key at start-up, and the deploy refuses to store one | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/server.py`, `src/jarvis/config_voice.py:LocalSpeechConfig`, `deploy/cloudrun.sh:local_speech_answer` |
+| A key that fails closed | The kit's key is at least 32 characters (`KEY_MIN_CHARS`; start-kit makes 32 random bytes, 43 characters). With no key, or a shorter one, the gate answers 503 to every request and the server refuses to serve. JARVIS refuses a shorter key at start-up, and the deploy never stores one: it says why, leaves the kit off this time and goes on (`ls_skip`, R5.2 review) | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/server.py`, `src/jarvis/config_voice.py:LocalSpeechConfig`, `deploy/cloudrun.sh:local_speech_answer` |
 | Checked twice | The Caddy gate matches the bearer header for each of the kit's addresses; the server compares it again in constant time (`hmac.compare_digest`) | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/server.py` |
 | Never logged, never shown | The key comes only from the environment or the kit's private file; the server keeps no access log and logs no body, audio, text, header or key; the self-test's report never holds it; the deploy reads it without echo and writes it only to Secret Manager; the client logs only the route, status and a fixed reason | `src/jarvis/localspeech/__main__.py`, `src/jarvis/localspeech/selftest.py`, `src/jarvis/localspeech/client.py` |
 | Loopback only on the laptop | The server binds `127.0.0.1:11437` and the gate `127.0.0.1:11436`; only Funnel's https port reaches the gate from outside | `src/jarvis/localspeech/kitconfig.py:HOST`, `deploy/local-speech/Caddyfile` |
@@ -380,15 +382,22 @@ to a temporary name and renamed into place only when its size and hash match; a 
 it and installs nothing (`src/jarvis/localspeech/manager.py:ModelManager.install`).
 
 **The exception (ADR-42).** A small text file kept in plain git (a `.json` or `.txt` of at most
-5 MB), at a revision that is a full 40-character commit and appears in the file's address, may be
-pinned by its **git blob id** (`git_blob_sha1`) instead. The manager computes it after download as
+5 MB), at a revision that is a full 40-character commit, may be pinned by its **git blob id**
+(`git_blob_sha1`) instead, and only when its address is exactly the host's raw file at that commit:
+`/<owner>/<repo>/resolve/<commit>/…/<name>` on Hugging Face (`raw` on GitHub), plain segments, no
+port, query or fragment, ending in the pinned name (`src/jarvis/localspeech/manager.py:_at_commit`).
+Until the R5.2 review the commit only had to appear somewhere in the address, so a moving branch
+name could pass with the commit in a query, a fragment or a folder under `resolve/main/`; the
+commit is what makes a SHA-1 pin safe (review finding 2, `2d487fd`;
+`tests/test_r52_review_manager.py`). The manager computes it after download as
 git does (SHA-1 of "blob <size>", a zero byte, then the data), refuses a mismatch, and records the
 file's SHA-256 in `installed.json` and `LICENCE.txt` (`src/jarvis/localspeech/manager.py:ModelFile`,
 `git_blob`, `ModelEntry`). Weights (`model.bin`, any LFS file) always need a SHA-256, because an
 LFS file's blob id is its pointer's, not its data's. faster-whisper small and medium are pinned
 this way: `model.bin` by SHA-256, `config.json`, `tokenizer.json` and `vocabulary.txt` by blob id.
 
-How it is checked: `tests/test_r52_i1_manager_blob.py` and `tests/test_r52_v1_manager.py`. The
+How it is checked: `tests/test_r52_i1_manager_blob.py`, `tests/test_r52_v1_manager.py` and
+`tests/test_r52_review_manager.py` (which also loads the real `deploy/local-speech/models.json`). The
 later check (`ModelManager.verify`, the `models verify` command) re-hashes every installed file
 against its pin, so a blob-pinned file is re-checked by its blob id, not by the SHA-256 recorded
 at install. The blob ids were read twice from Hugging Face's API listing at each revision through
@@ -399,12 +408,17 @@ on the laptop, so a wrong pin fails the install rather than installing a wrong f
 
 The voice session learns the chosen engine's mishearings that repeat (seen twice or more) and
 applies them after listening, whichever engine listened. A correction is 1–3 heard words for 1–5
-meant words, letters only: a digit, a currency sign, or a number, money or code word (`otp`,
-`pin`, `upi`, `ifsc`, `pan`, `aadhaar` and others) on either side is refused when the correction
-is made, and none is learned from the numbers block or from a phrase he really says elsewhere
-(`src/jarvis/voice/profile.py:Correction`, `PROTECTED_WORDS`;
-`src/jarvis/voice/session_score.py`). Tests: `tests/test_r52_i0_profile.py`,
-`tests/test_r52_v3_score.py`. He can switch corrections off in Voice → Your voice.
+meant words, letters only: a digit, a currency sign, or a number, money or code word on either
+side is refused when the correction is made, and none is learned from the numbers block or from a
+phrase he really says elsewhere (`src/jarvis/voice/profile.py:Correction`, `PROTECTED_WORDS`;
+`src/jarvis/voice/session_score.py`). The protected words are the cardinals ("one" to "billion",
+"lakh", "crore", "double", "half"), since the R5.2 review also the ordinals ("fourth" to
+"billionth"), the plural and counting words ("fives", "hundreds", "dozen", "twice"), the money
+words ("rupees", "paise") and the code words (`otp`, `pin`, `cvv`, `cvc`, `upi`, `ifsc`, `pan`,
+`aadhaar`, `password`, `passcode`, `passkey`, `pincode`): before it, a learned correction could
+still write or rewrite "fifth", "hundreds", "dozen", "twice" or "passcode" (review finding 5,
+`d81d129`). Tests: `tests/test_r52_i0_profile.py`, `tests/test_r52_v3_score.py`,
+`tests/test_r52_review_corrections.py`. He can switch corrections off in Voice → Your voice.
 
 ### 9.4 The speaker check never approves anything
 
@@ -440,3 +454,4 @@ lists it with a matching SHA-256 and a data media type, never JavaScript
 | v6.5.0 | 27 Nov 2026, 20:05 IST | R18 | R18 "Calls from your laptop": the call desk and the live view as callers; the console-only tools; the calls' limits among the caps; threats T15 widened and T16–T20 added; residual risks 1 widened and 10–12 added (a waiting call card's number in clear in `approvals`, a card's unsealed fields, nothing tried on real devices); new section 8: R3 `calls_place`, the one-use grant, the passkey for new numbers, Telegram can't approve a call, the phone's Approve, the desk's signed socket and link code, the live socket's one-use ticket, the phone's signed commands, the reply guard, limits and quiet hours, the TRAI and DPDP reasoning, the speech keys | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: T11 names the sealed approval numbers; residual risk 10 closed (the approvals seal, commit `9e8b490`); risk 11 adds a waiting card's other arguments; section 8.1 adds the number sealed while the card waits; section 8.6 says the deploy mounts a speech key only when stored | 🛠 Mark XXV |
 | v6.6.0 | 27 Nov 2026, 22:07 IST | R5.2 | R5.2 "Your voice": the voice rules in plain words; JARVIS and the call desk calling the speech kit as a caller row; 15 `SecretStr` fields and the kit key's start-up check; the speaker model pinned like the vision files; threats T21–T25 (a stranger at the kit's door, a look-alike address, a tampered model, a voice used to approve, a correction changing a number); residual risk 9 widened (the feature models), 13–15 added (what the kit's key opens, the speaker check not working yet, nothing run on a laptop); new section 9: the kit's key and pinned transport, the model manager's SHA-256 pins and the git-blob SHA-1 exception (and how `verify` re-checks it), corrections never touching numbers, the speaker check never approving, files from the laptop to the console | 🛠 Mark XXV |
+| v6.6.1 | 28 Nov 2026 | R5.2 | Brought in line with R5.2's combined review (`docs/plans/r5-2-integration/REVIEW.md`): a git-blob pin holds only for the host's raw file at exactly its commit (T23, section 9.2); the corrections' protected words widened to ordinals, counting words and more code words (T25, section 9.3); the deploy never stores a short kit key and goes on without the kit; residual risk 13: the kit README's key-change step is written down after all | 🛠 Mark XXV |

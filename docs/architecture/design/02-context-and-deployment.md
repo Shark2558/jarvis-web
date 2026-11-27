@@ -62,7 +62,7 @@ permanent"; `deploy/cloudrun.sh` step 4). Every collection name starts with `jar
 `updated_at`) and exempts the sealed `blob` fields of 11 collection groups from indexing. No TTL
 policy is set (TTL deletes are billed); JARVIS deletes what expires itself. Every store reaches
 Firestore through the `Docs` port (`src/jarvis/storage/docs.py:Docs`;
-`src/jarvis/storage/firestore_docs.py:FirestoreDocs`). Chapter 04 lists the 126 collections.
+`src/jarvis/storage/firestore_docs.py:FirestoreDocs`). Chapter 04 lists the 131 collections.
 
 ### 2.3 Secret Manager
 

@@ -237,8 +237,8 @@
       <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">API keys and the root key</text>
     </g>
     <g id="node-Store" transform="translate(756, 416)" >
-      <rect width="280" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
-      <rect x="0.5" y="0.5" width="279" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+      <rect width="256" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>
+      <rect x="0.5" y="0.5" width="255" height="75" rx="11.5" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
       <!-- Frameless Icon Glyph -->
       <g transform="translate(16, 25) scale(1.0833333333333333)" fill="none" stroke="#22c55e" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
         <ellipse cx="12" cy="5.5" rx="7" ry="3" />
@@ -248,8 +248,8 @@
       <!-- Label -->
       <text x="54" y="31" class="markdy-svg-text" font-size="13" font-weight="600" letter-spacing="-0.01em" fill="#0f1c2e" dominant-baseline="central">Firestore</text>
       <!-- Tech Badge -->
-      <rect x="54" y="43" width="185.6" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
-      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">asia-south1, 126 collections</text>
+      <rect x="54" y="43" width="167" height="16" rx="4" fill="#0f1c2e" fill-opacity="0.05" stroke="#cbd5e1" stroke-width="0.75"/>
+      <text x="60" y="51" class="markdy-svg-mono" font-size="9.5" font-weight="500" fill="#475569" dominant-baseline="central">asia-south1, one database</text>
     </g>
     <g id="node-Gateway" transform="translate(756, 584)" >
       <rect width="288" height="76" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#markdy-node-shadow)"/>

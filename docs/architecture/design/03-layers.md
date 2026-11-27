@@ -121,7 +121,7 @@ section 3, where each part's files are listed in full.
 | Components | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger, C66 Backups and restore drill |
 | Responsibilities | The `Docs` port and its Firestore and in-memory versions; the append-only audit; the encrypted vault; the DigiLocker folder import; the free-allowance counters; backups and the monthly drill |
 | Ports and interfaces | `src/jarvis/storage/docs.py:Docs` (get, set, create-only, query, transaction); `src/jarvis/tools/audit.py:AuditTrail`; `src/jarvis/keyring.py:Keyring`; `src/jarvis/vault/ports.py:VaultIntake`; `src/jarvis/quota/ledger.py` |
-| Key data | All 126 collections (chapter 04) |
+| Key data | All 131 collections (chapter 04) |
 | Failure modes | A composite index not ready → `IndexNotReady`, callers sort in the app; no token key → `Keyring.from_settings` is None and the vault, notes and things are off (never stored in clear); a counter that can't be read → the paid call is refused; backups not set up → Vitals says "Backups: not set up" |
 
 ### L8 · Response and output

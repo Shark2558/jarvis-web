@@ -99,7 +99,8 @@ Written on 27 Nov 2026 from the code at `83331a1`, the deploy scripts, both CI w
 evals and the plans. The as-built chapters' counts were measured, not copied: `pytest
 --collect-only` (19,530 items), `scripts/skill_coverage.py` (157 tools in 11 skills) and
 `scripts/arch_coverage.py`'s inventory (66 packages and modules, 126 Firestore collections, 31
-outside services, 2 Scheduler jobs). The secret scan of `scripts/arch_coverage.py` covers every
+outside services, 2 Scheduler jobs); a wider search found 5 collections the inventory misses (131
+in all, chapter 04). The secret scan of `scripts/arch_coverage.py` covers every
 file under `docs/architecture/`, these chapters included.
 
 ## Glossary (terms used across the chapters)

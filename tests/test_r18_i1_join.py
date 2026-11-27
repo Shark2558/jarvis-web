@@ -580,3 +580,51 @@ async def test_a_confirmed_settings_change_from_the_console_raises_the_cap(wired
         assert refused.status_code == 422 and refused.json()["error"] == "confirm_raise"
         done = await c.put("/v1/calls/settings?confirm=1", json={"month_cap_inr": 400}, headers=H)
     assert done.status_code == 200 and done.json()["month_cap_inr"] == 400
+
+
+# ---- the dial reaches the phone only after the gate (A2 -> A1 -> D) ------------------------------
+class _Directory:
+    def __init__(self, at: float) -> None:
+        from jarvis.phone.store import Phone
+
+        self.phones = [
+            Phone(
+                id="ph_0123456789ab",
+                model="phone",
+                public_key="04" + "ab" * 64,
+                package="io.github.shark2558.jarvis",
+                fingerprint="cd" * 32,
+                linked_at=at - 86_400,
+                last_seen=at - 60,
+                app_version="18.0.0",
+            )
+        ]
+
+    async def linked(self, uid: str) -> list[Any]:
+        return list(self.phones) if uid == UID else []
+
+
+async def test_a_dial_is_queued_for_the_phone_only_for_the_call_the_gate_let_through() -> None:
+    from jarvis.calls.protocol import CallDial
+    from jarvis.phone.calls import OwnerPhoneLink, PhoneCalls, PhoneCommandRefused
+    from jarvis.phone.calls_wire import CommandSigner
+
+    r = await rig()
+    card, approval = await _approved(r)
+    now = lambda: r.clock().timestamp()  # noqa: E731 - one clock for both sides
+    phone = PhoneCalls(
+        phones=_Directory(now()),
+        signer=CommandSigner.ephemeral(),
+        approvals=PhoneApprovals(r.service.grants),
+        clock=now,
+    )
+    link = OwnerPhoneLink(phone, UID)
+    dial = CallDial(call_id="call_0000000000aa", number=NUMBER, approval_id=approval)
+    with pytest.raises(PhoneCommandRefused) as early:
+        await link.send(dial)  # the gate has not spent the grant for this call yet
+    assert early.value.code == "approval"
+    assert await GrantGate(r.service).before_dial(UID, card, approval, dial.call_id) is None
+    await link.send(dial)  # queued for the phone, signed
+    other = dial.model_copy(update={"call_id": "call_0000000000bb"})
+    with pytest.raises(PhoneCommandRefused):
+        await link.send(other)

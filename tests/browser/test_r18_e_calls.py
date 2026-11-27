@@ -697,6 +697,14 @@ def test_settings_ask_before_raising_a_cap_or_answering_and_keep_three_languages
     pane.get_by_label("Keep calls for this many days").fill("10")
     calls.button("Save", "#clp-settings section:has(h3:text('Records'))").click()
     assert "Keep calls for 10 days?" in calls.text("#clp-settings .mbox")
+    calls.button("Not now", "#clp-settings").click()
+    # I1: the call desk's kit and its link code
+    kit = pane.get_by_role("link", name="Download the call desk")
+    kit.wait_for(state="visible")
+    assert kit.get_attribute("href") == "/v1/calls/desk/kit"
+    calls.button("Link the call desk", "#clp-settings").click()
+    pane.locator(".cl-code", has_text="ABCD-EFGH").wait_for()
+    assert "works once and expires in 10 minutes" in calls.text("#clp-settings")
     calls.clean()
 
 

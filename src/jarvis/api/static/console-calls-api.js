@@ -12,6 +12,7 @@ export const PATHS = Object.freeze({
   records: BASE + '/records', // ?limit=N; /{id} (GET, DELETE); /{id}/keep (PUT {keep}); /{id}/audio; /{id}/booking/undo
   settings: BASE + '/settings', // GET; PUT {changed fields} (?confirm=1 when it raises a cap or switches on)
   languages: BASE + '/languages', // GET; /check (POST {confirm: false} -> the estimate, {confirm: true} -> runs)
+  desk: BASE + '/desk', // I1: POST /code (a link code for install-calldesk.ps1 -Link); GET /kit (the zip), /kit/info
   live: (id) => BASE + '/' + encodeURIComponent(id) + '/live', // the live WebSocket (owner session)
 });
 export const ID = /^[A-Za-z0-9_-]{1,64}$/;

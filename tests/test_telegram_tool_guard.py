@@ -279,7 +279,8 @@ def r13_tools(docs: Any) -> tuple[Any, ...]:
 
 def r18_tools(docs: Any, ring: Keyring) -> tuple[Any, ...]:
     """R18's two call tools as the app registers them (`api/r18_wiring.r18_tools`): the R3
-    `calls_place` card and the answering switch, so the register and the Telegram guards see them."""
+    `calls_place` card and the answering switch, so the register and the Telegram guards see
+    them."""
     from jarvis.calls.approvals import CallsService
     from jarvis.calls.cards import CardBuilder, Estimator
     from jarvis.calls.limits import Limits

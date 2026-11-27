@@ -111,3 +111,6 @@ html[data-surface="night"] .cl-rtitle{font:400 15px/1.3 var(--tech);letter-spaci
 }
 html[data-motion="off"] #p-calls *,html[data-motion="off"] .cl-card *{transition:none!important;animation:none!important}
 @media (prefers-reduced-motion:reduce){#p-calls *,.cl-card *{transition:none!important;animation:none!important}}
+/* I1: the call desk's link code (as the home link's, in the console's own tokens) */
+#p-calls .cl-code{margin:10px 0 0;font:600 22px/1.2 var(--tech);letter-spacing:.2em;color:var(--ink);overflow-wrap:anywhere}
+#p-calls .cl-code:empty{display:none}

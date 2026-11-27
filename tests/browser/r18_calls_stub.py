@@ -441,6 +441,10 @@ class CallsStub:
             return ok(self.settings)
         if path == "/v1/calls/languages":
             return ok(self.languages)
+        if path == "/v1/calls/desk/kit/info":  # I1: the call desk's kit (Settings)
+            return ok({"sha256": "ab" * 32, "size": 4096, "version": "18.0.0"})
+        if path == "/v1/calls/desk/code" and method == "POST":
+            return ok({"code": "ABCD-EFGH", "expires_in_s": 600})
         if path == "/v1/calls/languages/check":
             if (body or {}).get("confirm"):
                 self.languages["check"]["running"] = True

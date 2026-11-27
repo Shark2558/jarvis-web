@@ -5,7 +5,8 @@
 // answering the calls he misses (row 104: off until he switches it on and says yes; after how many rings; which
 // callers), the records (keep the audio; how many days; lowering it asks first: older calls go), and the paid or
 // dearer options (Sarvam, the balanced brain: each only with his yes). Every change is one PUT /v1/calls/settings of
-// the changed fields; one he confirmed carries ?confirm=1. ASCII source; textContent only.
+// the changed fields; one he confirmed carries ?confirm=1. I1: the call desk's kit and its link code (the home
+// kit's way: a plain download link, a code that works once for 10 minutes). ASCII source; textContent only.
 import { MAX_INDIAN, PATHS, api, button, choice, failed, field, input, mk, option, say, toggle, uid, wholeRupees } from './console-calls-api.js';
 import { settings as checkSettings } from './console-calls-shapes.js';
 
@@ -60,7 +61,15 @@ export function mount(host, ctx) {
   const balanced = sw('Languages that need the balanced brain', 'About \u20b92\u20134 a call minute instead of \u20b90.10\u20130.20.', (on) => setPaid('allow_balanced', on));
   const azureEl = mk('p', 'snote');
   const speech = sec('Speech and brain', [azureEl, sarvam.row, balanced.row]);
-  host.append(state, caps, limits, opening, langs, answering, records, speech, ask, err);
+  // the call desk on the laptop (I1): its kit and a link code for install-calldesk.ps1 -Link
+  const kit = mk('a', 'btn sact', 'Download the call desk');
+  kit.href = PATHS.desk + '/kit'; kit.download = 'JARVIS-Call-desk-kit.zip'; kit.hidden = true;
+  const kitNote = mk('p', 'sfine'), code = mk('p', 'cl-code'), codeNote = mk('p', 'snote');
+  codeNote.setAttribute('role', 'status'); codeNote.setAttribute('aria-live', 'polite');
+  const linkBtn = button('Link the call desk', 'sact', () => linkCode());
+  const desk = sec('Call desk on your laptop', [mk('p', 'sfine', 'Install VB-CABLE (free), extract the kit and run install-calldesk.ps1, then -Link with a code from here.'),
+    kitNote, row(kit, linkBtn), code, codeNote]);
+  host.append(state, caps, limits, opening, langs, answering, records, speech, desk, ask, err);
 
   function paint() {
     const d = S.data;
@@ -161,7 +170,29 @@ export function mount(host, ctx) {
     confirmFirst('Keep calls for ' + n + ' days?', ['Calls older than ' + n + ' days (except the ones you kept) are deleted, with their audio. This can\u2019t be undone.'],
       'Keep ' + n + ' days', () => put({ retention_days: n }, 'Calls are kept ' + n + ' days.', true), keepSave);
   }
+  async function kitInfo() {
+    try {
+      const r = await api(PATHS.desk + '/kit/info');
+      const v = r && typeof r.version === 'string' ? r.version.slice(0, 20) : '';
+      kit.hidden = false; kitNote.textContent = v ? 'Call desk ' + v + '.' : '';
+    } catch (e) {
+      kit.hidden = true;
+      kitNote.textContent = e && e.status === 501 ? 'The kit needs JARVIS\u2019s https address (JARVIS_PUBLIC_BASE_URL) on the server.' : failed(e);
+    }
+  }
+  async function linkCode() {
+    linkBtn.disabled = true; code.textContent = ''; say(codeNote, '');
+    try {
+      const r = await api(PATHS.desk + '/code', { body: {} });
+      const c = r && typeof r.code === 'string' && /^[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(r.code) ? r.code : '';
+      if (!c) throw new Error('JARVIS didn\u2019t give a code. Please try again.');
+      code.textContent = c;
+      say(codeNote, 'Type this code into install-calldesk.ps1 -Link on your laptop. It works once and expires in 10 minutes.');
+    } catch (e) { say(codeNote, failed(e), 'bad'); }
+    linkBtn.disabled = false;
+  }
   async function load() {
+    if (kit.hidden && !kitNote.textContent) kitInfo();
     if (S.busy) return;
     S.busy = true;
     if (!S.data) say(state, 'Loading the settings\u2026');

@@ -126,6 +126,8 @@ NOT_IN_PAGE = {
     # R5.2 V3: Voice -> Your voice and the voice session, brought by the R7 loader
     "console-voice-session.js": ("console-r7.js", "import('./console-voice-session.js')"),
     "console-voice-session.css": ("console-r7.js", "'/static/console-voice-session.css'"),
+    # R8 I0 (docs/plans/r8-vision.md S3): pose v2's and hands' bodies, imported by the engine
+    "console-vision-r8.js": ("console-vision.js", "import('./console-vision-r8.js')"),
 }
 # R6.4: linked from the full book's page (book-read.html), served by api/book_read.READ_ASSETS
 ON_READ_PAGE = {"console-book-read.js", "console-book-chapter.js"}

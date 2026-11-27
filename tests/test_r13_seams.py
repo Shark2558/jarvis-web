@@ -485,6 +485,7 @@ def test_vision_assets_know_the_wardrobe_release() -> None:
 # holds it to the scan module's rules, D12)
 PANELS = ("console-camera-panel.js", "console-wardrobe-scan.js", "console-tryon-photo.js")
 ENGINE = ("console-vision.js", "console-camera.js")  # the port and the camera's own door
+ENGINE += ("console-vision-r8.js", "console-vision-check.js")  # R8: A's task bodies, setup test
 # the drawing modules that use canvas APIs on their OWN canvases (never a camera frame); R13.1's
 # figure engine and its textures (B) too, held to their own rules in tests/test_r131_seams.py
 DRAWING = ("console-fx.js", "console-3d.js", "console-r111-files.js")

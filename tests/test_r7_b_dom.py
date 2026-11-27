@@ -133,6 +133,7 @@ def test_another_tab_counts_only_through_the_browsers_own_storage_event() -> Non
 
 def test_a_use_case_receives_frozen_plain_results_only() -> None:
     out = run_dom("engine", probe={"n": 1})
+    assert out["told"] == 0  # R8 I0: run() tells no use case; a live look that names it does
     assert [g["keys"] for g in out["got"]] == [
         ["at", "data", "device", "ms", "ok", "quality", "task", "v"]
     ] * 2
@@ -158,16 +159,17 @@ def test_an_answer_outside_its_schema_is_dropped() -> None:
     assert out["got"][0]["r"]["data"] == {}
 
 
-def test_the_engine_lists_the_nine_tasks() -> None:
-    # R7's five, and R13 Part D's four wardrobe tasks, photo-only (INTEGRATION-D.md)
+def test_the_engine_lists_the_ten_tasks() -> None:
+    # R7's five, R13 Part D's four wardrobe tasks, photo-only (INTEGRATION-D.md), R8's hands
     tasks = {t["id"]: t for t in run_dom("engine", probe={"n": 1})["tasks"]}
-    assert set(tasks) - {"probe"} == {"text", "code", "objects", "pose", "quality"} | {
+    assert set(tasks) - {"probe"} == {"text", "code", "objects", "pose", "quality", "hands"} | {
         "embed",
         "colour",
         "person",
         "face",
     }
-    assert {tasks[t]["input"] for t in ("text", "code", "objects", "pose", "quality")} == {"both"}
+    both = ("text", "code", "objects", "pose", "quality", "hands")
+    assert {tasks[t]["input"] for t in both} == {"both"}
     assert {tasks[t]["input"] for t in ("embed", "colour", "person", "face")} == {"photo"}
 
 

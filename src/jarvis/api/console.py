@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 
 from jarvis.api.auth import session_email
 from jarvis.api.console_calls_assets import CALLS_ASSETS
+from jarvis.api.console_r8_assets import R8_ASSETS
 from jarvis.config import Settings
 from jarvis.logging import get_logger
 
@@ -157,16 +158,14 @@ APP_ASSETS: dict[str, str] = {
     "console-r7-send.js": _JS,  # I0: the one door that sends a picture (Ask, Vault, Attach)
     "console-vision.js": _JS,  # I0 core, B tasks: the vision engine's one port (D13)
     "console-r7-links.js": _JS,  # A: launch addresses (?do=, ?open=) that open a screen, never act
-    "console-r7-share.js": _JS,  # A: the share tray
-    "console-r7-share.css": "text/css",
+    "console-r7-share.js": _JS, "console-r7-share.css": "text/css",  # A: the share tray
     "console-camera.js": _JS,  # B: the camera's one door and its hard off switch (D11)
     "console-camera-panel.js": _JS,  # B: the Camera panel (Look, Results, Cameras)
     "console-camera.css": "text/css",
     "console-r7-phone.js": _JS,  # C: Integrations -> Phone app (link, unlink, sign out everywhere)
     "console-r7-lock.js": _JS,  # C: the app lock's unlock cover
     "console-r7-phone.css": "text/css",
-    "console-r7-sos.js": _JS,  # D: the SOS sheet and Integrations -> Emergency SOS
-    "console-r7-sos.css": "text/css",
+    "console-r7-sos.js": _JS, "console-r7-sos.css": "text/css",  # D: SOS sheet, Emergency SOS
     "console-helpers-watch.js": _JS,  # D: Helpers -> Watch (loaded by console-helpers.js)
     # R13 I0 (docs/plans/r13-wardrobe.md seam 12; stubs at I0, Part D's from then on)
     "console-helpers-wardrobe.js": _JS,  # Helpers -> Wardrobe (loaded by console-helpers.js)
@@ -192,6 +191,7 @@ APP_ASSETS: dict[str, str] = {
     "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS, **CALLS_ASSETS,  # + R18 E's
     "console-voice-session.js": _JS, "console-voiceprint.js": _JS,  # R5.2 V3, V5 (rows 81, 84)
     "console-voiceprint-math.js": _JS, "console-voiceprint-panel.js": _JS,  # R5.2 V5
+    **R8_ASSETS,  # R8 I0 (seam S18): every console file R8 and R8.1 add
 }
 
 # Self-hosted OFL fonts (licences beside them).

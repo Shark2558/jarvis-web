@@ -39,8 +39,10 @@ CAMERA, VISION, PANEL, CSS = (
     "console-camera.css",
 )
 # I0's core was 9e5ae773...82c6; v7.0.2 changed two functions (register is sealed, stream
-# reports its errors): INTEGRATION-B.md, "Review follow-ups"
-I0_CORE_SHA256 = "f26e439a9c76db84e074bfdec5a4b3f8c95f46376ddf0f0d3f2d6f5b99910860"
+# reports its errors): INTEGRATION-B.md, "Review follow-ups"; R8 I0 (f26e439a...0860 before)
+# added the live driver, tally and reset, results only to named uses, stream's opts.rate:
+# INTEGRATION-B.md section 3, R8's contract lines
+I0_CORE_SHA256 = "a0a9e7f9de8cf472fa904458e8fda5f43a3546fa0bb5444ac9d91573e537ddd3"
 PART_B = "\n// ==== R7 Part B"
 
 
@@ -209,12 +211,12 @@ def test_the_guard_passes_ordinary_use_case_code(fine: str) -> None:
     assert use_case_problems(CLEAN_USE_CASE + "\n" + fine) == [], fine
 
 
-NINE = ["text", "code", "objects", "pose", "quality", "embed", "colour", "person", "face"]
+TEN = ["text", "code", "objects", "pose", "quality", "embed", "colour", "person", "face", "hands"]
 
 
-def test_the_engine_is_sealed_after_its_nine_tasks() -> None:
+def test_the_engine_is_sealed_after_its_ten_tasks() -> None:
     out = run_dom("sealed")
-    assert out["before"] == NINE  # R7's five, then R13's four (D8), then the seal
+    assert out["before"] == TEN  # R7's five, R13's four (D8), R8's hands (pose is v2), the seal
     assert out["added"] is False and out["after"] == out["before"]
 
 
@@ -248,7 +250,7 @@ def test_the_tasks_load_only_jarvis_own_files() -> None:
     assert f"POSE_MODEL = '{assets.POSE_MODEL}'" in tasks
     assert f"OBJECT_MODEL = '{assets.OBJECT_MODEL}'" in tasks
     for fetched in re.findall(r"fetch\(([^,)]+)", tasks):
-        assert fetched.startswith(("BASE + ", "BASE13 + ")), fetched  # only its own model file
+        assert fetched.startswith(("BASE + ", "BASE13 + ", "BASE8 + ")), fetched  # its own models
 
 
 def test_the_wardrobe_tasks_load_only_their_own_release() -> None:
@@ -283,8 +285,11 @@ def test_each_task_registers_through_the_port() -> None:
         "[textTask, codeTask, objectsTask, poseTask, qualityTask].forEach((t) => register(t));"
         in js
     )
-    for task in ("text", "code", "objects", "pose", "quality"):
+    for task in ("text", "code", "objects", "quality", "hands"):
         assert f"id: '{task}', v: 1, input: 'both'" in js, task
+    assert "id: 'pose', v: 2, input: 'both'" in js  # R8 I0: pose v2 (one body and `others`)
+    assert "[handsTask].forEach((t) => register(t));" in js
+    assert js.index("[handsTask]") < js.index("sealRegistry();\n")
     assert "[embedTask, colourTask, personTask, faceTask].forEach((t) => register(t));" in js
     for task in ("embed", "colour", "person", "face"):  # R13: run on one photo, never streamed
         assert f"id: '{task}', v: 1, input: 'photo'" in js, task
@@ -365,7 +370,7 @@ def test_a_failed_media_import_is_not_kept_and_a_failed_script_is_removed() -> N
     assert "removeChild(s)" in js and "scripts.delete(src)" in js  # no second <script> on a retry
     # a load says only "not installed" or "could not load": R7's four, R13's three models and the
     # colour task, which waits for its arithmetic (console-vision-r13.js, REVIEW-D-1 split)
-    assert js.count("load: guard(") == 8
+    assert js.count("load: guard(") == 9  # R8 I0: + hands (pose's shell replaced R7's)
     assert "window.addEventListener('pagehide', unload)" in js and "terminate()" in js
 
 

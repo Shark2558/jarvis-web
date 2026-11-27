@@ -4,6 +4,7 @@
 # environment.
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -50,9 +51,16 @@ def test_the_config_never_shows_its_key() -> None:
         KitConfig.from_env({ENV_DIR: "/tmp/kit", "JARVIS_SPEECH_KIT_DEVICE": "tpu"})
 
 
-def test_the_model_list_says_what_was_left_out(kit_env: Path) -> None:
+def test_the_model_list_says_what_was_left_out(
+    kit_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     code, text = run(["models"])
-    assert code == 0 and "whisper-small: left out" in text
+    assert code == 0 and "whisper-small: faster-whisper small" in text and "(MIT)" in text
+    assert "kokoro: left out" in text
+    raw = json.loads(MANIFEST.read_text())  # I1: Whisper is pinned; a list with none installs none
+    empty = kit_env / "none-pinned.json"
+    empty.write_text(json.dumps({**raw, "models": []}))
+    monkeypatch.setenv(ENV_MANIFEST, str(empty))
     code, text = run(["models", "install"])
     assert code == 0 and "nothing to install" in text
     code, text = run(["models", "install", "no-such-engine"])

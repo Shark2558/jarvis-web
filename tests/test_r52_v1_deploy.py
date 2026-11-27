@@ -1,8 +1,8 @@
 # tests/test_r52_v1_deploy.py -- R5.2 V1 (plan D1, 3.1, risk 2): deploy/local-speech/. The gate
 # passes exactly the kit's API with the key (32+ characters, fail closed) on loopback in front of
-# the server; Funnel on 10000 (the offline brain keeps 8443; 443 when 10000 is taken), never the server's
-# port; the installer installs only hash-pinned wheels with licences written beside them and no
-# GPL package; the manifest pins or leaves out every slot; the README in plain words.
+# the server; Funnel on 10000 (the offline brain keeps 8443; 443 when 10000 is taken), never
+# the server's port; the installer installs only hash-pinned wheels with licences written beside
+# them and no GPL package; the manifest pins or leaves out every slot; the README in plain words.
 # start-kit.sh is RUN here against stub caddy / tailscale / python programs.
 from __future__ import annotations
 
@@ -190,14 +190,50 @@ HASH_ROW = (
 )
 
 
-def test_english_hearing_waits_only_for_the_hashes_hugging_face_does_not_publish() -> None:
-    by_slot = {m.slot: m for m in load_manifest(KIT / "models.json").left_out}
+# I1 (the Workshop's decision): the three text files are pinned by their git blob id, read twice
+# from the API tree at the revision (`oid`); README keeps them
+WHISPER_BLOBS = {
+    "whisper-small": {
+        "config.json": ("e5047537059bd8f182d9ca64c470201585015187", 2370),
+        "tokenizer.json": ("7818adb6de9fa3064d3ff81226fdd675be1f6344", 2203239),
+        "vocabulary.txt": ("c9074644d9d1205686f16d411564729461324b75", 459861),
+    },
+    "whisper-medium": {
+        "config.json": ("242aa06a480a7b5509375c645097e87af5136774", 2257),
+        "tokenizer.json": ("7818adb6de9fa3064d3ff81226fdd675be1f6344", 2203239),
+        "vocabulary.txt": ("c9074644d9d1205686f16d411564729461324b75", 459861),
+    },
+}
+BLOB_ROW = r"^\| `(whisper-[a-z]+)` \| `([a-z.]+)` \| `([0-9a-f]{40})` \| ([0-9,]+) \|"
+
+
+def test_english_hearing_is_pinned_at_its_commit_weights_by_sha256_text_by_blob_id() -> None:
+    manifest = load_manifest(KIT / "models.json")
     for slot in WHISPER:
-        entry = by_slot[slot]
-        assert entry.licence == "MIT", slot
+        entry = manifest.entry(slot)
+        assert entry is not None and entry.licence == "MIT", slot
         assert entry.source == f"https://huggingface.co/Systran/faster-{slot.value}"
-        for words in (*UNHASHED, "SHA-256", "SHA-1"):
-            assert words in entry.why, (slot, words)
+        revision, sha256, size = WHISPER_MODEL_BIN[slot.value]
+        assert entry.revision == revision
+        files = {f.name: f for f in entry.files}
+        assert set(files) == {"model.bin", *UNHASHED}
+        weights = files["model.bin"]
+        assert (weights.sha256, f"{weights.size:,}", weights.git_blob_sha1) == (sha256, size, None)
+        for name, (blob, length) in WHISPER_BLOBS[slot.value].items():
+            assert (files[name].git_blob_sha1, files[name].size, files[name].sha256) == (
+                blob,
+                length,
+                None,
+            )
+        base = f"https://huggingface.co/Systran/faster-{slot.value}/resolve/{revision}/"
+        assert all(f.url == base + f.name for f in entry.files)
+
+
+def test_the_readme_keeps_the_whisper_text_files_blob_ids() -> None:
+    found: dict[str, dict[str, tuple[str, int]]] = {}
+    for slot, name, blob, size in re.findall(BLOB_ROW, README, re.M):
+        found.setdefault(slot, {})[name] = (blob, int(size.replace(",", "")))
+    assert found == WHISPER_BLOBS
 
 
 def test_the_workshops_left_out_engines_keep_their_reason() -> None:
@@ -276,7 +312,8 @@ def test_the_readme_covers_the_setup_and_what_was_left_out_in_plain_words() -> N
         "delete-recordings",
         "What this kit leaves out",
         "GPL-3.0",
-        "No model file is pinned yet",
+        "Only English listening is pinned",
+        "git blob id",
         "encrypted",
     ):
         assert token in text, token
@@ -378,7 +415,8 @@ def test_a_run_makes_a_private_key_and_publishes_only_the_gate(stubs: dict[str, 
     assert (log / "caddy_env").read_text().strip() == f"key={key}"
     assert key not in (log / "caddy_args").read_text() + (log / "server_args").read_text()
     ts = (log / "tailscale").read_text()
-    assert f"funnel --bg --https={p.FUNNEL_PORT} {p.GATE_PORT}" in ts and str(p.SERVER_PORT) not in ts
+    assert f"funnel --bg --https={p.FUNNEL_PORT} {p.GATE_PORT}" in ts
+    assert str(p.SERVER_PORT) not in ts
     assert f"funnel --https={p.FUNNEL_PORT} off" in ts and "reset" not in ts
     assert "8443" not in ts.replace("funnel status", "")  # the offline brain's port is never used
     again = _run(stubs)

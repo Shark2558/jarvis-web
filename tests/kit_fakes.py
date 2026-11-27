@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,8 +20,8 @@ from jarvis.localspeech.protocol import (
     SLOT_KIND,
     ArtifactInfo,
     Device,
-    JobKind,
     EngineSlot,
+    JobKind,
     Kind,
     KitRefused,
     WakeArtifact,

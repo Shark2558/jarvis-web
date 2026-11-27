@@ -1,4 +1,4 @@
-Version v5.2.1 · 27 Nov 2026, 13:40 IST · Release R5.2 · Status: Current (approved under the owner's 27 Nov instruction) · Owner: 🛠 Mark XXV
+Version v5.2.2 · 27 Nov 2026, 19:30 IST · Release R5.2 · Status: Current (approved under the owner's 27 Nov instruction) · Owner: 🛠 Mark XXV
 
 # R5.2 — Your voice: the plan
 
@@ -153,3 +153,4 @@ Then I1 join (`r5-2-i1`), the Build Book pages for the new modules, one combined
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v5.2.1 | 27 Nov 2026, 13:40 IST | R5.2 | First edition: rows 81, 83, 84, 383; the laptop speech kit, the voice session, the two-stage wake word, the on-device speaker check; costs ₹0; evals; decisions D1–D9 approved under the owner's 27 Nov instruction; builder split for six agents; overlaps with R18 | 🛠 Mark XXV |
+| v5.2.2 | 27 Nov 2026, 19:30 IST | R5.2 | I1 join (`docs/plans/r5-2-integration/I1-NOTES.md`). **Deviation from the build brief's rule 9** (the Workshop's decision): the kit's model manager accepts, only for a small plain-git text file (JSON or TXT, at most 5 MB) at a pinned full commit, its git blob id instead of a SHA-256 (checked after download, its SHA-256 then recorded); weights always need a SHA-256. faster-whisper small and medium are pinned that way. Also: the kit's Funnel port is 10000 (the offline brain keeps 8443); D2/D3 as built: the GPL phonemiser, piper-tts and the PyTorch Indian engines are left out (empty slots: Google's voice, Indian languages on the cloud options R18's check passes) | 🛠 Mark XXV |

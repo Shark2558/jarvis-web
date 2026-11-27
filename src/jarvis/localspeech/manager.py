@@ -6,16 +6,28 @@ The manifest (`deploy/local-speech/models.json`) pins every model file the kit m
 https address at a fixed revision, its size and its SHA-256, and the model's licence, which must
 be one of `protocol.PERMISSIVE_LICENCES`. Nothing else is ever downloaded. A file is written to a
 temporary name while its hash is computed and only renamed into place when size and hash match;
-a mismatch deletes it and installs nothing. Beside each model the manager writes `LICENCE.txt`
-(its licence, source and revision, and the licence file itself when the source ships one), and
-`installed.json` lists what this kit installed. Models the builders could not pin from a primary
-source are listed under `left_out` with the reason, and are never installed.
+a mismatch deletes it and installs nothing.
+
+The one exception to "a SHA-256 per file" (the Workshop's decision at the R5.2 join, a recorded
+deviation from the build brief's rule 9): a small text file that the model's host keeps in plain
+git (JSON or TXT, at most `BLOB_PIN_MAX` bytes), at a revision that is a full commit id, may be
+pinned by its git blob id (`git_blob_sha1`, the SHA-1 Hugging Face publishes) instead. It is
+checked after download as git computes it (SHA-1 of "blob <size>", a zero byte, then the data)
+and refused on a mismatch; its SHA-256 is then recorded in `installed.json` and `LICENCE.txt`.
+The commit pins the content and a second preimage on SHA-1 is infeasible. Weights (`model.bin`,
+any LFS file) always need a SHA-256: an LFS file's blob id is its pointer's, never its data's.
+
+Beside each model the manager writes `LICENCE.txt` (its licence, source and revision, and the
+licence file itself when the source ships one), and `installed.json` lists what this kit
+installed. Models the builders could not pin from a primary source are listed under `left_out`
+with the reason, and are never installed.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import shutil
 import urllib.request
 from collections.abc import Callable, Iterable
@@ -39,6 +51,10 @@ CHUNK: Final = 1024 * 1024
 TIMEOUT_S: Final = 60
 ALLOWED_HOSTS: Final = frozenset({"huggingface.co", "github.com"})
 LICENCE_NAME: Final = "LICENCE.txt"
+GIT_BLOB: Final = r"^[0-9a-f]{40}$"
+COMMIT: Final = re.compile(r"[0-9a-f]{40}")
+BLOB_PIN_SUFFIXES: Final = (".json", ".txt")  # small text files kept in plain git
+BLOB_PIN_MAX: Final = 5_000_000
 USER_AGENT: Final = f"jarvis-speech-kit/{KIT_VERSION_NOW}"
 
 
@@ -66,13 +82,25 @@ class _Strict(BaseModel):
 class ModelFile(_Strict):
     name: str = Field(pattern=FILE_NAME)
     url: str = Field(max_length=500)
-    sha256: str = Field(pattern=SHA256)
+    sha256: str | None = Field(default=None, pattern=SHA256)
+    git_blob_sha1: str | None = Field(default=None, pattern=GIT_BLOB)  # small text files only
     size: int = Field(gt=0, le=MAX_FILE)
 
     @model_validator(mode="after")
-    def _url(self) -> Self:
+    def _checks(self) -> Self:
         _https(self.url)
+        if (self.sha256 is None) == (self.git_blob_sha1 is None):
+            raise ValueError("a file is pinned by its SHA-256, or a small text file by its blob id")
+        if self.git_blob_sha1 is not None and (
+            not self.name.endswith(BLOB_PIN_SUFFIXES) or self.size > BLOB_PIN_MAX
+        ):
+            raise ValueError("only a JSON or TXT file of at most 5 MB may be pinned by its blob id")
         return self
+
+    def matches(self, sha256: str, blob_sha1: str) -> bool:
+        if self.sha256 is not None:
+            return sha256 == self.sha256
+        return blob_sha1 == self.git_blob_sha1
 
 
 class ModelEntry(_Strict):
@@ -93,6 +121,11 @@ class ModelEntry(_Strict):
             raise ValueError("file names are unique and never LICENCE.txt")
         if self.licence_file is not None and self.licence_file not in names:
             raise ValueError("the licence file is one of the pinned files")
+        for f in self.files:
+            if f.git_blob_sha1 is None:
+                continue
+            if not COMMIT.fullmatch(self.revision) or f"/{self.revision}/" not in f.url:
+                raise ValueError("a blob id pins a file only at a full commit, in its address")
         return self
 
 
@@ -188,6 +221,21 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def git_blob(size: int) -> hashlib._Hash:
+    """git's blob id of `size` bytes, to be fed the data: SHA-1 of "blob <size>", NUL, data."""
+    return hashlib.sha1(b"blob %d\0" % size)
+
+
+def digests_of(path: Path) -> tuple[str, str]:
+    """(SHA-256, git blob id) of a file, in one read."""
+    sha, blob = hashlib.sha256(), git_blob(path.stat().st_size)
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(CHUNK), b""):
+            sha.update(block)
+            blob.update(block)
+    return sha.hexdigest(), blob.hexdigest()
+
+
 class ModelManager:
     def __init__(
         self,
@@ -231,24 +279,31 @@ class ModelManager:
         if entry is None:
             raise ModelError("That engine has no pinned model in this kit.")
         folder = private_dir(self.models_dir / slot.value)
+        hashes: dict[str, str] = {}  # name -> SHA-256 (computed for a blob-pinned file)
         for f in entry.files:
             target = folder / f.name
-            if (
-                target.is_file()
-                and target.stat().st_size == f.size
-                and sha256_of(target) == f.sha256
-            ):
+            have = self._matching(f, target)
+            if have is not None:
                 progress(f"{f.name}: already here, hash OK")
+                hashes[f.name] = have
                 continue
             progress(f"{f.name}: downloading {f.size / 1e6:,.1f} MB")
-            self._download(f, target)
-        self._write_licence(entry, folder)
-        self._record(entry)
+            hashes[f.name] = self._download(f, target)
+        self._write_licence(entry, folder, hashes)
+        self._record(entry, hashes)
         return folder
 
-    def _download(self, f: ModelFile, target: Path) -> None:
+    @staticmethod
+    def _matching(f: ModelFile, target: Path) -> str | None:
+        """The file's SHA-256 when it is there and matches its pin, else None."""
+        if not target.is_file() or target.stat().st_size != f.size:
+            return None
+        sha, blob = digests_of(target)
+        return sha if f.matches(sha, blob) else None
+
+    def _download(self, f: ModelFile, target: Path) -> str:
         part = target.with_name(f"{target.name}.part")
-        digest = hashlib.sha256()
+        digest, blob = hashlib.sha256(), git_blob(f.size)
         count = 0
         try:
             with self._open(f.url) as response, part.open("wb") as out:
@@ -257,31 +312,32 @@ class ModelManager:
                     if count > f.size:
                         raise ModelError(f"{f.name} is bigger than pinned; nothing was installed.")
                     digest.update(block)
+                    blob.update(block)
                     out.write(block)
-            if count != f.size or digest.hexdigest() != f.sha256:
-                raise ModelError(
-                    f"{f.name} did not match its pinned SHA-256; nothing was installed."
-                )
+            if count != f.size or not f.matches(digest.hexdigest(), blob.hexdigest()):
+                kind = "SHA-256" if f.sha256 is not None else "git blob id"
+                raise ModelError(f"{f.name} did not match its pinned {kind}; nothing installed.")
         except BaseException:
             part.unlink(missing_ok=True)
             raise
         part.replace(target)
+        return digest.hexdigest()
 
-    def _write_licence(self, entry: ModelEntry, folder: Path) -> None:
+    def _write_licence(self, entry: ModelEntry, folder: Path, hashes: dict[str, str]) -> None:
         lines = [
             f"Model: {entry.model} (JARVIS speech kit slot {entry.slot.value})",
             f"Licence: {entry.licence} (SPDX)",
             f"Source: {entry.source}",
             f"Revision: {entry.revision}",
             "Files (SHA-256):",
-            *(f"  {f.sha256}  {f.name}" for f in entry.files),
+            *(f"  {hashes[f.name]}  {f.name}" for f in entry.files),
         ]
         if entry.licence_file is not None:
             text = (folder / entry.licence_file).read_text(encoding="utf-8", errors="replace")
             lines += ["", f"--- {entry.licence_file} ---", text]
         write_private(folder / LICENCE_NAME, ("\n".join(lines) + "\n").encode("utf-8"))
 
-    def _record(self, entry: ModelEntry) -> None:
+    def _record(self, entry: ModelEntry, hashes: dict[str, str]) -> None:
         current = [m for m in self.installed().models if m.slot is not entry.slot]
         current.append(
             InstalledModel(
@@ -291,7 +347,8 @@ class ModelManager:
                 licence=entry.licence,
                 source=entry.source,
                 files=tuple(
-                    InstalledFile(name=f.name, sha256=f.sha256, size=f.size) for f in entry.files
+                    InstalledFile(name=f.name, sha256=hashes[f.name], size=f.size)
+                    for f in entry.files
                 ),
                 installed_at=self._now(),
             )
@@ -311,7 +368,7 @@ class ModelManager:
             bad = [
                 f.name
                 for f in entry.files
-                if sha256_of(self.models_dir / slot.value / f.name) != f.sha256
+                if self._matching(f, self.models_dir / slot.value / f.name) is None
             ]
             found[slot] = f"hash mismatch: {', '.join(bad)}" if bad else None
         return found
@@ -349,6 +406,8 @@ __all__ = [
     "ModelError",
     "ModelFile",
     "ModelManager",
+    "digests_of",
+    "git_blob",
     "https_open",
     "load_manifest",
     "manifest_text",

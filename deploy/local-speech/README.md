@@ -24,12 +24,13 @@ JARVIS uses Google as today, then the browser: you see the same messages as befo
 
 This first version of the kit (1.0.0) is honest about what it could check when it was built:
 
-- **No model file is pinned yet.** The kit only ever downloads a file whose SHA-256 is written in
-  `models.json`. For the two English listening models, Hugging Face publishes the SHA-256 of the
-  big `model.bin` but not of their three small files (`config.json`, `tokenizer.json`,
-  `vocabulary.txt`), so they wait. Until they are pinned, `models install` says "nothing to
-  install" and every engine says "Not installed". The table below, and `models.json` under
-  `left_out`, give the reason for each.
+- **Only English listening is pinned.** The kit only ever downloads a file pinned in
+  `models.json` at a fixed commit: faster-whisper small and medium (MIT). Each `model.bin` is
+  checked by its SHA-256; their three small text files (`config.json`, `tokenizer.json`,
+  `vocabulary.txt`), which Hugging Face keeps in plain git and publishes only as git blob ids,
+  are checked by that id after download and their SHA-256 is then recorded in what the kit
+  installed (see "For maintainers"). Every other engine says "Not installed"; the table below,
+  and `models.json` under `left_out`, give the reason for each.
 - **The English voice (Kokoro) and Piper are not installed.** Kokoro's helper that turns words into
   sounds (espeak-ng, through `phonemizer`) and today's Piper are GPL-3.0, so they are left out of
   the pinned packages. JARVIS keeps using Google's voice.
@@ -40,8 +41,8 @@ This first version of the kit (1.0.0) is honest about what it could check when i
 
 | Engine slot | Model | Licence | In kit 1.0.0 | Why |
 |---|---|---|---|---|
-| `whisper-small` | faster-whisper small, English listening (float16 weights, run as int8) | MIT | Left out | Its three small files have no published SHA-256 |
-| `whisper-medium` | faster-whisper medium, if the voice session shows it is better | MIT | Left out | The same |
+| `whisper-small` | faster-whisper small, English listening (float16 weights, run as int8) | MIT | Pinned | model.bin by SHA-256, its three text files by git blob id |
+| `whisper-medium` | faster-whisper medium, if the voice session shows it is better | MIT | Pinned | The same |
 | `kokoro` | Kokoro-82M, English voice | Not checked | Left out | Its phonemiser is GPL-3.0 (Workshop decision) |
 | `piper` | Piper voices, the light fallback voice | Not checked | Left out | piper-tts is GPL-3.0 (Workshop decision) |
 | `indic-conformer` | IndicConformer 600M, Indian-language listening | Not checked | Left out | Needs PyTorch (Workshop decision) |
@@ -128,7 +129,7 @@ Run them in PowerShell from `C:\JARVIS\deploy\local-speech`, with
 | "Port 11436 is already in use" | A kit is already running: close that window first. |
 | "Funnel's port 10000 already serves something else" | Use `-HttpsPort 443` (see above). |
 | "Funnel did not start" | Tailscale admin console -> allow Funnel for this laptop; try again in 10 minutes. |
-| The self-test says an engine is "Not installed" | Expected in kit 1.0.0 until its model is pinned (see above). |
+| The self-test says an engine is "Not installed" | Run install-kit.ps1 again for the Whisper slots; the others are left out in kit 1.0.0 (see above). |
 | JARVIS says "The laptop speech kit refused JARVIS's key" | Give JARVIS the key printed by start-kit.ps1 again. |
 
 ## For maintainers: pinning a model
@@ -138,6 +139,13 @@ A model goes into `models.json` under `models` only with: its slot, a short mode
 `jarvis.localspeech.protocol.PERMISSIVE_LICENCES`), and every file with its https address **at
 that revision**, its size and its SHA-256 taken from the source itself. Remove it from
 `left_out` in the same change. `tests/test_r52_v1_deploy.py` checks the manifest.
+
+One exception (the Workshop's decision at the R5.2 join): a small text file the host keeps in
+plain git (JSON or TXT, at most 5 MB), at a revision that is a full 40-character commit id that
+appears in its address, may be pinned by its **git blob id** (`git_blob_sha1`, the `oid` in
+Hugging Face's API tree) instead of a SHA-256. The kit checks `sha1("blob <size>\0" + data)`
+after download, refuses a mismatch, and records the file's SHA-256 in `installed.json`. Weights
+(`model.bin`, any LFS file) always need a SHA-256.
 
 **Checked for the two Whisper slots (27 Nov 2026, nothing downloaded).** Each `model.bin` SHA-256
 below was read from two Hugging Face pages that agree, and their sizes agree too: the API tree
@@ -152,10 +160,17 @@ of `openai/whisper-small` and `openai/whisper-medium`, which Hugging Face lists 
 | `whisper-small` | `536b0662742c02347bc0e980a01041f333bce120` | `model.bin` | `3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671` | 483,546,902 |
 | `whisper-medium` | `08e178d48790749d25932bbc082711ddcfdfbc4f` | `model.bin` | `9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae` | 1,527,906,378 |
 
-Still missing for both: `config.json` (2,370 and 2,257 bytes), `tokenizer.json` (2,203,239) and
-`vocabulary.txt` (459,861). The Hub keeps them as plain git files, so it publishes only their git
-blob id (SHA-1), and every pinned file needs a SHA-256. Both slots stay in `left_out` until each of
-those files has a SHA-256 from a primary source, or the model manager learns to check git blob ids.
+Their three small files are plain git files on the Hub, pinned by git blob id: read at the I1
+join (27 Nov 2026) from the API tree at each revision (`oid`), twice, with the same answer.
+
+| Engine slot | File | Git blob id | Size (bytes) |
+|---|---|---|---|
+| `whisper-small` | `config.json` | `e5047537059bd8f182d9ca64c470201585015187` | 2,370 |
+| `whisper-small` | `tokenizer.json` | `7818adb6de9fa3064d3ff81226fdd675be1f6344` | 2,203,239 |
+| `whisper-small` | `vocabulary.txt` | `c9074644d9d1205686f16d411564729461324b75` | 459,861 |
+| `whisper-medium` | `config.json` | `242aa06a480a7b5509375c645097e87af5136774` | 2,257 |
+| `whisper-medium` | `tokenizer.json` | `7818adb6de9fa3064d3ff81226fdd675be1f6344` | 2,203,239 |
+| `whisper-medium` | `vocabulary.txt` | `c9074644d9d1205686f16d411564729461324b75` | 459,861 |
 
 ## Not on Windows?
 

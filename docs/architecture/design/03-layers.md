@@ -1,4 +1,4 @@
-Version v6.5.0 · 27 Nov 2026, 19:40 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.0 · 27 Nov 2026, 22:05 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 03 · The eight layers, as built
 
@@ -9,10 +9,10 @@ uses skills (5) through the one tool gateway (6), with data kept in layer 7 and 
 going out through layer 8. This chapter says what each layer holds, how its parts talk to each
 other, what it keeps and what happens when something in it fails.
 
-The package-to-layer map is code, not prose: `src/jarvis/buildbook/gen/layers.py:LAYER_OF` (69
-packages and top-level modules since R18 added `calls` in L5, `calldesk` in L6 and `config_calls`
-in the cross-cutting layer; `python -m jarvis.buildbook.gen --check` fails on one without a
-layer).
+The package-to-layer map is code, not prose: `src/jarvis/buildbook/gen/layers.py:LAYER_OF` (71
+packages and top-level modules: R18 added `calls` in L5, `calldesk` in L6 and `config_calls` in
+the cross-cutting layer; R5.2 added `localspeech` in L6 and `config_voice` in the cross-cutting
+layer; `python -m jarvis.buildbook.gen --check` fails on one without a layer).
 
 **R18 in one paragraph.** Phone calls (built in R18, not yet deployed) are five new parts, the
 guide's cards C74 to C78. Each sits in the layer that does most of its work, and each also
@@ -20,6 +20,14 @@ touches others: C78, the phone app's calls, in L1; C76, call speech and the lang
 C75, the call engine and its hub, in L3; C74, the Calls skill (cards, approvals, limits, records),
 in L5; C77, the call desk on the laptop, in L6. Section 1.1 follows one call through them. Component numbers (C01 …) are the guide's cards in `docs/architecture/JARVIS-Architecture.md`,
 section 3, where each part's files are listed in full.
+
+**R5.2 in one paragraph.** "Your voice" (built in R5.2, not yet deployed) is five more parts, the
+guide's cards C79 to C83. C79, the laptop speech kit, sits in L6 like the other laptop programs.
+The other four are in L2, because they are about hearing and recognising the owner: C80, the
+kit's link and the engine order; C81, the voice profile and the voice session (its screen in L1,
+its profile in L7); C82, his own "Hey Jarvis"; C83, the speaker check in the browser. Section 1.2
+gives the order in which engines are tried. R5.2 adds no tool and no skill: voice is how the owner
+talks to JARVIS, not something JARVIS does for him.
 
 ## 1. A request through the layers
 
@@ -76,6 +84,26 @@ section 3, where each part's files are listed in full.
    (`src/jarvis/calls/join.py:VaultRecords`); a booking goes on his calendar through the gateway;
    the call's ₹ are added to the month once; a Web Push notice tells him.
 
+### 1.2 Which engine listens and speaks (R5.2)
+
+The order is code, not configuration: `src/jarvis/voice/profile.py:listening_order` and
+`src/jarvis/voice/routing.py:EngineRoute`, inside `src/jarvis/voice/service.py`. Each engine is
+tried once.
+
+| What | Order | Notes |
+|---|---|---|
+| Listening in the console, before a voice session | the laptop's Whisper small while the kit is healthy → Google Speech-to-Text (with his words) → the browser's own recognition | the laptop is never gated or metered (₹0); Google keeps its free-allowance gate |
+| Listening in the console, after a scored session | the engine the session chose for his voice → Google → the browser | a laptop engine is used only while the kit is healthy; a broken or slow profile read falls back to the order before a session, remembered for a while |
+| After listening, whichever engine heard | his corrections, whole words only, never a number, money or code word | `src/jarvis/voice/routing.py:corrected`; chapter 05, section 9.3 |
+| JARVIS's voice in the console | the laptop's voice while the kit has a ready one → Google Text-to-Speech → the browser | kit 1.0.0 has no voice (ADR-41), so today it is Google, then the browser, as before R5.2 |
+| The voice session's comparison | Google alone, with his words, never routed to the laptop and never corrected | `VoiceService.transcribe(..., google_only=True)`, called by `src/jarvis/voice/session_api.py` |
+| A call (R18's selection) | the options that passed the language check, free now first: the laptop (R5.2's registration), Google, Azure's free tier, then paid options he allowed | `src/jarvis/api/r52_wiring.py:calls_laptop` passes the kit to R18's `build_speech`; kit 1.0.0 has no Indian-language engine and no voice, so the laptop never passes the check yet |
+| The call desk on the laptop | the kit over loopback, only for languages it both hears and speaks; else cloud speech | `src/jarvis/localspeech/desk.py` |
+
+A kit that is off, asleep, slow, busy with a long job, refusing the key or answering oddly is
+skipped silently and not asked again until its health period (30 s by default) ends
+(`src/jarvis/voice/laptop.py:LaptopVoice`).
+
 ## 2. The layers
 
 ### L1 · User interaction
@@ -84,7 +112,7 @@ section 3, where each part's files are listed in full.
 |---|---|
 | Packages | `api`, `cli`, `telegram`, `mobile`, `phone` |
 | Components | C01 Web console, C02 HTTP API and sign-in, C03 Terminal client, C04 Telegram front door, C62 Phone app and the phone's door, C78 Phone calls on the phone (R18) |
-| Responsibilities | Serve the console and its static modules; the `/v1` API; Google sign-in and the owner allow-list; the bearer token for the CLI and evals; Telegram pairing and chat; the phone's signed door and app lock. R18: the Calls panel (cards, live view, records, languages, settings), the `/v1/calls` routes and the live call socket; the phone app's dial, answer and end on signed commands |
+| Responsibilities | Serve the console and its static modules; the `/v1` API; Google sign-in and the owner allow-list; the bearer token for the CLI and evals; Telegram pairing and chat; the phone's signed door and app lock. R18: the Calls panel (cards, live view, records, languages, settings), the `/v1/calls` routes and the live call socket; the phone app's dial, answer and end on signed commands. R5.2: the Voice panel's "Your voice" and "Speaker check" sections and the session's pop-up (no new tab), the owner-only `/v1/voice/profile` routes (`src/jarvis/api/voice_profile_routes.py`) and the speaker model's file route (`src/jarvis/api/speaker_assets.py`) |
 | Ports and interfaces | HTTP routes (`src/jarvis/api/routes.py` and one router per feature, included by `src/jarvis/api/app.py:_include_routers`); `src/jarvis/mobile/ports.py:MobilePart`, `PhoneRequest`, `PhoneReply` (the phone parts' contract); `src/jarvis/mobile/contract.py` (the signed request's one form); R18: `src/jarvis/calls/ports.py:CallsApi` and `CallsSockets` (what the calls routes call), `src/jarvis/calls/ports.py:PhoneLink` (the engine's way to the phone) |
 | Key data | No data of its own beyond Telegram pairing (`telegram*` collections) and linked phones (`phone_link`, `phone_devices`); the user id is always derived on the server from the sign-in. The phone's call outbox, the events seen and the command key are in memory only |
 | Failure modes | Wrong or missing sign-in → 401; over the rate limit (120 a minute per client by default) → 429; a body over its cap → 413; a phone-door check failing → bare 401/404/429, logged by check name, never audited; a feature part whose setup fails is left out ("setup failed") and the rest still start. R18: calls not wired → 501, switched off → 503; any other failure in a calls route → 503 `unavailable` in plain words, never a bare 500; a dial the phone could not place ends the call at once |
@@ -95,11 +123,11 @@ section 3, where each part's files are listed in full.
 | Aspect | As built |
 |---|---|
 | Packages | `voice`, `documents`, `faces`, `facegroups`, `understand`, `vision` |
-| Components | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent, C63 Camera and vision engine; C61's "understood as" step (`understand`); C76 Call speech and the language check (R18, inside the `calls` package) |
-| Responsibilities | Speech in and out (Google Speech-to-Text v1, Text-to-Speech); the wake word in the browser; text out of attached files in a killable child process; a registry of people who consented to be recognised; on-device vision results (never a frame). R18: a call's hearing, voice and language detection over REST (Google, Azure F0, Bhashini, Sarvam), and the language check that every call language must pass |
-| Ports and interfaces | `POST /v1/voice/transcribe`, `POST /v1/voice/speak`, `GET /v1/voice` and `PUT /v1/voice/settings` (`src/jarvis/api/voice.py`); `src/jarvis/documents/isolation.py:Sandbox` (CPU, memory 200 MiB and time caps); `src/jarvis/vision/results.py:Result` (the one result contract the browser and a home camera share); `src/jarvis/home/ports.py:FaceMatch` (what the laptop reports); R18: `src/jarvis/calls/ports.py:Hearing`, `Voice` and `LanguageDetector` (16 kHz mono PCM16, BCP-47 codes such as `ml-IN`) |
-| Key data | `voice_settings`, `attachments` (text chunks; cleaned pictures under it), `faces` (sealed), `face_groups` (ids and counts), `vision_results` (sealed); R18: `call_lang_check`, `call_check_sentences` (and `call_lines`, `call_line_audio`, which nothing writes in v18.0.0) |
-| Failure modes | Google speech off or unreachable → the browser's own voice and recognition; a file too big, unreadable or of the wrong kind → refused in plain words; the extractor busy → queues up to 50 s, then "busy"; no microphone permission → text chat still works; a vision result outside its schema → dropped. R18: a language with no passing option is not offered; a checked language never falls back to an option it did not pass (its stand-in refuses, a failed line); a vendor's failure is one plain sentence, never the vendor's text; no network or Hugging Face refusing → that language stays unchecked |
+| Components | C05 Voice service, C06 Voice loop in the console, C07 Attached documents, C08 Faces with consent, C63 Camera and vision engine; C61's "understood as" step (`understand`); C76 Call speech and the language check (R18, inside the `calls` package); R5.2: C80 The kit's link and engine routing, C81 Your voice: profile and voice session, C82 Your own wake word, C83 Speaker check (all in `voice`, the console and, for C82's training, the kit) |
+| Responsibilities | Speech in and out (Google Speech-to-Text v1, Text-to-Speech); the wake word in the browser; text out of attached files in a killable child process; a registry of people who consented to be recognised; on-device vision results (never a frame). R18: a call's hearing, voice and language detection over REST (Google, Azure F0, Bhashini, Sarvam), and the language check that every call language must pass. R5.2: the engine order (section 1.2); the 20-minute voice session that ranks the engines on his own voice and learns his corrections and words; the voice profile; training his own wake word on the laptop and running it in the browser; the speaker check in the browser, for barge-in only |
+| Ports and interfaces | `POST /v1/voice/transcribe`, `POST /v1/voice/speak`, `GET /v1/voice` and `PUT /v1/voice/settings` (`src/jarvis/api/voice.py`); `src/jarvis/documents/isolation.py:Sandbox` (CPU, memory 200 MiB and time caps); `src/jarvis/vision/results.py:Result` (the one result contract the browser and a home camera share); `src/jarvis/home/ports.py:FaceMatch` (what the laptop reports); R18: `src/jarvis/calls/ports.py:Hearing`, `Voice` and `LanguageDetector` (16 kHz mono PCM16, BCP-47 codes such as `ml-IN`); R5.2: `src/jarvis/voice/profile_ports.py:ProfileStore`, `ProfileApi`, `LaptopApi`, `WakewordApi` (what the profile routes call), `src/jarvis/voice/laptop.py:LaptopSTT`, `LaptopTTS` (the kit behind the existing voice ports), `src/jarvis/voice/calls_bridge.py:LaptopHearing`, `LaptopCallVoice` (the kit behind R18's ports), `src/jarvis/localspeech/protocol.py:KitClient` (the kit's API) |
+| Key data | `voice_settings`, `attachments` (text chunks; cleaned pictures under it), `faces` (sealed), `face_groups` (ids and counts), `vision_results` (sealed); R18: `call_lang_check`, `call_check_sentences` (and `call_lines`, `call_line_audio`, which nothing writes in v18.0.0); R5.2: `voice_profile`, `voice_session` (no audio; chapter 04, section 8) |
+| Failure modes | Google speech off or unreachable → the browser's own voice and recognition; a file too big, unreadable or of the wrong kind → refused in plain words; the extractor busy → queues up to 50 s, then "busy"; no microphone permission → text chat still works; a vision result outside its schema → dropped. R18: a language with no passing option is not offered; a checked language never falls back to an option it did not pass (its stand-in refuses, a failed line); a vendor's failure is one plain sentence, never the vendor's text; no network or Hugging Face refusing → that language stays unchecked. R5.2: the kit off or slow → Google, then the browser, silently; no kit → the voice session can't start, in plain words; `voice_profile_enabled` off → the profile routes answer 503; a wake-word file whose hash, licence or format doesn't check out → today's wake word, unchanged; no speaker model (today) → barge-in as before |
 
 ### L3 · Context and orchestration
 
@@ -138,12 +166,12 @@ section 3, where each part's files are listed in full.
 
 | Aspect | As built |
 |---|---|
-| Packages | `tools`, `integrations`, `contacts`, `drive`, `places`, `media`, `photos`, `home`, `homebridge`, `camera`, `calldesk` (R18) |
-| Components | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail, C32 To-dos, C33 Contacts, C34 Drive, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history, C77 Call desk on the laptop (R18) |
-| Responsibilities | The one gateway every tool call passes (policy, cards, passkeys, taint, audit); direct REST adapters to each Google API (no SDK, no MCP); the signed link to the laptop; the bridge program that runs on the laptop. R18: the call desk, a Windows program on the laptop that carries a call's sound between Phone Link and JARVIS (chapter 02, section 2.13), and its kit, zipped by the server on request |
-| Ports and interfaces | `src/jarvis/tools/gateway.py:Gateway`; `src/jarvis/tools/registry.py:ToolRegistry`; `src/jarvis/tools/policy.py:Policy`, `OwnerRules`; `src/jarvis/tools/observers.py:GatewayObserver`; `src/jarvis/tools/background.py` (the helpers' background reads, through the gateway); `src/jarvis/integrations/google.py` (OAuth tokens, sealed); `src/jarvis/home/client.py` and `src/jarvis/home/ports.py` (the bridge's wire models) |
-| Key data | `audit` and `meta/audit_head`, `tokens` (sealed), `drive_roots`, `maps_places` (sealed), `home*` (sealed except the arm state), `connectors_github` (sealed); R18: `call_desk` (the linked desk, its seed sealed), `call_desk_codes` (a pending link code as a hash) |
-| Failure modes | The owner's rules unreadable, no owner in scope, or a look-up failing → nothing proposed, nothing run (fail closed); a tool that raises → a fixed sentence and a redacted detail, marked "may have done part of it"; Google not linked or the token key missing → the Google tools stay off; the laptop asleep → home tools say so, and the watchdog alerts once within about 6–11 minutes. R18: any desk check failing → the call card says which part is missing and nothing is dialled; a desk socket that doesn't verify → closed 4401 before it opens; the laptop asleep → no calls |
+| Packages | `tools`, `integrations`, `contacts`, `drive`, `places`, `media`, `photos`, `home`, `homebridge`, `camera`, `calldesk` (R18), `localspeech` (R5.2) |
+| Components | C28 Tool gateway and audit, C29 Google account link, C30 Calendar and reminders, C31 Gmail, C32 To-dos, C33 Contacts, C34 Drive, C35 Maps, C36 YouTube and Media, C37 Photos picker and GitHub, C38 Home link, C39 Home bridge, C40 Camera, alarm and history, C77 Call desk on the laptop (R18), C79 Laptop speech kit (R5.2) |
+| Responsibilities | The one gateway every tool call passes (policy, cards, passkeys, taint, audit); direct REST adapters to each Google API (no SDK, no MCP); the signed link to the laptop; the bridge program that runs on the laptop. R18: the call desk, a Windows program on the laptop that carries a call's sound between Phone Link and JARVIS (chapter 02, section 2.13), and its kit, zipped by the server on request. R5.2: the speech kit, a separate local server on the laptop behind its own key gate (chapter 02, section 2.14): its engines in slots loaded on demand, the model manager that installs only pinned files, the session's encrypted recordings, one long job at a time (scoring, wake-word training). The voice parts reach it directly, not through the gateway: it is how JARVIS hears, not a tool that acts (ADR-40) |
+| Ports and interfaces | `src/jarvis/tools/gateway.py:Gateway`; `src/jarvis/tools/registry.py:ToolRegistry`; `src/jarvis/tools/policy.py:Policy`, `OwnerRules`; `src/jarvis/tools/observers.py:GatewayObserver`; `src/jarvis/tools/background.py` (the helpers' background reads, through the gateway); `src/jarvis/integrations/google.py` (OAuth tokens, sealed); `src/jarvis/home/client.py` and `src/jarvis/home/ports.py` (the bridge's wire models); R5.2: `src/jarvis/localspeech/protocol.py` (the kit's API under /v1, its audio format, engine slots and licences), `src/jarvis/localspeech/client.py:cloud_kit` and `loopback_kit`, `src/jarvis/localspeech/wakeword/port.py:WakewordKit` (re-exported by `src/jarvis/localspeech/ports.py`), `src/jarvis/localspeech/memory.py:MemoryKit` (the kit in memory, for tests and mock evals) |
+| Key data | `audit` and `meta/audit_head`, `tokens` (sealed), `drive_roots`, `maps_places` (sealed), `home*` (sealed except the arm state), `connectors_github` (sealed); R18: `call_desk` (the linked desk, its seed sealed), `call_desk_codes` (a pending link code as a hash); R5.2: nothing in Firestore; on the laptop the kit's folder (chapter 04, section 8) |
+| Failure modes | The owner's rules unreadable, no owner in scope, or a look-up failing → nothing proposed, nothing run (fail closed); a tool that raises → a fixed sentence and a redacted detail, marked "may have done part of it"; Google not linked or the token key missing → the Google tools stay off; the laptop asleep → home tools say so, and the watchdog alerts once within about 6–11 minutes. R18: any desk check failing → the call card says which part is missing and nothing is dialled; a desk socket that doesn't verify → closed 4401 before it opens; the laptop asleep → no calls. R5.2: the kit's gate without a key → every request 503; a wrong key → 401; a second long job → busy; a download whose size or hash doesn't match → deleted, nothing installed; an engine that breaks → "engine not ready", reloaded next time |
 
 ### L7 · Data and persistence
 
@@ -153,7 +181,7 @@ section 3, where each part's files are listed in full.
 | Components | C41 Document store, C42 Document vault, C43 DigiLocker import folder, C44 Free allowance ledger, C66 Backups and restore drill |
 | Responsibilities | The `Docs` port and its Firestore and in-memory versions; the append-only audit; the encrypted vault; the DigiLocker folder import; the free-allowance counters; backups and the monthly drill |
 | Ports and interfaces | `src/jarvis/storage/docs.py:Docs` (get, set, create-only, query, transaction); `src/jarvis/tools/audit.py:AuditTrail`; `src/jarvis/keyring.py:Keyring`; `src/jarvis/vault/ports.py:VaultIntake`; `src/jarvis/quota/ledger.py` |
-| Key data | All 139 collections (chapter 04; R18 added 8, each listed in the layer that owns it above) |
+| Key data | All 141 collections (chapter 04; R18 added 8 and R5.2 2, each listed in the layer that owns it above) |
 | Failure modes | A composite index not ready → `IndexNotReady`, callers sort in the app; no token key → `Keyring.from_settings` is None and the vault, notes and things are off (never stored in clear); a counter that can't be read → the paid call is refused; backups not set up → Vitals says "Backups: not set up" |
 
 ### L8 · Response and output
@@ -171,7 +199,7 @@ section 3, where each part's files are listed in full.
 
 | Aspect | As built |
 |---|---|
-| Packages and modules | `config`, `config_calls` (R18: the calls settings, a base class of `Settings`), `logging`, `keyring`, `permissions`, `privacy`, `billing`, `vitals`, `health`, `selfwatch`, `hardening`, `buildbook`, `fixes`, `about` |
+| Packages and modules | `config`, `config_calls` (R18: the calls settings, a base class of `Settings`), `config_voice` (R5.2: the kit's address and key, its timeout and health period, the profile switch, the comparison's minutes; another base class), `logging`, `keyring`, `permissions`, `privacy`, `billing`, `vitals`, `health`, `selfwatch`, `hardening`, `buildbook`, `fixes`, `about` |
 | Components | C49 Configuration, C50 Logging, C51 Keyring, C52 Permissions and passkeys, C53 Privacy dashboard, C54 Costs in ₹, C55 Vitals, C56 Systems check, C57 Build book, C58 Delivery, C59 Evals and the visual gate, C67 Self-health watch (R14; C66 Backups is in L7, C68 Skill register in L5) |
 | Ports and interfaces | `src/jarvis/config.py:Settings`; `src/jarvis/logging.py:get_logger` (JSON logs with a trace id; the one file to swap for OpenTelemetry); `src/jarvis/privacy/ports.py:PrivacySource`, `PrivacyRegistry`; `src/jarvis/hardening/ports.py:HardeningPart`; `src/jarvis/buildbook/ports.py:BookSource`, `BookVault` |
 
@@ -179,7 +207,7 @@ section 3, where each part's files are listed in full.
 
 Measured on 27 Nov 2026 with `PYTHONPATH=src python scripts/skill_coverage.py` (it builds the
 fullest registry the test fakes build and files each tool with `SkillRegister`), re-run on R18's
-code at 19:20 IST: **159 tools in 11 skills**, 86 R1, 67 R2 and 6 R3; 75 work with the AI off
+code at 19:20 IST and on R5.2's the same evening (unchanged: R5.2 adds no tool): **159 tools in 11 skills**, 86 R1, 67 R2 and 6 R3; 75 work with the AI off
 (No-AI mode). R18 added two, both under Communication's new `calls` group: `calls_place` (R3) and
 `calls_answer_mode` (R2; switching answering on always asks). Skill ids and labels are
 fixed in `src/jarvis/skills/ids.py`; groups and their tool name patterns in
@@ -222,3 +250,4 @@ from Telegram, but its card is approved only in the console or the phone app
 | v6.4.1 | 27 Nov 2026, 15:15 IST | R6.4 | First edition: a request through the layers (Figure 17); for each of the eight layers and the cross-cutting concerns its packages, components, responsibilities, ports, key data and failure modes, No-AI and offline included; the 11 skills measured from the register (157 tools, risk tiers, No-AI counts, R3 tools, groups) | 🛠 Mark XXV |
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the cross-cutting components list C67 only (C66 sits in L7, C68 in L5, as the guide's cards are placed) | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 19:40 IST | R18 | R18 "Calls from your laptop": the five calls components C74–C78 placed in L1, L2, L3, L5 and L6; new section 1.1, a phone call through the layers; each layer's responsibilities, ports, data and failure modes for calls; the dock rule (Calls never displaces a tab at 1920 px); `LAYER_OF` 66 → 69; the skill register re-measured (159 tools, 67 R2, 6 R3; Communication 12); a call card is approved only in the console or the phone app | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 22:05 IST | R5.2 | R5.2 "Your voice": the five voice components C79–C83 placed (C79 in L6, C80–C83 in L2) in plain words; new section 1.2, which engine listens and speaks (the console before and after a session, corrections, JARVIS's voice, the session's Google-only comparison, a call, the call desk); L1's Voice sections and routes; L2's and L6's packages, responsibilities, ports, data and failure modes for the kit and the voice profile; 141 collections; `config_voice`; `LAYER_OF` 69 → 71; the skill register re-run (159 tools, unchanged) | 🛠 Mark XXV |

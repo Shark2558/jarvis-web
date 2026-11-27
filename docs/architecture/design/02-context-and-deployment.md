@@ -1,4 +1,4 @@
-Version v6.5.2 · 27 Nov 2026, 22:20 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.0 · 27 Nov 2026, 22:04 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 02 · System context and deployment
 
@@ -17,6 +17,15 @@ listens to that sound and plays JARVIS's voice back into the call through **VB-C
 virtual microphone. The server keeps a call's connections open for up to 30 minutes. Section 2.13
 has the details.
 
+**New in R5.2 ("Your voice", built, not yet deployed).** A free **speech kit** on your laptop can
+listen for JARVIS, so Google's free minutes last longer. It also keeps your voice session's
+recordings and trains your own "Hey Jarvis". It is a small separate program, not part of the home
+kit. The internet reaches it only at your laptop's own Tailscale address on port 10000, and only
+with the kit's key; a gate program (Caddy) checks that key first. You give JARVIS the address and
+the key once, with `bash deploy/cloudrun.sh --local-speech`. The call desk on the same laptop
+talks to the kit directly, never through the internet. If the laptop is off, JARVIS uses Google,
+then the browser, as before. Section 2.14 has the details.
+
 ## 1. System context
 
 ![Figure 15 · JARVIS as built: the containers](../diagrams/15-containers.png)
@@ -25,7 +34,11 @@ has the details.
 [`15-containers.markdy`](../diagrams/15-containers.markdy). The guide's Figure 1
 (`../diagrams/01-context.png`) draws the same context in the owner's words. Redrawn for R18: the
 laptop box now holds the call desk too, whose signed socket comes in to Cloud Run (step 3), and
-the phone app places calls; the speech services a call uses are in Figure 16.
+the phone app places calls; the speech services a call uses are in Figure 16. Updated for R5.2:
+the laptop box now names the speech kit as well. Cloud Run's voice service calls the kit directly
+with the kit's key over https (section 2.14, boundary B13), not through the tool gateway; the
+"HMAC both ways" arrow is the home bridge's only. A separate arrow for the kit was tried and
+dropped, because the router laid it over the call desk's arrow and cut its label.
 
 | Actor or system | Role | How it reaches JARVIS, or JARVIS reaches it | Evidence |
 |---|---|---|---|
@@ -43,7 +56,8 @@ the phone app places calls; the speech services a call uses are in Figure 16.
 | The call desk on the laptop (R18) | Carries a call's sound between Phone Link and JARVIS | The desk opens a WebSocket out to `/v1/calls/desk/ws`, signed like the home bridge; no Funnel | `src/jarvis/calldesk/`, `src/jarvis/api/calls_ws.py:CallSockets` |
 | The phone app, for calls (R18) | Dials, answers and ends calls on signed commands | A Web Push "doorbell", then the door's fifth route `POST /phone/v1/calls` | `src/jarvis/phone/calls.py:PhoneCalls`, `src/jarvis/mobile/ports.py` |
 | Speech services for calls (R18) | Hearing and speaking Indian languages | REST over `httpx`: Google (already linked), Microsoft Azure Speech free tier F0, Bhashini, Sarvam (paid, off) | `src/jarvis/calls/speech/build.py` |
-| Hugging Face (R18) | Test clips (FLEURS) for the language check | REST, only when the owner runs the check | `src/jarvis/calls/langcheck/fleurs.py` |
+| Hugging Face (R18; R5.2) | Test clips (FLEURS) for the language check; from R5.2 also the speech kit's pinned Whisper files | REST, only when the owner runs the check; the kit's files are downloaded once by the laptop, never by the cloud | `src/jarvis/calls/langcheck/fleurs.py`, `deploy/local-speech/models.json` |
+| The laptop speech kit (R5.2) | Listens for JARVIS, keeps the voice session's recordings, trains the owner's own wake word | JARVIS calls out to the laptop's Tailscale https address on Funnel port 10000 with the kit's key; the call desk on the same laptop calls it on `127.0.0.1` | `src/jarvis/localspeech/client.py:cloud_kit`, `loopback_kit`, `deploy/local-speech/Caddyfile` |
 
 ## 2. Deployment view
 
@@ -54,6 +68,9 @@ One container, built from `Dockerfile` (`python:3.12-slim`, every package hash-c
 written into `src/jarvis/BUILD_DATE`). Deployed by `deploy/cloudrun.sh` step 6 and then by CI's
 `deploy` job. Since R18 the image also carries `deploy/calldesk` (the call desk kit it zips on
 request; `.dockerignore` lets it in) and NumPy, the language check's audio maths (`pyproject.toml`).
+R5.2 adds no package to the cloud image: the speech kit's engines and server run only on the
+laptop, from their own hash-pinned list (`deploy/local-speech/requirements-kit.txt`), and a test
+keeps the kit's heavy modules out of the cloud's imports (`tests/test_r52_v1_import_guard.py`).
 
 | Setting | Value | Where | What it implies |
 |---|---|---|---|
@@ -65,7 +82,7 @@ request; `.dockerignore` lets it in) and NumPy, the language check's audio maths
 | CPU allocation | not set | same | The default: CPU only while a request runs; background learning is swept at the start of the next request (`src/jarvis/core/brain.py` module docstring) |
 | Ingress | `--allow-unauthenticated` | same | The URL is public; JARVIS does its own sign-in on every route (section 4) |
 | Identity | `--service-account jarvis-run` | same | No key file anywhere; Google libraries use the service account |
-| Settings | `JARVIS_ENV=prod`, `JARVIS_AUTH_MODE=google`, `JARVIS_SESSION_BACKEND=firestore`, `JARVIS_DEFAULT_TIER=balanced`, `JARVIS_EFFORT=low`, `JARVIS_LLM_TIMEOUT_S=20`, `JARVIS_LOG_JSON=true` and the feature switches | `deploy/cloudrun.sh` (`INFRA_ENV`) | Re-runs keep the owner's answers; `--reconfigure` rewrites them |
+| Settings | `JARVIS_ENV=prod`, `JARVIS_AUTH_MODE=google`, `JARVIS_SESSION_BACKEND=firestore`, `JARVIS_DEFAULT_TIER=balanced`, `JARVIS_EFFORT=low`, `JARVIS_LLM_TIMEOUT_S=20`, `JARVIS_LOG_JSON=true` and the feature switches; from R5.2 `JARVIS_LOCAL_SPEECH_ENABLED` and, when the owner gave one, `JARVIS_LOCAL_SPEECH_URL` (`LS_ENV`) | `deploy/cloudrun.sh` (`INFRA_ENV`) | Re-runs keep the owner's answers; `--reconfigure` rewrites them |
 | Health | `GET /health` | `src/jarvis/api/routes.py`; `Dockerfile` `HEALTHCHECK` | The deploy switches traffic only after `/health` answers `"status":"ok"` |
 | Start-up guards | refuses `JARVIS_ENV=dev` or token sign-in on Cloud Run; refuses a weak session secret, no owner e-mail, or a malformed token key | `src/jarvis/config.py:Settings._refuse_dev_on_cloud_run`, `_require_google_auth_config` | A misconfiguration fails the health check, so the old version keeps serving |
 
@@ -82,13 +99,14 @@ before R18; the calls add 8). R18 added no index and no indexing exemption to th
 
 ### 2.3 Secret Manager
 
-Up to 14 secrets, each readable by `jarvis-run` through its own grant (`deploy/cloudrun.sh` step
+Up to 15 secrets, each readable by `jarvis-run` through its own grant (`deploy/cloudrun.sh` step
 5): `jarvis-google-client-secret`, `jarvis-anthropic-key`, `jarvis-gemini-key`,
 `jarvis-openai-compat-key`, `jarvis-session-secret`, `jarvis-api-token`, `jarvis-token-key` (the
 root of the keyring, 32 random bytes made once), `jarvis-tavily-key`, `jarvis-google-api-key`,
-`jarvis-telegram-bot-token`, `jarvis-telegram-webhook-secret`, and from R18's review the three
-optional speech keys below. The optional ones (web search, Maps and YouTube, Telegram, the speech
-keys) are left unmounted if their grant fails; every other grant failing stops the deploy
+`jarvis-telegram-bot-token`, `jarvis-telegram-webhook-secret`, from R18's review the three
+optional speech keys below, and from R5.2 `jarvis-local-speech-key` (the laptop speech kit's key,
+section 2.14). The optional ones (web search, Maps and YouTube, Telegram, the speech keys, the
+kit's key) are left unmounted if their grant fails; every other grant failing stops the deploy
 (`grant_failed`). Secrets reach the process as environment variables and are held as
 `SecretStr` in `src/jarvis/config.py` (11 fields, one per secret: `api_token`,
 `google_client_secret`, `session_secret`, `anthropic_api_key`, `gemini_api_key`,
@@ -111,6 +129,17 @@ service by hand, and a `--reconfigure` run clears them (the same README). Tests:
 `tests/test_r18_review_deploy_speech.py`. The go-live guide, a project document outside this
 repository, does not have this step yet, by the review's report (REVIEW.md, section 4;
 *unverified* here, since the guide is not in the repository).
+
+**R5.2's kit key.** `src/jarvis/config_voice.py:LocalSpeechConfig` (another base class of
+`Settings`) adds `local_speech_key`, a `SecretStr` of at least 32 characters, 15 fields in all,
+and `local_speech_url`, the kit's address. Unlike R18's keys, the deploy asks for this one:
+`deploy/cloudrun.sh:local_speech_answer` asks once on a full run (and on any run with
+`--local-speech`) for the address and the key, reads the key without echo and stores it straight
+in the secret `jarvis-local-speech-key`, never in a file or the log. Enter skips it, and a quick
+re-run keeps the saved answer. A failed grant leaves the kit off with a plain note
+(`grant_failed`). An address of the wrong shape, a key under 32 characters or a failed secret write
+stops the whole deploy (`die`), although I1's notes say an optional part never does: an open item
+for the review (chapter 12, section 7).
 
 ### 2.4 Service accounts
 
@@ -139,7 +168,7 @@ the brief is made when the Brief panel opens.
 
 | Part | As built | Evidence |
 |---|---|---|
-| Console | One page served by the API: `console.html` plus 120 `console*.js` modules, plain JavaScript with no build step, vendored libraries pinned by hash; content security policy `script-src 'self' 'wasm-unsafe-eval'` | `src/jarvis/api/console.py:CONSOLE_CSP`, `src/jarvis/api/static/` |
+| Console | One page served by the API: `console.html` plus 136 `console*.js` modules (120 at R6.4, 131 after R18; R5.2 added the voice session, the owned wake word and the speaker check's three), plain JavaScript with no build step, vendored libraries pinned by hash; content security policy `script-src 'self' 'wasm-unsafe-eval'` | `src/jarvis/api/console.py:CONSOLE_CSP`, `src/jarvis/api/static/` |
 | Installable web app | A web app manifest with three shortcuts and a share target | `src/jarvis/api/app_shell.py` |
 | Phone app | Android app in `android/`: a Trusted Web Activity (`android-browser-helper`), native parts for the Talk tile, alerts, Health Connect, SOS and a DigiLocker folder; Chrome draws the console, so sign-in, passkeys, cookies and Web Push are unchanged | `docs/plans/r7-mobile.md` D1, D2 |
 | Site and app vouch for each other | `GET /.well-known/assetlinks.json` names the one package with the signing fingerprints of the linked phones (empty until a phone is linked; cached one minute) | `src/jarvis/api/phone.py` |
@@ -162,13 +191,22 @@ Docker Compose (`deploy/home/docker-compose.yml`, project `jarvis-home`).
 **Tailscale Funnel** gives the laptop one public HTTPS name; TLS ends on the laptop. JARVIS accepts
 only a `<machine>.<tailnet>.ts.net` address: port 8443 for the bridge
 (`src/jarvis/home/client.py`), and 443, 8443 or 10000 for the laptop brain
-(`src/jarvis/offline/config.py`). Each part on the laptop has its own Funnel port: the bridge 8443
+(`src/jarvis/offline/config.py`) and, from R5.2, the speech kit (`src/jarvis/config_voice.py`).
+Each part on the laptop has its own Funnel port: the bridge 8443
 (`deploy/home/setup-windows.ps1`), the laptop brain 443 (`deploy/local-brain/start-*`) and, since
 R5.2, the speech kit 10000 (`deploy/local-speech/start-kit.*`); each script refuses a port that
-already serves something else (R5.2 review: the brain's scripts had taken the bridge's 8443). **The laptop brain** is Ollama behind a Caddy gate on
+already serves something else (R5.2 review: the brain's scripts had taken the bridge's 8443).
+**The laptop brain** is Ollama behind a Caddy gate on
 `127.0.0.1:11435` that wants a bearer key of at least 16 characters and allows only
 `POST /v1/chat/completions` and `GET /v1/models`, bodies up to 2 MB
 (`deploy/local-brain/Caddyfile`).
+
+**One public port per program.** Funnel gives each program on the laptop its own https port. The
+speech kit uses 10000 (`src/jarvis/localspeech/protocol.py:FUNNEL_PORT`). The home bridge's set-up
+(`deploy/home/setup-windows.ps1`) and the laptop brain's start script
+(`deploy/local-brain/start-windows.ps1`) both take 8443, so on one laptop the brain's script
+replaces the bridge's door, and stopping the brain closes it. That clash is older than R5.2 and
+open (chapter 12, section 7).
 
 ### 2.8 Telegram
 
@@ -246,7 +284,34 @@ S0 laptop test of the real sound path has not been run yet (*unverified* on a re
 | Checks before every call | VB-CABLE installed, Phone Link running, no Bluetooth headset on the laptop, the sound path moving; the call card says what is missing and nothing is dialled | `src/jarvis/calldesk/checks.py` |
 | Installing it | The owner downloads the kit from Calls → Settings (only when JARVIS has an https public address), runs `install-calldesk.ps1`, then links it with an 8-character code shown once (10 minutes, one use). The installer can start it at sign-in; `deploy/home/start-home.ps1` also starts it with JARVIS Home | `src/jarvis/api/calldesk_kit.py:desk_kit`, `deploy/calldesk/install-calldesk.ps1`, `deploy/calldesk/README.txt` |
 | What it keeps on the laptop | `%LOCALAPPDATA%\JARVIS\CallDesk`: the desk's id and link seed, the microphone roles it changed, a log that never holds sound, words, numbers or keys | the guide's C77 |
-| Laptop speech | A hook only, shipped off: every call uses the cloud's speech (`SpeechMode.CLOUD`) | `src/jarvis/calldesk/speech_local.py`, `docs/plans/r18-integration/I1-NOTES.md` (4.2) |
+| Laptop speech | In R18 a hook only, shipped off. Since R5.2 the desk reaches the speech kit on the same laptop at its gate on `127.0.0.1:11436` when the desk holds the kit's key (from its environment or `local-speech.key` in its own folder; `install-calldesk.ps1 -SpeechKit` copies it). It offers only languages the kit both hears and speaks; kit 1.0.0 has no voice (section 2.14), so every call still uses the cloud's speech | `src/jarvis/calldesk/app.py:local_speech`, `src/jarvis/calldesk/config.py:speech_key`, `src/jarvis/localspeech/desk.py`, `src/jarvis/calldesk/speech_local.py` |
+
+### 2.14 The laptop speech kit (R5.2)
+
+A small speech program on the owner's own laptop (the guide's card C79). It is a separate local
+server, not part of the home kit and not the laptop brain (ADR-40): its own folder, its own gate,
+its own key and its own Funnel port. Built and tested with fakes and in-memory stand-ins only; the
+real engines, Caddy, Tailscale Funnel and the PowerShell scripts have not run on a laptop yet
+(*unverified* there; `docs/plans/r5-2-integration/I1-NOTES.md`, 4.6).
+
+| Part | As built | Evidence |
+|---|---|---|
+| The kit's server | Python 3.12 on Windows, Starlette and uvicorn on `127.0.0.1:11437` only, never published; no access log, no server header; kit version 1.0.0 on its own track | `src/jarvis/localspeech/__main__.py:serve`, `src/jarvis/localspeech/kitconfig.py:HOST`, `src/jarvis/localspeech/server.py` |
+| The gate | Caddy bound to `127.0.0.1:11436`. It passes exactly the kit's API (`GET /v1/health`, `GET /v1/jobs/job_…`, and the `POST` routes for listening, speaking, the session's clips and the wake word) and only with `Authorization: Bearer <key>`; a known address without the key gets 401, anything else 404, a body over 3 MB 413; with no key, or one under 32 characters, every request gets 503 | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/protocol.py:GATE_PORT` |
+| The public door | Tailscale Funnel publishes the gate on https port 10000 (`-HttpsPort 443` when 10000 already serves something else; the laptop brain keeps 8443). TLS ends on the laptop. The start script never takes a Funnel port that already serves something else, and closes only the port it opened | `deploy/local-speech/start-kit.ps1` (`Test-FunnelTaken`), `src/jarvis/localspeech/protocol.py:FUNNEL_PORT` |
+| Installing it | `install-kit.ps1` installs Python 3.12 and Caddy only with the owner's typed Y, makes the kit's private folder (only his account can open it), its hash-pinned packages and the pinned Whisper files (about 2 GB, each file checked) | `deploy/local-speech/install-kit.ps1`, `deploy/local-speech/requirements-kit.txt`, `deploy/local-speech/models.json`, `deploy/local-speech/README.md` |
+| Starting it | `start-kit.ps1` makes the key on the first run (32 random bytes, 43 characters), starts the server, the gate and Funnel, and prints the address (`https://<laptop>.<tailnet>.ts.net:10000`) and the key to give JARVIS; `-SelfTest` prints a report the owner can paste, which never holds the key, a folder name, the Tailscale name or anything he said | `deploy/local-speech/start-kit.ps1`, `src/jarvis/localspeech/selftest.py` |
+| Giving JARVIS the address and key | `bash deploy/cloudrun.sh --local-speech` in Cloud Shell: the address must be the laptop's Tailscale https name with a Funnel port (443, 8443 or 10000) and no path; the key goes straight to the secret `jarvis-local-speech-key` (section 2.3) | `deploy/cloudrun.sh:local_speech_answer`, `ls_url_ok` |
+| The cloud reaching it | One kit client (`HttpKit`) for the console's voice, R18's calls, the voice session and the wake word: https only, R1's pinned transport (the name resolved again, every address public, the connection made to the address just checked), no redirects, at most 4 MB of a reply read; its health trusted 30 s, so no turn waits for an absent laptop | `src/jarvis/localspeech/client.py:cloud_kit`, `src/jarvis/voice/laptop.py:LaptopVoice`, `src/jarvis/api/r52_wiring.py:voice_service` |
+| The call desk reaching it | Over loopback: plain http to the gate on `127.0.0.1:11436`, under `/v1`, with the kit's key; nothing leaves the laptop | `src/jarvis/localspeech/protocol.py:LOOPBACK_BASE`, `src/jarvis/localspeech/client.py:loopback_kit`, `src/jarvis/localspeech/desk.py` |
+| Engines | Each in its own slot, loaded on demand so a 4 GB graphics card is enough (else the CPU). Kit 1.0.0 pins only faster-whisper small and medium (English listening, MIT). Kokoro and Piper (voices) and AI4Bharat's Indian-language engines are left out (ADR-41), so the kit has no voice and no Indian-language engine | `src/jarvis/localspeech/engines.py`, `deploy/local-speech/models.json` (`left_out`) |
+| What it keeps | In `%LOCALAPPDATA%\JARVIS\LocalSpeech`: the key, the session's recordings (encrypted), the model files with their licences, what it installed, the wake word's trained files (sealed with their own key). Nothing in Firestore (chapter 04, section 8) | `src/jarvis/localspeech/kitconfig.py`, `src/jarvis/localspeech/clips.py` |
+| Turned off | No address, no key, or `JARVIS_LOCAL_SPEECH_ENABLED=false` → no client, Vitals' kit line hidden, voice as before (Google, then the browser) | `src/jarvis/config_voice.py:LocalSpeechConfig.local_speech_configured`, `src/jarvis/voice/laptop.py:laptop_voice` |
+
+**When the voice parts are wired.** `src/jarvis/api/r52_wiring.py:voice_service` builds the voice
+service with the kit and the voice profile in `app._wire_core`. With `voice_profile_enabled` off
+the `/v1/voice/profile` routes answer 503 and listening keeps its usual order; a part that fails
+to build leaves its routes at 501, logged by name.
 
 ## 3. Trust boundaries
 
@@ -255,7 +320,10 @@ S0 laptop test of the real sound path has not been run yet (*unverified* on a re
 *Figure 16. Trust boundaries.* Source:
 [`16-trust-boundaries.markdy`](../diagrams/16-trust-boundaries.markdy). Each arrow is a crossing;
 its label is what the receiving side checks. Redrawn for R18 with the call desk's signed socket
-(B10) and the speech services that hear a call (B12).
+(B10) and the speech services that hear a call (B12). Not every crossing is drawn: B5, B9 and B11
+never were, and R5.2's B13 and B14 (the speech kit) are in the table only. Every layout that
+added the kit as its own box made an arrow cross another arrow's label, so the figure stays as
+R18 left it; it is not wrong for R5.2, only incomplete, as before.
 
 | # | Boundary | Crossing | Checked by | Data that crosses |
 |---|---|---|---|---|
@@ -271,6 +339,8 @@ its label is what the receiving side checks. Redrawn for R18 with the call desk'
 | B10 | The laptop's call desk → JARVIS (R18) | The desk's WebSocket | Linked once by a one-use code; every upgrade signed with HMAC-SHA256 keys derived from the desk's 32-byte seed, a nonce, a 60-second window, checked before the socket opens (`src/jarvis/api/calls_ws.py:CallSockets`); at most 150 audio frames a second | The other person's speech while they talk; JARVIS's voice and commands back |
 | B11 | JARVIS → the phone (R18) | Call commands through the phone's door | Each command signed by the cloud (P-256); the phone acts on it only if it verifies, names this phone, is fresh and was never acted on; a dial only while the owner's approval is live (`src/jarvis/phone/calls.py:PhoneCalls`) | Dial, answer, end, route; a waiting call card |
 | B12 | JARVIS → speech services (R18) | Hearing and voice for a call | HTTPS with each option's own key; a call uses only an option that passed the language check for that language; paid Sarvam only with its key, `sarvam_enabled` and the owner's YES; the in-call brain is never one that may train on prompts (chapter 05, section 8) | Other people's voices and words on a call; the test clips' audio for the check |
+| B13 | JARVIS → the laptop speech kit (R5.2) | Listening, the voice session's clips and scoring, the wake word's training and files | The address rule (https, a `*.ts.net` name, a Funnel port, every resolved address public) and the pinned transport on JARVIS's side; the kit's key at the Caddy gate and again, in constant time, in the kit's server; no redirects, a 4 MB reply cap; the kit's answers become fixed words (chapter 05, section 9) | The owner's recorded speech for a listening turn and the session's clips (stored only on the laptop, encrypted); the engines' text back; the wake word's trained files (checked by hash and licence before the console uses them) |
+| B14 | The call desk → the speech kit, on the laptop (R5.2) | A call's hearing and voice in laptop mode | Loopback only (`127.0.0.1:11436`) and the kit's key; the desk offers only languages the kit both hears and speaks | The other person's speech while they talk (kit 1.0.0 offers no language, so nothing crosses yet) |
 
 ## Change log
 
@@ -281,3 +351,4 @@ its label is what the receiving side checks. Redrawn for R18 with the call desk'
 | v6.5.0 | 27 Nov 2026, 19:30 IST | R18 | R18 "Calls from your laptop": the calls' actors in the context table; `--timeout 1800`; the image carries the call desk kit and NumPy; 139 collections; the three speech keys (not mounted by the deploy, how to add them unverified); the phone app's calls (version 18.0.0, the door's fifth route, signed commands, CI's two new controls); when calls are wired; new section 2.13, the call desk, VB-CABLE and Phone Link; trust boundaries B1 and B2 widened, B10–B12 added; Figures 15 and 16 redrawn for R18 (the call desk, the speech services); the capacity pointer fixed to chapter 06, section 5 | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: the deploy now mounts each optional speech key when its secret is stored (`deploy/cloudrun.sh:speech_keys`, both deploy paths, a failed grant never fatal), so v6.5.0's "not mounted" and "how to add them unverified" no longer hold; how to add one is in the call desk README; up to 14 secrets; the go-live guide's step is left for the owner | 🛠 Mark XXV |
 | v6.5.2 | 27 Nov 2026, 22:20 IST | R5.2 | R5.2 review: Funnel's ports, one door each (the bridge 8443, the laptop brain 443, the speech kit 10000), and every start script refuses a taken port | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 22:04 IST | R5.2 | R5.2 "Your voice": the laptop speech kit in plain words; the kit and Hugging Face's Whisper downloads in the context table; no new package in the cloud image; the kit's two settings; up to 15 secrets, `jarvis-local-speech-key` asked by `cloudrun.sh --local-speech` (its stops on a bad address or short key flagged); 136 console modules; one Funnel port per program (the kit's 10000; the bridge and brain both on 8443, an older clash); the call desk's laptop speech reaches the kit over loopback; new section 2.14, the kit (server, gate, Funnel port 10000, install, start, the cloud's pinned client, the desk's loopback, engines, what it keeps); trust boundaries B13 and B14; Figure 15's laptop box names the speech kit (re-exported); Figure 16 unchanged, B13 and B14 in its table only | 🛠 Mark XXV |

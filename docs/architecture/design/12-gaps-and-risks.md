@@ -1,8 +1,8 @@
-Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.0 · 27 Nov 2026, 22:14 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 12 · Gaps, conflicts and risks
 
-What the design does not yet cover, where requirements pull against its rules, where it stops scaling, and the debt carried from earlier releases. Each item ends with what to do; the proposed ADRs are in chapter 08 (section 5 below). R18's own gaps and risks are in section 6.
+What the design does not yet cover, where requirements pull against its rules, where it stops scaling, and the debt carried from earlier releases. Each item ends with what to do; the proposed ADRs are in chapter 08 (section 5 below). R18's own gaps and risks are in section 6; R5.2's, with the items open for its combined review, in section 7.
 
 ## 1. Requirements with no code home yet
 
@@ -29,11 +29,14 @@ Every workbook module maps to a layer and a skill (chapter 10: "no architectural
 | C5 | Calls with **automated voice** from a personal SIM | TRAI's 2026 rules on calls placed by software without direct human dialling | Every call starts with the owner's tap, own number, personal volume, AI disclosure in the first sentence, daily caps (R18 plan §7); built in R18 (chapter 05, sections 8.4 and 8.5). A reading, not legal advice |
 | C6 | The **reference architecture PDF** (Postgres, Chroma, Kafka/NATS, ElevenLabs, MCP servers, Kubernetes) | This document's as-built chapters (Firestore, the custom tool gateway, Google speech, one Cloud Run instance) | Resolved: ADR-01 (this document is canonical; the PDF is a historical reference) |
 | C7 | The old R18 text named a **business call provider** | The owner has no registered business (17 Nov) | Resolved: the personal laptop route (R18 plan §3); row 198 stays Pending |
-| C8 | Today's **"Hey Jarvis" model is non-commercial** (CC BY-NC-SA) | A public launch | R5.2 stage 2 builds an owned model; required before R18.1 (ADR-29, proposed) |
+| C8 | Today's **"Hey Jarvis" model is non-commercial** (CC BY-NC-SA) | A public launch | R5.2 stage 2 builds an owned model; required before R18.1 (ADR-29, proposed). R5.2 found it is not enough: both stages read openWakeWord's non-commercial feature models, so a permissive or owned front end is needed too (ADR-45; section 7, G20) |
 | C9 | Indoor cameras record **other household members** | Privacy by default; India's data-protection law | Only the owner tracked by default, per-person consent, children never (vision rules) |
 | C10 | The slice 1 plan names an **R0 risk tier** ("default by risk: R0/R1 ALLOW, R3 ASK", `docs/plans/phase2-slice1-tool-spine.md`) | The code's three risk classes, R1 read, R2 reversible, R3 irreversible (`src/jarvis/core/guardrails.py:ActionRisk`) | Resolved: the code is the design, and this document says R1–R3 throughout (chapters 01, 05). No requirement row assumes an R0 tier: "R0" in the workbook's Release column (32 rows) is the first release, not a risk tier. The plan is marked "Superseded by the build log" and is left as written |
 | C11 | The R18 plan kept recordings **compressed, about 0.1 MB a minute** (D8) | No new dependency without need (no encoder is shipped) | Resolved by ADR-33: 8 kHz WAV, about 0.96 MB a minute, still inside the free storage |
 | C12 | R18 added a **23rd console tab**, which at 1920 px folded Calls and Camera into More | P6 and the owner's rule that every existing tab stays where it was | Resolved by ADR-35: Calls never displaces a tab; at 1920 px it has no tab and opens three other ways |
+| C13 | R5.2's plan chose **Kokoro and Piper voices and PyTorch Indian engines** for the kit (D2, D3) | Permissive licences only for what JARVIS installs (the build brief's rule 9; ADR-29, proposed) | Resolved by ADR-41: left out; the kit has no voice and no Indian-language engine yet (G18) |
+| C14 | The build brief's **"SHA-256 for every model file"** | No primary source could be downloaded at the build to hash the Whisper models' small text files | Resolved by ADR-42: those files are pinned by their git blob id at a full commit; weights keep SHA-256 |
+| C15 | **R5.2's voice session "learns" from his speech** | Confirm before commit and P-private: nothing learned may change a number, an amount or a code, and no voice may approve anything | Built so: corrections are letters-only words (chapter 05, section 9.3); the speaker check never approves (ADR-44) |
 
 ## 3. Scaling and availability limits
 
@@ -41,9 +44,10 @@ Every workbook module maps to a layer and a skill (chapter 10: "no architectural
 |---|---|---|---|
 | **Cloud Run `--max-instances 1`** | The per-conversation lock, the rate limiters, the home and phone nonce stores and, since R18, the call hub, dial grants, live tickets and the phone's command outbox are in memory; the Telegram webhook is registered for one connection. Conversations themselves are in Firestore | A second instance would split the locks, the rate limits, replay protection and call state | Keep 1 for one owner; before any second user or higher load, move that state out (ADR-25, ADR-36) |
 | **Cloud Run request timeout** (1800 s since R18) | Set by `deploy/cloudrun.sh` step 6 (`--timeout 1800`; 300 before) | A call's sockets longer than 30 minutes; a call itself stops at 30 minutes at most | Done in R18 (ADR-36) |
-| **The laptop as the home server** | Free first: the home kit (WSL2 + Docker: Home Assistant, Frigate, the bridge), the local brain, R5.2's speech kit and R18's call desk all run on it | Laptop asleep, off or away = home alerts, calls, local speech and laptop brain stop | Vitals already alerts "laptop off"; the always-on box (Raspberry Pi 5 with an accelerator, or a mini-PC) when the owner chooses (ADR-26, proposed) |
+| **The laptop as the home server** | Free first: the home kit (WSL2 + Docker: Home Assistant, Frigate, the bridge), the local brain, R5.2's speech kit (built) and R18's call desk all run on it | Laptop asleep, off or away = home alerts, calls, local speech and laptop brain stop; local speech falls back to Google silently | Vitals already alerts "laptop off" and, from R5.2, shows the kit's line (amber, never an alert); the always-on box (Raspberry Pi 5 with an accelerator, or a mini-PC) when the owner chooses (ADR-26, proposed) |
+| **Tailscale Funnel's three ports** (443, 8443, 10000) | Funnel publishes only those, one program each | Since R5.2 all three may be in use on one laptop (bridge 8443, kit 10000, and the brain also on 8443: section 7, G26) | Fix the clash on 443; any further laptop program shares a door or needs a design |
 | **WSL2 for Home Assistant and Frigate** | Trial set-up | Neither supports it officially | Same as above |
-| **Laptop compute** (16 GB RAM, 4 GB graphics) | Vision, speech and the local brain share it | 2–3 cameras at a few frames a second; one speech model loaded at a time | R5.2 loads engines on demand; R8 measures camera load |
+| **Laptop compute** (16 GB RAM, 4 GB graphics) | Vision, speech and the local brain share it | 2–3 cameras at a few frames a second; one speech model loaded at a time | R5.2 loads engines on demand (512 MB left free, else the CPU) and reports "slow" so JARVIS falls back; R8 measures camera load |
 | **Firestore free 1 GiB** | ₹0 storage | Call recordings (≈ 0.96 MB a minute as built, not the plan's 0.1; 30 days), wardrobe photos, vision results | Recordings are sealed like vault files with a 30-day retention; 80 call minutes a month ≈ 77 MB; watch in Vitals |
 | **Single owner** | The design's assumption | Guests and household members are limited modes | Any multi-user step needs its own ADR |
 
@@ -159,6 +163,59 @@ calls now are.
 | Phone Link updates | Its behaviour can change | The checks before every call | — |
 | The other person's data at speech vendors | Their voice reaches the chosen speech option | Only options set up and passed; Sarvam only with his YES; Bhashini opt-in | Each vendor's own terms (Google's and Azure's say they don't train on it, per the plan; *unverified* here) |
 
+## 7. R5.2 "Your voice": gaps, limits and risks
+
+From the join's known limits (`docs/plans/r5-2-integration/I1-NOTES.md`, section 4), the Book
+writers' list of code that looks wrong (`docs/plans/r5-2-integration/BOOK-LIST.md`, section 4),
+the Workshop's notes for R5.2's combined review, and what this edition found reading the code.
+The combined review is fixing R5.2's code on the `r5-2-review` branch while this edition is
+written; this list describes the code as it stands on the ADD's branch, and the Workshop brings
+this chapter in line with the review's fixes afterwards. Items marked *found here* are not in the
+join's notes.
+
+### 7.1 Not built, or built differently from the plan
+
+| # | Gap | What it means for the owner | Do |
+|---|---|---|---|
+| G18 | **Unpinned engine slots**: of the plan's engines only faster-whisper small and medium are pinned; Kokoro and Piper (GPL parts) and IndicConformer and Indic Parler-TTS (PyTorch) are left out (ADR-41; `deploy/local-speech/models.json`, `left_out`) | The kit listens in English only and has no voice: JARVIS's voice stays Google's, and calls never use the laptop | Pin a permissively licensed voice and, if one exists, an Indian-language engine without PyTorch (R5.2.x) |
+| G19 | **The speaker check has no model and an uncalibrated threshold**: the CAM++ slot is empty and 0.45 is a placeholder (ADR-46; `src/jarvis/api/static/vendor/speaker/spk-1/MANIFEST.json`) | The console says "no model" and barge-in is unchanged: the TV can still interrupt JARVIS | The owner downloads and pins the model on his laptop (its manifest says how), then the laptop eval sets the threshold |
+| G20 | **Launch blocker**: openWakeWord's melspectrogram and embedding models, which both wake-word stages build on, are CC BY-NC-SA 4.0 (ADR-45) | Personal use is fine; no public launch with them | A permissive or owned front end before R18.1, as well as stage 2 |
+| G21 | **The wake word trains without other speakers**: with no voice slot, stage 1 has no synthetic other-speaker negatives and stage 2 refuses (`src/jarvis/localspeech/wakejoin.py`) | His verifier may still wake for another person saying "Hey Jarvis"; its result says so | Comes with G18's voice |
+| G22 | **The kit's speed bars are not measured**: the self-test's round trip needs a voice, and listening alone is not timed (`src/jarvis/localspeech/selftest.py`) | First-audio and listening-speed promises are unproved | Time listening on its own in the self-test |
+| G23 | **The recognition eval on his real voice has not run**; CI runs a synthetic set | Which engine suits him is unknown until his session | The owner's 20-minute session |
+| G24 | **Nothing ran on a real laptop**: the kit's engines, Caddy, Tailscale Funnel, the PowerShell scripts, the desk's `-SpeechKit` step, a call heard on the kit | The install and the door are unproved | The owner's steps (I1-NOTES, section 5) |
+| G25 | **"Spoken by the owner" is not built**: `src/jarvis/voice/profile.py:SPOKEN_BY_HEADER` is defined, documented and never sent or read | Nothing; the label is display only and could never approve (ADR-44) | Build it in R5.2.x or remove it |
+
+### 7.2 Open for the combined review
+
+| # | Finding | Evidence | Do |
+|---|---|---|---|
+| G26 | **The Funnel port clash** (older than R5.2; it affects the owner): the home bridge's set-up and the laptop brain's start script both take port 8443, so on one laptop the brain's script replaces the bridge's door, and stopping the brain closes it. The kit uses 10000 and is not part of it | `deploy/home/setup-windows.ps1`, `deploy/local-brain/start-windows.ps1`; chapter 02, section 2.7; the Book's Tailscale page counts three doors (`src/jarvis/buildbook/book/pages/pg_service_tailscale.md`) | Give the brain (or the bridge) its own port, refuse a port that already serves something, with a test; then this document, the guide and the Book |
+| G27 | **The deploy stops on a bad kit answer**: an address of the wrong shape, a key under 32 characters or a failed secret write ends the whole deploy (`die`), although I1's notes say an optional part never stops the deploy | `deploy/cloudrun.sh:local_speech_answer`; `docs/plans/r5-2-integration/I1-NOTES.md` (section 2, "Deploy") | Warn and leave the kit off, with a test |
+| G28 | **Wrong words about the laptop option for calls**: R18's speech builder says the laptop option comes from the call desk, and its "not offered" reason says the same; since R5.2 it is the speech kit, registered in R18's wiring | `src/jarvis/calls/speech/build.py`, `src/jarvis/api/r18_wiring.py`, `src/jarvis/api/r52_wiring.py:calls_laptop` | Fix the wording |
+| G29 | **Stale comments**: the voice routes' install line and the profile routes' docstring still say the routes answer 501 until I1 wires them (501 is now only the fallback when a part fails to build); the session screen's header says clips go by POST, the route is PUT | `src/jarvis/api/voice.py`, `src/jarvis/api/voice_profile_routes.py`, `src/jarvis/api/static/console-voice-session.js` | Correct the comments |
+| G30 | **Names of parts the kit doesn't have**: Vitals' engine names and the protocol's default English voice (`bm_george`) name Kokoro and Piper, which kit 1.0.0 leaves out (harmless, never shown today); the kit's README says it "(later)" trains his "Hey Jarvis", which stage 1 does now | `src/jarvis/vitals/words.py:VOICE_ENGINES`, `src/jarvis/localspeech/protocol.py:DEFAULT_ENGLISH_VOICE`, `deploy/local-speech/README.md` | Tidy with G18 |
+| G31 | **The Book's code notes**: `gen/pages_index.py`'s docstring still counts 153 pages (now 169), left so its pages don't turn stale for a comment; R18's route-reader test that skips the calls' asset spread still fails | `src/jarvis/buildbook/gen/pages_index.py`, `tests/test_r63_a_facts_real.py`; BOOK-LIST, section 4 | R18's and the Book's follow-ups |
+| G32 | **CI does not run the wake-word eval** (*found here*): it is in `make eval-mock`, but no `tests/test_evals_*.py` runs it, unlike every other suite | `evals/run_all_mock.py`, `tests/test_r52_i1_join.py`; chapter 07, section 9.1 | A `tests/test_evals_wakeword.py` like the other suites' (planned, not yet written) |
+| G33 | **How `models verify` checks a blob-pinned file** (*found here*, for the review to confirm): it re-checks the file by its git blob id from the manifest, not by the SHA-256 recorded at install, so the recorded SHA-256 is a record, not a check | `src/jarvis/localspeech/manager.py:ModelManager.verify`; chapter 05, section 9.2 | Decide whether `verify` should also compare the recorded SHA-256 |
+| G34 | **What the kit's key opens, and how to replace it** (*found here*): the key also reads the engines' transcripts of his session clips, deletes recordings and fetches the wake word's files; no step to make a new key is written down (*unverified*) | `src/jarvis/localspeech/protocol.py:ROUTES`, `deploy/local-speech/README.md`; chapter 05, residual risk 13 | A "new key" step in the kit's README and in `cloudrun.sh --local-speech` |
+
+**Checked here and holding:** the speaker check never approves anything
+(`tests/test_r52_v5_never_approves.py` reads the deciding modules and drives the real app; it
+passes), the model manager's pins (`tests/test_r52_i1_manager_blob.py`,
+`tests/test_r52_v1_manager.py` pass), the kit's key rules (chapter 05, section 9.1) and
+corrections staying off numbers (chapter 05, section 9.3).
+
+### 7.3 Risks
+
+| Risk | Why | Mitigation as built | Left |
+|---|---|---|---|
+| The kit's door on the internet | Funnel publishes the gate to everyone | A 256-bit key at the gate and again in the server; only the kit's addresses pass; no key, nothing served | The key's reach (G34) |
+| The laptop is off, asleep or busy | It is a laptop | Silent fallback to Google, then the browser; the health period keeps turns from waiting | — |
+| A model file changes upstream | Hugging Face repositories can change | Pinned revisions, sizes and hashes; a mismatch installs nothing | The blob-id pins read through a web reader (ADR-42) |
+| A licence of a model or runtime | Several useful engines are GPL or non-commercial | Permissive-only installs (ADR-41, ADR-29 proposed) | The wake word's front end (G20) |
+| A voice used to approve something | A voice can be recorded or imitated | The check is barge-in only, held by a test (ADR-44) | — |
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -168,3 +225,4 @@ calls now are.
 | v6.4.3 | 27 Nov 2026 | R6.4 | Outfit plans: the owner chose 90 days; the code change is follow-up F4 | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 21:00 IST | R18 | R18 "Calls from your laptop": C1, C2 and C5 as built; conflicts C11 (recording size, ADR-33) and C12 (the 23rd tab, ADR-35); the one-instance, timeout and storage rows as built; new section 6: what is not built or differs from the plan (the brain check per language, laptop speech mode, FLEURS untested and 8 languages without clips, Bhashini opt-in, and five more), eight gaps found while writing this edition, the review's fixes so far, and R18's risks | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | Checked against the R18 review's report (`docs/plans/r18-integration/REVIEW.md`): G10, G11 and G13 closed (follow-ups F6, F5, F7); G4 notes the console's Bhashini words; section 4's outfit-plans item done (90 days, 250 plans, the calendar's cap split); section 6.3 lists every review fix, before and after this edition, and what the review left | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 22:14 IST | R5.2 | R5.2 "Your voice": C8 widened (the wake word's non-commercial front end, ADR-45); conflicts C13 (GPL and PyTorch engines, ADR-41), C14 (SHA-256 only, ADR-42) and C15 (learning from his voice, ADR-44); the laptop, Funnel-port and compute rows as built; new section 7: R5.2's gaps G18–G25 (unpinned slots, the speaker model and its uncalibrated threshold, the launch blocker, the wake word without other speakers, unmeasured speed, no real-voice eval, no laptop run, the label), G26–G34 open for the combined review (the 8443 port clash, `cloudrun.sh` stopping on a bad kit answer, the calls builder's wording, stale comments, unused Kokoro and Piper names, the Book's notes, the wake-word eval outside CI, how `verify` checks blob pins, the kit key's reach and rotation), what was checked and holds, and R5.2's risks | 🛠 Mark XXV |

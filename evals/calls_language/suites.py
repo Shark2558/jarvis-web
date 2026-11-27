@@ -9,6 +9,10 @@
   selection  the first passing option in the order laptop → Google → Azure → Bhashini → Sarvam
              (only when on), the balanced tier only with his YES, a stored pass re-read against
              the bars. Control: the order reversed MUST fail it.
+  free_first the app's own choice (`cards.offered`, R18 review): Google while its free allowance
+             covers the call, then the cheapest paid option he allows, Sarvam never when off,
+             Azure's free tier before paid, an unknown price last. Control: ranking by list
+             price alone (before the review's fix) MUST fail it.
   check      the whole check on scripted options: a clean language passes and is stored, lost
              numbers / slow replies / no clips / a low score fail with plain words, a different
              option hears the voice back, a paid plan is refused before any ₹, Sarvam off is not
@@ -26,10 +30,12 @@ from typing import Any
 import harness as h
 import numpy as np
 
+from jarvis.calls.cards import Estimator, offered
 from jarvis.calls.langcheck import runner, scoring, select
 from jarvis.calls.langcheck.runner import CheckRefused, LanguageCheck
 from jarvis.calls.langcheck.scoring import ClipScore
-from jarvis.calls.models import LanguageResult, SpeechOption
+from jarvis.calls.models import CallSettings, LanguageResult, SpeechOption
+from jarvis.calls.prices import SpeechPrice
 from jarvis.calls.speech import phoneline
 from jarvis.calls.speech.audio import SAMPLE_RATE, from_float, to_float
 from jarvis.calls.speech.catalogue import OPTION_ORDER
@@ -279,6 +285,92 @@ def _reversed_choose(results: Any, lang: str, *, sarvam_on: bool, allow_balanced
 async def suite_selection() -> dict[str, Any]:
     s = await _run(_selection_cases(select.choose))
     s["negative_control"] = _control(await _run(_selection_cases(_reversed_choose)))
+    s["gate"] = s["gate"] and s["negative_control"]["suite_failed"]
+    return s
+
+
+# ---- the app's choice: free first (R18 review) ---------------------------------------------------
+
+CALL_MINUTES = 6
+FREE_PRICES = {
+    SpeechOption.GOOGLE: SpeechPrice(SpeechOption.GOOGLE, 2.29, 2.86, 3600, 1_000_000),
+    SpeechOption.AZURE: SpeechPrice(SpeechOption.AZURE, 0.0, 0.0, 18_000, 500_000, can_bill=False),
+    SpeechOption.SARVAM: SpeechPrice(SpeechOption.SARVAM, 0.5, 3.0, paid=True),
+    SpeechOption.BHASHINI: SpeechPrice(SpeechOption.BHASHINI, None, None),
+}
+
+
+class _GoogleLeft:
+    """Google's free allowance left this month: plenty, or used up."""
+
+    def __init__(self, plenty: bool) -> None:
+        self.plenty = plenty
+
+    async def left(self, option: SpeechOption) -> tuple[float, float] | None:
+        if option is not SpeechOption.GOOGLE:
+            return None
+        return (1e6, 1e7) if self.plenty else (0.0, 0.0)
+
+
+FreeChoose = Callable[[list[LanguageResult], CallSettings, bool], Awaitable[str | None]]
+
+
+async def _app_choice(results: list[LanguageResult], s: CallSettings, plenty: bool) -> str | None:
+    """`cards.offered` as the card, the language table and the call use it (free first)."""
+    est = Estimator(FREE_PRICES, None, allowance=_GoogleLeft(plenty))
+    got = offered(results, s, await est.free_options(CALL_MINUTES)).get(results[0].lang)
+    return got.option.value if got else None
+
+
+async def _list_price_choice(
+    results: list[LanguageResult], s: CallSettings, plenty: bool
+) -> str | None:
+    """The negative control: ranked by list price alone (before the review's fix)."""
+    got = offered(results, s).get(results[0].lang)
+    return got.option.value if got else None
+
+
+def _free_cases(choose: FreeChoose) -> list[Case]:
+    def picks(
+        results: list[LanguageResult], want: str | None, *, plenty: bool, sarvam: bool
+    ) -> Callable[[], Awaitable[list[str]]]:
+        async def f() -> list[str]:
+            got = await choose(results, CallSettings(sarvam_on=sarvam), plenty)
+            return _expect(got == want, f"chose {got}, wanted {want}")
+
+        return f
+
+    paid = [
+        _result("hi-IN", "sarvam", inr_per_minute=0.70),
+        _result("hi-IN", "google", inr_per_minute=1.57),
+    ]
+    unknown = [
+        _result("bn-IN", "bhashini", inr_per_minute=None),
+        _result("bn-IN", "google", inr_per_minute=1.57),
+    ]
+    azure = [
+        _result("ml-IN", "sarvam", inr_per_minute=0.70),
+        _result("ml-IN", "azure", inr_per_minute=0.0),
+    ]
+    return [
+        ("allowance_left", "Google's allowance covers the call: Google, before cheaper Sarvam",
+         picks(paid, "google", plenty=True, sarvam=True)),
+        ("allowance_used", "the allowance used: the cheapest paid option he allows (Sarvam)",
+         picks(paid, "sarvam", plenty=False, sarvam=True)),
+        ("sarvam_off", "Sarvam off: never chosen, Google even past its allowance",
+         picks(paid, "google", plenty=False, sarvam=False)),
+        ("sarvam_off_free", "Sarvam off with the allowance left: Google",
+         picks(paid, "google", plenty=True, sarvam=False)),
+        ("azure_free", "Azure's free tier (it can't bill) before paid Sarvam",
+         picks(azure, "azure", plenty=False, sarvam=True)),
+        ("unknown_last", "an unknown price (Bhashini) after a known one, never as free",
+         picks(unknown, "google", plenty=False, sarvam=False)),
+    ]  # fmt: skip
+
+
+async def suite_free_first() -> dict[str, Any]:
+    s = await _run(_free_cases(_app_choice))
+    s["negative_control"] = _control(await _run(_free_cases(_list_price_choice)))
     s["gate"] = s["gate"] and s["negative_control"]["suite_failed"]
     return s
 

@@ -21,7 +21,8 @@ def test_calls_language_mock_evals_pass_their_gates() -> None:
     report = json.loads((ROOT / "evals" / "calls_language" / "report.json").read_text())
     suites = report["suites"]
     assert report["gate"] is True and report["mode"] == "mock"
-    assert set(suites) == {"scoring", "phoneline", "selection", "check"}
+    # R18 review: + free_first, the app's own choice (cards.offered: free first)
+    assert set(suites) == {"scoring", "phoneline", "selection", "free_first", "check"}
     for s in suites.values():
         assert s["pass_rate"] == 1
         assert s["negative_control"]["suite_failed"] is True

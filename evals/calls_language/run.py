@@ -7,8 +7,9 @@ Usage:
     python evals/calls_language/run.py --suite check
 
 Suites (mock; all gates hard, 100 %, each with a negative control that MUST fail it): scoring,
-phoneline, selection, check (see suites.py). The real check (FLEURS clips, real speech options)
-runs from the Calls panel, never in CI: no network and no paid speech here.
+phoneline, selection, free_first (the app's own choice, R18 review), check (see suites.py). The
+real check (FLEURS clips, real speech options) runs from the Calls panel, never in CI: no network
+and no paid speech here.
 """
 
 from __future__ import annotations
@@ -24,7 +25,13 @@ from typing import Any
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from suites import suite_check, suite_phoneline, suite_scoring, suite_selection  # noqa: E402
+from suites import (  # noqa: E402
+    suite_check,
+    suite_free_first,
+    suite_phoneline,
+    suite_scoring,
+    suite_selection,
+)
 
 from jarvis.logging import configure_logging  # noqa: E402
 
@@ -32,6 +39,7 @@ SUITES: dict[str, Callable[[], Awaitable[dict[str, Any]]]] = {
     "scoring": suite_scoring,
     "phoneline": suite_phoneline,
     "selection": suite_selection,
+    "free_first": suite_free_first,
     "check": suite_check,
 }
 

@@ -2,6 +2,18 @@
 chapter: module_voice
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
+pages:
+  "pg_module_voice": "d7f75fd0ef844d97"
+  "pg_card_c05": "a4b3efc3b7afacce"
+  "pg_card_c06": "d97c7b4c4b44e3c2"
+  "pg_card_c79": "97b626af41705a4e"
+  "pg_card_c80": "bdc27ce698cb4f24"
+  "pg_card_c81": "8406e9a94ac387f3"
+  "pg_card_c82": "de40e90ec2469e91"
+  "pg_card_c83": "60379190837d546e"
+  "pg_screen_voice": "ebbbac8acd00d1b1"
+  "pg_service_google_cloud_speech_to_text": "0fbd15f4ef36ad77"
+  "pg_service_google_cloud_text_to_speech": "f46603ef5546c3ba"
 ---
 - [page:pg_module_voice] [show:title] This chapter is about voice: how you talk to JARVIS, and how JARVIS talks back.
 - [show:plain] In the console, on laptop or phone, say "Hey Jarvis" and it listens; the wake word is spotted on your own device.
@@ -120,24 +132,41 @@ written_on: 2026-11-27
 - [show:plain] You talk with the microphone button beside the message box, and the Voice panel holds the choices.
 - There you pick which British voice JARVIS uses, how fast he speaks, and how much dry wit he allows himself.
 - "Hey Jarvis" is a separate switch, off until you turn it on, and the panel shows this month's voice use.
+- In Your voice you read short lines aloud, so JARVIS learns which listening engine hears you best, and your laptop trains your own Hey Jarvis.
+- And Speaker check lets only your voice interrupt him on this device.
 - [show:example] In the example, hands full in the kitchen, you tap the microphone and ask what's on today.
+- On Sunday you read the voice session's lines, learn that JARVIS now listens to you with Whisper small on your laptop, and press Train my Hey Jarvis.
 - [show:how] Voice, speed and wit are yours on every device, and Preview plays a short line in the chosen voice.
+- Your voice shows where your session stands, the listening engines ranked for your voice, the chosen one, and a switch to correct your usual mishearings.
+- The session comes in blocks with a break after each, and every clip goes on to your laptop; scoring it names the engine JARVIS now listens with.
+- After a scored session, the Train buttons have your laptop train your wake word from your recordings, and Delete my recordings asks first.
+- Speaker check keeps a voice print, encrypted in this browser and never uploaded; with it on, only your voice stops JARVIS, and it approves nothing.
 - [show:costs] The cloud voice uses Google's speech service in your own Google Cloud project, and the panel shows the allowance used, with a rupee estimate beyond it.
 - The browser's own recognition and voice cost nothing, though your audio then goes to the browser's maker.
+- The voice session's comparison uses Google's free listening minutes; past them it shows the rupees first, and Google hears more only after you type YES.
 - [show:fails] [count:{{fact:src/jarvis/api/voice.py:MAX_AUDIO_BYTES}}] A clip larger than {{fact:src/jarvis/api/voice.py:MAX_AUDIO_BYTES}} bytes is refused.
+- With the voice profile switched off on the server, Your voice says why, and with no speaker-check model, any voice interrupts as before.
 - [page:pg_service_google_cloud_speech_to_text] [show:title] Now the two outside services, starting with Google Cloud Speech-to-Text.
-- [show:plain] It is how JARVIS listens: after the wake word, that one short clip goes to Google, which sends back the words.
+- [show:plain] It is how JARVIS listens whenever your laptop speech kit doesn't hear you first: after the wake word, that one short clip goes to Google, which sends back the words.
 - Google gets the audio of that turn and a short list of hint words, and JARVIS stores no audio of these turns and never logs what you said.
 - [show:example] In the example, you ask JARVIS to add oat milk to groceries, Google returns the words and other guesses, and the item is added.
+- Had your laptop speech kit been awake, it would have heard the clip instead, and the month's counter would not have moved.
 - [show:how] Cloud listening is switched on only with the cloud voice, and JARVIS signs in as its own Google service account, with no extra key.
 - [count:{{fact:src/jarvis/voice/google_cloud.py:SHORT_CLIP_S}}] Your language is {{fact:settings.voice_language}}, with automatic punctuation, and the short-clip model handles clips up to {{fact:src/jarvis/voice/google_cloud.py:SHORT_CLIP_S}} seconds.
+- Your own listening follows your voice profile's order: the session's best engine, then Google, then the browser, each once.
+- A turn the laptop hears is never sent to Google or metered.
+- [count:{{fact:settings.voice_session_compare_minutes}}] The voice session's comparison asks Google alone, for at most {{fact:settings.voice_session_compare_minutes}} minutes, and past the free minutes nothing is sent until you type YES.
 - [show:costs] JARVIS claims only {{fact:settings.voice_stt_free_seconds}} seconds of listening a month, a margin below Google's own free amount.
 - [show:fails] When Google is slow, busy or unreachable, the console falls back to the browser's own recognition.
+- And when the laptop speech kit is off, asleep or failing, Google listens instead, with no message.
 - [page:pg_service_google_cloud_text_to_speech] [show:title] Last, Google Cloud Text-to-Speech: JARVIS's voice.
 - [show:plain] The reply is sent to Google, which returns it as sound, in one of the British voices you choose.
 - Only the text to be spoken goes to Google, and JARVIS stores no audio and never logs the text.
+- A laptop speech kit with a ready voice would speak your replies for free; this first kit has none, so Google speaks.
 - [show:example] In the example, you ask aloud for your first meeting, and the short answer comes back in your chosen HD voice in under a second.
 - [show:how] Google is asked for compressed sound at your chosen speed, with no retry, because a late voice is worse than the browser's voice now.
+- JARVIS asks the laptop first for your own replies, never for a voice preview or a guest's narration, and only while the kit reports a ready English voice.
 - [show:costs] Inside the free allowance it costs nothing, and Google's allowance resets on Pacific-time months, shared across your billing account.
 - [show:fails] When Google is slow, busy or down, the console speaks the reply in your browser's own voice.
+- With the laptop kit off, asleep or without a voice, Google speaks, with no message.
 - That is the Voice chapter: a wake word that stays on your device, a laptop that listens for free, and a voice that keeps to its allowance.

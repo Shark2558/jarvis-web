@@ -119,12 +119,15 @@ async def _loop(
     sleep: Sleep,
     rng: Callable[[], float],
     in_flight: list[bool],
+    passthrough: frozenset[int],
 ) -> httpx.Response:
     for attempt in range(max(1, policy.attempts)):
         last = attempt == max(1, policy.attempts) - 1
         in_flight[0] = True
         r = await _attempt(http, method, url, kw, option, api)
         in_flight[0] = False
+        if r is not None and r.status_code in passthrough:
+            return r
         if r is not None and (r.status_code not in RETRY_STATUSES or last):
             _raise_for(r, option, api)
             return r
@@ -151,8 +154,11 @@ async def send(
     data: Mapping[str, str] | None = None,
     files: Mapping[str, tuple[str, bytes, str]] | None = None,
     params: Mapping[str, str] | None = None,
+    passthrough: frozenset[int] = frozenset(),
 ) -> httpx.Response:
-    """The vendor's 2xx answer, or one of the speech errors (see the module docstring)."""
+    """The vendor's 2xx answer, or one of the speech errors (see the module docstring).
+    `passthrough`: statuses returned as they are, for an adapter that reads them itself (Azure's
+    403 is either a bad key or its free tier's quota used up)."""
     kw: dict[str, Any] = {"headers": dict(headers or {})}
     for key, value in (
         ("json", json),
@@ -166,7 +172,9 @@ async def send(
     in_flight = [False]
     try:
         async with asyncio.timeout(policy.deadline_s):
-            return await _loop(http, method, url, kw, option, api, policy, sleep, rng, in_flight)
+            return await _loop(
+                http, method, url, kw, option, api, policy, sleep, rng, in_flight, passthrough
+            )
     except TimeoutError:
         log.warning("speech api: deadline passed", extra={"option": option, "api": api})
         raise OptionUnavailable(option, "timeout", maybe_billed=in_flight[0]) from None

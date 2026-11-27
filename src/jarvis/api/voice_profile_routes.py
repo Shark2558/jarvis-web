@@ -1,8 +1,9 @@
 # src/jarvis/api/voice_profile_routes.py
-"""R5.2 "Your voice": the router skeleton (I0; docs/plans/r5-2-integration/I0-SEAMS.md). Every route
-is thin: it checks the owner, the path and the body's size and shape, then calls the part wired on
-`app.state` (I1 joins them), so V2, V3 and V4 fill the handlers from their own modules without
-editing this file. Mounted by `jarvis.api.voice.install_voice` (app.py stays under its guard).
+"""R5.2 "Your voice": the voice profile's routes (I0's router, its parts wired at I1 by
+`jarvis.api.r52_wiring`; docs/plans/r5-2-integration/I0-SEAMS.md). Every route is thin: it checks
+the owner, the path and the body's size and shape, then calls the part on `app.state`, so V2, V3
+and V4 keep the handlers in their own modules. Mounted by `jarvis.api.voice.install_voice` (app.py
+stays under its guard).
 
     owner (require_auth + current_user), /v1/voice/profile:
     GET  ""                          the profile: engines ranked, the chosen one   api.view
@@ -22,8 +23,11 @@ editing this file. Mounted by `jarvis.api.voice.install_voice` (app.py stays und
     GET  /wakeword/model             stage 2's ONNX model (bytes, type)           wakeword.model
 
 (api = `app.state.voice_profile_api` V3, laptop = `voice_laptop` V2, wakeword = `voice_wakeword`
-V4.) Not wired yet: 501 {"error": "not_built"}. `voice_profile_enabled` off: 503
-{"error": "voice_profile_off"}. A handler refuses with `ProfileRefused` -> {error, detail}. Bodies
+V4.) A part that failed to build at start-up (or none in a test app): 501 {"error": "not_built"}.
+`voice_profile_enabled` off: 503 {"error": "voice_profile_off"}. A handler refuses with
+`ProfileRefused` -> {error, detail}; anything else it raises (a store down, a document that can't
+be read) is logged by its class name only and answered 503 {"error": "unavailable"} in plain words,
+never a bare 500 or the error's text (R5.2 review). Bodies
 are JSON objects of at most `BODY_MAX` bytes (a clip: `CLIP_BODY_MAX`; 422 input_rejected / 413
 too_large). Every answer is `no-store`: a profile, a wake-word file or a voice's results are the
 owner's, never cached. /v1 is under the app's per-client rate limit (`api.ratelimit`).
@@ -44,7 +48,10 @@ from jarvis.api.body import BodyTooLarge, read_capped
 from jarvis.api.identity import current_user
 from jarvis.config import Settings
 from jarvis.localspeech.protocol import PROMPT_ID
+from jarvis.logging import get_logger
 from jarvis.voice.profile_ports import ProfileRefused
+
+log = get_logger(__name__)
 
 PREFIX: Final = "/v1/voice/profile"
 BODY_MAX: Final = 16_384
@@ -58,6 +65,7 @@ NOT_AN_OBJECT = "Send a JSON object."
 CONFIRM_NEEDED = f'Deleting your recordings needs {{"confirm": "{CONFIRM_WORD}"}}.'
 DELETE_KEYS: Final = frozenset({"confirm", "wakeword"})
 BAD_DELETE = 'Send {"confirm": "DELETE"} and, to delete the wake-word files too, "wakeword": true.'
+UNAVAILABLE = "Your voice's data can't be reached just now. Try again in a minute."
 
 # (method, path) -> (slot, the part's method): the route table and its seams
 SLOTS: Final[dict[tuple[str, str], tuple[str, str]]] = {
@@ -110,6 +118,16 @@ async def _answer(request: Request, slot: str, run: Run) -> Response:
         return _json(await run(part))
     except ProfileRefused as exc:
         return _err(exc.status, exc.code, exc.words)
+    except Exception as exc:  # noqa: BLE001 - never a bare 500, never the error's text
+        return _failed(request, exc)
+
+
+def _failed(request: Request, exc: Exception) -> JSONResponse:
+    log.error(
+        "voice profile route failed",
+        extra={"route": request.url.path, "error": type(exc).__name__},
+    )
+    return _err(503, "unavailable", UNAVAILABLE)
 
 
 async def _body(request: Request, cap: int) -> dict[str, Any] | JSONResponse:
@@ -149,6 +167,8 @@ async def _file(request: Request, slot: str, method: str, uid: str) -> Response:
         data, media = await getattr(part, method)(uid)
     except ProfileRefused as exc:
         return _err(exc.status, exc.code, exc.words)
+    except Exception as exc:  # noqa: BLE001 - never a bare 500, never the error's text
+        return _failed(request, exc)
     return Response(content=data, media_type=media, headers=NO_STORE)
 
 

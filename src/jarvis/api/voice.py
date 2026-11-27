@@ -215,7 +215,7 @@ def install_voice(app: FastAPI) -> None:
         return _err(429, {"error": "rate_limited", "detail": "too many requests"}, retry)
 
     app.include_router(router)
-    install_voice_profile_routes(app)  # R5.2: /v1/voice/profile (501 until its I1 wires it)
+    install_voice_profile_routes(app)  # R5.2: /v1/voice/profile (its parts: api/r52_wiring.py)
     app.include_router(speaker_router)  # R5.2 V5: the speaker check's model file (sha-checked)
 
 

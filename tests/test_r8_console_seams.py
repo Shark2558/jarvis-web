@@ -3,10 +3,10 @@
 #   - S2 the port core: a Result reaches a use case only during a live() that names it; run()
 #     and stream() tell none; live() needs a camera a tap started and stops when it stops; stream
 #     honours opts.rate; tally() is frozen plain data with only the fixed widget kinds; reset();
-#     one person: a second body pauses the look and nothing is counted (a partner may be in view
-#     only where the coach says so), and a coach without `pose` still has its people checked
-#   - S3 the R8 task module: `hands` v1 and `pose` v2 are registered before the seal and say
-#     "not installed" until builder A's bodies and the model files arrive
+#     the owner's D6: everyone in view by default, one body at a time (a state per body); "me"
+#     is a lone body on this device (no face is matched here); a person only by their fp_ id
+#   - S3 the R8 task module: `hands` v1, `digits` v1 and `pose` v2 are registered before the
+#     seal and say "not installed" until builder A's and D's bodies and the model files arrive
 # The Node scenarios are in tests/fixtures/r7/b_dom.js ("driver", "r8tasks").
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def test_results_reach_only_the_use_cases_a_live_look_names() -> None:
     out = _driver(
         use("named", "probe"),
         use("other", "probe"),
-        live(["probe"], ["named"], people="partner"),
+        live(["probe"], ["named"]),
         wait(300),
         {"op": "end"},
     )
@@ -67,7 +67,7 @@ def test_live_needs_a_camera_a_tap_started() -> None:
 def test_a_look_ends_when_the_camera_stops() -> None:
     out = _driver(
         use("named", "probe"),
-        live(["probe"], ["named"], people="partner"),
+        live(["probe"], ["named"]),
         wait(150),
         {"op": "camera", "on": False},
         {"op": "mark"},
@@ -83,9 +83,9 @@ def test_unknown_tasks_or_uses_start_nothing() -> None:
 
 
 def test_stream_honours_opts_rate_never_above_the_tasks_own() -> None:
-    slow = _driver(use("named", "probe"), live(["probe"], ["named"], rate=2, people="partner"),
+    slow = _driver(use("named", "probe"), live(["probe"], ["named"], rate=2),
                    wait(700), {"op": "end"})  # fmt: skip
-    fast = _driver(use("named", "probe"), live(["probe"], ["named"], rate=99, people="partner"),
+    fast = _driver(use("named", "probe"), live(["probe"], ["named"], rate=99),
                    wait(700), {"op": "end"})  # fmt: skip
     assert 1 <= slow["got"]["named"] <= 2  # 2 a second: the first frame, then one 500 ms later
     assert fast["got"]["named"] >= 5  # capped at the task's 15 a second, never 99
@@ -94,7 +94,7 @@ def test_stream_honours_opts_rate_never_above_the_tasks_own() -> None:
 def test_tally_is_frozen_plain_data_with_the_fixed_widgets_only() -> None:
     out = _driver(
         use("named", "probe"),
-        live(["probe"], ["named"], people="partner"),
+        live(["probe"], ["named"]),
         wait(200),
         {"op": "end"},
         {"op": "tally", "id": "named"},
@@ -103,13 +103,13 @@ def test_tally_is_frozen_plain_data_with_the_fixed_widgets_only() -> None:
     mine, nobody = out["tallies"]
     assert [w["kind"] for w in mine["view"]] == ["big", "paused"]  # "evil" and a function dropped
     assert mine["tally"]["count"] == out["got"]["named"] and mine["frozen"] is True
-    assert nobody == {"view": [], "tally": None, "frozen": True}
+    assert nobody == {"view": [], "tally": None, "who": "", "frozen": True}
 
 
 def test_reset_clears_a_use_cases_state() -> None:
     out = _driver(
         use("named", "probe"),
-        live(["probe"], ["named"], people="partner"),
+        live(["probe"], ["named"]),
         wait(200),
         {"op": "end"},
         {"op": "reset", "id": "named"},
@@ -118,77 +118,90 @@ def test_reset_clears_a_use_cases_state() -> None:
     assert out["resets"] == [True] and out["tallies"][0]["tally"]["count"] == 0
 
 
-# ---- S2 · one person is tracked (D6, ADR-48) ----------------------------------------------------
-def test_a_second_body_pauses_the_look_and_nothing_is_counted() -> None:
+# ---- S2 · the tracking target (the owner's D6: everyone by default, "me", or one person) ---------
+FP = "fp_0123456789ab"
+
+
+def test_everyone_in_view_is_told_one_body_at_a_time() -> None:
     out = _driver(
-        use("named", "pose"),
-        live(["pose"], ["named"]),
+        use("coach", "pose"),
+        {"op": "bodies", "value": ["", ""]},
+        live(["pose"], ["coach"]),
         wait(200),
-        {"op": "others", "value": 1},
-        wait(150),
+        {"op": "tracks", "id": "coach"},
+        {"op": "end"},
+        {"op": "tally", "id": "coach", "track": 1},
+    )
+    assert out["tracks"] == [[{"track": 0, "who": ""}, {"track": 1, "who": ""}]]
+    assert out["seen"] == out["tracks"]  # who is in view, as the look sees it
+    assert sorted(out["whos"]["coach"]) == ["0:", "1:"]
+    assert out["tallies"][0]["tally"]["count"] >= 2 and out["tallies"][0]["who"] == ""
+
+
+def test_a_lone_body_on_this_device_is_me_and_never_a_name() -> None:
+    out = _driver(use("coach", "pose"), live(["pose"], ["coach"]), wait(150),
+                  {"op": "tracks", "id": "coach"}, {"op": "end"})  # fmt: skip
+    assert out["tracks"] == [[{"track": 0, "who": "me"}]]
+
+
+def test_track_me_tells_only_my_body() -> None:
+    out = _driver(
+        use("coach", "pose"),
+        {"op": "bodies", "value": ["", ""]},
+        live(["pose"], ["coach"], target={"kind": "me"}),
+        wait(200),
         {"op": "mark"},
-        {"op": "paused"},
-        wait(300),
-        {"op": "others", "value": 0},
+        {"op": "bodies", "value": [""]},
         wait(200),
-        {"op": "paused"},
         {"op": "end"},
     )
-    assert out["marked"]["named"] >= 1
-    assert out["paused"] == ["others", ""]
-    assert out["counted_while_paused"] == 0  # no Result reached the use case while paused
+    assert out["marked"]["coach"] == 0  # two in view and no face matched here: nobody is "me"
+    assert out["got"]["coach"] >= 2 and out["whos"]["coach"] == ["0:me"]
 
 
-def test_a_partner_may_be_in_view_only_when_the_coach_says_so() -> None:
+def test_track_a_person_tells_only_that_person() -> None:
     out = _driver(
-        use("named", "pose"),
-        {"op": "others", "value": 1},
-        live(["pose"], ["named"], people="partner"),
+        use("coach", "pose"),
+        {"op": "bodies", "value": [FP, "me", ""]},
+        live(["pose"], ["coach"], target={"kind": "person", "person": FP}),
+        wait(200),
+        {"op": "end"},
+    )
+    assert out["whos"]["coach"] == [f"0:{FP}"]
+    nobody = _driver(use("coach", "pose"), live(["pose"], ["coach"], target={"kind": "person", "person": "Shruti"}))
+    assert nobody["errors"] == ["That vision task is not installed."] and nobody["frames"] == 0
+
+
+def test_things_in_view_reach_every_bodys_session() -> None:
+    out = _driver(
+        use("coach", "pose", "probe"),
+        {"op": "bodies", "value": ["", ""]},
+        live(["pose", "probe"], ["coach"]),
         wait(250),
-        {"op": "paused"},
         {"op": "end"},
+        {"op": "tally", "id": "coach", "track": 0},
+        {"op": "tally", "id": "coach", "track": 1},
     )
-    assert out["paused"] == [""] and out["got"]["named"] >= 2
-
-
-def test_a_coach_without_pose_still_pauses_for_a_second_body() -> None:
-    out = _driver(
-        use("game", "probe"),
-        {"op": "others", "value": 1},
-        live(["probe"], ["game"]),
-        wait(300),
-        {"op": "paused"},
-        {"op": "end"},
-    )
-    assert out["paused"] == ["others"] and out["got"]["game"] == 0
-    assert out["pose_runs"] >= 1  # the people check ran beside the coach's own task
-
-
-def test_a_look_starts_paused_until_one_person_is_seen() -> None:
-    out = _driver(use("named", "probe"), live(["probe"], ["named"]), wait(150),
-                  {"op": "paused"}, {"op": "end"})  # fmt: skip
-    assert out["started"] == ["checking"] and out["paused"] == [""]
-    partner = _driver(use("named", "probe"), live(["probe"], ["named"], people="partner"))
-    assert partner["started"] == [""]
+    first, second = (t["tally"]["count"] for t in out["tallies"])
+    assert first > len([w for w in out["whos"]["coach"] if w.startswith("0:")])  # pose and probe
 
 
 # ---- S3 · the R8 task module ----------------------------------------------------------------------
 def test_hands_and_pose_v2_are_registered_and_say_not_installed() -> None:
     out = run_dom("r8tasks")
     tasks = {t["id"]: t for t in out["tasks"]}
-    assert tasks["pose"]["v"] == 2 and tasks["hands"]["v"] == 1
+    assert tasks["pose"]["v"] == 2 and tasks["hands"]["v"] == 1 and tasks["digits"]["v"] == 1
     assert out["sealed"] is True
-    assert out["errors"] == {"pose": "not installed", "hands": "not installed"}
+    assert out["errors"] == {"pose": "not installed", "hands": "not installed", "digits": "not installed"}
     broken = run_dom("r8tasks", fetchStatus=500)
-    assert set(broken["errors"].values()) == {
-        "The vision tools could not load. Check the connection and try again."
-    }
+    no_load = "The vision tools could not load. Check the connection and try again."
+    assert broken["errors"] == {"pose": no_load, "hands": no_load, "digits": "not installed"}
 
 
 def test_the_r8_task_module_holds_bodies_only() -> None:
     js = (STATIC / R8_MODULE).read_text(encoding="utf-8")
     assert js.isascii() and len(js.splitlines()) <= 800
-    for name in ("loadPose", "runPose", "loadHands", "runHands", "unload"):
+    for name in ("loadPose", "runPose", "loadHands", "runHands", "loadDigits", "runDigits", "unload"):
         assert f"export function {name}(" in js or f"export async function {name}(" in js, name
     for bad in ("fetch(", "JarvisCamera", "getUserMedia", "JarvisVision", "localStorage",
                 "innerHTML", "XMLHttpRequest", "sendBeacon", "WebSocket", "import("):  # fmt: skip

@@ -9,13 +9,14 @@
 //                                             check(data) -> bool}   (its schema: numbers in ranges, labels from its own
 //                                             list, text <= 2,000 characters; the server's jarvis.vision.results)
 //   JarvisVision.use(usecase)                 a use case = {id, tasks: [...], onResult(result, state), summary(state)}
-//   JarvisVision.live(taskIds, {uses, rate, people, onError}) -> {end(), paused()}   R8 (INTEGRATION-B section 3, line 3)
+//   JarvisVision.live(taskIds, {uses, rate, target, onError}) -> {end(), tracks()}   R8 (INTEGRATION-B section 3, line 3)
 //                                             the driver: frames from JarvisCamera while a tap-started look is live, only
-//                                             to the use cases named in `uses`; people 'alone' (default: a second body
-//                                             pauses it, and a coach without pose still has its people checked) or
-//                                             'partner' (row 240: someone else may be in view; never tracked)
-//   JarvisVision.tally(id) -> {view, tally}   frozen plain data from the use case's summary(state); view: fixed widgets only
-//   JarvisVision.reset(id)                    its state cleared (a session's start and end)
+//                                             to the use cases named in `uses`, ONE BODY AT A TIME (a use case keeps a state
+//                                             per body); target {kind: 'all' (default) | 'me' | 'person', person: 'fp_...'}
+//                                             picks the bodies (the owner's D6). Here no face is matched: a body is 'me'
+//                                             only while it is the only one in view of this device
+//   JarvisVision.tally(id, track?) -> {view, tally, who}   frozen plain data from summary(state); view: fixed widgets only
+//   JarvisVision.tracks(id) -> [{track, who}]  the bodies a use case holds a state for; reset(id) clears them all
 //   Result = {task, v, at, ms, device: 'phone'|'browser'|'home', ok, data, quality: {light, sharp}}
 // A Result is a frozen copy of plain data: a task's answer that fails its own check is dropped (ok: false, data {}),
 // and a use case receives Results only, never a frame, never the task, never the source, and only during a live() that
@@ -27,9 +28,11 @@ const INPUTS = ['photo', 'live', 'both'];
 const LIVE_MAX_PER_S = 15; // D13: pose at most 15 a second, objects 5; a slow device slows itself
 const VIEW_KINDS = Object.freeze(['big', 'line', 'tip', 'timer', 'pacer', 'targets', 'checklist', 'bar', 'paused']); // R8 4.3
 const VIEW_MAX = 8;
-const PEOPLE = ['alone', 'partner'];
-const PEOPLE_CHECK_PER_S = 0.5; // R8 D6: a coach that does not ask for pose still has its people checked (risk 2)
+const TARGETS = ['all', 'me', 'person'];
+const PERSON = /^fp_[0-9a-f]{12}$/;
 const LIVE_TASKS_MAX = 4;
+const BODIES_MAX = 4;
+const ONE = '-'; // the state key of a use case that asked for no pose: hands and things belong to no body
 const NOT_THERE = 'That vision task is not installed.';
 const CAMERA_TAP = 'The camera starts only from a tap.';
 const CAMERA_STOPPED = 'The camera was stopped.';
@@ -82,11 +85,19 @@ function list() {
   return [...tasks.values()].map((t) => Object.freeze({ id: t.id, v: t.v, input: t.input, ready: t.ready, why: t.why }));
 }
 
-function tell(r, names) { // R8: only the use cases a live look names, and only for a task each asked for
+function feed(u, key, r, who) { // one body's state (or the one state) of one use case
+  const s = u.states.get(key) || { state: undefined, who: '' };
+  try { s.state = u.onResult(r, s.state); } catch (_) {}
+  s.who = who;
+  if (!u.states.has(key) && u.states.size < BODIES_MAX + 1) u.states.set(key, s);
+}
+function tell(r, names, bodies) { // R8: only the use cases a live look names, and only for a task each asked for
   names.forEach((id) => {
     const u = uses.get(id);
     if (!u || !u.tasks.includes(r.task)) return;
-    try { u.state = u.onResult(r, u.state); } catch (_) {}
+    if (!u.tasks.includes('pose')) { feed(u, ONE, r, ''); return; }
+    if (r.task === 'pose') { bodies.forEach((b) => feed(u, b.track, b.r, b.who)); return; }
+    u.states.forEach((s, key) => feed(u, key, r, s.who)); // a thing in view belongs to every body's session
   });
 }
 
@@ -131,48 +142,58 @@ function stream(id, opts, onResult) {
 function use(usecase) {
   if (!usecase || !TASK_ID.test(usecase.id || '') || uses.has(usecase.id) || typeof usecase.onResult !== 'function') return false;
   const wanted = Array.isArray(usecase.tasks) ? usecase.tasks.filter((x) => typeof x === 'string').slice(0, 8) : [];
-  uses.set(usecase.id, { id: usecase.id, tasks: wanted, onResult: usecase.onResult, summary: usecase.summary, state: undefined });
+  uses.set(usecase.id, { id: usecase.id, tasks: wanted, onResult: usecase.onResult, summary: usecase.summary, states: new Map() });
   return true;
 }
 
 // ---- R8: the live driver (docs/plans/r8-vision.md 4.3; R7 INTEGRATION-B section 7a) -----------------------------------
-function seen(look, r, peopleOnly) { // a pose Result says who is in view; a paused look tells nobody anything
-  if (!look.on) return;
-  if (r.task === 'pose' && look.people === 'alone') look.paused = !r.ok ? 'checking' : (r.data.others === 1 ? 'others' : '');
-  if (peopleOnly || look.paused) return;
-  tell(r, look.names);
+function bodiesOf(r, look) { // the bodies of a pose Result the target asks for, each as its own one-body Result
+  if (!r.ok || r.task !== 'pose') return [];
+  const raw = r.data.bodies && r.data.bodies.length ? r.data.bodies : (r.data.points && r.data.points.length ? [{ track: 0, who: '', points: r.data.points }] : []);
+  const all = raw.slice(0, BODIES_MAX).map((b) => ({ track: b.track, who: b.who || (raw.length === 1 ? 'me' : ''), points: b.points })); // no face matched here
+  const t = look.target;
+  const picked = all.filter((b) => t.kind === 'all' || (t.kind === 'me' ? b.who === 'me' : b.who === t.person));
+  look.seen = Object.freeze(all.map((b) => Object.freeze({ track: b.track, who: b.who })));
+  return picked.map((b) => ({ track: b.track, who: b.who, r: Object.freeze(Object.assign({}, r, { data: Object.freeze({ points: b.points }), track: b.track, who: b.who })) }));
+}
+function targetOf(t) {
+  const kind = t && TARGETS.includes(t.kind) ? t.kind : 'all';
+  if (kind === 'person') return PERSON.test((t && t.person) || '') ? { kind, person: t.person } : null; // a person nobody enrolled: nobody
+  return { kind, person: '' };
 }
 function live(taskIds, opts) {
   const o = opts || {}, cam = window.JarvisCamera;
   const fail = (e) => { if (typeof o.onError === 'function') { try { o.onError(e); } catch (_) {} } };
   const ids = Array.isArray(taskIds) ? [...new Set(taskIds.filter((x) => typeof x === 'string' && tasks.has(x)))].slice(0, LIVE_TASKS_MAX) : [];
   const names = Array.isArray(o.uses) ? [...new Set(o.uses.filter((x) => typeof x === 'string' && uses.has(x)))].slice(0, 8) : [];
-  const people = PEOPLE.includes(o.people) ? o.people : 'alone';
-  const look = { names, people, paused: people === 'alone' ? 'checking' : '', on: true, streams: [], off: null };
+  const look = { names, target: targetOf(o.target), on: true, streams: [], off: null, seen: Object.freeze([]) };
   const end = () => { look.on = false; look.streams.splice(0).forEach((x) => x.stop()); if (look.off) { try { look.off(); } catch (_) {} } look.off = null; };
-  const handle = Object.freeze({ end, paused: () => look.paused });
-  if (!ids.length || !names.length) { look.on = false; fail(new Error(NOT_THERE)); return handle; }
+  const handle = Object.freeze({ end, tracks: () => look.seen });
+  if (!ids.length || !names.length || !look.target) { look.on = false; fail(new Error(NOT_THERE)); return handle; }
   if (!cam || typeof cam.live !== 'function' || typeof cam.frame !== 'function' || !cam.live()) { look.on = false; fail(new Error(CAMERA_TAP)); return handle; }
   const stopped = (e) => { if (!look.on) return; end(); fail(e); };
   if (typeof cam.onChange === 'function') look.off = cam.onChange((d) => { if (!d || !d.live) stopped(new Error(CAMERA_STOPPED)); });
   const frame = () => (look.on && cam.live() ? cam.frame() : null);
-  const check = people === 'alone' && !ids.includes('pose') && tasks.has('pose'); // the people check rides beside
-  ids.forEach((id) => { look.streams.push(stream(id, { frame, rate: o.rate, onError: stopped }, (r) => seen(look, r, false))); });
-  if (check) look.streams.push(stream('pose', { frame, rate: PEOPLE_CHECK_PER_S, onError: () => { look.paused = 'checking'; } }, (r) => seen(look, r, true)));
+  ids.forEach((id) => { look.streams.push(stream(id, { frame, rate: o.rate, onError: stopped }, (r) => { if (look.on) tell(r, look.names, bodiesOf(r, look)); })); });
   return handle;
 }
-function tally(id) { // the panes' only way to a use case's state: frozen plain data, the fixed widget kinds only
+function tally(id, track) { // the panes' only way to a use case's state: frozen plain data, the fixed widget kinds only
   const u = uses.get(id);
+  const s = u ? (u.states.get(track === undefined ? [...u.states.keys()][0] : track) || null) : null;
   let out = null;
-  if (u && typeof u.summary === 'function') { try { out = u.summary(u.state); } catch (_) { out = null; } }
+  if (u && typeof u.summary === 'function') { try { out = u.summary(s ? s.state : undefined); } catch (_) { out = null; } }
   const o = out && typeof out === 'object' && !Array.isArray(out) ? out : {};
   const view = Array.isArray(o.view) ? o.view.filter((w) => !!w && typeof w === 'object' && VIEW_KINDS.includes(w.kind)).slice(0, VIEW_MAX) : [];
   const kept = o.tally === undefined || o.tally === null ? null : plain(o.tally, 0);
-  return Object.freeze({ view: plain(view, 0), tally: kept && typeof kept === 'object' && !Array.isArray(kept) ? kept : null });
+  return Object.freeze({ view: plain(view, 0), tally: kept && typeof kept === 'object' && !Array.isArray(kept) ? kept : null, who: s ? s.who : '' });
 }
-function reset(id) { const u = uses.get(id); if (u) u.state = undefined; return !!u; }
+function tracks(id) {
+  const u = uses.get(id);
+  return Object.freeze(u ? [...u.states.entries()].filter(([k]) => k !== ONE).map(([track, s]) => Object.freeze({ track, who: s.who })) : []);
+}
+function reset(id) { const u = uses.get(id); if (u) u.states.clear(); return !!u; }
 
-const api = Object.freeze({ tasks: list, run, stream, register, use, live, tally, reset });
+const api = Object.freeze({ tasks: list, run, stream, register, use, live, tally, tracks, reset });
 window.JarvisVision = api;
 if (M) M.part('vision', api);
 
@@ -219,6 +240,9 @@ const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= l
 const inUnit = (v) => num(v, 0, 1);
 const clamp = (v, lo, hi) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo);
 const text = (s) => typeof s === 'string' && s.length <= TEXT_MAX;
+const WHO = /^(?:|me|fp_[0-9a-f]{12})$/; // unknown, the owner, or a consented person (R3's id): never a name
+const bodyPoints = (ps) => Array.isArray(ps) && ps.length <= 33 && ps.every((p) => only(p, ['x', 'y', 'z', 'visibility'])
+  && num(p.x, -1, 2) && num(p.y, -1, 2) && num(p.z, -10, 10) && inUnit(p.visibility));
 const CHECKS = {
   text: (d) => only(d, ['text', 'confidence']) && text(d.text) && (d.confidence === undefined || d.confidence === null || inUnit(d.confidence)),
   code: (d) => only(d, ['codes']) && Array.isArray(d.codes) && d.codes.length <= 20
@@ -226,15 +250,20 @@ const CHECKS = {
   objects: (d) => only(d, ['objects']) && Array.isArray(d.objects) && d.objects.length <= 50
     && d.objects.every((o) => only(o, ['label', 'score', 'box']) && OBJECT_LABELS.includes(o.label) && inUnit(o.score)
       && only(o.box, ['x', 'y', 'w', 'h']) && ['x', 'y', 'w', 'h'].every((k) => inUnit(o.box[k]))),
-  pose: (d) => only(d, ['points', 'others']) && Array.isArray(d.points) && d.points.length <= 33
-    && d.points.every((p) => only(p, ['x', 'y', 'z', 'visibility']) && num(p.x, -1, 2) && num(p.y, -1, 2)
-      && num(p.z, -10, 10) && inUnit(p.visibility)) && (d.others === undefined || d.others === 0 || d.others === 1),
+  pose: (d) => only(d, ['points', 'bodies']) && (d.points === undefined || bodyPoints(d.points))
+    && (d.bodies === undefined || (Array.isArray(d.bodies) && d.bodies.length <= 4 && d.bodies.every((b) => only(b, ['track', 'who', 'points'])
+      && Number.isInteger(b.track) && b.track >= 0 && b.track <= 63 && typeof b.who === 'string' && WHO.test(b.who) && bodyPoints(b.points))
+      && new Set(d.bodies.map((b) => b.track)).size === d.bodies.length))
+    && !(d.points && d.points.length && d.bodies && d.bodies.length), // R8 v2 (D6): bodies, each a track and who
   quality: (d) => only(d, ['light', 'sharp']) && inUnit(d.light) && inUnit(d.sharp),
   // R8 I0: at most 2 hands, each all 21 points (the server's HandsData)
   hands: (d) => only(d, ['hands']) && Array.isArray(d.hands) && d.hands.length <= 2
     && d.hands.every((h) => only(h, ['side', 'score', 'points']) && ['left', 'right'].includes(h.side) && inUnit(h.score)
       && Array.isArray(h.points) && h.points.length === 21
       && h.points.every((p) => only(p, ['x', 'y', 'z']) && num(p.x, -1, 2) && num(p.y, -1, 2) && num(p.z, -10, 10))),
+  // R8 I0 (D7): a seven-segment display's lines, top to bottom (the server's DigitsData)
+  digits: (d) => only(d, ['lines']) && Array.isArray(d.lines) && d.lines.length <= 4
+    && d.lines.every((l) => only(l, ['value', 'score']) && Number.isInteger(l.value) && l.value >= 0 && l.value <= 999 && inUnit(l.score)),
 };
 
 // ---- frames: whatever the camera or a photo gives, drawn into this run's own canvases ---------------------------------
@@ -562,9 +591,11 @@ window.addEventListener('pagehide', unload13);
 // Their shells (id, v, input, rate, check) are here and registered before the seal; their bodies live in
 // console-vision-r8.js (R8 builder A), imported on first use like R13's arithmetic: a failed import is not kept (the
 // next use tries again) and is "could not load" for these two only. That module's API, called only from here:
-//   loadPose(kit), runPose(frame, opts, kit) -> {data, quality}, loadHands(kit), runHands(frame, opts, kit), unload()
-// `pose` v2 runs the landmarker with 2 poses, follows the body that started the look alone and drops every other
-// body's points itself, setting `others` (ADR-48); `hands` gives at most 2 hands of 21 points. Its kit is the engine's
+//   loadPose(kit), runPose(frame, opts, kit) -> {data, quality}, loadHands(kit), runHands(frame, opts, kit),
+//   loadDigits(kit), runDigits(frame, opts, kit), unload()
+// `pose` v2 runs the landmarker with up to 4 poses and gives each body a `track` that follows it (who: '' here, no
+// face is matched in a browser); `hands` gives at most 2 hands of 21 points; `digits` reads a seven-segment display
+// (D7: a blood-pressure monitor's) from one photo or frame, on a tap. Its kit is the engine's
 // own helpers (KIT8); a use case never sees it. BASE8 is the r8-1 release (jarvis.vision.assets.R8_RELEASE): the hand
 // model and the full pose model; R7's lite pose model stays in BASE.
 const BASE8 = '/static/vendor/vision/r8-1/';
@@ -582,7 +613,7 @@ async function model8(name) { // 404: the model file has not arrived (D8); the r
   return new Uint8Array(await r.arrayBuffer());
 }
 const KIT8 = Object.freeze({ NOT_INSTALLED, NO_PICTURE, POSE_MODEL, POSE_FULL_MODEL, HAND_MODEL, MP_FILES, look, qualityOf, clamp,
-  model, model8, mp, sha256hex });
+  drawn, model, model8, mp, sha256hex });
 const poseTask = {
   id: 'pose', v: 2, input: 'both', rate: 15,
   load: guard(async () => { await r8(); await R8.loadPose(KIT8); }),
@@ -595,15 +626,21 @@ const handsTask = {
   run: (frame, opts) => R8.runHands(frame, opts || {}, KIT8),
   check: CHECKS.hands,
 };
+const digitsTask = {
+  id: 'digits', v: 1, input: 'both',
+  load: guard(async () => { await r8(); await R8.loadDigits(KIT8); }),
+  run: (frame, opts) => R8.runDigits(frame, opts || {}, KIT8),
+  check: CHECKS.digits,
+};
 function unload8() { // the page left: A's landmarkers go; the next use loads them again
-  ['pose', 'hands'].forEach((id) => { const t = tasks.get(id); if (t) { t.ready = false; t.loading = null; } });
+  ['pose', 'hands', 'digits'].forEach((id) => { const t = tasks.get(id); if (t) { t.ready = false; t.loading = null; } });
   if (R8 && typeof R8.unload === 'function') { try { R8.unload(); } catch (_) {} }
 }
 window.addEventListener('pagehide', unload8);
 
 [textTask, codeTask, objectsTask, poseTask, qualityTask].forEach((t) => register(t));
 [embedTask, colourTask, personTask, faceTask].forEach((t) => register(t)); // R13 D: before the seal
-[handsTask].forEach((t) => register(t)); // R8 I0: before the seal
+[handsTask, digitsTask].forEach((t) => register(t)); // R8 I0: before the seal
 sealRegistry();
 
 // When the page is left, the worker and the landmarkers are let go (a phone keeps no 100 MB it no longer needs); the

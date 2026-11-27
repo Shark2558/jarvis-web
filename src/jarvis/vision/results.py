@@ -18,21 +18,24 @@ wardrobe tasks, `WARDROBE_TASKS` (embed, colour, person, face), that only the tw
 wardrobe=True)`), but `TASKS` stays the five: a wardrobe result is never a kept vision result
 (`parse_result` without `wardrobe=True`, the kept-results route's, refuses them).
 
-R8 I0 (docs/plans/r8-vision.md section 4.2, seam S1; the line in R7's INTEGRATION-B.md): a sixth
-task, `hands` v1 (MediaPipe Hand Landmarker: at most 2 hands, each `side`, `score` and exactly
-`HAND_POINTS` 21 points), and `pose` v2: the same 33 points for ONE body plus `others` (0 or 1:
-whether another body is in view; the task drops that body's points itself, so they never reach
-a use case or this schema: ADR-48). A v1 pose result (no `others`) still fits.
+R8 I0 (docs/plans/r8-vision.md v8.0.2 section 4.2, seams S1 and S26; the lines in R7's
+INTEGRATION-B.md): two more tasks, `hands` v1 (MediaPipe Hand Landmarker: at most 2 hands, each
+`side`, `score` and exactly `HAND_POINTS` 21 points) and `digits` v1 (the numbers on a
+seven-segment display, a blood-pressure monitor's: at most 4 lines of 0..999), and `pose` v2: the
+owner's D6 ("track all"): `bodies`, up to `BODIES_MAX` 4, each `{track, who, points}` (`track`
+follows one body from frame to frame; `who` is "" unknown, "me" or an enrolled person's `fp_` id,
+from R3's consented face library on the home laptop only). A v1 pose result (`points`, one body)
+still fits; a result never carries both.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-TaskName = Literal["text", "code", "objects", "pose", "quality", "hands"]
-TASKS: tuple[str, ...] = ("text", "code", "objects", "pose", "quality", "hands")
+TaskName = Literal["text", "code", "objects", "pose", "quality", "hands", "digits"]
+TASKS: tuple[str, ...] = ("text", "code", "objects", "pose", "quality", "hands", "digits")
 WardrobeTask = Literal["embed", "colour", "person", "face"]
 WARDROBE_TASKS: tuple[str, ...] = ("embed", "colour", "person", "face")
 EMBED_DIMS = 1280  # MobileNet v2's pooled features, uint8 (D7, D8)
@@ -50,6 +53,11 @@ POSE_POINTS = 33
 HAND_POINTS = 21  # R8: MediaPipe's hand landmarks (wrist, then four per finger)
 HANDS_MAX = 2
 HAND_SIDES: tuple[str, ...] = ("left", "right")
+BODIES_MAX = 4  # R8 D6: everyone in view, at most four bodies
+TRACK_MAX = 63
+WHO = r"^(?:|me|fp_[0-9a-f]{12})$"  # unknown, the owner, or a consented person (R3's PERSON_ID)
+DIGIT_LINES_MAX = 4
+DIGIT_MAX = 999
 # The 80 everyday things the object model knows (the COCO list MediaPipe's detector uses)
 OBJECT_LABELS: tuple[str, ...] = tuple(
     "person bicycle car motorcycle airplane bus train truck boat traffic_light fire_hydrant "
@@ -124,10 +132,25 @@ class Point(_Strict):
     visibility: Unit
 
 
+class Body(_Strict):
+    """R8 pose v2: one body in view; `who` is never a name."""
+
+    track: Annotated[int, Field(ge=0, le=TRACK_MAX, strict=True)]
+    who: str = Field(default="", pattern=WHO)
+    points: tuple[Point, ...] = Field(max_length=POSE_POINTS)
+
+
 class PoseData(_Strict):
-    points: tuple[Point, ...] = Field(max_length=POSE_POINTS)  # empty: nobody in view
-    # R8 v2: another body in view (its points dropped inside the task); strict, so never a bool
-    others: Annotated[int, Field(ge=0, le=1, strict=True)] = 0
+    points: tuple[Point, ...] = Field(default=(), max_length=POSE_POINTS)  # v1: one body
+    bodies: tuple[Body, ...] = Field(default=(), max_length=BODIES_MAX)  # v2 (D6): everyone
+
+    @model_validator(mode="after")
+    def _one_shape(self) -> PoseData:
+        if self.points and self.bodies:
+            raise ValueError("a pose result is v1 (points) or v2 (bodies), never both")
+        if len({b.track for b in self.bodies}) != len(self.bodies):
+            raise ValueError("two bodies with one track")
+        return self
 
 
 class HandPoint(_Strict):
@@ -144,6 +167,17 @@ class Hand(_Strict):
 
 class HandsData(_Strict):
     hands: tuple[Hand, ...] = Field(max_length=HANDS_MAX)  # empty: no hand in view
+
+
+class DigitLine(_Strict):
+    value: Annotated[int, Field(ge=0, le=DIGIT_MAX, strict=True)]
+    score: Unit
+
+
+class DigitsData(_Strict):
+    """R8 D7: the lines a seven-segment display shows, top to bottom (never stored unconfirmed)."""
+
+    lines: tuple[DigitLine, ...] = Field(max_length=DIGIT_LINES_MAX)
 
 
 class QualityData(_Strict):
@@ -185,6 +219,7 @@ DATA: dict[str, type[_Strict]] = {
     "pose": PoseData,
     "quality": QualityData,
     "hands": HandsData,
+    "digits": DigitsData,
 }
 
 
@@ -201,7 +236,7 @@ class Result(_Strict):
 
 def parse_result(raw: object, *, wardrobe: bool = False) -> Result | None:
     """A Result whose data fits its task's schema, else None (dropped, never repaired). Only
-    `TASKS` (R7's five and R8's `hands`) unless `wardrobe` (R13: the wardrobe routes' own
+    `TASKS` (R7's five, R8's `hands` and `digits`) unless `wardrobe` (R13: the wardrobe routes' own
     check)."""
     if not isinstance(raw, dict):
         return None
@@ -225,6 +260,10 @@ __all__ = [
     "EMBED_B64",
     "EMBED_DIMS",
     "EMBED_MODELS",
+    "BODIES_MAX",
+    "Body",
+    "DigitLine",
+    "DigitsData",
     "HAND_POINTS",
     "HAND_SIDES",
     "HANDS_MAX",
@@ -238,6 +277,7 @@ __all__ = [
     "POSE_POINTS",
     "TASKS",
     "TEXT_MAX",
+    "WHO",
     "Quality",
     "Result",
     "TaskName",

@@ -1003,7 +1003,7 @@ def test_two_passkey_purposes_join_with_their_exact_targets() -> None:
 
 # ---- the guide-coverage cards and the result schema (seams 8, 17) -------------------------------
 def test_a_result_outside_its_schema_is_dropped() -> None:
-    assert TASKS == ("text", "code", "objects", "pose", "quality", "hands")  # R8 I0: + hands
+    assert TASKS == ("text", "code", "objects", "pose", "quality", "hands", "digits")  # R8 I0
     base = {"v": 1, "at": 1763000000, "ms": 40, "device": "phone", "ok": True}
     base["quality"] = {"light": 0.5, "sharp": 0.7}
     good = parse_result({**base, "task": "text", "data": {"text": "MRP 40"}})

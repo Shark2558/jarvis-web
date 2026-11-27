@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from jarvis.vision.results import HAND_POINTS, POSE_POINTS, TASKS, parse_result
+from jarvis.vision.results import BODIES_MAX, HAND_POINTS, POSE_POINTS, TASKS, parse_result
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "jarvis"
@@ -41,9 +41,9 @@ def _body(n: int = POSE_POINTS) -> list[dict[str, float]]:
 
 
 # ---- S1 · the Result contract: `hands` (v1) and `pose` v2 ---------------------------------------
-def test_hands_is_a_sixth_task_and_the_wardrobe_four_stay_apart() -> None:
-    assert TASKS == ("text", "code", "objects", "pose", "quality", "hands")
-    assert HAND_POINTS == 21 and POSE_POINTS == 33
+def test_hands_and_digits_join_the_kept_tasks() -> None:
+    assert TASKS == ("text", "code", "objects", "pose", "quality", "hands", "digits")
+    assert HAND_POINTS == 21 and POSE_POINTS == 33 and BODIES_MAX == 4
 
 
 def test_a_hands_result_is_two_hands_of_21_points_at_most() -> None:
@@ -63,16 +63,38 @@ def test_a_hands_result_is_two_hands_of_21_points_at_most() -> None:
         assert parse_result(_result("hands", bad)) is None, bad
 
 
-def test_pose_v2_carries_others_and_never_a_second_body() -> None:
-    assert parse_result(_result("pose", {"points": _body(), "others": 1})) is not None
-    assert parse_result(_result("pose", {"points": _body(), "others": 0})) is not None
-    v1 = parse_result(_result("pose", {"points": _body()}))  # R7's v1 result still fits
-    assert v1 is not None
+def _bodies(*who: str) -> list[dict[str, Any]]:
+    return [{"track": n, "who": w, "points": _body()} for n, w in enumerate(who)]
+
+
+def test_pose_v2_carries_everyone_in_view_with_a_track_and_who() -> None:
+    # the owner's D6: everyone in view by default; `who` is "", "me" or a consented fp_ id
+    four = _result("pose", {"bodies": _bodies("me", "fp_0123456789ab", "", "")})
+    assert parse_result(four) is not None
+    assert parse_result(_result("pose", {"bodies": []})) is not None  # nobody in view
+    assert parse_result(_result("pose", {"points": _body()})) is not None  # R7's v1 still fits
     for bad in (
-        {"points": _body(), "others": 2},  # 0 or 1: whether someone else is in view
-        {"points": _body(), "others": -1},
-        {"points": _body(), "others": True},
-        {"points": _body(66)},  # a second body's points never reach a use case
-        {"points": _body(), "others": 1, "other_points": _body()},
+        {"bodies": _bodies("", "", "", "", "")},  # at most four bodies
+        {"bodies": _bodies("Shruti")},  # never a name
+        {"bodies": [{"track": 0, "who": "", "points": _body()}] * 2},  # one track, one body
+        {"bodies": [{"track": True, "who": "", "points": _body()}]},
+        {"bodies": [{"track": 64, "who": "", "points": _body()}]},
+        {"bodies": _bodies("me"), "points": _body()},  # v1 or v2, never both
+        {"bodies": [{**_bodies("")[0], "face": [0.1, 0.2]}]},  # nothing rides along
+        {"points": _body(66)},
     ):
         assert parse_result(_result("pose", bad)) is None, bad
+
+
+def test_digits_are_a_displays_lines_and_nothing_else() -> None:
+    reading = {"lines": [{"value": 128, "score": 0.97}, {"value": 82, "score": 0.95},
+                         {"value": 71, "score": 0.9}]}  # fmt: skip
+    assert parse_result(_result("digits", reading)) is not None
+    for bad in (
+        {"lines": [{"value": 1000, "score": 0.9}]},
+        {"lines": [{"value": 12.5, "score": 0.9}]},
+        {"lines": [{"value": 1, "score": 0.9}] * 5},
+        {"lines": [{"value": 120, "score": 0.9, "label": "systolic"}]},
+        {"lines": [], "text": "128/82"},
+    ):
+        assert parse_result(_result("digits", bad)) is None, bad

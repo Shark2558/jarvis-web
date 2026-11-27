@@ -446,7 +446,7 @@ def test_the_scan_request_bounds_what_a_phone_sends() -> None:
 def test_the_wardrobe_tasks_are_checked_but_never_kept() -> None:
     from jarvis.vision.results import TASKS, WARDROBE_TASKS, parse_result
 
-    assert TASKS == ("text", "code", "objects", "pose", "quality", "hands")  # kept; R8 + hands
+    assert TASKS == (*("text", "code", "objects", "pose", "quality"), "hands", "digits")  # R8 + 2
     assert WARDROBE_TASKS == ("embed", "colour", "person", "face")
     base = {"v": 1, "at": 1763000000, "ms": 70, "device": "phone", "ok": True}
     base["quality"] = {"light": 0.5, "sharp": 0.7}

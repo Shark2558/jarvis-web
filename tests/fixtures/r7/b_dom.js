@@ -259,49 +259,52 @@ async function engine(input) {
 }
 
 // ---- R8 I0 (docs/plans/r8-vision.md 4.3): the live driver, tally and reset; the R8 task shells ----------------------
-async function driver(input) { // steps: [{op, ...}] on a fake camera and two probe tasks ('probe', and 'pose' with others)
+async function driver(input) { // steps: [{op, ...}] on a fake camera and two probe tasks ('probe', and 'pose' with bodies)
   let src = input.files['console-vision.js'].replace(/\nsealRegistry\(\);\n?/, '\n');
-  src = src.replace("id: 'pose', v: 2,", "id: 'pose-shell', v: 2,"); // this scenario's own pose answers who is in view
+  src = src.replace("id: 'pose', v: 2,", "id: 'pose-shell', v: 2,"); // this scenario's own pose says who is in view
   input.files['console-vision.js'] = src;
   const { s } = boot(input, ['console-vision.js']);
   const V = s.JarvisVision;
-  const fake = { on: input.camera !== false, frames: 0, subs: new Set(), others: 0, poseRuns: 0 };
+  const fake = { on: input.camera !== false, frames: 0, subs: new Set(), bodies: [''], poseRuns: 0 };
   const canvas = new El('canvas'); canvas.width = W; canvas.height = H;
   s.JarvisCamera = { live: () => fake.on, frame: () => { if (!fake.on) return null; fake.frames += 1; return canvas; },
     onChange: (fn) => { fake.subs.add(fn); return () => fake.subs.delete(fn); } };
   const picture = (f) => { if (!f) throw new Error('There is no picture to look at.'); };
   V.register({ id: 'probe', v: 1, input: 'both', rate: 15, run: (f) => { picture(f); return { data: { n: 1 } }; }, check: (d) => !!d && d.n === 1 });
-  V.register({ id: 'pose', v: 2, input: 'both', rate: 15, run: (f) => { picture(f); fake.poseRuns += 1; return { data: { points: [], others: fake.others } }; },
-    check: (d) => !!d && Array.isArray(d.points) && (d.others === 0 || d.others === 1) });
-  const got = {}, errors = [], tallies = [], resets = [], paused = [], started = [];
-  let handle = null, sh = null, ran = 0, streamed = 0, marked = null, whilePaused = null;
+  const point = { x: 0.5, y: 0.4, z: 0, visibility: 0.9 };
+  V.register({ id: 'pose', v: 2, input: 'both', rate: 15, run: (f) => { picture(f); fake.poseRuns += 1;
+    return { data: { bodies: fake.bodies.map((who, track) => ({ track, who, points: [point] })) } }; },
+  check: (d) => !!d && Array.isArray(d.bodies) });
+  const got = {}, errors = [], tallies = [], resets = [], tracks = [], seen = [], whos = {};
+  let handle = null, sh = null, ran = 0, streamed = 0, marked = null;
   const summary = (st) => ({ view: [{ kind: 'big', n: (st && st.count) || 0, word: 'counted' }, { kind: 'evil', x: 1 },
     { kind: 'paused', why: 'others', fn: () => 1 }, 'text'], tally: { count: (st && st.count) || 0 } });
   for (const st of input.steps || []) {
-    if (st.op === 'use') { got[st.id] = 0; V.use({ id: st.id, tasks: st.tasks, summary, onResult: (r, state) => { got[st.id] += 1; return { count: ((state && state.count) || 0) + 1 }; } }); }
-    else if (st.op === 'live') { handle = V.live(st.tasks, { uses: st.uses, rate: st.rate, people: st.people, onError: (e) => errors.push(String(e && e.message)) }); started.push(handle.paused()); }
+    if (st.op === 'use') { got[st.id] = 0; whos[st.id] = []; V.use({ id: st.id, tasks: st.tasks, summary, onResult: (r, state) => { got[st.id] += 1;
+      if (r.task === 'pose' && !whos[st.id].includes(r.track + ':' + r.who)) whos[st.id].push(r.track + ':' + r.who); return { count: ((state && state.count) || 0) + 1 }; } }); }
+    else if (st.op === 'live') handle = V.live(st.tasks, { uses: st.uses, rate: st.rate, target: st.target, onError: (e) => errors.push(String(e && e.message)) });
     else if (st.op === 'end') handle.end();
     else if (st.op === 'run') { await V.run(st.task, canvas); ran += 1; }
     else if (st.op === 'stream') sh = V.stream(st.task, { frame: () => canvas }, () => { streamed += 1; });
     else if (st.op === 'stopstream') sh.stop();
-    else if (st.op === 'tally') { const t = V.tally(st.id); tallies.push({ view: JSON.parse(JSON.stringify(t.view)), tally: JSON.parse(JSON.stringify(t.tally)), frozen: Object.isFrozen(t) && Object.isFrozen(t.view) && (t.tally === null || Object.isFrozen(t.tally)) }); }
+    else if (st.op === 'tally') { const t = V.tally(st.id, st.track); tallies.push({ view: JSON.parse(JSON.stringify(t.view)), tally: JSON.parse(JSON.stringify(t.tally)), who: t.who, frozen: Object.isFrozen(t) && Object.isFrozen(t.view) && (t.tally === null || Object.isFrozen(t.tally)) }); }
+    else if (st.op === 'tracks') { tracks.push(JSON.parse(JSON.stringify(V.tracks(st.id)))); seen.push(JSON.parse(JSON.stringify(handle.tracks()))); }
+    else if (st.op === 'bodies') fake.bodies = st.value;
     else if (st.op === 'reset') resets.push(V.reset(st.id));
     else if (st.op === 'camera') { fake.on = !!st.on; fake.subs.forEach((fn) => fn({ locked: false, live: fake.on, by: 'panel' })); }
-    else if (st.op === 'others') { if (st.value === 0 && marked) whilePaused = Object.keys(got).reduce((n, k) => n + got[k] - (marked[k] || 0), 0); fake.others = st.value; }
-    else if (st.op === 'paused') paused.push(handle.paused());
     else if (st.op === 'mark') marked = Object.assign({}, got);
     else if (st.op === 'wait') await wait(st.ms || 50);
     await settle();
   }
   if (handle) handle.end();
-  return { got, errors, frames: fake.frames, ran, streamed, tallies, resets, paused, started, marked, counted_while_paused: whilePaused, pose_runs: fake.poseRuns };
+  return { got, errors, frames: fake.frames, ran, streamed, tallies, resets, tracks, seen, whos, marked, pose_runs: fake.poseRuns };
 }
 
 async function r8tasks(input) { // the engine as shipped: pose v2 and hands, their load through console-vision-r8.js
   const { s } = boot(input, ['console-vision.js']);
   const V = s.JarvisVision, errors = {};
   const canvas = new El('canvas'); canvas.width = W; canvas.height = H; canvas.px = pattern(W, H);
-  for (const id of ['pose', 'hands']) { try { await V.run(id, canvas); errors[id] = 'ran'; } catch (e) { errors[id] = String(e && e.message); } }
+  for (const id of ['pose', 'hands', 'digits']) { try { await V.run(id, canvas); errors[id] = 'ran'; } catch (e) { errors[id] = String(e && e.message); } }
   const added = V.register({ id: 'mine', v: 1, input: 'both', run: () => ({ data: {} }), check: () => true });
   return { tasks: V.tasks(), errors, sealed: added === false };
 }

@@ -132,6 +132,12 @@ Done, or the path was removed) is reported when the generator runs.
 - **The guide** (`docs/architecture/JARVIS-Architecture.md`, not part of this document) still dates
   the move to Cloud Run "by Slice 4 (*unverified*)" in its technology table; the date is now known
   (31 Oct 2026). Its next edition can take it.
+- **Three Build Book pages are stale** because `scripts/check_doc_versions.py` changed
+  (`pg_chapter_technology`, `pg_module_delivery`, `pg_card_c58`; their words still hold, only the
+  stamp is old), so `python -m jarvis.buildbook.gen pages --check` fails until they are re-stamped:
+  `PYTHONPATH=src python -m jarvis.buildbook.gen pages --stamp pg_chapter_technology
+  pg_module_delivery pg_card_c58`. The pages live under `src/jarvis/`, so this verification did not
+  stamp them; the pull request needs it before CI's `docs-check` job passes.
 - **The workbook** lives outside the repository, so CI can't regenerate chapter 10; the Workshop
   runs the generator at each release (chapter 09, rule 6).
 

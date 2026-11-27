@@ -68,6 +68,10 @@ From the handoff's carried-over list and the R6.4 review (left on purpose, docum
   - The AI-SDK boundary test (`tests/test_llm_sdk_boundary.py`) found no offender: the only vendor
     SDK import is `anthropic` inside `src/jarvis/llm/`. Nothing is marked to fail.
   - `README.md` still offers `render.yaml` as an alternative host; nothing deploys it.
+  - Outfit plans: R13's plan (`docs/plans/r13-wardrobe.md`, the data table) keeps
+    `wardrobe_plans` "90 days after the event"; the code drops a plan 14 days after its day
+    (`src/jarvis/wardrobe/styling/plans.py:StylingDoc.pruned`). Chapter 04 describes the code; which
+    one is meant is the owner's call.
 
 ## 5. Proposed ADRs
 

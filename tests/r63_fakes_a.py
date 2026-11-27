@@ -218,7 +218,7 @@ TOUR = {
     "release.version": "v5.2.0",  # R5.2 (v18.0.0 at R18, v6.4.0 at R6.4, v6.3.2 at R6.3.1)
     # R5.2: its own plan (by version); R18's was "Calls from your laptop: the plan"
     "release.new": "Your voice: the plan",
-    "cards.count": 78,  # R18: C74-C78
+    "cards.count": 83,  # R18: C74-C78; R5.2: C79-C83 (in Voice)
     "modules.count": 19,  # R18: Phone calls
     "modules.else_count": 12,
     "layers.count": 8,
@@ -240,10 +240,10 @@ TOUR = {
     "seeme.inr_a_picture": "₹9",
     "seeme.month_cap_inr": "₹300",
     "costs.rate": 95.24,
-    # the guide's roadmap after this release (R6.3.1's row went at R6.3.1, R6.4's at R6.4 and
-    # "Phone calls" at R18: built)
-    "roadmap.next": "R5.2, Voice",
-    "roadmap.after": "R8, Home cameras",
+    # the guide's roadmap after this release (R6.3.1's row went at R6.3.1, R6.4's at R6.4,
+    # "Phone calls" at R18 and "R5.2 Voice" at R5.2: built; the R8.1 row has no title)
+    "roadmap.next": "R8, Home cameras",
+    "roadmap.after": "R8.1",
 }
 
 

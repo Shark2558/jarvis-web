@@ -87,7 +87,7 @@ def test_every_reference_of_the_real_guide_resolves() -> None:
     cov = _script("arch_coverage")
     text = (ROOT / cov.GUIDE).read_text(encoding="utf-8")
     cards = cov.cards(cov._section(text, "Component catalogue"))
-    assert len(cards) == 78  # R18: C74-C78
+    assert len(cards) == 83  # R18: C74-C78; R5.2: C79-C83
     found = [
         (c.name, s, p) for c in cards for s, p in refs.resolve(ROOT, c.fields["Where in the code"])
     ]

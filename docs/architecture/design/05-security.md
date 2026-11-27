@@ -1,4 +1,4 @@
-Version v6.5.1 · 27 Nov 2026, 21:25 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.0 · 27 Nov 2026, 23:15 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 05 · Security architecture
 
@@ -15,6 +15,14 @@ waits for your tap on its card, a number JARVIS has never called also needs your
 Telegram can never approve a call. Your approval can be used for one call only, within 10
 minutes. During the call, the other person's words are only information: JARVIS will not read out
 codes or account numbers, and will not agree to pay. Section 8 has the details.
+
+**Your voice (R5.2, built, not yet deployed).** Your laptop's speech kit answers only someone who
+holds its key, a long random password made on your laptop. JARVIS reaches it only at your
+laptop's own Tailscale address and refuses any other. The kit downloads only model files whose
+fingerprints were written down in advance. Your voice is **never** used to approve anything: the
+speaker check only decides who may interrupt JARVIS while he speaks. Corrections learned from your
+voice change ordinary words only, never a number, an amount of money or a code. Section 9 has the
+details.
 
 Figure 16 (`../diagrams/16-trust-boundaries.png`, in chapter 02) shows the boundaries; the guide's
 Figure 5 (`../diagrams/05-approvals-passkeys.png`) shows a card and a passkey.
@@ -36,6 +44,7 @@ Figure 5 (`../diagrams/05-approvals-passkeys.png`) shows a card and a passkey.
 | GitHub Actions (deploy) | Workload Identity Federation: this repository's numeric id, `refs/heads/main`, a push or manual run, `ci.yml` on `main`, a GitHub-hosted runner; impersonates `jarvis-deployer` | `deploy/cloudrun.sh:setup_autodeploy` | Google refuses the token exchange |
 | The call desk on the laptop (R18) | Linked once with an 8-character code (10 minutes, one use); then every upgrade of its WebSocket carries `X-Jarvis-Home`, signed with keys derived from the desk's 32-byte seed exactly as the home bridge signs, checked before the socket opens | `src/jarvis/calls/hub.py:DeskDoorService`, `src/jarvis/api/calls_ws.py:CallSockets` | Closed 4401 before the handshake completes, logged by check name only |
 | The owner's live call view (R18) | His bearer, or his session cookie from JARVIS's own page; in token mode a one-use ticket of 30 seconds for that call | `src/jarvis/api/calls_routes.py:LiveTickets` | Closed 4401; a call not his or not running: 4404 |
+| JARVIS or the call desk, calling the laptop speech kit (R5.2) | The kit's key, at least 32 characters (start-kit makes 32 random bytes), as `Authorization: Bearer`, checked by the Caddy gate and again in constant time by the kit's server; only the kit's own API addresses pass | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/server.py` | 401 for a wrong or missing key, 404 for any other address, 503 for everything while the kit has no key |
 
 **Lost passkey.** A fresh Google sign-in can only *start* removing all passkeys; it takes effect
 24 hours later (`src/jarvis/permissions/service.py:RESET_DELAY`), shows in the console and puts a
@@ -110,8 +119,10 @@ the room may have spoken), except for tools marked `spoken_ok` when no outside c
 - **Storage.** Only in Secret Manager, one grant per secret for `jarvis-run` (chapter 02, 2.3);
   GitHub holds no Google key (Workload Identity Federation). The one GitHub secret is the optional
   `JARVIS_ANTHROPIC_API_KEY` for the main-only eval gate (`.github/workflows/ci.yml`).
-- **In the process.** Held as `SecretStr` (`src/jarvis/config.py`, 11 fields); start-up refuses a
-  session secret under 32 characters and a malformed token key.
+- **In the process.** Held as `SecretStr` (`src/jarvis/config.py`, 11 fields; R18's three
+  speech keys in `src/jarvis/config_calls.py`; R5.2's kit key in `src/jarvis/config_voice.py`,
+  15 in all); start-up refuses a session secret under 32 characters, a malformed token key and a
+  kit key under 32 characters.
 - **Never logged.** Tool errors reach the model and the audit as a fixed sentence plus a redacted
   detail (`src/jarvis/tools/gateway.py:_safe_detail` removes bearer tokens, `sk-` keys and
   e-mail addresses); the deploy scripts pass tokens to `curl` only on standard input, never on a
@@ -138,8 +149,9 @@ The console's content security policy allows scripts only from JARVIS itself
 `src/jarvis/api/console.py:CONSOLE_CSP`); server text is always set as text, never as HTML.
 Every response carries `X-Content-Type-Options: nosniff` and, outside dev, HSTS for a year
 (`src/jarvis/api/app.py:_install_middleware`). Vendored libraries are served by JARVIS and pinned
-by SHA-256 (the vision files only if their manifest's hash matches). The container runs as a
-non-root user; the home bridge runs read-only with no capabilities.
+by SHA-256 (the vision files only if their manifest's hash matches; from R5.2 the speaker
+check's model the same way, `src/jarvis/api/speaker_assets.py`, an empty slot today). The
+container runs as a non-root user; the home bridge runs read-only with no capabilities.
 
 ## 6. Threat model summary
 
@@ -168,6 +180,11 @@ or name a top-level file.
 | T18 | Someone else's program posing as the call desk (R18) | One-use link code (hash stored, 20 wrong codes in 10 minutes stop all), then HMAC-signed upgrades with nonce and clock window, checked before the socket opens | `calls/hub.py`, `api/calls_ws.py` | The laptop holds the seed in the owner's profile folder; anyone with that file can be the desk |
 | T19 | The owner's number flagged as a spammer, or calls seen as automated commercial calls (R18) | Every call starts with his tap; personal limits; AI and recording disclosure first; no emergency, premium or international numbers | `calls/limits.py`, `calls/cards.py`, `calls/models.py` | The rules' application to a person's own AI-assisted calls is a reading, not legal advice (section 8.5) |
 | T20 | The owner's microphone left on the virtual cable (R18) | The desk writes the old defaults first, reads every switch back, restores at takeover, end, crash (watchdog) and next start | `calldesk/micguard.py`, `calldesk/watchdog.py` | Not yet tried on a real laptop (S0 not run) |
+| T21 | A stranger reaching the laptop speech kit through its public Funnel address (R5.2) | The gate passes only the kit's API with the key; no key at all → 503 for everything; the server checks the key again and binds 127.0.0.1 only; bodies capped at 3 MB; nothing logs a body, audio, text, header or key | `deploy/local-speech/Caddyfile`, `localspeech/server.py`, `localspeech/kitconfig.py` | Whoever holds the key can do what JARVIS can (residual risk 13) |
+| T22 | JARVIS sent to a look-alike address, or a redirect, instead of the owner's kit (R5.2) | Only a `*.ts.net` https name with a Funnel port; every address it resolves to must be public; the pinned transport connects to the address just checked; no redirects; at most 4 MB read; the kit's text never reaches the console (fixed words only) | `config_voice.py`, `localspeech/client.py`, `offline/config.py` | — |
+| T23 | A tampered or swapped model file (R5.2) | Only files pinned in `models.json`, https from two hosts at a fixed revision, size and SHA-256 checked before a file is renamed into place; small text files by their git blob id at a full commit (ADR-42); a permissive licence or nothing; the wake word's files checked by hash, licence and format before the console uses them | `localspeech/manager.py`, `voice/wakeword_api.py` | The blob-id files were pinned from Hugging Face's API listing read through a web reader, not computed from downloaded files (section 9.2) |
+| T24 | A voice (a recording, a TV, another person) used to approve something (R5.2) | The speaker check is a barge-in filter and, at most, a display label; no approval, passkey, unlock or Telegram decision reads it, and a test fails if one ever mentions it | `api/static/console-voiceprint.js`, `voice/profile.py`, `tests/test_r52_v5_never_approves.py` | — (ADR-44) |
+| T25 | A learned correction changing a number, an amount or a code the owner said (R5.2) | Corrections are whole words of letters only; a correction with a digit, a currency sign or a number, money or code word is refused, and none is learned from the numbers block | `voice/profile.py:Correction`, `voice/session_score.py` | A mishearing of an ordinary word can still be corrected into another ordinary word |
 
 ## 7. Known residual risks
 
@@ -189,7 +206,9 @@ or name a top-level file.
 8. **The owner's Google account is the root of trust** for sign-in, the Google tools and the Cloud
    project; its own 2-step sign-in matters most.
 9. **The wake-word models are CC BY-NC-SA 4.0** (personal, non-commercial use only); a licence
-   risk, not a security one, but it blocks any public release.
+   risk, not a security one, but it blocks any public release. R5.2 found that its owned model
+   (stage 2) does not lift it alone: both stages read openWakeWord's two feature models, which
+   carry the same licence (ADR-45).
 10. **Closed on 27 Nov 2026 (R18 review, item 12): a waiting call card's number is sealed in
     `approvals`.** The gateway keeps a card's full arguments, which are what runs on approval, in
     `approvals` until the card is decided or tidied after its 10 minutes. This edition first found
@@ -208,6 +227,19 @@ or name a top-level file.
 12. **Nothing of R18 has run on real devices** (R18): Phone Link, the Windows sound path,
     Bluetooth, the Android build on the owner's phone and real Web Push were tested with fakes only
     (`docs/plans/r18-integration/I1-NOTES.md`, 4.7).
+13. **The kit's key opens more than listening** (R5.2; this edition's reading of
+    `src/jarvis/localspeech/protocol.py:ROUTES`). Whoever holds it can ask the kit what its
+    engines heard in his session's clips (`/v1/session/results`), delete his recordings, start a
+    training job and fetch the wake word's files; there is no route that returns a clip's audio.
+    The key lives in three places: the kit's folder, Secret Manager and, when he copies it, the
+    call desk's folder. A new key is one `start-kit.ps1` away after the old file is removed
+    (*unverified*: no rotation step is written down in `deploy/local-speech/README.md`).
+14. **The speaker check does nothing yet** (R5.2): its model slot is empty and its threshold
+    (0.45) is not calibrated (ADR-46). That is safe, because it only ever blocks a barge-in, but
+    the plan's promise that only his voice can interrupt JARVIS is not kept until the model is in.
+15. **Nothing of R5.2's laptop side has run on a real laptop**: the kit's engines, Caddy,
+    Tailscale Funnel and the PowerShell scripts were tested with fakes only
+    (`docs/plans/r5-2-integration/I1-NOTES.md`, 4.6).
 
 ## 8. Phone calls (R18)
 
@@ -320,6 +352,85 @@ Secret Manager only when the owner has stored it, and no key value is in the rep
 (`deploy/cloudrun.sh:speech_keys`; chapter 02, section 2.3). The desk keeps no speech key in
 cloud mode, which is every call in v18.0.0.
 
+## 9. Your voice (R5.2)
+
+Built in R5.2 (`v5.2.0`), not yet deployed. Plan: `docs/plans/r5-2-voice.md`, sections 3 and 5;
+the join's decisions: `docs/plans/r5-2-integration/I1-NOTES.md`, section 2.
+
+### 9.1 The kit's door: its key, the gate and the pinned transport
+
+| Rule | As built | Code |
+|---|---|---|
+| A key that fails closed | The kit's key is at least 32 characters (`KEY_MIN_CHARS`; start-kit makes 32 random bytes, 43 characters). With no key, or a shorter one, the gate answers 503 to every request and the server refuses to serve. JARVIS refuses a shorter key at start-up, and the deploy refuses to store one | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/server.py`, `src/jarvis/config_voice.py:LocalSpeechConfig`, `deploy/cloudrun.sh:local_speech_answer` |
+| Checked twice | The Caddy gate matches the bearer header for each of the kit's addresses; the server compares it again in constant time (`hmac.compare_digest`) | `deploy/local-speech/Caddyfile`, `src/jarvis/localspeech/server.py` |
+| Never logged, never shown | The key comes only from the environment or the kit's private file; the server keeps no access log and logs no body, audio, text, header or key; the self-test's report never holds it; the deploy reads it without echo and writes it only to Secret Manager; the client logs only the route, status and a fixed reason | `src/jarvis/localspeech/__main__.py`, `src/jarvis/localspeech/selftest.py`, `src/jarvis/localspeech/client.py` |
+| Loopback only on the laptop | The server binds `127.0.0.1:11437` and the gate `127.0.0.1:11436`; only Funnel's https port reaches the gate from outside | `src/jarvis/localspeech/kitconfig.py:HOST`, `deploy/local-speech/Caddyfile` |
+| https to the owner's own name | JARVIS accepts only `https://<machine>.<tailnet>.ts.net` with port 443, 8443 or 10000 and no other path (row 392's rule: http refused) | `src/jarvis/config_voice.py:kit_origin` |
+| Pinned transport | Before the first call every address the name resolves to must be public (R1's rule); every request is resolved again and connected to the address just checked, the name kept for TLS | `src/jarvis/localspeech/client.py:cloud_kit`, `src/jarvis/offline/config.py:check_url`, `PinnedTransport` |
+| No redirects, a reply cap, fixed words | Redirects are never followed; at most 4,000,000 bytes of a reply are read (`REPLY_MAX`); the kit's answers become fixed words (offline, timeout, unauthorized, busy, error, protocol), never the kit's own text | `src/jarvis/localspeech/client.py`, `src/jarvis/localspeech/protocol.py:REPLY_MAX` |
+| Strict requests | Every request and reply is a strict model (unknown fields refused); audio is 16 kHz mono PCM16 (or MP3 for the console's voice); a listening request at most 60 seconds, a session clip at most 20 (`STT_MAX_S`, `CLIP_MAX_S`) | `src/jarvis/localspeech/protocol.py` |
+
+### 9.2 What the kit may download: SHA-256 pins, and one recorded exception
+
+The build brief's rule 9 says every model file is pinned by its SHA-256. The model manager keeps
+it for every weight file: only files listed in `deploy/local-speech/models.json`, from https
+addresses on huggingface.co or github.com at a fixed revision, with their size and SHA-256 and a
+permissive licence (`src/jarvis/localspeech/protocol.py:PERMISSIVE_LICENCES`). A file is written
+to a temporary name and renamed into place only when its size and hash match; a mismatch deletes
+it and installs nothing (`src/jarvis/localspeech/manager.py:ModelManager.install`).
+
+**The exception (ADR-42).** A small text file kept in plain git (a `.json` or `.txt` of at most
+5 MB), at a revision that is a full 40-character commit and appears in the file's address, may be
+pinned by its **git blob id** (`git_blob_sha1`) instead. The manager computes it after download as
+git does (SHA-1 of "blob <size>", a zero byte, then the data), refuses a mismatch, and records the
+file's SHA-256 in `installed.json` and `LICENCE.txt` (`src/jarvis/localspeech/manager.py:ModelFile`,
+`git_blob`, `ModelEntry`). Weights (`model.bin`, any LFS file) always need a SHA-256, because an
+LFS file's blob id is its pointer's, not its data's. faster-whisper small and medium are pinned
+this way: `model.bin` by SHA-256, `config.json`, `tokenizer.json` and `vocabulary.txt` by blob id.
+
+How it is checked: `tests/test_r52_i1_manager_blob.py` and `tests/test_r52_v1_manager.py`. The
+later check (`ModelManager.verify`, the `models verify` command) re-hashes every installed file
+against its pin, so a blob-pinned file is re-checked by its blob id, not by the SHA-256 recorded
+at install. The blob ids were read twice from Hugging Face's API listing at each revision through
+a web reader, not computed from downloaded files (I1-NOTES, 4.5); the manager re-checks every file
+on the laptop, so a wrong pin fails the install rather than installing a wrong file.
+
+### 9.3 Corrections never touch numbers, money or codes
+
+The voice session learns the chosen engine's mishearings that repeat (seen twice or more) and
+applies them after listening, whichever engine listened. A correction is 1–3 heard words for 1–5
+meant words, letters only: a digit, a currency sign, or a number, money or code word (`otp`,
+`pin`, `upi`, `ifsc`, `pan`, `aadhaar` and others) on either side is refused when the correction
+is made, and none is learned from the numbers block or from a phrase he really says elsewhere
+(`src/jarvis/voice/profile.py:Correction`, `PROTECTED_WORDS`;
+`src/jarvis/voice/session_score.py`). Tests: `tests/test_r52_i0_profile.py`,
+`tests/test_r52_v3_score.py`. He can switch corrections off in Voice → Your voice.
+
+### 9.4 The speaker check never approves anything
+
+The voice print lets a device tell his voice from others (chapter 04, section 8). It is used for
+barge-in only: with a print active, a voice that would interrupt JARVIS is checked on the device
+first, and a check that is slow, fails or has no print is "skip", so barge-in works as before
+(`src/jarvis/api/static/console-voice-barge.js`, `src/jarvis/api/static/console-voiceprint.js`).
+"Spoken by the owner" (`src/jarvis/voice/profile.py:SPOKEN_BY_HEADER`) is defined as a display
+label and nothing sends or reads it yet. `tests/test_r52_v5_never_approves.py` reads every module
+that decides an approval, a passkey, an unlock, a permission or a Telegram approval and fails if
+one mentions the label or a voice print, and it shows on the real app that the label in a header
+or a body leaves a waiting R3 card waiting for its passkey. This keeps slice 9's decision D11 and
+plan D6 (ADR-44). A wake is only ever a wake, too: the owned wake word approves nothing
+(`src/jarvis/voice/wakeword_api.py`).
+
+### 9.5 Files from the laptop to the console
+
+The wake word's two trained files pass through the cloud without being stored, and only after
+`src/jarvis/voice/wakeword_api.py:WakewordHandlers` checks the kit's hash and licence (permissive
+or the owner's own), the status they were announced with, their format and, for stage 1, that they
+read the very feature model the console runs. In the browser `console-wakeword-own.js` takes a file
+only when its SHA-256 is the one the status announced; anything odd leaves today's wake word
+unchanged. The speaker model is served from JARVIS's own release folder only when its manifest
+lists it with a matching SHA-256 and a data media type, never JavaScript
+(`src/jarvis/api/speaker_assets.py`).
+
 ## Change log
 
 | Version | Date | Release | What changed | By |
@@ -328,3 +439,4 @@ cloud mode, which is every call in v18.0.0.
 | v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): `SecretStr` fields 13 → 11; Telegram's audit of strangers capped at 20 an hour; residual risk 7 closed by `tests/test_llm_sdk_boundary.py`; proposed ADR-B is now ADR-25 | 🛠 Mark XXV |
 | v6.5.0 | 27 Nov 2026, 20:05 IST | R18 | R18 "Calls from your laptop": the call desk and the live view as callers; the console-only tools; the calls' limits among the caps; threats T15 widened and T16–T20 added; residual risks 1 widened and 10–12 added (a waiting call card's number in clear in `approvals`, a card's unsealed fields, nothing tried on real devices); new section 8: R3 `calls_place`, the one-use grant, the passkey for new numbers, Telegram can't approve a call, the phone's Approve, the desk's signed socket and link code, the live socket's one-use ticket, the phone's signed commands, the reply guard, limits and quiet hours, the TRAI and DPDP reasoning, the speech keys | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: T11 names the sealed approval numbers; residual risk 10 closed (the approvals seal, commit `9e8b490`); risk 11 adds a waiting card's other arguments; section 8.1 adds the number sealed while the card waits; section 8.6 says the deploy mounts a speech key only when stored | 🛠 Mark XXV |
+| v6.6.0 | 27 Nov 2026, 23:15 IST | R5.2 | R5.2 "Your voice": the voice rules in plain words; JARVIS and the call desk calling the speech kit as a caller row; 15 `SecretStr` fields and the kit key's start-up check; the speaker model pinned like the vision files; threats T21–T25 (a stranger at the kit's door, a look-alike address, a tampered model, a voice used to approve, a correction changing a number); residual risk 9 widened (the feature models), 13–15 added (what the kit's key opens, the speaker check not working yet, nothing run on a laptop); new section 9: the kit's key and pinned transport, the model manager's SHA-256 pins and the git-blob SHA-1 exception (and how `verify` re-checks it), corrections never touching numbers, the speaker check never approving, files from the laptop to the console | 🛠 Mark XXV |

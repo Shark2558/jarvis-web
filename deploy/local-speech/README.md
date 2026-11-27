@@ -83,8 +83,8 @@ This first version of the kit (1.0.0) is honest about what it could check when i
 5. **Paste the self-test's report into JARVIS's chat.** It says what passed and what to fix; it
    never contains your key, your folder names or anything you said.
 6. **Give JARVIS the address and the key, once.** The address is the setting
-   `JARVIS_LOCAL_SPEECH_URL`; the key goes in the secret `jarvis-local-speech-key` (deploy step,
-   see `deploy/cloudrun.sh`). The call desk on this same laptop finds the kit by itself on
+   `JARVIS_LOCAL_SPEECH_URL`; the key goes in the secret `jarvis-local-speech-key`: in Cloud
+   Shell run `bash deploy/cloudrun.sh --local-speech` and paste both when it asks. The call desk on this same laptop finds the kit by itself on
    `http://127.0.0.1:11436/v1`.
 
 Keep the window open and the laptop awake. Ctrl+C stops the kit and closes Funnel on its port

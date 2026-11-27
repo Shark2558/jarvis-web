@@ -30,8 +30,8 @@ A wider search for this chapter found **5 more** that its patterns miss: `wardro
 `wardrobe_cal` and `wardrobe_outlook` (named through `src/jarvis/wardrobe/styling/part.py:_sealed`)
 and `bills_told` and `birthdays_told` (a tuple assignment in `src/jarvis/helpers/today/part.py`).
 So the code names **131** collections. The coverage check passes all the same, because the guide
-happens to name all five; its inventory should learn both idioms (chapter 08, ADR-02's follow-ups). Every name carries
-the prefix `jarvis_` (`src/jarvis/config.py` `firestore_prefix`).
+happens to name all five; its inventory should learn both idioms (chapter 08, follow-up F2).
+Every name carries the prefix `jarvis_` (`src/jarvis/config.py` `firestore_prefix`).
 
 "Sealed" names the keyring purpose that encrypts the content (section 3); "token key" means the
 root key directly (these predate the keyring). "Kept" is how long JARVIS keeps it; JARVIS's own

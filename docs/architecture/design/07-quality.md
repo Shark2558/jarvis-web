@@ -80,7 +80,7 @@ All third-party actions are pinned by commit SHA; Dependabot proposes updates mo
 
 | Check | What it enforces | Scope | Gap |
 |---|---|---|---|
-| `scripts/check_doc_versions.py` | Line 1 is the version line; the last `##` section is `## Change log` with its five-column table | `docs/plans/*.md` and `docs/architecture/*.md`, **not sub-folders** | This document's chapters (`docs/architecture/design/`) are not checked by CI; they were checked by calling the same function on each file (chapter 00, "How this document was checked"). Extending `FOLDERS` is a one-line follow-up for the owner of that script. |
+| `scripts/check_doc_versions.py` | Line 1 is the version line; the last `##` section is `## Change log` with its five-column table | `docs/plans/*.md` and `docs/architecture/*.md`, **not sub-folders** | This document's chapters (`docs/architecture/design/`) are not checked by CI; they were checked by calling the same function on each file (chapter 00, "How this document was checked"). Extending `FOLDERS` is follow-up F3 in chapter 08. |
 | `scripts/arch_coverage.py` | The guide names every package, console module, Scheduler job, outside service and collection; complete cards and technology rows; the secret scan | the guide; the scan covers every file under `docs/architecture/` | Its collection patterns miss 5 names (chapter 04, section 2) |
 | `scripts/markdy_export.py` | Diagram privacy, lint, showcase verification, exports current | `docs/architecture/diagrams/*.markdy` | `--check` trusts `exports.json` (CI has no browser) |
 | `python -m jarvis.buildbook.gen pages --check` | Every indexed Book page written, current (stamped against the code it cites) and passing its checks | `src/jarvis/buildbook/book/pages/` | — |

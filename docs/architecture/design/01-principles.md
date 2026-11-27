@@ -155,7 +155,7 @@ walk helpers beside it), and `google-auth` for the service account's credentials
 
 **Weaker than it sounds.** No lint rule or test enforces this for the whole tree; ruff's selected
 rules (`pyproject.toml`, `E F I B UP`) have no import ban. `tests/test_r63_static.py` checks only
-the files on its own list. A tree-wide check is a candidate ADR follow-up (chapter 08, ADR-02).
+the files on its own list. A tree-wide check is follow-up F1 in chapter 08.
 
 ## P8 · Content from tools is untrusted data
 

@@ -40,6 +40,7 @@ from jarvis.localspeech.protocol import (
     AudioFormat,
     ClipIn,
     Device,
+    EngineSlot,
     Kind,
     KitError,
     KitErrorBody,
@@ -61,6 +62,7 @@ TEST_SENTENCE: Final = "Hello, this is JARVIS. One, two, three, four, five."
 WER_BAR: Final = 0.20
 FIRST_AUDIO_BAR_MS: Final = {Device.CUDA: 700, Device.CPU: 1_500}  # plan 5
 SPEED_BAR: Final = 3.0  # listening faster than real time x3
+LISTEN_TEST_S: Final = 5.0  # the test tone listening alone is timed on (a kit with no voice)
 PROBE_TIMEOUT_S: Final = 5
 CALL_TIMEOUT_S: Final = 120  # the first call loads a model
 _WORD = re.compile(r"[a-z0-9']+")
@@ -271,8 +273,12 @@ async def check_round_trip(calls: KitCalls) -> list[Check]:
         health.engine_for(Kind.TTS, ENGLISH),
         health.engine_for(Kind.STT, ENGLISH),
     )
-    if voice_slot is None or ear_slot is None:
+    if ear_slot is None:
         found.append(Check("round trip", None, "needs an English voice and listening engine"))
+        return found
+    if voice_slot is None:  # kit 1.0.0: listening alone is timed (plan 5's x3 bar; R5.2 review)
+        found.append(await check_listening_alone(calls, ear_slot))
+        found.append(Check("round trip", None, "needs an English voice: word error not measured"))
         return found
     try:
         say = TtsRequest(lang=ENGLISH, text=TEST_SENTENCE, format=AudioFormat.PCM16)
@@ -300,6 +306,24 @@ async def check_round_trip(calls: KitCalls) -> list[Check]:
         ),
     ]
     return found
+
+
+async def check_listening_alone(calls: KitCalls, ear: EngineSlot) -> Check:
+    """A kit with listening and no voice: listening's speed on a few seconds of a test tone (the
+    word error needs the voice's sentence). The first call loads the engine and is not timed."""
+    req = SttRequest(lang=ENGLISH, audio=encode_pcm(tone(LISTEN_TEST_S, 330.0)))
+    try:
+        await calls.stt(req)
+        heard = await calls.stt(req)
+    except KitError as err:
+        return Check("listening", False, str(err))
+    speed = heard.seconds / max(heard.elapsed_ms / 1000, 1e-3)
+    return Check(
+        "listening",
+        speed >= SPEED_BAR,
+        f"{ear.value}: {speed:.1f}x real time (bar {SPEED_BAR:.0f}x) on {LISTEN_TEST_S:.0f} s of "
+        "a test tone; its word error needs a voice",
+    )
 
 
 async def check_gate(key: str | None, probe: Probe) -> list[Check]:

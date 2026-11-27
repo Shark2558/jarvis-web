@@ -2,6 +2,18 @@
 chapter: module_calls
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
+pages:
+  "pg_module_calls": "34f5d7b438c40e06"
+  "pg_card_c74": "b948b6a08a312662"
+  "pg_card_c75": "9e6d0440cd70e0a9"
+  "pg_card_c76": "4b50157d1d5fb587"
+  "pg_card_c77": "31d44cbad607db39"
+  "pg_card_c78": "c8eeaa2240b45125"
+  "pg_screen_calls": "8dd07fc570e109ae"
+  "pg_service_bhashini": "a4bf466c164e02cb"
+  "pg_service_hugging_face": "c867d8c12d15ba0b"
+  "pg_service_microsoft_azure_speech": "bd6ab0f24b41a616"
+  "pg_service_sarvam": "c062f5bfc7c9019b"
 ---
 - [show:title] This chapter is about phone calls: JARVIS calling for you, from your own mobile number, through your laptop.
 - [show:plain] You say who to call and why, and JARVIS writes a call card.
@@ -117,8 +129,33 @@ written_on: 2026-11-27
 - [show:costs] It costs nothing: the call is on your own plan, and the doorbell is free.
 - [show:fails] When Android holds a dial back, the app asks for one tap to let JARVIS call.
 - [page:pg_screen_calls] [show:title] Now the Calls screen itself, where all of this meets you.
-- [show:plain] It is where you see today's calls and their records, start a new call, read the language table and change your call settings.
-- [show:how] A live call opens there with its captions and its controls.
+- [show:plain] A line at the top says whether the laptop and the phone are ready, how many calls you made today, and what calls have cost this month.
+- Under it are four tabs: Calls, with your recent calls and their records; New call; Languages; and Settings, with your caps and choices.
+- What the other person says is shown as their words, and never taken as an order.
+- [show:how] Calls opens from the Calls this month line in Vitals, from a call card in the chat, and from its own link.
+- Its tab joins the bar only where it fits beside all the others: on a full-HD laptop screen it has none, and on a wider screen it is last in the bar.
+- On a narrower screen or a phone, it waits behind More.
+- [show:overview] Here is the road from a call card to its record.
+- [node:card] It starts with a call card, showing only the number's last digits, its limits, its languages and its rupee estimate.
+- [edge:card>ready] [node:ready] While the panel is open, the top line keeps checking the desk and the phone, and lists anything that stops a call.
+- [edge:ready>fix] [node:fix] If something isn't ready, such as a Bluetooth headset on the laptop, Call stays greyed until you fix what the list says.
+- [edge:fix>press] Once that is fixed, the card is yours to press.
+- [edge:ready>press] [node:press] With both ready, you press Call, and that press is your approval.
+- [edge:press>passkey] [node:passkey] For a number JARVIS has never called, your passkey is asked first.
+- [edge:passkey>dial] [node:dial] Then your phone dials, and the laptop carries the talking.
+- [edge:dial>live] [node:live] [count:{{fact:src/jarvis/api/calls_routes.py:TICKET_TTL_S}}] The live view opens with a ticket that lasts {{fact:src/jarvis/api/calls_routes.py:TICKET_TTL_S}} seconds, and shows the captions with their English.
+- [edge:live>you] [node:you] From there you choose Listen live or Captions only, Tell JARVIS, Take over, or Hang up.
+- [edge:live>record] When the call ends, its record takes over.
+- [node:record] Open shows the English summary, with what was agreed and what needs you, the transcript with each line in English too, and the recording's player.
+- [edge:record>keep] [node:keep] And you press Keep, or Delete, which asks you first.
+- Settings sends only what you change, asks first before a raise or a dearer choice, and gives the call desk's kit with a one-use link code.
+- [show:example] In the made-up example, you click Calls this month in Vitals on your laptop, and Calls opens.
+- You make a card for a laundry pickup, press Call, and follow the Malayalam call with English under each line.
+- When it ends, you open the record, see the pickup on your calendar with Undo, and press Keep this call.
+- [show:costs] The panel itself costs nothing; a call costs its speech and its brain, and the card shows the estimate before you press Call.
+- Captions only uses less data than Listen live.
+- [show:fails] If calls aren't set up, or are switched off, the panel says so in plain words.
+- If the live view drops, it connects again a few times, and a browser that can't play the call keeps the captions.
 - [page:pg_service_bhashini] [show:title] Last, the outside services that calls add.
 - [show:plain] Bhashini is the Government of India's language platform, an optional speech option for calls.
 - Its price for this use is unknown, so JARVIS never counts it as free.

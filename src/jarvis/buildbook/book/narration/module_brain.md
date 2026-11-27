@@ -1,7 +1,7 @@
 ---
 chapter: module_brain
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
   "pg_module_brain": "0092747ee86ef6d0"
   "pg_card_c09": "d3c3d3cc0684264f"
@@ -11,7 +11,7 @@ pages:
   "pg_card_c16": "4ba2cd05ca06d13d"
   "pg_card_c17": "3190b7dc62ba8aad"
   "pg_card_c68": "3b22362528a9ecb2"
-  "pg_screen_chat": "4881a58c9e10e887"
+  "pg_screen_chat": "4445020ec3059f29"
   "pg_screen_history": "74dfa93a74a5785c"
   "pg_service_anthropic": "593cd67a881aa39b"
   "pg_service_gemini": "aa8ef95faa153ecc"
@@ -101,6 +101,7 @@ pages:
 - [edge:route>limit] [node:limit] [edge:limit>refused] [node:refused] When the month's limit is used up, the thread says so, and suggests raising it in Vitals or using the free brain.
 - [edge:limit>brain] [node:brain] Otherwise, the brain answers.
 - [edge:brain>card] [node:card] A change that needs your yes waits as a card in Approvals.
+- When JARVIS proposes a phone call, a call card is drawn under the reply, with Call, Edit and Cancel and only the number's last digits, while the same proposal waits in Approvals.
 - [edge:brain>reply] [node:reply] Under the reply you see the brain, the model, the time taken, the cost in rupees and the number of tool calls.
 - A reply from a model JARVIS has no price for says price unknown there instead, and a reopened conversation counts how many such replies it holds.
 - [edge:reply>saved] [node:saved] And the conversation is saved, so it survives JARVIS going to sleep.

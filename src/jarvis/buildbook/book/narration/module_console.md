@@ -3,13 +3,13 @@ chapter: module_console
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
-  "pg_module_console": "df072ac9862073c3"
-  "pg_card_c01": "4324712b3fcf1d31"
-  "pg_card_c02": "550c8b34167298f0"
+  "pg_module_console": "0e35e40e9a4da2bf"
+  "pg_card_c01": "f73461620e64d4ab"
+  "pg_card_c02": "d18f1b7b46b1e73a"
   "pg_card_c03": "773a566ba7590934"
   "pg_card_c41": "8336130889fc3e26"
   "pg_screen_construct": "199bad85a6e6ff3a"
-  "pg_service_firestore": "c0fa9cd8ff2d6ced"
+  "pg_service_firestore": "f097f10230e841db"
   "pg_service_google_sign_in": "fde5db99cea41a26"
   "pg_service_redis": "fb4824e2028bff31"
 ---

@@ -1,13 +1,13 @@
 ---
 chapter: module_privacy
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
   "pg_module_privacy": "94d87fe277d78e11"
   "pg_card_c53": "909359e8f682a430"
-  "pg_screen_privacy": "02f740526eda5bbe"
+  "pg_screen_privacy": "73a2ce9e5417d5a3"
 ---
-- [page:pg_module_privacy] [show:title] This chapter is about the privacy panel: the one place that shows everything JARVIS keeps about you and your family.
+- [page:pg_module_privacy] [show:title] This chapter is about the privacy panel: the place that shows what JARVIS keeps about you and your family, kind by kind.
 - [show:plain] The panel is one screen in the console, listing every kind of data JARVIS keeps.
 - For each kind, it shows what it is, how many items there are, how long they are kept, where they live, and whether JARVIS encrypts them itself.
 - Each kind has an Export button, and a Delete button wherever removing it makes sense.
@@ -50,9 +50,9 @@ pages:
 - A delete that left items behind says how many are still there, and one your home laptop finishes later says so in the note.
 - And a Google sign-in that is too old for a delete shows a button to sign in with Google again.
 - [page:pg_card_c53] [show:title] The first part is the privacy dashboard behind the panel.
-- [show:plain] It lists everything JARVIS keeps about you, one row per kind, each with Export and, where it makes sense, Delete.
+- [show:plain] It lists what JARVIS keeps about you, one row per kind, each with Export and, where it makes sense, Delete.
 - Deleting something gone for good, like conversations or memories, needs your passkey, so a stolen phone with an open console is not enough.
-- Download everything gives you one file with all of it, and never a secret.
+- Download everything gives you one file with every kind it lists, and never a secret.
 - [show:how] Every feature that keeps something about you signs up as a source for the dashboard.
 - [count:{{fact:src/jarvis/privacy/ports.py:SOURCE_BUDGET_S}}] The dashboard asks them all at once, each within {{fact:src/jarvis/privacy/ports.py:SOURCE_BUDGET_S}} seconds, and a slow or failing one still keeps its row.
 - The one exception is a retired feature's leftover row, such as the Book's old writer trial: it leaves the list once a check finds it empty.
@@ -71,9 +71,11 @@ pages:
 - A delete that partly fails says how many are still there, and one the home laptop must finish stays pending until the laptop is back on.
 - [page:pg_screen_privacy] [show:title] Last, the Privacy screen in your console.
 - [show:plain] There is a card for each kind of data: what it is, how many, how long it is kept, where it is stored, and whether JARVIS encrypts it.
+- Your phone calls are not among them: they are kept and deleted in the Calls panel.
 - [show:how] A card shows an Encrypted by JARVIS badge when that is so.
 - Export on a simple card downloads straight away; for private content, it first needs your passkey, or a Google sign-in from the last few minutes.
 - Download everything leaves out vault files, which the Vault exports on its own.
+- Phone calls have no card: a call's record is deleted in Calls or when its keeping time runs out, and Download everything leaves calls out too.
 - The Delete button opens a box that says what will go, and the delete travels with the version of the card you saw.
 - [show:example] In the made-up example, you decide to clear out the list of what JARVIS did this week.
 - [count:{{fact:settings.activity_retention_days}}] You scroll to the Activity card, whose rows are kept for {{fact:settings.activity_retention_days}} days.
@@ -81,4 +83,4 @@ pages:
 - The card now tells you its rows were deleted, and shows none left.
 - [show:costs] Looking, exporting and deleting cost nothing: they read and write JARVIS's own records, with no AI.
 - [show:fails] [count:{{fact:src/jarvis/api/privacy.py:CHANGE_PER_MINUTE}}] If part of a delete fails, the card suggests trying again in a moment, and changes are limited to {{fact:src/jarvis/api/privacy.py:CHANGE_PER_MINUTE}} a minute.
-- That is the privacy panel: everything JARVIS keeps, in plain sight, yours to take away or to delete, with your passkey guarding what can't come back.
+- That is the privacy panel: what JARVIS keeps, kind by kind, in plain sight, yours to take away or to delete, with your passkey guarding what can't come back.

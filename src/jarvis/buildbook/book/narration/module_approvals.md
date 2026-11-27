@@ -3,12 +3,12 @@ chapter: module_approvals
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
-  "pg_module_approvals": "178743f9bda25535"
+  "pg_module_approvals": "37fc50a9574728ce"
   "pg_card_c18": "d6c001daf7baf35a"
-  "pg_card_c28": "6d86fa4ce30366a8"
-  "pg_card_c51": "d6b728ee331b13d5"
+  "pg_card_c28": "3bbaf5446ea9dd7b"
+  "pg_card_c51": "1d9c01b7bdf49831"
   "pg_card_c52": "1d94e343328a1fef"
-  "pg_screen_approvals": "86326e0b75ab9329"
+  "pg_screen_approvals": "dda38ef437489da7"
 ---
 - [page:pg_module_approvals] [show:title] This chapter is about JARVIS's conscience: how it asks before it acts, and how you say yes.
 - [show:plain] Every action JARVIS takes for you passes one door, the tool gateway, which may do it, ask you first, or refuse.
@@ -109,6 +109,8 @@ pages:
 - [edge:send>gateway] [node:gateway] The tool runs through the gateway, carrying the card's token.
 - [edge:gateway>chat] [node:chat] The outcome arrives as a reply in that card's conversation, which the panel opens for you.
 - [edge:chat>list] [node:list] And the card leaves the list.
+- A phone call JARVIS proposes waits here as a calls place card: Approve places the same call as Call on its call card in Chat or Calls.
+- Whichever you press first, the stored card is used once.
 - [show:example] In the example, a card to e-mail Meera the agenda has a typo, so you press Decline and ask JARVIS to fix it.
 - The new card looks right, you press Approve, and Chat confirms the mail went.
 - [show:costs] Approving costs nothing by itself, and a paid reply after it shows its rupees in Chat, or price unknown when its model has no known price.

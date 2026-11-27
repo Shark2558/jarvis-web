@@ -1,4 +1,4 @@
-Version v6.6.0 · 27 Nov 2026, 22:08 IST · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.6.1 · 28 Nov 2026 · Release R5.2 · Status: Current · Owner: 🛠 Mark XXV
 
 # 06 · Cost and capacity
 
@@ -229,7 +229,9 @@ the least recently used are put away first and 512 MB is left free, else the CPU
 speaking run one at a time; one long job at a time (scoring, training). While a job runs or
 requests queue, the kit's health says slow, and JARVIS falls back to Google rather than wait.
 The plan's speed bars (first audio within 0.7 s on the graphics card, listening three times
-faster than real time) are not measured yet (chapter 07, section 9.4).
+faster than real time) are not measured yet: since the R5.2 review the kit's self-test times
+listening on its own against the ×3 bar, but it has not run on a laptop, and first audio needs a
+voice, which kit 1.0.0 has none of (chapter 07, section 9.4).
 
 On Cloud Run: a session clip passes through the one instance in memory (a body of at most 1 MB)
 on its way to the laptop; the kit's client is one shared connection pool, closed with the voice
@@ -245,3 +247,4 @@ one-instance rule is unchanged.
 | v6.5.0 | 27 Nov 2026, 20:15 IST | R18 | R18 "Calls from your laptop": calls' costs in plain words; metering rows for a call's speech and brain; the calls' speech price table; the calls caps, their raise rule and the language check's ₹ gate; calls in a typical month (the plan's estimate); `--timeout 1800`; new section 6: the caps (an unknown estimate is refused), free speech first (the review's ranking fix), metering in one place, and what a call adds to the one instance (CPU and the background check marked unverified) | 🛠 Mark XXV |
 | v6.5.1 | 27 Nov 2026, 21:25 IST | R18 | The R18 review's later fixes: Secret Manager holds up to 14 secrets with the three optional speech keys the deploy now mounts (₹0–46 a month with all three, an estimate) | 🛠 Mark XXV |
 | v6.6.0 | 27 Nov 2026, 22:08 IST | R5.2 | R5.2 "Your voice": its cost in plain words (₹0 a month; about 20 free Google minutes once, else the ₹ shown and his YES); metering rows for the laptop (never metered) and the session's comparison (free-only, or 402 `needs_yes` with the ₹); the calls' laptop option registered but not yet passing; Secret Manager up to 15 secrets (₹0–51); the voice rows of a typical month; new section 7: the comparison's ₹ gate step by step, what the laptop costs and saves, and the kit's capacity (the speed bars and the cloud's extra load unmeasured) | 🛠 Mark XXV |
+| v6.6.1 | 28 Nov 2026 | R5.2 | Brought in line with R5.2's combined review: the self-test now times listening alone (not yet run on a laptop); first audio still needs a voice | 🛠 Mark XXV |

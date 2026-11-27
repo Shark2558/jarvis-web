@@ -57,6 +57,7 @@
     people: 'Public figures and work due-diligence, profiles open in your browser',
     book: 'How JARVIS is built, sealed in your vault with each release',
     voice: 'JARVIS\'s voice, speed and wit; how this device listens',
+    calls: 'Calls JARVIS places from your phone: live captions, records, languages', // R18
     media: 'Play the videos and music JARVIS found for you',
     construct: 'The rotating hologram',
     helpers: 'Bills, chores, weather and alerts, nudges and the kitchen',

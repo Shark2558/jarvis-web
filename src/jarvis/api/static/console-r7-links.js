@@ -18,7 +18,7 @@
 const M = window.JarvisMobile;
 const WORDS = Object.freeze(['talk', 'look', 'sos', 'shared']);
 const PANELS = Object.freeze(['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault',
-  'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'book', 'voice', 'media',
+  'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'book', 'voice', 'calls', 'media',
   'construct', 'helpers', 'camera']);
 const KEYS = ['do', 'open'];
 const KEEP = 'jarvis_r7_launch_v1';

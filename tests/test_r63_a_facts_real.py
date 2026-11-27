@@ -64,7 +64,7 @@ def test_row379_facts_index_holds_every_path_symbol_constant_setting_collection_
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
     }
     assert set(ix.symbols) == tops
-    assert len(ix.settings) == len(pack.settings) == 179
+    assert len(ix.settings) == len(pack.settings) == 197  # R18 + 18 (`config_calls.py`)
     assert ix.collections == pack.collections and len(pack.collections) == _checker().collections
     assert ix.routes == tuple(sorted({f"{r.method} {r.path}" for r in pack.routes}))
     for field in ("paths", "symbols", "constants", "settings", "collections", "routes"):

@@ -41,6 +41,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "web": "L5",
         "people": "L5",
         "whatsapp": "L5",
+        "calls": "L5",  # R18: the Communication skill's phone calls (cards, records, the desk)
         "kb": "L5",
         "belongings": "L5",
         "groceries": "L5",
@@ -77,6 +78,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "activity": "L8",
         # X cross-cutting: configuration, keys, security, cost, health, privacy, the book
         "config": "X",
+        "config_calls": "X",  # R18: the calls settings, a base class of config.Settings
         "about": "X",  # R6.1 D4: version + build date
         "logging": "X",
         "keyring": "X",

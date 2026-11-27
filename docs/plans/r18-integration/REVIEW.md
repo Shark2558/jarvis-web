@@ -1,4 +1,4 @@
-Version v18.0.0 · 27 Nov 2026, 19:40 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
+Version v18.0.0 · 27 Nov 2026, 21:10 IST · Release R18 · Status: Current · Owner: 🛠 Mark XXV
 
 # R18 "Calls from your laptop": the combined security and code review
 
@@ -68,10 +68,27 @@ records sealed; 30-day retention; an objection drops what was recorded; secrets 
 
 ## 3. The final check pass
 
-Filled in when it ran (section 3 of the change log's last row).
+Run once, at the end, on `r18-review` (the code at fa33d4c; the Book restamp after it is words-only).
+
+| Check | Result |
+|---|---|
+| 1. The whole suite, Python 3.12, with coverage | **20,575 passed, 2 failed, 163 skipped** (43 min). Coverage **95.4 %** (102,131 statements, 4,648 missed), at the project's floor of 95. The two failures were R18's own, not the review's: `test_notify_hardening::test_every_third_party_top_level_import_in_src_is_in_pyproject` (the call desk's `websockets`, `soundcard`, `comtypes` live in its own hash-pinned `requirements-calldesk.txt`, read now as the bridge's extra is) and `test_web_auth::test_prod_boots_without_a_token_key_with_google_tools_off[False]` (R18's calls-off line named `JARVIS_TOKEN_KEY`, a second key warning). Both fixed in fa33d4c; their files rerun with the join's: 81 passed. The suite was not run a second time (one pass) |
+| 2. `ruff check`, `ruff format --check` | the 49 Python files the review touched: clean. The whole tree: only the known E501 at `tests/test_r63_seams.py:115` |
+| 2. `mypy --strict` | 108 files (`calls`, `calldesk`, `phone`, `mobile`, `config_calls`, the R18 API files, and every file the review touched): only the known baseline `memory/redis_store.py:67` |
+| 3. Mock evals, Python 3.11 (`/tmp/venv-b`, made for this pass from `pyproject.toml`) | **ALL MOCK EVALS: PASS**; `calls_language` 5 suites (with the new `free_first`, 6/6, its control failing as it must), `r6_3` 30/30 after its R18 pins |
+| 4. The Book | `pages --check`: 164 pages ok, 0 problems; `--narration-check`: 27 ok, 0 problems; `scripts/check_doc_versions.py`: OK; `scripts/arch_coverage.py`: OK (69 packages/modules, 131 console modules, 35 services, 134 collections); `tests/test_arch_coverage.py`: 50 passed |
+| 5. Browser, Python 3.13 + Playwright (`/tmp/venv-c`, the project installed into it for NumPy) | R18's files and the ones the review touched (`test_r18_e_calls`, `test_r18_e_look`, `test_r18_calls_ways_in`, `test_dock_fit`, `test_r51_dock`, `test_r18_review_calls`, `test_r18_review_look`, `test_privacy`, `test_approve_all`): **103 passed**. The changes after it (the approvals seal, the deploy step, the evals) touch no browser file |
+| 6. Screenshots | `build/r18-review-shots/` (60 PNGs, never committed): Calls → Settings (the server's limits and prices; Unlink and its box), Calls → Languages (Score the voice, its box, the estimate's Bhashini words), Privacy's Phone calls rows, the Approvals card of a waiting call (`+91 …0001`) and Vitals' calls line, at 1920 × 1080 and 2560 × 1440, Night and Day, each through the console's DOM checks (`test_r18_review_look.py`). Looked at: one fix (the 1–5 scale wrapped to two rows; now one row of five). At 1920 Calls has no tab in the bar and no tab moved (the owner's dock rule); at 2560 it is last |
+
+## 4. Left for the owner
+
+1. **The go-live guide** (a project document, not in this repository) needs the optional speech keys' step, as the calls README's "On the server" has it: store a key with `gcloud secrets create jarvis-azure-speech-key` (or `jarvis-sarvam-key`, `jarvis-bhashini-key`), re-run `deploy/cloudrun.sh`, and set `JARVIS_AZURE_SPEECH_REGION`, `JARVIS_SARVAM_ENABLED=true` or `JARVIS_BHASHINI_USER_ID` only if needed (a `--reconfigure` run clears them).
+2. His live checks of plan 10 step 6, and the voice scores (now in Calls → Languages → Score the voice).
+3. Follow-ups, not R18's to fix: the pre-made lines' audio cache (row 19), the brain's own check of each language (I1-NOTES 4.1), sealing every R3 card at rest the way calls now are (row 12 seals calls only).
+4. Commit 09bb44e is the deploy step for the speech keys; its message repeats 9e8b490's by mistake (pushed, so not rewritten; 4c1f66b's message says so).
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
-| v18.0.0 | 27 Nov 2026, 19:40 IST | R18 | First edition: the findings, the owner's outfit-plans decision carried out, the check pass | 🛠 Mark XXV |
+| v18.0.0 | 27 Nov 2026, 21:10 IST | R18 | First edition: the findings (with the ADD writer's three items), the owner's outfit-plans decision carried out, the one final check pass, what is left for the owner | 🛠 Mark XXV |

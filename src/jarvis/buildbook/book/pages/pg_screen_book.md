@@ -30,10 +30,10 @@ sources:
   "src/jarvis/api/static/console-book-script.js": "b05346ce9a31efc5"
   "src/jarvis/api/static/console-book-show.js": "3a53ebbcf354215b"
   "src/jarvis/api/static/console-book-talk.js": "17d0515bfbb34ddf"
-  "src/jarvis/api/static/console-book-tour.js": "21e2972a31775060"
+  "src/jarvis/api/static/console-book-tour.js": "72eec1b2c26a8eaa"
   "src/jarvis/api/static/console-book-voice.js": "d8758d303187cdc6"
   "src/jarvis/api/static/console-book.js": "1ca3680249aaf9d0"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Book is the console's panel for the Build Book, JARVIS's own record of how each version is built. It shows whether this release's book is sealed in your vault, which releases are kept and how much room they use. Open for me starts your own reading session; Show a guest opens the narrated show for a guest, which holds nothing of yours. Once your session is open you read the book's sections, download the sealed code of any kept release, take the Short tour, or tap Read the full book: the full book opens on a page of its own, with its contents, search, a page for every part and a Play button that tells each chapter aloud. Nothing here asks an AI to write anything: the pages and their scripts were written while JARVIS was built.

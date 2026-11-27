@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/static/console-media.js": "9470b3411b87efe1"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Media is JARVIS's small video player. When you ask for a song or a video, the reply shows cards from YouTube, each with a Play button. Nothing plays until you press Play; then the video opens in this panel, in YouTube's privacy-enhanced player, with the other results listed underneath so you pick the next one. Stop removes the player again (`src/jarvis/api/static/console.html`).

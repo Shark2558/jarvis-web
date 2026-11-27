@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/belongings.py": "ed3598e69f3f0053"
   "src/jarvis/api/static/console-things.js": "03183aa2760ac6a0"
-  "src/jarvis/api/static/console.html": "9f4c0c68f45e46fe"
+  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
 ---
 ## In plain words
 Things answers the question "Where did I keep it?". You note what you put away and where, and when you need it again you type a word in the search box and JARVIS shows the place and when you noted it. When something moves, you say so and JARVIS remembers the old place too, so History shows where it has been. Everything here is kept encrypted (`src/jarvis/api/belongings.py`).

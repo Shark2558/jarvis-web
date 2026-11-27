@@ -2,6 +2,35 @@
 page: pg_card_c76
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
+sources:
+  "evals/calls_language/harness.py": "70d6107ad5ca78ff"
+  "evals/calls_language/run.py": "644272915cc99d39"
+  "evals/calls_language/suites.py": "80477250dab6e85c"
+  "src/jarvis/api/static/console-calls-langs.js": "cd555ffe064312f7"
+  "src/jarvis/calls/join_speech.py": "86d3f9a9a39c3909"
+  "src/jarvis/calls/langcheck/__init__.py": "b191fe7a0f1b9545"
+  "src/jarvis/calls/langcheck/api.py": "f1a5ed89b54bae04"
+  "src/jarvis/calls/langcheck/fleurs.py": "46d38040fe11afaa"
+  "src/jarvis/calls/langcheck/runner.py": "7708514f57b166ad"
+  "src/jarvis/calls/langcheck/scoring.py": "cdff02d85ee9af8d"
+  "src/jarvis/calls/langcheck/select.py": "17f8aff69333bcc1"
+  "src/jarvis/calls/langcheck/sentences.py": "da6c3c76ebdcd1b4"
+  "src/jarvis/calls/prices.py": "09530bc93cd5d9f2"
+  "src/jarvis/calls/speech/__init__.py": "7cd8cca15eae7567"
+  "src/jarvis/calls/speech/audio.py": "0282570850200ed1"
+  "src/jarvis/calls/speech/azure.py": "cd27af97dbaf8e28"
+  "src/jarvis/calls/speech/bhashini.py": "32a72dec885b81c5"
+  "src/jarvis/calls/speech/build.py": "f03b52cba95aad09"
+  "src/jarvis/calls/speech/catalogue.py": "09ee31b83a942427"
+  "src/jarvis/calls/speech/detect.py": "d25e44790afcfe3e"
+  "src/jarvis/calls/speech/errors.py": "da58392f33e803b9"
+  "src/jarvis/calls/speech/google.py": "114d5796ec1d46c7"
+  "src/jarvis/calls/speech/lines.py": "3599a5f0c2bc41ed"
+  "src/jarvis/calls/speech/meter.py": "ee673080feff66fe"
+  "src/jarvis/calls/speech/phoneline.py": "79408543a2713deb"
+  "src/jarvis/calls/speech/rest.py": "59a2324a4c347664"
+  "src/jarvis/calls/speech/sarvam.py": "bc73208ec89e647f"
+  "src/jarvis/calls/speech/translate.py": "07a528c755b8b23c"
 ---
 ## In plain words
 This part is how JARVIS hears the other person in a call and speaks back, and how it decides which languages a call may use. It uses cloud speech, free first: Google's, which shares the free monthly allowance of JARVIS's own voice; Microsoft Azure's free tier if you add its key, which stops at its allowance and can never bill; Bhashini if it is set up; and Sarvam, which is paid and stays off until you say yes (`src/jarvis/calls/speech/catalogue.py`). A language reaches a call card only after it passes the language check: hearing phone-quality clips correctly, speaking call sentences clearly enough to be heard back, and answering fast enough (`src/jarvis/calls/langcheck/select.py`). You start the check in Calls, Languages, and see its price before anything is sent.

@@ -64,7 +64,7 @@ sources:
   "src/jarvis/buildbook/gen/facts_cache.py": "bd6bf85ae50fed31"
   "src/jarvis/buildbook/gen/facts_code.py": "937942a4b5e66f52"
   "src/jarvis/buildbook/gen/facts_guide.py": "6607c03e4c48accf"
-  "src/jarvis/buildbook/gen/facts_routes.py": "75e71f796eeceea2"
+  "src/jarvis/buildbook/gen/facts_routes.py": "409ef6e03c67ce71"
   "src/jarvis/buildbook/gen/facts_values.py": "3f353b0cd2766d66"
   "src/jarvis/buildbook/gen/fake_secrets.txt": "0e1c1d29a7659603"
   "src/jarvis/buildbook/gen/fallback.py": "7625a5163251b853"

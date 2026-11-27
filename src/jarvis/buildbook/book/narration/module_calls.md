@@ -3,17 +3,17 @@ chapter: module_calls
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
-  "pg_module_calls": "34f5d7b438c40e06"
-  "pg_card_c74": "b948b6a08a312662"
+  "pg_module_calls": "88855363b6f3c07a"
+  "pg_card_c74": "3ce8af10ae94f2d3"
   "pg_card_c75": "9e6d0440cd70e0a9"
-  "pg_card_c76": "4b50157d1d5fb587"
-  "pg_card_c77": "31d44cbad607db39"
-  "pg_card_c78": "c8eeaa2240b45125"
-  "pg_screen_calls": "8dd07fc570e109ae"
+  "pg_card_c76": "7c744d389bfadc64"
+  "pg_card_c77": "aec0238ab86e3938"
+  "pg_card_c78": "bd6b45b8791412dd"
+  "pg_screen_calls": "60dd09b61813e44c"
   "pg_service_bhashini": "a4bf466c164e02cb"
   "pg_service_hugging_face": "c867d8c12d15ba0b"
   "pg_service_microsoft_azure_speech": "bd6ab0f24b41a616"
-  "pg_service_sarvam": "c062f5bfc7c9019b"
+  "pg_service_sarvam": "d8259dec318dc923"
 ---
 - [show:title] This chapter is about phone calls: JARVIS calling for you, from your own mobile number, through your laptop.
 - [show:plain] You say who to call and why, and JARVIS writes a call card.
@@ -78,7 +78,7 @@ pages:
 - The Calls panel opens from the dock where its tab fits beside the others, from Vitals' calls line, from a call card in the chat, and from its own link.
 - [show:costs] [count:₹{{fact:src/jarvis/calls/models.py:CALL_CAP_CEILING_INR}}] You can raise a call's cap up to {{fact:src/jarvis/calls/models.py:CALL_CAP_CEILING_INR}} rupees in Calls, Settings, and a raise always waits for your confirmation.
 - [show:fails] A day's count or a month's spend that can't be read refuses the call, and a sealed part that doesn't open is called unreadable, never empty.
-- The Privacy panel has no calls row: a call is deleted in Calls, or by the retention job.
+- The Privacy panel has a Phone calls section: your calls, their settings, the desk's link and the language check, each with Export and Delete.
 - [page:pg_card_c75] [show:title] Next, the engine that runs a call while it is on.
 - [show:plain] It holds one call at a time, in memory, and never dials on its own or redials.
 - [show:example] In the example, Leela's clinic answers in Tamil, which her card allows, so JARVIS speaks Tamil from its next sentence.
@@ -99,12 +99,12 @@ pages:
 - A language reaches a call card only after it passes the check.
 - [show:how] A request is retried only where the vendor surely didn't take it, so nothing is billed twice.
 - Every rupee goes through JARVIS's billing once, under the label calls.
-- In a call, a language uses the cheapest passing option you allow, and never one that didn't pass it.
+- In a call, a language uses the passing option you allow, free first: a paid one only when no free one still covers the call, and never one that didn't pass.
 - The check plans first, with its price, and sends nothing until you press Run.
 - [count:{{fact:src/jarvis/calls/langcheck/fleurs.py:CLIPS}}] It takes {{fact:src/jarvis/calls/langcheck/fleurs.py:CLIPS}} clips a language from Google's open FLEURS set, and squeezes each into a phone line's narrow band.
 - Hearing must get at least {{fact:src/jarvis/calls/langcheck/scoring.py:HEAR_FACTS_MIN}} of the key facts right, and a voice must be heard back just as well by another option.
 - [count:{{fact:src/jarvis/calls/langcheck/scoring.py:SPEED_FAST_S}}] Half of the replies must start within {{fact:src/jarvis/calls/langcheck/scoring.py:SPEED_FAST_S}} seconds.
-- Until you score its samples, a passing language is offered as not yet heard by a native speaker.
+- Until you score its samples, with Score the voice in Languages, a passing language is offered as not yet heard by a native speaker.
 - [show:costs] [count:₹{{fact:src/jarvis/calls/langcheck/api.py:MAX_ACCEPT_INR}}] Inside the free allowances the check costs nothing, and you can accept at most {{fact:src/jarvis/calls/langcheck/api.py:MAX_ACCEPT_INR}} rupees for one run.
 - [show:fails] No network leaves a language unchecked, said plainly, and the brain's own check of each language is not built, so it never fails one.
 - [page:pg_card_c77] [show:title] Now the call desk on your laptop.

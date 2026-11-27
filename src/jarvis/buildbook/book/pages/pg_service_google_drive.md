@@ -7,7 +7,7 @@ sources:
   "src/jarvis/api/drive.py": "aab977fe9441f939"
   "src/jarvis/api/feature_wiring.py": "473760847cb35d03"
   "src/jarvis/api/integrations.py": "849076061558773f"
-  "src/jarvis/api/personal.py": "7a9aa32e08b7d084"
+  "src/jarvis/api/personal.py": "8874aeec850037d6"
   "src/jarvis/api/startup_log.py": "4ba9e18096e253e1"
   "src/jarvis/api/vault_inbox.py": "26546b663f03b975"
   "src/jarvis/config.py": "8c3c0b7f0890ff99"

@@ -10,7 +10,7 @@ sources:
   "src/jarvis/api/feature_wiring.py": "473760847cb35d03"
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
   "src/jarvis/api/identity.py": "4b025a7710b59c4b"
-  "src/jarvis/api/personal.py": "7a9aa32e08b7d084"
+  "src/jarvis/api/personal.py": "8874aeec850037d6"
   "src/jarvis/api/r11_wiring.py": "4cfa5b25282b147c"
   "src/jarvis/api/r4_wiring.py": "379192618b74836f"
   "src/jarvis/api/r6_wiring.py": "933facfd96a82b79"

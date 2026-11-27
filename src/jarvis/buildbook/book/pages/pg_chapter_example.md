@@ -37,7 +37,7 @@ sources:
   "src/jarvis/core/channel.py": "0c46ee25a780e41b"
   "src/jarvis/core/finish.py": "29da647acc47e7e7"
   "src/jarvis/core/fixed_lines.py": "f7628651dff9b5b5"
-  "src/jarvis/core/models.py": "b81cc65f474ac5d8"
+  "src/jarvis/core/models.py": "11f918a72651ab39"
   "src/jarvis/core/rounds.py": "f6a5203fab82caa5"
   "src/jarvis/core/saving.py": "c92f295af587766d"
   "src/jarvis/core/window.py": "06c365d979fdc3cf"

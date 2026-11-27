@@ -7,8 +7,8 @@ pages:
   "pg_card_c05": "6f1e9f1eae6e0f4c"
   "pg_card_c06": "0c93fd63672dc89d"
   "pg_screen_voice": "3cd7f21a82067368"
-  "pg_service_google_cloud_speech_to_text": "27ee781a35616177"
-  "pg_service_google_cloud_text_to_speech": "e08f6f14a597b1fc"
+  "pg_service_google_cloud_speech_to_text": "b850cfd538974b40"
+  "pg_service_google_cloud_text_to_speech": "8e225efe79566cc1"
 ---
 - [page:pg_module_voice] [show:title] This chapter is about voice: how you talk to JARVIS, and how JARVIS talks back.
 - [show:plain] Voice works in the console, on your laptop or on your phone.

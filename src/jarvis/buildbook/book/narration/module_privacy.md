@@ -5,7 +5,7 @@ written_on: 2026-11-27
 pages:
   "pg_module_privacy": "94d87fe277d78e11"
   "pg_card_c53": "909359e8f682a430"
-  "pg_screen_privacy": "73a2ce9e5417d5a3"
+  "pg_screen_privacy": "0bfde86222de14fd"
 ---
 - [page:pg_module_privacy] [show:title] This chapter is about the privacy panel: the place that shows what JARVIS keeps about you and your family, kind by kind.
 - [show:plain] The panel is one screen in the console, listing every kind of data JARVIS keeps.
@@ -71,11 +71,11 @@ pages:
 - A delete that partly fails says how many are still there, and one the home laptop must finish stays pending until the laptop is back on.
 - [page:pg_screen_privacy] [show:title] Last, the Privacy screen in your console.
 - [show:plain] There is a card for each kind of data: what it is, how many, how long it is kept, where it is stored, and whether JARVIS encrypts it.
-- Your phone calls are not among them: they are kept and deleted in the Calls panel.
+- Your phone calls are among them, in a section of their own.
 - [show:how] A card shows an Encrypted by JARVIS badge when that is so.
 - Export on a simple card downloads straight away; for private content, it first needs your passkey, or a Google sign-in from the last few minutes.
 - Download everything leaves out vault files, which the Vault exports on its own.
-- Phone calls have no card: a call's record is deleted in Calls or when its keeping time runs out, and Download everything leaves calls out too.
+- Phone calls have four cards: your calls, deleted only with your passkey and exported with each number masked; the calls settings; the call desk's link; and the language check's results.
 - The Delete button opens a box that says what will go, and the delete travels with the version of the card you saw.
 - [show:example] In the made-up example, you decide to clear out the list of what JARVIS did this week.
 - [count:{{fact:settings.activity_retention_days}}] You scroll to the Activity card, whose rows are kept for {{fact:settings.activity_retention_days}} days.

@@ -129,7 +129,7 @@ sources:
   "src/jarvis/mobile/ports.py": "1715d5e8251ff5b8"
   "src/jarvis/phone/__init__.py": "9be415daac56c96f"
   "src/jarvis/phone/applock.py": "7e71acd21cdef363"
-  "src/jarvis/phone/calls.py": "c215200dfc9f2f19"
+  "src/jarvis/phone/calls.py": "2b20c0e9fed52998"
   "src/jarvis/phone/calls_wire.py": "512eac2611f265c5"
   "src/jarvis/phone/door.py": "ab8b59add7d96386"
   "src/jarvis/phone/handlers.py": "fd6c504bae8191d1"
@@ -155,7 +155,7 @@ Each later request carries a signed header (`parse_header`), and `DoorGate` chec
 The signature covers the path, the time, the nonce and a hash of the body (`signing_string`), and the body must be the one exact JSON form (`canonical_json`).
 Only then does a handler run: `DoorHandlers` answers hello with the app's settings and the SOS contacts, and takes an inbox file only if its size and SHA-256 match its first line.
 `PhoneCalls` adds the door's calls route: the cloud signs each call command and rings the phone with a Web Push that names no number, and the phone fetches the command through the door and acts only on one that checks out (`src/jarvis/phone/calls.py`).
-Approve or Decline on a call card's notice comes back the same way as your press in the Calls panel, and a number never called before opens the console for your passkey (`CardDesk`).
+Approve or Decline on a call card's notice comes back the same way as your press in the Calls panel, and a new number, or your passkey rule, opens the console for the passkey (`CardDesk`).
 The app lock (`AppLock`) applies only to the app's own sessions, marked by a signed device cookie, and only once a passkey was added from the app.
 After {{fact:settings.app_lock_minutes}} minutes with no tap from you, every route outside the never-locked list answers with status 423 until a passkey check bound to that session (`install_app_lock`).
 `src/jarvis/api/app_shell.py` serves the installable manifest with its shortcuts and share target, and a shared photo, PDF or text waits in the phone's own browser tray (`src/jarvis/api/static/app-share-sw.js`).

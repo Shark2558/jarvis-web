@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
   "pg_module_android": "665ef44d0430e321"
-  "pg_card_c62": "f639af4513ecb096"
+  "pg_card_c62": "cd56c82ba4deb235"
   "pg_card_c64": "96ee0e66356181e1"
   "pg_card_c65": "6608284f309c2e1b"
 ---
@@ -70,7 +70,7 @@ pages:
 - Only then does a handler run, and an inbox file is taken only if its size and its SHA-256 hash match its first line.
 - The door's calls route works the same way: JARVIS signs each call command and rings the phone with a push that names no number.
 - The phone fetches the command through the door, and acts only on one that checks out.
-- Approve or Decline on a call's notice comes back like your press in the Calls panel, and a number never called before opens the console for your passkey.
+- Approve or Decline on a call's notice comes back like your press in the Calls panel, and a new number, or your passkey rule, opens the console for your passkey.
 - The app lock applies only to the app's own sessions, and only once a passkey was added from the app.
 - Every change to the app is built and tested on GitHub with a throwaway key, while the app you install is built on your laptop.
 - [show:example] In the made-up example, Meher opens Integrations on her laptop, then Phone app, touches her passkey, and gets her code.

@@ -55,7 +55,7 @@ html[data-motion="calm"] .vs-level i,html[data-motion="off"] .vs-level i{transit
 
 /* the ₹ question, his words, the browser switch */
 .vs-field{margin-top:12px}
-.vs-field label{display:block;margin-bottom:6px;font-size:13px;font-weight:600;line-height:1.35;color:var(--ink)}
+.vs-field label{display:block;margin-bottom:6px}
 .vsess .vs-field .minput{max-width:100%}
 .vsess .vs-field .minput.vs-yes{max-width:160px;font-family:var(--tech);letter-spacing:.2em;text-transform:uppercase}
 .vsess .bopt{margin-top:10px}

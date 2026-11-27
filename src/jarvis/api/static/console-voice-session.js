@@ -315,7 +315,7 @@ function statusText(cur, done, total) {
   return total ? `${done} of ${total} recorded` : 'About 20 minutes, with breaks';
 }
 function actions(...btns) { const a = mk('div', 'actions'); a.append(...btns); D.ui.body.append(a); return a; }
-function field(id, label, input) { const f = mk('div', 'vs-field'), l = mk('label', '', label); l.htmlFor = id; input.id = id; f.append(l, input); return f; }
+function field(id, label, input) { const f = mk('div', 'vs-field'), l = mk('label', 'bl', label); l.htmlFor = id; input.id = id; f.append(l, input); return f; }  // the Voice panel's own label (R5.2 review)
 
 function drawIntro() {
   const b = D.ui.body, s = D.s;

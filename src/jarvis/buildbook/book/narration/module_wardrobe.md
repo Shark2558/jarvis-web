@@ -6,7 +6,7 @@ pages:
   "pg_module_wardrobe": "987f65c80f28f4fc"
   "pg_card_c69": "9775643b22514a19"
   "pg_card_c70": "963714a3c60d82d3"
-  "pg_card_c71": "7a750822969d10a3"
+  "pg_card_c71": "3791839bd680795e"
   "pg_card_c72": "fd7afee853fc7e57"
   "pg_card_c73": "87f2b2d657c2d3e9"
   "pg_service_google_agent_platform": "eb4721a8ea3ad4b3"

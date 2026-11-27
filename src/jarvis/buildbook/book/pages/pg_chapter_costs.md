@@ -3,7 +3,7 @@ page: pg_chapter_costs
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "src/jarvis/__init__.py": "e7c19ff56bddba24"
+  "src/jarvis/__init__.py": "5f3e13571a1966bf"
   "src/jarvis/about.py": "c310b3bdce51c135"
   "src/jarvis/api/static/console-usage.js": "1595a84e680dde87"
   "src/jarvis/api/static/console-vitals.js": "dd7cc4ee3cec2353"

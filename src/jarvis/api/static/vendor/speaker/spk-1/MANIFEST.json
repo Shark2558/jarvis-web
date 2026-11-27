@@ -1,0 +1,33 @@
+{
+ "release": "spk-1",
+ "what": "R5.2 row 84, the speaker check (docs/plans/r5-2-voice.md 3.5, D6): the speaker-embedding model console-voiceprint.js runs in the browser. Served by src/jarvis/api/speaker_assets.py only when a file below is listed with a matching SHA-256.",
+ "files": {},
+ "slot": {
+  "file": "wespeaker-voxceleb-campplus.onnx",
+  "status": "empty: no model file is shipped yet (console-voiceprint.js SLOT.sha256 is null, so the console reports 'no_model' and barge-in works as before)",
+  "model": "WeSpeaker 'VoxCeleb (EN) CAM++' (github.com/wenet-e2e/wespeaker, docs/pretrained.md), the CAM++ architecture (arXiv 2303.00332) trained by WeSpeaker on VoxCeleb",
+  "upstream_name": "voxceleb_CAM++.onnx",
+  "source": "https://huggingface.co/Wespeaker/wespeaker-voxceleb-campplus/resolve/main/voxceleb_CAM%2B%2B.onnx",
+  "mirror": "https://wenet.org.cn/downloads?models=wespeaker&version=voxceleb_CAM%2B%2B.onnx",
+  "licence": "CC-BY-4.0",
+  "licence_evidence": "github.com/wenet-e2e/wespeaker docs/pretrained.md (read 2026-11-27): 'The pretrained model in WeNet follows the license of it's corresponding dataset. For example, the pretrained model on VoxCeleb follows Creative Commons Attribution 4.0 International License.'",
+  "training_data": "VoxCeleb: CC BY 4.0 (mm.kaist.ac.kr/datasets/voxceleb/files/license.txt, read 2026-11-27); that licence also says the copyright of the original and cropped videos stays with their original owners",
+  "input": "feats float32[1, T, 80]: 80-band Kaldi fbank, 25 ms / 10 ms, Hamming window, no dither, each band's mean removed (console-voiceprint-math.js; checked against a numpy reference in tests/test_r52_v5_voiceprint_math.py)",
+  "output": "one embedding float32[1, D]; the runtime reads the input and output names from the session and compares by cosine",
+  "threshold": "0.45 until the laptop eval measures it (plan section 5: equal error rate <= 5 % on the owner's clips against openly licensed other speakers)",
+  "why_empty": "huggingface.co and wenet.org.cn were not reachable from the build session (its network refused them), so the file's bytes and SHA-256 could not be taken from a primary source; nothing was fetched from a third-party copy",
+  "to_ship": [
+   "download upstream_name from source (or mirror); compare its SHA-256 with the one Hugging Face shows for the file",
+   "save it here as wespeaker-voxceleb-campplus.onnx (renamed: the console's file names allow no '+'), unchanged",
+   "list it under files: {sha256, bytes, type: application/octet-stream, licence: CC-BY-4.0, source, upstream_name, changes: 'renamed, otherwise unchanged'}",
+   "put the same sha256 in SLOT.sha256 of static/console-voiceprint.js (tests/test_r52_v5_console.py checks they match)",
+   "add LICENSE-wespeaker-models.txt beside the release folder: the CC BY 4.0 attribution (WeSpeaker VoxCeleb CAM++, wenet-e2e/wespeaker, CC BY 4.0, renamed) and the licence text",
+   "add 'static/vendor/speaker/*/*' and 'static/vendor/speaker/*.txt' to pyproject's jarvis.api package-data",
+   "set SLOT.threshold from the laptop eval"
+  ],
+  "alternatives": {
+   "wespeaker-voxceleb-resnet34": "WeSpeaker 'VoxCeleb (EN) ResNet34' (voxceleb_resnet34.onnx), the same licence statement; 6.84 GFLOPs and a real-time factor of 0.032 against CAM++'s 1.72 GFLOPs and 0.013 (arXiv 2303.00332, Table 3), so about four times slower for a barge-in check on a phone",
+   "3d-speaker-campplus": "not taken: the 3D-Speaker README states Apache-2.0 for its code but not the checkpoints' licence or their 200k-speaker Mandarin training set; ModelScope was not reachable to check"
+  }
+ }
+}

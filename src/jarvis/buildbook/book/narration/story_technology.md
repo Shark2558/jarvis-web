@@ -3,7 +3,7 @@ chapter: story_technology
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
-  "pg_chapter_technology": "b39ac362030a5622"
+  "pg_chapter_technology": "53b6be2a78bde189"
 ---
 - [show:title] This chapter lists what JARVIS is built from: the pieces of other people's work it stands on, and where each one runs.
 - [show:plain] The server is written in Python, with the FastAPI web framework.
@@ -11,6 +11,7 @@ pages:
 - The server's own code comes to about {{fact:loc.python_code}} lines of Python.
 - The console is plain browser code, with no build step at all.
 - Your home laptop runs a small kit of its own for the cameras, and another, the call desk, for phone calls.
+- If you set it up, a third, the speech kit, listens for JARVIS.
 - The Android app is built with Google's Android tools.
 - GitHub tests every change before it ships, and every package is pinned to an exact, checked version.
 - [show:how] Here are the building blocks. FastAPI and Uvicorn run the web server, Pydantic checks data, and httpx makes calls out.
@@ -18,6 +19,7 @@ pages:
 - NumPy handles the sound of phone calls.
 - [count:{{fact:services.count}}] Out in the world, JARVIS talks to {{fact:services.count}} outside services in all.
 - A one-time setup, safe to run again, prepares Google Cloud: Cloud Run, Firestore, Secret Manager, Cloud Scheduler for the morning clock, and the speech services.
+- It asks once for the laptop speech kit's address and key, and keeps the key in Secret Manager.
 - The older Render blueprint is still kept, from before the move to Google.
 - [show:overview] Now, here is how a change becomes a running JARVIS.
 - [node:change] It starts with a pull request, opened from a standard template.

@@ -3,10 +3,10 @@ page: pg_service_microsoft_azure_speech
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "src/jarvis/api/r18_wiring.py": "9c0a9b872566617c"
+  "src/jarvis/api/r18_wiring.py": "75477497af6c33aa"
   "src/jarvis/calls/prices.py": "09530bc93cd5d9f2"
-  "src/jarvis/calls/speech/build.py": "f03b52cba95aad09"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/calls/speech/build.py": "2c70d34548a1d131"
+  "src/jarvis/config.py": "965b3658da16361e"
 ---
 ## In plain words
 Microsoft Azure Speech is Microsoft's service that turns speech into text and text into speech. JARVIS can use its free tier on phone calls, to hear what the other person says and to speak JARVIS's side, in English and most major Indian languages (`src/jarvis/calls/speech/build.py:build_speech`). It is off until you set an Azure free-tier key, `azure_speech_key`; without one it is simply not offered. The free tier cannot bill, so it costs nothing and stops once its monthly allowance is used. What goes to Microsoft: each short clip of the other person's voice with the language to hear it in, and the text of each line JARVIS says, sent to the Azure region set for it. A language uses Azure on a call only after Azure passed JARVIS's language check for it; before English has been checked, English calls use Google, or Azure when Google is not set up.

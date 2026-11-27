@@ -81,12 +81,17 @@ def test_what_the_kit_holds(built: bytes) -> None:
         n.endswith((".pyc", ".pem", ".key", ".log")) or "__pycache__" in n or "secret" in n
         for n in names
     )
-    # nothing else of the cloud ships: only the three shared modules outside the desk
+    # nothing else of the cloud ships: only the shared modules outside the desk (R5.2 I1: + the
+    # laptop speech kit's client, its protocol and the Tailscale address rule it reuses)
     outside = {n for n in names if n.startswith("desk-src/") and "/calldesk/" not in n}
     assert {n for n in outside if not n.endswith("__init__.py")} == {
         "desk-src/jarvis/calls/protocol.py",
         "desk-src/jarvis/calls/models.py",
         "desk-src/jarvis/home/signing.py",
+        "desk-src/jarvis/localspeech/protocol.py",
+        "desk-src/jarvis/localspeech/client.py",
+        "desk-src/jarvis/localspeech/desk.py",
+        "desk-src/jarvis/offline/config.py",
     }
 
 
@@ -201,6 +206,13 @@ def test_every_pin_is_hash_locked_and_the_set_is_the_closure() -> None:
         "annotated-types",
         "typing-extensions",
         "typing-inspection",
+        # R5.2 I1: httpx and what it needs, for the laptop speech kit's client
+        "httpx",
+        "httpcore",
+        "h11",
+        "anyio",
+        "idna",
+        "certifi",
     }
     assert kit.pinned(text) == frozenset(pins)
     assert pins["soundcard"] == "0.4.6"  # the version S0 tests on the laptop
@@ -292,6 +304,6 @@ def test_the_owner_downloads_the_kit_with_its_hash(settings: Settings, built: by
     assert info == {
         "sha256": hashlib.sha256(built).hexdigest(),
         "size": len(built),
-        "version": "18.0.0",
+        "version": "18.1.0",  # R5.2 I1: the desk gained the laptop speech kit
     }
     assert anon.status_code == 401

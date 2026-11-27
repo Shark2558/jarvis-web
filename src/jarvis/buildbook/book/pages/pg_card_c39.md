@@ -16,7 +16,7 @@ sources:
   "deploy/home/models/MODELS.txt": "e21a3fc25d92d0b7"
   "deploy/home/mosquitto/acl": "39c602bca80a945f"
   "deploy/home/mosquitto/mosquitto.conf": "82979e5f4e46fbe0"
-  "deploy/home/setup-windows.ps1": "b6f80d2e42ef9123"
+  "deploy/home/setup-windows.ps1": "fa2e742ac802bca3"
   "deploy/home/setup-wsl.sh": "63978a0f3d2aa59c"
   "deploy/home/start-home.ps1": "b7b542257f3142ce"
   "deploy/home/stop-home.ps1": "80a7e2e8e35e8e7f"
@@ -69,4 +69,4 @@ At 02:14, with the alarm armed, a person walks into the driveway zone you drew. 
 Nothing in software: every part is free and runs on your laptop (`deploy/home/docker-compose.yml`). The laptop's electricity is yours, and its amount is Unverified here.
 
 ## When it fails
-If a container stops, the heartbeat reports it and the systems check shows it (`src/jarvis/homebridge/heartbeat.py`). An unsigned or malformed call gets a bare refusal before any handler runs (`src/jarvis/homebridge/app.py`). A snapshot that isn't a small clean JPEG is dropped, and the alert goes out without it (`src/jarvis/homebridge/snapshot.py`). A face model that is missing or not the pinned one is never loaded; the camera keeps working and photos wait (`EngineOff`). A photo that makes the reader fail is tried a few times, then marked unreadable, and never stops the scan (`src/jarvis/homebridge/face_folder.py`).
+If a container stops, the heartbeat reports it and the systems check shows it (`src/jarvis/homebridge/heartbeat.py`). The setup refuses the bridge's own Funnel port while it serves something else, so it never takes another part's door (`deploy/home/setup-windows.ps1`). An unsigned or malformed call gets a bare refusal before any handler runs (`src/jarvis/homebridge/app.py`). A snapshot that isn't a small clean JPEG is dropped, and the alert goes out without it (`src/jarvis/homebridge/snapshot.py`). A face model that is missing or not the pinned one is never loaded; the camera keeps working and photos wait (`EngineOff`). A photo that makes the reader fail is tried a few times, then marked unreadable, and never stops the scan (`src/jarvis/homebridge/face_folder.py`).

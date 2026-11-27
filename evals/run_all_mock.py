@@ -138,6 +138,9 @@ SUITES = [
         [sys.executable, str(HERE / "calls_language" / "run.py"), "--mock"],
         True,
     ),
+    # R5.2 V4: "Your voice" -- his own "Hey Jarvis": the stage 1 verifier and the stage 2 owned
+    # model on a synthetic session (fake models, synthetic tones); each suite's control must fail
+    ("wakeword (gated)", [sys.executable, str(HERE / "wakeword" / "run.py"), "--mock"], True),
 ]
 
 

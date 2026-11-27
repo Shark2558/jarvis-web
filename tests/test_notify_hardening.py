@@ -373,6 +373,14 @@ def _bridge_extra() -> set[str]:
     return _names(list(project["optional-dependencies"]["homebridge"]))
 
 
+def _speech_kit() -> set[str]:
+    """R5.2 V1: the laptop speech kit's own hash-pinned packages (deploy/local-speech/, never the
+    cloud image's). Its model-runtime modules are checked by test_r52_v1_import_guard.py instead:
+    they import their packages lazily, and some are left out of the kit on purpose."""
+    text = (ROOT / "deploy" / "local-speech" / "requirements-kit.txt").read_text()
+    return _names(re.findall(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", text, re.M))
+
+
 def _calldesk_requirements() -> set[str]:
     """R18: the call desk runs on the owner's Windows laptop from its own hash-pinned list
     (deploy/calldesk/requirements-calldesk.txt), never the cloud image's dependencies."""
@@ -380,14 +388,21 @@ def _calldesk_requirements() -> set[str]:
     return _names(re.findall(r"^([A-Za-z0-9_.-]+==[^\s\\]+)", text, re.M))
 
 
+KIT_RUNTIMES = ("jarvis/localspeech/runtimes/", "jarvis/localspeech/wakeword/")
+
+
 def test_every_third_party_top_level_import_in_src_is_in_pyproject() -> None:
     declared = _declared()
     bridge = declared | _bridge_extra()
+    kit = declared | _speech_kit()
     desk = declared | _calldesk_requirements()
     stdlib = set(sys.stdlib_module_names)
     missing: dict[str, str] = {}
     for path in (ROOT / "src").rglob("*.py"):
+        if path.relative_to(ROOT / "src").as_posix().startswith(KIT_RUNTIMES):
+            continue
         allowed = bridge if "homebridge" in path.parts else declared
+        allowed = kit if "localspeech" in path.parts else allowed
         allowed = desk if "calldesk" in path.parts else allowed
         for node in ast.walk(ast.parse(path.read_text())):
             mods: list[str] = []

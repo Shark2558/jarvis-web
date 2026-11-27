@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/static/console-connectors.js": "ff3bd4922c9d1c14"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
   "src/jarvis/photos/api.py": "8ac985d0fd795e2a"
 ---
 ## In plain words

@@ -1,7 +1,7 @@
 ---
 page: pg_card_c53
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
   "src/jarvis/api/privacy.py": "26b8bb3f25b86ee7"
   "src/jarvis/api/static/console-privacy.js": "7184a1fe77763ae0"
@@ -28,7 +28,8 @@ With passkeys in force, a passkey check bound to that row is needed; without the
 `fingerprint` gives each row a short revision from what you were shown, so a delete is refused if the data changed since you looked, and no proof is spent (`src/jarvis/privacy/export.py`).
 `scrub` runs over every export and drops anything named like a token, key, password or encrypted blob, at any depth, as a second line of defence.
 `export_all` gives the single download of every exportable row except vault files, behind a passkey or a fresh sign-in (`src/jarvis/api/privacy.py`).
-The sources themselves live in `src/jarvis/privacy/sources.py` and `src/jarvis/privacy/sources_r1.py`: conversations, memories, approvals, the audit, briefs, Google, Drive, places, faces, Telegram and more.
+The first sources live in `src/jarvis/privacy/sources.py` and `src/jarvis/privacy/sources_r1.py`: conversations, memories, approvals, the audit, briefs, Google, Drive, places, faces, Telegram and more.
+Later parts register their own rows the same way, such as those of phone calls and of your voice: your voice profile, the voice session's recordings and the wake-word files trained from them (`PrivacySource`).
 Every export and delete is audited with the row and a count, never the content (`PrivacyService`). A bearer token can look but never export or delete (`ConsoleOnly`).
 `src/jarvis/api/static/console-privacy.js` draws the panel from `GET /v1/privacy` and deletes through `POST /v1/privacy/{category_id}/delete`.
 

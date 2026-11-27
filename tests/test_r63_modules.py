@@ -1,8 +1,8 @@
 # tests/test_r63_modules.py -- R6.3 I0 seam 4 (docs/plans/r6-3-book-content.md D3, Phase A §9.4):
 # the module map `buildbook/gen/modules.py`. Nineteen modules (Phase A's 17, Wardrobe & Try-on,
-# C69-C73, and R18's Phone calls, C74-C78); every card of the real guide in exactly one; a card
-# in no module or in two is a GenError, so a new card is placed before its release's book builds.
-# A and D read it.
+# C69-C73, and R18's Phone calls, C74-C78; R5.2's C79-C83 extend Voice); every card of the real
+# guide in exactly one; a card in no module or in two is a GenError, so a new card is placed before
+# its release's book builds. A and D read it.
 from __future__ import annotations
 
 import re
@@ -26,20 +26,24 @@ def test_nineteen_modules_with_wardrobe_then_phone_calls_last() -> None:
     assert wardrobe.cards == ("C69", "C70", "C71", "C72", "C73")
     assert (calls.id, calls.title) == ("calls", "Phone calls")  # R18
     assert calls.cards == ("C74", "C75", "C76", "C77", "C78")
+    # R5.2 extends Voice (its laptop parts sit with their domain, as C17, C39 and C77 do)
+    voice = next(m for m in modules.MODULES if m.id == "voice")
+    assert voice.title == "Voice"
+    assert voice.cards == ("C05", "C06", "C79", "C80", "C81", "C82", "C83")
     assert all(re.fullmatch(PAGE_ID, f"pg_module_{m.id}") for m in modules.MODULES)
 
 
 def test_every_card_of_the_real_guide_is_in_exactly_one_module() -> None:
     cards = modules.guide_cards(GUIDE.read_text(encoding="utf-8"))
-    assert len(cards) == 78 and cards[0] == "C01" and cards[-1] == "C78"
+    assert len(cards) == 83 and cards[0] == "C01" and cards[-1] == "C83"  # R5.2: C79-C83
     modules.check(cards)  # no GenError
     assert modules.module_of("C16") == "brain" and modules.module_of("C57") == "book"
-    assert modules.module_of("C76") == "calls"
+    assert modules.module_of("C76") == "calls" and modules.module_of("C81") == "voice"
 
 
 def test_a_card_in_no_module_fails_the_generator() -> None:
-    with pytest.raises(GenError, match="C79"):
-        modules.check(("C01", "C79"))
+    with pytest.raises(GenError, match="C84"):  # R5.2 placed C79-C83
+        modules.check(("C01", "C84"))
 
 
 def test_a_card_in_two_modules_fails_the_generator() -> None:

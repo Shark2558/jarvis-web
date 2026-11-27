@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "src/jarvis/api/static/console-camera-panel.js": "8e142dadab602be2"
   "src/jarvis/api/static/console-camera.js": "c917b03cb1ff1deb"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Camera lets JARVIS look through this device's camera, or at a photo you choose, and tell you what it sees: it reads text, reads a QR code or barcode, or checks the light and sharpness. The looking happens on the device itself; a picture leaves it only when you press a button that says so. Results you want to keep are saved as words and numbers, never the picture. This device's camera has its own off switch, and only a tap switches it back on. The home burglar camera is separate and lives in the Home panel (`src/jarvis/api/static/console-camera-panel.js`).

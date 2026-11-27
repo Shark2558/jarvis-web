@@ -3,8 +3,8 @@ page: pg_service_redis
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/api/selfcheck_wiring.py": "fb7336391ffa3727"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/api/selfcheck_wiring.py": "1acfee7d6ea08779"
+  "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/memory/__init__.py": "b201fcff1ddce9e7"
 ---
 ## In plain words

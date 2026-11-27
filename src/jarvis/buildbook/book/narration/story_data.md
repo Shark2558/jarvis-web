@@ -3,14 +3,14 @@ chapter: story_data
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
-  "pg_chapter_data": "16b9c63608dd129b"
+  "pg_chapter_data": "6e55e3027364f0f4"
 ---
 - [show:title] This chapter is about where your data lives, how it is kept safe, and how it comes back if something goes wrong.
 - [show:plain] JARVIS runs on Google Cloud Run, and keeps its records in Google's Firestore database, in the Mumbai region.
 - Its secrets live in Google's Secret Manager, never in the code.
 - The most private things, such as the vault, your notes, your things, the numbers you call and your Google tokens, are sealed again by JARVIS with keys of its own.
 - There is a separate key for each kind of data.
-- The privacy panel shows what is kept, phone calls included, with Export and Delete.
+- The privacy panel shows what is kept, phone calls and your voice included, with Export and Delete.
 - Once you switch backups on, Google copies the database every day, and JARVIS proves each month that a copy really restores.
 - The Vault, Privacy, Approvals and Delivery pages give the details.
 - [show:how] JARVIS is set up on Cloud Run, which lets it sleep when idle, with Firestore as its database in the same project.
@@ -36,6 +36,7 @@ pages:
 - [edge:firestore>privacy] Everything kept stays visible to you.
 - [node:privacy] The privacy panel lists the kinds of data kept, with Export and Delete, and asks for your passkey before anything goes for good.
 - Phone calls have their own rows there too.
+- So does your voice: your voice profile, the voice session's recordings, which stay on your laptop, and the wake-word files trained from them.
 - [edge:firestore>copy] When backups are on, the database is copied every day.
 - [node:copy] Backups begin with a one-time setup that you run yourself.
 - [count:{{fact:src/jarvis/backup/status.py:RETENTION_DAYS}}] Each daily copy is kept {{fact:src/jarvis/backup/status.py:RETENTION_DAYS}} days, and the live database gets delete protection.

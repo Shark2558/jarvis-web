@@ -4,9 +4,9 @@ written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
   "src/jarvis/api/telegram.py": "4787df327efb86d5"
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/telegram/client.py": "c5efc78af12cb8f9"
-  "src/jarvis/vitals/own.py": "cd127fbc1ca087c6"
+  "src/jarvis/vitals/own.py": "9f8aef630fa0d168"
 ---
 ## In plain words
 Telegram is a free messaging app. JARVIS has its own Telegram bot, so you chat with JARVIS from your phone like with a person, and JARVIS sends you alerts there: an approval waiting, offline mode, a ready morning brief, a document about to expire, a burglar alert. Only the one Telegram account you pair is answered. What goes to Telegram: your chat with the bot and the alert texts. Telegram keeps bot chats on its servers and they are not end-to-end encrypted, which is why reading your mail, Drive files and contacts, your vault list, notes and things, and your home over Telegram each stay off until you switch them on (`src/jarvis/api/telegram.py:SettingsBody`).

@@ -1,0 +1,29 @@
+{
+  "title": "Who hears you in the console",
+  "dir": "down",
+  "nodes": [
+    {"id": "speak", "label": "You speak", "kind": "person", "rank": 0, "col": 0},
+    {"id": "order", "label": "Your profile's order", "kind": "step", "rank": 1, "col": 0,
+     "ref": "src/jarvis/voice/routing.py"},
+    {"id": "health", "label": "Kit healthy lately?", "kind": "guard", "rank": 2, "col": 0,
+     "ref": "src/jarvis/voice/laptop.py"},
+    {"id": "laptop", "label": "Laptop's Whisper", "kind": "service", "rank": 3, "col": 0,
+     "ref": "src/jarvis/localspeech/client.py"},
+    {"id": "google", "label": "Google listens", "kind": "service", "rank": 3, "col": 1},
+    {"id": "browser", "label": "The browser listens", "kind": "step", "rank": 4, "col": 1},
+    {"id": "fixes", "label": "Your corrections", "kind": "guard", "rank": 5, "col": 0,
+     "ref": "src/jarvis/voice/routing.py"},
+    {"id": "text", "label": "What you said", "kind": "step", "rank": 6, "col": 0}
+  ],
+  "edges": [
+    {"from": "speak", "to": "order"},
+    {"from": "order", "to": "health"},
+    {"from": "health", "to": "laptop", "label": "yes, ₹0"},
+    {"from": "health", "to": "google", "label": "down or slow", "style": "side"},
+    {"from": "laptop", "to": "google", "label": "it fails", "style": "side"},
+    {"from": "google", "to": "browser", "label": "unavailable", "style": "side"},
+    {"from": "laptop", "to": "fixes"},
+    {"from": "google", "to": "fixes", "style": "side"},
+    {"from": "fixes", "to": "text"}
+  ]
+}

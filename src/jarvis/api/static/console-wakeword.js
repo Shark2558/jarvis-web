@@ -13,6 +13,9 @@
 //
 // Privacy: audio frames never leave this tab. The only requests this file makes are the
 // same-origin static files named below, once, when the owner switches the wake word on.
+// R5.2 row 83: when the page has console-wakeword-own.js (window.JarvisWakeOwn), load() also asks
+// it for the owner's own model (run in place of WAKE_MODEL) and his personal verifier (run after
+// the score); without it, or without either file, everything is exactly as before.
 //
 //   window.JarvisWake = { supported(), load(), start(source, onWake), pause(), resume(), stop(),
 //                         state, threshold }
@@ -80,6 +83,9 @@
   let loading = null;
   let initFeatures = null; // the last 16 embeddings of the seed noise
   let noiseHead = [];
+  let verifier = null; // R5.2 stage 1: { rescore(score, features) } from JarvisWakeOwn
+  let ownModel = false; // R5.2 stage 2: the wake session runs the owner's own model
+  let ownTried = false; // the last load attempt used it (a failure retries without it)
 
   // Listening.
   let unsubscribe = null;
@@ -177,7 +183,19 @@
     return Float32Array.from(emb.subarray(emb.length - EMB_FRAMES * EMB_DIM));
   }
 
-  async function loadOnce() {
+  // R5.2: what console-wakeword-own.js offers ('model' bytes, a 'verifier'), or null.
+  async function fromOwn(name) {
+    const own = window.JarvisWakeOwn;
+    if (!own || typeof own[name] !== 'function') return null;
+    try {
+      return (await own[name]()) || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function loadOnce(skipOwn) {
+    ownTried = false;
     let mod;
     try {
       mod = await import(ORT_BASE + 'ort.wasm.min.mjs');
@@ -188,7 +206,11 @@
     o.env.wasm.numThreads = 1;
     o.env.wasm.proxy = false;
     o.env.wasm.wasmPaths = ORT_BASE;
-    const bytes = await Promise.all([MEL_MODEL, EMBEDDING_MODEL, WAKE_MODEL].map(fetchModel));
+    const owned = skipOwn ? null : await fromOwn('model');
+    ownTried = owned instanceof Uint8Array;
+    const names = ownTried ? [MEL_MODEL, EMBEDDING_MODEL] : [MEL_MODEL, EMBEDDING_MODEL, WAKE_MODEL];
+    const bytes = await Promise.all(names.map(fetchModel));
+    if (ownTried) bytes.push(owned);
     const options = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
     const created = [];
     try {
@@ -196,6 +218,9 @@
       ort = o;
       const ready = { mel: created[0], emb: created[1], wake: created[2] };
       initFeatures = await seedHistory(ready);
+      const v = await fromOwn('verifier');
+      verifier = v && typeof v.rescore === 'function' ? v : null;
+      ownModel = ownTried;
       sessions = ready; // only now: load() and start() treat a set `sessions` as fully loaded
       needsReset = true;
     } catch (err) {
@@ -212,7 +237,10 @@
       return Promise.reject(wakeError('unsupported'));
     }
     state = 'loading';
-    loading = loadOnce().then(
+    loading = loadOnce(false).catch((err) => {
+      if (!ownTried) throw err;
+      return loadOnce(true); // the owner's own model would not load: today's model instead
+    }).then(
       () => {
         loading = null;
         if (state === 'loading') state = 'idle';
@@ -260,7 +288,8 @@
     shiftIn(features, emb);
 
     const out = await run(sessions.wake, features.slice(), [1, EMB_FRAMES, EMB_DIM]);
-    const score = predictions < WARMUP_FRAMES || !Number.isFinite(out[0]) ? 0 : out[0];
+    const base = predictions < WARMUP_FRAMES || !Number.isFinite(out[0]) ? 0 : out[0];
+    const score = verifier && base > 0 ? verifier.rescore(base, features) : base; // R5.2 stage 1
     predictions += 1;
     return score;
   }
@@ -420,6 +449,7 @@
       dropped,
       lastError: lastError ? lastError.code : null,
       noiseHead: noiseHead.slice(),
+      own: { model: ownModel, verifier: !!verifier },
     });
   }
 

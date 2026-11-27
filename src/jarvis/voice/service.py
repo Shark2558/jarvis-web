@@ -23,6 +23,11 @@ gives the defaults and is remembered 30 s (no read meanwhile) until a PUT clears
 Availability (D10): Google answering 403 or no credentials marks that API unavailable for 10
 minutes (no calls meanwhile); timeouts and 5xx are reported but not remembered. Privacy (D13): no
 audio is stored; text and transcripts are never logged (lengths only).
+
+R5.2 (plan 3.2, D7): with the laptop kit and the voice profile wired, `jarvis.voice.routing`
+picks the owner's engine (his listening order; his voice on the laptop while it is healthy, never
+a Google voice's preview), ₹0 and never gated or metered; a kit failure falls back silently to
+Google, then the browser; his corrections apply after listening. A guest never reaches either.
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ from jarvis.billing import Billing
 from jarvis.billing.meter import Hold, UnitCharge
 from jarvis.config import Settings
 from jarvis.core.prompts import DEFAULT_WIT, WIT_LEVELS
+from jarvis.localspeech.protocol import Kind
 from jarvis.logging import get_logger
 from jarvis.storage.docs import Docs
 from jarvis.voice.catalogue import (
@@ -56,6 +62,7 @@ from jarvis.voice.catalogue import (
     find_voice,
 )
 from jarvis.voice.commands import BASE_PHRASES
+from jarvis.voice.laptop import GOOGLE, LaptopVoice, kit_phrases
 from jarvis.voice.ports import (
     NothingToSay,
     Reason,
@@ -68,6 +75,9 @@ from jarvis.voice.ports import (
     VoiceRejected,
     VoiceUnavailable,
 )
+from jarvis.voice.profile import VoiceProfile
+from jarvis.voice.profile_ports import ProfileStore
+from jarvis.voice.routing import EngineRoute, corrected
 from jarvis.voice.settings import (
     CACHE_S,
     PHRASE_CHARS,
@@ -194,6 +204,7 @@ class Speech:
     chars: int
     cost_inr: float
     voice: str
+    engine: str = GOOGLE  # R5.2: "google" or the laptop's ("laptop-kokoro", ...)
 
 
 @dataclass(frozen=True)
@@ -220,6 +231,8 @@ class VoiceService:
         language: str,
         honorific: str,
         clock: Callable[[], float] = time.monotonic,
+        laptop: LaptopVoice | None = None,
+        profiles: ProfileStore | None = None,
     ) -> None:
         self.store = store
         self.billing = billing
@@ -228,6 +241,10 @@ class VoiceService:
         self.language = language
         self.honorific = honorific
         self._clock = clock
+        # R5.2: the laptop kit and the voice profile (None: not wired, as before)
+        self.route = EngineRoute(
+            laptop, profiles, clock=clock, read_s=SETTINGS_READ_S, memo_s=CACHE_S
+        )
         self._down: dict[Api, tuple[float, Reason]] = {}
         self._settings_fail_until: dict[str, float] = {}
         self._voice_list: asyncio.Future[frozenset[str] | None] | None = None
@@ -492,11 +509,19 @@ class VoiceService:
 
     async def speak(self, uid: str, req: SpeakRequest, *, free_only: bool = False) -> Speech:
         """`free_only` (R6.2 security review 2): a build book guest's narration; only while the
-        free allowance covers the whole text, never priced (FreeAllowanceUsed otherwise)."""
+        free allowance covers the whole text, never priced (FreeAllowanceUsed otherwise).
+        R5.2: the owner's speech is the laptop's while it is healthy (not a preview, not a
+        guest's); otherwise, or when the kit fails, Google's as before."""
         voice, rate, text = self._speech_input(req, await self.settings_of(uid))
         spoken = speakable(text)
         if not spoken:
             raise NothingToSay()
+        if not req.preview and not free_only:
+            on_laptop = await self.route.speak(spoken, language=VOICE_LANGUAGE, rate=rate)
+            if on_laptop is not None:
+                audio, engine = on_laptop
+                log.info("voice: spoke", extra={"chars": len(spoken), "engine": engine})
+                return Speech(audio, len(spoken), 0.0, voice=engine, engine=engine)
         engines = self._require("tts")
         price = self.prices.tts(voice.type)
         chars = len(spoken)
@@ -513,6 +538,8 @@ class VoiceService:
                 held,
             )
             charge = await self._meter(uid, price, chars, held)
+        if not free_only:
+            self.route.google_served(Kind.TTS)
         log.info(
             "voice: spoke",
             extra={"chars": chars, "voice": voice.id, "cost_inr": round(charge.inr, 4)},
@@ -557,13 +584,68 @@ class VoiceService:
         turn_hints: tuple[str, ...] = (),
         public_hints: tuple[str, ...] = (),
         free_only: bool = False,
+        google_only: bool = False,
     ) -> TranscriptView:
         """`owner_phrases=False`: the base hints only (R6: a build book guest's question must not
         be biased toward the owner's own words). `turn_hints` (R11.1 D9): this turn's hints,
         already cleaned and capped by the caller; they sit between the base list and his words.
         `public_hints` (R6.2): words that hold nothing of the owner's (the build book's own
-        vocabulary), so they go along for a guest too. `free_only`: see `_gate`."""
+        vocabulary), so they go along for a guest too. `free_only`: see `_gate`.
+        R5.2: the owner's listening follows his profile's `listening_order` (the laptop first
+        while it is healthy and his best, else Google as before), his corrections after it.
+        `google_only` (R5.2 I1): Google with his words and nothing else, as the voice session's
+        comparison measures it (never the laptop, never his corrections)."""
         audio = parse_wav(blob)
+        if not owner_phrases or free_only or google_only:  # Google as before, no routing
+            return await self._transcribe_google(
+                uid, audio, owner_phrases, turn_hints, public_hints, free_only
+            )
+        profile = await self.route.profile_of(uid)
+        heard = await self._listen_on_laptop(uid, audio, profile, (*public_hints, *turn_hints))
+        if heard is None:
+            heard = await self._transcribe_google(uid, audio, True, turn_hints, public_hints, False)
+            self.route.google_served(Kind.STT)
+        text, alternatives = corrected(heard.text, heard.alternatives, profile)
+        return heard.model_copy(update={"text": text, "alternatives": alternatives})
+
+    async def _listen_on_laptop(
+        self, uid: str, audio: Audio, profile: VoiceProfile, turn: tuple[str, ...]
+    ) -> TranscriptView | None:
+        """His listening order's laptop engine, while the kit is healthy (₹0); None: Google."""
+        engine = await self.route.laptop_first(profile)
+        if engine is None:
+            return None
+        owner = (await self.settings_of(uid)).phrases  # never raises
+        words = kit_phrases((*self.hints_for(owner), *turn))  # the base list and his words first
+        t = await self.route.listen(
+            engine, audio.pcm, sample_rate=audio.sample_rate, language=self.language, phrases=words
+        )
+        if t is None:
+            return None
+        text = t.text.strip()
+        log.info("voice: transcribed", extra={"chars": len(text), "engine": engine.value})
+        return self._view(text, t, audio, 0.0)
+
+    def _view(self, text: str, t: Transcript, audio: Audio, cost_inr: float) -> TranscriptView:
+        return TranscriptView(
+            text=text,
+            confidence=t.confidence,
+            seconds=round(audio.seconds, 2),
+            cost_inr=round(cost_inr, 4),
+            language=self.language,
+            no_speech=not text,
+            alternatives=[a for a in (x.strip() for x in t.alternatives) if a and a != text][:2],
+        )
+
+    async def _transcribe_google(
+        self,
+        uid: str,
+        audio: Audio,
+        owner_phrases: bool,
+        turn_hints: tuple[str, ...],
+        public_hints: tuple[str, ...],
+        free_only: bool,
+    ) -> TranscriptView:
         engines = self._require("stt")
         owner = (await self.settings_of(uid)).phrases if owner_phrases else ()  # never raises
         turn = (*public_hints, *turn_hints) if owner_phrases else public_hints
@@ -588,21 +670,14 @@ class VoiceService:
                 "cost_inr": round(charge.inr, 4),
             },
         )
-        return TranscriptView(
-            text=text,
-            confidence=t.confidence,
-            seconds=round(audio.seconds, 2),
-            cost_inr=round(charge.inr, 4),
-            language=self.language,
-            no_speech=not text,
-            alternatives=[a for a in (x.strip() for x in t.alternatives) if a and a != text][:2],
-        )
+        return self._view(text, t, audio, charge.inr)
 
     async def aclose(self) -> None:
         """App shutdown: the voice-list fetch, the HTTP client and the credentials transport."""
         task = self._voice_list
         if task is not None and not task.done():
             task.cancel()
+        await self.route.aclose()
         if self.engines is None:
             return
         if self.engines.http is not None:
@@ -625,10 +700,17 @@ def google_engines() -> VoiceEngines:
 
 
 def build_voice_service(
-    s: Settings, docs: Docs, billing: Billing, *, engines: VoiceEngines | None = None
+    s: Settings,
+    docs: Docs,
+    billing: Billing,
+    *,
+    engines: VoiceEngines | None = None,
+    laptop: LaptopVoice | None = None,
+    profiles: ProfileStore | None = None,
 ) -> VoiceService:
     """Settings and the wit level always; the cloud engines only when JARVIS_VOICE_CLOUD is on.
-    Nothing here makes a network call: credentials are looked up on first use."""
+    Nothing here makes a network call: credentials are looked up on first use. R5.2: `laptop`
+    (`jarvis.voice.laptop.laptop_voice(s)`) and `profiles` (a `DocProfileStore`), wired at I1."""
     if engines is None and s.voice_cloud:
         engines = google_engines()
     return VoiceService(
@@ -638,6 +720,8 @@ def build_voice_service(
         engines=engines if s.voice_cloud else None,
         language=s.voice_language,
         honorific=s.user_honorific,
+        laptop=laptop,
+        profiles=profiles,
     )
 
 

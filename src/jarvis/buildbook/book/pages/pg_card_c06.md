@@ -1,9 +1,9 @@
 ---
 page: pg_card_c06
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  "src/jarvis/api/static/console-voice-barge.js": "bf50083732d8c6e4"
+  "src/jarvis/api/static/console-voice-barge.js": "e6f3f5f38f7a27fe"
   "src/jarvis/api/static/console-voice-capture.js": "09f45d685b4b5ea0"
   "src/jarvis/api/static/console-voice-commands.js": "5fce1e68f0de2831"
   "src/jarvis/api/static/console-voice-conversation.js": "a38e545b0e8e0fa3"
@@ -19,7 +19,7 @@ sources:
   "src/jarvis/api/static/console-voice-speech.js": "3ac2e294edcc281c"
   "src/jarvis/api/static/console-voice-wake.js": "906de367b5e856ef"
   "src/jarvis/api/static/console-voice.js": "69224f06a0ee9c0e"
-  "src/jarvis/api/static/console-wakeword.js": "f339e7c5c064c699"
+  "src/jarvis/api/static/console-wakeword.js": "6dca020ffbb88b58"
   "src/jarvis/api/static/voice-capture-worklet.js": "4b1dbae36264b075"
   "src/jarvis/api/static/wakeword/LICENSE-openwakeword-code.txt": "c71d239df91726fc"
   "src/jarvis/api/static/wakeword/LICENSE.txt": "687d8f82513e3aa3"
@@ -32,7 +32,7 @@ This is everything that listens and speaks inside the console, on your own devic
 At 21:30, while cooking, you say "Hey Jarvis, remind me to switch off the rice in ten minutes". JARVIS answers aloud and keeps listening for a follow-up. Halfway through its next reply you say "stop", and it stops at once. Your earphones run flat, so you say "switch to the speakers", and JARVIS moves its voice there without asking the AI. When guests arrive you press Ctrl + Shift + Space, hear "Microphone off", and nothing is captured until you tap the mic again.
 
 ## How it works
-`src/jarvis/api/static/console-voice-capture.js` opens the microphone once, with echo cancellation and noise suppression, and `src/jarvis/api/static/voice-capture-worklet.js` turns it into the small frames every listener shares, storing nothing. `src/jarvis/api/static/console-wakeword.js` runs the openWakeWord models in the page to spot "Hey Jarvis", and `src/jarvis/api/static/console-voice-wake.js` pauses it while JARVIS listens or speaks, with a stricter score during its own voice. The models are for personal, non-commercial use only, and each file is pinned by its SHA-256 sum (`src/jarvis/api/static/wakeword/MANIFEST.txt`). `src/jarvis/api/static/console-voice-mic.js` runs the conversation, through the voice service or the browser's own recognition, with a follow-up window and a standby before it hands back to the keyboard (`src/jarvis/api/static/console-voice-conversation.js`). `src/jarvis/api/static/console-voice-barge.js` lets you interrupt: with earphones any speech does, with speakers you say its name, and an echo guard ignores JARVIS's own words. `src/jarvis/api/static/console-voice-commands.js` handles "mic off", "stop" or "switch to my earphones" before anything reaches the chat, so they work with the AI off. `src/jarvis/api/static/console-voice-micoff.js` is the hard lock: only your click, tap or key press unlocks the microphone. `src/jarvis/api/static/console-voice-speech.js` splits a reply into speakable pieces and plays them in order, never reading code or tables. `src/jarvis/api/static/console-voice-devices.js` keeps your chosen speaker and microphone, and a device is named aloud only by its kind (`src/jarvis/api/static/console-voice-devices-match.js`). `src/jarvis/api/static/console-voice-phrases.js` edits your words to recognise.
+`src/jarvis/api/static/console-voice-capture.js` opens the microphone once, with echo cancellation and noise suppression, and `src/jarvis/api/static/voice-capture-worklet.js` turns it into the small frames every listener shares, storing nothing. `src/jarvis/api/static/console-wakeword.js` runs the openWakeWord models in the page to spot "Hey Jarvis", and `src/jarvis/api/static/console-voice-wake.js` pauses it while JARVIS listens or speaks, with a stricter score during its own voice. The models are for personal, non-commercial use only, and each file is pinned by its SHA-256 sum (`src/jarvis/api/static/wakeword/MANIFEST.txt`). Since {{fact:release.label}}, when the page offers your own wake-word files from the laptop, it runs your own model in place of today's and your personal check after the score; without them everything is exactly as before (`src/jarvis/api/static/console-wakeword.js`). `src/jarvis/api/static/console-voice-mic.js` runs the conversation, through the voice service or the browser's own recognition, with a follow-up window and a standby before it hands back to the keyboard (`src/jarvis/api/static/console-voice-conversation.js`). `src/jarvis/api/static/console-voice-barge.js` lets you interrupt: with earphones any speech does, with speakers you say its name, and an echo guard ignores JARVIS's own words. With your voice print active on this device, a voice that opens the gate lowers JARVIS's volume and a check clip is judged on the device first: with earphones only your voice stops him, with speakers another voice is dropped unsent, and without a print nothing changes (`src/jarvis/api/static/console-voice-barge.js`). `src/jarvis/api/static/console-voice-commands.js` handles "mic off", "stop" or "switch to my earphones" before anything reaches the chat, so they work with the AI off. `src/jarvis/api/static/console-voice-micoff.js` is the hard lock: only your click, tap or key press unlocks the microphone. `src/jarvis/api/static/console-voice-speech.js` splits a reply into speakable pieces and plays them in order, never reading code or tables. `src/jarvis/api/static/console-voice-devices.js` keeps your chosen speaker and microphone, and a device is named aloud only by its kind (`src/jarvis/api/static/console-voice-devices-match.js`). `src/jarvis/api/static/console-voice-phrases.js` edits your words to recognise.
 
 ## What it costs
 Nothing: the wake word, the commands, interruptions and the device choice all run in your browser (`src/jarvis/api/static/console-wakeword.js`). Speech sent to Google costs only what the voice service counts beyond its free allowance (`src/jarvis/api/static/console-voice.js`).

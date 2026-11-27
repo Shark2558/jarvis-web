@@ -58,7 +58,7 @@ window.JarvisMobile = { mk, api, part, parts, when };
 
 for (const href of ['/static/console-r7-share.css', '/static/console-camera.css',
   '/static/console-r7-phone.css', '/static/console-r7-sos.css', '/static/console-wardrobe.css', // R13: the Wardrobe tabs' places
-  '/static/console-tryon.css']) { // R13.1: Try it on's places
+  '/static/console-tryon.css', '/static/console-voice-session.css']) { // R13.1: Try it on's; R5.2: Your voice
   const css = document.createElement('link');
   css.rel = 'stylesheet';
   css.href = href;
@@ -75,6 +75,7 @@ const MODULES = [
   ['console-wardrobe-scan.js', 'Camera, Wardrobe', 'camera', () => import('./console-wardrobe-scan.js')], // R13 D: a pixel panel
   ['console-tryon-card.js', 'The try-on card', '', () => import('./console-tryon-card.js')], // R13.1 D21: row 388
   ['console-calls.js', 'Calls', 'calls', () => import('./console-calls.js')], // R18 E: the Calls panel and the call cards
+  ['console-voice-session.js', 'Your voice', '', () => import('./console-voice-session.js')], // R5.2 V3: Voice -> Your voice
 ];
 function noLoad(file, label, where, err) {
   console.warn('JARVIS: ' + file + ' could not load (' + (err && err.message ? err.message : 'unknown') + ').');

@@ -89,11 +89,16 @@ service itself, only if you need them (a deploy run with --reconfigure clears th
 Azure's region is centralindia unless you set it; Sarvam stays off on the server until
 JARVIS_SARVAM_ENABLED=true; Bhashini needs its user id beside the key.
 
-Laptop speech (later)
----------------------
-JARVIS can one day hear and speak on the laptop itself, so no sound leaves it. That part is not
-installed: the desk says "laptop speech is not installed" and calls use JARVIS's cloud speech.
-JARVIS's language check decides later which languages could use it.
+Laptop speech (R5.2)
+--------------------
+With the laptop speech kit (deploy/local-speech) on this same laptop, the desk can hear and speak
+on the laptop itself, free, so no sound leaves it. The installer copies the kit's key into the
+desk's own folder (%LOCALAPPDATA%\JARVIS\CallDesk\local-speech.key); if you install the kit
+later, or make it a new key, run:
+        powershell -ExecutionPolicy Bypass -File .\install-calldesk.ps1 -SpeechKit
+then restart the desk. Without the kit, or while it is off or busy, calls use JARVIS's cloud
+speech. JARVIS's language check decides which languages use the laptop (kit 1.0.0 hears English
+only).
 
 Removing it
 -----------

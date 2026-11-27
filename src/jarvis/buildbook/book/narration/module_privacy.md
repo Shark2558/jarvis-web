@@ -4,8 +4,8 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
   "pg_module_privacy": "94d87fe277d78e11"
-  "pg_card_c53": "909359e8f682a430"
-  "pg_screen_privacy": "0bfde86222de14fd"
+  "pg_card_c53": "93c91909fa33b312"
+  "pg_screen_privacy": "02c8e6a010f49297"
 ---
 - [page:pg_module_privacy] [show:title] This chapter is about the privacy panel: the place that shows what JARVIS keeps about you and your family, kind by kind.
 - [show:plain] The panel is one screen in the console, listing every kind of data JARVIS keeps.
@@ -62,7 +62,8 @@ pages:
 - Each row also gets a short revision from what you were shown, so a delete is refused if the data changed, and no proof is spent.
 - Every export is scrubbed as a second line of defence: anything named like a token, key, password or encrypted blob is dropped, at any depth.
 - Every export and delete is audited with the row and a count, never the content.
-- The sources cover conversations, memories, approvals, the audit, briefs, Google, Drive, places, faces, Telegram and more.
+- The first sources cover conversations, memories, approvals, the audit, briefs, Google, Drive, places, faces, Telegram and more.
+- Later parts sign up their own rows the same way, such as those of phone calls, and of your voice: your voice profile, the voice session's recordings, and the wake-word files trained from them.
 - [show:example] In the made-up example, on a quiet evening, you open Privacy and see your conversations and memories counted.
 - You export your memories as a small file, then delete your conversations: JARVIS lists what goes, asks for your passkey, and the row empties.
 - Your laptop is off just then, so the Face groups row says its delete will finish when the laptop is back on.
@@ -71,11 +72,14 @@ pages:
 - A delete that partly fails says how many are still there, and one the home laptop must finish stays pending until the laptop is back on.
 - [page:pg_screen_privacy] [show:title] Last, the Privacy screen in your console.
 - [show:plain] There is a card for each kind of data: what it is, how many, how long it is kept, where it is stored, and whether JARVIS encrypts it.
-- Your phone calls are among them, in a section of their own.
+- Your phone calls are among them, in a section of their own, and so is your voice.
 - [show:how] A card shows an Encrypted by JARVIS badge when that is so.
 - Export on a simple card downloads straight away; for private content, it first needs your passkey, or a Google sign-in from the last few minutes.
 - Download everything leaves out vault files, which the Vault exports on its own.
 - Phone calls have four cards: your calls, deleted only with your passkey and exported with each number masked; the calls settings; the call desk's link; and the language check's results.
+- Your voice has cards of its own, under Settings and safety. First, your voice profile, with the engine that hears you best and the mishearings JARVIS corrects.
+- Then the voice session recordings, kept only on your laptop, encrypted, and deleted only while the laptop is on.
+- And the wake-word files trained from them, whose delete takes the recordings too.
 - The Delete button opens a box that says what will go, and the delete travels with the version of the card you saw.
 - [show:example] In the made-up example, you decide to clear out the list of what JARVIS did this week.
 - [count:{{fact:settings.activity_retention_days}}] You scroll to the Activity card, whose rows are kept for {{fact:settings.activity_retention_days}} days.
@@ -83,4 +87,5 @@ pages:
 - The card now tells you its rows were deleted, and shows none left.
 - [show:costs] Looking, exporting and deleting cost nothing: they read and write JARVIS's own records, with no AI.
 - [show:fails] [count:{{fact:src/jarvis/api/privacy.py:CHANGE_PER_MINUTE}}] If part of a delete fails, the card suggests trying again in a moment, and changes are limited to {{fact:src/jarvis/api/privacy.py:CHANGE_PER_MINUTE}} a minute.
+- If your laptop can't be reached, the two voice cards kept there say they couldn't check right now, and their delete fails rather than claim they are gone.
 - That is the privacy panel: what JARVIS keeps, kind by kind, in plain sight, yours to take away or to delete, with your passkey guarding what can't come back.

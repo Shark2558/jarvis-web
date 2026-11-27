@@ -9,7 +9,7 @@ pages:
   "pg_card_c14": "1d297bb5eae505ca"
   "pg_card_c15": "5b011adcd77f60f5"
   "pg_card_c16": "4ba2cd05ca06d13d"
-  "pg_card_c17": "3190b7dc62ba8aad"
+  "pg_card_c17": "c7f4cd2a73870581"
   "pg_card_c68": "3b22362528a9ecb2"
   "pg_screen_chat": "4445020ec3059f29"
   "pg_screen_history": "74dfa93a74a5785c"

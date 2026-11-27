@@ -1,9 +1,9 @@
 ---
 page: pg_card_c56
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-24
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 sources:
-  "src/jarvis/api/selfcheck_wiring.py": "fb7336391ffa3727"
+  "src/jarvis/api/selfcheck_wiring.py": "1acfee7d6ea08779"
   "src/jarvis/api/static/console-systems-modal.js": "0591870095265d5c"
   "src/jarvis/api/static/console-systems-voice.js": "e8f488a203174612"
   "src/jarvis/api/static/console-systems.js": "b2a348eb9c0bd6eb"
@@ -38,6 +38,7 @@ A whole run has {{fact:src/jarvis/health/service.py:CHECK_DEADLINE_S}} seconds; 
 `plan` decides what to tell you: a fault must hold for {{fact:src/jarvis/health/changes.py:DEBOUNCE_CHECKS}} checks at least {{fact:src/jarvis/health/changes.py:DEBOUNCE_GAP_S}} seconds apart, a recovery needs {{fact:src/jarvis/health/changes.py:RECOVERY_CHECKS}} clear checks, only "down" rings, and "degraded" is a silent note (`src/jarvis/health/changes.py`).
 `HealthTickJob` runs the check in the background at most every {{fact:src/jarvis/health/tick.py:CHECK_EVERY_S}} seconds per owner with a linked home, and on the morning tick for everyone (`src/jarvis/health/tick.py`).
 `set_reminder` turns a concern into a calendar reminder with fixed words at one of three fixed times, through the tool gateway like any other call (`src/jarvis/health/remind.py`).
+`vitals_sources` hands Vitals, whose board the briefing reads, what it tracks of JARVIS's own keys and connections; since {{fact:release.label}} that includes the laptop speech kit's engine line, at ₹0 (`src/jarvis/api/selfcheck_wiring.py`).
 The pop-up streams each result as it lands from `POST /v1/health/run/stream`, and `src/jarvis/api/static/console-systems-voice.js` hears the phrase and speaks the briefing.
 
 ## What it costs

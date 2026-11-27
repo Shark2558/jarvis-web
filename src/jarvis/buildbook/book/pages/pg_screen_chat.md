@@ -4,7 +4,7 @@ written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
   "src/jarvis/api/routes.py": "4086daa780722d3f"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
 ---
 ## In plain words
 Conversation is where you talk to JARVIS. You type a message, press Send, and the answer appears in the thread with a small line under it: which brain answered, how long it took and roughly what it cost in rupees. Every conversation is saved, so you pick it up again from History on any device. Anything that sends, pays or can't be undone waits for your approval first, as the hint under the message box says (`src/jarvis/api/static/console.html`).

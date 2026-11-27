@@ -46,6 +46,8 @@ from jarvis.api.body import read_capped
 from jarvis.api.identity import current_user
 from jarvis.api.ratelimit import RateLimiter
 from jarvis.api.settings_audit import record_change
+from jarvis.api.speaker_assets import router as speaker_router
+from jarvis.api.voice_profile_routes import install_voice_profile_routes
 from jarvis.logging import get_logger
 from jarvis.voice.ports import (
     AudioTooLarge,
@@ -213,6 +215,8 @@ def install_voice(app: FastAPI) -> None:
         return _err(429, {"error": "rate_limited", "detail": "too many requests"}, retry)
 
     app.include_router(router)
+    install_voice_profile_routes(app)  # R5.2: /v1/voice/profile (its parts: api/r52_wiring.py)
+    app.include_router(speaker_router)  # R5.2 V5: the speaker check's model file (sha-checked)
 
 
 __all__ = ["MAX_AUDIO_BYTES", "install_voice", "read_capped", "router"]

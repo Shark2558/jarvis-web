@@ -32,6 +32,7 @@ import jarvis.api.r7_wiring as r7
 import jarvis.api.r13_wiring as r13
 import jarvis.api.r14_wiring as r14
 import jarvis.api.r18_wiring as r18
+import jarvis.api.r52_wiring as r52
 from jarvis import __version__ as VERSION
 from jarvis.activity.service import ActivityService
 from jarvis.activity.store import ActivityStore
@@ -141,7 +142,7 @@ from jarvis.tools.gateway import Gateway
 from jarvis.tools.r1_tools import build_family_service
 from jarvis.tools.setup import attach_activity, build_gateway
 from jarvis.undo.service import UndoBin
-from jarvis.voice.service import VoiceEngines, build_voice_service
+from jarvis.voice.service import VoiceEngines
 
 log = get_logger(__name__)
 
@@ -318,7 +319,7 @@ def _wire_core(
     )
     app.state.memory = build_app_memory(s, docs, app.state.brains, app.state.billing, audit)
     # Voice (slice 9): settings + wit always; Google speech only when on; credentials at first use
-    app.state.voice = build_voice_service(s, docs, app.state.billing, engines=inj.voice_engines)
+    app.state.voice = r52.voice_service(app, s, docs, inj.voice_engines)  # + R5.2: kit, profile
     return docs, audit
 
 

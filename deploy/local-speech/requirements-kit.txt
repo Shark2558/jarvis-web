@@ -1,0 +1,117 @@
+# deploy/local-speech/requirements-kit.txt -- R5.2 laptop speech kit: the only packages it installs,
+# pinned and hash-checked (Windows, 64-bit, Python 3.12). install-kit.ps1 installs them into the
+# kit's private environment with --require-hashes --only-binary=:all: (wheels only: nothing is
+# compiled on the laptop). Resolved for win_amd64 / CPython 3.12 on 27 Nov 2026; every hash is the
+# SHA-256 PyPI publishes for that wheel, and the whole set was downloaded once with
+# --require-hashes for that platform (which also proves no dependency is missing).
+# Licences are PyPI's own (licence expression or classifier); none is GPL. tqdm is MPL-2.0 AND MIT
+# (file-level, used unmodified); typing-extensions is PSF-2.0. PyAV's wheel bundles FFmpeg and LAME
+# (LGPL), loaded unmodified, as the cloud image's OpenCV does.
+#
+# Not here, on purpose (see README.md "What this kit leaves out"):
+#   kokoro-onnx (MIT) needs phonemizer (GPL-3.0-or-later) and espeakng-loader (no licence stated;
+#   it bundles espeak-ng, GPL-3.0); piper-tts 1.3+ is GPL-3.0-or-later; PyTorch / transformers /
+#   parler-tts for the Indian-language engines. Their engine slots say "not installed".
+#   NVIDIA's CUDA 12 / cuDNN 9 libraries (NVIDIA's own licence) are not pip-installed: the kit uses
+#   the graphics card only when they are already on the laptop, else the CPU.
+# annotated-types (MIT): needed by pydantic
+annotated-types==0.8.0 \
+    --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
+# anyio (MIT): needed by httpx2, starlette
+anyio==4.16.0 \
+    --hash=sha256:c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026
+# av (BSD-3-Clause): faster-whisper's audio decoding; the console's MP3
+av==19.0.2 \
+    --hash=sha256:3ce5a1d7b916d13c16ac58f1756f0fee4af2d53f02bc1403e18550b50d375a22
+# cffi (MIT-0): needed by cryptography
+cffi==2.1.1 \
+    --hash=sha256:f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a
+# click (BSD-3-Clause): needed by huggingface-hub, uvicorn
+click==8.5.1 \
+    --hash=sha256:8bb5376d2006950386f8c6427613334a2acadc5f559cb80e638d00b4df957e37
+# colorama (BSD-3-Clause): needed by tqdm
+colorama==0.4.6 \
+    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
+# cryptography (Apache-2.0 OR BSD-3-Clause): AES-256-GCM for the recordings at rest
+cryptography==50.0.2 \
+    --hash=sha256:7afa5a6602a9f29af1f3a2965f831bae7c9d5d597b7cbb716d41ab3b7d89879c \
+    --hash=sha256:4e81d95e5bafc2d6e34e4bed780e53e4d5b9a2f928573428aa4d35fbec1eb0de
+# ctranslate2 (MIT): faster-whisper's engine
+ctranslate2==4.9.1 \
+    --hash=sha256:627aeb62a3a5a27266f9ebae820189c12eea8db713c8c202ea331c9ec47effcf
+# faster-whisper (MIT): English listening (Whisper small/medium int8)
+faster-whisper==1.2.1 \
+    --hash=sha256:79a66ad50688c0b794dd501dc340a736992a6342f7f95e5811be60b5224a26a7
+# filelock (MIT): needed by huggingface-hub
+filelock==4.3.1 \
+    --hash=sha256:79e43df8e9fe509cd83a3899a7c186c8077cbbe4d200a1ed3705c2f3bb6bc487
+# flatbuffers (Apache-2.0): needed by onnxruntime
+flatbuffers==25.12.19 \
+    --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
+# fsspec (BSD-3-Clause): needed by huggingface-hub
+fsspec==2026.9.0 \
+    --hash=sha256:8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f
+# h11 (MIT): needed by httpcore2, uvicorn
+h11==0.16.0 \
+    --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
+# hf-xet (Apache-2.0): needed by huggingface-hub
+hf-xet==1.8.0 \
+    --hash=sha256:92188598dedc1e1f5609bd718d4db8687a6c89915553912571e2f587892eecec
+# httpcore2 (BSD-3-Clause): needed by httpx2
+httpcore2==2.16.2 \
+    --hash=sha256:16051ae2a42f776007543f32de9349a317b23d2cbb4e1456b4bac0e88b87419a
+# httpx2 (BSD-3-Clause): needed by huggingface-hub
+httpx2==2.16.2 \
+    --hash=sha256:f05c13aade4c45dbf1c9060647a1058f0acad62398fad96e741269edb33d46f5
+# huggingface-hub (Apache-2.0): needed by faster-whisper, tokenizers
+huggingface-hub==2.5.0 \
+    --hash=sha256:f8565260f2031f5a62301d01d8d80bf6f889390f3c3f1b1cfe6d7e10b5a02db8
+# idna (BSD-3-Clause): needed by anyio, httpx2
+idna==3.20 \
+    --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+# numpy (BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0): audio (resampling, PCM)
+numpy==2.5.5 \
+    --hash=sha256:919eb420662b0b4ba34889df503f3d5329775b0c1d5f7e5f5af4fba8315b1e30
+# onnxruntime (MIT): faster-whisper's voice detector
+onnxruntime==1.32.0 \
+    --hash=sha256:efe7456952c243a05a53d5b8732953625144642c2f3989094277f6217f0c0c40
+# packaging (Apache-2.0 OR BSD-2-Clause): needed by huggingface-hub, onnxruntime
+packaging==26.4 \
+    --hash=sha256:81383611a09c1bc0b08b76e0fd5829d7c6824c65b27a6aee339da133f4233ea2
+# protobuf (BSD-3-Clause): needed by onnxruntime
+protobuf==7.36.2 \
+    --hash=sha256:a300819d441e078a5608c0d3c709796bb548136058fda017ae51d425b44fd353 \
+    --hash=sha256:bdb3a345d48db958e6ce1f18e508beb0cc981d64f24088427549c866cd039f1e
+# pycparser (BSD-3-Clause): needed by cffi
+pycparser==3.12 \
+    --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e
+# pydantic (MIT): the API's models (jarvis/localspeech/protocol.py)
+pydantic==2.14.2 \
+    --hash=sha256:7efbf7507b937931cd32a5755acb00ea1cf5ccb1d4e8067a5850d5069e382118
+# pydantic-core (MIT): needed by pydantic
+pydantic-core==2.50.2 \
+    --hash=sha256:b381574614245f18fdb2d6d1aa8f149e225869c47b5ee7f81812de8977817314
+# pyyaml (MIT): needed by ctranslate2, huggingface-hub
+pyyaml==6.0.4 \
+    --hash=sha256:131d11bd9b60d705a6388366d77ed67850995a4d2be85fe149785a257c17e531
+# starlette (BSD-3-Clause): the speech server
+starlette==1.10.0 \
+    --hash=sha256:478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4
+# tokenizers (Apache-2.0): needed by faster-whisper
+tokenizers==0.23.3 \
+    --hash=sha256:1f0823bb00c5fdc98e487354d54dd55a03848d61a1a0bf29a68c77f24f3b26c3
+# tqdm (MPL-2.0 AND MIT): needed by faster-whisper, huggingface-hub
+tqdm==4.70.1 \
+    --hash=sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73
+# truststore (MIT): needed by httpcore2, httpx2
+truststore==0.10.5 \
+    --hash=sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c
+# typing-extensions (PSF-2.0): needed by anyio, httpx2, huggingface-hub, pydantic, pydantic-core, starlette, typing-inspection
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+# typing-inspection (MIT): needed by pydantic
+typing-inspection==0.4.5 \
+    --hash=sha256:bc210535442b39e1bf2805e0c7a17dfd6a4ace760c84c7f7d16245d23a6b1c39
+# uvicorn (BSD-3-Clause): runs the speech server on 127.0.0.1
+uvicorn==0.54.0 \
+    --hash=sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf

@@ -122,7 +122,7 @@ sources:
   "src/jarvis/api/static/console-r7-phone.js": "39e038d8237ad7b4"
   "src/jarvis/api/static/console-r7-share.css": "5b933aaf0b8d7034"
   "src/jarvis/api/static/console-r7-share.js": "ab846cef6ffe4167"
-  "src/jarvis/api/static/console-r7.js": "0613adea76dca0a6"
+  "src/jarvis/api/static/console-r7.js": "914448d515edf369"
   "src/jarvis/api/static/console-sw.js": "8998e220b800ebcc"
   "src/jarvis/mobile/__init__.py": "c511816f99985bb6"
   "src/jarvis/mobile/contract.py": "6dfc15ad9e07a5a8"

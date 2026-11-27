@@ -35,7 +35,8 @@
     ["sarvam_", ["Sarvam"]],
     ["voice_price_sarvam_", ["Sarvam"]],
     ["bhashini_", ["Bhashini"]],
-    ["voice_price_bhashini_", ["Bhashini"]]
+    ["voice_price_bhashini_", ["Bhashini"]],
+    ["local_speech_", ["Tailscale"]]
   ],
   "internal_secrets": ["api_token", "session_secret", "token_key"],
   "api_hosts": {

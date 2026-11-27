@@ -8,11 +8,16 @@
 # can read.
 #
 # Run it with:  powershell -ExecutionPolicy Bypass -File start-windows.ps1
+#
+# Funnel's port: 443, the brain's own (R3 plan D3). The home bridge keeps 8443 and the laptop speech
+# kit 10000; this script never takes a port that already serves something else (R5.2 review).
 $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dir = if ($env:JARVIS_LOCAL_BRAIN_DIR) { $env:JARVIS_LOCAL_BRAIN_DIR } else { Join-Path $env:LOCALAPPDATA 'JarvisLocalBrain' }
 $keyFile = Join-Path $dir 'key'
+$httpsPort = 443
+$gate = 'http://127.0.0.1:11435'
 
 function Need([string]$name, [string]$hint) {
     if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
@@ -55,6 +60,24 @@ try {
     $probe.Dispose()
 }
 
+# Never take over a Funnel port that already serves something else: one door each, the brain 443,
+# the home bridge 8443, the laptop speech kit 10000 (R5.2 review: the brain once took the bridge's).
+function Test-FunnelTaken([int]$port, [string]$mine) {
+    try { $cfg = (& tailscale funnel status --json 2>$null | Out-String) | ConvertFrom-Json } catch { return $false }
+    if (-not $cfg -or -not $cfg.Web) { return $false }
+    foreach ($site in $cfg.Web.PSObject.Properties) {
+        if ($site.Name -like "*:$port") {
+            $targets = @($site.Value.Handlers.PSObject.Properties | ForEach-Object { $_.Value.Proxy })
+            if ($targets -notcontains $mine) { return $true }
+        }
+    }
+    return $false
+}
+if (Test-FunnelTaken $httpsPort $gate) {
+    Write-Host "Tailscale Funnel's port $httpsPort already serves something else on this laptop (the home bridge keeps 8443, the speech kit 10000; 443 is the offline brain's). See what uses it with: tailscale funnel status"
+    exit 1
+}
+
 if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
 # only you (and no inherited group) can read the folder and the key: lock it BEFORE the key exists
 & icacls $dir /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
@@ -80,7 +103,7 @@ try {
     Remove-Item Env:\JARVIS_LOCAL_KEY
     Start-Sleep -Seconds 1
 
-    & tailscale funnel --bg --https=8443 11435 | Out-Null
+    & tailscale funnel --bg --https=443 11435 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Tailscale Funnel did not start. Check that Funnel is allowed for your tailnet (Tailscale admin console > Access controls) and that you are signed in. See README.md.'
         exit 1
@@ -88,7 +111,8 @@ try {
     $funnelOn = $true
 
     $status = (& tailscale funnel status 2>$null) -join "`n"
-    $m = [regex]::Match($status, 'https://[A-Za-z0-9.-]+\.ts\.net(:[0-9]+)?')
+    # its own door: port 443 has no ":port" in Funnel's status (the bridge's :8443 is not it)
+    $m = [regex]::Match($status, '(?m)^https://[A-Za-z0-9.-]+\.ts\.net(?![:0-9A-Za-z.-])')
     $address = if ($m.Success) { $m.Value } else { "run 'tailscale funnel status' to see it" }
 
     Write-Host ''
@@ -103,6 +127,6 @@ try {
 } finally {
     if ($caddy -and -not $caddy.HasExited) { Stop-Process -Id $caddy.Id -Force -ErrorAction SilentlyContinue }
     # close only this port, and only if THIS run opened it
-    if ($funnelOn) { & tailscale funnel --https=8443 off 2>$null | Out-Null }
+    if ($funnelOn) { & tailscale funnel --https=443 off 2>$null | Out-Null }
     if ($ollama -and -not $ollama.HasExited) { Stop-Process -Id $ollama.Id -Force -ErrorAction SilentlyContinue }
 }

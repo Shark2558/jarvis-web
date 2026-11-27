@@ -61,7 +61,7 @@ APP_ASSETS: dict[str, str] = {
     "voice-capture-worklet.js": _JS,  # slice 9: AudioWorkletProcessor (downsample to 16 kHz)
     "console-3d.js": _JS,  # three.js scenes (ES module; loads three lazily, 2D fallback)
     "console-3d-scenes.js": _JS,  # Core / Globe / Construct scene builders (ES module)
-    "console-wakeword.js": _JS,  # on-device "Hey Jarvis" (openWakeWord port, slice 9 D12)
+    "console-wakeword.js": _JS, "console-wakeword-own.js": _JS,  # Hey Jarvis (D12; R5.2 row 83)
     "console-web.js": _JS,  # slice 10 B: the Sources row under replies, Vitals web-search line
     "console-permissions.js": _JS,  # slice 10 D: Allow / Ask first / Never, passkeys (WebAuthn)
     "console-attach.js": _JS,  # slice 10 E: paperclip, drag-and-drop, file chips
@@ -117,11 +117,9 @@ APP_ASSETS: dict[str, str] = {
     "console-connectors.css": "text/css",  # R5.1 A: Connectors as Integrations-style cards
     "console-people.css": "text/css",  # R5.1 A: People panel + the top-bar Brain pill
     "console.css": "text/css",
-    "console-deck.css": "text/css",
-    "console-memory.css": "text/css",
-    "console-voice.css": "text/css",
-    "console-voice-devices.css": "text/css",
-    "console-permissions.css": "text/css",
+    "console-deck.css": "text/css", "console-memory.css": "text/css",
+    "console-voice.css": "text/css", "console-voice-session.css": "text/css",  # + R5.2 V3's
+    "console-voice-devices.css": "text/css", "console-permissions.css": "text/css",
     # R6 (docs/plans/r6-build-book.md D15, D16; builder D): the Book panel in the deck, then the
     # show page (/book/show, book.html). The 3D files are ES modules; the scene modules are
     # imported by console-book-3d.js, never linked.
@@ -192,6 +190,8 @@ APP_ASSETS: dict[str, str] = {
     "console-book-tour.js": _JS,  # R6.3 D: the tour's chapters, owner-only scenes, continue
     # R6.3.1 F: the full book's flowcharts (R6.4: /book/read, imported by console-book-read-page.js)
     "console-book-flow.js": _JS, "console-book-flow-layout.js": _JS, **CALLS_ASSETS,  # + R18 E's
+    "console-voice-session.js": _JS, "console-voiceprint.js": _JS,  # R5.2 V3, V5 (rows 81, 84)
+    "console-voiceprint-math.js": _JS, "console-voiceprint-panel.js": _JS,  # R5.2 V5
 }
 
 # Self-hosted OFL fonts (licences beside them).

@@ -3,11 +3,11 @@ page: pg_service_gemini
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/config.py": "8c3c0b7f0890ff99"
+  "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/llm/brains.py": "a1fa670cdd1f62ae"
   "src/jarvis/llm/gemini_provider.py": "46855ef23dd8aabb"
   "src/jarvis/llm/router.py": "c72db7b28cbba849"
-  "src/jarvis/vitals/own.py": "cd127fbc1ca087c6"
+  "src/jarvis/vitals/own.py": "9f8aef630fa0d168"
 ---
 ## In plain words
 Gemini is Google's AI model, and JARVIS offers it as a second, free brain for plain chat. You pick it in the console when you want an answer that costs nothing. On Google's free tier, Google may use what you type to improve its products, so JARVIS gives this brain no tools and no personal data: no calendar, no e-mail, no memory facts, no attached files (`src/jarvis/llm/brains.py:BrainSpec`). The console shows a warning on it saying exactly that. What goes to Google is only the conversation you type to it, with any earlier tool results taken out.

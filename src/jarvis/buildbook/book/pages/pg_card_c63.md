@@ -5,7 +5,7 @@ written_on: 2026-11-24
 sources:
   "evals/r7/vision.py": "6915895e39b87c6e"
   "scripts/vision_assets.py": "fb34eec7a323c768"
-  "src/jarvis/api/console.py": "5f89470424a0a10a"
+  "src/jarvis/api/console.py": "c31a243b1ec2b6f6"
   "src/jarvis/api/static/console-camera-panel.js": "8e142dadab602be2"
   "src/jarvis/api/static/console-camera.css": "30a4a654f42d34ed"
   "src/jarvis/api/static/console-camera.js": "c917b03cb1ff1deb"

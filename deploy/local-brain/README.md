@@ -41,7 +41,7 @@ works exactly as before without it.
    Funnel and prints:
 
    ```
-   Address: https://my-laptop.tail1234.ts.net:8443
+   Address: https://my-laptop.tail1234.ts.net
    Key: <43 characters>
    ```
 5. **Tell JARVIS.** Integrations -> Offline mode: paste the address, the key and the model name
@@ -54,8 +54,15 @@ works exactly as before without it.
    sometimes call tools badly; if so, try the bigger `qwen2.5:7b` and change the model name in
    Integrations.
 
-Keep the script window open. Ctrl+C stops the gate and closes Funnel on port 8443 (nothing else of your Tailscale setup is touched). You can run it at login if you
+Keep the script window open. Ctrl+C stops the gate and closes Funnel on port 443 (nothing else of your Tailscale setup is touched). You can run it at login if you
 like.
+
+**Funnel's ports (v5.2.0).** Each part on the laptop has its own Funnel port: the offline brain
+443 (an address with no port), the home bridge 8443 and the laptop speech kit 10000, and every
+start script refuses a port that already serves something else. Before v5.2.0 this script took
+8443, the home bridge's door, and stopping it closed the bridge's: if you set Offline mode up
+then, run the script once and paste its new address (no `:8443`) into Integrations -> Offline
+mode.
 
 ## Why it is safe
 

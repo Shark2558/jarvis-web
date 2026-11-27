@@ -2,9 +2,10 @@
 """R6.3 D3 (docs/plans/r6-3-book-content.md; Phase A §9.4): the module map. Every catalogue card of
 the guide (`docs/architecture/JARVIS-Architecture.md`, `#### Cnn · …`) belongs to exactly ONE of
 the 19 modules below, Phase A's 17 plus Wardrobe & Try-on (C69-C73, R13 and R13.1) and Phone calls
-(C74-C78, R18). The full book has a chapter page for each module (`pg_module_<id>`) with its cards'
-pages under it; the tour's "what else" scene (T14) lists the modules that are not one of his seven
-highlights.
+(C74-C78, R18); R5.2's C79-C83 extend Voice, as R13.1 extended Wardrobe (a laptop part sits with
+its domain: C17 in brain, C39 in home, C77 in calls). The full book has a chapter page for each
+module (`pg_module_<id>`) with its cards' pages under it; the tour's "what else" scene (T14) lists
+the modules that are not one of his seven highlights.
 
 `check(cards)` is the generator's gate: a card in no module, a card in two, or a module naming a
 card the guide does not have is a `GenError`, so a new card must be placed here before its
@@ -37,7 +38,7 @@ def _m(mid: str, title: str, *cards: int) -> Module:
 MODULES: tuple[Module, ...] = (
     _m("console", "Console and API", 1, 2, 3, 41),
     _m("brain", "Chat and the brain router", 9, 13, 14, 15, 16, 17, 68),
-    _m("voice", "Voice", 5, 6),
+    _m("voice", "Voice", 5, 6, 79, 80, 81, 82, 83),  # R5.2: the kit, its routing, your voice
     _m("memory", "Memory and knowledge", 10, 23, 24),
     _m("vault", "Vault and documents", 7, 42, 43),
     _m("people", "People and faces", 8, 21),

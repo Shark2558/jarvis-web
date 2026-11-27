@@ -13,6 +13,6 @@ runs on Windows lives in `jarvis.calldesk.win` and is imported lazily, so everyt
 on Linux with fakes. Nothing is imported here, so `python -m jarvis.calldesk` stays light.
 """
 
-DESK_VERSION = "18.0.0"
+DESK_VERSION = "18.1.0"  # R5.2 I1: the laptop speech kit (its own track)
 
 __all__ = ["DESK_VERSION"]

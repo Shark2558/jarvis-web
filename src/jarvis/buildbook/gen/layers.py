@@ -66,6 +66,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         "homebridge": "L6",
         "calldesk": "L6",  # R18 C: the call desk on the laptop (Windows audio, Phone Link)
         "camera": "L6",
+        "localspeech": "L6",  # R5.2: the laptop speech kit (its API, server, engines, jobs)
         # L7 Data & Persistence
         "storage": "L7",
         "vault": "L7",
@@ -80,6 +81,7 @@ LAYER_OF: Mapping[str, str] = MappingProxyType(
         # X cross-cutting: configuration, keys, security, cost, health, privacy, the book
         "config": "X",
         "config_calls": "X",  # R18: the calls settings, a base class of config.Settings
+        "config_voice": "X",  # R5.2: the laptop speech kit's and voice profile's settings
         "about": "X",  # R6.1 D4: version + build date
         "logging": "X",
         "keyring": "X",

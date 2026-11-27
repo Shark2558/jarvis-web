@@ -3,13 +3,13 @@ chapter: module_vitals
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 pages:
-  "pg_module_vitals": "9cf1677df06d9523"
+  "pg_module_vitals": "55bb94dec7ff1956"
   "pg_card_c44": "82626a80cc75e907"
   "pg_card_c54": "c0fb0155b89ba5f3"
-  "pg_card_c55": "7693f31fd1511d36"
-  "pg_card_c56": "1014d9b2e02dfb36"
+  "pg_card_c55": "fdd9bc895f16d39e"
+  "pg_card_c56": "4780cfe91ff30bf4"
   "pg_card_c67": "d886a2ba380e16b0"
-  "pg_screen_vitals": "bbbc0b0b328a9bbb"
+  "pg_screen_vitals": "2b2d7e74f855e8af"
   "pg_service_frankfurter": "572319c24dce3f86"
 ---
 - [page:pg_module_vitals] [show:title] This chapter is about JARVIS keeping an eye on itself, and on everything that has a limit.
@@ -30,6 +30,7 @@ pages:
 - [edge:told>board] [node:board] And the Vitals board shows it too.
 - [node:check] [edge:check>board] Whenever you ask for a systems check, its result reaches the board as well.
 - [show:how] The board is filled with no model call: the brains' last call, the Google link, the last systems check, the web search vendor's usage and the home link, among others.
+- Once you set it up, the laptop speech kit's engine line is there too.
 - [count:{{fact:settings.selfwatch_brief_grace_min}}] The watch notices a brief more than {{fact:settings.selfwatch_brief_grace_min}} minutes late, and more than {{fact:settings.selfwatch_errors_per_hour}} error lines in an hour.
 - [count:₹{{fact:settings.selfwatch_spike_min_inr}}] It warns when a day's AI spend is over {{fact:settings.selfwatch_spike_factor}} times the recent daily average, and at least ₹{{fact:settings.selfwatch_spike_min_inr}}.
 - The About line at the board's foot shows the running version and its build day.
@@ -73,6 +74,8 @@ pages:
 - [count:{{fact:src/jarvis/vitals/own.py:SOURCE_TIMEOUT_S}}] Each of JARVIS's own sources gets {{fact:src/jarvis/vitals/own.py:SOURCE_TIMEOUT_S}} seconds, so a slow one turns only its own line "unknown", and never slows the board.
 - [count:{{fact:src/jarvis/vitals/models.py:MAX_MANUAL}}] You can add up to {{fact:src/jarvis/vitals/models.py:MAX_MANUAL}} lines of your own, and anything that looks like a credential is refused, on every way in.
 - [count:{{fact:src/jarvis/vitals/job.py:POLL_EVERY_S}}] A background job looks at most every {{fact:src/jarvis/vitals/job.py:POLL_EVERY_S}} seconds, and alerts only when a line crosses upwards.
+- The laptop speech kit's line shows only once the kit is set up: which engine heard and spoke last, and what the laptop costs a minute.
+- It never alerts, because a laptop asleep is normal, and voice falls back to Google by itself.
 - [count:{{fact:src/jarvis/vitals/brief.py:MAX_LINES}}] The morning brief names at most {{fact:src/jarvis/vitals/brief.py:MAX_LINES}} amber or red lines, and you can ask about them by voice.
 - [show:example] In the example, a domain renewal you added turns amber within the warning days, with one alert, and red with one more on the day it expires.
 - [show:costs] It costs nothing: only meters, arithmetic and fixed words.
@@ -94,6 +97,7 @@ pages:
 - [edge:debounce>alert] [node:alert] If it does, an alert goes through the alert policy; only "down" rings, and "degraded" is a silent note.
 - [count:{{fact:src/jarvis/health/changes.py:RECOVERY_CHECKS}}] A recovery needs {{fact:src/jarvis/health/changes.py:RECOVERY_CHECKS}} clear checks.
 - [show:how] [count:{{fact:src/jarvis/health/tick.py:CHECK_EVERY_S}}] In the background, the check runs at most every {{fact:src/jarvis/health/tick.py:CHECK_EVERY_S}} seconds for an owner with a linked home, and on the morning tick for everyone.
+- Since {{fact:release.label}}, what Vitals tracks of JARVIS's own connections, which the briefing reads, includes the laptop speech kit's engine line, at no cost.
 - [show:example] In the example, you ask for a check one evening, and every system turns green except Telegram.
 - JARVIS says alerts and Telegram chat won't reach you, offers a reminder to fix it, and you pick tomorrow morning for your calendar.
 - [show:costs] It costs nothing: the brain probe only reads what JARVIS already knows.
@@ -115,14 +119,18 @@ pages:
 - [show:plain] At the top it shows how quickly replies arrive, then "This month": the paid AI's cost so far in rupees, and your monthly limit.
 - A Calls this month line shows what phone calls have cost this month, and pressing its name opens the Calls panel.
 - Below is the board, each line with a plain status: OK, Watch, Act now or Unknown.
+- Once your laptop's speech kit is set up, a Laptop speech kit line says which engine last heard and spoke to you.
 - [show:how] The board groups keys and connections, allowances and quotas, and bills, with the worst first, in words, never colour alone.
 - The board's answer carries the month's replies with no known price too, at an upper estimate, never as nothing.
 - "Track something JARVIS can't see" adds your own item; it never asks for a key's value, and refuses one if pasted.
+- The Laptop speech kit line sits under keys and connections: OK while it is ready, and Watch while it is slow, out of date or not answering, when Google's speech is used.
+- It never sends an alert.
 - Under This conversation, Calls this month shows the rupees calls have used this month and the calls cap, or a dash when they can't be read.
 - Its name is a link to the Calls panel: the way in on a screen whose tab bar has no room for Calls.
 - [show:example] In the example, late in the month, you see a domain renewal marked Act now, and raise your limit, confirming it before it is saved.
 - [show:costs] The rupee figures are estimates, because Anthropic bills in US dollars and your bank converts.
 - [show:fails] [count:{{fact:src/jarvis/vitals/api.py:GET_PER_MINUTE}}] If an outside service doesn't answer, its chip says Unknown, and reading the board is limited to {{fact:src/jarvis/vitals/api.py:GET_PER_MINUTE}} times a minute.
+- When the laptop's speech kit stops, its line says JARVIS listens and speaks with Google's free minutes, then the browser's, and nothing else stops.
 - [page:pg_service_frankfurter] [show:title] Last, Frankfurter.
 - [show:plain] It is a free service that publishes daily exchange rates, with no account and no key, and JARVIS asks it once a day for one number.
 - Nothing about you goes there: the request is the same for everybody.

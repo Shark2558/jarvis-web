@@ -64,7 +64,7 @@ def test_row379_facts_index_holds_every_path_symbol_constant_setting_collection_
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
     }
     assert set(ix.symbols) == tops
-    assert len(ix.settings) == len(pack.settings) == 197  # R18 + 18 (`config_calls.py`)
+    assert len(ix.settings) == len(pack.settings) == 204  # R18 + 18, R5.2 + 7 (`config_*.py`)
     assert ix.collections == pack.collections and len(pack.collections) == _checker().collections
     assert ix.routes == tuple(sorted({f"{r.method} {r.path}" for r in pack.routes}))
     for field in ("paths", "symbols", "constants", "settings", "collections", "routes"):
@@ -107,14 +107,15 @@ def test_m7_the_services_are_the_coverage_checker_s(pack: FactPack, repo: Repo) 
 
 def test_d3_every_page_from_the_guide_and_the_code(pack: FactPack) -> None:
     kinds = [p.kind for p in pack.pages]
-    # R18: the Phone calls module, cards C74-C78, the Calls screen, four services
+    # R18: the Phone calls module, cards C74-C78, the Calls screen, four services; R5.2: C79-C83
+    # in Voice (no new module, screen or service: the voice session is in the Voice panel)
     assert kinds.count("chapter") == 8 and kinds.count("module") == 19
-    assert kinds.count("card") == 78 and kinds.count("screen") == 24
-    assert kinds.count("service") == 35 and len(pack.pages) == 164
+    assert kinds.count("card") == 83 and kinds.count("screen") == 24
+    assert kinds.count("service") == 35 and len(pack.pages) == 169
     assert all(p.refs for p in pack.pages if p.kind in ("card", "module", "screen"))
     assert all(set(p.refs) <= set(pack.index.paths) for p in pack.pages)
     every_card = [c for m in pack.modules for c in m.cards]
-    assert sorted(every_card) == sorted(set(every_card)) and len(every_card) == 78
+    assert sorted(every_card) == sorted(set(every_card)) and len(every_card) == 83
     for cid, (_, files) in pages_index.CHAPTER_SOURCES.items():
         assert all(f in pack.index.paths for f in files), cid  # the fixed lists still exist
 

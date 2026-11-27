@@ -6,10 +6,12 @@
 #   powershell -ExecutionPolicy Bypass -File .\install-calldesk.ps1 -Link
 # Later, after extracting a newer kit over this folder (your link and settings are kept):
 #   powershell -ExecutionPolicy Bypass -File .\install-calldesk.ps1 -Update
+# Later, after installing (or re-keying) the laptop speech kit on this laptop (R5.2):
+#   powershell -ExecutionPolicy Bypass -File .\install-calldesk.ps1 -SpeechKit
 # Safe to run again: every step checks first and skips what is already done. It installs Python
 # 3.12 only with your Y, makes a private Python environment in this folder with the desk's
 # pinned, hash-checked packages (no downloads of voice models), and adds Start-menu shortcuts.
-param([switch]$Link, [switch]$Update)
+param([switch]$Link, [switch]$Update, [switch]$SpeechKit)
 $ErrorActionPreference = 'Stop'
 $Kit = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Data = Join-Path $env:LOCALAPPDATA 'JARVIS\CallDesk'
@@ -48,6 +50,18 @@ function Link-Desk {
     if (-not $code) { Write-Host 'Not linked yet. Later:  powershell -ExecutionPolicy Bypass -File .\install-calldesk.ps1 -Link'; return }
     & $Py -I -m jarvis.calldesk link $code
     if ($LASTEXITCODE -ne 0) { Write-Host 'Not linked. Make a new code in JARVIS, then:  powershell -ExecutionPolicy Bypass -File .\install-calldesk.ps1 -Link' }
+}
+
+# R5.2: the laptop speech kit's key, copied from the kit's own private folder into the desk's (your
+# profile folder, like the desk's link); the desk then offers the kit's free speech for calls. The
+# key is never printed and never put in this kit folder.
+function Copy-SpeechKey {
+    $kitDir = if ($env:JARVIS_SPEECH_KIT_DIR) { $env:JARVIS_SPEECH_KIT_DIR } else { Join-Path $env:LOCALAPPDATA 'JARVIS\LocalSpeech' }
+    $from = Join-Path $kitDir 'key'
+    if (-not (Test-Path -LiteralPath $from)) { Write-Host 'No laptop speech kit on this laptop: calls use cloud speech.'; return }
+    New-Item -ItemType Directory -Force -Path $Data | Out-Null
+    Copy-Item -LiteralPath $from -Destination (Join-Path $Data 'local-speech.key') -Force
+    Write-Host 'The laptop speech kit is on this laptop: the call desk can use its free speech (restart the desk).'
 }
 
 function New-Shortcut($folder, $name, $script, [switch]$Hidden) {
@@ -97,6 +111,10 @@ if (-not (Test-Path -LiteralPath $Py)) {
     if ($LASTEXITCODE -ne 0) { Stop-Here 'Could not make the environment. Copy the lines above to Claude.' }
     $Update = $true
 }
+if ($SpeechKit) {
+    Copy-SpeechKey
+    exit 0
+}
 if ($Update) {
     & $Py -m pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r (Join-Path $Kit 'requirements-calldesk.txt')
     if ($LASTEXITCODE -ne 0) { Stop-Here 'Installing the packages failed. Copy the lines above to Claude.' }
@@ -112,6 +130,10 @@ Set-Content -LiteralPath (Join-Path $Data 'kit-folder.txt') -Value $Kit -Encodin
 # 5. The link to JARVIS ---------------------------------------------------------------------------
 if (-not (Test-Path -LiteralPath (Join-Path $Data 'secret.json'))) { Link-Desk }
 else { Say 'Link'; Write-Host 'Already linked (to link again: -Link).' }
+
+# 5b. The laptop speech kit, when it is on this laptop (R5.2) -------------------------------------
+Say 'Laptop speech kit'
+Copy-SpeechKey
 
 # 6. Start-menu shortcuts and start at sign-in ----------------------------------------------------
 Say 'Shortcuts'

@@ -53,13 +53,14 @@ BRIEF_JOB="jarvis-morning-brief"
 HOME_JOB="jarvis-home-watchdog"
 BRIEF_TZ="${BRIEF_TZ:-Asia/Kolkata}"   # the clock's window (04:00-11:30) is read in this time zone
 
-RECONFIGURE=no; ASK_WEB=no; ASK_TG=no
+RECONFIGURE=no; ASK_WEB=no; ASK_TG=no; ASK_SPEECH=no
 for arg in "$@"; do
   case "$arg" in
     --reconfigure) RECONFIGURE=yes ;;
     --web-search) ASK_WEB=yes ;;
     --telegram) ASK_TG=yes ;;
-    -h|--help) echo "Usage: bash deploy/cloudrun.sh [--reconfigure] [--web-search] [--telegram]"; exit 0 ;;
+    --local-speech) ASK_SPEECH=yes ;;   # R5.2: the laptop speech kit's address and key
+    -h|--help) echo "Usage: bash deploy/cloudrun.sh [--reconfigure] [--web-search] [--telegram] [--local-speech]"; exit 0 ;;
     *) printf 'Unknown option: %s (try --help)\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -286,6 +287,68 @@ telegram_answer() {
   TG_ENV="JARVIS_TELEGRAM=on"
 }
 telegram_answer
+
+# The laptop speech kit (R5.2, deploy/local-speech): optional. Like Telegram, a quick re-run asks
+# only while there is no saved answer. Saved answer = the jarvis-local-speech-key secret (its
+# address stays on the live service), or a remembered skip (JARVIS_LOCAL_SPEECH_ENABLED=false).
+# The address must be the laptop's Tailscale https name, as JARVIS checks it (*.ts.net, Funnel's
+# port 443, 8443 or 10000, no path); the key goes straight to Secret Manager, never to a file,
+# the log or the screen. Off: voice uses Google, then the browser, as before. An optional part
+# never stops the deploy (R5.2 review): a bad address, a short key or a key Secret Manager won't
+# store says why and leaves the kit off this time (`ls_skip`); re-run with --local-speech.
+LS_SECRET=""; LS_ENV="JARVIS_LOCAL_SPEECH_ENABLED=false"; LS_REMOVE=()
+ls_url_ok() {
+  printf '%s' "$1" | grep -Eq '^https://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.ts\.net(:(443|8443|10000))?/?$'
+}
+ls_unmount() {
+  case "${SVC_JSON:-}" in *JARVIS_LOCAL_SPEECH_KEY*) LS_REMOVE=(--remove-secrets JARVIS_LOCAL_SPEECH_KEY) ;; esac
+}
+ls_skip() { # why
+  echo "  Note: $1 The laptop speech kit stays off this time (voice uses Google's speech, then the"
+  echo "  browser's); the deploy goes on. Re-run with --local-speech to try again."
+  LS_SECRET=""; LS_ENV="JARVIS_LOCAL_SPEECH_ENABLED=false"; ls_unmount
+}
+local_speech_answer() {
+  local v="" u=""
+  if [ "$QUICK" = yes ] && [ "${ASK_SPEECH:-no}" = no ]; then
+    if secret_exists jarvis-local-speech-key && case "${SVC_JSON:-}" in *JARVIS_LOCAL_SPEECH_URL*) true ;; *) false ;; esac; then
+      LS_SECRET="JARVIS_LOCAL_SPEECH_KEY=jarvis-local-speech-key:latest,"; LS_ENV="JARVIS_LOCAL_SPEECH_ENABLED=true"
+      return 0
+    fi
+    case "${SVC_JSON:-}" in *'"JARVIS_LOCAL_SPEECH_ENABLED"'*) ls_unmount; return 0 ;; esac   # skipped before
+  fi
+  echo
+  echo "NEW: your laptop can listen and speak for JARVIS for free (deploy/local-speech/README.md)."
+  echo "start-kit.ps1 prints an address (https://<laptop>.<tailnet>.ts.net:10000) and a key."
+  read -r -p "Laptop speech kit address (Enter = skip, JARVIS uses Google's speech as today): " u || true
+  u="$(printf '%s' "$u" | tr 'A-Z' 'a-z')"
+  if [ -z "$u" ]; then echo "  (skipped: the laptop speech kit stays off)"; ls_unmount; return 0; fi
+  if ! ls_url_ok "$u"; then
+    ls_skip "That is not the kit's Tailscale https address (https://<laptop>.<tailnet>.ts.net:10000)."
+    return 0
+  fi
+  if secret_exists jarvis-local-speech-key; then
+    read -r -s -p "The kit's key (Enter keeps the saved key): " v || true; echo
+  else
+    read -r -s -p "The kit's key (printed by start-kit.ps1): " v || true; echo
+  fi
+  if [ -n "$v" ]; then
+    if [ "${#v}" -lt 32 ]; then
+      v=""; ls_skip "The kit's key is at least 32 characters: copy it from start-kit.ps1's window again."
+      return 0
+    fi
+    if ! put_secret jarvis-local-speech-key "$v"; then
+      v=""; ls_skip "Could not store the kit's key in Secret Manager (jarvis-local-speech-key)."
+      return 0
+    fi
+  elif ! secret_exists jarvis-local-speech-key; then
+    echo "  (no key: the laptop speech kit stays off)"; ls_unmount; return 0
+  fi
+  v=""
+  LS_SECRET="JARVIS_LOCAL_SPEECH_KEY=jarvis-local-speech-key:latest,"
+  LS_ENV="JARVIS_LOCAL_SPEECH_ENABLED=true,JARVIS_LOCAL_SPEECH_URL=${u%/}"
+}
+local_speech_answer
 
 # R18 (review): the calls' optional speech keys - Azure's free tier F0, Sarvam (paid, off until the
 # owner's yes), Bhashini. No question: the owner stores a key in Secret Manager himself
@@ -586,6 +649,9 @@ grant_failed() { # secret
       WEB_SECRET=""; WEB_ENV="JARVIS_WEB_SEARCH_ENABLED=false"; WEB_REMOVE=(--remove-secrets JARVIS_TAVILY_API_KEY) ;;
     jarvis-google-api-key)
       maps_off "could not let JARVIS read the secret $1" ;;
+    jarvis-local-speech-key)
+      echo "  Note: could not let JARVIS read the secret $1, so the laptop speech kit stays off this time; re-run this script to try again."
+      LS_SECRET=""; LS_ENV="JARVIS_LOCAL_SPEECH_ENABLED=false"; LS_REMOVE=(--remove-secrets JARVIS_LOCAL_SPEECH_KEY) ;;
     jarvis-azure-speech-key|jarvis-sarvam-key|jarvis-bhashini-key)
       echo "  Note: could not let JARVIS read the secret $1, so that speech key is left out this time; re-run this script to try again."
       speech_unmount "$1" ;;
@@ -599,8 +665,8 @@ grant_failed() { # secret
 for secret in jarvis-google-client-secret jarvis-anthropic-key jarvis-gemini-key \
               jarvis-openai-compat-key jarvis-session-secret jarvis-api-token jarvis-token-key \
               jarvis-tavily-key jarvis-google-api-key jarvis-telegram-bot-token \
-              jarvis-telegram-webhook-secret jarvis-azure-speech-key jarvis-sarvam-key \
-              jarvis-bhashini-key; do
+              jarvis-azure-speech-key jarvis-sarvam-key jarvis-bhashini-key \
+              jarvis-telegram-webhook-secret jarvis-local-speech-key; do
   secret_exists "$secret" || continue
   ok=no
   for _ in 1 2 3 4 5 6; do
@@ -631,18 +697,19 @@ SCHED_SA="jarvis-scheduler@${PROJECT}.iam.gserviceaccount.com"
 INFRA_ENV="JARVIS_ENV=prod,JARVIS_LOG_JSON=true,JARVIS_AUTH_MODE=google,JARVIS_PUBLIC_BASE_URL=${BASE_URL},JARVIS_SESSION_BACKEND=firestore,JARVIS_FIRESTORE_PROJECT=${PROJECT},JARVIS_DEFAULT_TIER=balanced,JARVIS_EFFORT=low,JARVIS_LLM_TIMEOUT_S=20,JARVIS_BRIEF_SCHEDULER_SA=${SCHED_SA},JARVIS_DRIVE=${DRIVE_STATE}"
 INFRA_ENV="${INFRA_ENV},${WEB_ENV}"   # the web-search answer (on / remembered skip), both paths
 INFRA_ENV="${INFRA_ENV},${TG_ENV}"   # the Telegram answer (on / remembered skip), both paths
+INFRA_ENV="${INFRA_ENV},${LS_ENV}"   # R5.2: the laptop speech kit (on with its address / off)
 INFRA_ENV="${INFRA_ENV},JARVIS_MAPS_PRICING=${MAPS_PRICING}"   # Google's Maps price list (india / global)
 INFRA_ENV="${INFRA_ENV},JARVIS_TRYON_PICTURES=${TRYON_STATE},JARVIS_TRYON_CACHE=${TRYON_CACHE}"   # R13.1 seam 13
 if [ "$QUICK" = yes ]; then
   CONFIG_FLAGS=(
     --update-env-vars "$INFRA_ENV"
-    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${SPEECH_SECRET}${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
-    "${MAPS_REMOVE[@]}" "${WEB_REMOVE[@]}" "${TG_REMOVE[@]}" "${SPEECH_REMOVE[@]}"
+    --update-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${SPEECH_SECRET}${MAPS_SECRET}${TG_SECRET}${LS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    "${MAPS_REMOVE[@]}" "${WEB_REMOVE[@]}" "${TG_REMOVE[@]}" "${LS_REMOVE[@]}" "${SPEECH_REMOVE[@]}"
   )
 else
   CONFIG_FLAGS=(
     --set-env-vars "${INFRA_ENV},JARVIS_OWNER_EMAILS=${OWNER_EMAIL},JARVIS_GOOGLE_CLIENT_ID=${CLIENT_ID},${BRAIN_ENV}"
-    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${SPEECH_SECRET}${MAPS_SECRET}${TG_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
+    --set-secrets "JARVIS_GOOGLE_CLIENT_SECRET=jarvis-google-client-secret:latest,${BRAIN_SECRET}JARVIS_SESSION_SECRET=jarvis-session-secret:latest,JARVIS_API_TOKEN=jarvis-api-token:latest,${SPEECH_SECRET}${MAPS_SECRET}${TG_SECRET}${LS_SECRET}${WEB_SECRET}JARVIS_TOKEN_KEY=jarvis-token-key:latest"
   )
 fi
 # an earlier book must never ride along as this release's when make or Python is missing

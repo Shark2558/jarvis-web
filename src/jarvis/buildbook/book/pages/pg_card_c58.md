@@ -7,7 +7,7 @@ sources:
   ".github/workflows/ci.yml": "9a6b5662e765a438"
   "Dockerfile": "2b925ebcbd25ec7c"
   "Makefile": "3c446b64c5b9cb98"
-  "deploy/cloudrun.sh": "603e230e96a462c8"
+  "deploy/cloudrun.sh": "76721925b3aca87c"
   "deploy/run-real-evals.sh": "3e7d08fb0a07cf43"
   "docs/github-backfill.tsv": "08260a54febc5a52"
   "render.yaml": "f4d4dcab2c0f7920"
@@ -28,7 +28,7 @@ Separate jobs check the pull request's title with `scripts/check_pr_title.py` an
 The documents job also checks that every page of the Build Book is written, passes its checks and is up to date with the code it describes, and fails the pull request when one is not (`.github/workflows/ci.yml`).
 On a merge to main, the deploy job signs in to Google without a stored key, builds the image from the repository's Dockerfile with the exact package versions in `requirements.lock`, and pushes it (`.github/workflows/ci.yml`).
 It refuses to deploy if main has moved on since, so re-running an old job never rolls JARVIS back, then rolls the image out with no traffic and checks its health page before switching traffic to it (`.github/workflows/ci.yml`).
-`deploy/cloudrun.sh` sets up the cloud project once from Cloud Shell: the services, the secrets, the scheduler clocks, and the image clean-up, and skips whatever already exists.
+`deploy/cloudrun.sh` sets up the cloud project once from Cloud Shell: the services, the secrets, the scheduler clocks, the image clean-up and, if you give them, the laptop speech kit's address and key, and skips whatever already exists.
 `deploy/run-real-evals.sh` runs the evals against the real AI on demand, showing the cost in rupees and spending nothing until you type YES, and the Makefile gives short commands for tests, lint and evals.
 `scripts/github_backfill.sh` gives older pull requests the same titles, labels and releases from `docs/github-backfill.tsv`; by default it only prints what it would change.
 The fill-in template for every pull request is `.github/pull_request_template.md`, and `render.yaml` is the old blueprint from before Cloud Run.

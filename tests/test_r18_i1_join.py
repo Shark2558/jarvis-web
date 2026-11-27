@@ -24,9 +24,10 @@ from jarvis.api.calls_console import ConsoleCardsApi
 from jarvis.api.r18_wiring import R18Parts
 from jarvis.calls.approvals import GrantBook
 from jarvis.calls.brain import Line
-from jarvis.calls.cards import offered, provisional
+from jarvis.calls.cards import offered, provisional, read_draft
 from jarvis.calls.join import (
     BookingSlots,
+    EngineStarter,
     GrantGate,
     HubAnswering,
     HubPhoneSink,
@@ -313,6 +314,44 @@ async def test_the_phones_approve_is_his_press_and_a_new_number_needs_the_consol
     assert await PhoneCardDesk(lambda: None, store).decide(UID, old.id, "approve", "d") == (
         "unavailable"
     )
+
+
+async def test_review_the_phone_s_approve_never_skips_his_passkey() -> None:
+    # R18 review: Approve on the phone is his Calls-panel press with no proof; when his passkey is
+    # in force (or the rule can't be read) it opens the console and nothing is dialled
+    from jarvis.calls.tools import PlaceArgs
+
+    class _Unreadable:
+        async def passkey_required(self, uid: str) -> bool:
+            raise RuntimeError("permissions down")
+
+    for passkeys in ("required", "unreadable"):
+        r = await rig(passkey=True)
+        await known(r.store)
+        cards = a1_api(r)
+        if passkeys == "unreadable":
+            cards.passkeys = _Unreadable()
+        card = await r.service.builder.build(
+            UID, PlaceArgs(number=NUMBER, purpose="Book a pickup", languages=("en-IN",))
+        )
+        await r.store.put_card(UID, card)
+        desk = PhoneCardDesk(lambda c=cards: c, r.store)
+        assert await desk.decide(UID, card.id, "approve", "d1") == "passkey_needed"
+        assert r.starter.started == [] and r.service.grants._grants == {}
+        assert (await r.store.get_card(UID, card.id)).status.value == "draft"  # type: ignore[union-attr]
+    # the guard is the last word: a press the policy thought free still meets the passkey guard
+    r = await rig(passkey=True)
+    await known(r.store)
+    cards = a1_api(r)
+    cards.passkeys = None  # the press can't tell the rule: it proposes and runs at once
+    card = await r.service.builder.build(
+        UID, PlaceArgs(number=NUMBER, purpose="Book a pickup", languages=("en-IN",))
+    )
+    await r.store.put_card(UID, card)
+    assert await PhoneCardDesk(lambda: cards, r.store).decide(UID, card.id, "approve", "d") == (
+        "passkey_needed"  # the guard refused it without his passkey: the console asks for it
+    )
+    assert r.starter.started == []
 
 
 class _Hub:
@@ -627,6 +666,52 @@ async def test_the_call_speaks_with_the_option_its_card_was_estimated_with() -> 
     assert langs == ("en-IN", "ml-IN") and balanced == frozenset()
     await choices.refresh(UID, None)  # an answered call: his default languages
     assert choices.snapshot(UID)[2] == ("en-IN",)
+
+
+async def test_review_the_call_speaks_free_first_as_its_card_was_estimated() -> None:
+    # R18 review HIGH: with Sarvam on, Google (₹0 while its allowance lasts) is chosen before the
+    # cheaper paid Sarvam; the allowance is read for the call's own length
+    from jarvis.calls.join_speech import SpeechChoices
+
+    store = MemoryCallStore()
+    await store.save_settings(UID, {"sarvam_on": True})
+    for option, inr in ((SpeechOption.SARVAM, 0.70), (SpeechOption.GOOGLE, 1.57)):
+        await store.put_language_result(
+            LanguageResult(
+                lang="hi-IN", option=option, checked_at=NOW, passed=True, inr_per_minute=inr
+            )
+        )
+    asked: list[int] = []
+
+    async def free(minutes: int) -> frozenset[SpeechOption]:
+        asked.append(minutes)
+        return frozenset({SpeechOption.GOOGLE}) if minutes <= 4 else frozenset()
+
+    choices = SpeechChoices(store, free=free)
+    await choices.refresh(UID, ("hi-IN",), 4)
+    assert choices.snapshot(UID)[0] == {"hi-IN": "google"} and asked == [4]
+    await choices.refresh(UID, ("hi-IN",), 6)  # past the allowance: the cheaper price
+    assert choices.snapshot(UID)[0] == {"hi-IN": "sarvam"}
+
+
+async def test_review_the_starter_reads_the_table_for_the_card_s_length() -> None:
+    seen: list[tuple[Any, ...]] = []
+
+    async def refresh(uid: str, langs: Any, minutes: Any = None) -> None:
+        seen.append((uid, langs, minutes))
+
+    class _StartHub:
+        async def start_outgoing(self, uid: str, card: Any, approval_id: str) -> Any:
+            return type("R", (), {"id": "call_0000000000aa"})()
+
+    r = await rig()
+    await known(r.store)
+    card = await r.service.builder.build(
+        UID, read_draft({"number": NUMBER, "purpose": "Book", "max_minutes": 4})
+    )
+    started = await EngineStarter(_StartHub(), refresh).start(UID, card, "cg_x")  # type: ignore[arg-type]
+    assert started == "call_0000000000aa"
+    assert seen == [(UID, card.languages, 4)]
 
 
 # ---- the chat's call card (E draws `call_card`; A1's press either way, once) ---------------------

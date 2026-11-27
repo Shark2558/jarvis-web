@@ -11,7 +11,8 @@ laptop first; Sarvam only when the owner turned it on, with its ₹):
     google    Google Cloud Speech-to-Text v1 / Text-to-Speech (Chirp 3: HD), within JARVIS's
               shared free allowance, then priced (≈ ₹2.29 a minute, ≈ ₹2.86 per 1,000 chars)
     azure     Microsoft Azure Speech free tier F0: ₹0, cannot bill; stops at its allowance
-    bhashini  the Government of India's Bhashini (ULCA pipeline): ₹0 at low volume; optional
+    bhashini  the Government of India's Bhashini (ULCA pipeline): its price is unknown (not
+              published; `prices`: never ₹0), so it is checked and used only with that accepted
     sarvam    Sarvam (Saaras to hear, Bulbul v3 to speak): paid, off unless enabled
 
 Voices are stock voices (never a clone of anyone, JARVIS's rule D1): male, to match JARVIS's own.

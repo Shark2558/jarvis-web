@@ -176,17 +176,41 @@ export function languages(v) {
   }).sort((a, b) => (a.code === 'en-IN' ? -1 : b.code === 'en-IN' ? 1 : a.name.localeCompare(b.name)));
   return { rows, check: { running: ch.running === true || rows.some((r) => r.status === 'running'), estimate: num(ch.estimate_inr) } };
 }
+/** R18 review: the fixed limits as the server sends them (jarvis.calls.models), or null: never typed in here. */
+function limits(v) {
+  const l = obj(v), HM = /^\d{2}:\d{2}$/;
+  if (!l) return null;
+  const out = { perDay: int(l.calls_per_day, 1, 1000), perNumber: int(l.calls_per_number_per_day, 1, 1000),
+    newNumbers: int(l.new_numbers_per_day, 0, 1000), redials: int(l.no_answer_redials_per_day, 0, 100),
+    from: HM.test(String(l.quiet_from)) ? l.quiet_from : '', until: HM.test(String(l.quiet_until)) ? l.quiet_until : '' };
+  return Object.values(out).some((x) => x === null || x === '') ? null : out;
+}
+/** The caps' ranges (the server's ceilings); the I0 values when the server sends none. */
+function ceilings(v) {
+  const c = obj(v) || {}, rings = arr(c.answer_rings);
+  return { month: int(c.month_cap_inr, 1, 100000) ?? 3000, call: int(c.call_cap_inr, 1, 100000) ?? 200,
+    minutes: int(c.call_max_minutes, 1, 600) ?? 30, retention: int(c.retention_days, 1, 3650) ?? 30,
+    ringsMin: int(rings[0], 1, 60) ?? 2, ringsMax: int(rings[1], 1, 60) ?? 15 };
+}
+/** A paid option's prices in rupees, or null (unknown: never shown as \u20b90). */
+function price(v) {
+  const p = obj(v);
+  const hear = p && num(p.hear_inr_per_minute), voice = p && num(p.voice_inr_per_1k_chars);
+  return hear !== null && voice !== null && hear >= 0 && voice >= 0 ? { hear, voice } : null;
+}
 export function settings(v) {
   const o = obj(v) || {};
   const sp = obj(o.speech) || {}, az = obj(sp.azure) || {};
+  const ce = ceilings(o.ceilings);
   return {
-    month: int(o.month_cap_inr, 0, 3000), call: int(o.call_cap_inr, 1, 200), minutes: int(o.call_max_minutes, 1, 30),
+    month: int(o.month_cap_inr, 0, ce.month), call: int(o.call_cap_inr, 1, ce.call), minutes: int(o.call_max_minutes, 1, ce.minutes),
     defaults: langs(o.default_languages, 4).filter((c) => c !== 'en-IN'),
-    answering: o.answering_on === true, rings: int(o.answer_after_rings, 2, 15) || 5,
+    answering: o.answering_on === true, rings: int(o.answer_after_rings, ce.ringsMin, ce.ringsMax) || 5,
     policy: ['all', 'contacts', 'not_contacts'].includes(o.answer_policy) ? o.answer_policy : 'all',
-    retention: int(o.retention_days, 1, 30) || 30, recordAudio: o.record_audio !== false,
+    retention: int(o.retention_days, 1, ce.retention) || ce.retention, recordAudio: o.record_audio !== false,
     balanced: o.allow_balanced === true, sarvam: o.sarvam_on === true, firstName: txt(o.owner_first_name, 60),
     azure: txt(az.status || o.azure_status, 20),
+    limits: limits(o.limits), ceilings: ce, sarvamPrice: price(obj(o.prices) && o.prices.sarvam),
     templates: arr(o.templates).slice(0, 20).map(template).filter(Boolean), // A1's settings_view carries the ready cards
   };
 }

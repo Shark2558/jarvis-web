@@ -6,8 +6,8 @@ time, so the runtime writer's parts are gone), one suite file per part:
     python evals/r6_3/run.py --mock [--part facts --part authored --part narration ...]
 
     facts.py     A  --check twice identical with facts.json; every tour key known; the module map
-                    has all 73 cards once; the index (paths, symbols, constants); the counter on a
-                    fixture; the inventory; the scrubber's new kinds; scrubbed paths (H6); 31
+                    has all 78 cards once; the index (paths, symbols, constants); the counter on a
+                    fixture; the inventory; the scrubber's new kinds; scrubbed paths (H6); 35
                     services (M7); the route list against the built app (M9). Controls: a set
                     iterated unsorted; the IP pattern removed; C69 out of the map; a raw path; a
                     router name dropped

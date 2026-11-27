@@ -264,6 +264,15 @@ def test_readme_is_numbered_plain_steps() -> None:
     assert "install-calldesk.ps1" in readme and "NOT as administrator" in readme
 
 
+def test_review_readme_names_the_console_s_own_menu_path() -> None:
+    # R18 review: the desk's section is Calls -> Settings -> "Call desk on your laptop" (there is no
+    # "Calls -> Call desk"), with "Link the call desk" and the review's Unlink there
+    readme = " ".join(_ps("README.txt").split())
+    assert "Calls -> Call desk" not in readme
+    assert 'Calls -> Settings -> "Call desk on your laptop" -> "Link the call desk"' in readme
+    assert 'Calls -> Settings -> "Call desk on your laptop" -> Unlink' in readme
+
+
 # ---- the route -------------------------------------------------------------------------------
 
 

@@ -13,6 +13,10 @@ changes (the owner's first name, a new translation) or it is missing. English is
 translated. A translation the brain gets wrong is refused whole (`TranslationRefused`) and the
 call falls back to English. Audio over MAX_AUDIO_BYTES (a Firestore document is at most 1 MiB) is
 spoken but not kept. One make at a time per language and voice in this process.
+
+Not wired in v18.0.0 (I1-NOTES 4.3; R18 review): the engine's `brain.FixedLines` keeps each line's
+text and voices it per call (inside Google's free characters), so nothing writes `call_lines` or
+`call_line_audio` yet. This cache is the R18.x follow-up that makes the audio once.
 """
 
 from __future__ import annotations

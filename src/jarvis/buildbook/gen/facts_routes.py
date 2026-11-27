@@ -274,15 +274,32 @@ def loop_envs(consts: Consts, rel: str, loop: ast.For | None) -> list[dict[str, 
         return []
     where, value = found
     if isinstance(value, ast.Dict):
-        pairs = [(k, v) for k, v in zip(value.keys, value.values, strict=True) if k is not None]
-        items: list[ast.expr] = [
-            ast.Tuple(elts=[k, v]) if spread == 2 else (v if spread == 1 else k) for k, v in pairs
+        items: list[tuple[str, ast.expr]] = [
+            (rel_of, ast.Tuple(elts=[k, v]) if spread == 2 else (v if spread == 1 else k))
+            for rel_of, k, v in dict_pairs(consts, where, value)
         ]
     elif isinstance(value, (ast.Tuple, ast.List, ast.Set)) and spread == 0:
-        items = list(value.elts)
+        items = [(where, e) for e in value.elts]
     else:
         return []
-    return [_bind(consts, where, loop.target, item) for item in items]
+    return [_bind(consts, rel_of, loop.target, item) for rel_of, item in items]
+
+
+def dict_pairs(
+    consts: Consts, rel: str, value: ast.Dict, depth: int = 0
+) -> list[tuple[str, ast.expr, ast.expr]]:
+    """(the module, key, value) of each entry of a constant dict, a `**OTHER` spread of another
+    constant dict included (R18 review: console.py's `**CALLS_ASSETS`), each read where it is
+    written."""
+    out: list[tuple[str, ast.expr, ast.expr]] = []
+    for k, v in zip(value.keys, value.values, strict=True):
+        if k is not None:
+            out.append((rel, k, v))
+            continue
+        found = consts.expr_of(rel, v.id) if isinstance(v, ast.Name) else None
+        if found is not None and isinstance(found[1], ast.Dict) and depth < MAX_DEPTH:
+            out.extend(dict_pairs(consts, found[0], found[1], depth + 1))
+    return out
 
 
 def _bind(consts: Consts, rel: str, target: ast.expr, item: ast.expr) -> dict[str, str]:

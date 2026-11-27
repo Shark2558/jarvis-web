@@ -123,3 +123,7 @@ html[data-motion="off"] #p-calls *,html[data-motion="off"] .cl-card *{transition
 /* I1: the call desk's link code (as the home link's, in the console's own tokens) */
 #p-calls .cl-code{margin:10px 0 0;font:600 22px/1.2 var(--tech);letter-spacing:.2em;color:var(--ink);overflow-wrap:anywhere}
 #p-calls .cl-code:empty{display:none}
+/* R18 review: Score the voice, a 1-5 scale per sample on one row (the console's .seg, five wide) */
+#p-calls .cl-score .seg{grid-template-columns:repeat(5,minmax(0,1fr));max-width:300px}
+#p-calls .cl-score .cl-hear{margin-top:10px}
+#p-calls .cl-score .sacts{margin-top:12px}

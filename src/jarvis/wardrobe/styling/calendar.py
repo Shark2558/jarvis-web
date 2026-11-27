@@ -43,7 +43,14 @@ from jarvis.helpers.sources import OUTSIDE_TIMEOUT_S
 from jarvis.logging import get_logger
 from jarvis.tools.background import Verdict
 from jarvis.wardrobe.ports import WardrobeContext
-from jarvis.wardrobe.styling.plans import MAX_CAL_PLANS, MAX_PLANS, Plan, StylingDoc, new_plan_id
+from jarvis.wardrobe.styling.plans import (
+    MAX_CAL_AHEAD,
+    MAX_CAL_PLANS,
+    MAX_PLANS,
+    Plan,
+    StylingDoc,
+    new_plan_id,
+)
 from jarvis.wardrobe.styling.reserve import window
 from jarvis.wardrobe.styling.rules import Rules
 from jarvis.wardrobe.styling.sealed import SealedDoc
@@ -261,10 +268,16 @@ def _edited(p: Plan, e: CalEntry, zone: tzinfo, now: datetime) -> Plan:
     )  # fmt: skip
 
 
-def _room(doc: StylingDoc, key: str, gone: set[str]) -> bool:
-    """A new calendar plan: not one he removed, at most 20 made by the calendar, at most 60 in
-    all (security review H1: invites from anyone can't take his own slots)."""
-    return key not in gone and doc.made() < MAX_CAL_PLANS and len(doc.plans) < MAX_PLANS
+def _room(doc: StylingDoc, key: str, gone: set[str], today: date) -> bool:
+    """A new calendar plan: not one he removed, at most `MAX_CAL_AHEAD` calendar plans from today
+    on and `MAX_CAL_PLANS` kept in all, at most `MAX_PLANS` in all (security review H1: invites
+    from anyone can't take his own slots; R18: past ones are kept 90 days)."""
+    return (
+        key not in gone
+        and doc.made(today) < MAX_CAL_AHEAD
+        and doc.made() < MAX_CAL_PLANS
+        and len(doc.plans) < MAX_PLANS
+    )
 
 
 def sync(
@@ -280,7 +293,7 @@ def sync(
             plan = plan.model_copy(update={"manual": False})  # his calendar again: taken back
             doc, touched = doc.put(plan), [*touched, plan.id]
         if plan is None or plan.manual:
-            if plan is None and _room(doc, e.k, gone):
+            if plan is None and _room(doc, e.k, gone, now.astimezone(zone).date()):
                 made = _plan_of(e, zone, now)
                 doc, touched = doc.put(made), [*touched, made.id]
             continue

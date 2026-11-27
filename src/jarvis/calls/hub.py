@@ -193,6 +193,23 @@ class DeskStore:
             self._by_desk.pop(old.desk_id, None)
         return old is not None
 
+    async def linked_view(self, uid: str) -> dict[str, Any] | None:
+        """The link as the Privacy panel shows it: the desk's id, version and when it was
+        linked; never its seed (sealed) or a code."""
+        doc = await self._d.get(f"{self._desks}/{self._owner(uid)}")
+        if not doc:
+            return None
+        desk_id = doc.get("desk_id")
+        version, at = doc.get("desk_version"), doc.get("linked_at")
+        return {
+            "desk_id": desk_id if isinstance(desk_id, str) and _DESK_RE.fullmatch(desk_id) else "",
+            "desk_version": version if isinstance(version, str) else "",
+            "linked_at": at if isinstance(at, int | float) else None,
+        }
+
+    async def code_waiting(self, uid: str) -> bool:
+        return await self._d.get(f"{self._codes}/{self._owner(uid)}") is not None
+
     async def load(self, uid: str) -> DeskRecord | None:
         doc = await self._d.get(f"{self._desks}/{self._owner(uid)}")
         if not doc:
@@ -261,8 +278,12 @@ class DeskDoorService:
         return {"desk_id": desk_id, "seed": seed_b64, "ws_path": DESK_WS_PATH}
 
     async def unlink(self, uid: str) -> dict[str, Any]:
+        """His Unlink (Calls → Settings, or the Privacy panel): the desk's link and any unused
+        link code go, and a desk socket that is open stops at once."""
         gone = await self._store.unlink(uid)
+        await self._store.spend_code(uid)
         await self._hub.drop_desk(uid)
+        log.info("call desk unlinked", extra={"was_linked": gone})
         return {"unlinked": gone}
 
 

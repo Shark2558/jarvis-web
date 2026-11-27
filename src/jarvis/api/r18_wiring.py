@@ -13,8 +13,11 @@ docs/plans/r18-integration/I1-NOTES.md). The adapters between the parts are
 - `r18_tools(parts)`: `calls_place` (R3) and `calls_answer_mode`, for `build_gateway(r18=...)`.
 - `finish_r18(app)` (after the gateway, from `tick_wiring.finish_wiring`): A1's `CardsApi` on
   `app.state.calls_api` (its approvals run the gateway's `calls_place` card), the booking calendar
-  and the phone's Approve / Decline. No gateway (tools off): no `calls_api` (501), no call.
+  and the phone's Approve / Decline; the review's seal on the gateway's approval store (a waiting
+  call's number sealed at rest, `calls/pending.py`). No gateway (tools off): no `calls_api` (501),
+  no call.
 - `r18_tick_jobs(app)`: the 30-day retention job (`calls_retention`).
+- `r18_privacy_sources(app)` (R18 review): the calls' four Privacy rows (`jarvis.calls.privacy`).
 """
 
 from __future__ import annotations
@@ -72,8 +75,10 @@ from jarvis.calls.langcheck.runner import LanguageCheck
 from jarvis.calls.langcheck.sentences import CheckSentences
 from jarvis.calls.limits import BillingBudget, Limits
 from jarvis.calls.models import CallSettings, SpeechOption
+from jarvis.calls.pending import seal_pending_calls
 from jarvis.calls.ports import CallStore
 from jarvis.calls.prices import SpeechPrice, speech_prices
+from jarvis.calls.privacy import calls_privacy_sources
 from jarvis.calls.records import RecordKeeper, SealedBlobs
 from jarvis.calls.retention import CallRetentionJob
 from jarvis.calls.settings import defaults
@@ -90,6 +95,7 @@ from jarvis.contacts.client import ContactsClient
 from jarvis.keyring import Keyring
 from jarvis.llm.router import ModelTier
 from jarvis.logging import get_logger
+from jarvis.privacy.ports import PrivacySource
 from jarvis.storage.docs import Docs
 from jarvis.tools.audit import AuditLog, AuditTrail
 from jarvis.tools.base import Tool
@@ -98,7 +104,8 @@ from jarvis.vault.crypto import VaultCrypto
 log = get_logger(__name__)
 
 SPEECH_TIMEOUT_S = 30.0
-NO_KEY = "R18 calls are not wired: they need JARVIS_TOKEN_KEY (numbers and records are sealed)."
+# the other features' words (`personal`, `home_wiring`); the one JARVIS_TOKEN_KEY warning: app.py
+NO_KEY = "No encryption key on this server: phone calls are OFF (numbers and records are sealed)"
 
 
 @dataclass
@@ -117,6 +124,7 @@ class R18Parts:
     http: httpx.AsyncClient
     phone: Any  # jarvis.phone.calls.PhoneCalls, or None without the phone part
     tools: tuple[Tool, ...]
+    privacy: tuple[PrivacySource, ...] = ()  # the review's four Privacy rows
 
     async def aclose(self) -> None:
         await self.check.aclose()
@@ -288,7 +296,7 @@ def _build(app: FastAPI, s: Settings, docs: Docs, ring: Keyring, audit: AuditTra
     records = VaultRecords(keeper)
     http = httpx.AsyncClient(timeout=SPEECH_TIMEOUT_S, follow_redirects=False)
     speech = _SpeechFactory(app, s, store, http)
-    choices = SpeechChoices(store)
+    choices = SpeechChoices(store, free=builder.estimator.free_options)  # free first (review)
     base = EngineDeps(
         desk=None,  # type: ignore[arg-type]  # each call's: the hub's DeskProxy
         phone=NoPhone(),
@@ -314,8 +322,9 @@ def _build(app: FastAPI, s: Settings, docs: Docs, ring: Keyring, audit: AuditTra
     )
     service.starter = EngineStarter(hub, choices.refresh)
     desks = DeskStore(docs, ring.cipher("calls"), prefix=s.firestore_prefix)
+    door = DeskDoorService(desks, hub)
     st.calls_sockets = CallSockets(hub, desks)
-    st.calls_desk_door = DeskDoorService(desks, hub)
+    st.calls_desk_door = door
     phone = _join_phone(app, hub, service, store, choices)
     return R18Parts(
         store=store,
@@ -330,6 +339,7 @@ def _build(app: FastAPI, s: Settings, docs: Docs, ring: Keyring, audit: AuditTra
         http=http,
         phone=phone,
         tools=tuple(calls_tools(service)),
+        privacy=calls_privacy_sources(store, keeper, desks, door),
     )
 
 
@@ -349,6 +359,13 @@ def _join_phone(
 
 def r18_tools(parts: R18Parts | None) -> tuple[Tool, ...]:
     return () if parts is None else parts.tools
+
+
+def r18_privacy_sources(app: FastAPI) -> tuple[PrivacySource, ...]:
+    """The calls' Privacy rows (R18 review), for `api.personal.privacy_sources`; none when
+    calls are not wired."""
+    parts: R18Parts | None = getattr(app.state, "r18_parts", None)
+    return () if parts is None else parts.privacy
 
 
 def finish_r18(app: FastAPI) -> None:
@@ -387,6 +404,9 @@ def finish_r18(app: FastAPI) -> None:
     )
     api.phone, api.azure_ready = parts.phone, s.azure_speech_key is not None
     st.calls_api = api
+    ring = Keyring.from_settings(s)
+    if ring is not None:  # R18 review: a waiting call's number sealed at rest (calls/pending.py)
+        seal_pending_calls(gw, ring)
     if parts.phone is not None:
         parts.phone.cards = PhoneCardDesk(lambda: getattr(st, "calls_api", None), parts.store)
     log.info("R18 calls wired", extra={"phone": parts.phone is not None, "env": s.env})
@@ -400,6 +420,7 @@ def r18_tick_jobs(app: FastAPI) -> tuple[CallRetentionJob, ...]:
 __all__ = [
     "R18Parts",
     "finish_r18",
+    "r18_privacy_sources",
     "r18_tick_jobs",
     "r18_tools",
     "wire_r18",

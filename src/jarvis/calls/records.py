@@ -2,11 +2,12 @@
 """Call records in the vault (R18 A1; docs/plans/r18-calls.md section 4 step 8, section 7 item 3;
 BUILD-BRIEF.md "Records"; Layer 7 data, cross-cutting security).
 
-A call's audio (Opus or compressed 16 kHz mono, D8), its transcript (each line in the language it
-was spoken and in English), its English summary and its ₹ are sealed with the vault's envelope
-encryption (`jarvis.vault.crypto.VaultCrypto`: a random data key per file, AES-256-GCM in 512 KiB
-chunks, the key wrapped by the keyring's `vault` key; every AAD names the owner, the call and the
-kind, so a chunk moved to another call, kind or owner fails to open):
+A call's audio (8 kHz mono WAV in v18.0.0, the narrowband phone line: `calls.join.RECORD_RATE`;
+Opus needs an encoder JARVIS doesn't ship yet, I1-NOTES 4.4), its transcript (each line in the
+language it was spoken and in English), its English summary and its ₹ are sealed with the vault's
+envelope encryption (`jarvis.vault.crypto.VaultCrypto`: a random data key per file, AES-256-GCM in
+512 KiB chunks, the key wrapped by the keyring's `vault` key; every AAD names the owner, the call
+and the kind, so a chunk moved to another call, kind or owner fails to open):
 
     {prefix}calls/{uid}/sealed/{call_id}_{kind}             {wrapped, count, size, media, at}
     {prefix}calls/{uid}/sealed_chunks/{call_id}_{kind}_{nn} {blob, n, of}
@@ -41,7 +42,7 @@ from jarvis.calls.settings import owner_key
 from jarvis.core.guardrails import ActionRisk
 from jarvis.integrations.vault import VaultError
 from jarvis.logging import get_logger
-from jarvis.storage.docs import Delete, Docs, Set
+from jarvis.storage.docs import Delete, Docs, Query, Set
 from jarvis.tools.audit import AuditTrail
 from jarvis.vault.crypto import VaultCrypto
 
@@ -55,6 +56,7 @@ MAX_AUDIO_BYTES = 16 * 1024 * 1024  # 30 minutes of compressed audio with room t
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 WRITE_GROUP = 6
 RECORD_TOOL = "calls_record"
+WIPE_BATCH, WIPE_PASSES = 200, 50  # the Privacy panel's delete: at most 10,000 parts a kind
 
 MSG_NO_RECORD = "There is no such call record."
 MSG_NOT_RECORDED = "This call has no recording (it wasn't recorded, or it was deleted)."
@@ -189,6 +191,20 @@ class SealedBlobs:
         paths = [self._chunk(uid, ref, n) for n in range(count)]
         for start in range(0, len(paths), 200):
             await self.docs.write([Delete(p) for p in paths[start : start + 200]])
+
+    async def wipe(self, uid: str) -> int:
+        """Every sealed part of the owner's calls (the Privacy panel's delete): all the headers
+        first (their wrapped keys go: nothing opens again), then the chunks. The parts removed."""
+        root = f"{self._root}/{owner_key(uid)}"
+        gone = 0
+        for coll in (f"{root}/sealed", f"{root}/sealed_chunks"):
+            for _ in range(WIPE_PASSES):
+                rows = await self.docs.query(Query(coll, limit=WIPE_BATCH))
+                if not rows:
+                    break
+                await self.docs.write([Delete(f"{coll}/{doc_id}") for doc_id, _ in rows])
+                gone += len(rows) if coll.endswith("/sealed") else 0
+        return gone
 
 
 # ---- the keeper -------------------------------------------------------------------------------

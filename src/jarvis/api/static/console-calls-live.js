@@ -1,5 +1,5 @@
 // src/jarvis/api/static/console-calls-live.js -- R18 E (docs/plans/r18-calls.md section 4 step 7, row 396): the live
-// call, in the Calls panel on the laptop or in the phone's browser. One WebSocket (GET /api/calls/{id}/live, the owner's
+// call, in the Calls panel on the laptop or in the phone's browser. One WebSocket (GET /v1/calls/{id}/live, the owner's
 // session): the server sends `caption {who, lang, text, english}` and `state {...}` as JSON and, while he listens, the
 // mixed audio as binary 0x03 messages (16 kHz PCM16); this page sends `listen {audio}`, `takeover`, `tell {text}` and
 // `hangup`, and nothing else. The controls:

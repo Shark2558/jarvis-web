@@ -3,7 +3,7 @@ page: pg_card_c15
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "src/jarvis/core/guardrails.py": "906dc22e6f5c1678"
+  "src/jarvis/core/guardrails.py": "bf48636f731d056c"
   "src/jarvis/tools/external.py": "fcc26ec8b93fd836"
   "src/jarvis/tools/provenance.py": "5618fb13067e690f"
   "src/jarvis/tools/spoken.py": "1c3db255f7c0e5f8"

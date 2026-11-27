@@ -301,6 +301,24 @@ SETTINGS: dict[str, Any] = {
     "updated_at": None,
 }
 RAISES = ("month_cap_inr", "call_cap_inr", "call_max_minutes")
+# R18 review: what A1's settings_view adds beside the settings (jarvis.api.calls_handlers_cards)
+LIMITS = {
+    "calls_per_day": 10,
+    "calls_per_number_per_day": 2,
+    "new_numbers_per_day": 3,
+    "no_answer_redials_per_day": 1,
+    "quiet_from": "21:00",
+    "quiet_until": "08:00",
+    "quiet_zone": "IST",
+}
+CEILINGS = {
+    "month_cap_inr": 3000,
+    "call_cap_inr": 200,
+    "call_max_minutes": 30,
+    "retention_days": 30,
+    "answer_rings": [2, 15],
+}
+PRICES = {"sarvam": {"hear_inr_per_minute": 0.5, "voice_inr_per_1k_chars": 3.0}}
 
 
 def wav_bytes(seconds: float = 2.0, rate: int = 16000) -> bytes:
@@ -399,6 +417,9 @@ class CallsStub:
         self.languages = deepcopy(LANGUAGES)
         self.running = False
         self.templates = templates
+        self.limits: dict[str, Any] | None = deepcopy(LIMITS)
+        self.prices: dict[str, Any] = deepcopy(PRICES)
+        self.desk_linked = True
         self.known = set(SAVED.values())
         self.cards: dict[str, dict[str, Any]] = {}
         self.sent: list[tuple[str, str, Any]] = []  # (method, path?query, body)
@@ -439,7 +460,8 @@ class CallsStub:
         return [s for s in self.sent if s[0] == method and part in s[1]]
 
     def settings_view(self) -> dict[str, Any]:
-        return {**self.settings, "templates": TEMPLATES if self.templates else []}
+        extra = {"limits": self.limits, "ceilings": CEILINGS, "prices": self.prices}
+        return {**self.settings, "templates": TEMPLATES if self.templates else []} | extra
 
     def handle(self, route: Any) -> None:  # noqa: C901 -- one switch over the stubbed routes
         req = route.request
@@ -566,7 +588,19 @@ class CallsStub:
             if (body or {}).get("confirm"):
                 self.running = True
                 return ok({"running": True}, 202)
-            return ok({"estimate_inr": 0, "languages": 3})
+            plan = {"total_inr": 0, "unknown_price": ["or-IN bhashini"], "pairs": []}
+            return ok({"estimate_inr": 0, "languages": 3, "plan": plan})
+        if path == "/v1/calls/languages/score" and method == "POST":  # R18 review: his scores
+            b = dict(body or {})
+            for row in self.languages["languages"]:
+                for r in row["results"]:
+                    if r["lang"] == b.get("lang") and r["option"] == b.get("option"):
+                        r["native_heard"] = True
+                        return ok({"result": r})
+            return ok({"error": "not_checked", "detail": "Not checked yet."}, 404)
+        if path == "/v1/calls/desk" and method == "DELETE":  # R18 review: Unlink
+            was, self.desk_linked = self.desk_linked, False
+            return ok({"unlinked": was})
         if re.fullmatch(r"/v1/calls/call_[0-9a-f]{12}/live/ticket", path) and method == "POST":
             return ok({"ticket": "lt_" + "t" * 32, "expires_in_s": 30})  # I1: the live ticket
         if path == "/v1/calls/desk/kit/info":  # I1: the call desk's kit (Settings)

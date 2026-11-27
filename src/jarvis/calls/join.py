@@ -69,19 +69,25 @@ def _utcnow() -> datetime:
 
 
 # ---- A1 -> A2: start the approved call ---------------------------------------------------------
-Refresh = Callable[[str, Sequence[str] | None], Awaitable[None]]  # (owner, languages)
+class Refresh(Protocol):
+    """`SpeechChoices.refresh`: (owner, the call's languages, its length in minutes)."""
+
+    async def __call__(
+        self, uid: str, languages: Sequence[str] | None, minutes: int | None = None
+    ) -> None: ...
 
 
 class EngineStarter:
     """A1's `CallStarter`: the approved card's call runs in the hub (one per owner); `refresh`
-    reads the language table first, so the call's speech is the check's choice."""
+    reads the language table first (free first, for the card's own length), so the call's
+    speech is the one its card was estimated with."""
 
     def __init__(self, hub: CallHub, refresh: Refresh | None = None) -> None:
         self._hub, self._refresh = hub, refresh
 
     async def start(self, uid: str, card: CallCard, approval_id: str) -> str:
         if self._refresh is not None:
-            await self._refresh(uid, card.languages)
+            await self._refresh(uid, card.languages, card.limits.max_minutes)
         record = await self._hub.start_outgoing(uid, card, approval_id)
         return record.id
 
@@ -311,7 +317,9 @@ _GONE = frozenset({"gone", "not_found", "not_waiting", "changed"})
 
 class PhoneCardDesk:
     """D's `CardDesk`: Approve / Decline tapped on the phone is his press in the Calls panel
-    (the same gateway card; a new number, or his passkey in force, opens the console)."""
+    (the same gateway card, sent with no passkey proof). A never-called number, his passkey in
+    force or a rule that can't be read, and a press the approval guard refused all answer
+    `passkey_needed`: the phone opens the console, where the passkey is asked (R18 review)."""
 
     def __init__(self, cards: Callable[[], _Cards | None], store: CallStore) -> None:
         self._cards, self._store = cards, store
@@ -331,6 +339,8 @@ class PhoneCardDesk:
                 return "passkey_needed"
             out = await cards.approve(uid, card_id, {})
         except CallsRefused as exc:
+            if exc.code == "passkey":  # the approval guard wants his passkey: the console asks
+                return "passkey_needed"
             return "gone" if exc.code in _GONE else "unavailable"
         except Exception as exc:  # noqa: BLE001 - the phone says "try in JARVIS"
             log.error("phone card decision failed", extra={"error": type(exc).__name__})

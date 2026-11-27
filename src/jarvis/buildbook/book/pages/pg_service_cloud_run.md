@@ -6,7 +6,7 @@ sources:
   "src/jarvis/api/app.py": "2f8821679b892d33"
   "src/jarvis/api/auth.py": "02a9e121c2585fd8"
   "src/jarvis/api/calldesk_kit.py": "ecfbe8177c5f2a46"
-  "src/jarvis/api/calls_routes.py": "f6479aa1fe74bfbc"
+  "src/jarvis/api/calls_routes.py": "4afdecf7fe9949c6"
   "src/jarvis/api/home.py": "cd0a9f3557a74808"
   "src/jarvis/api/home_wiring.py": "47912d10ccd3e249"
   "src/jarvis/api/integrations.py": "849076061558773f"

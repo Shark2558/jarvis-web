@@ -15,7 +15,7 @@ Cases (each the eval case of a named test in tests/test_r63_d_*.py):
 - `guest_speak_404`: through the real route, a guest's speak of every owner-only tour id is 404
   `unknown_line` and every line of the guest's tour speaks (H1);
 - `old_book`: an older book (no tour) serves today's 11 scenes, `kind: "show"`;
-- `what_else`: T14 lists the 11 other modules from the module map;
+- `what_else`: T14 lists the 12 other modules from the module map (R18: + Phone calls);
 - `pictures` (M6): every scene's picture data has what its `visual` reads, for both audiences;
 - `player`: the show's own script reader and the tour's hooks (console-book-script.js,
   console-book-tour.js, under Node) read all 17 scenes (16 for a guest), Questions and Closing as
@@ -206,7 +206,7 @@ async def _what_else(w: World) -> list[str]:
     titles = {m.id: m.title for m in modules.MODULES}
     want = [titles[m] for m in modules.others()]
     got = [f.label for f in w.tour().guest.scenes[13].picture.facts]
-    return [] if got == want and len(want) == 11 else [f"T14 lists {got}"]
+    return [] if got == want and len(want) == 12 else [f"T14 lists {got}"]  # R18: + Phone calls
 
 
 async def _pictures(w: World) -> list[str]:

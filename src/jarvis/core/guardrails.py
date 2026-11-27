@@ -68,10 +68,17 @@ MEMORY_TOOL_PREFIX = "memory_"
 # R14 D4 (Part A): each restore drill costs a restore, so he approves each on its own card
 # R13 D16: merging two wardrobe records and archiving / restoring a piece, one card each; I1: a
 # whole outfit plan's release (security review C-1 M4) is always its own card
-NO_BULK_TOOLS = frozenset({DRILL_START, "wardrobe_merge", "wardrobe_retire", "outfit_plan"})
+# R18 review: a phone call (`jarvis.calls.tools.PLACE`; a literal here: calls.tools imports this
+# module) is R3, so it is never in Approve all anyway; listed so the rule doesn't hang on the risk
+CALLS_PLACE = "calls_place"
+NO_BULK_TOOLS = frozenset(
+    {DRILL_START, "wardrobe_merge", "wardrobe_retire", "outfit_plan", CALLS_PLACE}
+)
 # R14 I1 (integrated security review M4; the Workshop's decision): cards approved in the console
-# only, never with Telegram's one-tap buttons, however short (`telegram.service`)
-CONSOLE_ONLY_TOOLS = frozenset({DRILL_START})
+# only, never with Telegram's one-tap buttons, however short (`telegram.service`). R18 review: a
+# call card too (the console, or the phone's own Approve with the passkey rule), even if the R3
+# rule were switched off
+CONSOLE_ONLY_TOOLS = frozenset({DRILL_START, CALLS_PLACE})
 
 
 class PendingAction(BaseModel):

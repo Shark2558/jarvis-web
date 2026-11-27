@@ -381,11 +381,11 @@ def _speech_kit() -> set[str]:
     return _names(re.findall(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", text, re.M))
 
 
-def _call_desk() -> set[str]:
-    """R18's call desk (found missing at R5.2's join): its own hash-pinned packages
-    (deploy/calldesk/requirements-calldesk.txt, the laptop's, never the cloud image's)."""
+def _calldesk_requirements() -> set[str]:
+    """R18: the call desk runs on the owner's Windows laptop from its own hash-pinned list
+    (deploy/calldesk/requirements-calldesk.txt), never the cloud image's dependencies."""
     text = (ROOT / "deploy" / "calldesk" / "requirements-calldesk.txt").read_text()
-    return _names(re.findall(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", text, re.M))
+    return _names(re.findall(r"^([A-Za-z0-9_.-]+==[^\s\\]+)", text, re.M))
 
 
 KIT_RUNTIMES = ("jarvis/localspeech/runtimes/", "jarvis/localspeech/wakeword/")
@@ -395,16 +395,15 @@ def test_every_third_party_top_level_import_in_src_is_in_pyproject() -> None:
     declared = _declared()
     bridge = declared | _bridge_extra()
     kit = declared | _speech_kit()
+    desk = declared | _calldesk_requirements()
     stdlib = set(sys.stdlib_module_names)
     missing: dict[str, str] = {}
     for path in (ROOT / "src").rglob("*.py"):
         if path.relative_to(ROOT / "src").as_posix().startswith(KIT_RUNTIMES):
             continue
         allowed = bridge if "homebridge" in path.parts else declared
-        if "localspeech" in path.parts:
-            allowed = kit
-        if "calldesk" in path.parts:
-            allowed = declared | _call_desk()
+        allowed = kit if "localspeech" in path.parts else allowed
+        allowed = desk if "calldesk" in path.parts else allowed
         for node in ast.walk(ast.parse(path.read_text())):
             mods: list[str] = []
             if isinstance(node, ast.Import):

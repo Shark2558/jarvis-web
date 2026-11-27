@@ -38,7 +38,9 @@ checks the owner, the path and the body's size and shape, then calls the part wi
                                             can't send Authorization on a WebSocket)
 
 Not wired yet: 501 {"error": "not_built"}; a WebSocket closes 4501. `calls_enabled` off: 503
-{"error": "calls_off"}. A handler refuses with `CallsRefused` -> {error, detail}. Bodies are JSON
+{"error": "calls_off"}. A handler refuses with `CallsRefused` -> {error, detail}; anything else it
+raises is logged by class name and answered 503 {"error": "unavailable"} in plain words (R18
+review: never a bare 500, never the error's own text). Bodies are JSON
 objects of at most `BODY_MAX` bytes (422 input_rejected / 413 too_large). Every answer is
 `no-store`. /v1 is also under the app's per-client rate limit (`api.ratelimit`).
 """
@@ -87,6 +89,7 @@ API_SLOT, DOOR_SLOT, KIT_SLOT, SOCKETS_SLOT = (
 NOT_BUILT = "Calls are not ready yet: this part of R18 is still being built."
 CALLS_OFF = "Calls are switched off on this server (JARVIS_CALLS_ENABLED)."
 NOT_AN_OBJECT = "Send a JSON object."
+FAILED = "JARVIS couldn't do that just now. Try again in a moment."  # R18 review: never a 500
 KIT_NAME = "JARVIS-Call-desk-kit.zip"
 
 ROUTES: tuple[tuple[str, str], ...] = (
@@ -156,6 +159,13 @@ async def _answer(
         return _json(await run(part))
     except CallsRefused as exc:
         return _err(exc.status, exc.code, exc.words)
+    except Exception as exc:  # noqa: BLE001 - R18 review: plain words, the error's text never shown
+        return _failed(request, exc)
+
+
+def _failed(request: Request, exc: Exception) -> JSONResponse:
+    log.error("calls route failed", extra={"path": request.url.path, "error": type(exc).__name__})
+    return _err(503, "unavailable", FAILED)
 
 
 async def _body(request: Request) -> dict[str, Any] | JSONResponse:
@@ -268,6 +278,8 @@ async def record_audio(
         data, media = await api.record_audio(uid, call_id)
     except CallsRefused as exc:
         return _err(exc.status, exc.code, exc.words)
+    except Exception as exc:  # noqa: BLE001 - R18 review: never a bare 500
+        return _failed(request, exc)
     return Response(content=data, media_type=media, headers=NO_STORE)
 
 
@@ -372,7 +384,10 @@ async def desk_kit(request: Request, uid: str = Depends(current_user)) -> Respon
     kit, refused = _part(request, KIT_SLOT)
     if refused is not None:
         return refused
-    data: bytes = kit.build()
+    try:
+        data: bytes = kit.build()
+    except Exception as exc:  # noqa: BLE001 - R18 review: never a bare 500
+        return _failed(request, exc)
     headers = NO_STORE | {
         "Content-Disposition": f'attachment; filename="{KIT_NAME}"',
         "X-Kit-Sha256": hashlib.sha256(data).hexdigest(),
@@ -385,7 +400,10 @@ async def desk_kit_info(request: Request, uid: str = Depends(current_user)) -> R
     kit, refused = _part(request, KIT_SLOT)
     if refused is not None:
         return refused
-    data: bytes = kit.build()
+    try:
+        data: bytes = kit.build()
+    except Exception as exc:  # noqa: BLE001 - R18 review: never a bare 500
+        return _failed(request, exc)
     sha = hashlib.sha256(data).hexdigest()
     return _json({"sha256": sha, "size": len(data), "version": str(kit.version)})
 
@@ -425,6 +443,10 @@ def ws_owner(ws: WebSocket, s: Settings) -> str | None:
     return None
 
 
+def _other_credential(ws: WebSocket, s: Settings) -> bool:
+    return bool(ws.headers.get("authorization")) or session_email(cast(Request, ws), s) is not None
+
+
 @open_router.websocket(DESK_WS_PATH)
 async def desk_socket(ws: WebSocket) -> None:
     sockets = getattr(ws.app.state, SOCKETS_SLOT, None)
@@ -439,7 +461,9 @@ async def live_socket(ws: WebSocket, call_id: str) -> None:
     s = _settings(ws.app)
     uid = ws_owner(ws, s)
     ticket = ws.query_params.get("ticket")
-    if uid is None and ticket and same_origin(ws, s):  # I1: token mode, from JARVIS's own page
+    # I1: token mode, from JARVIS's own page; R18 review: only when the socket brought no other
+    # credential (a bearer or a session cookie that didn't let him in is refused, not bypassed)
+    if uid is None and ticket and same_origin(ws, s) and not _other_credential(ws, s):
         uid = tickets(ws.app).take(ticket, call_id)
     if uid is None:
         await ws.close(code=WS_UNAUTHORIZED)

@@ -1,6 +1,6 @@
 // src/jarvis/api/static/console-calls-vitals.js -- R18 E (docs/plans/r18-calls.md section 6): Vitals' calls line,
 // "Calls this month  \u2248 \u20b912.40 of \u20b9200", one more .kv row under "This conversation", in the list's own look. The
-// figures are the cloud's (GET /api/calls/status: this month's rupees for calls and the calls cap), read when Vitals
+// figures are the cloud's (GET /v1/calls/status: this month's rupees for calls and the calls cap), read when Vitals
 // opens (or is open when he signs in: a restored panel fires no open event) and after a call ends; never before
 // sign-in, never a guess ("\u2014" when it can't be read). ASCII source; textContent only.
 // R18 dock (the owner, 27 Nov 2026): the line's name is a way in to Calls, whose tab is not in the bar at 1920 px: a

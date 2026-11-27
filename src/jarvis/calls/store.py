@@ -43,6 +43,9 @@ CALLS_COLL, LANG_COLL = "calls", "call_lang_check"
 KEY_PURPOSE = "calls"
 REF_HEX = 32
 LIST_MAX = 200
+WIPE_BATCH = 200  # documents a delete pass removes
+WIPE_PASSES = 50  # at most 10,000 of one kind
+PRIVACY_MAX = 1_000  # calls the Privacy panel counts (30 days of at most 10 a day: 300)
 MONTH = re.compile(r"^20[0-9]{2}-(0[1-9]|1[0-2])$")
 
 
@@ -321,6 +324,48 @@ class DocCallStore:
     async def put_language_result(self, result: LanguageResult) -> None:
         path = f"{self._lang}/{result.lang}_{result.option.value}"
         await self.docs.write([Set(path, result.model_dump(mode="json"))])
+
+    # ---- the owner's data, for the Privacy panel (R18 review; `jarvis.calls.privacy`) ----------
+    async def _ids(self, coll: str, limit: int = WIPE_BATCH) -> list[tuple[str, dict[str, Any]]]:
+        return await self.docs.query(Query(coll, limit=limit))
+
+    async def _wipe(self, coll: str) -> int:
+        gone = 0
+        for _ in range(WIPE_PASSES):
+            rows = await self._ids(coll)
+            if not rows:
+                break
+            await self.docs.write([Delete(f"{coll}/{doc_id}") for doc_id, _ in rows])
+            gone += len(rows)
+        return gone
+
+    async def call_rows(self, uid: str) -> list[tuple[str, bool, float]]:
+        """(call id, kept, delete time) of each record, unopened (a seal that doesn't open is
+        still counted and still deleted)."""
+        rows = await self._ids(self._coll(uid, "records"), limit=PRIVACY_MAX)
+        return [
+            (doc_id, raw.get("keep") is True, float(raw.get("delete_ts", 0.0) or 0.0))
+            for doc_id, raw in rows
+        ]
+
+    async def wipe_calls(self, uid: str) -> int:
+        """The owner's records, cards and numbers called before (the sealed parts are
+        `SealedBlobs.wipe`'s). Today's counters and the months' ₹ stay: they keep the limits
+        and the calls cap and hold no number. The records removed."""
+        records = await self._wipe(self._coll(uid, "records"))
+        for kind in ("cards", "numbers"):
+            await self._wipe(self._coll(uid, kind))
+        return records
+
+    async def settings_saved(self, uid: str) -> bool:
+        return await self._settings.saved(uid)
+
+    async def reset_settings(self, uid: str) -> bool:
+        """Back to the defaults (his saved settings deleted); False when none were saved."""
+        return await self._settings.reset(uid)
+
+    async def delete_language_results(self) -> int:
+        return await self._wipe(self._lang)
 
     async def language_results(self) -> list[LanguageResult]:
         out = []

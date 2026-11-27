@@ -15,8 +15,8 @@ also asks `Spend.speech` after each hearing and voice, to hold the call to its �
   translations: the only place their ₹ is recorded).
 
 **Which speech.** `SpeechChoices` reads the language table for an owner before a call starts and
-takes A1's choice (`cards.offered`: the cheapest passing option he allows, the one the card's ₹
-estimate was made with); `CallSpeech` (A2's
+takes A1's choice (`cards.offered`: free first, then the cheapest passing option he allows, the
+one the card's ₹ estimate was made with); `CallSpeech` (A2's
 `SpeechKit`) serves that choice, and English before its first check (the Workshop's decision)
 the first cloud option that is set up, Google first. A language with no option gets a stand-in
 that refuses (`SpeechUnavailable`), which the engine treats as a failed line; a language the check
@@ -118,27 +118,35 @@ class CallSpend:
 
 
 # ---- which option speaks and hears each language ------------------------------------------------
+FreeOptions = Callable[[int], Awaitable[frozenset[SpeechOption]]]  # `Estimator.free_options`
+
+
 class SpeechChoices:
     """The language table's choice per language for each owner, read before a call."""
 
-    def __init__(self, store: CallStore) -> None:
-        self._store = store
+    def __init__(self, store: CallStore, *, free: FreeOptions | None = None) -> None:
+        self._store, self._free = store, free
         self._chosen: dict[str, dict[str, str]] = {}
         self._balanced: dict[str, frozenset[str]] = {}
         self._languages: dict[str, tuple[str, ...]] = {}
 
-    async def refresh(self, uid: str, languages: Sequence[str] | None = None) -> None:
-        """Before a call: its languages (None: his defaults, for an answered call)."""
+    async def refresh(
+        self, uid: str, languages: Sequence[str] | None = None, minutes: int | None = None
+    ) -> None:
+        """Before a call: its languages (None: his defaults, for an answered call) and its
+        length (None: his settings' longest call), for the options it costs ₹0 on now."""
         try:
             settings = await self._store.settings(uid)
             results = list(latest(await self._store.language_results()).values())
+            length = minutes or settings.call_max_minutes
+            free = await self._free(length) if self._free is not None else frozenset()
         except Exception as exc:  # noqa: BLE001 - the call goes on with the last table read
             log.warning("language table unreadable", extra={"error": type(exc).__name__})
             self._languages[uid] = tuple(languages or (ENGLISH,))
             return
         self._languages[uid] = tuple(languages or settings.default_languages or (ENGLISH,))
-        # A1's choice (the card's estimate was made with it): the cheapest passing option he allows
-        picked = {k: r for k, r in offered(results, settings).items() if not provisional(r)}
+        # A1's choice (the card's estimate was made with it): free first, then the cheapest
+        picked = {k: r for k, r in offered(results, settings, free).items() if not provisional(r)}
         self._chosen[uid] = {k: r.option.value for k, r in picked.items()}
         self._balanced[uid] = frozenset(k for k, r in picked.items() if r.needs_balanced)
 
@@ -215,6 +223,7 @@ class CallSpeech:
 MakeCheck = Callable[[str, CallSettings], Awaitable[LanguageCheck]]
 MSG_RUNNING = "A language check is already running: its progress is in the language table."
 MSG_UNPLANNED = "JARVIS can't work out the language check just now. Try again in a moment."
+MSG_UNSCORED = "JARVIS couldn't save the scores just now. Try again in a moment."
 
 
 @dataclass
@@ -320,9 +329,18 @@ class LanguageCheckJob:
         return {"plan": plan_view(plan), "check": await self.view()} | told
 
     async def score(self, uid: str, body: Mapping[str, Any]) -> dict[str, Any]:
-        """The owner's 1-5 scores of a language's samples (`langcheck.api.handle_score`)."""
-        check = await self._make(uid, await self._store.settings(uid))
-        return await handle_score(check, body)
+        """The owner's 1-5 scores of a language's samples (`langcheck.api.handle_score`). A bad
+        score is 422 and a store that can't be read 503, in plain words (R18 review)."""
+        try:
+            check = await self._make(uid, await self._store.settings(uid))
+            return await handle_score(check, body)
+        except CallsRefused:
+            raise
+        except ValueError as exc:  # the runner's own words ("Score at least one sample, 1 to 5.")
+            raise CallsRefused(422, "bad_request", str(exc)[:200]) from None
+        except Exception as exc:  # noqa: BLE001 - nothing was scored
+            log.error("voice scores not saved", extra={"error": type(exc).__name__})
+            raise CallsRefused(503, "unreadable", MSG_UNSCORED) from None
 
     def _start(self, check: LanguageCheck, plan: CheckPlan, req: CheckRequest) -> None:
         self.progress = CheckProgress(

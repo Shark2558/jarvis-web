@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from jarvis.calls.models import CallSettings
-from jarvis.storage.docs import Docs, DocTx
+from jarvis.storage.docs import Delete, Docs, DocTx
 from jarvis.storage.sessions import safe_id
 
 if TYPE_CHECKING:
@@ -96,6 +96,17 @@ class CallSettingsStore:
 
     async def get(self, uid: str) -> CallSettings:
         return read(await self.docs.get(self._path(uid)), self.base)
+
+    async def saved(self, uid: str) -> bool:
+        """Has he saved any setting (else the defaults apply)?"""
+        return await self.docs.get(self._path(uid)) is not None
+
+    async def reset(self, uid: str) -> bool:
+        """The Privacy panel's delete: his settings go, the defaults apply again."""
+        if not await self.saved(uid):
+            return False
+        await self.docs.write([Delete(self._path(uid))])
+        return True
 
     async def save(self, uid: str, changes: Mapping[str, Any]) -> CallSettings:
         async def work(tx: DocTx) -> CallSettings:

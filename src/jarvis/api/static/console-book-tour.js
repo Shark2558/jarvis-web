@@ -45,6 +45,7 @@
     pg_module_delivery: 'Delivery, CI and backups',
     pg_module_book: 'The Build Book',
     pg_module_wardrobe: 'Wardrobe & Try-on',
+    pg_module_calls: 'Phone calls',
   });
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const store = {

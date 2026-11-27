@@ -31,7 +31,7 @@ sources:
   "src/jarvis/calls/engine_turns.py": "e3dd50d216e63efb"
   "src/jarvis/calls/engine_voice.py": "cac890f0a4d3bff9"
   "src/jarvis/calls/guard.py": "d300d7c800d4f2c2"
-  "src/jarvis/calls/hub.py": "ab86515269baf371"
+  "src/jarvis/calls/hub.py": "436e3b281b7c1603"
   "src/jarvis/calls/join.py": "f68ef2ff854983c4"
   "src/jarvis/calls/join_speech.py": "b980962416104ee6"
   "src/jarvis/calls/langcheck/__init__.py": "b191fe7a0f1b9545"

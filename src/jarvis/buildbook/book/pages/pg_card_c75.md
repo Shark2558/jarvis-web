@@ -14,14 +14,14 @@ sources:
   "src/jarvis/calls/engine_turns.py": "e3dd50d216e63efb"
   "src/jarvis/calls/engine_voice.py": "cac890f0a4d3bff9"
   "src/jarvis/calls/guard.py": "d300d7c800d4f2c2"
-  "src/jarvis/calls/hub.py": "ab86515269baf371"
+  "src/jarvis/calls/hub.py": "436e3b281b7c1603"
   "src/jarvis/calls/join.py": "f68ef2ff854983c4"
   "src/jarvis/calls/live.py": "8b4d2ae45dacb29b"
   "src/jarvis/calls/protocol.py": "3bc2ebd613b92b89"
   "src/jarvis/calls/summary.py": "ad280e3f27d4930f"
   "tests/test_calls_engine.py": "ad38764f0b3f5a8d"
   "tests/test_calls_guard.py": "050f3e56e8305335"
-  "tests/test_calls_hub_ws.py": "a490620b43f33413"
+  "tests/test_calls_hub_ws.py": "0823049bca06b82e"
 ---
 ## In plain words
 This is the part that runs a call while it is on. It holds one call at a time, in memory, and takes it through its steps: the ready check, the dial, JARVIS's opening words saying it is an AI assistant calling for you and that the call is recorded, the conversation, and the wrap-up with an English summary (`src/jarvis/calls/engine.py`). It never dials on its own and never redials: trying again is a new card and a new tap from you (`CallSession`). While the call is on you can listen live to both sides with English captions, follow the captions only, take over, tell JARVIS something the other person doesn't hear, or hang up, from the Calls panel or the console in your phone's browser (`src/jarvis/calls/live.py`).

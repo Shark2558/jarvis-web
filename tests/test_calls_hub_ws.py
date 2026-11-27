@@ -364,6 +364,22 @@ async def test_a_listener_for_someone_elses_call_is_gone() -> None:
     await asyncio.wait_for(desk_task, 1)
 
 
+async def test_closing_the_hub_ends_a_running_call_and_its_job() -> None:
+    # A restart closes the hub while a call is up: the call's job ends at once (the call is
+    # ended, its record kept), never waiting for a call that can no longer finish on its own.
+    r, hub, _, sockets, desk_id, seed = await linked_world()
+    desk, desk_task = await open_desk(sockets, desk_id, seed)
+    await hub.start_outgoing(UID, card(), "appr_12345678")
+    await spin()
+    jobs = set(hub._tasks)
+    assert jobs
+    await hub.aclose()
+    _, pending = await asyncio.wait(jobs, timeout=5)
+    assert not pending
+    assert hub.active(UID) is None
+    await asyncio.wait_for(desk_task, 1)
+
+
 async def test_bad_live_messages_close_the_listener() -> None:
     r, hub, _, sockets, desk_id, seed = await linked_world()
     desk, desk_task = await open_desk(sockets, desk_id, seed)

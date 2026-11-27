@@ -7,7 +7,7 @@ sources:
   "src/jarvis/config.py": "965b3658da16361e"
   "src/jarvis/config_voice.py": "cc7af41e22be3757"
   "src/jarvis/voice/laptop.py": "c05c622c3b08fee0"
-  "src/jarvis/voice/session_api.py": "adb4e002a290f925"
+  "src/jarvis/voice/session_api.py": "e4f51093cb23971d"
 ---
 ## In plain words
 Tailscale is a free service that gives your home laptop a safe public address without touching your home router. Its Funnel feature publishes one door of the laptop on the internet over HTTPS, and the encryption ends on the laptop itself, not at Tailscale. JARVIS uses up to three such doors: the home bridge (cameras, devices, faces) and, if you set them up, the offline brain (Ollama) and the laptop speech kit, whose Funnel port is its own, apart from the offline brain's. What passes through: JARVIS's signed calls to the bridge and the laptop's answers; in offline mode, your chat with the laptop's brain; with the kit, what you say to JARVIS for the laptop to hear, the voice session's recordings, and the words heard. Tailscale carries the traffic but sees only encrypted data.

@@ -9,10 +9,10 @@ sources:
   "src/jarvis/voice/profile.py": "1e4413929541d0aa"
   "src/jarvis/voice/profile_ports.py": "313a15e9823c3ad8"
   "src/jarvis/voice/profile_store.py": "432ae0bcf26a64d7"
-  "src/jarvis/voice/session.py": "7cb5e8c4163664f8"
-  "src/jarvis/voice/session_api.py": "adb4e002a290f925"
+  "src/jarvis/voice/session.py": "62f6a4f09d3bb6dc"
+  "src/jarvis/voice/session_api.py": "e4f51093cb23971d"
   "src/jarvis/voice/session_compare.py": "6e54e7e25fdb3556"
-  "src/jarvis/voice/session_privacy.py": "39bde552817991a3"
+  "src/jarvis/voice/session_privacy.py": "98c49f9f5883f6cd"
   "src/jarvis/voice/session_prompts.py": "2955f892f2e17b17"
   "src/jarvis/voice/session_score.py": "f4b2689cc3a36a17"
   "src/jarvis/voice/session_store.py": "ba2767fcf7779019"
@@ -35,4 +35,4 @@ The lines are commands JARVIS knows, your words to recognise, places and names, 
 ₹0 a month. The one comparison uses about {{fact:settings.voice_session_compare_minutes}} of Google's free listening minutes, each clip counted at Google's own billing step (`src/jarvis/voice/session_compare.py`). Past this month's free minutes the rupees are shown first and nothing is spent without your typed YES; free minutes that can't be read are never promised, so you are asked (`src/jarvis/voice/session_compare.py`). The laptop's scoring costs nothing (`src/jarvis/voice/session.py`).
 
 ## When it fails
-With no kit set up the session doesn't start and says why; a kit of another version asks to be updated first (`src/jarvis/voice/session.py`). A clip that is too long, not a WAV, or for a line not in the session is refused (`src/jarvis/voice/session.py`). Too few comparison lines recorded: "record more"; scoring that failed says "Try Check again"; recordings gone from the laptop: "start a new session" (`src/jarvis/voice/session.py`). With `voice_profile_enabled` off the routes answer with status 503 and listening keeps its usual order (`src/jarvis/api/voice_profile_routes.py`). A laptop that can't be reached makes the privacy rows say "Couldn't check right now", and a delete then fails rather than claim anything is gone (`src/jarvis/voice/session_privacy.py`). A stored profile or session that doesn't validate reads as none (`DocProfileStore`, `DocSessionStore`).
+With no kit set up the session doesn't start and says why, and Delete my recordings clears only the comparison's words here, the laptop's recordings still counted; a kit of another version asks to be updated first (`src/jarvis/voice/session.py`). A clip too long, not a WAV, or for a line not in the session is refused. Too few comparison lines: "record more"; failed scoring: "Try Check again"; recordings gone from the laptop: "start a new session" (`VoiceSessions`). With `voice_profile_enabled` off the routes answer with status 503 and listening keeps its usual order (`src/jarvis/api/voice_profile_routes.py`). An unreachable laptop makes the privacy rows say "Couldn't check right now", and a delete then fails rather than claim anything is gone (`src/jarvis/voice/session_privacy.py`). A stored profile or session that doesn't validate reads as none (`DocProfileStore`, `DocSessionStore`).

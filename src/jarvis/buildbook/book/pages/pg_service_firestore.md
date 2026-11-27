@@ -35,7 +35,7 @@ sources:
   "src/jarvis/tools/r1_tools.py": "4d7f8f07d7292b33"
   "src/jarvis/vault/build.py": "1b4cc21bdbaa3c14"
   "src/jarvis/voice/service.py": "61380b913e4265cf"
-  "src/jarvis/voice/session_api.py": "adb4e002a290f925"
+  "src/jarvis/voice/session_api.py": "e4f51093cb23971d"
   "src/jarvis/wardrobe/catalog/part.py": "107e069a8eb76134"
   "src/jarvis/wardrobe/laundry/part.py": "15450b1dd178a058"
   "src/jarvis/wardrobe/seeme/pair.py": "faf86b938c31c4b5"

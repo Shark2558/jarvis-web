@@ -14,6 +14,7 @@ import struct
 import pytest
 
 from jarvis.calldesk import audio, dtmf, vad
+from jarvis.calls import protocol
 
 RATE = audio.RATE
 
@@ -48,7 +49,7 @@ def _noise(ms: int, level: float, seed: int = 5) -> bytes:
 
 
 def _frames(pcm: bytes) -> list[bytes]:
-    return audio.split_frames(pcm)
+    return protocol.split_frames(pcm)
 
 
 def _run(det: vad.VoiceDetector, pcm: bytes, *, jarvis_speaking: bool = False) -> list[vad.Step]:
@@ -73,26 +74,17 @@ def test_framer_cuts_any_chunks_into_whole_frames_and_keeps_the_rest() -> None:
     assert framer.flush() == b""
 
 
-def test_split_frames_pads_the_last_frame_with_silence() -> None:
-    frames = audio.split_frames(b"\x05" * 700)
-    assert [len(f) for f in frames] == [640, 640]
-    assert frames[1][:60] == b"\x05" * 60 and frames[1][60:] == b"\x00" * 580
+def test_caller_frames_go_in_messages_of_at_most_one_second() -> None:
+    frames = [bytes([i % 250]) * audio.FRAME_BYTES for i in range(120)]
+    messages = audio.caller_messages(frames)
+    assert [len(m) for m in messages] == [1 + 50 * 640, 1 + 50 * 640, 1 + 20 * 640]
+    kind, pcm = protocol.unpack_audio(messages[2])
+    assert kind is protocol.AudioKind.THEM and pcm == b"".join(frames[100:])
+    assert audio.caller_messages([]) == []
 
 
-def test_tagged_audio_round_trip_and_refusals() -> None:
-    msg = audio.tag(audio.TAG_CALLER, b"\x00\x01" * 320)
-    assert msg[0] == 0x01 and len(msg) == 641
-    assert audio.untag(msg) == (audio.TAG_CALLER, b"\x00\x01" * 320)
-    with pytest.raises(audio.AudioFormatError):
-        audio.untag(b"")
-    with pytest.raises(audio.AudioFormatError):
-        audio.untag(b"\x09" + b"\x00" * 640)  # unknown tag
-    with pytest.raises(audio.AudioFormatError):
-        audio.untag(b"\x02" + b"\x00" * 3)  # odd: not PCM16
-    with pytest.raises(audio.AudioFormatError):
-        audio.untag(b"\x02" + b"\x00" * (audio.MAX_AUDIO_BYTES + 2))
-    with pytest.raises(audio.AudioFormatError):
-        audio.tag(0x07, b"\x00\x00")
+def test_the_desk_uses_the_protocols_format() -> None:
+    assert audio.FRAME_BYTES == protocol.FRAME_BYTES and audio.RATE == protocol.SAMPLE_RATE
 
 
 def test_float_to_pcm16_clips_and_rounds() -> None:

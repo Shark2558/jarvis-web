@@ -21,7 +21,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from jarvis.calldesk.audio import FRAME_BYTES, split_frames
+from jarvis.calldesk.audio import FRAME_BYTES, Framer
 from jarvis.calldesk.ports import AudioDeviceError, Capture, Player, SoundDevices
 
 log = logging.getLogger(__name__)
@@ -145,7 +145,11 @@ class Speaking:
 
     def play(self, pcm: bytes) -> bool:
         """Queue PCM (any length); False when the queue is full (the audio is dropped)."""
-        frames = split_frames(pcm)
+        framer = Framer()
+        frames = framer.push(pcm[: len(pcm) - len(pcm) % 2])
+        tail = framer.flush()
+        if tail:
+            frames.append(tail)
         with self._cond:
             if self._frames + len(frames) > MAX_QUEUED_FRAMES:
                 return False
@@ -210,4 +214,53 @@ def _close(device: Capture | Player) -> None:
         log.warning("a sound device did not close cleanly")
 
 
-__all__ = ["MAX_QUEUED_FRAMES", "Hearing", "Speaking"]
+class CallAudio:
+    """Hearing and speaking together, for one call (what the desk session drives)."""
+
+    def __init__(self, devices: SoundDevices, loop: asyncio.AbstractEventLoop) -> None:
+        self._devices = devices
+        self._loop = loop
+        self._hearing: Hearing | None = None
+        self._speaking: Speaking | None = None
+
+    def start(
+        self,
+        on_frame: Callable[[bytes], None],
+        on_marker: Callable[[str], None],
+        on_error: Callable[[str], None],
+    ) -> None:
+        self.stop()
+        self._hearing = Hearing(self._devices, self._loop, on_frame, on_error)
+        self._speaking = Speaking(self._devices, self._loop, on_marker, on_error)
+        self._speaking.start()
+        self._hearing.start()
+
+    def stop(self) -> None:
+        if self._speaking is not None:
+            self._speaking.stop()
+        if self._hearing is not None:
+            self._hearing.stop()
+        self._hearing = self._speaking = None
+
+    def stop_speaking(self) -> None:
+        """Takeover: JARVIS goes quiet for good; the recording runs on."""
+        if self._speaking is not None:
+            self._speaking.stop()
+        self._speaking = None
+
+    def play(self, pcm: bytes) -> bool:
+        return self._speaking.play(pcm) if self._speaking is not None else False
+
+    def mark(self, token: str) -> None:
+        if self._speaking is not None:
+            self._speaking.mark(token)
+
+    def cut(self) -> bool:
+        return self._speaking.cut() if self._speaking is not None else False
+
+    @property
+    def busy(self) -> bool:
+        return self._speaking.busy if self._speaking is not None else False
+
+
+__all__ = ["MAX_QUEUED_FRAMES", "CallAudio", "Hearing", "Speaking"]

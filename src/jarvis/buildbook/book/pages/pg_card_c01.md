@@ -3,7 +3,7 @@ page: pg_card_c01
 written_by: Workshop · Mark XXV
 written_on: 2026-11-27
 sources:
-  "src/jarvis/api/console.py": "5f89470424a0a10a"
+  "src/jarvis/api/console.py": "c31a243b1ec2b6f6"
   "src/jarvis/api/static/console-3d-scenes.js": "80d2691e8bb110de"
   "src/jarvis/api/static/console-3d.js": "b590fd5947ccb313"
   "src/jarvis/api/static/console-deck.js": "9068fb0d30f872de"
@@ -12,7 +12,7 @@ sources:
   "src/jarvis/api/static/console-helpers.js": "38c9179fa5cd2d23"
   "src/jarvis/api/static/console-text.js": "be5a5239bbffae37"
   "src/jarvis/api/static/console.css": "6a8f96e9bcd21971"
-  "src/jarvis/api/static/console.html": "d26e202e4e9aa526"
+  "src/jarvis/api/static/console.html": "6bf7eb0ad6bc821c"
   "src/jarvis/api/static/console.js": "7f64b41a454a9ea7"
 ---
 ## In plain words

@@ -3,7 +3,7 @@ page: pg_module_wardrobe
 written_by: Workshop · Mark XXIV
 written_on: 2026-11-24
 sources:
-  "deploy/cloudrun.sh": "603e230e96a462c8"
+  "deploy/cloudrun.sh": "567937409974b4a2"
   "evals/r13/catalog.py": "92b1fd8103cefadc"
   "evals/r13/contract.py": "6a2865d32c4f53f2"
   "evals/r13/e2e.py": "4674cf168867869c"
@@ -30,7 +30,7 @@ sources:
   "src/jarvis/api/static/console-privacy.js": "7184a1fe77763ae0"
   "src/jarvis/api/static/console-r111-files.js": "1fec6c5ad6de99be"
   "src/jarvis/api/static/console-r7-send.js": "545d6c2abaf1e8c6"
-  "src/jarvis/api/static/console-r7.js": "0613adea76dca0a6"
+  "src/jarvis/api/static/console-r7.js": "914448d515edf369"
   "src/jarvis/api/static/console-tryon-3d.js": "c3c07a9cd8e4edf9"
   "src/jarvis/api/static/console-tryon-card.js": "7735889bded44c4b"
   "src/jarvis/api/static/console-tryon-cloth.js": "7a78ee65b5efce5f"

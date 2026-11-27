@@ -28,7 +28,7 @@ sources:
   "src/jarvis/api/static/console-r7-share.js": "ab846cef6ffe4167"
   "src/jarvis/api/static/console-r7-sos.css": "b1ea79b88f9b7814"
   "src/jarvis/api/static/console-r7-sos.js": "8abd07b320b0f28a"
-  "src/jarvis/api/static/console-r7.js": "0613adea76dca0a6"
+  "src/jarvis/api/static/console-r7.js": "914448d515edf369"
   "src/jarvis/api/static/console-sw.js": "8998e220b800ebcc"
   "src/jarvis/api/watch.py": "a632cfa03931c5d3"
   "src/jarvis/brief/models.py": "18f095d54c93f9da"

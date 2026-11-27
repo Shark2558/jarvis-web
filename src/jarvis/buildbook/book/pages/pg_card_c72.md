@@ -30,7 +30,7 @@ sources:
   "src/jarvis/api/static/console-helpers-wardrobe.js": "acd25c1703c9f832"
   "src/jarvis/api/static/console-media.js": "9470b3411b87efe1"
   "src/jarvis/api/static/console-privacy.js": "7184a1fe77763ae0"
-  "src/jarvis/api/static/console-r7.js": "0613adea76dca0a6"
+  "src/jarvis/api/static/console-r7.js": "914448d515edf369"
   "src/jarvis/api/static/console-tryon-3d.js": "c3c07a9cd8e4edf9"
   "src/jarvis/api/static/console-tryon-card.js": "7735889bded44c4b"
   "src/jarvis/api/static/console-tryon-cloth.js": "7a78ee65b5efce5f"

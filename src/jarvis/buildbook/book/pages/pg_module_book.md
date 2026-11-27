@@ -48,7 +48,7 @@ sources:
   "src/jarvis/buildbook/gen/facts_values.py": "3f353b0cd2766d66"
   "src/jarvis/buildbook/gen/inventory.py": "ac5493391a2b37d9"
   "src/jarvis/buildbook/gen/loc.py": "72deb29b5ea46235"
-  "src/jarvis/buildbook/gen/modules.py": "48ffd4a71324ed18"
+  "src/jarvis/buildbook/gen/modules.py": "e7b37361c0113d2d"
   "src/jarvis/buildbook/gen/narration_cli.py": "391a57476632a8d1"
   "src/jarvis/buildbook/gen/pages_cli.py": "396d8bacb1a01500"
   "src/jarvis/buildbook/gen/pages_index.py": "94f193a0b07136a3"

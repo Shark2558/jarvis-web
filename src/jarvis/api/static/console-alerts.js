@@ -73,6 +73,7 @@
     ['outfit_changed', 'A piece of a planned outfit changed'],
     ['laundry_overdue', 'Laundry at a shop is overdue or came back short'],
     ['wardrobe_review', 'Wardrobe pieces wait for a quick check'],
+    ['nudge_posture', 'Nudge: sit up straight (the posture coach)'], // R8 S15
   ];
   const LEVEL = { urgent: 'Urgent', important: 'Important', info: 'Just so you know' };
   const S = { data: undefined, vip: [], devices: [], error: '', loadedAt: 0, loading: null, busy: false, key: '' };

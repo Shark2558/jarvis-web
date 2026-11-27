@@ -96,6 +96,7 @@ DEFAULT_URGENCY: Mapping[str, Urgency] = MappingProxyType(
         "nudge_activity": "important",
         "nudge_free_time": "important",
         "nudge_focus": "important",
+        "nudge_posture": "important",  # R8 S15
         "weather_note": "info",
         # R11.1: the study-plan check-in (daytime ring, held at night) and "faces to name"
         "series_checkin": "important",

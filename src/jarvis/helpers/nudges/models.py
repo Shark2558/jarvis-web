@@ -38,6 +38,7 @@ _WORD = re.compile(r"^[a-z][a-z \-]{1,29}$")
 
 EVERY_KINDS: frozenset[str] = frozenset({"nudge_standup", "nudge_hydrate"})
 TIMES_KINDS: frozenset[str] = frozenset({"nudge_focus", "nudge_free_time"})
+CAMERA_KINDS: frozenset[str] = frozenset({"nudge_posture"})  # R8: sent by a camera coach
 NAME: Mapping[str, str] = MappingProxyType(
     {
         "nudge_standup": "standup",
@@ -45,6 +46,7 @@ NAME: Mapping[str, str] = MappingProxyType(
         "nudge_activity": "activity",
         "nudge_free_time": "free_time",
         "nudge_focus": "focus",
+        "nudge_posture": "posture",
     }
 )
 LABEL: Mapping[str, str] = MappingProxyType(
@@ -54,6 +56,7 @@ LABEL: Mapping[str, str] = MappingProxyType(
         "nudge_activity": "A planned activity that didn't happen",
         "nudge_free_time": "Ideas for free time",
         "nudge_focus": "Your top priority",
+        "nudge_posture": "Sit up straight",
     }
 )
 _SAID: Mapping[str, str] = MappingProxyType(
@@ -79,6 +82,11 @@ _SAID: Mapping[str, str] = MappingProxyType(
         "focus": "nudge_focus",
         "top priority": "nudge_focus",
         "priority": "nudge_focus",
+        "posture": "nudge_posture",
+        "sit up": "nudge_posture",
+        "sit up straight": "nudge_posture",
+        "slouch": "nudge_posture",
+        "slouching": "nudge_posture",
         "all": ALL,
         "every": ALL,
         "everything": ALL,
@@ -87,7 +95,7 @@ _SAID: Mapping[str, str] = MappingProxyType(
         "all nudges": ALL,
     }
 )
-KINDS_HELP = "stand-up, water, activity, free time, focus or all"
+KINDS_HELP = "stand-up, water, activity, free time, focus, posture or all"
 
 
 def kind_of(said: str) -> str:
@@ -188,6 +196,7 @@ DEFAULTS: Mapping[str, Nudge] = MappingProxyType(
         ),
         "nudge_free_time": Nudge(start="09:00", end="21:00", days=WEEK, times=("18:00",)),
         "nudge_focus": Nudge(times=("10:00", "15:00")),
+        "nudge_posture": Nudge(),  # R8: off; sent only by the posture coach, inside this window
     }
 )
 

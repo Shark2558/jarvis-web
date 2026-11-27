@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from jarvis.alerts import R11_ALERT_KINDS, AlertKind
+from jarvis.alerts import R8_ALERT_KINDS, R11_ALERT_KINDS, AlertKind
 from jarvis.config import Settings
 from jarvis.helpers.kinds import DEFAULT_CAPS, KINDS_OF, MAX_CAP, NUDGE_KINDS, PartName
 from jarvis.logging import get_logger
@@ -39,7 +39,7 @@ MAX_SENDS_A_DAY = 300
 MAX_TEXT = 300
 ON_TIME = timedelta(minutes=6)  # one 5-minute clock run plus the Scheduler's jitter
 SNOOZE_MINUTES = (15, 720)  # the bounds of a snooze, in minutes
-_R11 = frozenset(R11_ALERT_KINDS)
+_R11 = frozenset(R11_ALERT_KINDS) | frozenset(R8_ALERT_KINDS)  # R8 S15: the posture nudge
 _NUDGES = frozenset(NUDGE_KINDS)
 _COUNTED = frozenset({"rang", "silent", "held"})  # a send that counts toward the caps
 _TARGETS = frozenset({ALL, *NUDGE_KINDS})

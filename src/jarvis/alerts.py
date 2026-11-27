@@ -14,6 +14,7 @@ R11.1 (docs/plans/r11-1-observations.md): two more; `R11_1_ALERT_KINDS` lists th
 R7 (docs/plans/r7-mobile.md D25): five more; `R7_ALERT_KINDS` lists them.
 R14 (docs/plans/r14-hardening.md D6): nine more; `R14_ALERT_KINDS` lists them.
 R13 (docs/plans/r13-wardrobe.md D19): four more; `R13_ALERT_KINDS` lists them.
+R8 (docs/plans/r8-vision.md 4.7, seam S15): one more, the posture nudge; `R8_ALERT_KINDS` lists it.
 """
 
 from __future__ import annotations
@@ -68,6 +69,7 @@ AlertKind = Literal[
     "nudge_activity",
     "nudge_free_time",
     "nudge_focus",
+    "nudge_posture",  # R8 S15: the home camera's posture coach (off until he switches it on)
     "weather_note",
     # R11.1 (docs/plans/r11-1-observations.md D6, D14): "did this study session happen?" is asked
     # every time, so it is an "important" daytime ring that is HELD at night (never dropped like a
@@ -199,6 +201,7 @@ R13_ALERT_KINDS: tuple[AlertKind, ...] = (
     "laundry_overdue",
     "wardrobe_review",
 )
+R8_ALERT_KINDS: tuple[AlertKind, ...] = ("nudge_posture",)
 
 
 __all__ = [
@@ -208,6 +211,7 @@ __all__ = [
     "R13_ALERT_KINDS",
     "R14_ALERT_KINDS",
     "R7_ALERT_KINDS",
+    "R8_ALERT_KINDS",
     "AlertKind",
     "AlertResult",
     "AlertSink",

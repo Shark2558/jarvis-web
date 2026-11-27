@@ -37,11 +37,12 @@ AGENT = "nudges"
 STANDUP = "nudge_standup"
 KIND_ARG = {
     "type": "string",
-    "description": "Which nudge: standup, water, activity, free_time, focus (or all).",
+    "description": "Which nudge: standup, water, activity, free_time, focus, posture (or all).",
 }
 SNOOZE_KIND_ARG = {
     "type": "string",
-    "description": "Which nudge: standup, water, activity, free_time, focus, all, or last "
+    "description": "Which nudge: standup, water, activity, free_time, focus, posture, all, or "
+    "last "
     "(the one sent in the last 30 minutes; for a bare 'snooze').",
 }
 SAY: dict[str, str] = {  # how he names each nudge in a phrase that works with the AI off
@@ -50,6 +51,7 @@ SAY: dict[str, str] = {  # how he names each nudge in a phrase that works with t
     "nudge_activity": "activity",
     "nudge_free_time": "free time",
     "nudge_focus": "focus",
+    "nudge_posture": "posture",
 }
 WHICH = (
     "Which nudge should I snooze, Sir? None came in the last 30 minutes. Say 'snooze water', "

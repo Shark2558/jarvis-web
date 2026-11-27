@@ -83,7 +83,7 @@ def test_the_real_repository_is_r13_and_its_plan_comes_first() -> None:
 def test_four_kinds_make_fifty_six() -> None:
     every = get_args(AlertKind)
     assert R13_ALERT_KINDS == KINDS13
-    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)
+    assert len(every) == len(set(every)) == 57 and set(DEFAULT_URGENCY) == set(every)  # R8 + 1
     assert [DEFAULT_URGENCY[k] for k in KINDS13] == ["important"] * 3 + ["info"]
     # the three important ones ring by day and are held at night, never dropped like a nudge
     assert set(KINDS13[:3]) <= DAYTIME_RING_KINDS and "wardrobe_review" not in DAYTIME_RING_KINDS

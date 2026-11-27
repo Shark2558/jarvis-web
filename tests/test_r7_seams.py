@@ -230,7 +230,7 @@ def test_five_kinds_make_forty_three() -> None:
         "phone_unlinked",
         "watch_stale",
     )
-    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)  # R13: 56
+    assert len(every) == len(set(every)) == 57 and set(DEFAULT_URGENCY) == set(every)  # R8: 57
     assert DEFAULT_URGENCY["sos_sent"] == DEFAULT_URGENCY["phone_linked"] == "urgent"
     assert DEFAULT_URGENCY["sos_contact_left"] == "important"
     assert DEFAULT_URGENCY["phone_unlinked"] == DEFAULT_URGENCY["watch_stale"] == "info"

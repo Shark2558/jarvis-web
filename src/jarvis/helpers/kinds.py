@@ -22,9 +22,13 @@ LETTER: Mapping[PartName, str] = MappingProxyType(
 )
 
 NudgeKind = Literal[
-    "nudge_standup", "nudge_hydrate", "nudge_activity", "nudge_free_time", "nudge_focus"
-]
+    "nudge_standup", "nudge_hydrate", "nudge_activity", "nudge_free_time", "nudge_focus",
+    "nudge_posture",  # R8 S15 (docs/plans/r8-vision.md 4.7): sent by the posture coach, part C
+]  # fmt: skip
 NUDGE_KINDS: tuple[NudgeKind, ...] = get_args(NudgeKind)
+# R8 (docs/plans/r8-vision.md 4.7): the posture nudge's own ceilings, whatever the owner sets
+POSTURE_PER_HOUR = 3
+POSTURE_PER_DAY = 8
 # D6: the per-kind daily caps until the owner sets his own (never above the deployment's total)
 DEFAULT_CAPS: Mapping[str, int] = MappingProxyType(
     {
@@ -33,6 +37,7 @@ DEFAULT_CAPS: Mapping[str, int] = MappingProxyType(
         "nudge_activity": 3,
         "nudge_free_time": 2,
         "nudge_focus": 2,
+        "nudge_posture": POSTURE_PER_DAY,
     }
 )
 MAX_CAP = 24  # a per-kind cap the owner may set (the deployment's daily total still applies)
@@ -139,6 +144,8 @@ __all__ = [
     "LETTER",
     "MAX_CAP",
     "NUDGE_KINDS",
+    "POSTURE_PER_DAY",
+    "POSTURE_PER_HOUR",
     "PARTS",
     "PRIVACY_IDS",
     "PRIVACY_SECTION",

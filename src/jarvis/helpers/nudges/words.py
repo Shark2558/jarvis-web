@@ -10,6 +10,7 @@ from typing import Any
 
 from jarvis.helpers.nudges.models import (
     ALL,
+    CAMERA_KINDS,
     EVERY_KINDS,
     LABEL,
     TIMES_KINDS,
@@ -50,6 +51,8 @@ def _when(kind: str, n: Nudge) -> list[str]:
         parts = [f"every {n.every} minutes, {n.start}-{n.end}"]
     elif kind in TIMES_KINDS:
         parts = ["at " + ", ".join(n.times)]
+    elif kind in CAMERA_KINDS:  # R8: the posture coach decides when, at most 3 an hour
+        parts = [f"{n.start}-{n.end}, when the posture coach sees a slouch, at most 3 an hour"]
     else:
         parts = [f"{n.start}-{n.end}, for " + ", ".join(n.words)]
     parts.append(days_text(n.days))
@@ -72,7 +75,7 @@ def describe(kind: str, n: Nudge) -> str:
 def a_kind(value: Any, *, allow_all: bool = True) -> str:
     kind = kind_of(str(value or ""))
     if kind == ALL and not allow_all:
-        raise ValueError("Name one nudge, Sir: stand-up, water, activity, free time or focus.")
+        raise ValueError("Name one nudge, Sir: stand-up, water, activity, free time, focus or posture.")
     return kind
 
 

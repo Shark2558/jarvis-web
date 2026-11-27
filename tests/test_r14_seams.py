@@ -197,7 +197,7 @@ def test_the_drill_copy_is_the_one_target_and_never_the_live_one() -> None:
 def test_nine_kinds_make_fifty_two() -> None:
     every = get_args(AlertKind)
     assert R14_ALERT_KINDS == (*SELF, "selfwatch_ok", "backup_ok")
-    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)  # R13: 56
+    assert len(every) == len(set(every)) == 57 and set(DEFAULT_URGENCY) == set(every)  # R8: 57
     assert all(DEFAULT_URGENCY[k] == "important" for k in SELF)
     assert DEFAULT_URGENCY["selfwatch_ok"] == DEFAULT_URGENCY["backup_ok"] == "info"
     assert set(SELF) <= DAYTIME_RING_KINDS  # held in quiet hours, never dropped like a nudge

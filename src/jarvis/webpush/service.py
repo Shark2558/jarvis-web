@@ -58,6 +58,7 @@ _HELPERS = (
     "nudge_activity",
     "nudge_free_time",
     "nudge_focus",
+    "nudge_posture",  # R8 S15
     "weather_note",
     "watch_stale",  # Helpers -> Watch
 )

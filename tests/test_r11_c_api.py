@@ -91,6 +91,7 @@ async def test_the_view_lists_every_nudge_off_by_default(settings: Settings) -> 
             "activity",
             "free_time",
             "focus",
+            "posture",  # R8 S15
         ]
         assert not any(n["on"] for n in view["nudges"])
         water = view["nudges"][1]

@@ -65,8 +65,8 @@ def test_the_version_is_eleven() -> None:
 def test_thirteen_helper_kinds_make_thirty_six_and_each_belongs_to_one_part() -> None:
     every = get_args(AlertKind)
     assert len(R11_ALERT_KINDS) == 13 and set(R11_ALERT_KINDS) <= set(every)
-    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)  # R7..R13
-    assert kinds.part_kinds() == frozenset(R11_ALERT_KINDS)
+    assert len(every) == len(set(every)) == 57 and set(DEFAULT_URGENCY) == set(every)  # R7..R8
+    assert kinds.part_kinds() == frozenset(R11_ALERT_KINDS) | {"nudge_posture"}  # R8 S15: part C
     owners = [p for k in R11_ALERT_KINDS for p in kinds.PARTS if k in kinds.KINDS_OF[p]]
     assert len(owners) == 13  # exactly one part each
     assert set(kinds.NUDGE_KINDS) == EPHEMERAL_KINDS == NUDGE_KINDS
@@ -125,8 +125,8 @@ def test_the_alerts_card_lists_the_helper_kinds_in_order() -> None:
     block = js[js.index("const KINDS = [") : js.index("];", js.index("const KINDS = ["))]
     listed = re.findall(r"\['([a-z_]+)', '", block)
     # R11.1 added its two kinds after them (tests/test_r11_1_seams.py), R7 five more, R14 eleven
-    # rows (its nine kinds and R5.1's two systems rings; tests/test_r14_seams.py), R13 four
-    assert listed[-35:-22] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
+    # rows (its nine kinds and R5.1's two systems rings; tests/test_r14_seams.py), R13 four, R8 one
+    assert listed[-36:-23] == list(R11_ALERT_KINDS) and len(listed) == len(set(listed))
 
 
 # ---- storm control (D5) -------------------------------------------------------------------------

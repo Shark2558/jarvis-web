@@ -117,8 +117,8 @@ def test_two_kinds_make_thirty_eight() -> None:
     every = get_args(AlertKind)
     assert R11_1_ALERT_KINDS == ("series_checkin", "faces_to_name")
     # R7 I0 added five (tests/test_r7_seams.py): 43; R14 I0 nine (tests/test_r14_seams.py): 52;
-    # R13 I0 four (tests/test_r13_seams.py): 56
-    assert len(every) == len(set(every)) == 56 and set(DEFAULT_URGENCY) == set(every)
+    # R13 I0 four (tests/test_r13_seams.py): 56; R8 I0 one (tests/test_r8_seams.py): 57
+    assert len(every) == len(set(every)) == 57 and set(DEFAULT_URGENCY) == set(every)
     assert DEFAULT_URGENCY["series_checkin"] == "important"
     assert DEFAULT_URGENCY["faces_to_name"] == "info"
     # "did the session happen?" is asked every time: it rings by day and is HELD at night,

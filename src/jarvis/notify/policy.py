@@ -44,6 +44,7 @@ DAYTIME_RING_KINDS = frozenset(
         "nudge_activity",
         "nudge_free_time",
         "nudge_focus",
+        "nudge_posture",  # R8 S15
         "series_checkin",  # R11.1 D6: asked every time; held at night, never dropped
         "sos_contact_left",  # R7 D20: an emergency contact sent /stop; held at night
         # R14 D6: JARVIS's own health and its backups; held at night, never dropped
@@ -64,6 +65,7 @@ DAYTIME_RING_KINDS = frozenset(
 # only), never held for the morning summary.
 EPHEMERAL_KINDS = frozenset(
     {"nudge_standup", "nudge_hydrate", "nudge_activity", "nudge_free_time", "nudge_focus"}
+    | {"nudge_posture"}  # R8 S15
 )
 
 

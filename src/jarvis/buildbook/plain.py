@@ -190,6 +190,7 @@ ALERT_WORDS: Mapping[str, str] = MappingProxyType(
         "nudge_activity": "A planned activity didn't happen",
         "nudge_free_time": "An idea for free time",
         "nudge_focus": "My top priority now",
+        "nudge_posture": "A nudge to sit up straight",
         "weather_note": "A minor weather note",
         "series_checkin": "A planned session: did it happen?",
         "faces_to_name": "New faces to name from my photo folder",

@@ -162,8 +162,9 @@ def test_r3_alert_kinds_join_the_older_ones() -> None:
     # R6 added book_sealed/book_seal_failed/book_session_closed (20 -> 23)
     # R11 added the thirteen helper kinds (23 -> 36; tests/test_r11_seams.py) and R11.1 two more
     # (36 -> 38; tests/test_r11_1_seams.py), R7 five (38 -> 43; tests/test_r7_seams.py), R14
-    # nine (43 -> 52; tests/test_r14_seams.py), R13 four (52 -> 56; tests/test_r13_seams.py)
-    assert "test" in kinds and len(kinds) == len(set(kinds)) == 56
+    # nine (43 -> 52; tests/test_r14_seams.py), R13 four (52 -> 56; tests/test_r13_seams.py),
+    # R8 one (56 -> 57; tests/test_r8_seams.py)
+    assert "test" in kinds and len(kinds) == len(set(kinds)) == 57
 
 
 async def test_the_sink_takes_silent_and_photo_keywords() -> None:

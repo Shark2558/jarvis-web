@@ -47,6 +47,7 @@ MAX_SOFT_URGENT_PER_HOUR = 6
 # R11 D5: the nudge ceiling (the gate keeps the owner's lower caps) and the disaster de-dup
 NUDGE_KINDS = frozenset(
     {"nudge_standup", "nudge_hydrate", "nudge_activity", "nudge_free_time", "nudge_focus"}
+    | {"nudge_posture"}  # R8 S15
 )
 NUDGE_GAP = timedelta(minutes=20)
 MAX_NUDGES_PER_HOUR = 8

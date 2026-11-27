@@ -98,3 +98,33 @@ def test_digits_are_a_displays_lines_and_nothing_else() -> None:
         {"lines": [], "text": "128/82"},
     ):
         assert parse_result(_result("digits", bad)) is None, bad
+
+
+# ---- S15 · the posture nudge kind and its caps ------------------------------------------------------
+def test_the_posture_nudge_is_one_new_kind_in_every_table() -> None:
+    from typing import get_args
+
+    from jarvis.alerts import R8_ALERT_KINDS, AlertKind
+    from jarvis.buildbook.plain import ALERT_WORDS
+    from jarvis.helpers import kinds
+    from jarvis.helpers.nudges.models import DEFAULTS, LABEL, kind_of
+    from jarvis.helpers.nudges.words import describe
+    from jarvis.notify.policy import DAYTIME_RING_KINDS, EPHEMERAL_KINDS
+    from jarvis.notify.ports import DEFAULT_URGENCY
+    from jarvis.notify.storm import NUDGE_KINDS
+    from jarvis.webpush.service import TARGETS
+
+    assert R8_ALERT_KINDS == ("nudge_posture",) and "nudge_posture" in get_args(AlertKind)
+    assert "nudge_posture" in kinds.NUDGE_KINDS and "nudge_posture" in kinds.KINDS_OF["nudges"]
+    assert kinds.DEFAULT_CAPS["nudge_posture"] == kinds.POSTURE_PER_DAY == 8
+    assert kinds.POSTURE_PER_HOUR == 3
+    assert DEFAULTS["nudge_posture"].on is False  # off until he switches it on
+    assert DEFAULT_URGENCY["nudge_posture"] == "important"
+    assert "nudge_posture" in DAYTIME_RING_KINDS and "nudge_posture" in EPHEMERAL_KINDS
+    assert "nudge_posture" in NUDGE_KINDS and "nudge_posture" in TARGETS
+    assert "nudge_posture" in ALERT_WORDS and LABEL["nudge_posture"] == "Sit up straight"
+    assert kind_of("posture") == kind_of("slouching") == "nudge_posture"
+    line = describe("nudge_posture", DEFAULTS["nudge_posture"])
+    assert line.startswith("Sit up straight: off") and "at most 3 an hour" in line
+    js = (STATIC / "console-alerts.js").read_text(encoding="utf-8")
+    assert "['nudge_posture', " in js

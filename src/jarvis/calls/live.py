@@ -25,7 +25,7 @@ import json
 import sys
 from array import array
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
 from jarvis.logging import get_logger
@@ -224,6 +224,11 @@ class LiveRoom:
     def send(self, msg: Mapping[str, Any]) -> None:
         for listener in list(self._open()):
             listener.push_json(msg)
+
+    def send_each(self, build: Callable[[LiveListener], Mapping[str, Any]]) -> None:
+        """One message per listener (a state says whether THIS listener gets audio)."""
+        for listener in list(self._open()):
+            listener.push_json(build(listener))
 
     def audio(self, frame: bytes) -> None:
         for listener in self._open():

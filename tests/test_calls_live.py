@@ -165,3 +165,13 @@ def test_mix_refuses_wrong_sizes(bad: bytes) -> None:
     with pytest.raises(ValueError):
         mix(bad, _frame(0))
     assert len(_frame(0)) == FRAME_BYTES
+
+
+def test_room_sends_each_listener_its_own_state() -> None:
+    room = LiveRoom()
+    on, off = LiveListener(Sink(), audio=True), LiveListener(Sink(), audio=False)
+    room.add(on)
+    room.add(off)
+    room.send_each(lambda x: {"type": "state", "listening": x.wants_audio})
+    assert on._text[-1].endswith('"listening":true}')
+    assert off._text[-1].endswith('"listening":false}')

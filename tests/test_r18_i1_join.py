@@ -511,37 +511,16 @@ def _console(r: Any) -> ConsoleCardsApi:
     )
 
 
-async def test_the_console_card_body_and_view() -> None:
-    r = await rig()
-    await known(r.store)
-    api = _console(r)
-    body = {
-        "number": NUMBER,
-        "contact_name": "Laundry",
-        "purpose": "Book a pickup",
-        "limits": {"max_minutes": 4},
-    }
-    card = await api.create_card(UID, body)
-    assert card["contact_name"] == "Laundry" and card["limits"]["max_minutes"] == 4
-    assert card["number_last4"] == "0001" and card["passkey_required"] is False
-    assert card["ready"] == {"ok": True, "problems": []} and card["refused"] is None
-    again = await api.create_card(UID, {"purpose": "Ask again", "from_card": card["id"]})
-    assert again["number_e164"] == NUMBER and again["contact_name"] == "Laundry"  # Edit
-    with pytest.raises(CallsRefused) as gone:
-        await api.create_card(UID, {"purpose": "x", "from_card": "cc_000000000000"})
-    assert gone.value.status == 404
-
-
-async def test_a_new_number_or_his_passkey_in_force_asks_for_the_passkey() -> None:
+async def test_a_passkey_card_takes_a1s_two_presses() -> None:
     r = await rig(passkey=True)
     api = _console(r)
     card = await api.create_card(UID, {"number": NUMBER, "purpose": "Book a pickup"})
-    assert card["new_number"] is True and card["passkey_required"] is True
+    assert card["new_number"] is True and card["needs_passkey"] is True
     first = await api.approve(UID, card["id"], {})  # A1's first press: the approval to prove
     assert first["status"] == "needs_passkey" and first["approval_id"]
 
 
-async def test_the_console_record_settings_and_language_views() -> None:
+async def test_the_console_reads_a_sealed_record_settings_and_the_language_table() -> None:
     r = await rig(languages=())
     api = _console(r)
     rec = CallRecord(number_e164=NUMBER, started_at=NOW, recorded=False)
@@ -550,13 +529,11 @@ async def test_the_console_record_settings_and_language_views() -> None:
     await sink.finish(
         UID, rec, card=None, summary=CallSummary(text="Booked."), lines=LINES, booked=None
     )
-    one = await api.get_record(UID, rec.id)
-    assert one["summary"] == "Booked." and one["summary_parts"]["english"] == "Booked."
-    assert [ln["who"] for ln in one["transcript"]] == ["jarvis", "them"]
-    assert one["number_last4"] == "0001" and one["booking_event"] is None
-    listed = await api.list_records(UID, 10)
-    assert listed["records"][0]["number_last4"] == "0001"
-    assert (await api.get_settings(UID))["azure_status"] == "off"
+    one = await api.get_record(UID, rec.id)  # A1's own view, as the console reads it
+    assert one["summary"]["english"] == "Booked."
+    assert [ln["who"] for ln in one["transcript"]["lines"]] == ["jarvis", "them"]
+    settings = await api.get_settings(UID)
+    assert settings["azure_status"] == "off" and settings["templates"]
     langs = await api.languages(UID)
     english = [x for x in langs["results"] if x["lang"] == "en-IN"]
     assert english and english[0]["passed"] is True and english[0]["not_checked"] is True

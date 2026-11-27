@@ -1,8 +1,8 @@
-Version v6.4.1 · 27 Nov 2026, 14:10 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 09 · Requirements baseline
 
-This chapter fixes the requirements the architecture answers to. The record is the owner's requirements workbook, **`JARVIS_Requirements_Complete_v13.1.10.xlsx`** (27 Nov 2026), kept on his Drive and never in this public repository, because its remarks hold personal details. Chapter 10 lists every row against the architecture; this chapter gives the totals, how a requirement finds its place in the design, and the rules for adding one.
+This chapter fixes the requirements the architecture answers to. The record is the owner's requirements workbook, **`JARVIS_Requirements_Complete_v13.1.10.xlsx`** (27 Nov 2026), kept outside this public repository (git tracks no workbook; *unverified* from the repository: that its home is the owner's Drive), because its remarks hold personal details. Every count below was re-counted from the workbook on 27 Nov 2026 (chapter 13). Chapter 10 lists every row against the architecture; this chapter gives the totals, how a requirement finds its place in the design, and the rules for adding one.
 
 ## 1. The baseline in numbers
 
@@ -63,8 +63,8 @@ Health & Wellbeing, the 11th skill added for the vision use cases, is the larges
 
 | Release | Rows | Status |
 |---|---|---|
-| R0–R7, R11, R11.1, R13, R13.1, R14, R6.1–R6.4 (live) | 215 | 213 Done; R1's Swiggy ordering and Phase 0 re-check Pending (2) |
-| R5 (live) | 10 | 6 Done; rows 81, 83, 84 and 383 move to **R5.2** (plan `docs/plans/r5-2-voice.md`) |
+| R0–R4, R5.1, R6–R6.4, R7, R11, R11.1, R13, R13.1, R14 (live) | 213 | 209 Done; 4 Pending: R1's Phase 0 re-check and Swiggy ordering (rows 33, 35) and R13's activity timeline and screen time (rows 182, 183, designed with R8) |
+| R5 (live) | 10 | 6 Done; rows 81, 83, 84 and 383 move to **R5.2** (plan `docs/plans/r5-2-voice.md`, on branch `r5-2-plan`, not yet in `main`) |
 | **R18 Calls from your laptop** (`v18.0.0`, building) | 7 | 387, 395, 396, 104, 195–197: Next up |
 | R18.1 Launch | 2 | Pending (Feb–Mar 2028) |
 | R8 / R8.1 / R9 / R10 (vision) | 25 / — / 20 / 13 | Pending, split by camera (chapter 11) |
@@ -79,7 +79,7 @@ Health & Wellbeing, the 11th skill added for the vision use cases, is the larges
 1. **Module → layer and skill.** Every workbook module maps to one layer and one skill (chapter 10). A module that is not in the map shows up in chapter 10's summary as "no architectural home"; today there is none.
 2. **Skill → code.** Every tool is filed under one group of one skill in the skill register (`src/jarvis/skills/catalogue.json`, R14 D11); a tool outside the register fails CI.
 3. **Release → plan.** A row's release names the plan in `docs/plans/` that designs it; a plan states its layers, its skill, its phase and its decisions, and the chapters of this document it changes.
-4. **Done → code.** Chapter 10 points each Done row at the file that best matches its own words — a lead for a reader, not a proof — or says "location not confirmed".
+4. **Done → code.** Chapter 10 points each Done row at the file that carries it, reviewed against the row's full text and the code (the generator's `OVERRIDES`), or, for a use-case row (INV-01, LND-14 …), at the test named after it; a row that has no one place says "not located" and why (`NOT_LOCATED`). A Done row not yet reviewed falls back to the file that best matches its own words, shown as a lead, not a proof.
 
 ## 3. Rules for adding and changing requirements
 
@@ -88,7 +88,7 @@ These are the owner's standing rules (17 Nov, repeated 23 Nov) and workshop rule
 1. **A new requirement becomes a workbook row at once**, Pending, with its module, phase, type, release (or "—") and the owner's own words; the workbook's version goes up at every change.
 2. **Serial numbers never change** (retired serials stay retired), so every document's row numbers keep pointing at the same feature.
 3. **Status is only Done, Next up, Pending or Declined.**
-4. **A row whose module is new** gets an entry in the generator's `MODULES` map (layer, skill, code paths) in the same change, or is listed as "no architectural home" until it does.
+4. **A row whose module is new** gets an entry in the generator's `MODULES` map (layer, skill, code paths) in the same change, or is listed as "no architectural home" until it does. **A row that becomes Done** gets a reviewed pointer in `OVERRIDES` (or a reason in `NOT_LOCATED`) in the release that builds it; the generator reports a pointer that no longer fits.
 5. **A requirement that conflicts with this design** (a rule, a layer's contract, a privacy or cost principle) gets an ADR in chapter 08 before it is built; the conflict and its resolution are listed in chapter 12.
 6. **At every release** the Workshop regenerates chapter 10 from the new workbook (`python scripts/docs/adds_traceability.py <workbook>`), updates this chapter's tables, and updates the chapters the release changes.
 7. **Declined is a decision, not a deletion:** declined rows keep their reason in the workbook and come back only on the owner's Yes.
@@ -98,3 +98,4 @@ These are the owner's standing rules (17 Nov, repeated 23 Nov) and workshop rule
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:10 IST | R6.4 | First edition: the baseline from workbook v13.1.10 (390 rows) by status, phase, layer, skill and release; how a requirement finds its place; the rules for adding requirements | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the live releases' row fixed (213 rows, 209 Done, 4 Pending, not 215 and 213); the R5.2 plan's branch named; how chapter 10 now locates Done rows; a reviewed pointer for every row that becomes Done; the workbook's home marked unverified | 🛠 Mark XXV |

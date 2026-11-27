@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 14:05 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 00 · The JARVIS Architecture Design Document
 
@@ -63,7 +63,8 @@ merge `83331a1` (27 Nov 2026), program version `6.4.0` (`src/jarvis/__init__.py:
 | 09 | `09-requirements.md` | The requirements baseline | Requirements | requirements writer |
 | 10 | `10-traceability.md` | Every requirement mapped to layer, skill and status | Requirements | requirements writer |
 | 11 | `11-roadmap.md` | Planned releases and their design notes | PLANNED | requirements writer |
-| 12 | `12-gaps-and-risks.md` | Gaps, conflicts, scaling limits, debt, proposed ADRs | Analysis | requirements writer |
+| 12 | `12-gaps-and-risks.md` | Gaps, conflicts, scaling limits, debt (the proposed ADRs moved to 08) | Analysis | requirements writer |
+| 13 | `13-verification.md` | The independent check of chapters 00–12 against the code and the workbook: method, counts, every fix, what stays unverified, how to re-run | Verification | verifier |
 
 ## Diagrams
 
@@ -103,6 +104,11 @@ outside services, 2 Scheduler jobs); a wider search found 5 collections the inve
 in all, chapter 04). The secret scan of `scripts/arch_coverage.py` covers every
 file under `docs/architecture/`, these chapters included.
 
+On the same day a second reader who had not written it checked every chapter against the code and
+the requirements workbook, fixed what was wrong in place and marked what can't be checked from the
+repository as *Unverified*; chapter 13 lists every fix and how to repeat the checks. Since then
+`scripts/check_doc_versions.py` checks this folder's version lines too.
+
 ## Glossary (terms used across the chapters)
 
 | Term | Meaning |
@@ -127,3 +133,4 @@ file under `docs/architecture/`, these chapters included.
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:05 IST | R6.4 | First edition: what the ADD is, the canonical-reference rule, how conflicts are settled, the chapter list (00–12), the three new figures, the single-file copy, how it was checked, the shared glossary | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): chapter 13 added to the list; how the document was verified; the proposed ADRs now in chapter 08 | 🛠 Mark XXV |

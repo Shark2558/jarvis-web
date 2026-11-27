@@ -1,4 +1,4 @@
-Version v6.4.1 · 27 Nov 2026, 14:20 IST · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
+Version v6.4.2 · 27 Nov 2026 · Release R6.4 · Status: Current · Owner: 🛠 Mark XXV
 
 # 11 · Target architecture: the roadmap by release
 
@@ -22,7 +22,7 @@ Chapters 01–08 describe JARVIS as built (live release `v6.4.0`). This chapter 
 
 ## R18 · Calls from your laptop (`v18.0.0`)
 
-Plan: `docs/plans/r18-calls.md` (approved 25 Nov; D8 keeps the audio recordings). Build brief and contracts: `docs/plans/r18-calls/BUILD-BRIEF.md`.
+Plan: `docs/plans/r18-calls.md` (approved 25 Nov; D8 keeps the audio recordings). Build brief and contracts: `docs/plans/r18-calls/BUILD-BRIEF.md`. Both are on the `r18-*` branches (for example `r18-a1`), not yet in `main`.
 
 | Layer | Adds | Reuses |
 |---|---|---|
@@ -43,7 +43,7 @@ Plan: `docs/plans/r18-calls.md` (approved 25 Nov; D8 keeps the audio recordings)
 
 ## R5.2 · Your voice (`v5.2.0`)
 
-Plan: `docs/plans/r5-2-voice.md`.
+Plan: `docs/plans/r5-2-voice.md`, on branch `r5-2-plan` (not yet in `main`).
 
 | Layer | Adds | Reuses |
 |---|---|---|
@@ -98,7 +98,7 @@ Layer 6 work on the home bridge: Home Assistant devices the owner lists (robot c
 ## R18.1 · Launch (`v18.1.0`) and R19 · Trading desk
 
 - **R18.1:** the full red-team test, final tests and two weeks of stable running (rows 108 and 113). Preconditions from this document: the owned wake-word model (R5.2 stage 2), a licence audit of every model and dataset, the scaling items of chapter 12 decided.
-- **R19 (deferred, decision later):** an agent desk for trading. **Conflicts with confirm-before-commit** (the owner first asked for fully autonomous trading); any design needs an ADR that keeps money movements behind the owner's approval, plus three months of paper trading first.
+- **R19 (deferred, decision later):** an agent desk for trading. **Conflicts with confirm-before-commit** (the owner first asked for fully autonomous trading); any design needs an ADR that keeps money movements behind the owner's approval (ADR-30, proposed), plus paper trading first. *Unverified:* the "three months" of paper trading this chapter's first edition gave; no plan in the repository records a length.
 
 ## Not placed yet
 
@@ -106,13 +106,14 @@ Layer 6 work on the home bridge: Home Assistant devices the owner lists (robot c
 |---|---|---|---|
 | 376 | Gesture control | L2 on-device hand tracking (MediaPipe-class, Apache-2.0) in the browser and on the home laptop | Needs a build prompt approved; gestures never approve anything |
 | 389 (and 2) | Gemini as the brain for Google tasks | L4: a paid Gemini provider in `jarvis.llm`, routed by skill | Paid tier only (the free tier never sees tools); each Google tool's evals must pass on it first |
-| 386 | A 3D model of the owner from his photo | L5 wardrobe, cloud model behind a provider port | Later, after "See it on me" proves itself |
+| 386 | A 3D model of the owner from his photo | L5 wardrobe, cloud model behind a provider port | Release "Later" in the workbook, after "See it on me" proves itself |
 | 198 | WhatsApp Business route | L6 | Needs a registered business |
 | 129 | JARVIS Zero, a ₹0 edition | L4 provider order | Paused by the owner (2 Nov) |
-| 35 | Swiggy and Instamart ordering | L6 | Waiting on Swiggy's access |
+| 35 | Swiggy and Instamart ordering | L6 | Placed in R1 in the workbook but still Pending; waiting on Swiggy's access |
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
 | v6.4.1 | 27 Nov 2026, 14:20 IST | R6.4 | First edition: every planned release's design delta by layer, what it reuses and where it bends the as-built design; the hardware note for the no-cloud camera; the rows not placed yet | 🛠 Mark XXV |
+| v6.4.2 | 27 Nov 2026 | R6.4 | Verification (chapter 13): the R18 and R5.2 plans named as branch files, not yet in `main`; the paper-trading period marked unverified; rows 35 and 386 carry their workbook release | 🛠 Mark XXV |

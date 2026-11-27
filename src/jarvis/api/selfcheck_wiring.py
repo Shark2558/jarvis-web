@@ -97,6 +97,7 @@ def vitals_sources(app: FastAPI) -> OwnSources:
         web=usage,  # TavilyProvider.usage(): the vendor's free usage report
         github=getattr(st, "github", None),  # GithubClient.status / .token_meta
         home=getattr(st, "home_store", None),  # HomeStore.status(uid)
+        voice=getattr(st, "voice_laptop", None),  # R5.2: the laptop kit's engine line (₹0)
         default_brain=brains.default.id,  # the brain the systems check's probe watches
         book=lambda: setup_failure(app),  # R6 review L2: read per board (R6 wires after Vitals)
         r14=lambda: getattr(st, "r14_vitals", None),  # R14 seam 7: the parts' items, read late

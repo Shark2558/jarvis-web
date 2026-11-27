@@ -99,10 +99,12 @@ def test_the_route_table_is_the_seams() -> None:
 class _Part:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.keywords: dict[str, dict[str, Any]] = {}
 
     def __getattr__(self, name: str) -> Any:
-        async def handler(*args: Any) -> Any:
+        async def handler(*args: Any, **kw: Any) -> Any:
             self.calls.append((name, args))
+            self.keywords[name] = kw
             if name == "score":
                 raise ProfileRefused(402, "needs_yes", "This uses ₹12.40 of Google time. Go on?")
             if name in ("verifier", "model"):
@@ -148,6 +150,7 @@ def test_wired_parts_get_the_owner_and_the_body(settings: Settings) -> None:
         assert not_object.status_code == 422 and not_object.json()["error"] == "input_rejected"
     assert ("put_clip", (uid, PROMPT, CLIP)) in api.calls
     assert ("delete_recordings", (uid,)) in api.calls and len(api.calls) == 4
+    assert api.keywords["delete_recordings"] == {"wakeword": False}  # I1: the route passes it
     assert ("model", (uid,)) in wake.calls
 
 

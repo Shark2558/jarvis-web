@@ -29,6 +29,7 @@ from fastapi import FastAPI
 from jarvis.api.calldesk_kit import install_calldesk_kit
 from jarvis.api.calls_console import ConsoleCardsApi, ready_cards
 from jarvis.api.calls_ws import CallSockets
+from jarvis.api.r52_wiring import calls_laptop
 from jarvis.calls.answering import AnsweringPolicy, GoogleContactBook
 from jarvis.calls.approvals import CallsService
 from jarvis.calls.booking import BookingCalendar
@@ -171,6 +172,7 @@ class _SpeechFactory:
             google_tokens=tokens,
             google_http=google_http,
             sarvam_on=_owner_sarvam(self._store, meter.uid),
+            laptop=calls_laptop(self._app),  # R5.2 I1: the laptop speech kit, "laptop" (V2)
             policy=BATCH if batch else IN_CALL,
         )
 

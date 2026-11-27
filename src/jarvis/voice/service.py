@@ -584,6 +584,7 @@ class VoiceService:
         turn_hints: tuple[str, ...] = (),
         public_hints: tuple[str, ...] = (),
         free_only: bool = False,
+        google_only: bool = False,
     ) -> TranscriptView:
         """`owner_phrases=False`: the base hints only (R6: a build book guest's question must not
         be biased toward the owner's own words). `turn_hints` (R11.1 D9): this turn's hints,
@@ -591,9 +592,11 @@ class VoiceService:
         `public_hints` (R6.2): words that hold nothing of the owner's (the build book's own
         vocabulary), so they go along for a guest too. `free_only`: see `_gate`.
         R5.2: the owner's listening follows his profile's `listening_order` (the laptop first
-        while it is healthy and his best, else Google as before), his corrections after it."""
+        while it is healthy and his best, else Google as before), his corrections after it.
+        `google_only` (R5.2 I1): Google with his words and nothing else, as the voice session's
+        comparison measures it (never the laptop, never his corrections)."""
         audio = parse_wav(blob)
-        if not owner_phrases or free_only:  # a guest: Google as before, nothing of his applied
+        if not owner_phrases or free_only or google_only:  # Google as before, no routing
             return await self._transcribe_google(
                 uid, audio, owner_phrases, turn_hints, public_hints, free_only
             )

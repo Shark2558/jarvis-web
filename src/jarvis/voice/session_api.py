@@ -330,7 +330,8 @@ class ServiceGoogle:
 
     async def hear(self, uid: str, wav: bytes, *, free_only: bool) -> GoogleHeard:
         start = time.monotonic()
-        got = await self.v.transcribe(uid, wav, free_only=free_only)
+        # I1: Google alone (V2's routing would send it to the laptop and apply his corrections)
+        got = await self.v.transcribe(uid, wav, free_only=free_only, google_only=True)
         return GoogleHeard(text=got.text, ms=int((time.monotonic() - start) * 1000))
 
 

@@ -13,8 +13,8 @@ editing this file. Mounted by `jarvis.api.voice.install_voice` (app.py stays und
     POST /session/score              the comparison; 402 needs_yes with the ₹     api.score
     GET  /session/results                                                         api.results
     POST /recheck                    "Check again"                                api.recheck
-    POST /recordings/delete          {confirm: "DELETE"}: "Delete my recordings"  api.delete_
-                                                                                  recordings
+    POST /recordings/delete          {confirm: "DELETE", wakeword?: true}: "Delete  api.delete_
+                                     my recordings" (and the wake-word files)     recordings
     GET  /laptop                     the laptop speech kit's health               laptop.status
     GET  /wakeword                   stage 1 and stage 2, their jobs              wakeword.status
     POST /wakeword/train             {artifact: "verifier" | "owned"}             wakeword.train
@@ -56,6 +56,8 @@ NOT_BUILT = "Your voice is not ready yet: this part of R5.2 is still being built
 PROFILE_OFF = "Your voice is switched off on this server (JARVIS_VOICE_PROFILE_ENABLED)."
 NOT_AN_OBJECT = "Send a JSON object."
 CONFIRM_NEEDED = f'Deleting your recordings needs {{"confirm": "{CONFIRM_WORD}"}}.'
+DELETE_KEYS: Final = frozenset({"confirm", "wakeword"})
+BAD_DELETE = 'Send {"confirm": "DELETE"} and, to delete the wake-word files too, "wakeword": true.'
 
 # (method, path) -> (slot, the part's method): the route table and its seams
 SLOTS: Final[dict[tuple[str, str], tuple[str, str]]] = {
@@ -198,7 +200,10 @@ async def recheck(request: Request, uid: str = Depends(current_user)) -> Respons
 async def _confirmed_delete(api: Any, body: dict[str, Any], uid: str) -> BaseModel | dict[str, Any]:
     if body.get("confirm") != CONFIRM_WORD:
         raise ProfileRefused(422, "confirm_needed", CONFIRM_NEEDED)
-    result: BaseModel | dict[str, Any] = await api.delete_recordings(uid)
+    wakeword = body.get("wakeword", False)
+    if not set(body) <= DELETE_KEYS or not isinstance(wakeword, bool):
+        raise ProfileRefused(422, "input_rejected", BAD_DELETE)
+    result: BaseModel | dict[str, Any] = await api.delete_recordings(uid, wakeword=wakeword)
     return result
 
 

@@ -3,6 +3,7 @@
 # (console errors, cut text, sideways overflow, WCAG contrast of every text line inside the new panels, computed from
 # the rendered colours) and the contact sheet. Opens the pages as file:// URLs: no server.
 # Usage: python -I tools/shoot.py [--only <page>] [--sheet-only] [--chrome <path to chrome>]
+# Screen 5 (bar-edit, R8 part I) has its own sheet, contact-sheet-bar.png; then run tools/squash.py (Pillow) on the new PNGs.
 from __future__ import annotations
 
 import argparse
@@ -24,11 +25,16 @@ MATRIX = (
     (3, "workout-phone", "phone", ("first", "active", "off", "warn", "error")),
     (4, "activity-timeline", "laptop", ("first", "active", "off", "warn", "error")),
     (4, "activity-timeline", "phone", ("active",)),
+    (5, "bar-edit", "laptop", ("today", "edit", "drag", "tomore", "removed", "hidden", "keyboard")),
+    (5, "bar-edit", "phone", ("today", "edit", "drag", "removed", "hidden", "keyboard")),
 )
 TITLES = {"camera-setup": "Camera setup", "desk-coach": "Desk coach", "workout-phone": "Workout session (phone)",
-          "activity-timeline": "Activity timeline and screen time"}
+          "activity-timeline": "Activity timeline and screen time", "bar-edit": "Your bar, your way (edit the bar)"}
 STATE_WORDS = {"first": "First use", "active": "Active", "off": "Camera off", "warn": "Warning", "error": "Error: camera blocked",
-               "check": "No-cloud check", "bp": "BP posture checklist", "game": "Reaction game"}
+               "check": "No-cloud check", "bp": "BP posture checklist", "game": "Reaction game",
+               "today": "1. The bar as today", "edit": "2. Edit mode (from More)", "drag": "3. Dragging, with the drop line",
+               "tomore": "4a. Taking one off: drop it on More", "removed": "4b. More lists it, with Put back", "hidden": "5. Bar hidden: the handle",
+               "keyboard": "6. The keyboard way"}
 SIZE = {"laptop": (1920, 1080, 1), "phone": (390, 844, 2)}
 
 # runs in the page: every text line inside the new panels, its colour against the background it really sits on
@@ -52,7 +58,7 @@ CHECK_JS = r"""
   }
   function opacityOf(el) { let o = 1, n = el; while (n && n.nodeType === 1) { o *= parseFloat(getComputedStyle(n).opacity) || 1; n = n.parentElement; } return o; }
   const out = { contrast: [], cut: [], wide: [], min: 99 };
-  const scope = [...document.querySelectorAll('.panel:not(#p-chat), .cam-chip')];
+  const scope = [...document.querySelectorAll('.panel:not(#p-chat), .cam-chip, [data-r8-check]')];
   const seen = new Set();
   scope.forEach((root) => root.querySelectorAll('*').forEach((el) => {
     if (seen.has(el)) return; seen.add(el);
@@ -106,7 +112,7 @@ def shoot(browser, only: str | None) -> int:
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.goto((MOCKS / f"{page}.html").as_uri() + f"?v={view}&s={theme}&st={state}")
-        pg.wait_for_selector("html[data-ready='1']", timeout=10000)
+        pg.wait_for_selector("html[data-ready='1']:not([data-r8b-wait])", timeout=10000)
         pg.evaluate("document.fonts.ready")
         pg.wait_for_timeout(250)
         out = name(num, page, view, state, theme)
@@ -122,9 +128,19 @@ def shoot(browser, only: str | None) -> int:
     return problems
 
 
-def sheet(browser) -> None:
+SHEETS = {  # output: (pages, heading, line under it)
+    "contact-sheet.png": (((1, "camera-setup"), (2, "desk-coach"), (3, "workout-phone"), (4, "activity-timeline")),
+                          "JARVIS R8 / R8.1 · new screens · mockups",
+                          "Draft for the owner's approval · 28 Nov 2026 · the console's own look (Workshop theme), Night and Day · laptop 1920 × 1080, phone 390 × 844"),
+    "contact-sheet-bar.png": (((5, "bar-edit"),), "JARVIS R8 · I · your bar, your way · mockups",
+                              "Draft for the owner's approval · 28 Nov 2026 · the console's own dock and More sheet, Night and Day · laptop 1920 × 1080, phone 390 × 844"),
+}
+
+
+def sheet(browser, out: str = "contact-sheet.png") -> None:
+    pages, heading, line = SHEETS[out]
     sections = []
-    for num, page in ((1, "camera-setup"), (2, "desk-coach"), (3, "workout-phone"), (4, "activity-timeline")):
+    for num, page in pages:
         rows = []
         for n, p, view, states in MATRIX:
             if p != page:
@@ -137,6 +153,12 @@ def sheet(browser) -> None:
             for theme in THEMES:
                 rows.append(f'<div class="row"><p class="lbl">{theme}<br>{view}</p>{"".join(cell(s, theme, False) for s in states)}</div>')
         sections.append(f'<section><h2><span>{num}</span>{TITLES[page]}</h2>{"".join(rows)}</section>')
+    if out == "contact-sheet-bar.png":  # the point of screen 5 is the bottom of the screen: the laptop's last 240 px, large
+        laptop_states = next(states for n, p, view, states in MATRIX if p == "bar-edit" and view == "laptop")
+        crop = lambda s, theme: (f'<figure class="near"><div><img src="png/{name(5, "bar-edit", "laptop", s, theme)}" alt=""></div>'
+                                 f'<figcaption><b>{STATE_WORDS[s]}</b> \u00b7 {theme}</figcaption></figure>')
+        near = "".join(crop(s, th) for s in laptop_states for th in THEMES)
+        sections.append(f'<section><h2><span>5</span>The bar up close · laptop, the last 240 px of the screen</h2><div class="near-grid">{near}</div></section>')
     html = ("<!doctype html><html><head><meta charset='utf-8'><style>"
             "body{margin:0;padding:36px 40px 40px;background:#04070D;color:#E6EDF6;font:15px/1.4 system-ui,sans-serif;width:2480px}"
             "h1{margin:0 0 4px;font:600 26px/1.2 ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase}"
@@ -149,8 +171,10 @@ def sheet(browser) -> None:
             "figure.laptop img{width:320px;height:180px}figure.phone img{width:150px;height:324.6px}"
             "img{display:block;border:1px solid #1d3550;border-radius:6px}"
             "figcaption{max-width:320px;font-size:13px;color:#AEBACB}figcaption b{font-weight:600;font-size:14px}figure.phone figcaption{max-width:150px}"
-                        "</style></head><body><h1>JARVIS R8 / R8.1 · new screens · mockups</h1>"
-            "<p class='v'>Draft for the owner's approval · 28 Nov 2026 · the console's own look (Workshop theme), Night and Day · laptop 1920 × 1080, phone 390 × 844</p>"
+            ".near-grid{display:grid;grid-template-columns:repeat(2,1200px);gap:14px 16px;margin:0 0 10px}"
+            "figure.near div{width:1200px;height:150px;overflow:hidden;border:1px solid #1d3550;border-radius:6px}"
+            "figure.near img{width:1200px;height:675px;margin-top:-525px;border:0;border-radius:0}figure.near figcaption{max-width:none}"
+                        f"</style></head><body><h1>{heading}</h1><p class='v'>{line}</p>"
             + "".join(sections) + "</body></html>")
     tmp = MOCKS / "contact-sheet.src.html"
     tmp.write_text(html, encoding="utf-8")
@@ -159,7 +183,7 @@ def sheet(browser) -> None:
         pg = ctx.new_page()
         pg.goto(tmp.as_uri())
         pg.wait_for_load_state("load")
-        pg.screenshot(path=str(MOCKS / "contact-sheet.png"), full_page=True)
+        pg.screenshot(path=str(MOCKS / out), full_page=True)
         ctx.close()
     finally:
         tmp.unlink()
@@ -176,6 +200,8 @@ def main() -> int:
         problems = 0 if a.sheet_only else shoot(browser, a.only)
         if not a.only:
             sheet(browser)
+        if a.only in (None, "bar-edit"):
+            sheet(browser, "contact-sheet-bar.png")
         browser.close()
     print(f"{problems} shot(s) with findings")
     return 0

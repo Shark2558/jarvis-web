@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # docs/plans/r8-mockups/tools/kit.py -- make each R8 mockup page self-contained: put the console's OWN stylesheets
 # (copied verbatim, comments stripped, whitespace folded), its self-hosted OFL fonts (as data: URLs), tools/r8-common.css
-# and tools/deck.js between the <!-- KIT:BEGIN --> and <!-- KIT:END --> lines of every page given (default: all four).
+# and tools/deck.js between the <!-- KIT:BEGIN --> and <!-- KIT:END --> lines of every page given (default: all five).
+# A page with its own new pieces gets one more stylesheet after r8-common.css (PAGE_CSS: bar-edit.html -> r8-bar.css).
 # Standard library only; reads the repo, writes only the pages. Usage: python3 -I tools/kit.py [page.html ...]
 from __future__ import annotations
 
@@ -22,7 +23,8 @@ FONTS = {
     "orbitron-latin-700-normal.woff2", "rajdhani-latin-600-normal.woff2", "rajdhani-latin-700-normal.woff2",
     "share-tech-mono-latin-400-normal.woff2",
 }
-PAGES = ("camera-setup.html", "desk-coach.html", "workout-phone.html", "activity-timeline.html")
+PAGES = ("camera-setup.html", "desk-coach.html", "workout-phone.html", "activity-timeline.html", "bar-edit.html")
+PAGE_CSS = {"bar-edit.html": "r8-bar.css"}  # the R8 part I "your bar, your way" pieces, in the console's tokens only
 BEGIN, END = "<!-- KIT:BEGIN", "<!-- KIT:END -->"
 FACE = re.compile(r"@font-face\{[^}]*?url\(/static/fonts/([\w.-]+)\?v=\d+\)[^}]*\}")
 
@@ -42,24 +44,27 @@ def inline_fonts(css: str) -> str:
     return FACE.sub(face, css)
 
 
-def kit() -> str:
+def kit(page: str) -> str:
     sha = subprocess.run(["git", "-C", str(REPO), "log", "-1", "--format=%h", "--", "src/jarvis/api/static"],
                          capture_output=True, text=True, check=False).stdout.strip() or "unknown"
     console = inline_fonts(" ".join(fold((STATIC / s).read_text(encoding="utf-8")) for s in SHEETS))
     common = (HERE / "r8-common.css").read_text(encoding="utf-8").strip()
+    extra = (HERE / PAGE_CSS[page]).read_text(encoding="utf-8").strip() if page in PAGE_CSS else ""
     deck = (HERE / "deck.js").read_text(encoding="utf-8").strip()
-    if "</style" in common or "</script" in deck:
+    if "</style" in common or "</style" in extra or "</script" in deck:
         raise SystemExit("kit.py: a closing tag inside the kit sources")
+    own = f", then tools/{PAGE_CSS[page]}" if page in PAGE_CSS else ""
     head = (f"{BEGIN} made by tools/kit.py: the console's own CSS ({', '.join(SHEETS)} from src/jarvis/api/static at {sha}, "
-            "comments stripped) with its OFL fonts inlined, then tools/r8-common.css and tools/deck.js. "
+            f"comments stripped) with its OFL fonts inlined, then tools/r8-common.css{own} and tools/deck.js. "
             "Edit those files, never this block. -->")
-    return f'{head}\n<style id="kit-console">{console}</style>\n<style id="kit-r8">\n{common}\n</style>\n<script id="kit-deck">\n{deck}\n</script>\n{END}'
+    styles = f'<style id="kit-r8">\n{common}\n</style>\n' + (f'<style id="kit-page">\n{extra}\n</style>\n' if extra else "")
+    return f'{head}\n<style id="kit-console">{console}</style>\n{styles}<script id="kit-deck">\n{deck}\n</script>\n{END}'
 
 
 def main(argv: list[str]) -> int:
-    block = kit()
     for name in argv or PAGES:
         page = (MOCKS / name).resolve()
+        block = kit(page.name)
         text = page.read_text(encoding="utf-8")
         a, b = text.find(BEGIN), text.find(END)
         if a < 0 or b < a:

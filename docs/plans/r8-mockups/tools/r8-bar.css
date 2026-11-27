@@ -1,0 +1,137 @@
+/* docs/plans/r8-mockups/tools/r8-bar.css -- R8 part I "your bar, your way" (bar-edit.html): the NEW pieces of the
+   customisable bar. Mockup only. Everything else on the page is the console's own CSS (tools/kit.py), so the bar itself,
+   its tabs, More and the More sheet keep their look exactly. Every colour, font, radius and shadow below is a console
+   token. Borrowed looks, not new ones: the dragged item wears .panel.dragging (--sh-2 and a 1 px accent ring), the
+   toolbar wears the dock's own .card, the tips wear the menu material (--panel-solid, --line, --sh-1, --r-md), the rows
+   of the phone editor wear .sheet-item. Prefix: r8b-. */
+
+/* ---- edit mode on the laptop: every item a movable tile (dashed edge), a grip, a ✕ ------------------------------ */
+.dock.r8b-edit .dk{border-style:dashed;border-color:var(--line);cursor:grab}
+.r8b-grip{position:absolute;left:6px;top:6px;width:8px;height:12px;color:var(--ink-3);pointer-events:none}
+.r8b-grip svg{display:block;width:8px;height:12px}
+.r8b-x{position:absolute;z-index:2;top:3px;right:3px;width:20px;height:20px;padding:0;display:grid;place-items:center;border-radius:50%;
+  border:1px solid var(--line);background:var(--panel-solid);color:var(--ink-2);cursor:pointer}
+.r8b-x::after{content:"";position:absolute;inset:-3px} /* a 24 px target (WCAG 2.5.8) around the 20 px mark, inside the tile */
+.r8b-x svg{width:11px;height:11px}
+.r8b-x:hover{color:var(--ink);border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
+.r8b-x[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
+.r8b-x[aria-disabled="true"].r8b-hover{opacity:.5;border-color:var(--line)}
+/* the item's place while it is carried: an empty dashed slot (the bar never jumps under the pointer) */
+.dock .dk.r8b-hole{border-style:dashed;border-color:var(--line-2);background:transparent;box-shadow:none}
+.dock .dk.r8b-hole > :not(.r8b-x){opacity:.28}
+.dock .dk.r8b-hole .r8b-x{display:none}
+/* the drop line between two items: 3 px of accent-2 with the console's diamond caps */
+.r8b-drop{position:absolute;z-index:3;top:0;bottom:0;width:3px;margin-left:-1.5px;border-radius:2px;background:var(--accent-2);
+  box-shadow:0 0 12px color-mix(in srgb,var(--accent-2) 80%,transparent);pointer-events:none}
+.r8b-drop::before,.r8b-drop::after{content:"";position:absolute;left:50%;width:7px;height:7px;margin-left:-3.5px;background:var(--accent-2);transform:rotate(45deg)}
+.r8b-drop::before{top:-3px}.r8b-drop::after{bottom:-3px}
+/* the item being carried: the console's dragged-panel look, lifted off the bar */
+.dk.r8b-ghost{position:fixed;z-index:70;margin:0;pointer-events:none;color:var(--accent-ink);background:var(--panel-solid);
+  border:1px solid var(--accent);box-shadow:var(--sh-2),0 0 0 1px var(--accent);cursor:grabbing}
+html[data-surface="night"] .dk.r8b-ghost svg{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--accent-2) 80%,transparent))}
+/* More as the place to drop an item: lit like a pressed tab, with a ring */
+.dock .dk.more.r8b-target{color:var(--accent-ink);background:var(--tint);border:1px solid var(--accent);
+  box-shadow:inset 0 -2px 0 var(--accent-2),0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent)}
+/* the focused item (the keyboard way): the console's own :focus-visible ring, drawn for the still picture */
+.dock .dk.r8b-focus{outline:2px solid var(--accent-ink);outline-offset:2px;color:var(--ink);border-style:solid}
+
+/* ---- the edit toolbar: the dock's own card, floating just above the bar ---------------------------------------- */
+.r8b-tools{position:fixed;z-index:56;left:50%;bottom:96px;transform:translateX(-50%);width:min(940px,calc(100vw - 24px));
+  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 18px;padding:10px 12px 11px 16px;border-radius:12px}
+.r8b-tools h2{display:flex;align-items:center;gap:8px;margin:0;font:400 12px/1.3 var(--tech);letter-spacing:.24em;text-transform:uppercase;color:var(--accent-ink)}
+.r8b-tools h2 svg{flex:none;width:16px;height:16px}
+.r8b-tools p{grid-column:1;margin:0;font-size:13px;line-height:1.45;color:var(--ink-2)}
+.r8b-tools p b{font-weight:600;color:var(--ink)}
+.r8b-tools .actions{grid-column:2;grid-row:1 / span 2;margin:0;display:flex;gap:8px}
+.r8b-tools .btn{flex:none;padding:0 14px}
+.r8b-tools .btn.primary{padding:0 22px}
+
+/* ---- tips (hover or focus on desktop; shown at once on touch) and the keyboard hints --------------------------- */
+.r8b-tip{position:fixed;z-index:80;width:max-content;max-width:270px;padding:8px 11px;border-radius:var(--r-md);border:1px solid var(--line);
+  background:var(--panel-solid);color:var(--ink);box-shadow:var(--sh-1);font-size:13px;line-height:1.4}
+.r8b-tip::after{content:"";position:absolute;left:var(--ax,50%);bottom:-6px;width:10px;height:10px;margin-left:-5px;transform:rotate(45deg);
+  background:var(--panel-solid);border:1px solid var(--line);border-top:0;border-left:0}
+.r8b-tip b{font-weight:600}
+.r8b-tip.r8b-line{max-width:none;white-space:nowrap} /* one line: it covers the rail's last line whole, never half of one */
+.r8b-tip.r8b-wide{left:8px!important;right:8px;width:auto;max-width:none}
+.r8b-tip small{display:block;margin-top:2px;font-size:12.5px;color:var(--ink-2)}
+kbd.r8b-k{display:inline-block;min-width:22px;padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--well-2);
+  font:400 12px/1.25 var(--tech);letter-spacing:.04em;color:var(--ink);text-align:center;vertical-align:1px}
+.r8b-keys{position:fixed;z-index:80;padding:10px;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--panel-solid);box-shadow:var(--sh-2)}
+.r8b-keys::after{content:"";position:absolute;left:var(--ax,50%);bottom:-7px;width:12px;height:12px;margin-left:-6px;transform:rotate(45deg);
+  background:var(--panel-solid);border:1px solid var(--line);border-top:0;border-left:0}
+.r8b-keys h3{margin:0 2px 8px;font:400 11.5px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2)}
+.r8b-keys h3 b{font-weight:400;color:var(--accent-ink)}
+.r8b-keys ul{display:grid;grid-template-columns:repeat(3,auto);gap:8px;margin:0;padding:0;list-style:none}
+.r8b-keys li{display:flex;flex-direction:column;align-items:center;gap:6px}
+.r8b-keys .btn{flex:none;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;white-space:nowrap}
+.r8b-keys .btn svg{flex:none;width:15px;height:15px}
+
+/* ---- the hidden bar: a slim handle at the bottom edge ------------------------------------------------------------ */
+.r8b-handle{position:fixed;z-index:55;left:50%;bottom:0;transform:translateX(-50%);width:168px;height:28px;padding:0;border:0;background:transparent;
+  cursor:pointer;display:grid;place-items:end center;padding-bottom:7px}
+.r8b-handle i{display:block;width:76px;height:5px;border-radius:3px;background:var(--accent-ink);box-shadow:0 0 10px -1px var(--accent-2)}
+.r8b-handle.r8b-hover i{width:96px}
+.r8b-hidden .rail{padding-bottom:16px}
+.r8b-hidden .stage{padding-bottom:0}
+
+/* ---- the More sheet: "Edit the bar", the items taken off the bar with "Put back" -------------------------------- */
+.r8b-shead{display:flex;align-items:center;gap:12px;grid-column:1/-1;margin:0 0 2px}
+.r8b-shead h2{flex:1;margin:0 4px}
+.r8b-shead .btn{flex:none;display:inline-flex;align-items:center;gap:8px;padding:0 14px}
+.r8b-shead .btn svg{width:16px;height:16px}
+.sheet h3.r8b-sub{grid-column:1/-1;margin:8px 4px 0;font:400 11.5px/1.3 var(--tech);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2)}
+.r8b-off{display:flex;align-items:center;gap:10px;min-height:56px;padding:6px 10px 6px 12px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--well)}
+.r8b-off .r8b-open{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:2px 0;border:0;background:transparent;color:var(--ink);text-align:left;font:inherit;cursor:pointer}
+.r8b-off .r8b-open svg{flex:none;width:22px;height:22px;color:var(--accent-ink)}
+.r8b-off .r8b-open b{display:block;font:700 14px/1.2 var(--hud);letter-spacing:.06em;color:var(--ink)}
+html[data-surface="night"] .r8b-off .r8b-open b{font:400 12.5px/1.25 var(--tech);letter-spacing:.14em;text-transform:uppercase}
+.r8b-off .r8b-open small{display:block;margin-top:3px;font-size:12.5px;line-height:1.35;color:var(--ink-2)}
+.r8b-off .btn{flex:none;display:inline-flex;align-items:center;gap:6px;padding:0 12px}
+.r8b-off .btn svg{width:15px;height:15px}
+.r8b-toast{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:0;padding:8px 12px;border-radius:var(--r-md);border:1px solid var(--line-2);
+  background:var(--tint);font-size:13px;line-height:1.4;color:var(--ink)}
+.r8b-toast svg{flex:none;width:16px;height:16px;color:var(--ok-ink)}
+
+/* ---- the phone: the bar is edited as a list in the More sheet (each row a .sheet-item, 44 px targets) ----------- */
+.r8b-ed .sheet-in{gap:6px;padding-top:0}
+.r8b-ehead{position:sticky;top:0;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;
+  margin:0 -12px;padding:14px 12px 10px;background:var(--panel-solid);border-bottom:1px solid var(--line-2)}
+.r8b-ehead h2{margin:0 4px}
+.r8b-ehead .btn{height:44px;flex:none}
+.r8b-ehead .btn.primary{padding:0 24px}
+.r8b-ehead .r8b-two{grid-column:1/-1;display:flex;gap:8px}
+.r8b-ehead .r8b-two .btn{flex:1}
+.r8b-ehead p{grid-column:1/-1;margin:2px 4px 0;font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.r8b-ehead p b{font-weight:600;color:var(--ink)}
+.r8b-ehead p svg{width:8px;height:13px;vertical-align:-1px;margin:0 2px;color:var(--ink-3)}
+.r8b-row{position:relative;display:grid;grid-template-columns:44px 22px minmax(0,1fr) 44px;align-items:center;gap:0 10px;min-height:54px;padding:4px 4px 4px 0;
+  border-radius:var(--r-md);border:1px solid var(--line-2);background:var(--well);color:var(--ink)}
+.r8b-row .r8b-hold{width:44px;height:44px;display:grid;place-items:center;color:var(--ink-3);border:0;background:transparent;padding:0;cursor:grab}
+.r8b-row .r8b-hold svg{width:10px;height:16px}
+.r8b-row > svg{width:22px;height:22px;color:var(--accent-ink)}
+.r8b-row b{display:block;font:700 14px/1.2 var(--hud);letter-spacing:.06em;color:var(--ink)}
+html[data-surface="night"] .r8b-row b{font:400 12.5px/1.25 var(--tech);letter-spacing:.14em;text-transform:uppercase}
+.r8b-row small{display:block;margin-top:2px;font-size:12px;line-height:1.35;color:var(--ink-2)}
+.r8b-row .r8b-del{width:44px;height:44px;display:grid;place-items:center;border-radius:var(--r-sm);border:1px solid transparent;background:transparent;color:var(--ink-2);padding:0;cursor:pointer}
+.r8b-row .r8b-del svg{width:16px;height:16px}
+.r8b-row .r8b-del[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
+.r8b-row.r8b-lift{z-index:4;border-color:var(--accent);background:var(--panel-solid);box-shadow:var(--sh-2),0 0 0 1px var(--accent)}
+.r8b-row.r8b-sel{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent-2);outline:2px solid var(--accent-ink);outline-offset:2px}
+.r8b-row .r8b-moves{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:6px 0 4px 8px}
+.r8b-row .r8b-moves .btn{height:44px;padding:0 6px;letter-spacing:.06em}
+.r8b-row .r8b-moves kbd{display:none}
+.r8b-fold{display:flex;align-items:center;gap:8px;margin:4px 2px 2px;font:400 11px/1.3 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.r8b-fold::before,.r8b-fold::after{content:"";flex:1;border-top:1px dashed var(--line)}
+.r8b-slot{position:relative;min-height:56px;border-radius:var(--r-md);border:1.5px dashed var(--accent-2);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.r8b-slot .r8b-row{position:absolute;left:10px;right:-4px;top:-9px}
+.r8b-empty{margin:0 4px;font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+/* the phone without its tab bar: the panel reaches down to the handle */
+@media (max-width: 899px){
+  html.r8b-hidden{--tab-h:40px}
+  .r8b-handle{width:180px;height:44px;padding-bottom:9px}
+  .r8b-handle i{width:120px}
+  .r8b-ed .sheet-in{padding-bottom:16px}
+  .r8b-shead .btn{height:44px}
+  .r8b-off .btn{height:44px}
+}

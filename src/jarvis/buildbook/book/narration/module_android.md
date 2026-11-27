@@ -1,10 +1,10 @@
 ---
 chapter: module_android
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_module_android": "d1cfe650a3b3ecc3"
-  "pg_card_c62": "8ecdea0575e88dbe"
+  "pg_module_android": "665ef44d0430e321"
+  "pg_card_c62": "f639af4513ecb096"
   "pg_card_c64": "96ee0e66356181e1"
   "pg_card_c65": "6608284f309c2e1b"
 ---
@@ -13,9 +13,12 @@ pages:
 - Around it sit a few phone parts: a Talk to JARVIS tile, shortcuts, alerts sorted into Urgent, Alerts and Nudges, and JARVIS in the share sheet.
 - It reads your steps, heart rate and sleep from Health Connect, so the brief can say how you slept.
 - And it carries an emergency SOS: hold a button, and a fixed message with your location goes to your emergency contacts on Telegram.
+- It also places the phone calls JARVIS makes for you, each one after your approval.
 - A passkey lock keeps the app closed when you've been away.
 - [show:how] A phone is linked once, and afterwards it reaches JARVIS only through its door: a handful of signed routes.
-- Those routes never read a conversation, the vault or mail, never approve anything, and never call a tool.
+- Those routes never read a conversation, the vault or mail, and never call a tool.
+- One of them, the calls route, carries JARVIS's signed call commands, the phone's call states, and your Approve or Decline on a call card: the door's only approval.
+- So the app may hold the call permissions it needs: placing, answering and ending a call, seeing its state, and for answering, the caller's number.
 - [count:{{fact:settings.app_lock_minutes}}] The app lock asks for your passkey after {{fact:settings.app_lock_minutes}} minutes away, and only in the installed app.
 - The share sheet hands a photo, a PDF or some text to the console's share tray, where you choose what happens to it.
 - [show:overview] Here is the journey that matters most on a phone: an SOS.
@@ -47,12 +50,13 @@ pages:
 - His SMS app opens, filled in, and the console tells him how many it reached.
 - [show:costs] None of this costs anything in JARVIS: the app is built by free checks for a public repository, and SOS goes through Telegram's free bot service.
 - An SOS text message costs your mobile plan's usual charge, and only if you press Send.
+- A call the phone places is charged by your plan, as any call is.
 - [show:fails] Every failed check at the phone's door gets a bare refusal, logged by the check's name only, so a flood never fills the audit trail.
 - If the SOS limits can't be read, a real SOS still goes, and a refused or failed send still opens the SMS screen and the emergency number.
 - An app-lock check that fails stays locked.
 - [page:pg_card_c62] [show:title] The first part is the phone app itself, and the phone's door.
-- [show:plain] Its phone-only parts are the tile, alerts sorted by urgency, the health sync, the SOS screen, and a DigiLocker folder you pick, whose new files it sends in.
-- You link the phone once with a short code, and after that it uses only a narrow door of signed requests.
+- [show:plain] Its phone-only parts are the tile, alerts sorted by urgency, the health sync, the SOS screen, a DigiLocker folder you pick, whose new files it sends in, and the calls JARVIS places once you approve them.
+- You link the phone once with a short code, and after that it uses only a narrow door of signed requests, whose one approval is your tap on a call card.
 - [show:how] The link code is given only after a passkey check bound to that one offer, or a fresh Google sign-in when you have no passkey.
 - [count:{{fact:src/jarvis/phone/store.py:CODE_TTL_S}}] JARVIS keeps only a keyed hash of the code, which lasts {{fact:src/jarvis/phone/store.py:CODE_TTL_S}} seconds and works once.
 - [count:{{fact:src/jarvis/phone/store.py:MAX_TRIES}}] After {{fact:src/jarvis/phone/store.py:MAX_TRIES}} wrong tries, the code is void.
@@ -64,6 +68,9 @@ pages:
 - [count:{{fact:src/jarvis/phone/door.py:PER_PHONE_MINUTE}}] Last come the signature, and a limit of {{fact:src/jarvis/phone/door.py:PER_PHONE_MINUTE}} a minute for each phone.
 - The signature covers the path, the time, that one-time value and a hash of the body, and the body must be in one exact form.
 - Only then does a handler run, and an inbox file is taken only if its size and its SHA-256 hash match its first line.
+- The door's calls route works the same way: JARVIS signs each call command and rings the phone with a push that names no number.
+- The phone fetches the command through the door, and acts only on one that checks out.
+- Approve or Decline on a call's notice comes back like your press in the Calls panel, and a number never called before opens the console for your passkey.
 - The app lock applies only to the app's own sessions, and only once a passkey was added from the app.
 - Every change to the app is built and tested on GitHub with a throwaway key, while the app you install is built on your laptop.
 - [show:example] In the made-up example, Meher opens Integrations on her laptop, then Phone app, touches her passkey, and gets her code.
@@ -72,6 +79,7 @@ pages:
 - That night, the app sends a DigiLocker PDF of her driving licence through the door, and it waits in the vault under Check details.
 - When she opens the app after lunch the next day, it asks for her fingerprint before showing anything.
 - [show:costs] It costs nothing: the door, the link and the lock run inside JARVIS's own server, and the build check runs on GitHub's free runners.
+- A call the phone places for you is charged by your mobile plan, as any call you make.
 - [show:fails] A failed door check is logged by its name but never audited, so a flood can't fill the audit.
 - If Chrome can't confirm that the site and the app belong together, the address bar shows, and the rest still works.
 - And you are never locked out: from your laptop, you can switch the lock off with your passkey, or unlink the phone.

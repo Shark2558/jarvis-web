@@ -1,19 +1,21 @@
 ---
 chapter: story_technology
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_chapter_technology": "05f258f6ee635aee"
+  "pg_chapter_technology": "b39ac362030a5622"
 ---
 - [show:title] This chapter lists what JARVIS is built from: the pieces of other people's work it stands on, and where each one runs.
 - [show:plain] The server is written in Python, with the FastAPI web framework.
 - It is packed into one container on Google Cloud Run, with its memory in Firestore.
 - The server's own code comes to about {{fact:loc.python_code}} lines of Python.
 - The console is plain browser code, with no build step at all.
-- Your home laptop runs a small kit of its own for the cameras, and the Android app is built with Google's Android tools.
+- Your home laptop runs a small kit of its own for the cameras, and another, the call desk, for phone calls.
+- The Android app is built with Google's Android tools.
 - GitHub tests every change before it ships, and every package is pinned to an exact, checked version.
 - [show:how] Here are the building blocks. FastAPI and Uvicorn run the web server, Pydantic checks data, and httpx makes calls out.
 - Google's Firestore client handles storage, cryptography and webauthn handle keys and passkeys, and there are readers for PDF, Word, Excel and slides.
+- NumPy handles the sound of phone calls.
 - [count:{{fact:services.count}}] Out in the world, JARVIS talks to {{fact:services.count}} outside services in all.
 - A one-time setup, safe to run again, prepares Google Cloud: Cloud Run, Firestore, Secret Manager, Cloud Scheduler for the morning clock, and the speech services.
 - The older Render blueprint is still kept, from before the move to Google.
@@ -28,6 +30,7 @@ pages:
 - [node:lock] Every package is pinned with its exact hash in a lock, so the build refuses any file that differs from the reviewed one.
 - [edge:lock>image] Only those exact packages go into the image.
 - [node:image] The build makes one slim Python container that runs as an ordinary user, stamps its own build day and checks its own health.
+- It also carries the home kit and the call desk's kit, for your laptop to download.
 - [edge:image>cloud] The new image goes up to Cloud Run.
 - [node:cloud] There it waits, with no traffic yet.
 - [edge:cloud>health] First it must answer its health check.

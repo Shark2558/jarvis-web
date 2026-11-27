@@ -1,16 +1,17 @@
 ---
 chapter: story_data
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_chapter_data": "7d182c14a4c6bfee"
+  "pg_chapter_data": "ee7fb466f5463795"
 ---
 - [show:title] This chapter is about where your data lives, how it is kept safe, and how it comes back if something goes wrong.
 - [show:plain] JARVIS runs on Google Cloud Run, and keeps its records in Google's Firestore database, in the Mumbai region.
 - Its secrets live in Google's Secret Manager, never in the code.
-- The most private things, such as the vault, your notes, your things and your Google tokens, are sealed again by JARVIS with keys of its own.
+- The most private things, such as the vault, your notes, your things, the numbers you call and your Google tokens, are sealed again by JARVIS with keys of its own.
 - There is a separate key for each kind of data.
-- The privacy panel shows everything that is kept, with Export and Delete.
+- The privacy panel shows what is kept, with Export and Delete.
+- Phone calls are the exception: you delete them in the Calls panel, or they go at the end of their keeping time.
 - Once you switch backups on, Google copies the database every day, and JARVIS proves each month that a copy really restores.
 - The Vault, Privacy, Approvals and Delivery pages give the details.
 - [show:how] JARVIS is set up on Cloud Run, which lets it sleep when idle, with Firestore as its database in the same project.
@@ -34,7 +35,8 @@ pages:
 - The vault seals each file under its own key, and opens one only after an unlock in the console.
 - [count:{{fact:settings.vault_unlock_minutes}}] That unlock lasts {{fact:settings.vault_unlock_minutes}} minutes.
 - [edge:firestore>privacy] Everything kept stays visible to you.
-- [node:privacy] The privacy panel lists every kind of data kept, with Export and Delete, and asks for your passkey before anything goes for good.
+- [node:privacy] The privacy panel lists the kinds of data kept, with Export and Delete, and asks for your passkey before anything goes for good.
+- Phone calls have no row there.
 - [edge:firestore>copy] When backups are on, the database is copied every day.
 - [node:copy] Backups begin with a one-time setup that you run yourself.
 - [count:{{fact:src/jarvis/backup/status.py:RETENTION_DAYS}}] Each daily copy is kept {{fact:src/jarvis/backup/status.py:RETENTION_DAYS}} days, and the live database gets delete protection.
@@ -45,7 +47,7 @@ pages:
 - [edge:drill>proven] When the checks pass, the copy has proven itself.
 - [node:proven] The copy is proven, and then removed.
 - [show:example] In the made-up example, one Friday, Ritu wonders what JARVIS keeps about her family.
-- The privacy panel lists every kind of data: her vault documents, encrypted by JARVIS, and the facts in Memory.
+- The privacy panel lists the kinds of data it keeps: her vault documents, encrypted by JARVIS, and the facts in Memory.
 - She downloads everything except the vault files, as one file for her own records.
 - That night Google copies the whole database, as it has every night since she ran the backup setup.
 - And at the start of the next month, the drill proves that a copy restores, and opens with today's key.

@@ -1,9 +1,9 @@
 ---
 chapter: story_what
-written_by: Workshop · Mark XXIV
-written_on: 2026-11-25
+written_by: Workshop · Mark XXV
+written_on: 2026-11-27
 pages:
-  "pg_chapter_what": "dc31618b1b1048ff"
+  "pg_chapter_what": "ed7408ef22bdfb8c"
 ---
 - [show:title] This first chapter is about what JARVIS is, told in one picture.
 - [show:plain] JARVIS is your own personal assistant, running on a server of its own in the cloud, and answering only to you.
@@ -18,6 +18,7 @@ pages:
 - [node:you] It starts with you, typing or speaking.
 - [edge:you>console] Your words go into the console, the one page that JARVIS serves for itself.
 - [node:console] The console runs the chat, the brain picker and the approval cards, and lays out the dock of panels.
+- A reply that offers a phone call shows a call card under it, with Call, Edit and Cancel.
 - Its scripts, fonts and libraries all come from JARVIS itself, never from another website.
 - [edge:console>brain] From the console, each message travels on to the brain.
 - [node:brain] The brain handles one message at a time in each conversation, and checks your monthly limit before any paid call.

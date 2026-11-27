@@ -2,8 +2,9 @@
 """JARVIS's own keys and connections on the Vitals board (R5.1 D2: "Vitals tracks itself").
 
 One automatic item per thing JARVIS itself uses: the Claude and Gemini keys, the Google sign-in,
-the Telegram bot, the web-search credits, the GitHub token and the home laptop link. Each is left
-out when that thing is not set up at all. Reads are cheap and free: in-process state (the LLM
+the Telegram bot, the web-search credits, the GitHub token, the home laptop link and (R5.2) the
+laptop speech kit (which engine served the owner's voice; the laptop's ₹0). Each is left out
+when that thing is not set up at all. Reads are cheap and free: in-process state (the LLM
 router's own record of its last call), stored records, the LAST stored systems-check report, and
 the web vendor's free usage report (cached 10 minutes per process). No model call, no new vendor
 call, no key value. Every reason here is fixed words; a source that fails or is slow makes its
@@ -42,12 +43,15 @@ LABELS: Mapping[str, str] = {
     "web_credits": "Web search allowance",
     "github_token": "GitHub token",
     "home_link": "Home laptop link",
+    "voice_laptop": "Laptop speech kit",  # R5.2: only when it is set up
     "build_book": "Build book",  # R6 review L2: only when it could not start on this server
     **VITALS_IDS,  # R14: backups, the drill, the database size, the clocks, the AI money by part
 }
 OWN_IDS = frozenset(LABELS)
 # Rung elsewhere already, so quiet here; the health brain probe reads only the DEFAULT brain.
 QUIET_IDS = frozenset({"google_link", "telegram_bot", "home_link"})
+# R5.2: a laptop asleep is normal and voice falls back by itself: shown, never alerted
+VOICE_QUIET = frozenset({"voice_laptop"})
 DEFAULT_BRAIN_ITEM: Mapping[str, str] = {"anthropic": "brain_claude", "gemini": "brain_gemini"}
 TELEGRAM_MAX_AGE_S = 2 * 3600.0  # an older stored systems-check result is not trusted
 UNKNOWN_REASON = "can't be read now"
@@ -75,6 +79,13 @@ BRAIN_STATES: Mapping[str, tuple[Status, str]] = {
 BRAIN_NOTES = {
     "ok": "The last AI call worked.",
     "unknown": "No AI call has failed since JARVIS started.",
+}
+VOICE_STATES: Mapping[str, tuple[Status, str]] = {
+    "ready": ("ok", ""),
+    "unknown": ("unknown", "hasn't been checked yet"),
+    "slow": ("amber", "is slow just now; Google's speech is used"),
+    "old": ("amber", "needs updating; Google's speech is used"),
+    "down": ("amber", "isn't answering; Google's speech is used"),
 }
 PROBE_STATES: Mapping[str, tuple[Status, str]] = {
     "ok": ("ok", ""),
@@ -177,6 +188,24 @@ class HomeReader(Protocol):  # HomeStore.status
     async def status(self, uid: str) -> HomeStatusLike | None: ...
 
 
+class VoiceLineLike(Protocol):  # jarvis.voice.laptop.VoiceLine
+    @property
+    def state(self) -> str: ...
+
+    @property
+    def heard_by(self) -> str | None: ...
+
+    @property
+    def spoken_by(self) -> str | None: ...
+
+    @property
+    def inr_per_minute(self) -> float: ...
+
+
+class VoiceLineReader(Protocol):  # jarvis.voice.laptop.LaptopVoice: None when no kit is set up
+    async def vitals_line(self, uid: str) -> VoiceLineLike | None: ...
+
+
 @dataclass(frozen=True)
 class OwnSources:
     """Each None means "not wired": a configured key without its reader shows as unknown."""
@@ -188,6 +217,7 @@ class OwnSources:
     web: UsageReporterLike | None = None
     github: GithubLike | None = None
     home: HomeReader | None = None
+    voice: VoiceLineReader | None = None  # R5.2: the laptop speech kit (`app.state.voice_laptop`)
     # The brain the systems check's probe watches ("anthropic" or "gemini", the router's id).
     # Its item is quiet here; the other brain's key still rings from Vitals. None: both ring.
     default_brain: str | None = None
@@ -288,7 +318,7 @@ class Own:
     def quiet_ids(self) -> frozenset[str]:
         """Items something else already rings for (never alerted from Vitals)."""
         brain = DEFAULT_BRAIN_ITEM.get(self._src.default_brain or "")
-        return QUIET_IDS | VITALS_QUIET | ({brain} if brain else frozenset())
+        return QUIET_IDS | VITALS_QUIET | VOICE_QUIET | ({brain} if brain else frozenset())
 
     async def items(self, uid: str, now: datetime, tz: ZoneInfo) -> list[OwnItem]:
         s = self._s
@@ -300,6 +330,7 @@ class Own:
             ("web_credits", lambda: self._web_credits(now, tz)),
             ("github_token", lambda: self._github(uid, now)),
             ("home_link", lambda: self._home(uid, now)),
+            ("voice_laptop", lambda: self._voice(uid)),
             ("build_book", self._book),
         ]
         got = await asyncio.gather(*(self._guard(pid, job) for pid, job in jobs))
@@ -426,6 +457,20 @@ class Own:
             base = ("amber", fault.reason if fault is not None else HOME_PROBLEM)
         return _item("home_link", base, note=f"Last heartbeat {_ago(age)}.")
 
+    async def _voice(self, uid: str) -> OwnItem | None:
+        """R5.2: the laptop speech kit, when it is set up: its state and which engine served."""
+        reader = self._src.voice
+        if reader is None:
+            if self._s.local_speech_configured:
+                return unknown("voice_laptop")
+            return None
+        line = await reader.vitals_line(uid)
+        if line is None:
+            return None  # no kit set up
+        base = VOICE_STATES.get(line.state, ("unknown", UNKNOWN_REASON))
+        note = words.voice_note(line.heard_by, line.spoken_by, line.inr_per_minute)
+        return _item("voice_laptop", base, note=note)
+
     async def _book(self) -> OwnItem | None:
         """R6 review L2: shown only when the build book could not start (its error class)."""
         failed = self._src.book() if self._src.book is not None else None
@@ -451,4 +496,7 @@ __all__ = [
     "OwnSources",
     "StatusReader",
     "UsageReporterLike",
+    "VOICE_QUIET",
+    "VoiceLineLike",
+    "VoiceLineReader",
 ]

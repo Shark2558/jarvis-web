@@ -28,7 +28,9 @@ from r51b_fakes import (
 from vitals_fakes import UID, key
 
 from jarvis.hardening.ports import VITALS_IDS
+from jarvis.localspeech.memory import MemoryKit
 from jarvis.vitals.own import OWN_IDS, QUIET_IDS, OwnSources
+from jarvis.voice.laptop import LaptopVoice
 
 
 def by_id(board, pid):  # type: ignore[no-untyped-def]
@@ -334,6 +336,7 @@ async def test_every_own_item_has_fixed_words_and_is_reserved() -> None:
         github=Github(Meta(epoch)),
         home=Home(HomeSt("online", epoch)),
         book=lambda: "RuntimeError",  # R6 review L2: shown only when the book could not start
+        voice=LaptopVoice(MemoryKit(), health_s=30),  # R5.2: the laptop speech kit's line
     )
     board = await OwnRig(own, clock=rig.clock).svc.board(UID)
 

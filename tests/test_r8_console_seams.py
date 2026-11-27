@@ -221,3 +221,171 @@ def test_the_r8_task_module_holds_bodies_only() -> None:
     for bad in ("fetch(", "JarvisCamera", "getUserMedia", "JarvisVision", "localStorage",
                 "innerHTML", "XMLHttpRequest", "sendBeacon", "WebSocket", "import("):  # fmt: skip
         assert bad not in js, bad
+
+
+# ---- S20 · the coaches' shared geometry (pure), on S23's synthetic bodies ------------------------
+def _geom(call: str, *args: Any) -> Any:
+    from r8_fakes import run_node
+
+    return run_node("console-coach-geom.js", call, *args)
+
+
+def test_the_knee_angle_of_a_synthetic_body_is_its_script() -> None:
+    for knee in (90, 120, 170):
+        body = {"$fixture": "poses.body", "args": [{"knee": knee}]}
+        pts = _geom("poses.body", {"knee": knee})
+        got = _geom("mod.angle", pts[23], pts[25], pts[27])
+        assert abs(got - knee) < 0.5, (knee, got)
+        assert body  # the fixture form is the runner's own
+    assert _geom("mod.angle", {"x": 0, "y": 0}, {"x": 0, "y": 0}, {"x": 1, "y": 0}) is None  # NaN
+
+
+def test_a_rep_is_a_dip_below_down_then_a_rise_above_up() -> None:
+    state = None
+    for t, value in enumerate([170, 150, 95, 80, 100, 150, 172, 160, 85, 175, 120]):
+        state = _geom("mod.reps", state, value, {"down": 90, "up": 165, "t": t})
+    assert state["count"] == 2 and state["phase"] == "up"
+    assert _geom("mod.reps", None, 120, {"down": 165, "up": 90})["count"] == 0  # bad limits: no rep
+
+
+def test_hold_sway_sequence_and_ema() -> None:
+    s = None
+    for t, good in ((0, True), (1, True), (2, True), (3, False), (4, True), (5, True)):
+        s = _geom("mod.hold", s, good, t)
+    assert s["best"] == 2 and s["holding"] is True
+    still = _geom("mod.sway", [{"x": 0.5, "y": 0.5}] * 5)
+    moving = _geom("mod.sway", [{"x": 0.5 + d, "y": 0.5} for d in (0, 0.02, -0.02, 0.03, -0.03)])
+    assert still["r"] == 0 and moving["r"] > 0.01
+    seq = _geom("mod.sequence", ["a", "c", "b", "c", "d"], ["a", "b", "c", "d"])
+    assert seq == {"matched": 4, "outOfOrder": 1, "missing": []}
+    assert _geom("mod.ema", None, 10, 0.5) == 10 and _geom("mod.ema", 10, 20, 0.25) == 12.5
+
+
+def test_the_synthetic_hands_are_the_engines_shape() -> None:
+    h = _geom("hands.hand", {"side": "left", "open": 0.5})
+    assert h["side"] == "left" and len(h["points"]) == 21
+    assert set(h["points"][0]) == {"x", "y", "z"}
+    assert len(_geom("hands.hands", [h, h, h])["hands"]) == 2
+    two = _geom("poses.pose", [_geom("poses.body", {}), _geom("poses.body", {})])
+    assert [b["track"] for b in two["bodies"]] == [0, 1] and {b["who"] for b in two["bodies"]} == {
+        ""
+    }
+
+
+# ---- S19 · the guard runs on every console-coach-*.js; pure modules; the pixel panes -------------
+def test_every_coach_module_passes_the_guard_and_geometry_is_the_one_import() -> None:
+    from r7_fakes_b import (
+        COACH_PANES,
+        PURE_MODULES,
+        pure_problems,
+        use_case_modules,
+        use_case_problems,
+    )
+
+    names = {p.name for p in use_case_modules()}
+    coach = {p.name for p in STATIC.glob("console-coach-*.js")}
+    assert coach - names == set(COACH_PANES) | {"console-coach-geom.js", "console-coach-bp.js"}
+    for path in use_case_modules():
+        assert use_case_problems(path.read_text(encoding="utf-8")) == [], path.name
+    for name in PURE_MODULES:
+        assert pure_problems((STATIC / name).read_text(encoding="utf-8")) == [], name
+    use = "JarvisVision.use({ id: 'reps', tasks: ['pose'], onResult: (r, s) => s, summary: (s) => s"
+    use += " });"
+    assert use_case_problems("import { angle, reps } from './console-coach-geom.js';\n" + use) == []
+    for sneak in (
+        "import { fetch } from './console-coach-geom.js';",
+        "import { angle } from './console-vision-r8.js';",
+        "import * as g from './console-coach-geom.js';",
+        "import { angle } from 'https://cdn.example/geom.js';",
+    ):
+        assert use_case_problems(sneak + "\n" + use) != [], sneak
+    assert pure_problems("export function f() { return fetch('/x'); }") != []
+
+
+def test_the_panes_register_their_modes_and_load_their_use_cases() -> None:
+    from jarvis.coach.usecases import USE_CASES
+
+    desk = (STATIC / "console-coach-desk.js").read_text(encoding="utf-8")
+    workout = (STATIC / "console-coach-workout.js").read_text(encoding="utf-8")
+    setup = (STATIC / "console-camera-setup.js").read_text(encoding="utf-8")
+    assert "modes.register('desk'," in desk and "modes.register('workout'," in workout
+    assert "modes.register('cameras'," in setup and "import('./console-vision-check.js')" in setup
+    for u in USE_CASES:
+        if not u.module.endswith(".js"):
+            continue
+        pane = desk if u.spot == "desk" else workout
+        assert f"'{u.id}': () => import('./{u.module}')" in pane, u.id
+    for js in (desk, workout, setup):
+        assert js.isascii() and "innerHTML" not in js and "fetch(" not in js
+
+
+# ---- S16, S17 · the Camera panel's panes and the deep links (open, never act) --------------------
+def test_the_camera_panel_has_desk_and_workout_panes_and_no_new_dock_tab() -> None:
+    out = run_dom("look", steps=[{"op": "open"}])
+    assert out["cam"]["live"] is False  # opening never starts the camera
+    js = (STATIC / "console-camera-panel.js").read_text(encoding="utf-8")
+    assert "['desk', 'Desk'], ['workout', 'Workout']" in js and len(js.splitlines()) <= 483
+    html = (STATIC / "console.html").read_text(encoding="utf-8")
+    assert 'data-open="desk"' not in html and 'data-open="workout"' not in html
+
+
+def test_the_deep_links_open_three_panes_and_never_start_the_camera() -> None:
+    from r7_fakes_a import links_words
+
+    from jarvis.mobile.ports import LAUNCH_WORDS
+
+    assert links_words() == list(LAUNCH_WORDS)
+    assert LAUNCH_WORDS[-3:] == ("desk", "workout", "cameras")
+    js = (STATIC / "console-r7-links.js").read_text(encoding="utf-8")
+    assert (
+        "else if (PANES.includes(l.do)) { if (D) D.open('camera', { focus: true }); "
+        "partCall('panel', 'choose', l.do); }" in js
+    )
+    assert "start(" not in js and "JarvisCamera" not in js
+
+
+# ---- S28 · the bar's layout model (D13, part I) --------------------------------------------------
+BAR = ["chat", "brief", "approvals", "activity", "vault", "camera", "calls"]
+
+
+def _dock(call: str, *args: Any) -> Any:
+    from r8_fakes import run_node
+
+    return run_node("console-dock-layout.js", call, *args)
+
+
+def test_no_saved_layout_is_the_shipped_bar_exactly() -> None:
+    layout = _dock("mod.apply", BAR, None)
+    assert layout == {"v": 1, "order": BAR, "more": [], "hidden": False}
+    assert _dock("mod.isDefault", BAR, layout) is True
+    assert _dock("mod.parse", "not json") is None and _dock("mod.parse", '{"v": 2}') is None
+
+
+def test_moves_removals_and_a_later_release_lose_nothing() -> None:
+    saved = {
+        "v": 1,
+        "order": ["camera", "chat", "brief"],
+        "more": ["vault", "chat"],
+        "hidden": True,
+    }
+    parsed = _dock("mod.parse", __import__("json").dumps(saved))
+    assert parsed["more"] == ["vault"]  # chat can never be removed
+    drawn = _dock("mod.apply", [*BAR, "newtab"], parsed)
+    assert drawn["order"][:3] == ["camera", "chat", "brief"]
+    assert drawn["order"][-1] == "newtab" and set(drawn["order"]) | set(drawn["more"]) == {
+        *BAR,
+        "newtab",
+    }
+    assert drawn["hidden"] is True and drawn["more"] == ["vault"]
+    gone = _dock(
+        "mod.apply", ["chat", "brief"], parsed
+    )  # a tab the console no longer has is dropped
+    assert gone["order"] == ["chat", "brief"] and gone["more"] == []
+    base = _dock("mod.apply", BAR, None)
+    assert _dock("mod.toMore", base, "chat") == base  # chat stays
+    moved = _dock("mod.move", base, "calls", 0)
+    assert moved["order"][0] == "calls" and _dock("mod.isDefault", BAR, moved) is False
+    back = _dock("mod.fromMore", _dock("mod.toMore", base, "vault"), "vault", 1)
+    assert back["order"][1] == "vault" and back["more"] == []
+    text = _dock("mod.serialize", _dock("mod.hide", base, True))
+    assert _dock("mod.parse", text)["hidden"] is True

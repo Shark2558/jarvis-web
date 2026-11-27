@@ -128,6 +128,68 @@ NOT_IN_PAGE = {
     "console-voice-session.css": ("console-r7.js", "'/static/console-voice-session.css'"),
     # R8 I0 (docs/plans/r8-vision.md S3): pose v2's and hands' bodies, imported by the engine
     "console-vision-r8.js": ("console-vision.js", "import('./console-vision-r8.js')"),
+    "console-coach-desk.js": ("console-r7.js", "import('./console-coach-desk.js')"),
+    "console-coach-workout.js": ("console-r7.js", "import('./console-coach-workout.js')"),
+    "console-camera-setup.js": ("console-r7.js", "import('./console-camera-setup.js')"),
+    "console-dock-edit.js": ("console-r7.js", "import('./console-dock-edit.js')"),
+    "console-coach.css": ("console-r7.js", "'/static/console-coach.css'"),
+    "console-camera-setup.css": ("console-camera-setup.js", "'/static/console-camera-setup.css'"),
+    "console-dock-edit.css": ("console-dock-edit.js", "'/static/console-dock-edit.css'"),
+    "console-dock-layout.js": ("console-dock-edit.js", "from './console-dock-layout.js'"),
+    "console-vision-check.js": ("console-camera-setup.js", "import('./console-vision-check.js')"),
+    # R8 I0: the panes' renderer, the shared geometry, the reading rule and the use cases
+    "console-coach-geom.js": ("console-coach-desk.js", "import('./console-coach-geom.js')"),
+    "console-coach-view.js": ("console-coach-desk.js", "import('./console-coach-view.js')"),
+    "console-coach-bp.js": ("console-coach-desk.js", "import('./console-coach-bp.js')"),
+    "console-coach-reaction.js": ("console-coach-desk.js", "import('./console-coach-reaction.js')"),
+    "console-coach-breath.js": ("console-coach-desk.js", "import('./console-coach-breath.js')"),
+    "console-coach-water.js": ("console-coach-desk.js", "import('./console-coach-water.js')"),
+    "console-coach-handrehab.js": (
+        "console-coach-desk.js",
+        "import('./console-coach-handrehab.js')",
+    ),
+    "console-coach-reach.js": ("console-coach-desk.js", "import('./console-coach-reach.js')"),
+    "console-coach-reps.js": ("console-coach-workout.js", "import('./console-coach-reps.js')"),
+    "console-coach-warmup.js": ("console-coach-workout.js", "import('./console-coach-warmup.js')"),
+    "console-coach-band.js": ("console-coach-workout.js", "import('./console-coach-band.js')"),
+    "console-coach-form.js": ("console-coach-workout.js", "import('./console-coach-form.js')"),
+    "console-coach-yoga.js": ("console-coach-workout.js", "import('./console-coach-yoga.js')"),
+    "console-coach-plank.js": ("console-coach-workout.js", "import('./console-coach-plank.js')"),
+    "console-coach-space.js": ("console-coach-workout.js", "import('./console-coach-space.js')"),
+    "console-coach-balance.js": (
+        "console-coach-workout.js",
+        "import('./console-coach-balance.js')",
+    ),
+    "console-coach-boxing.js": ("console-coach-workout.js", "import('./console-coach-boxing.js')"),
+    "console-coach-agility.js": (
+        "console-coach-workout.js",
+        "import('./console-coach-agility.js')",
+    ),
+    "console-coach-pilates.js": (
+        "console-coach-workout.js",
+        "import('./console-coach-pilates.js')",
+    ),
+    "console-coach-taichi.js": ("console-coach-workout.js", "import('./console-coach-taichi.js')"),
+    "console-coach-jump.js": ("console-coach-workout.js", "import('./console-coach-jump.js')"),
+    "console-coach-dance.js": ("console-coach-workout.js", "import('./console-coach-dance.js')"),
+    "console-coach-handstand.js": (
+        "console-coach-workout.js",
+        "import('./console-coach-handstand.js')",
+    ),
+    "console-coach-kettlebell.js": (
+        "console-coach-workout.js",
+        "import('./console-coach-kettlebell.js')",
+    ),
+    "console-coach-partner.js": (
+        "console-coach-workout.js",
+        "import('./console-coach-partner.js')",
+    ),
+    "console-coach-walk.js": ("console-coach-workout.js", "import('./console-coach-walk.js')"),
+    "console-coach-sitstand.js": (
+        "console-coach-workout.js",
+        "import('./console-coach-sitstand.js')",
+    ),
+    "console-coach-meal.js": ("console-coach-workout.js", "import('./console-coach-meal.js')"),
 }
 # R6.4: linked from the full book's page (book-read.html), served by api/book_read.READ_ASSETS
 ON_READ_PAGE = {"console-book-read.js", "console-book-chapter.js"}

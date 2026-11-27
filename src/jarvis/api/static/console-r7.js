@@ -12,7 +12,8 @@
 //   console-r7-sos.js       D   the SOS sheet and Integrations -> Emergency SOS
 //   console-wardrobe-scan.js R13 D  Camera -> Wardrobe (the second pixel panel, D9), and console-wardrobe.css
 //   console-tryon-card.js   R13.1 D  the try-on card under a "what should I wear?" reply (row 388), console-tryon.css
-//   console-calls.js        R18 E    the Calls panel and the call cards (it loads console-calls.css and its parts)
+//   console-calls.js        R18 E    the Calls panel and the call cards (it loads console-calls.css and its parts); R8: the
+//                           Camera panes console-coach-desk.js, -workout.js, console-camera-setup.js (C, E, B), console-dock-edit.js (I)
 // (Helpers -> Watch and Wardrobe are loaded by the Helpers frame.) Each part's stylesheet may only
 // place things: existing tokens and classes, no new colours, fonts, radii or shadows (plan D0), at most 150
 // lines. No build step; CSP script-src 'self' and style-src 'self'; textContent only. A module asks the server
@@ -58,7 +59,7 @@ window.JarvisMobile = { mk, api, part, parts, when };
 
 for (const href of ['/static/console-r7-share.css', '/static/console-camera.css',
   '/static/console-r7-phone.css', '/static/console-r7-sos.css', '/static/console-wardrobe.css', // R13: the Wardrobe tabs' places
-  '/static/console-tryon.css', '/static/console-voice-session.css']) { // R13.1: Try it on's; R5.2: Your voice
+  '/static/console-tryon.css', '/static/console-voice-session.css', '/static/console-coach.css']) { // R13.1, R5.2, R8
   const css = document.createElement('link');
   css.rel = 'stylesheet';
   css.href = href;
@@ -76,6 +77,8 @@ const MODULES = [
   ['console-tryon-card.js', 'The try-on card', '', () => import('./console-tryon-card.js')], // R13.1 D21: row 388
   ['console-calls.js', 'Calls', 'calls', () => import('./console-calls.js')], // R18 E: the Calls panel and the call cards
   ['console-voice-session.js', 'Your voice', '', () => import('./console-voice-session.js')], // R5.2 V3: Voice -> Your voice
+  ['console-coach-desk.js', 'Camera, Desk', 'camera', () => import('./console-coach-desk.js')], ['console-coach-workout.js', 'Camera, Workout', 'camera', () => import('./console-coach-workout.js')], // R8 C, E
+  ['console-camera-setup.js', 'Camera setup', 'camera', () => import('./console-camera-setup.js')], ['console-dock-edit.js', 'Edit the bar', '', () => import('./console-dock-edit.js')], // R8 B, I
 ];
 function noLoad(file, label, where, err) {
   console.warn('JARVIS: ' + file + ' could not load (' + (err && err.message ? err.message : 'unknown') + ').');

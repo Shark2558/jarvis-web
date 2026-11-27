@@ -9,7 +9,9 @@
 #     the ways to pixels, bytes, the global object, dynamic code and the camera);
 #   - `JarvisVision` may only be followed by `.use`; the engine's and the camera's own members
 #     (`register`, `run`, `stream`, `start`, `frame` ...) are refused as members;
-#   - `import` is refused except the one allowed form; `export` is refused.
+#   - `import` is refused except the one allowed form and (R8 I0, S19) the coaches' pure geometry:
+#     `import { a, b } from './console-coach-geom.js'`; `export` is refused (a pure module's
+#     exports are allowed by `pure_problems`, the same guard otherwise).
 # No new dependency: a JavaScript parser would be a runtime or dev dependency this repo does not
 # carry, and a conservative lexer that says "no" to what it cannot read is the stricter choice.
 from __future__ import annotations
@@ -52,6 +54,7 @@ IDENT_BANS = frozenset(
     {*(a for a in (*D13_APIS, *AROUND) if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", a)), *LABELS}
 ) - {"import", "open"}
 ALLOWED_IMPORT = ["import", "{", "use", "}", "from", "./console-vision.js"]
+GEOM = "./console-coach-geom.js"  # R8 I0 (S20): the one other module a use case may import
 # a word after which `[` or `/` starts a value, not an access or a division
 VALUE_WORDS = frozenset(
     "return typeof in of case else yield await new void delete throw do instanceof const let var "
@@ -250,12 +253,28 @@ def _name_problems(name: str, member: bool) -> list[str]:
     return found
 
 
+def _geom_import(toks: list[Tok], i: int) -> bool:
+    """`import { a, b, c } from './console-coach-geom.js'`: plain names only, none banned."""
+    if i + 1 >= len(toks) or toks[i + 1].text != "{":
+        return False
+    j, names = i + 2, []
+    while j < len(toks) and toks[j].text != "}":
+        if toks[j].kind == "name":
+            names.append(toks[j].text)
+        elif toks[j].text != ",":
+            return False
+        j += 1
+    tail = [t.text for t in toks[j : j + 3]]
+    ok_names = bool(names) and all(not _name_problems(n, True) for n in names)
+    return ok_names and tail == ["}", "from", GEOM] and toks[j + 2].kind == "str"
+
+
 def _import_problems(toks: list[Tok], i: int) -> list[str]:
     nxt = toks[i + 1] if i + 1 < len(toks) else None
     if nxt is not None and nxt.text == "(":
         return ["import("]
     shape = [t.text for t in toks[i : i + 6]]
-    return [] if shape == ALLOWED_IMPORT else ["import"]
+    return [] if shape == ALLOWED_IMPORT or _geom_import(toks, i) else ["import"]
 
 
 def problems_of(toks: list[Tok]) -> list[str]:
@@ -287,6 +306,18 @@ def problems_of(toks: list[Tok]) -> list[str]:
         if tok.kind == "name":
             found += _name_problems(tok.text, member)
     return found
+
+
+def pure_problems(source: str) -> list[str]:
+    """R8 I0 (S19, S20, S28): a PURE module (the coaches' geometry, the reading rule, the bar's
+    layout model) passes the use-case guard with its `export` statements allowed and nothing
+    else: no page, network, storage, camera or engine."""
+    try:
+        toks = [t for t in tokens(source) if not (t.kind == "name" and t.text == "export")]
+        found = problems_of(toks)
+    except Unreadable as exc:
+        return [f"unreadable: {exc}"]
+    return list(dict.fromkeys(found))
 
 
 def use_case_problems(source: str) -> list[str]:

@@ -17,7 +17,8 @@ const panel = document.getElementById('p-camera');
 const host = document.getElementById('cameraBody');
 const meta = document.getElementById('cameraMeta');
 const P = '/v1/vision';
-const TABS = [['look', 'Look'], ['results', 'Results'], ['cameras', 'Cameras'], ['wardrobe', 'Wardrobe']]; // R13: a mode's pane
+const TABS = [['look', 'Look'], ['results', 'Results'], ['cameras', 'Cameras'], ['wardrobe', 'Wardrobe'], ['desk', 'Desk'], ['workout', 'Workout']]; // R13, R8: modes' panes
+const MODE_IDS = ['wardrobe', 'desk', 'workout', 'cameras'], PIXEL_MODES = ['wardrobe', 'desk', 'workout']; // R8 I0 (S16)
 const TASKS = [['text', 'Read text'], ['code', 'Read a code (QR or barcode)'], ['quality', 'Light and sharpness'],
   ['objects', 'Everyday things'], ['pose', 'Body points']];
 const STREAMED = ['objects', 'pose', 'quality']; // live at a capped rate; text and codes are read on demand
@@ -169,15 +170,15 @@ function choose(id) {
     panes[t].hidden = !on;
   });
   if (S.tab === 'results') loadResults();
-  if (S.tab === 'wardrobe') stopLive(); else stopModes(); // one pixel panel at a time (R13 D9)
+  if (PIXEL_MODES.includes(S.tab)) stopLive(); stopModes(S.tab); // one pixel panel at a time (R13 D9; R8: + desk, workout)
 }
 // R13 I0 (docs/plans/r13-wardrobe.md D9, seam 12): Camera -> Wardrobe is a mode a named pixel panel module
 // (console-wardrobe-scan.js) mounts here: register(id, {mount(host, P), stop()}); it stops whenever its tab or
-// this panel goes away. Only 'wardrobe', once; P is this panel's own builders.
+// this panel goes away. Only MODE_IDS, each once (R8: Desk, Workout and the Cameras pane's setup); P is this panel's own builders.
 const MODES = {};
-function stopModes() { Object.values(MODES).forEach((m) => { try { m.stop(); } catch (_) {} }); }
+function stopModes(but) { Object.keys(MODES).forEach((id) => { if (id !== but) { try { MODES[id].stop(); } catch (_) {} } }); }
 window.JarvisCameraModes = Object.freeze({ register(id, mode) {
-  if (id !== 'wardrobe' || MODES[id] || !mode || typeof mode.mount !== 'function' || typeof mode.stop !== 'function') return false;
+  if (!MODE_IDS.includes(id) || MODES[id] || !mode || typeof mode.mount !== 'function' || typeof mode.stop !== 'function') return false;
   MODES[id] = mode;
   try { mode.mount(panes[id], Object.freeze({ mk, button, field, say, signedIn })); } catch (_) { panes[id].replaceChildren(mk('p', 'snote', DIDNT)); }
   return true;

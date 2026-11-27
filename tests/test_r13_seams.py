@@ -484,6 +484,8 @@ def test_vision_assets_know_the_wardrobe_release() -> None:
 # the panels that may see pixels: R13's two and R13.1's photo check (tests/test_r131_seams.py
 # holds it to the scan module's rules, D12)
 PANELS = ("console-camera-panel.js", "console-wardrobe-scan.js", "console-tryon-photo.js")
+# R8 I0 (S19): Camera -> Desk, Workout and the Cameras pane's setup (it runs the setup test)
+PANELS += ("console-coach-desk.js", "console-coach-workout.js", "console-camera-setup.js")
 ENGINE = ("console-vision.js", "console-camera.js")  # the port and the camera's own door
 ENGINE += ("console-vision-r8.js", "console-vision-check.js")  # R8: A's task bodies, setup test
 # the drawing modules that use canvas APIs on their OWN canvases (never a camera frame); R13.1's
@@ -549,9 +551,12 @@ def test_the_door_is_the_only_caller_of_the_wardrobes_picture_routes() -> None:
 def test_the_camera_panel_mounts_one_wardrobe_mode_and_stops_it() -> None:
     js = _text(STATIC / "console-camera-panel.js")
     assert "['wardrobe', 'Wardrobe']" in js and "window.JarvisCameraModes = Object.freeze(" in js
-    assert "if (id !== 'wardrobe' || MODES[id]" in js
+    # R8 I0 (S16): + Desk, Workout (pixel panes) and the Cameras pane's setup, each once
+    assert "['desk', 'Desk'], ['workout', 'Workout']" in js
+    assert "const MODE_IDS = ['wardrobe', 'desk', 'workout', 'cameras']" in js
+    assert "if (!MODE_IDS.includes(id) || MODES[id]" in js
     assert "stopLive(); stopModes(); clear();" in js  # the panel hidden: the mode stops too
-    assert "if (S.tab === 'wardrobe') stopLive(); else stopModes();" in js
+    assert "if (PIXEL_MODES.includes(S.tab)) stopLive(); stopModes(S.tab);" in js
 
 
 # ---- 12 · the console's joins (D1) ---------------------------------------------------------------

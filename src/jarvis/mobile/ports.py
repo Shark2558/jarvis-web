@@ -93,8 +93,9 @@ DOOR_CAPS: Mapping[str, int] = {  # the body cap of each route, checked before a
     "sos": 16 * _KB,
     "calls": 16 * _KB,  # R18: `jarvis.phone.calls.DOOR_CAP`
 }
-# The four launch words (D8): a launch address opens a screen and never acts.
-LAUNCH_WORDS: tuple[str, ...] = ("talk", "look", "sos", "shared")
+# The launch words (D8): a launch address opens a screen and never acts. R8 I0 (S17): + the Camera
+# panel's Desk, Workout and Cameras panes (they never start the camera either).
+LAUNCH_WORDS: tuple[str, ...] = ("talk", "look", "sos", "shared", "desk", "workout", "cameras")
 
 
 @dataclass(frozen=True)

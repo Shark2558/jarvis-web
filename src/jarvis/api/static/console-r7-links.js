@@ -7,6 +7,7 @@
 //   ?do=look     the Camera panel; the camera itself starts only on a tap on that screen (Part B)
 //   ?do=sos      the SOS sheet (Part D: JarvisMobile.parts.sos.open()); sending still needs the hold
 //   ?do=shared   the share tray (console-r7-share.js: JarvisMobile.parts.share.open())
+//   ?do=desk, ?do=workout, ?do=cameras   R8 I0 (S17): the Camera panel's Desk, Workout or Cameras pane; never the camera
 //   ?open=<p>    the panel <p>, one of the dock's own panels (PANELS)
 // Only these: each key at most once, its value exactly from WORDS or PANELS; anything else is ignored. `do` wins
 // over `open`. Both keys are taken out of the address at once (history.replaceState), so a reload never repeats a
@@ -16,11 +17,12 @@
 // A tapped alert (console-sw.js) hands its target to the JARVIS window already open over the BroadcastChannel
 // 'jarvis-launch' ({type: 'launch', open, do}); a window that is not on screen keeps it until it is (15 s).
 const M = window.JarvisMobile;
-const WORDS = Object.freeze(['talk', 'look', 'sos', 'shared']);
+const WORDS = Object.freeze(['talk', 'look', 'sos', 'shared', 'desk', 'workout', 'cameras']); // R8: + 3 panes
 const PANELS = Object.freeze(['chat', 'brief', 'approvals', 'activity', 'history', 'memory', 'integrations', 'vault',
   'things', 'notes', 'privacy', 'home', 'faces', 'vitals', 'connectors', 'people', 'book', 'voice', 'media',
   'construct', 'helpers', 'camera', 'calls']);
 const KEYS = ['do', 'open'];
+const PANES = ['desk', 'workout', 'cameras']; // R8: they open a pane of the Camera panel
 const KEEP = 'jarvis_r7_launch_v1';
 const KEEP_MS = 10 * 60 * 1000;
 const UNSEEN_MS = 15000;
@@ -98,6 +100,7 @@ function act(l) {
   if (locked()) { keep(l); return; } // the app lock's cover is up: the launch waits (the unlock reloads the page)
   if (l.do === 'talk') talk();
   else if (l.do === 'look') { if (D) D.open('camera', { focus: true }); partCall('panel', 'choose', 'look'); } // never a camera
+  else if (PANES.includes(l.do)) { if (D) D.open('camera', { focus: true }); partCall('panel', 'choose', l.do); } // R8: nor here
   else if (l.do === 'sos') partOpen('sos');
   else if (l.do === 'shared') partOpen('share');
   else if (l.open && D) D.open(l.open, { focus: true });

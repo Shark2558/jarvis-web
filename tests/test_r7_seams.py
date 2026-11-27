@@ -308,7 +308,7 @@ def test_the_four_server_parts_and_what_each_owns() -> None:
     assert COLLECTIONS["phone"] == ("phone_link", "phone_devices")
     assert COLLECTIONS["vision"] == ("vision_results",) and COLLECTIONS["shell"] == ()
     assert PACKAGE == "io.github.shark2558.jarvis"
-    assert LAUNCH_WORDS == ("talk", "look", "sos", "shared")
+    assert LAUNCH_WORDS == ("talk", "look", "sos", "shared", "desk", "workout", "cameras")  # R8
     for name in PARTS:
         assert callable(importlib.import_module(wiring.PART_MODULES[name]).build), name
 

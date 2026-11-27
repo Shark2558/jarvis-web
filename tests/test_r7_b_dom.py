@@ -162,7 +162,8 @@ def test_an_answer_outside_its_schema_is_dropped() -> None:
 def test_the_engine_lists_the_eleven_tasks() -> None:
     # R7's five, R13 Part D's four wardrobe tasks, photo-only (INTEGRATION-D.md), R8's two
     tasks = {t["id"]: t for t in run_dom("engine", probe={"n": 1})["tasks"]}
-    assert set(tasks) - {"probe"} == {"text", "code", "objects", "pose", "quality", "hands", "digits"} | {
+    r8 = {"hands", "digits"}
+    assert set(tasks) - {"probe"} == {"text", "code", "objects", "pose", "quality"} | r8 | {
         "embed",
         "colour",
         "person",

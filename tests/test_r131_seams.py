@@ -932,7 +932,7 @@ def test_the_size_guards_hold() -> None:
     assert _lines(SRC / "billing" / "spend.py") <= 100
     # D21, D22 (the owner's scope of 17 Nov): the card's hook, its loader, the share tray's button
     assert _lines(STATIC / "console-media.js") <= 415
-    assert _lines(STATIC / "console-r7.js") <= 96  # R5.2 V3: its one registration line
+    assert _lines(STATIC / "console-r7.js") <= 99  # R5.2 V3: its one registration line; R8 I0 +3
     assert _lines(STATIC / "console-r7-share.js") <= 295
     assert _lines(SRC / "tools" / "reply_cards.py") <= 400
     m1 = STATIC / "vendor" / "mannequin" / "m1"

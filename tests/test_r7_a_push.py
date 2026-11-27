@@ -58,7 +58,7 @@ def test_an_unknown_kind_opens_the_console_and_the_payload_stays_small() -> None
 
 
 def test_the_launch_reader_allows_the_four_words_and_every_dock_panel() -> None:
-    assert links_words() == ["talk", "look", "sos", "shared"]
+    assert links_words() == ["talk", "look", "sos", "shared", "desk", "workout", "cameras"]  # R8
     assert links_panels() == dock_panels()
 
 

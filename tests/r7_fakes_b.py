@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from r7_jsguard import AROUND, D13_APIS, use_case_problems
+from r7_jsguard import AROUND, D13_APIS, pure_problems, use_case_problems
 
 from jarvis.keyring import Keyring
 from jarvis.storage.docs import MemoryDocs
@@ -113,13 +113,23 @@ def run_dom(script: str, **payload: Any) -> dict[str, Any]:
 
 # ---- D13: what a use case's module may never use (static; for R8-R10's modules) ---------------
 # The lexer-based guard lives in tests/r7_jsguard.py (it fails closed); these names are its API.
+# R8 I0 (S19): the coach files that are not use cases: the two pixel panes, the renderer (both
+# held to the panes' rules in tests/test_r13_seams.py) and the pure modules (`pure_problems`)
+COACH_PANES = ("console-coach-desk.js", "console-coach-workout.js", "console-coach-view.js")
+PURE_MODULES = ("console-coach-geom.js", "console-coach-bp.js", "console-dock-layout.js")
+
+
 def use_case_modules() -> list[Path]:
-    """Every console script that hands a use case to the engine (`JarvisVision.use`)."""
+    """Every console script that hands a use case to the engine (`JarvisVision.use`), and (R8)
+    every console-coach-*.js that is not a pane, the renderer or a pure module, so a use case
+    that forgot to register is still checked."""
     use = re.compile(r"(?:JarvisVision|parts\s*\.\s*vision)\s*\.\s*use\s*\(")
+    skip = {"console-vision.js", *COACH_PANES, *PURE_MODULES}
     return [
         path
         for path in sorted(STATIC.glob("*.js"))
-        if path.name != "console-vision.js" and use.search(path.read_text(encoding="utf-8"))
+        if path.name not in skip
+        and (path.name.startswith("console-coach-") or use.search(path.read_text(encoding="utf-8")))
     ]
 
 
@@ -134,7 +144,10 @@ JarvisVision.use({ id: 'label-scan', tasks: ['text', 'code'],
 __all__ = [
     "AROUND",
     "CLEAN_USE_CASE",
+    "COACH_PANES",
     "D13_APIS",
+    "PURE_MODULES",
+    "pure_problems",
     "use_case_modules",
     "use_case_problems",
 ]

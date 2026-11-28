@@ -207,10 +207,10 @@ def test_planted_personal_data_is_scrubbed_and_leaks_without_the_scrub(tmp_path:
 def test_the_real_plans_parse(tmp_path: Path) -> None:
     r = Repo.from_git(ROOT)
     read = plans.read_plans(r, default_scrubber())
-    # R7 I0 seam 2: the release is named from the repository's own version (R5.2: 5.2.0 -> R5.2;
-    # 18.0.0 -> R18 at R18, 6.4.0 -> R6.4 at R6.4) and its plan comes first, then the rest
+    # R7 I0 seam 2: the release is named from the repository's own version (R8: 8.0.0 -> R8;
+    # 5.2.0 -> R5.2 at R5.2, 18.0.0 -> R18 at R18) and its plan comes first, then the rest
     # newest first (by number: R18 first); R6's own decisions are still read
-    assert read[0].path == "docs/plans/r5-2-voice.md" and read[0].label == "R5.2"
+    assert read[0].path == "docs/plans/r8-vision.md" and read[0].label == "R8"
     assert [p.path for p in read[1:3]] == [
         "docs/plans/r18-calls.md",
         "docs/plans/r14-hardening.md",
@@ -223,4 +223,4 @@ def test_the_real_plans_parse(tmp_path: Path) -> None:
     assert len(r6.decisions) == 17 and r6.decisions[0].startswith("D1 · Deterministic")
     assert any(f.release == "R6" for f in plans.fit_rows(read))
     lims = plans.limitations(read)
-    assert lims[0].release == "R5.2" and 0 < len(lims) <= MAX_LIMITATIONS  # this release's first
+    assert lims[0].release == "R8" and 0 < len(lims) <= MAX_LIMITATIONS  # this release's first

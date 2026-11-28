@@ -108,7 +108,7 @@ def _text(path: Path) -> str:
 # ---- 1, 2 · the version and the build book's release name --------------------------------------
 def test_the_version_is_seven() -> None:
     # R5.2 (18.0.0 at R18, 6.4.0 at R6.4, 7.0.0 at R7 I0); nothing compares
-    assert jarvis.__version__ == "5.2.0"
+    assert jarvis.__version__ == "8.0.0"  # R8 (5.2.0 at R5.2)
 
 
 def _repo(tmp_path: Path, version: str | None) -> Repo:
@@ -157,8 +157,8 @@ def test_the_fallback_label_reads_the_checkouts_version_file(tmp_path: Path) -> 
 
 def test_the_real_repository_is_r7_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)  # R6.4: the release is now R6.4 (tests/test_r63_seams.py)
-    assert plans.release_label(repo) == "R5.2"  # R18 at R18, R13.1 at R13.1, R14 to hotfix 2
-    assert plans.plan_paths(repo)[0] == "docs/plans/r5-2-voice.md"  # R18: r18-calls.md
+    assert plans.release_label(repo) == "R8"  # R5.2 at R5.2, R18 at R18, R14 to hotfix 2
+    assert plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"  # R5.2: r5-2-voice.md
     assert "docs/plans/r7-mobile.md" in plans.plan_paths(repo)
 
 
@@ -658,7 +658,7 @@ def test_new_css_stays_small() -> None:
 
 def test_the_line_budgets_hold() -> None:
     assert _lines(SRC / "tools" / "gateway.py") <= 760
-    assert _lines(SRC / "api" / "app.py") <= 739  # R18 I1 +4; R5.2 I1 +1 (r52_wiring)
+    assert _lines(SRC / "api" / "app.py") <= 741  # R18 I1 +4; R5.2 I1 +1; R8 I0 +2 (routes)
     for path in STATIC.glob("console*.js"):
         assert _lines(path) <= 800, path.name
 

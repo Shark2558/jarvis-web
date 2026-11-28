@@ -37,10 +37,10 @@ def _load(path: Path, name: str) -> ModuleType:
 # ---- 1 · the version and the release ------------------------------------------------------------
 def test_the_version_is_six_point_three() -> None:
     # R5.2 (18.0.0 at R18, 6.4.0 at R6.4, 6.3.2 at R6.3.1); the persona is unchanged
-    assert jarvis.__version__ == "5.2.0"
+    assert jarvis.__version__ == "8.0.0"  # R8 (5.2.0 at R5.2)
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R5.2"
-    assert plans.plan_paths(repo)[0] == "docs/plans/r5-2-voice.md"
+    assert plans.release_label(repo) == "R8"  # R5.2 at R5.2
+    assert plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"
 
 
 # ---- 12 · the staged eval runner ----------------------------------------------------------------
@@ -82,10 +82,10 @@ def test_the_keyring_keeps_its_27_purposes() -> None:
 
 # ---- the size guards -----------------------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") == 739  # R18 +2 (routes), I1 +4 (the join); R5.2 I1 +1
+    assert _lines(SRC / "api" / "app.py") == 741  # R18 +2 (routes), I1 +4; R5.2 I1 +1; R8 I0 +2
     assert _lines(SRC / "tools" / "gateway.py") == 760  # not edited
     assert _lines(SRC / "core" / "brain.py") == 713  # not edited
-    assert _lines(SRC / "config.py") == 792  # R18 +2, R5.2 +1 (the base classes' imports)
+    assert _lines(SRC / "config.py") == 793  # R18 +2, R5.2 +1, R8 +1 (the base classes' imports)
     assert _lines(STATIC / "console.html") == 782
     assert _lines(SRC / "api" / "r6_wiring.py") <= 300
     assert _lines(SRC / "api" / "console.py") <= 473

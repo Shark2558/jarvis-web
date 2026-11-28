@@ -1,4 +1,4 @@
-Version v8.0.3 · 28 Nov 2026, 04:40 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
+Version v8.0.4 · 28 Nov 2026, 05:35 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
 
 # R8 and R8.1 — Vision core, your desk camera and your workout spot: the plan
 
@@ -106,7 +106,7 @@ The owner answered on 28 Nov 2026, 04:24 IST. Each row says what holds now.
 | D10 | The webcam coach while you work | **Default stands:** the webcam's sessions run in a small always-on-top window (Chrome's Document Picture-in-Picture) so they keep looking while you use other programs; closing that window stops the camera; R7's "stops when the page is hidden" rule stays for everything else (ADR-52). The home camera's coaches need no window: they run on the home laptop |
 | D11 | "Cameras off" | **Default stands:** stops every camera's looking at once (this device, his other devices, the home camera's coaches); it **never disarms the burglar alarm** and never switches off Frigate (R3 D8): the reply says the alarm camera is still armed and offers the Disarm card |
 | D12 | Where results show and how long they're kept | **Default stands:** the day strip in Camera → Desk ("Your day") plus one line in the brief's Helpers section; Vitals shows camera health only. Tallies are kept only for coaches he switched on, for every person and guest (D6), 90 days (settable 7–365), exportable and deletable |
-| D13 | Your bar, your way (part I, his 04:33 ask: "make every icon editable … drag and drop each item and place it as per my requirement. Also, the items I remove should be in the More. I should also have the option to hide the bar as well.") | An **Edit the bar** mode on the console: drag and drop each item to any place; every move also works by keyboard (arrow keys on a picked item) and by long-press on touch; an item removed from the bar goes to More and can be put back from there; a **Hide the bar** switch, with a slim handle and a shortcut to show it again. **Nothing can be lost:** Chat and More can't be removed, and "Reset to default" puts the shipped bar back. The layout is saved **per device** (localStorage), versioned, so a tab a later release adds appears at the end instead of being lost. Until he edits it, the default bar at 1920 px stays byte-identical (R18's 1920 rule; `tests/browser/test_dock_fit.py`). A mockup of the edit mode is on `r8-mockups` |
+| D13 | Your bar, your way (part I, his 04:33 ask: "make every icon editable … drag and drop each item and place it as per my requirement. Also, the items I remove should be in the More. I should also have the option to hide the bar as well.") | An **Edit the bar** mode on the console, opened from a **right-click on the bar** ("Edit the bar"), a **long-press** on touch, a **keyboard shortcut** and a line in the console's settings (About), never from a new always-visible button: drag and drop each item to any place; every move also works by keyboard (arrow keys on a picked item); an item removed from the bar goes to More and can be put back from there; a **Hide the bar** switch, with a slim handle and a shortcut to show it again. **More keeps today's behaviour:** it appears only when items overflow or when he has removed items (the mockup's always-visible More would push Camera into More at 1920 px, which R18's rule forbids). On the phone, editing is a list in the More sheet (as mocked). **Nothing can be lost:** Chat and More can't be removed, and "Reset to default" puts the shipped bar back. The layout is saved **per device** (localStorage), versioned, so a tab a later release adds appears at the end instead of being lost. Until he edits it, the default bar at 1920 px stays byte-identical (R18's 1920 rule; `tests/browser/test_dock_fit.py`). A mockup of the edit mode is on `r8-mockups` |
 
 ---
 
@@ -178,7 +178,7 @@ R7 left the driver to R8 on purpose (`INTEGRATION-B.md`, section 7a): a use case
 ### 4.5b Your bar, your way (D13, part I; builder I)
 
 - **The layout:** `{v, order: [tab ids], more: [tab ids], hidden: bool}` in this device's localStorage (`jarvis_dock_layout_v1`), read and written only by `src/jarvis/api/static/console-dock-layout.js` (I0, pure: `parse`, `apply(defaults, saved)`, `move`, `toMore`, `fromMore`, `reset`). `apply` drops ids the console no longer has, appends tabs a later release adds at the end of the bar, never lets `chat` or `more` leave the bar, and returns the defaults for anything it can't read: no item is ever lost.
-- **The editor:** builder I's `console-dock-edit.js` and `console-dock-edit.css` (new) and the dock's own `console-dock.js`: Edit the bar, drag and drop, keyboard moves, long-press, Remove (to More), Put back, Reset to default, Hide the bar and its handle and shortcut. With no saved layout the bar is exactly today's.
+- **The editor:** builder I's `console-dock-edit.js` and `console-dock-edit.css` (new) and the dock's own `console-dock.js`: Edit the bar (right-click on the bar, long-press, a shortcut, the settings line; no new button), drag and drop, keyboard moves, Remove (to More), Put back, Reset to default, Hide the bar and its handle and shortcut; on the phone a list in the More sheet. More shows only when tabs overflow or one was removed. With no saved layout the bar is exactly today's.
 
 ### 4.6 The no-cloud camera check (row 377; builder B)
 
@@ -374,28 +374,26 @@ Mockups are made in parallel on branch `r8-mockups` (`docs/plans/r8-mockups/`, t
 
 ---
 
-## 11. Cost, risks and known limits
+## 11. Risks, cost and known limits
+
+1. **Chrome may throttle a hidden console tab, slowing the desk window's look.** The look's timer runs on the small window's own clock; a 2-hour browser test proves 1 frame a second; if it fails, the desk coach runs only while the console is visible and says so.
+2. **The phone may not keep 15 frames a second with up to four bodies tracked (D6: everyone).** The setup test measures it; the lite model, and "track me" (one body) as the fallback.
+3. **Fast moves (228, 235) need more than 15 frames a second.** Counts stay right; punch types and jump height are marked "about" at 15; 30 only if the phone keeps it (D4).
+4. **Upside-down poses (237) are not what the pose model is trained on.** "To be tried": if tracking fails in his check, 237 ships as a hold timer with the wall-or-spotter rule only.
+5. **One camera can't see depth; side views matter (plank, kettlebell).** Each coach's setup line says which way to face; low visibility pauses the count rather than guessing.
+6. **Two bodies crossing can swap who is followed.** A body's track follows its torso centre; where two overlap, the counts of both tracks are marked "about" for that span, and a guest saved by mistake can be merged or deleted later (D6).
+7. **ActivityWatch listens on Windows' 127.0.0.1; the bridge's container may not reach it.** Unverified; the go-live card's setting and the bridge's self-test prove it at his step 4; screen time stays off until it works.
+8. **The home kit has shown amber (from the scope note, not verified here).** Rows 183 and 377 need it linked; both say so in plain words; nothing else in R8 needs the kit.
+9. **Model pins are trust on first use (no vendor hash).** Two CI runs must agree; the console checks every file's SHA-256 against the manifest before use.
+10. **The object model's licence may not be permissive.** D9's fallback (SSD-MobileNet v1, already pinned and licensed).
+11. **Battery and heat on a 30-minute phone session.** A warning at 20 % battery; the session can pause; the camera stops when the screen locks.
+12. **The workbook's success-check wording is not in the repository.** I0 copies it into `ROWS.md`; a stricter figure there wins.
+13. **Not medical grade.** Every health row says "practice, not medical advice"; the automated scan; a reading is categorised only by a published table with its source named, never diagnosed.
+14. **The home camera arrives about 3 Dec and its model is not confirmed.** Built for any RTSP/ONVIF camera; CI uses a fake RTSP source; rows 181, 182, 227 and 262's checklist are proved on the real camera after it arrives (owner step 4a).
+15. **The home laptop may not keep pose at 15 frames a second beside Frigate.** D4: lite when full is too slow; posture needs 1 a second; the seated session says when the laptop is too slow.
+16. **Identifying people (D6) relies on R3's face library, which works only on the home camera.** On device cameras `who` is "me" only while one body is in view of his own device; "track <name>" there says it needs the home camera.
 
 **Cost:** ₹0 a month. All looking is on the device; coaches use fixed rules, no AI call; counts and tips use the browser's own voice (no cloud minutes); the `coach_results` tool runs only when he asks the brain (an ordinary brain turn, inside his ₹3,000 limit); Firestore writes stay inside the free tier; the CI job runs on GitHub's free minutes; no new account, key or secret. Equipment for rows 219, 230 and 239 is his own. Built on the Claude subscription.
-
-| # | Risk or limit | What the plan does |
-|---|---|---|
-| 1 | Chrome may throttle a hidden console tab, slowing the desk window's look | The look's timer runs on the small window's own clock; a 2-hour browser test proves 1 frame a second; if it fails, the desk coach runs only while the console is visible and says so |
-| 2 | The phone may not keep 15 frames a second with two bodies tracked | The setup test measures it; the lite model and the one-body mode as fallback, with the pause rule kept by the `person` check once every 2 s |
-| 3 | Fast moves (228, 235) need more than 15 frames a second | Counts stay right; punch types and jump height are marked "about" at 15; 30 only if the phone keeps it (D4) |
-| 4 | Upside-down poses (237) are not what the pose model is trained on | "To be tried": if tracking fails in his check, 237 ships as a hold timer with the wall-or-spotter rule only |
-| 5 | One camera can't see depth; side views matter (plank, kettlebell) | Each coach's setup line says which way to face; low visibility pauses the count rather than guessing |
-| 6 | Two bodies crossing can swap who is followed | The coach pauses when bodies overlap and asks him to step clear |
-| 7 | ActivityWatch listens on Windows' 127.0.0.1; the bridge's container may not reach it | Unverified; the go-live card's setting and the bridge's self-test prove it at his step 4; screen time stays off until it works |
-| 8 | The home kit has shown amber (from the scope note, not verified here) | Rows 183 and 377 need it linked; both say so in plain words; nothing else in R8 needs the kit |
-| 9 | Model pins are trust on first use (no vendor hash) | Two CI runs must agree; the console checks every file's SHA-256 against the manifest before use |
-| 10 | The object model's licence may not be permissive | D9's fallback (SSD-MobileNet v1, already pinned and licensed) |
-| 11 | Battery and heat on a 30-minute phone session | A warning at 20 % battery; the session can pause; the camera stops when the screen locks |
-| 12 | The workbook's success-check wording is not in the repository | I0 copies it into `ROWS.md`; a stricter figure there wins |
-| 13 | Not medical grade | Every health row says "practice, not medical advice"; the automated scan; a reading is categorised only by a published table with its source named, never diagnosed |
-| 14 | The home camera arrives about 3 Dec and its model is not confirmed | Built for any RTSP/ONVIF camera; CI uses a fake RTSP source; rows 181, 182, 227 and 262's checklist are proved on the real camera after it arrives (owner step 4a) |
-| 15 | The home laptop may not keep pose at 15 frames a second beside Frigate | D4: lite when full is too slow; posture needs 1 a second; the seated session says when the laptop is too slow |
-| 16 | Identifying people (D6) relies on R3's face library, which works only on the home camera | On device cameras `who` is "me" only while one body is in view of his own device; "track <name>" there says it needs the home camera |
 
 ---
 
@@ -418,6 +416,7 @@ Mockups are made in parallel on branch `r8-mockups` (`docs/plans/r8-mockups/`, t
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v8.0.4 | 28 Nov 2026, 05:35 IST | R8 | I0: section 11's risks as a numbered list (the Build Book reads a plan's risks from a list); D13's edit mode opens from a right-click on the bar, a long-press, a shortcut and a settings line, and More keeps today's behaviour (the coordinator's correction to the mockup) | 🛠 Mark XXVI |
 | v8.0.3 | 28 Nov 2026, 04:40 IST | R8 | The owner's further answers of 28 Nov 04:33 IST: the camera is an **Imou Ranger S2** (RTSP and ONVIF, delivery 3 Dec; built for any RTSP/ONVIF camera); D8 and D9 approved; **D6 final** ("Keep everything and save the results": everyone's results saved, unknown people as "Guest N" per session, rename and merge, Privacy rows per person and guest); **D13 new**, part I "your bar, your way" (move, remove to More, put back, hide the bar; saved per device, versioned; Chat and More can't be removed; the 1920 bar unchanged until edited; builder I); seams S27, S28 | 🛠 Mark XXVI |
 | v8.0.2 | 28 Nov 2026, 04:35 IST | R8 | The owner's answers of 28 Nov 04:24 IST: D1, D2 (mockups), D5, D10–D12 approved; **D3 changed** (the ordered home camera for posture and the whole-body desk rows, vision on the home laptop: section 4.5a, ADR-49, builder J); D4 follows it; **D6 changed** (a tracking target, everyone by default, kept only for known people: ADR-48); **D7 changed** (the camera reads the monitor, he confirms, category with its source: ADR-51); D8 and D9 defaults kept; seams S24–S26; links to the Architecture Design Document replaced by plain words (it is kept privately) | 🛠 Mark XXVI |
 | v8.0.1 | 28 Nov 2026, 03:50 IST | R8 | First edition: rows (R8's 14, R8.1's 20) with acceptance tests; decisions D1–D12 with safe defaults; the `hands` task and `pose` v2 contract change, the live driver and use-case registry, kept tallies sealed under `coach`, cameras, spots, rooms, health and "cameras off", the no-cloud check, posture, the day strip and screen time, CPU budget, no new dock tab, the desk window, the CI model fetch and the object model's licence; ADR-47 to ADR-54 proposed; privacy and safety; I0 seams S1–S23, builders A–D and E–H with their files and tests; evals; four mockups and the approval stop; owner steps; ₹0 cost, risks; corrections to the scope note | 🛠 Mark XXVI |

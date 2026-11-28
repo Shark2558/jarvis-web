@@ -214,17 +214,17 @@ INVENTORY_FILES: dict[str, str] = {
 
 # the plan's "The tour's facts" table, on this branch (the release's own values)
 TOUR = {
-    "release.label": "R5.2",  # R5.2 (R18 at R18, R6.4 at R6.4)
-    "release.version": "v5.2.0",  # R5.2 (v18.0.0 at R18, v6.4.0 at R6.4, v6.3.2 at R6.3.1)
-    # R5.2: its own plan (by version); R18's was "Calls from your laptop: the plan"
-    "release.new": "Your voice: the plan",
+    "release.label": "R8",  # R8 (R5.2 at R5.2, R18 at R18, R6.4 at R6.4)
+    "release.version": "v8.0.0",  # R8 (v5.2.0 at R5.2, v18.0.0 at R18, v6.4.0 at R6.4)
+    # R8: its own plan (by version); R5.2's was "Your voice: the plan"
+    "release.new": "Vision core, your desk camera and your workout spot: the plan",
     "cards.count": 83,  # R18: C74-C78; R5.2: C79-C83 (in Voice)
     "modules.count": 19,  # R18: Phone calls
     "modules.else_count": 12,
     "layers.count": 8,
     "brain.balanced_model": "Claude Sonnet 5.5",
     "undo.keep_days": 30,
-    "keys.purposes": 27,  # R18 + 1 (calls)
+    "keys.purposes": 28,  # R18 + 1 (calls), R8 + 1 (coach)
     "services.count": 35,  # R18: Microsoft Azure Speech, Sarvam, Bhashini, Hugging Face
     "approvals.max_new_cards": 5,
     "memory.facts_per_turn": 12,

@@ -14,6 +14,7 @@ from pydantic import AliasChoices, Field, SecretStr, field_validator, model_vali
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from jarvis.config_calls import CallsConfig
+from jarvis.config_coach import CoachConfig
 from jarvis.config_voice import LocalSpeechConfig
 
 
@@ -54,7 +55,7 @@ def _is_private_host(host: str) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
-class Settings(LocalSpeechConfig, CallsConfig, BaseSettings):  # R5.2 and R18: config_*.py
+class Settings(CoachConfig, LocalSpeechConfig, CallsConfig, BaseSettings):  # R8, R5.2, R18
     model_config = SettingsConfigDict(
         env_prefix="JARVIS_",
         env_file=".env",

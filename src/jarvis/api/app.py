@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 import jarvis.api.r7_wiring as r7
+import jarvis.api.r8_wiring as r8
 import jarvis.api.r13_wiring as r13
 import jarvis.api.r14_wiring as r14
 import jarvis.api.r18_wiring as r18
@@ -697,6 +698,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     r14.install_r14_routes(app)  # R14: /v1/r14, /v1/backup, /v1/selfwatch, /v1/skills
     r13.install_r13_routes(app)  # R13: /v1/r13, /v1/wardrobe, /v1/laundry, /v1/outfits
     install_calls_routes(app)  # R18: /v1/calls (501 until I1 wires the parts), its 2 sockets
+    r8.install_r8_routes(app)  # R8: /v1/coach, /v1/camera (I1 wires app.state.coach)
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

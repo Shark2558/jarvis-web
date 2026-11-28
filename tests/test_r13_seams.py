@@ -69,13 +69,13 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name ------------------------------------------------
 def test_the_version_is_thirteen() -> None:
-    assert jarvis.__version__ == "5.2.0"  # R5.2 (18.0.0 at R18; nothing compares)
+    assert jarvis.__version__ == "8.0.0"  # R8 (5.2.0 at R5.2; nothing compares)
 
 
 def test_the_real_repository_is_r13_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)  # R6.4: the release is now R6.4 (tests/test_r63_seams.py)
-    assert plans.release_label(repo) == "R5.2"  # R18 at R18
-    assert plans.plan_paths(repo)[0] == "docs/plans/r5-2-voice.md"
+    assert plans.release_label(repo) == "R8"  # R5.2 at R5.2, R18 at R18
+    assert plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"
     assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 
 
@@ -604,7 +604,7 @@ def test_the_wardrobe_css_only_places_things() -> None:
 
 # ---- size guards and "no real clock" -------------------------------------------------------------
 def test_the_size_guards_hold() -> None:
-    assert _lines(SRC / "api" / "app.py") <= 739  # R18 I1 +4; R5.2 I1 +1 (r52_wiring)
+    assert _lines(SRC / "api" / "app.py") <= 741  # R18 I1 +4; R5.2 I1 +1; R8 I0 +2 (routes)
     assert _lines(SRC / "tools" / "gateway.py") == 760
     assert _lines(SRC / "core" / "brain.py") <= 741
     for path in STATIC.glob("console*.js"):

@@ -697,3 +697,62 @@ def test_the_workflow_fetches_twice_compares_and_keeps_the_files_a_week() -> Non
     for use in re.findall(r"uses: (\S+)", wf):
         assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", use), use  # every action pinned by its commit
     assert "secrets." not in wf
+
+
+# ---- S22 · the wiring skeleton, the settings, the version ----------------------------------------
+def test_the_version_is_eight_and_the_book_names_r8() -> None:
+    import jarvis
+    from jarvis.buildbook.gen import plans
+    from jarvis.buildbook.gen.repo import Repo
+
+    assert jarvis.__version__ == "8.0.0"  # the exact number: test_about.py
+    repo = Repo.from_git(ROOT)
+    assert (
+        plans.release_label(repo) == "R8" and plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"
+    )
+
+
+def test_the_coach_settings_have_safe_defaults_and_ranges() -> None:
+    from pydantic import ValidationError
+
+    from jarvis.config import Settings
+
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert s.coach_enabled is True and s.coach_keep_days == 90
+    for bad in (6, 366):
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None, coach_keep_days=bad)  # type: ignore[call-arg]
+
+
+def test_the_wiring_mounts_the_routes_and_builds_the_coach_only_when_enabled() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from jarvis.api.auth import require_auth
+    from jarvis.api.coach import CoachApp
+    from jarvis.api.identity import current_user
+    from jarvis.api.r8_wiring import install_r8_routes, r8_privacy_sources, r8_tools, wire_r8
+    from jarvis.config import Settings
+    from jarvis.keyring import Keyring
+    from jarvis.storage.docs import MemoryDocs
+
+    app = FastAPI()
+    install_r8_routes(app)
+    app.dependency_overrides[require_auth] = lambda: None
+    app.dependency_overrides[current_user] = lambda: "u1"
+    c = TestClient(app)
+    assert c.get("/v1/coach/usecases").status_code == 200
+    assert c.get("/v1/coach/results").status_code == 404  # no coach wired: coach_off
+    assert c.get("/v1/camera/spots").status_code == 501  # B's skeleton
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    coach = wire_r8(app, s, MemoryDocs(), Keyring(KEY), _clock())
+    assert isinstance(coach, CoachApp) and app.state.coach is coach and coach.store.keep_days == 90
+
+    async def names(uid: str) -> dict[str, str]:
+        return {}
+
+    assert [r.id for r in r8_privacy_sources(app)] == ["coach_me", "coach_people", "coach_guests"]
+    assert [t.name for t in r8_tools(app, names)] == ["coach_results"]
+    off = Settings(_env_file=None, coach_enabled=False)  # type: ignore[call-arg]
+    assert wire_r8(app, off, MemoryDocs(), None, _clock()) is None and app.state.coach is None
+    assert r8_privacy_sources(app) == () and r8_tools(app, names) == []

@@ -222,8 +222,10 @@ def test_this_cameras_switch_stops_its_look_within_two_seconds(
         assert "This device \u00b7 Desk, in the study" in p.inner_text()
         start_look(c)
         p = pane(c)
-        t0 = time.monotonic()
-        press(p, "Switch off")
+        put = lambda r: r.request.method == "PUT" and r.url.endswith("/v1/camera/spots")  # noqa: E731
+        with c.page.expect_response(put):
+            press(p, "Switch off")
+        t0 = time.monotonic()  # the switch is saved: from here this device has 2 s
         until(c.page, lambda: not live(c) and not chip(c), "the look to stop", timeout_s=2.0)
         assert time.monotonic() - t0 <= 2.0
         look = pane(c, "look")
@@ -325,7 +327,9 @@ def test_check_a_camera_in_two_stages_then_add_it(browser: Any, b_url: str, toke
         press(p, "Add as a home camera")
         until(c.page, lambda: "Home kit id: home_camera" in p.inner_text(), "the home camera added")
         no_picture_sent(c)
-        assert c.errors == [] and c.csp_violations() == []
+        refused = [e for e in c.errors if "422" in e and e.endswith("/v1/camera/check")]
+        assert len(refused) == 1  # the public address, refused by the server (by design)
+        assert [e for e in c.errors if e not in refused] == [] and c.csp_violations() == []
     finally:
         c.close()
 
@@ -353,6 +357,7 @@ def test_the_cameras_pane_passes_the_visual_gate(
         _gate(c, vp, f"first use, {vp} {surface}")
         if SHOTS:
             Path(SHOTS).mkdir(parents=True, exist_ok=True)
+            p.locator(".r8-promise").evaluate("(n) => n.scrollIntoView({ block: 'start' })")
             c.page.screenshot(path=str(Path(SHOTS) / f"cameras-first-{vp}-{surface}.png"))
         add_this(c, "Workout phone" if vp == "phone" else "Desk camera", "Study")
         disclose(p)
@@ -363,8 +368,9 @@ def test_the_cameras_pane_passes_the_visual_gate(
         until(c.page, lambda: "HALF WAY" in p.inner_text().upper(), "the first stage")
         _gate(c, vp, f"set up with a check, {vp} {surface}")
         if SHOTS:
+            p.locator(".r8-card").evaluate("(n) => n.scrollIntoView({ block: 'end' })")
             c.page.screenshot(path=str(Path(SHOTS) / f"cameras-check-{vp}-{surface}.png"))
-            p.get_by_role("heading", name="Cameras and spots").scroll_into_view_if_needed()
+            p.locator(".r8-promise").evaluate("(n) => n.scrollIntoView({ block: 'start' })")
             c.page.screenshot(path=str(Path(SHOTS) / f"cameras-set-{vp}-{surface}.png"))
         assert c.errors == [] and c.csp_violations() == []
     finally:

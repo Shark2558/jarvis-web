@@ -38,7 +38,7 @@ const BEFORE_BUY = [
   ['Mains power', 'A battery camera sleeps and can\u2019t be watched all day.'],
 ];
 const S = { host: null, P: null, box: null, view: null, busy: false, note: '', noteKind: '', open: false, check: null, ip: '',
-  blocked: false, poll: 0, testing: false, tested: '', loading: false };
+  blocked: false, poll: 0, testing: false, tested: '', loading: false, form: {} }; // form: what he typed, kept across repaints
 const mk = (tag, cls, text) => (M ? M.mk(tag, cls, text) : document.createElement(tag));
 const signedIn = () => !!(S.P && S.P.signedIn());
 const api = (path, opts) => (M && typeof M.api === 'function' ? M.api(path, opts) : Promise.reject(new Error('offline')));
@@ -225,28 +225,35 @@ function cameraRow(c) {
   row.append(wide);
   return row;
 }
-function input(label, value, attrs) {
-  const i = mk('input', 'minput');
-  i.type = 'text'; i.value = value || '';
-  Object.entries(attrs || {}).forEach(([k, v]) => i.setAttribute(k, v));
-  return [S.P.field(label, i), i];
+function kept(i, key, value) { // a field keeps what he typed when the pane is drawn again
+  i.setAttribute('data-k', 'f-' + key);
+  i.value = Object.prototype.hasOwnProperty.call(S.form, key) ? S.form[key] : value || '';
+  const save = () => { S.form[key] = i.value; };
+  i.addEventListener('input', save);
+  i.addEventListener('change', save);
+  return i;
 }
-function select(label, pairs, value) {
+function input(label, key, value, attrs) {
+  const i = mk('input', 'minput');
+  i.type = 'text';
+  Object.entries(attrs || {}).forEach(([k, v]) => i.setAttribute(k, v));
+  return [S.P.field(label, kept(i, key, value)), i];
+}
+function select(label, key, pairs, value) {
   const s = mk('select', 'minput');
   pairs.forEach(([v, t]) => { const o = mk('option', '', t); o.value = v; s.append(o); });
-  s.value = value;
-  return [S.P.field(label, s), s];
+  return [S.P.field(label, kept(s, key, value)), s];
 }
 function addThisForm() {
   const li = mk('div', 'r8-form');
-  const [nameF, name] = input('Name this camera', onPhone() ? 'Workout phone' : 'Desk camera', { maxlength: '40', autocomplete: 'off' });
-  const [spotF, spot] = select('Spot', SPOT_WORDS, onPhone() ? 'workout' : 'desk');
-  const [roomF, room] = input('Room (optional)', '', { maxlength: '40', placeholder: 'Study', autocomplete: 'off' });
+  const [nameF, name] = input('Name this camera', 'name', onPhone() ? 'Workout phone' : 'Desk camera', { maxlength: '40', autocomplete: 'off' });
+  const [spotF, spot] = select('Spot', 'spot', SPOT_WORDS, onPhone() ? 'workout' : 'desk');
+  const [roomF, room] = input('Room (optional)', 'room', '', { maxlength: '40', placeholder: 'Study', autocomplete: 'off' });
   const grid = mk('div', 'r8-grid2');
   grid.append(spotF, roomF);
   li.append(mk('p', 'snote', 'This device\u2019s camera isn\u2019t set up yet. Give it a name, the spot it watches and its room.'), nameF, grid);
   const acts = mk('div', 'sacts');
-  acts.append(button('Add this camera', 'primary', () => addCamera({ label: name.value, spot: spot.value, room: room.value }, 'device'), 'add-this'));
+  acts.append(button('Add this camera', 'primary', () => { addCamera({ label: name.value, spot: spot.value, room: room.value }, 'device'); S.form = {}; }, 'add-this'));
   li.append(acts);
   return li;
 }
@@ -296,8 +303,12 @@ function roomsSection() {
   const sec = mk('section', 'hp-sec r8-add'), v = S.view;
   sec.append(mk('h3', 'hp-h', 'Rooms'));
   (v.rooms || []).forEach((r) => sec.append(roomRow(r)));
-  const [roomF, room] = input('Add a room', '', { maxlength: '40', placeholder: 'Bedroom', autocomplete: 'off' });
-  const add = button('Add room', '', () => { if (clean(room.value)) change((s) => Object.assign(s, { rooms: roomFor(s, room.value).rooms })); }, 'add-room');
+  const [roomF, room] = input('Add a room', 'newroom', '', { maxlength: '40', placeholder: 'Bedroom', autocomplete: 'off' });
+  const add = button('Add room', '', () => {
+    if (!clean(room.value)) return;
+    change((s) => Object.assign(s, { rooms: roomFor(s, room.value).rooms }));
+    delete S.form.newroom;
+  }, 'add-room');
   const lrow = mk('span', 'lrow');
   lrow.append(roomF, add);
   sec.append(lrow, mk('p', 'sfine', ROOM_FINE));
@@ -323,14 +334,14 @@ function resultCard(c) {
   const verdict = c.state === 'running' ? ['', 'Checking'] : c.verdict === 'pass' ? ['ok', 'Works'] : c.verdict === 'half' ? ['amber', 'Half way'] : ['red', 'Doesn\u2019t work'];
   head.append(mk('h4', 'k nw', 'Camera at ' + c.ip), chip(verdict[0], verdict[1]));
   const ul = mk('ul', 'r8-checks');
-  (c.checks || []).forEach((x) => { const [cls, mark, word] = MARKS[x.ok === true ? 'true' : x.ok === false ? 'false' : 'null']; ul.append(checkItem(cls, mark, CHECK_NAMES[x.id] || x.id, x.words, word)); });
+  (c.checks || []).forEach((x) => { const [cls, mark, word] = MARKS[x.ok === true ? 'true' : x.ok === false ? 'false' : 'null']; ul.append(checkItem(cls, mark, CHECK_NAMES[x.id] || x.id, x.ok === true ? '' : x.words, word)); }); // a line that passed says it once
   card.append(head, ul);
   if (c.state === 'running') card.append(mk('p', 'sfine', c.stage === 'offline' ? 'Checking with its internet blocked: round ' + Math.max(1, c.rounds_done) + ' of ' + (c.rounds || 5) + '. About two minutes.' : 'Checking on your Wi-Fi\u2026'));
   else if (c.verdict === 'pass') {
     card.append(mk('p', 'inote', 'Works with JARVIS. No cloud service needed.'));
     const acts = mk('div', 'sacts');
     acts.append(button('Add as a home camera', 'primary', () => addCamera({ label: 'Home camera', spot: 'desk', room: '' }, 'home'), 'add-home'),
-      button('Check another', '', () => { S.check = null; S.ip = ''; render(); }, 'another'));
+      button('Check another', '', () => { S.check = null; S.ip = ''; delete S.form.ip; render(); }, 'another'));
     card.append(acts);
   } else if (c.verdict === 'half') {
     card.append(mk('p', 'bnote', 'Works on your Wi-Fi. Now block its internet in your router and restart the camera, then check again: it passes only if everything still answers.'));
@@ -365,7 +376,7 @@ function checkSection() {
   body.id = 'camChk';
   const ul = mk('ul', 'r8-checks');
   BEFORE_BUY.forEach(([t, s]) => ul.append(checkItem('need', '\u25c6', t, s, 'Must')));
-  const [ipF, ip] = input('The camera\u2019s address on your Wi-Fi (its own app shows it)', S.ip, { inputmode: 'decimal', maxlength: '15', autocomplete: 'off', placeholder: '192.168.1.40' });
+  const [ipF, ip] = input('The camera\u2019s address on your Wi-Fi (its own app shows it)', 'ip', S.ip, { inputmode: 'decimal', maxlength: '15', autocomplete: 'off', placeholder: '192.168.1.40' });
   ip.addEventListener('input', () => { S.ip = ip.value; });
   const go = button('Check', 'primary', () => { S.ip = ip.value; S.blocked = false; runCheck('first'); }, 'check');
   const lrow = mk('span', 'lrow');
@@ -423,7 +434,10 @@ function stop() {
 document.addEventListener('jarvis:ready', () => load());
 document.addEventListener('jarvis:panel', (e) => { if (e && e.detail && e.detail.id === 'camera' && e.detail.open) load(); });
 document.addEventListener('click', (e) => { const t = e && e.target; if (t && typeof t.closest === 'function' && t.closest('#camt-cameras')) load(); });
-document.addEventListener('jarvis:camera', () => { if (S.view && !S.busy) render(); });
+document.addEventListener('jarvis:camera', () => { // the chip changed; never under his typing
+  const a = document.activeElement;
+  if (S.view && !S.busy && !(a && S.box && S.box.contains(a) && /^(INPUT|SELECT)$/.test(a.tagName))) render();
+});
 function join() { const modes = window.JarvisCameraModes; return !!(modes && modes.register('cameras', { mount, stop })); }
 if (!join()) document.addEventListener('jarvis:camera-modes', join, { once: true });
 export { CHECK, STYLE };

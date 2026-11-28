@@ -54,5 +54,5 @@
 #p-camera .r8-checks .no .r8-mark,#p-camera .r8-checks .no em{color:var(--bad-ink)}
 
 @media (max-width:600px){
-  #p-camera .r8-cam .hp-acts .btn.sact,#p-camera .r8-setup .sacts .btn{min-height:44px}
+  #p-camera .r8-cam .hp-acts .btn.sact,#p-camera .r8-setup .sacts .btn,#p-camera .r8-setup .lrow > .btn{min-height:44px}
 }

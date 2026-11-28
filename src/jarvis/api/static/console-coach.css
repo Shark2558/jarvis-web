@@ -1,2 +1,108 @@
-/* src/jarvis/api/static/console-coach.css -- R8 I0 stub (docs/plans/r8-vision.md v8.0.3; owner from I0 on: R8 builder C).
-   The Desk and Workout panes' places only: existing tokens and classes, no new colours, fonts, radii or shadows. */
+/* src/jarvis/api/static/console-coach.css -- R8 builder C (docs/plans/r8-vision.md 4.3, 4.7, 4.10; the approved mockups
+   docs/plans/r8-mockups/tools/r8-common.css on r8-mockups): the Desk and Workout panes' places and the view widgets
+   (console-coach-view.js). The console's own tokens and classes only (.vt-card, .vt-chip, .tiles, .hp-*, .mbar, .bnote):
+   no new colours, fonts, radii or shadows. The two night mixes for the amber card are console-deck.css's own (.spend).
+   Loaded by console-r7.js. */
+
+/* the Camera panel's six tabs (Look, Results, Cameras, Wardrobe, Desk, Workout) in 3 x 2: six names don't fit one row */
+#p-camera .hp-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+/* the promise line on every coach pane (the .bnote material, an eye like the Privacy tab's) */
+.r8-promise{display:flex;align-items:flex-start;gap:8px;margin:10px 0 0;padding:7px 10px;border-radius:var(--r-sm);
+  background:var(--well-2);border:1px solid var(--line-2);font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.r8-promise svg{flex:none;width:16px;height:16px;margin-top:1px;color:var(--ok-ink)}
+.r8-promise b{font-weight:600;color:var(--ink)}
+
+/* cards: the "This month" material, amber the way .spend shows a warning */
+.r8-card{margin:10px 0 0}
+.r8-card .rhead{align-items:center}
+.r8-card.r8-warn{background:var(--amber-tint);border-color:var(--amber-line)}
+html[data-surface="night"] .r8-card.r8-warn{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
+.r8-card.r8-dim .r8-view{opacity:.8}
+.r8-lead{margin:0;font-size:14px;font-weight:600;line-height:1.4;color:var(--ink)}
+.r8-warn .r8-lead{color:var(--amber-ink)}
+.r8-card .tiles{margin:10px 0 0}
+.r8-card .tile{background:var(--well-2)}
+.r8-card .sacts{margin-top:10px}
+.r8-card .sfine{margin:6px 0 0}
+.r8-view > * + *{margin-top:8px}
+.r8-view:empty{display:none}
+
+/* the widgets */
+.r8-big{display:flex;align-items:baseline;gap:6px;margin-top:2px}
+.r8-big b{font:400 26px/1.1 var(--tech);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.r8-big span{font:400 13px/1.2 var(--tech);letter-spacing:.06em;color:var(--ink-2)}
+.r8-tip{margin:0}
+.r8-paused{margin:0}
+.r8-bar .rhead{margin:0}
+.r8-bar .mbar{margin-top:6px}
+.r8-breath{display:flex;align-items:center;gap:10px;margin-top:2px}
+.r8-ring{position:relative;flex:none;width:64px;height:64px}
+.r8-ring svg{width:100%;height:100%}
+.r8-ring .trk{fill:none;stroke:var(--line-2);stroke-width:3}
+.r8-ring .arc{fill:none;stroke:var(--accent-2);stroke-width:3;stroke-linecap:round}
+.r8-ring .disc{fill:color-mix(in srgb,var(--accent-2) 16%,transparent);stroke:var(--accent-2);stroke-width:1}
+.r8-ring b{position:absolute;inset:0;display:grid;place-items:center;font:400 15px/1 var(--tech);color:var(--ink)}
+.r8-bwords{margin:0;min-width:0;font:400 12px/1.4 var(--tech);letter-spacing:.06em;color:var(--ink-2)}
+.r8-bwords b{display:block;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-ink, var(--accent))}
+.r8-play{position:relative;height:214px;border-radius:var(--r-md);background:var(--well);border:1px solid var(--line-2);overflow:hidden}
+.r8-tg{position:absolute;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;border:2px solid var(--line)}
+.r8-tg.lit{border-color:var(--accent-2);background:color-mix(in srgb,var(--accent-2) 30%,transparent);box-shadow:0 0 22px -2px var(--accent-2)}
+.r8-hand{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2.5px solid var(--accent);background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.r8-playcap{position:absolute;left:0;right:0;bottom:8px;text-align:center;font:400 11px/1 var(--tech);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.r8-checks{list-style:none;margin:6px 0 0;padding:0}
+.r8-checks li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 8px;align-items:start;padding:7px 0;border-top:1px dashed var(--line-2)}
+.r8-checks li:first-child{border-top:0}
+.r8-checks .r8-mark{font:400 13px/1.4 var(--tech);font-style:normal;text-align:center;color:var(--ink-3)}
+.r8-checks .ok .r8-mark{color:var(--ok-ink)} .r8-checks .warn .r8-mark{color:var(--amber-ink)}
+.r8-checks span{font-size:13.5px;line-height:1.4;color:var(--ink)}
+.r8-checks em{font:400 11px/1.5 var(--tech);font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.r8-checks .ok em{color:var(--ok-ink)} .r8-checks .warn em{color:var(--amber-ink)}
+
+/* rows: a camera, a session (.hp-row frame; the chip is the Vitals .vt-chip) */
+.r8-cam .hp-txt b,.r8-sess .hp-txt b{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+.r8-cam .vt-chip,.r8-sess .vt-chip{margin-top:0}
+.r8-sub{display:block;margin-top:2px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+.r8-add{margin-top:12px}
+.r8-sess .hp-acts .btn[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
+.r8-live{margin:10px 0 0}
+.r8-live[hidden]{display:none}
+.r8-live .sacts .btn.sact{height:44px}
+
+/* "Your day": the day strip (pattern + colour + words) and its totals */
+.r8-day{margin-top:6px}
+.r8-hours{position:relative;height:12px;margin:2px 0 0}
+.r8-hours span{position:absolute;top:0;transform:translateX(-50%);font:400 10px/1 var(--tech);letter-spacing:.1em;color:var(--ink-3)}
+.r8-hours span:first-child{transform:none}
+.r8-hours span:last-child{transform:translateX(-100%)}
+.r8-strip{position:relative;height:36px;border-radius:4px;background:var(--well-2);border:1px solid var(--line-2);overflow:hidden}
+.r8-seg{position:absolute;top:0;bottom:0}
+.r8-sw{display:inline-block;flex:none;width:14px;height:14px;border-radius:3px;border:1px solid var(--line-2);background:var(--well-2);vertical-align:-2px}
+.r8-seg.desk,.r8-sw.desk{background:var(--accent)}
+.r8-seg.phone,.r8-sw.phone{background:var(--accent-2);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.r8-seg.eating,.r8-sw.eating{background:var(--ok)}
+.r8-seg.away,.r8-sw.away{background:repeating-linear-gradient(135deg,var(--ink-3) 0 1.5px,transparent 1.5px 5px)}
+.r8-seg.off,.r8-sw.off{background:repeating-linear-gradient(45deg,var(--ink-3) 0 1.2px,transparent 1.2px 4px),repeating-linear-gradient(135deg,var(--ink-3) 0 1.2px,transparent 1.2px 4px)}
+.r8-totals{list-style:none;margin:8px 0 0;padding:0}
+.r8-totals li{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13.5px;line-height:1.35;color:var(--ink)}
+.r8-totals li span{flex:1;min-width:0}
+.r8-totals li em{font:400 12.5px/1.2 var(--tech);font-style:normal;letter-spacing:.06em;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.r8-progs{list-style:none;margin:6px 0 0;padding:0}
+.r8-progs li{display:flex;gap:8px;padding:3px 0;font-size:13px;line-height:1.35;color:var(--ink);border-top:1px dashed var(--line-2)}
+.r8-progs li:first-child{border-top:0}
+.r8-progs li span{flex:1;min-width:0;overflow-wrap:anywhere}
+.r8-progs li em{font:400 12.5px/1.2 var(--tech);font-style:normal;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.r8-sub-h{margin:12px 0 4px;font:400 10.5px/1.2 var(--tech);letter-spacing:.22em;text-transform:uppercase;color:var(--k)}
+
+/* the small window (Document Picture-in-Picture, D10): the live view, the chip and Stop */
+.r8-pip{margin:0;padding:10px;min-height:100vh;box-sizing:border-box;background:var(--panel-solid, var(--well));color:var(--ink)}
+.r8-pip .r8-pip-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.r8-pip .btn.sact{height:44px}
+
+@media (max-width:899px){
+  .r8-sess .hp-acts .btn{min-height:44px}
+  .r8-card .sacts .btn.sact{height:44px}
+}
+@media (prefers-reduced-motion:reduce){
+  .r8-tg.lit{box-shadow:none}
+}

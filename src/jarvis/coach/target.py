@@ -41,7 +41,21 @@ TRACK_ME: tuple[str, ...] = ("track me", "track only me", "just track me", "foll
 TRACK_ALL: tuple[str, ...] = (
     *("track everyone", "track everybody", "track all", "track all of us", "follow everyone"),
 )
-_TRACK_NAME = re.compile(r"^(?:track|follow)(?: only)? (?P<name>[a-z][a-z .'-]{0,39})$")
+_TRACK_NAME = re.compile(
+    r"^(?:track|follow)(?: only)? (?P<name>[a-z][a-z.'-]*(?: [a-z][a-z.'-]*)?)$"
+)
+# R8 I1: a name is one or two words, never one of these first words, so "track my parcel" or
+# "track the flight" stays a chat message (the console's local router keeps the same list)
+NOT_NAMES: frozenset[str] = frozenset(
+    {
+        *("me", "everyone", "everybody", "all", "us", "it", "this", "that", "these", "those"),
+        *("my", "the", "a", "an", "our", "your", "his", "her", "their", "its", "how", "what"),
+        *("parcel", "parcels", "package", "packages", "order", "orders", "delivery", "flight"),
+        *("deliveries", "shipment", "shipments", "flights", "train", "bus", "money", "spending"),
+        *("expenses", "budget", "time", "habits", "steps", "sleep", "weight", "calories"),
+        *("water", "mood", "stocks", "price", "prices", "progress", "workouts", "workout"),
+    }
+)
 _WAKE = re.compile(r"^(?:hey )?jarvis[,.!]?\s+")
 
 
@@ -82,10 +96,10 @@ def phrase_target(text: str) -> TrackTarget | str | None:
     if t in TRACK_ALL:
         return EVERYONE
     m = _TRACK_NAME.match(t)
-    if m is None:
+    if m is None or len(m["name"]) > NAME_MAX:
         return None
     name = m["name"].strip()
-    return name if name not in ("me", "everyone", "everybody", "all") else None
+    return None if name.split(" ")[0] in NOT_NAMES else name
 
 
 async def resolve_name(uid: str, name: str, people: PeopleLookup) -> TrackTarget | str:

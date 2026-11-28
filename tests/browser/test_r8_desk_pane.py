@@ -383,3 +383,34 @@ def test_the_desk_pane_passes_the_visual_gate(
         assert r.c.errors == [] and r.c.csp_violations() == []
     finally:
         r.c.close()
+
+
+def test_track_me_everyone_or_a_name_by_voice_sets_the_target(
+    browser: Any, server_url: str, token: str
+) -> None:
+    """R8 I1 (D6): the local router's "track me", "track everyone" and "track <name>" put the
+    target (PUT /v1/coach/target) and say so; nothing starts the camera."""
+    r = rig(browser, server_url, token)
+    try:
+        r.desk()
+        owns = "(t) => window.JarvisVoiceCommands.owns(t, 'listening')"
+        for said in ("track me", "Jarvis, follow everyone", "track Ana"):
+            assert r.page.evaluate(owns, said) == "coach.track", said
+        for chat in ("track my parcel", "track the flight", "track ana and the dog now"):
+            assert r.page.evaluate(owns, chat) != "coach.track", chat  # stays a chat message
+        handle = (
+            "async (t) => (await window.JarvisVoiceCommands.handle(t,"
+            " { source: 'voice', state: 'listening' })).result.say"
+        )
+        r.target = {"kind": "me", "person": None}
+        assert r.page.evaluate(handle, "track me") == "Only you are followed now, Sir."
+        r.target = {"kind": "person", "person": "fp_aaaaaaaaaaaa"}
+        assert r.page.evaluate(handle, "track ana") == "Following Ana now, Sir."
+        puts = [
+            json.loads(b or b"{}") for m, u, b in r.reqs if m == "PUT" and u.endswith("/target")
+        ]
+        assert puts == [{"kind": "me"}, {"name": "ana"}]
+        assert r.page.evaluate("window.JarvisCamera.live()") is False
+        assert r.c.errors == [] and r.c.csp_violations() == []
+    finally:
+        r.c.close()

@@ -434,5 +434,44 @@ document.addEventListener('jarvis:ready', () => { if (S.host) { S.dayAt = 0; S.t
 document.addEventListener('jarvis:panel', (e) => { const d = (e && e.detail) || {}; if (d.id === 'camera' && d.open) setTimeout(() => refresh(false), 0); });
 document.addEventListener('jarvis:camera', (e) => { const d = (e && e.detail) || {}; if (S.run && !d.live && !S.run.ended) end('camera'); });
 function join() { const modes = window.JarvisCameraModes; return !!(modes && modes.register('desk', { mount, stop })); }
+
+// ---- R8 I1: "track me", "track everyone", "track <name>" (D6), the local router's like "cameras off" ------------------
+// jarvis.coach.target's own phrases (tests/test_r8_i1_track.py keeps them equal); the server checks a name against the
+// people he enrolled with consent (Faces) and answers in words; nothing turns a camera on by voice.
+const TRACK_ME = Object.freeze(/*TRACK-ME-BEGIN*/['track me', 'track only me', 'just track me', 'follow me']/*TRACK-ME-END*/);
+const TRACK_ALL = Object.freeze(/*TRACK-ALL-BEGIN*/['track everyone', 'track everybody', 'track all', 'track all of us', 'follow everyone']/*TRACK-ALL-END*/);
+const TRACK_NAME = /^(?:track|follow)(?: only)? ([a-z][a-z.'-]*(?: [a-z][a-z.'-]*)?)$/; // one or two words, at most 40
+const NOT_NAMES = new Set(/*NOT-NAMES-BEGIN*/['me', 'everyone', 'everybody', 'all', 'us', 'it', 'this', 'that', 'these',
+  'those', 'my', 'the', 'a', 'an', 'our', 'your', 'his', 'her', 'their', 'its', 'how', 'what', 'parcel', 'parcels', 'package',
+  'packages', 'order', 'orders', 'delivery', 'flight', 'deliveries', 'shipment', 'shipments', 'flights', 'train', 'bus',
+  'money', 'spending', 'expenses', 'budget', 'time', 'habits', 'steps', 'sleep', 'weight', 'calories', 'water', 'mood',
+  'stocks', 'price', 'prices', 'progress', 'workouts', 'workout']/*NOT-NAMES-END*/); // "track my parcel" stays a chat message
+const TRACK_SAY = Object.freeze({ me: 'Only you are followed now, {h}.', all: 'Everyone in view is followed now, {h}.',
+  person: 'Following {name} now, {h}.', off: 'The coaches aren\u2019t set up on this server yet, {h}.' });
+function trackArgs(norm, me, all) {
+  if (me.has(norm)) return { body: { kind: 'me' } };
+  if (all.has(norm)) return { body: { kind: 'all' } };
+  const m = TRACK_NAME.exec(norm), name = m && m[1].length <= 40 ? m[1].trim() : '';
+  return name && !NOT_NAMES.has(name.split(' ')[0]) ? { body: { name }, name } : null;
+}
+async function track(a) {
+  const h = (window.JarvisChat && window.JarvisChat.honorific && window.JarvisChat.honorific()) || 'Sir';
+  try {
+    const v = await api(P + '/target', { method: 'PUT', body: a.body });
+    S.target = v && v.target ? v.target : S.target; paintPromise();
+    const kind = S.target && S.target.kind === 'person' ? 'person' : a.body.kind === 'me' ? 'me' : 'all';
+    return { say: TRACK_SAY[kind].replace('{h}', h).replace('{name}', a.name ? a.name.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : '') };
+  } catch (e) { return { say: e && (e.status === 404 || e.status === 501) && !(e.message || '').trim() ? TRACK_SAY.off.replace('{h}', h) : said(e) }; }
+}
+let tracking = false;
+function registerTrack() {
+  const C = window.JarvisVoiceCommands;
+  if (tracking || !C || typeof C.register !== 'function') return tracking;
+  const me = new Set(TRACK_ME.map((p) => C.normalise(p))), all = new Set(TRACK_ALL.map((p) => C.normalise(p)));
+  try { C.register('coach.track', { match: (norm) => trackArgs(norm, me, all), run: (a) => track(a) }); } catch (_) { /* a second copy */ }
+  tracking = true;
+  return tracking;
+}
+if (!registerTrack()) window.addEventListener('load', registerTrack, { once: true });
 if (!join()) document.addEventListener('jarvis:camera-modes', join, { once: true });
 export { USES, VIEW, GEOM, BP, SESSIONS, refresh };

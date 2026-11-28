@@ -84,6 +84,9 @@ class Console:
         # reads no switches and looks as before (console-camera.js), the Cameras pane says why
         if "404" in msg.text and url.endswith("/v1/camera/spots"):
             return
+        # R8.1 I1: no recorded routine yet answers 404; the Workout pane then offers to record one
+        if "404" in msg.text and "/v1/coach/routines/" in url:
+            return
         self.errors.append(f"console.error: {msg.text} @ {msg.location.get('url', '')}")
 
     def open(self, path: str = "/") -> None:

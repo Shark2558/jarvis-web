@@ -16,7 +16,18 @@
 //                 with how it looked (16 brightness numbers, in memory only, never kept or sent) and says at once when
 //                 it is out of sight. The picture shows only for that tap; a session shows no picture at all.
 // The safety line "Stop if anything hurts." is on every screen; a battery at 20 % or less says so (risk 11).
-// Never a picture, a point or a box leaves this phone; nothing here reads a body point. ASCII; textContent only.
+// R8.1 I1 join (docs/plans/r8-integration/R81-I1-NOTES.md):
+//   setup         each session's choices go to its use cases only through live(..., {setup}) (S2's contract line from
+//                 R8's join: r.setup on every Result): the wall or spotter (handstand never starts without it), the
+//                 agility marks he taps on the picture, his boxing stance (optional), the partner's agreement
+//                 ({consent: true, consent_at}; that session follows everyone and keeps only his own tallies, as `me`),
+//                 the walk test's typed course length, and for tai-chi and dance his recorded routine (or "record")
+//   recordings    a tally carrying `record` is his routine: its chunks are joined and PUT to /v1/coach/routines/{rid}
+//                 (joint angles only); it is never posted as a result
+//   body lines    the approved mockup's "Body lines only": the pane names its own reader, `body-lines`, in each look;
+//                 the driver hands it the bodies the tracking target picks and it keeps only the newest points of each
+//                 in this page's memory to draw them as SVG strokes. Never kept, never sent, never in a tally.
+// Never a picture, a point or a box leaves this phone. ASCII; textContent only.
 const M = window.JarvisMobile;
 const P = '/v1/coach';
 const USES = Object.freeze({
@@ -56,14 +67,14 @@ const SESSIONS = Object.freeze([
   S_('yoga', 'Yoga and mobility', 'Poses recognised and held', ['yoga'], 'flow'),
   S_('balance', 'Single-leg balance', 'Hold time and sway', ['balance'], 'flow'),
   S_('pilates', 'Pilates', 'The sequence, step by step', ['pilates'], 'flow'),
-  S_('tai-chi', 'Tai chi', 'Your form against your recording', ['tai-chi'], 'flow'),
-  S_('dance', 'Dance', 'In time with a routine you record', ['dance'], 'flow'),
-  S_('boxing', 'Shadowboxing', 'Punches and combinations', ['boxing'], 'dynamic'),
-  S_('agility', 'Agility', 'Split times between your marks', ['agility'], 'dynamic'),
+  S_('tai-chi', 'Tai chi', 'Your form against your recording', ['tai-chi'], 'flow', { confirm: 'routine', routine: 'tai-chi-1' }),
+  S_('dance', 'Dance', 'In time with a routine you record', ['dance'], 'flow', { confirm: 'routine', routine: 'dance-1' }),
+  S_('boxing', 'Shadowboxing', 'Punches and combinations', ['boxing'], 'dynamic', { confirm: 'stance' }),
+  S_('agility', 'Agility', 'Split times between your marks', ['agility'], 'dynamic', { marks: true }),
   S_('jump', 'Jumps', 'Height and landings', ['jump'], 'dynamic'),
   S_('handstand', 'Handstand', 'Hold time and drift \u00b7 a wall or a spotter only', ['handstand'], 'dynamic', { confirm: 'support' }),
-  S_('partner-stretch', 'Partner stretch', 'Your ranges and holds \u00b7 your partner agrees first', ['partner-stretch'], 'more', { confirm: 'partner' }),
-  S_('walk-test', 'Six-minute walk', 'Laps and turns \u00b7 practice, not a clinical test', ['walk-test'], 'more'),
+  S_('partner-stretch', 'Partner stretch', 'Your ranges and holds \u00b7 your partner agrees first', ['partner-stretch'], 'more', { confirm: 'partner', own: true, noLines: true }),
+  S_('walk-test', 'Six-minute walk', 'Laps and turns \u00b7 practice, not a clinical test', ['walk-test'], 'more', { confirm: 'course' }),
   S_('sit-to-stand', 'Sit to stand', '30 seconds and five times \u00b7 practice only', ['sit-to-stand'], 'more'),
   S_('meal', 'Meal pace', 'Bites and meal length \u00b7 the phone at the table', ['meal'], 'more'),
 ]);
@@ -93,9 +104,27 @@ const WORDS = Object.freeze({
   anchorAsk: 'Tap the band\u2019s anchor on the picture.', anchorSet: 'Anchor marked.',
   anchorGone: 'I can\u2019t see the band\u2019s anchor. Move so the phone sees it.',
   battery: (p) => 'Battery at ' + p + ' %. Plug the phone in, or stop soon.',
+  // R8.1 I1: the setups and the body lines
+  stance: 'Which foot is in front when you box? Only used when the phone can\u2019t tell.',
+  orthodox: 'Left foot forward', southpaw: 'Right foot forward', skip: 'Skip',
+  course: 'How long is your walking course, end to end?', courseField: 'Course length in metres (1 to 100)',
+  courseStart: 'Start the walk', courseBad: 'Type a length from 1 to 100 metres.',
+  routineLooking: 'Looking for your recording\u2026',
+  routineHave: { 'tai-chi': 'Follow the form you recorded, or record it again.', dance: 'Dance with the routine you recorded, or record it again.' },
+  routineNone: { 'tai-chi': 'First record your form: move through it once, then press Stop.', dance: 'First record your routine: dance it once, then press Stop.' },
+  routineLimit: 'A recording stops at 5 minutes. Only joint angles are kept, never a picture.',
+  follow: 'Follow my recording', record: 'Record it again', recordFirst: 'Record it now',
+  routineSaved: 'The session ended. Your recording is kept (joint angles only).',
+  routineFailed: 'The session ended, but your recording couldn\u2019t be kept. Please record it again.',
+  marksAsk: 'Tap each mark on the picture in the order you\u2019ll run them: 2 to 12. Tap a mark again to come back to it.',
+  marksN: (n) => (n === 1 ? '1 mark' : n + ' marks'), marksDone: 'Done: start', marksUndo: 'Undo',
+  linesCap: 'Body lines only \u00b7 the picture stays on this phone',
 });
 const TICK_MS = 250, SPOTS_MS = 60000, CHECK_S = 4, ANCHOR_MS = 500, ANCHOR_BOX = 0.06, MOVED = 0.12, LOW_BATTERY = 0.2;
-const S = { el: null, mk: null, button: null, signedIn: () => false, run: null, gen: 0, target: null, listing: null, group: 'strength', voice: true };
+const COURSE_MIN = 1, COURSE_MAX = 100, MARKS_MIN = 2, MARKS_MAX = 12, CHUNK = 100;
+const ROUTINE_ID = /^(?:dance-(?:[1-9]|1[0-9]|20)|tai-chi-[1-9])$/; // jarvis.coach.store's ids, posture never from here
+const ROUTINE_KINDS = Object.freeze(['dance', 'tai-chi']);
+const S = { el: null, mk: null, button: null, field: null, signedIn: () => false, run: null, gen: 0, target: null, listing: null, group: 'strength', voice: true };
 
 function api(path, opts) { return M ? M.api(path, opts) : Promise.reject(new Error('The console is still starting.')); }
 function cam() { return window.JarvisCamera || null; }
@@ -130,6 +159,85 @@ function grab(view, at) { // the anchor's area of the picture now, as 16 numbers
   const x = Math.max(0, Math.min(canvas.width - w, Math.round(at.x * canvas.width - w / 2)));
   const y = Math.max(0, Math.min(canvas.height - h, Math.round(at.y * canvas.height - h / 2)));
   try { return fingerprint(ctx.getImageData(x, y, w, h)); } catch (_) { return null; }
+}
+/** Where he tapped on the video, as 0..1 of the camera's own frame (object-fit: contain may leave bars); null on a bar. */
+function tapAt(video, ev) {
+  const r = video.getBoundingClientRect(), bw = r.width || 1, bh = r.height || 1;
+  const vw = video.videoWidth || bw, vh = video.videoHeight || bh, k = Math.min(bw / vw, bh / vh), w = vw * k, h = vh * k;
+  const x = (ev.clientX - r.left - (bw - w) / 2) / (w || 1), y = (ev.clientY - r.top - (bh - h) / 2) / (h || 1);
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x: r3(x), y: r3(y) } : null;
+}
+
+// ---- the body lines (the approved mockup: "Body lines only - the picture stays on this phone") -------------------
+// The pane's own one-body reader, named in each look: it keeps the newest points of each body the target picks in this
+// page's memory (L.bodies) and draws them; its summary is empty, so nothing of it can be kept, posted or spoken.
+const LINES_ID = 'body-lines';
+const LINE_MS = 1000; // a body not seen for a second is no longer drawn
+const LINE_SEEN = 0.5;
+const BONES = Object.freeze([[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25],
+  [25, 27], [27, 31], [24, 26], [26, 28], [28, 32]]);
+const JOINTS = Object.freeze([11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28]);
+const SVG = 'http://www.w3.org/2000/svg';
+const L = { on: false, bodies: new Map(), frame: 0, mirror: true };
+/** One body's strokes in a box 1000 high and 1000 x aspect wide (x scaled by the frame's aspect, mirrored for the
+ *  front camera): bones and joints seen well, the head round the nose. Pure: tested in test_r81_workout_pane.py. */
+export function bodyLines(points, aspect, mirror) {
+  if (!Array.isArray(points) || points.length !== 33) return null;
+  const k = Number.isFinite(aspect) && aspect >= 0.2 && aspect <= 5 ? aspect : 1, w = 1000 * k;
+  const good = (p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && !(p.visibility < LINE_SEEN);
+  const at = (i) => { const p = points[i]; return good(p) ? [Math.round((mirror ? 1 - p.x : p.x) * w), Math.round(p.y * 1000)] : null; };
+  const bones = BONES.map(([a, b]) => [at(a), at(b)]).filter(([a, b]) => a && b).map(([a, b]) => [...a, ...b]);
+  const joints = JOINTS.map(at).filter(Boolean);
+  const nose = at(0), sh = at(11) && at(12) ? [(at(11)[0] + at(12)[0]) / 2, (at(11)[1] + at(12)[1]) / 2] : null;
+  const head = nose && sh ? [nose[0], nose[1], Math.max(18, Math.round(0.45 * Math.hypot(nose[0] - sh[0], nose[1] - sh[1])))] : null;
+  return bones.length ? { w: Math.round(w), h: 1000, bones, joints, head } : null;
+}
+/** The reader's onResult: the newest points of this body, in memory only (exported for the browser test's stand-in). */
+export function takeLines(r, state) {
+  if (!L.on || !r || !r.ok || !r.data || !Array.isArray(r.data.points)) return state;
+  L.bodies.set(Number.isInteger(r.track) ? r.track : 0, { points: r.data.points, aspect: r.aspect, at: performance.now() });
+  if (!L.frame) L.frame = requestAnimationFrame(drawLines);
+  return state;
+}
+function linesUse() { // once; a stand-in registered first (the browser test) takes its place
+  const V = vis();
+  if (V) V.use({ id: LINES_ID, tasks: ['pose'], onResult: takeLines, summary: () => ({ view: [], tally: null }) });
+}
+function svgEl(tag, cls, attrs) {
+  const n = document.createElementNS(SVG, tag);
+  if (cls) n.setAttribute('class', cls);
+  Object.entries(attrs || {}).forEach(([k, v]) => n.setAttribute(k, String(v)));
+  return n;
+}
+function fresh(now) { // a body not seen for LINE_MS is no longer drawn; -> how many are
+  [...L.bodies.keys()].forEach((k) => { if (now - L.bodies.get(k).at > LINE_MS) L.bodies.delete(k); });
+  return L.bodies.size;
+}
+function drawLines() {
+  L.frame = 0;
+  const fig = S.el && S.el.fig, now = performance.now();
+  if (!fig || !L.on) return;
+  fresh(now);
+  const shapes = [...L.bodies.values()].map((b) => bodyLines(b.points, b.aspect, L.mirror)).filter(Boolean);
+  const w = Math.max(1000, ...shapes.map((s) => s.w));
+  fig.setAttribute('viewBox', '0 0 ' + w + ' 1000');
+  fig.replaceChildren(...shapes.flatMap((s) => {
+    const dx = Math.round((w - s.w) / 2), d = s.bones.map(([a, b, c, e]) => 'M' + (a + dx) + ' ' + b + 'L' + (c + dx) + ' ' + e).join('');
+    const out = [svgEl('path', 'bone', { d })];
+    if (s.head) out.push(svgEl('circle', 'head', { cx: s.head[0] + dx, cy: s.head[1], r: s.head[2] }));
+    return out.concat(s.joints.map(([x, y]) => svgEl('circle', 'joint', { cx: x + dx, cy: y, r: 14 })));
+  }));
+}
+function linesOff() { // the points go with the look; the view falls back to its words
+  L.on = false; L.bodies.clear();
+  if (L.frame) cancelAnimationFrame(L.frame);
+  L.frame = 0;
+  if (!S.el || !S.el.fig) return;
+  S.el.fig.replaceChildren();
+  S.el.view.classList.remove('figs');
+  S.el.view.removeAttribute('aria-label');
+  S.el.cap.textContent = WORDS.cap;
 }
 
 // ---- server lists, switches and the target ---------------------------------------------------------------------------
@@ -230,7 +338,8 @@ function buildRun(host) {
   el.view.setAttribute('role', 'status');
   el.mid = mk('div', 'r8-viewmid');
   el.cap = mk('p', 'r8-viewcap', WORDS.cap);
-  el.view.append(el.mid, el.cap);
+  el.fig = svgEl('svg', 'r8-body', { viewBox: '0 0 1000 1000', preserveAspectRatio: 'xMidYMid meet', 'aria-hidden': 'true', focusable: 'false' });
+  el.view.append(el.fig, el.mid, el.cap);
   el.nums = mk('div', 'r8-nums');
   el.nums.setAttribute('role', 'status');
   el.nums.setAttribute('aria-live', 'polite');
@@ -306,8 +415,14 @@ async function draw(view, seen) {
   of('checklist').slice(0, 1).forEach((w) => mid.push(checks(w)));
   const extra = of('pacer').concat(of('targets'));
   if (extra.length) { const box = mk('div', 'r8-extra'); try { (await VIEW()).render(box, extra); } catch (_) {} mid.push(box); }
-  if (!mid.length) mid.push(mk('p', 'r8-lead', seen ? WORDS.inViewN(seen) : WORDS.nobody));
+  const figs = !mid.length && !!seen && !!S.run && !S.run.sess.noLines && L.on && fresh(performance.now()) > 0; // R8.1 I1
+  if (!mid.length && !figs) mid.push(mk('p', 'r8-lead', seen ? WORDS.inViewN(seen) : WORDS.nobody));
   el.mid.replaceChildren(...mid);
+  el.view.classList.toggle('figs', figs);
+  if (figs) el.view.setAttribute('aria-label', WORDS.linesCap + ': ' + WORDS.inViewN(seen));
+  else el.view.removeAttribute('aria-label');
+  el.cap.textContent = figs ? WORDS.linesCap : WORDS.cap;
+  if (figs && !L.frame) L.frame = requestAnimationFrame(drawLines);
 }
 function speak(text) {
   const ss = window.speechSynthesis;
@@ -323,13 +438,46 @@ function full(on) {
   S.el.run.hidden = !on;
 }
 function ask(sess) { // a session that needs a line confirmed shows it first; nothing starts until it is picked
-  const el = S.el;
-  if (!sess.confirm) { start(sess, ''); return; }
-  const acts = mk('div', 'sacts');
-  if (sess.confirm === 'support') acts.append(S.button(WORDS.wall, 'primary', () => start(sess, 'wall')), S.button(WORDS.spotter, 'primary', () => start(sess, 'spotter')));
-  else acts.append(S.button(WORDS.partnerYes, 'primary', () => start(sess, 'partner')));
-  el.confirm.replaceChildren(mk('p', 'r8-lead', sess.confirm === 'support' ? WORDS.support : WORDS.partner), acts);
+  if (!sess.confirm) { start(sess, null); return; }
+  if (sess.confirm === 'routine') { askRoutine(sess); return; }
+  const go = (setup) => () => start(sess, setup), b = (label, setup, cls) => S.button(label, cls === undefined ? 'primary' : cls, go(setup));
+  if (sess.confirm === 'support') confirmCard(WORDS.support, [b(WORDS.wall, { support: 'wall' }), b(WORDS.spotter, { support: 'spotter' })]);
+  else if (sess.confirm === 'stance') confirmCard(WORDS.stance, [b(WORDS.orthodox, { stance: 'orthodox' }), b(WORDS.southpaw, { stance: 'southpaw' }), b(WORDS.skip, null, '')]);
+  else if (sess.confirm === 'course') askCourse(sess);
+  else confirmCard(WORDS.partner, [S.button(WORDS.partnerYes, 'primary', () => start(sess, { consent: true, consent_at: Math.floor(Date.now() / 1000) }))]);
+}
+function confirmCard(lead, buttons, extra) {
+  const el = S.el, acts = mk('div', 'sacts');
+  acts.append(...buttons);
+  el.confirm.replaceChildren(mk('p', 'r8-lead', lead), ...(extra || []), acts);
   el.confirm.hidden = false;
+}
+function askCourse(sess) { // the walk test counts nothing without the course length he types (H: course_m 1..100)
+  const i = mk('input', 'minput'), note = mk('p', 'snote');
+  i.type = 'number'; i.inputMode = 'decimal'; i.min = String(COURSE_MIN); i.max = String(COURSE_MAX); i.step = '0.5';
+  i.autocomplete = 'off';
+  note.setAttribute('role', 'status');
+  const goWalk = () => {
+    const n = Number(i.value);
+    if (!(Number.isFinite(n) && n >= COURSE_MIN && n <= COURSE_MAX)) { note.textContent = WORDS.courseBad; i.focus(); return; }
+    start(sess, { course_m: Math.round(n * 10) / 10 });
+  };
+  i.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') goWalk(); });
+  confirmCard(WORDS.course, [S.button(WORDS.courseStart, 'primary', goWalk)], [S.field(WORDS.courseField, i), note]);
+}
+function chunked(rows) { return Array.from({ length: Math.ceil(rows.length / CHUNK) }, (_, k) => rows.slice(k * CHUNK, (k + 1) * CHUNK)); }
+async function askRoutine(sess) { // tai-chi and dance follow his recording (F: setup.chunks), or record it (setup.record)
+  const el = S.el, n = Number(sess.routine.split('-').pop()) || 1, kind = sess.uses[0];
+  if (!S.signedIn()) return;
+  confirmCard(WORDS.routineLooking, []);
+  let got = null;
+  try { got = await api(P + '/routines/' + sess.routine); } catch (e) {
+    if (!(e && e.status === 404)) { el.confirm.hidden = true; el.state.textContent = failWords(e); return; }
+  }
+  const rows = got && got.routine && Array.isArray(got.routine.angles) ? got.routine.angles : null;
+  const record = S.button(rows ? WORDS.record : WORDS.recordFirst, rows ? '' : 'primary', () => start(sess, { routine: n, record: true }));
+  const follow = rows ? [S.button(WORDS.follow, 'primary', () => start(sess, { routine: n, chunks: chunked(rows) }))] : [];
+  confirmCard((rows ? WORDS.routineHave : WORDS.routineNone)[kind], [...follow, record], [mk('p', 'snote', WORDS.routineLimit)]);
 }
 async function prepare(uses) { // the camera (inside the tap), the registry, the switches, the modules
   const c = cam(), V = vis();
@@ -347,7 +495,7 @@ async function prepare(uses) { // the camera (inside the tap), the registry, the
 function failWords(e) {
   return e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? WORDS.blocked : (e && e.message) || WORDS.failed;
 }
-async function start(sess, support) { // only from a tap
+async function start(sess, setup) { // only from a tap; `setup` is the session's choices (plain data) or null
   const el = S.el;
   if (S.run || !S.signedIn()) return;
   el.confirm.hidden = true;
@@ -358,23 +506,30 @@ async function start(sess, support) { // only from a tap
     const got = await prepare(sess.uses);
     if (gen !== S.gen || !cam().live()) throw new Error('The camera was stopped.');
     sess.uses.forEach((id) => vis().reset(id));
-    S.run = { sess, support, sid: sessionId(), view: got.view, tasks: got.tasks, rate: got.rate, look: null, tick: 0, spots: 0,
-      paused: false, ended: false, said: { n: -1, tip: '' }, anchor: null, anchorTick: 0, anchorPrompts: 0, anchorOut: false, nobodySince: 0 };
+    vis().reset(LINES_ID);
+    S.run = { sess, setup: setup && typeof setup === 'object' ? Object.freeze(Object.assign({}, setup)) : null, sid: sessionId(),
+      view: got.view, tasks: got.tasks, rate: got.rate, look: null, tick: 0, spots: 0, paused: false, ended: false,
+      said: { n: -1, tip: '' }, anchor: null, anchorTick: 0, anchorPrompts: 0, anchorOut: false, nobodySince: 0, routine: '' };
     el.title.textContent = sess.name;
     el.state.textContent = '';
     full(true);
     paintRows();
     battery();
     if (sess.anchor) { askAnchor(S.run); return; }
+    if (sess.marks) { askMarks(S.run); return; }
     look(S.run);
   } catch (e) {
     const c = cam(); if (c && c.live()) c.stop('panel');
     el.state.textContent = failWords(e);
   }
 }
-function look(run) { // the driver, from the camera that a tap started
-  const V = vis();
-  run.look = V.live(run.tasks, { uses: run.sess.uses.slice(), rate: run.rate, target: S.target || { kind: 'all' }, onError: (e) => halted(run, e) });
+function look(run) { // the driver, from the camera that a tap started; the session's setup rides on every Result
+  const V = vis(), lines = !run.sess.noLines;
+  if (lines) { linesUse(); L.on = true; L.mirror = !cam() || typeof cam().facing !== 'function' || cam().facing() === 'user'; }
+  const target = run.sess.own ? { kind: 'all' } : (S.target || { kind: 'all' }); // the partner stretch tells him apart itself
+  const opts = { uses: run.sess.uses.concat(lines ? [LINES_ID] : []), rate: run.rate, target, onError: (e) => halted(run, e) };
+  if (run.setup) opts.setup = run.setup;
+  run.look = V.live(run.tasks, opts);
   run.tick = setInterval(() => paint(run), TICK_MS);
   run.spots = setInterval(async () => { if (!(await spotsAllow())) end('switched'); }, SPOTS_MS);
   if (run.anchor) run.anchorTick = setInterval(() => watchAnchor(run), ANCHOR_MS);
@@ -385,14 +540,46 @@ function askAnchor(run) { // the one moment the picture shows: he taps the band'
   if (!video) { look(run); return; }
   video.className = 'cam-view r8-anchorpick';
   el.mid.replaceChildren(mk('p', 'r8-lead', WORDS.anchorAsk), video);
-  video.addEventListener('click', (ev) => {
-    const r = video.getBoundingClientRect();
-    run.anchor = { x: Math.min(1, Math.max(0, (ev.clientX - r.left) / (r.width || 1))), y: Math.min(1, Math.max(0, (ev.clientY - r.top) / (r.height || 1))) };
+  const onTap = (ev) => {
+    const at = tapAt(video, ev);
+    if (!at) return; // a tap on a bar beside the picture: wait for one on it
+    video.removeEventListener('click', onTap);
+    run.anchor = at;
     run.anchorPrint = grab(run.view, run.anchor);
     video.remove();
     el.note.textContent = WORDS.anchorSet;
     if (S.run === run && !run.ended) look(run);
-  }, { once: true });
+  };
+  video.addEventListener('click', onTap);
+}
+function askMarks(run) { // agility (G): he taps 2 to 12 marks on the picture; they go to the use case as setup.marks
+  const el = S.el, video = run.view && run.view.video;
+  if (!video) { look(run); return; }
+  const marks = [], box = mk('div', 'r8-markpick'), dots = mk('div', 'r8-dots'), count = mk('p', 'snote');
+  const acts = mk('div', 'sacts'), undo = S.button(WORDS.marksUndo, '', () => { marks.pop(); paintMarks(); });
+  count.setAttribute('role', 'status');
+  const done = S.button(WORDS.marksDone, 'primary', () => {
+    if (marks.length < MARKS_MIN || S.run !== run || run.ended) return;
+    run.setup = Object.freeze(Object.assign({}, run.setup || {}, { marks: Object.freeze(marks.map((m) => Object.freeze(Object.assign({}, m)))) }));
+    box.remove();
+    look(run);
+  });
+  const paintMarks = () => {
+    const r = video.getBoundingClientRect(), vw = video.videoWidth || r.width || 1, vh = video.videoHeight || r.height || 1;
+    const k = Math.min((r.width || 1) / vw, (r.height || 1) / vh), w = vw * k, h = vh * k;
+    dots.replaceChildren(...marks.map((m, i) => { const d = mk('span', 'r8-dot', String(i + 1)); d.style.left = Math.round((r.width - w) / 2 + m.x * w) + 'px'; d.style.top = Math.round((r.height - h) / 2 + m.y * h) + 'px'; return d; }));
+    count.textContent = WORDS.marksN(marks.length);
+    done.disabled = marks.length < MARKS_MIN;
+    undo.disabled = !marks.length;
+  };
+  video.className = 'cam-view r8-anchorpick';
+  video.addEventListener('click', (ev) => { const at = tapAt(video, ev); if (at && marks.length < MARKS_MAX) { marks.push(at); paintMarks(); } });
+  acts.append(undo, done);
+  const pic = mk('div', 'r8-markpic');
+  pic.append(video, dots);
+  box.append(mk('p', 'r8-lead', WORDS.marksAsk), pic, count, acts);
+  el.mid.replaceChildren(box);
+  paintMarks();
 }
 function watchAnchor(run) {
   if (S.run !== run || run.paused || !run.anchorPrint) return;
@@ -417,6 +604,7 @@ function quiet(run) {
   clearInterval(run.tick); clearInterval(run.spots); clearInterval(run.anchorTick);
   if (run.look) run.look.end();
   run.look = null;
+  linesOff(); // the body lines' points go with the look
 }
 function halted(run, e) { // the camera stopped under the look (cameras off, the page hidden): paused, counts kept
   if (S.run !== run || run.ended) return;
@@ -452,6 +640,19 @@ async function resume() { // a tap again: the camera, then the look on the same 
   S.el.note.textContent = '';
   look(run);
 }
+/** A recorded routine (F's `tally.record`: {rid, kind, chunks}) as the store's body {kind, angles}, or null. Pure. */
+export function routineBody(rec) {
+  if (!rec || typeof rec !== 'object' || !ROUTINE_ID.test(String(rec.rid)) || !ROUTINE_KINDS.includes(rec.kind)) return null;
+  if (!String(rec.rid).startsWith(rec.kind + '-') || !Array.isArray(rec.chunks)) return null;
+  const angles = rec.chunks.flat();
+  return angles.length && angles.every((row) => Array.isArray(row)) ? { rid: rec.rid, body: { kind: rec.kind, angles } } : null;
+}
+async function keepRoutine(run, rec) { // his routine: PUT to coach_routines (joint angles only), never posted as a result
+  const got = routineBody(rec);
+  if (!got || run.routine) return false;
+  run.routine = 'failed';
+  try { await api(P + '/routines/' + got.rid, { method: 'PUT', body: got.body }); run.routine = 'kept'; return true; } catch (_) { return false; }
+}
 async function keep(run) { // each body's tally of each use case: counts, times and scores only
   const V = vis();
   let kept = 0;
@@ -460,8 +661,10 @@ async function keep(run) { // each body's tally of each use case: counts, times 
     for (const b of list.slice(0, 4)) {
       const t = V.tally(id, bodies.length ? b.track : undefined);
       if (!t || !t.tally) continue;
+      if (t.tally.record) { if (await keepRoutine(run, t.tally.record)) kept += 1; continue; }
       const tally = id === 'band' ? Object.assign({}, t.tally, { prompts: Math.min(500, (t.tally.prompts || 0) + run.anchorPrompts) }) : t.tally;
-      try { await api(P + '/results', { method: 'POST', body: { use: id, session: run.sid, track: b.track, who: t.who || b.who || '', tally } }); kept += 1; } catch (_) { /* dropped or unreachable: never repaired */ }
+      const who = run.sess.own ? 'me' : t.who || b.who || ''; // the partner stretch keeps only his own (H), as `me`
+      try { await api(P + '/results', { method: 'POST', body: { use: id, session: run.sid, track: b.track, who, tally } }); kept += 1; } catch (_) { /* dropped or unreachable: never repaired */ }
     }
   }
   return kept;
@@ -473,12 +676,14 @@ async function end(why) {
   quiet(run);
   const kept = await keep(run);
   run.sess.uses.forEach((id) => vis().reset(id));
+  vis().reset(LINES_ID);
   const c = cam(); if (c && c.live()) c.stop('panel');
   if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (_) {} }
   S.run = null;
   full(false);
   el.pause.textContent = WORDS.pause; el.pause.classList.remove('primary'); el.note.textContent = '';
-  el.state.textContent = why === 'switched' ? WORDS.switchedOff : kept ? WORDS.stopped : WORDS.stoppedNothing;
+  const ended = run.routine === 'kept' ? WORDS.routineSaved : run.routine === 'failed' ? WORDS.routineFailed : kept ? WORDS.stopped : WORDS.stoppedNothing;
+  el.state.textContent = why === 'switched' ? WORDS.switchedOff : ended;
   paintRows();
 }
 async function battery() {
@@ -517,7 +722,7 @@ async function check(which) {
 
 // ---- the mode ----------------------------------------------------------------------------------------------------------
 function mount(host, P_) {
-  S.mk = P_.mk; S.button = P_.button; S.signedIn = P_.signedIn;
+  S.mk = P_.mk; S.button = P_.button; S.field = P_.field; S.signedIn = P_.signedIn;
   S.el = { promises: [] };
   const root = mk('div', 'r8-wo'), pick = mk('div', 'r8-picker');
   pick.append(mk('p', 'sfine', WORDS.intro));
@@ -535,4 +740,4 @@ function mount(host, P_) {
 function stop() { if (S.run) end('stop'); else { S.gen += 1; } }
 function join() { const modes = window.JarvisCameraModes; return !!(modes && modes.register('workout', { mount, stop })); }
 if (!join()) document.addEventListener('jarvis:camera-modes', join, { once: true });
-export { USES, VIEW, GEOM, SESSIONS };
+export { USES, VIEW, GEOM, SESSIONS, LINES_ID };

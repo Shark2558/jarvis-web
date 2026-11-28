@@ -105,3 +105,104 @@ html[data-surface="night"] .r8-card.r8-warn{background:color-mix(in srgb,#F59E0B
 @media (prefers-reduced-motion:reduce){
   .r8-tg.lit{box-shadow:none}
 }
+
+/* ---- R8.1 builder E's Workout pane (console-coach-workout.js), joined here at the R8.1 I1 join from the staged
+   tests/fixtures/r8/workout_pane.css: the approved mockup's places (r8-mockups tools/r8-common.css), the console's tokens
+   and classes only; everything under .r8-wo, so the Desk pane is untouched ---- */
+.r8-wo .r8-promise{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;padding:7px 10px;border-radius:var(--r-sm);
+  background:var(--well-2);border:1px solid var(--line-2);font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.r8-wo .r8-promise b{font-weight:600;color:var(--ink)}
+.r8-wo .r8-card{margin:10px 0 0}
+.r8-wo .r8-card .rhead{align-items:center}
+.r8-wo .r8-card h3{margin:0}
+.r8-wo .r8-lead{margin:0;font-size:15px;font-weight:600;line-height:1.4;color:var(--ink)}
+.r8-wo .r8-steps{list-style:none;margin:8px 0 0;padding:0;counter-reset:s}
+.r8-wo .r8-steps > li{position:relative;padding:10px 0 10px 36px;border-top:1px solid var(--line-2);counter-increment:s}
+.r8-wo .r8-steps > li:first-child{border-top:0}
+.r8-wo .r8-steps > li::before{content:counter(s);position:absolute;left:0;top:9px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;
+  font:400 12px/1 var(--tech);color:var(--accent-ink, var(--accent));background:var(--tint);border:1px solid var(--line)}
+.r8-wo .r8-steps b{display:block;font:600 14px/1.3 var(--hud);color:var(--ink)}
+html[data-surface="night"] .r8-wo .r8-steps b{font:400 12.5px/1.3 var(--tech);letter-spacing:.12em;text-transform:uppercase}
+.r8-wo .r8-steps small{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.r8-wo .r8-steps .sacts{margin-top:8px}
+.r8-wo .r8-steps .sfine{margin:6px 0 0}
+.r8-wo .r8-steps .sfine:empty{display:none}
+.r8-wo .r8-kinds{border:0;margin:0;padding:0;min-width:0}
+.r8-wo .r8-pick .seg{grid-template-columns:repeat(4,minmax(0,1fr));margin:12px 0 4px}
+.r8-wo .r8-pick .seg-opt{min-height:44px;font-size:11.5px;letter-spacing:.08em;padding:0 2px}
+.r8-wo .r8-pick .opt-in{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.r8-wo .r8-pick .hp-row{min-height:56px}
+.r8-wo .r8-pick .hp-acts .btn{height:44px}
+.r8-wo .r8-confirm .sacts{margin-top:10px}
+.r8-wo .r8-safe{margin:10px 0 0;font-size:12.5px;line-height:1.4;color:var(--ink-2);text-align:center}
+.r8-wo .r8-safe b{color:var(--ink);font-weight:600}
+
+/* the session: big numbers read from 2-3 m */
+.r8-wo .r8-run{display:flex;flex-direction:column;min-height:100%}
+.r8-wo .r8-head{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.r8-wo .r8-title{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 12px/1 var(--tech);letter-spacing:.24em;text-transform:uppercase;color:var(--ink)}
+.r8-wo .r8-head .btn{height:44px;padding:0 12px;font-size:12px}
+.r8-wo .r8-view{position:relative;flex:none;min-height:180px;margin:5px 5px 0;border-radius:var(--r-md);background:var(--well);border:1px solid var(--line-2)}
+.r8-wo .r8-viewmid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;padding:16px 16px 34px;text-align:center}
+.r8-wo .r8-viewmid p{margin:0;font-size:14px;line-height:1.45;color:var(--ink-2)}
+.r8-wo .r8-viewmid .r8-lead{font-size:15px;color:var(--ink)}
+.r8-wo .r8-viewmid .r8-checks{align-self:stretch;text-align:left}
+.r8-wo .r8-viewcap{position:absolute;left:10px;right:10px;bottom:8px;margin:0;text-align:center;font:400 10.5px/1.2 var(--tech);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.r8-wo .r8-anchorpick{display:block;width:100%;max-height:260px;object-fit:contain;border-radius:var(--r-sm);cursor:crosshair}
+.r8-wo .r8-nums{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:8px;margin-top:12px}
+.r8-wo .r8-nums:empty{display:none}
+.r8-wo .r8-num{min-width:0;padding:8px 10px 9px;border-radius:var(--r-sm);background:var(--tint);border:1px solid var(--line-2)}
+.r8-wo .r8-num .k{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r8-wo .r8-num b{display:block;margin-top:4px;font:400 30px/1 var(--tech);letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.r8-wo .r8-num.reps b{font-size:72px;line-height:.9}
+.r8-wo .r8-tempo{margin-top:8px;padding:8px 10px 9px;border-radius:var(--r-sm);background:var(--well-2);border:1px solid var(--line-2)}
+.r8-wo .r8-tempo .rhead{margin:0 0 6px}
+.r8-wo .r8-tempo .mbar{margin-top:0;height:8px}
+.r8-wo .r8-tip{margin-top:8px;padding:10px 12px;border-radius:var(--r-md);background:color-mix(in srgb,var(--ok) 12%,transparent);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+.r8-wo .r8-tip p{margin:0;font-size:15px;font-weight:600;line-height:1.4;color:var(--ink)}
+.r8-wo .r8-tip.r8-warn{background:var(--amber-tint);border-color:var(--amber-line)}
+html[data-surface="night"] .r8-wo .r8-tip.r8-warn{background:color-mix(in srgb,#F59E0B 11%,var(--panel-solid))}
+.r8-wo .r8-tip.r8-warn p{color:var(--amber-ink)}
+.r8-wo .r8-lines{list-style:none;margin:8px 0 0;padding:0}
+.r8-wo .r8-lines li{padding:3px 0;font:400 13px/1.35 var(--tech);letter-spacing:.06em;color:var(--ink-2)}
+.r8-wo .r8-checks{list-style:none;margin:0;padding:0}
+.r8-wo .r8-checks li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 8px;align-items:start;padding:6px 0;border-top:1px dashed var(--line-2)}
+.r8-wo .r8-checks li:first-child{border-top:0}
+.r8-wo .r8-checks .r8-mark{font:400 13px/1.4 var(--tech);font-style:normal;text-align:center;color:var(--ink-3)}
+.r8-wo .r8-checks .ok .r8-mark{color:var(--ok-ink)}
+.r8-wo .r8-checks .warn .r8-mark{color:var(--amber-ink)}
+.r8-wo .r8-checks span{font-size:13.5px;line-height:1.4;color:var(--ink)}
+.r8-wo .r8-checks em{font:400 11px/1.5 var(--tech);font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.r8-wo .r8-checks .ok em{color:var(--ok-ink)}
+.r8-wo .r8-ctl{display:grid;grid-template-columns:1fr 1.6fr;gap:8px;margin-top:auto;padding-top:10px}
+.r8-wo .r8-ctl .btn{height:64px;font-size:15px;letter-spacing:.16em}
+.r8-wo .r8-ctl .btn.danger{font-size:18px;letter-spacing:.2em}
+.r8-wo .r8-run .r8-promise{margin:8px 0 0}
+
+/* on a phone a session fills the screen: above the top bar and the tab bar (z 55), below console-camera.css's "Camera on"
+   chip (z 85), which gets its own gap under the head row; the panel's title bar and the camera tabs step aside */
+@media (max-width:899px){
+  #p-camera.r8-full{left:0;right:0;top:0;bottom:0;z-index:60;border-radius:0;border-width:0;background:var(--panel-solid)}
+  #p-camera.r8-full .r8-head{margin-bottom:calc(var(--top-h, 56px) + 4px)}
+  #p-camera.r8-full .ptitle,#p-camera.r8-full #cameraBody > .sfine,#p-camera.r8-full #cameraBody > .hp-tabs{display:none}
+  #p-camera.r8-full .pbody{padding:12px 14px calc(14px + env(safe-area-inset-bottom))}
+  .r8-wo .r8-steps .btn,.r8-wo .r8-confirm .btn{min-height:44px}
+}
+
+/* R8.1 I1: the body lines (the mockup's "Body lines only": SVG strokes in the accents, never the picture), the marks he
+   taps for agility, the typed course length */
+.r8-wo .r8-view svg.r8-body{display:none;margin:0}
+.r8-wo .r8-view.figs{height:240px}
+.r8-wo .r8-view.figs svg.r8-body{display:block;position:absolute;left:0;top:10px;width:100%;height:calc(100% - 38px);overflow:visible}
+.r8-wo .r8-view.figs .r8-viewmid{display:none}
+.r8-wo .r8-body .bone{fill:none;stroke:var(--accent-2);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.r8-wo .r8-body .head{fill:none;stroke:var(--accent-2);stroke-width:2.4;vector-effect:non-scaling-stroke}
+.r8-wo .r8-body .joint{fill:var(--accent-ink)}
+.r8-wo .r8-markpick{align-self:stretch;display:flex;flex-direction:column;gap:8px}
+.r8-wo .r8-markpick .snote{margin:0}
+.r8-wo .r8-markpic{position:relative}
+.r8-wo .r8-dots{position:absolute;inset:0;pointer-events:none}
+.r8-wo .r8-dot{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;display:grid;place-items:center;
+  font:400 12px/1 var(--tech);color:var(--ink);background:var(--tint);border:2px solid var(--accent)}
+.r8-wo .r8-confirm .hp-field{display:block;margin-top:10px}
+.r8-wo .r8-confirm .snote:empty{display:none}

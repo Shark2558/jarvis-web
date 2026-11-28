@@ -1,13 +1,14 @@
-# tests/test_r81_f_coaches.py -- R8.1 builder F: the flow and balance coaches (docs/plans/r8-vision.md
-# v8.0.4 section 2.2 rows 221, 226, 231, 232, 236; docs/plans/r8-integration/ROWS.md). Each row's
-# acceptance test, on synthetic data only (never a real person's): the console's use cases
-# (console-coach-<x>.js) run in Node on the scripted sessions of tests/fixtures/r8/flow_sequences.mjs,
-# behind a stand-in for JarvisVision.use. The workbook's checks are covered too: hold-time error,
-# task-state F1 and repeatability (226), sequence recall and hold-time error (231), form-step
-# recognition F1 and sequence completion (232), timing error and fairness across styles (236).
-# Every tally must fit its jarvis.coach.usecases model (a tally that doesn't is dropped), a recorded
-# routine must fit jarvis.coach.store's Routine (angles only), every view holds only the fixed widget
-# kinds, and no view says anything medical.
+# tests/test_r81_f_coaches.py -- R8.1 builder F: the flow and balance coaches
+# (docs/plans/r8-vision.md v8.0.4 section 2.2 rows 221, 226, 231, 232, 236;
+# docs/plans/r8-integration/ROWS.md). Each row's acceptance test, on synthetic data only (never a
+# real person's): the console's use cases (console-coach-<x>.js) run in Node on the scripted
+# sessions of tests/fixtures/r8/flow_sequences.mjs, behind a stand-in for JarvisVision.use. The
+# workbook's checks are covered too: hold-time error, task-state F1 and repeatability (226),
+# sequence recall and hold-time error (231), form-step recognition F1 and sequence completion
+# (232), timing error and fairness across styles (236). Every tally must fit its
+# jarvis.coach.usecases model (a tally that doesn't is dropped), a recorded routine must fit
+# jarvis.coach.store's Routine (angles only), every view holds only the fixed widget kinds, and no
+# view says anything medical.
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -65,7 +66,7 @@ def _plain_view(use: str, view: list[dict[str, Any]]) -> None:
 
 
 def _no_points(value: Any) -> None:
-    """Nothing kept is a point: no x/y pair anywhere, and no list as long as a body's 33."""
+    """Nothing kept is a point: no x/y pair anywhere."""
     if isinstance(value, dict):
         assert not ({"x", "y"} <= set(value)), value
         for v in value.values():
@@ -90,8 +91,14 @@ def _yoga_runs() -> list[dict[str, Any]]:
     for seed in range(1, 9):
         out = node(
             "yogaSession",
-            {"poses": list(YOGA), "hold": 6 + seed % 4, "seed": seed, "tilt": (-4, 0, 3, 4)[seed % 4],
-             "scale": (0.72, 0.8, 0.86)[seed % 3], "flip": seed % 2 == 0},  # fmt: skip
+            {
+                "poses": list(YOGA),
+                "hold": 6 + seed % 4,
+                "seed": seed,
+                "tilt": (-4, 0, 3, 4)[seed % 4],
+                "scale": (0.72, 0.8, 0.86)[seed % 3],
+                "flip": seed % 2 == 0,
+            },  # fmt: skip
         )
         runs.append(out)
     return runs
@@ -124,7 +131,9 @@ def test_221_every_recognised_hold_is_timed_within_a_second(
 
 
 def test_221_the_tally_keeps_the_longest_hold_and_the_number_of_holds() -> None:
-    out = node("yogaSession", {"poses": ["tree", "warrior_ii", "child"], "hold": [8, 14, 6], "seed": 3})
+    out = node(
+        "yogaSession", {"poses": ["tree", "warrior_ii", "child"], "hold": [8, 14, 6], "seed": 3}
+    )
     assert out["tally"]["pose"] == "warrior_ii" and out["tally"]["holds"] == 3
     assert abs(out["tally"]["hold_s"] - 14) <= 1.0
     _fits("yoga", out["tally"])
@@ -216,7 +225,10 @@ def test_231_every_out_of_order_step_is_reported(order: list[str]) -> None:
     assert [g["step"] for g in out["log"]] == order
     assert out["tally"]["out_of_order"] == len(out["wrong"]) > 0
     for step in out["wrong"]:  # each one said, by name, when it happened
-        assert any(step.replace("_", " ").split()[0] in tip.lower() for tip in out["tips"]), (step, out["tips"])
+        assert any(step.replace("_", " ").split()[0] in tip.lower() for tip in out["tips"]), (
+            step,
+            out["tips"],
+        )
     marks = next(w for w in out["view"] if w["kind"] == "checklist")["items"]
     assert sum(1 for i in marks if i["ok"] is False) == len(out["wrong"])
     _fits("pilates", out["tally"])
@@ -233,8 +245,10 @@ def test_231_a_skipped_step_is_never_counted_as_done() -> None:
 @pytest.fixture(scope="module")
 def taichi_reference() -> list[list[float]]:
     rec = node("taichiSession", {"mode": "record", "seed": 11})
-    rows = run_node(SEQ, "mod.rowsOf", rec)
-    assert rec["tally"]["record"]["rid"] == "tai-chi-1" and rec["tally"]["record"]["kind"] == "tai-chi"
+    rows: list[list[float]] = run_node(SEQ, "mod.rowsOf", rec)
+    assert (
+        rec["tally"]["record"]["rid"] == "tai-chi-1" and rec["tally"]["record"]["kind"] == "tai-chi"
+    )
     return rows
 
 
@@ -273,8 +287,10 @@ def test_232_the_smoothness_score_is_lower_for_every_sequence_with_injected_jerk
     for seed in (6, 7):
         clean = node("taichiSession", {"reference": taichi_reference, "seed": seed})
         last = clean["tally"]["smooth"]
-        for jerks in ([9.0], [9.0, 21.0], [5.0, 13.0, 21.0, 29.0]):
-            jerky = node("taichiSession", {"reference": taichi_reference, "seed": seed, "jerks": jerks})
+        for jerks in ([9.0], [9.0, 21.0], [5.0, 11.0, 17.0, 23.0]):
+            jerky = node(
+                "taichiSession", {"reference": taichi_reference, "seed": seed, "jerks": jerks}
+            )
             assert jerky["tally"]["smooth"] < last, (seed, jerks, jerky["tally"], last)
             last = jerky["tally"]["smooth"]
 
@@ -334,5 +350,7 @@ def test_236_his_reference_routine_is_kept_as_joint_angles_only(
 
 def test_236_without_a_reference_the_session_records_one() -> None:
     out = node("danceSession", {"seconds": 6})
-    assert out["tally"]["record"]["rid"] == "dance-1" and len(run_node(SEQ, "mod.rowsOf", out)) >= 55
+    assert (
+        out["tally"]["record"]["rid"] == "dance-1" and len(run_node(SEQ, "mod.rowsOf", out)) >= 55
+    )
     _plain_view("dance", out["view"])

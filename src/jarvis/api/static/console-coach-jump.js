@@ -106,7 +106,7 @@ function onResult(r, state) {
     if (t - l.t >= LAND_S) s = judge(s);
   }
   if (s.phase === 'ground') {
-    if (h > AIR) return Object.assign({}, s, { phase: 'air', air: [frame], liftFrom: s.prev });
+    if (h > AIR) return Object.assign({}, s.land ? judge(s) : s, { phase: 'air', air: [frame], liftFrom: s.prev }); // a rebound
     const near = Math.abs(h) < AIR / 2;
     return Object.assign({}, s, { prev: frame, floor: near ? ema(s.floor, b.foot, 0.2) : s.floor,
       leg: s.land || !Number.isFinite(b.leg) ? s.leg : Math.max(s.leg * 0.999, b.leg) });

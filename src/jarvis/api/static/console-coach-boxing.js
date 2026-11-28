@@ -29,7 +29,7 @@ const ARMS = Object.freeze([Object.freeze({ sh: 11, el: 13, wr: 15 }), Object.fr
 const TYPES = Object.freeze(['jab', 'cross', 'hook', 'uppercut']);
 const WORDS = Object.freeze([
   'Face the phone in your stance, hands up, then throw.', 'punches', 'Stop if anything hurts.',
-  'Punch types are about right at this frame rate.', 'Last combination: ', 'Hands back to your guard.',
+  'Punch types are about right at this frame rate.', 'Last combination: ',
 ]);
 
 const clock = (r) => (Number.isFinite(r.t) ? r.t : performance.now() / 1000 - (Number(r.ms) || 0) / 1000);

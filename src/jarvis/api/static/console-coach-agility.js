@@ -76,7 +76,7 @@ function onResult(r, state) {
   if (!f) return state;
   const t = clock(r), at = Number.isInteger(r.at) ? r.at : 0;
   let s = state && state.phase ? state : begin(t, at, setupOf(state));
-  s = Object.assign({}, s, { t, at: Math.max(s.at, at), foot: f });
+  s = Object.assign({}, s, { t, at: Math.max(s.at, at), foot: { x: Math.round(f.x * 100) / 100, y: Math.round(f.y * 100) / 100 } });
   if (!s.ok) return s;
   const d0 = dist(f, s.marks[0]);
   if (s.phase === 'wait' || s.phase === 'done') {

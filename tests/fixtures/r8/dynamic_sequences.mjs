@@ -403,3 +403,18 @@ export async function kettlebellSession(o) {
   const out = uc.summary(state);
   return plainOut({ tally: out.tally, view: out.view, mid, styles, truth: plan.filter((x) => !x.part).map((x) => x.style) });
 }
+
+/** Row 235: rebound jumps (the next takeoff inside the last landing's half second): each landing is still judged. */
+export async function reboundJumps(o) {
+  const opt = Object.assign({ jumps: 5, h: 0.15, contact: 0.25, fps: 30, seed: 2, base: undefined }, o || {});
+  const uc = await useCase('console-coach-jump.js', opt.base);
+  const r = rng(opt.seed), v = Math.sqrt(2 * G * opt.h), flight = 2 * v / G, cycle = flight + opt.contact;
+  let state;
+  for (let i = 0; i <= Math.round((1 + opt.jumps * cycle + 1.5) * opt.fps); i += 1) {
+    const tt = i / opt.fps, u = tt - 1, k = Math.floor(u / cycle), w = u - k * cycle;
+    const air = u >= 0 && k < opt.jumps && w < flight;
+    const lift = air ? v * w - G * w * w / 2 : 0, drop = !air && u > 0 && k <= opt.jumps ? 0.01 : 0; // stiff contacts
+    state = uc.onResult(res(draw(frontBody({ lift, drop }), { noise: 0.002, r }), tt), state);
+  }
+  return plainOut({ tally: uc.summary(state).tally });
+}

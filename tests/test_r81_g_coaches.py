@@ -350,3 +350,9 @@ def test_239_the_wrist_path_is_drawn_as_the_bells_path() -> None:
     assert 2 <= len(targets["dots"]) <= 8 and max(ys) - min(ys) >= 0.1  # the swing's arc
     assert len(targets["hands"]) == 1  # the bell, where the wrists are now
     assert all(0 <= v <= 1 for d in targets["dots"] for v in (d["x"], d["y"]))
+
+
+def test_235_rebound_jumps_each_get_their_landing_judged() -> None:
+    out = node("reboundJumps", {"jumps": 5})
+    assert out["tally"]["jumps"] == 5
+    assert out["tally"]["stiff"] == 5  # short, straight-legged contacts: each one judged

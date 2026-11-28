@@ -363,6 +363,5 @@
     state: () => ({ order: tabs.map((t) => t.dataset.open), shown: tabs.filter((t) => !t.hidden).map((t) => t.dataset.open),
       removed: [...removed], more: !moreBtn.hidden, phone: isPhone(), hidden: dock.style.display === 'none' }),
     onSheet(fn) { sheetHook = typeof fn === 'function' ? fn : null; },
-    openSheet() { if (!moreBtn.hidden && !sheet.open) openSheet(); },
   });
 })();

@@ -202,6 +202,12 @@ def test_a_right_click_edits_and_a_drag_moves_an_item_kept_after_a_reload(
         )
         assert json.loads(c.page.evaluate(SAVED_JS))["order"][:3] == ["chat", "brief", "vitals"]
         assert c.page.locator("#p-vitals").is_hidden()  # editing never opened the panel
+        _tab(c, "vitals").focus()  # after a drag the next press counts: Enter, the Move panel
+        c.page.keyboard.press("Enter")
+        expect(c.page.locator(".dke-keys")).to_be_visible()
+        c.page.keyboard.press("Escape")  # closes the panel first, editing stays
+        expect(c.page.locator(".dke-keys")).to_have_count(0)
+        expect(c.page.locator("#dock.dke-edit")).to_have_count(1)
         c.page.locator(".dke-tools").get_by_role("button", name="Done").click()
         expect(c.page.locator("#dock.dke-edit")).to_have_count(0)
         assert c.page.locator("#dock .dke-grip, #dock .dke-x").count() == 0

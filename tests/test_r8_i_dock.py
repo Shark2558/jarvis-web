@@ -201,6 +201,8 @@ def test_the_words_say_what_a_change_did_to_the_room() -> None:
         "Camera and Calls wait in More: no room for them at this width."
     )
     assert _ed("mod.noRoomWords", [], NAMES, True) == ""
+    many = _ed("mod.noRoomWords", ["vault", "construct", "helpers", "camera", "calls"], NAMES, True)
+    assert many == "5 items wait in More: no room for them at this width."
 
 
 def test_the_editor_keeps_the_gesture_numbers_of_the_mockup() -> None:

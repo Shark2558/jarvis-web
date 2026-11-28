@@ -14,7 +14,7 @@
 .dke-x::after{content:"";position:absolute;inset:-3px} /* a 24 px target around the 20 px mark, inside the tile */
 .dk .dke-x svg{width:11px;height:11px}
 .dke-x:hover{color:var(--ink);border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
-.dke-x.dke-off,.dke-x.dke-off:hover{opacity:.5;cursor:not-allowed;color:var(--ink-2);border-color:var(--line)}
+.dke-x.dke-fixed,.dke-x.dke-fixed:hover{opacity:.5;cursor:not-allowed;color:var(--ink-2);border-color:var(--line)}
 .dock .dk.dke-hole{border-style:dashed;border-color:var(--line-2);background:transparent;box-shadow:none}
 .dock .dk.dke-hole > :not(.dke-x){opacity:.28}
 .dock .dk.dke-hole .dke-x{display:none}

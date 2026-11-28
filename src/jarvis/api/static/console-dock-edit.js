@@ -111,10 +111,10 @@ export function roomWords(before, after, names, except) {
   if (n(went)) words.push(`${n(went)} ${one(went) ? 'waits' : 'wait'} in More: no room for ${one(went) ? 'it' : 'them'} now.`);
   return words.join(' ');
 }
-/** Tabs on his bar that this width has no room for. */
+/** Tabs on his bar that this width has no room for (named up to three, else counted). */
 export function noRoomWords(folded, names, more) {
   if (!folded.length) return '';
-  const one = folded.length === 1, who = listWords(folded.map((x) => nameIn(names, x)));
+  const one = folded.length === 1, who = folded.length > 3 ? `${folded.length} items` : listWords(folded.map((x) => nameIn(names, x)));
   return more ? `${who} ${one ? 'waits' : 'wait'} in More: no room for ${one ? 'it' : 'them'} at this width.`
     : `${who} ${one ? 'has' : 'have'} no room at this width.`;
 }
@@ -252,7 +252,7 @@ function boot(D) {
   }
   function sayBase() {
     const st = D.state(), folded = st.order.filter((id) => !st.shown.includes(id) && !st.removed.includes(id));
-    say([S.phone ? WORDS.list : WORDS.base, noRoomWords(folded, names(), st.more)].filter(Boolean).join(' '));
+    say(S.phone ? WORDS.list : [WORDS.base, noRoomWords(folded, names(), st.more)].filter(Boolean).join(' ')); // a phone's list draws the fold
     S.base = true;
   }
   function sayItem(id) {
@@ -308,7 +308,7 @@ function boot(D) {
   // ---- editing on the laptop: in place --------------------------------------------------------------------------------
   function decorate(t) {
     if (t.querySelector('.dke-grip')) return;
-    const grip = el('i', 'dke-grip'), x = el('i', 'dke-x' + (FIXED.includes(t.dataset.open) ? ' dke-off' : ''));
+    const grip = el('i', 'dke-grip'), x = el('i', 'dke-x' + (FIXED.includes(t.dataset.open) ? ' dke-fixed' : ''));
     grip.setAttribute('aria-hidden', 'true'); x.setAttribute('aria-hidden', 'true');
     grip.append(dots(8, 12, 1.1)); x.append(icon('x', 2));
     t.append(grip, x);
@@ -318,6 +318,7 @@ function boot(D) {
     if (S.editing) return;
     await css();
     closeCtx();
+    if (sheet && sheet.open) sheet.close(); // the bar is behind a modal sheet: edit it in the open
     if (S.layout.hidden) commit(hide(S.layout, false));
     S.editing = true;
     if (D.state().phone) { openList(focusId); return; }
@@ -352,7 +353,7 @@ function boot(D) {
     chatTipEl.style.bottom = Math.round(window.innerHeight - r.top + 10) + 'px';
   }
   dock.addEventListener('pointerover', (e) => {
-    const x = e.target.closest && e.target.closest('.dke-x.dke-off');
+    const x = e.target.closest && e.target.closest('.dke-x.dke-fixed');
     if (S.editing && !S.drag) chatTip(!!x, x);
   });
   dock.addEventListener('pointerleave', () => chatTip(false));
@@ -428,7 +429,7 @@ function boot(D) {
     const d = S.drag;
     S.drag = null;
     if (!d || !d.started) return;
-    S.dragged = true;
+    swallowNextClick();
     cleanDrag(d);
     if (d.to === 'more') remove(d.id);
     else if (d.to) {
@@ -436,6 +437,8 @@ function boot(D) {
       commit(next, { words: placeWords(next.order, d.id, names()), focus: d.id });
     } else sayBase();
   }
+  /** The click that ends a drag (same task as its pointerup) is not a press; any later one is. */
+  function swallowNextClick() { S.dragged = true; setTimeout(() => { S.dragged = false; }, 0); }
   function cleanDrag(d) {
     if (d.ghost) d.ghost.remove();
     if (d.line) d.line.remove();
@@ -509,7 +512,10 @@ function boot(D) {
    *  takes a press, so the lift can't press a row's x or move focus. */
   function holdUntilLift() {
     const kinds = ['pointerup', 'pointercancel', 'touchend', 'touchcancel'];
-    const free = () => { kinds.forEach((k) => window.removeEventListener(k, free, true)); setTimeout(() => { S.held = false; }, 350); };
+    const free = () => {
+      kinds.forEach((k) => window.removeEventListener(k, free, true));
+      setTimeout(() => { S.held = false; S.swallow = false; }, 350);
+    };
     S.held = true;
     kinds.forEach((k) => window.addEventListener(k, free, true));
     setTimeout(() => { S.held = false; }, 3000);
@@ -674,7 +680,7 @@ function boot(D) {
     const d = S.ldrag;
     S.ldrag = null;
     if (!d || !d.started) return;
-    S.dragged = true;
+    swallowNextClick();
     const next = dropTo(S.layout, d.id, d.to && d.to.before, d.to && d.to.after);
     if (!commit(next, { words: placeWords(next.order, d.id, names()), focus: d.id, part: 'hold' })) drawList(d.id, 'hold');
   }

@@ -33,7 +33,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from jarvis.coach.home import Summary
+from jarvis.coach.home import Summary, aspect_of
 
 ID = "posture"
 TASKS: tuple[str, ...] = ("pose",)
@@ -154,7 +154,7 @@ class PostureCoach:
             return s
         s = replace(s, first=at if s.first is None else s.first, last=at)
         pts = _result_points(result)
-        found = angles(pts, self.aspect) if pts is not None else None
+        found = angles(pts, aspect_of(result, self.aspect)) if pts is not None else None  # I1
         if found is None:
             return self._unjudged(s, at)
         return self._judge(s, at, found)

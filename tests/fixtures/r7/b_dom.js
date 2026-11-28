@@ -193,13 +193,20 @@ function camState(s) {
 }
 
 // ---- scenarios -------------------------------------------------------------------------------------------------------------
+function smallWindow() { // R8 I1: a Document Picture-in-Picture window's shape (closed, its document, its events)
+  const on = (map) => (t, f) => { (map[t] = map[t] || []).push(f); };
+  const fire = (map) => (t) => (map[t] || []).splice(0).forEach((f) => f());
+  const W1 = {}, D1 = {};
+  const d = { hidden: false, addEventListener: on(D1), fire: fire(D1) };
+  return { closed: false, document: d, addEventListener: on(W1), fire: fire(W1) };
+}
 async function camera(input) { // steps: [{op, ...}] -> the state after each
   const { s, win } = boot(input, ['console-camera.js']);
   const C = s.JarvisCamera, out = [];
   // the camera's own button (inside #p-camera) and one elsewhere: a tap counts only on the first
   const panel = doc.body.appendChild(new El('section')); panel.id = 'p-camera';
   const own = panel.appendChild(new El('button')), elsewhere = doc.body.appendChild(new El('button'));
-  let job = null;
+  let job = null, pip = null;
   [own, elsewhere].forEach((b) => b.addEventListener('click', () => { if (job) { const j = job; job = null; j(); } }));
   const tapped = (st, fn) => { // tap: true = on the camera's button, 'elsewhere' = a real tap on another part of the page
     if (!st.tap) return fn();
@@ -215,6 +222,13 @@ async function camera(input) { // steps: [{op, ...}] -> the state after each
       else if (st.op === 'wake') { cam.wake.splice(0).forEach((f) => f()); }
       else if (st.op === 'stop') C.stop('panel');
       else if (st.op === 'hide') { doc.hidden = true; doc.dispatchEvent(new Ev('visibilitychange')); doc.hidden = false; }
+      // R8 I1: keepWhile(win), the small window on top (a fake Window with its own document)
+      else if (st.op === 'pip') { pip = smallWindow(); ok = typeof C.keepWhile(pip) === 'function'; }
+      else if (st.op === 'hideStay') { doc.hidden = true; doc.dispatchEvent(new Ev('visibilitychange')); }
+      else if (st.op === 'show') { doc.hidden = false; doc.dispatchEvent(new Ev('visibilitychange')); }
+      else if (st.op === 'pipHide') { pip.document.hidden = true; pip.document.fire('visibilitychange'); }
+      else if (st.op === 'pipClose') { pip.closed = true; pip.fire('pagehide'); }
+      else if (st.op === 'keepSelf') ok = typeof C.keepWhile(s.window || win) === 'function';
       else if (st.op === 'chipStop') doc.all().find((n) => String(n.className).includes('cam-chip')).click();
       else if (st.op === 'voice') { const r = await s.JarvisVoiceCommands.handle(st.text, { source: 'voice', state: 'listening' }); ok = r.handled; code = (r.result && r.result.say) || r.id || ''; }
       else if (st.op === 'storage') { store.set('jarvis_cam_off_v1', st.value); if (st.value === null) store.delete('jarvis_cam_off_v1'); win.dispatchEvent(new Ev('storage', { trusted: st.trusted, key: 'jarvis_cam_off_v1', storageArea: localStorage })); }
@@ -275,14 +289,15 @@ async function driver(input) { // steps: [{op, ...}] on a fake camera and two pr
   V.register({ id: 'pose', v: 2, input: 'both', rate: 15, run: (f) => { picture(f); fake.poseRuns += 1;
     return { data: { bodies: fake.bodies.map((who, track) => ({ track, who, points: [point] })) } }; },
   check: (d) => !!d && Array.isArray(d.bodies) });
-  const got = {}, errors = [], tallies = [], resets = [], tracks = [], seen = [], whos = {};
+  const got = {}, errors = [], tallies = [], resets = [], tracks = [], seen = [], whos = {}, res = {}; // res: R8 I1
   let handle = null, sh = null, ran = 0, streamed = 0, marked = null;
   const summary = (st) => ({ view: [{ kind: 'big', n: (st && st.count) || 0, word: 'counted' }, { kind: 'evil', x: 1 },
     { kind: 'paused', why: 'others', fn: () => 1 }, 'text'], tally: { count: (st && st.count) || 0 } });
   for (const st of input.steps || []) {
-    if (st.op === 'use') { got[st.id] = 0; whos[st.id] = []; V.use({ id: st.id, tasks: st.tasks, summary, onResult: (r, state) => { got[st.id] += 1;
+    if (st.op === 'use') { got[st.id] = 0; whos[st.id] = []; res[st.id] = []; V.use({ id: st.id, tasks: st.tasks, summary, onResult: (r, state) => { got[st.id] += 1;
+      if (res[st.id].length < 3) res[st.id].push({ setup: r.setup === undefined ? null : JSON.parse(JSON.stringify(r.setup)), frozen: r.setup === undefined || Object.isFrozen(r.setup), aspect: r.aspect, has: 'setup' in r });
       if (r.task === 'pose' && !whos[st.id].includes(r.track + ':' + r.who)) whos[st.id].push(r.track + ':' + r.who); return { count: ((state && state.count) || 0) + 1 }; } }); }
-    else if (st.op === 'live') handle = V.live(st.tasks, { uses: st.uses, rate: st.rate, target: st.target, onError: (e) => errors.push(String(e && e.message)) });
+    else if (st.op === 'live') handle = V.live(st.tasks, { uses: st.uses, rate: st.rate, target: st.target, setup: st.setup, onError: (e) => errors.push(String(e && e.message)) });
     else if (st.op === 'end') handle.end();
     else if (st.op === 'run') { await V.run(st.task, canvas); ran += 1; }
     else if (st.op === 'stream') sh = V.stream(st.task, { frame: () => canvas }, () => { streamed += 1; });
@@ -297,7 +312,7 @@ async function driver(input) { // steps: [{op, ...}] on a fake camera and two pr
     await settle();
   }
   if (handle) handle.end();
-  return { got, errors, frames: fake.frames, ran, streamed, tallies, resets, tracks, seen, whos, marked, pose_runs: fake.poseRuns };
+  return { got, errors, frames: fake.frames, ran, streamed, tallies, resets, tracks, seen, whos, marked, pose_runs: fake.poseRuns, res };
 }
 
 async function r8tasks(input) { // the engine as shipped: pose v2 and hands, their load through console-vision-r8.js

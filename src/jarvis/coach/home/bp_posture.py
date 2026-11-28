@@ -34,7 +34,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from jarvis.coach.home import Summary
+from jarvis.coach.home import Summary, aspect_of
 from jarvis.coach.home.seated import near_side
 
 USE = "bp-posture"
@@ -184,7 +184,7 @@ class BpPostureCoach:
             return replace(s, table=(top, t)) if top is not None else s
         data = result.get("data") if result.get("task") == "pose" else None
         points = data.get("points") if isinstance(data, Mapping) else None
-        p = near_side(points) if isinstance(points, Sequence) else {}
+        p = near_side(points, aspect_of(result)) if isinstance(points, Sequence) else {}
         if (
             not isinstance(points, Sequence)
             or not {11, 23} <= p.keys()

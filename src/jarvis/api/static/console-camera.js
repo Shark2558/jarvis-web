@@ -8,6 +8,7 @@
 //                and nothing keeps it: stop() empties the canvas
 //   photo()      a photo he picks (the system's own picker: gallery or camera app), only inside a tap; Promise<File|null>
 //   stop(why), live(), facing() / useFacing('environment'|'user'), onChange(fn) -> unsubscribe ({locked, live, by})
+//   keepWhile(win) -> release()   R8 I1: while that small window on top is open and visible, a hidden tab keeps it on
 // While any track is live a "Camera on" chip with Stop stays on screen (beside the dot Android itself draws). The camera
 // stops by itself when the page is hidden (another app, the screen locks, the tab is left), and when nothing has used a
 // frame for 10 minutes. "Jarvis, cameras off" (R5's local router, so it works with the AI off) locks THIS device's
@@ -289,7 +290,25 @@ function onChange(fn) {
 }
 
 // ---- stops by itself: hidden page, screen locked, page left --------------------------------------------------------
-document.addEventListener('visibilitychange', () => { if (document.hidden) stop('hidden'); });
+// R8 I1 (D10; C's Desk pane): keepWhile(win) -> release(). While the small window on top (Document Picture-in-Picture:
+// a Window of this page's own) is open and visible, hiding THIS tab doesn't stop the camera; closing that window, or it
+// being hidden too (the screen locked), does. Leaving the page or the page being frozen always stops it.
+const keepers = new Set();
+function kept() {
+  for (const w of keepers) { try { if (w.closed) keepers.delete(w); } catch (_) { keepers.delete(w); } }
+  return [...keepers].some((w) => { try { return !w.document.hidden; } catch (_) { return false; } });
+}
+function keepWhile(win) {
+  let ok = false;
+  try { ok = !!win && win !== window && typeof win.closed === 'boolean' && !win.closed && !!win.document; } catch (_) { ok = false; }
+  if (!ok) return () => {};
+  keepers.add(win);
+  const release = () => { keepers.delete(win); if (document.hidden && !kept()) stop('hidden'); };
+  try { win.addEventListener('pagehide', release, { once: true }); } catch (_) {}
+  try { win.document.addEventListener('visibilitychange', () => { if (win.document.hidden && document.hidden && !kept()) stop('hidden'); }); } catch (_) {}
+  return release;
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && !kept()) stop('hidden'); });
 window.addEventListener('pagehide', () => stop('hidden'));
 document.addEventListener('freeze', () => stop('hidden'));
 // another tab's switch counts only when the browser raised the event for this origin's storage (a script's own
@@ -333,7 +352,7 @@ const api = Object.freeze({
   locked: () => S.locked, live, lock, unlock, start, stop: (why) => stop(why || 'panel'), frame, photo, onChange,
   facing: () => S.facing, useFacing: (f) => { if (FACING.includes(f)) S.facing = f; return S.facing; },
   phrases: () => OFF_PHRASES,
-  spot, useSpot, recheck, allOff, blocked: () => S.blocked,
+  spot, useSpot, recheck, allOff, blocked: () => S.blocked, keepWhile,
 });
 window.JarvisCamera = api;
 if (M) M.part('camera', api);

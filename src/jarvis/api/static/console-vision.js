@@ -9,15 +9,19 @@
 //                                             check(data) -> bool}   (its schema: numbers in ranges, labels from its own
 //                                             list, text <= 2,000 characters; the server's jarvis.vision.results)
 //   JarvisVision.use(usecase)                 a use case = {id, tasks: [...], onResult(result, state), summary(state)}
-//   JarvisVision.live(taskIds, {uses, rate, target, onError}) -> {end(), tracks()}   R8 (INTEGRATION-B section 3, line 3)
+//   JarvisVision.live(taskIds, {uses, rate, target, setup, onError}) -> {end(), tracks()}   R8 (INTEGRATION-B section 3)
 //                                             the driver: frames from JarvisCamera while a tap-started look is live, only
 //                                             to the use cases named in `uses`, ONE BODY AT A TIME (a use case keeps a state
 //                                             per body); target {kind: 'all' (default) | 'me' | 'person', person: 'fp_...'}
 //                                             picks the bodies (the owner's D6). Here no face is matched: a body is 'me'
-//                                             only while it is the only one in view of this device
+//                                             only while it is the only one in view of this device. R8 I1: `setup` (plain
+//                                             data, e.g. a recorded routine) rides on every Result the look hands its use
+//                                             cases as `r.setup` (frozen once, the same object each time)
 //   JarvisVision.tally(id, track?) -> {view, tally, who}   frozen plain data from summary(state); view: fixed widgets only
 //   JarvisVision.tracks(id) -> [{track, who}]  the bodies a use case holds a state for; reset(id) clears them all
-//   Result = {task, v, at, ms, device: 'phone'|'browser'|'home', ok, data, quality: {light, sharp}}
+//   Result = {task, v, at, ms, device: 'phone'|'browser'|'home', ok, data, quality: {light, sharp}, aspect}
+//            R8 I1: `aspect` is the frame's width / height (null when unknown): points are 0..1 of each side, so an
+//            angle is true only with x scaled by it (console-coach-geom.js angle(a, b, c, aspect))
 // A Result is a frozen copy of plain data: a task's answer that fails its own check is dropped (ok: false, data {}),
 // and a use case receives Results only, never a frame, never the task, never the source, and only during a live() that
 // names it (R8: run() and stream() tell no use case). This file holds no frame after run() returns. A use case's module
@@ -43,23 +47,30 @@ let sealed = false; // v7.0.2: after the five built-in tasks nobody adds one (a 
 const device = () => (/Android|iPhone|iPad/i.test(navigator.userAgent || '') ? 'phone' : 'browser');
 const unit = (v) => (Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0);
 
-function plain(v, depth) { // a deep, frozen copy of JSON-shaped data only (no objects with prototypes, no buffers)
+function plain(v, depth, items) { // a deep, frozen copy of JSON-shaped data only (no objects with prototypes, no buffers)
+  const n = items || 100;
   if (depth > 6) return null;
   if (v === null || typeof v === 'boolean' || typeof v === 'string') return typeof v === 'string' ? v.slice(0, 2000) : v;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (Array.isArray(v)) return Object.freeze(v.slice(0, 100).map((x) => plain(x, depth + 1)));
+  if (Array.isArray(v)) return Object.freeze(v.slice(0, n).map((x) => plain(x, depth + 1, n)));
   if (Object.prototype.toString.call(v) !== '[object Object]') return null;
   const out = {};
-  Object.keys(v).slice(0, 50).forEach((k) => { out[k] = plain(v[k], depth + 1); });
+  Object.keys(v).slice(0, 50).forEach((k) => { out[k] = plain(v[k], depth + 1, n); });
   return Object.freeze(out);
 }
+const SETUP_ITEMS = 2000; // R8 I1: a recorded routine's rows (R8.1's tai-chi and dance compare against one)
+const aspectOf = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0.2 && v <= 5 ? Math.round(v * 1000) / 1000 : null);
+function ratioOf(src) { // the frame's width / height, from what the camera handed (a canvas, a bitmap, a video)
+  try { const w = src && (src.videoWidth || src.width), h = src && (src.videoHeight || src.height); return w > 0 && h > 0 ? w / h : null; } catch (_) { return null; }
+}
 
-function result(task, data, ms, quality) {
+function result(task, data, ms, quality, aspect) {
   const ok = !!data && typeof task.check === 'function' && task.check(data) === true;
   return Object.freeze({
     task: task.id, v: task.v, at: Math.floor(Date.now() / 1000), ms: Math.max(0, Math.round(ms)), device: device(), ok,
     data: ok ? plain(data, 0) : Object.freeze({}),
     quality: Object.freeze({ light: unit(quality && quality.light), sharp: unit(quality && quality.sharp) }),
+    aspect: aspectOf(aspect),
   });
 }
 
@@ -107,7 +118,8 @@ async function run(id, source, opts) {
   if (!(await ready(t))) throw new Error(t.why || NOT_THERE);
   const start = performance.now();
   const out = await t.run(source, opts || {});
-  return result(t, out && out.data, performance.now() - start, out && out.quality); // R8: tells no use case
+  const aspect = aspectOf(out && out.aspect) || ratioOf(source); // R8 I1: the task's own decoded size first
+  return result(t, out && out.data, performance.now() - start, out && out.quality, aspect); // R8: tells no use case
 }
 
 const NO_PICTURE = 'There is no picture to look at.';
@@ -167,6 +179,8 @@ function live(taskIds, opts) {
   const ids = Array.isArray(taskIds) ? [...new Set(taskIds.filter((x) => typeof x === 'string' && tasks.has(x)))].slice(0, LIVE_TASKS_MAX) : [];
   const names = Array.isArray(o.uses) ? [...new Set(o.uses.filter((x) => typeof x === 'string' && uses.has(x)))].slice(0, 8) : [];
   const look = { names, target: targetOf(o.target), on: true, streams: [], off: null, seen: Object.freeze([]) };
+  const setup = o.setup === undefined || o.setup === null ? undefined : plain(o.setup, 0, SETUP_ITEMS); // R8 I1, once
+  const withSetup = (r) => (setup === undefined ? r : Object.freeze(Object.assign({}, r, { setup })));
   const end = () => { look.on = false; look.streams.splice(0).forEach((x) => x.stop()); if (look.off) { try { look.off(); } catch (_) {} } look.off = null; };
   const handle = Object.freeze({ end, tracks: () => look.seen });
   if (!ids.length || !names.length || !look.target) { look.on = false; fail(new Error(NOT_THERE)); return handle; }
@@ -174,7 +188,7 @@ function live(taskIds, opts) {
   const stopped = (e) => { if (!look.on) return; end(); fail(e); };
   if (typeof cam.onChange === 'function') look.off = cam.onChange((d) => { if (!d || !d.live) stopped(new Error(CAMERA_STOPPED)); });
   const frame = () => (look.on && cam.live() ? cam.frame() : null);
-  ids.forEach((id) => { look.streams.push(stream(id, { frame, rate: o.rate, onError: stopped }, (r) => { if (look.on) tell(r, look.names, bodiesOf(r, look)); })); });
+  ids.forEach((id) => { look.streams.push(stream(id, { frame, rate: o.rate, onError: stopped }, (raw) => { if (!look.on) return; const r = withSetup(raw); tell(r, look.names, bodiesOf(r, look)); })); });
   return handle;
 }
 function tally(id, track) { // the panes' only way to a use case's state: frozen plain data, the fixed widget kinds only
@@ -316,7 +330,10 @@ function qualityOf(src) {
 }
 async function look(frame, fn) { // one run on one frame; every copy drawn for it is emptied after it
   const src = Object.assign(await drawable(frame), { pads: [] });
-  try { return await fn(src); } finally { src.done(); src.pads.forEach(empty); }
+  try { // R8 I1: the decoded frame's width / height rides on the Result (`aspect`), whatever the source was
+    const out = await fn(src);
+    return out && typeof out === 'object' && out.aspect === undefined && src.w > 0 && src.h > 0 ? Object.assign({}, out, { aspect: src.w / src.h }) : out;
+  } finally { src.done(); src.pads.forEach(empty); }
 }
 
 // ---- loading a task's own files, from JARVIS only ----------------------------------------------------------------------
@@ -393,16 +410,33 @@ const codeTask = {
   check: CHECKS.code,
 };
 
-let finder = null;
+let finder = null, coco = null;
+// R8 I1 (D9, ADR-50): EfficientDet-Lite0 serves `objects` only once its file has arrived with its licence read; while
+// it is "not installed", R13's vendored SSD-MobileNet v1 (r13-1, the `person` task's file and self-check) serves it,
+// its COCO ids mapped to OBJECT_LABELS by console-vision-r8.js cocoObjects (tests/test_r8_i1_engine.py)
+const OBJECT_MIN = 0.5, OBJECTS_MAX = 50;
+async function loadCoco() {
+  await r8();
+  await open13('objects', PERSON_MODEL, CHECKS_AT_LOAD.person);
+  coco = sessions.objects;
+}
 const objectsTask = {
   id: 'objects', v: 1, input: 'both', rate: 5,
   load: guard(async () => {
-    const bytes = await model(OBJECT_MODEL);
+    let bytes = null;
+    try { bytes = await model(OBJECT_MODEL); } catch (e) { if (!e || e.message !== NOT_INSTALLED) throw e; }
+    if (!bytes) { await loadCoco(); return; } // D9's fallback
     const V = await mp();
-    finder = await V.ObjectDetector.createFromOptions(MP_FILES, { baseOptions: { modelAssetBuffer: bytes, delegate: 'CPU' }, runningMode: 'VIDEO', scoreThreshold: 0.5, maxResults: 20 });
+    finder = await V.ObjectDetector.createFromOptions(MP_FILES, { baseOptions: { modelAssetBuffer: bytes, delegate: 'CPU' }, runningMode: 'VIDEO', scoreThreshold: OBJECT_MIN, maxResults: 20 });
   }),
   run: (frame) => look(frame, async (src) => {
     const quality = qualityOf(src);
+    if (!finder && coco) {
+      const { o, s } = coco;
+      const out = await s.run({ inputs: new o.Tensor('uint8', R.rgb(sized(src, 300, 300), 300 * 300), [1, 300, 300, 3]) });
+      const found = R8.cocoObjects(out.detection_classes.data, out.detection_scores.data, out.detection_boxes.data, out.num_detections.data[0], OBJECT_MIN, OBJECTS_MAX);
+      return { data: { objects: found.filter((x) => OBJECT_LABELS.includes(x.label)) }, quality };
+    }
     const r = finder.detectForVideo(src.img, performance.now());
     const objects = ((r && r.detections) || []).map((d) => {
       const c = (d.categories && d.categories[0]) || {}, b = d.boundingBox || {};
@@ -647,7 +681,8 @@ sealRegistry();
 // next look loads them again.
 function unload() {
   const gone = [[ocr, 'text', (o) => o.terminate()], [finder, 'objects', (o) => o.close()]]; // pose: unload8 (R8)
-  ocr = null; finder = null;
+  if (coco) { gone.push([coco.s, 'objects', (o) => o.release()]); delete sessions.objects; } // R8 I1: D9's fallback
+  ocr = null; finder = null; coco = null;
   gone.forEach(([o, id, close]) => {
     const t = tasks.get(id);
     if (t) t.ready = false;

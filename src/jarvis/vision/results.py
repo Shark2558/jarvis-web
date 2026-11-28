@@ -232,6 +232,9 @@ class Result(_Strict):
     ok: bool
     data: dict[str, Any]
     quality: Quality
+    # R8 I1 (contract line, I0-SEAMS S1): the frame's width / height; points are 0..1 of each side,
+    # so an angle is true only with x scaled by it. None when the device didn't know it
+    aspect: float | None = Field(default=None, ge=0.2, le=5.0, allow_inf_nan=False)
 
 
 def parse_result(raw: object, *, wardrobe: bool = False) -> Result | None:

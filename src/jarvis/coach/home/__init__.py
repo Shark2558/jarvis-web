@@ -15,7 +15,7 @@ The runtime (builder J, `jarvis.coach.home.runtime`) gives each use case one bod
 the console's driver does (`track`, `who`), keeps a state per body, and sends only `Summary`s up
 in `CoachReport`s (`jarvis.home.ports`). The rules themselves are builders C's and D's:
 `posture.py`, `activity.py` (C), `seated.py`, `bp_posture.py` (D). `REGISTRY` maps each home use
-case's id to its factory; I0 leaves it empty, so the runtime starts none.
+case's id to its factory (I0 left it empty; the I1 join fills it with the four rules).
 """
 
 from __future__ import annotations
@@ -39,6 +39,31 @@ class HomeUseCase(Protocol):
 
 
 HOME_USE_CASES: tuple[str, ...] = ("posture", "activity", "seated", "bp-posture")
-REGISTRY: dict[str, Callable[[], HomeUseCase]] = {}
+ASPECT_MIN, ASPECT_MAX = 0.2, 5.0
 
-__all__ = ["HOME_USE_CASES", "REGISTRY", "HomeUseCase", "Summary"]
+
+def aspect_of(result: Mapping[str, Any], default: float = 1.0) -> float:
+    """R8 I1: the Result's frame width / height (`aspect`; the runtime sets it from the frame),
+    else `default`. Points are 0..1 of each side: x times this puts both in the frame's height."""
+    v = result.get("aspect") if isinstance(result, Mapping) else None
+    if isinstance(v, int | float) and not isinstance(v, bool) and ASPECT_MIN <= v <= ASPECT_MAX:
+        return float(v)
+    return default
+
+
+def _registry() -> dict[str, Callable[[], HomeUseCase]]:
+    """R8 I1: the four home rules' factories (C's posture and activity, D's seated and
+    bp-posture), imported here so the kit carries them (all kit-safe: stdlib and Pydantic)."""
+    from jarvis.coach.home import activity, bp_posture, posture, seated
+
+    return {
+        "posture": posture.create,
+        "activity": activity.create,
+        "seated": seated.make,
+        "bp-posture": bp_posture.make,
+    }
+
+
+REGISTRY: dict[str, Callable[[], HomeUseCase]] = _registry()
+
+__all__ = ["HOME_USE_CASES", "REGISTRY", "HomeUseCase", "Summary", "aspect_of"]

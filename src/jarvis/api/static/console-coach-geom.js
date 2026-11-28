@@ -5,8 +5,10 @@
 //   import { angle, dist, ema, reps, hold, sway, sequence } from './console-coach-geom.js';
 // Points are the engine's {x, y, z, visibility} (pose, 0..1 of the frame) or {x, y, z} (hands). Times are seconds.
 // Every function returns a NEW object; nothing is changed in place.
-//   angle(a, b, c)                 the angle at b, in degrees 0..180 (NaN when a point is missing or two coincide)
-//   dist(a, b)                     the distance in the frame's units (x and y only)
+//   angle(a, b, c, aspect?)        the angle at b, in degrees 0..180 (NaN when a point is missing or two coincide)
+//   dist(a, b, aspect?)            the distance in the frame's height units (x and y only)
+//                                  R8 I1 (contract line): `aspect` is the Result's own (r.aspect, the frame's width /
+//                                  height): x is scaled by it, so a portrait phone's angles are true; 1 when not given
 //   ema(prev, value, k)            exponential smoothing; prev undefined starts at value; k 0..1 (the new value's weight)
 //   reps(state, value, {down, up}) a rep counter on one number (an angle): a rep is a dip below `down` then a rise above
 //                                  `up` (down < up, so a value between them changes nothing); -> {phase, count, at,
@@ -17,17 +19,20 @@
 const DEG = 180 / Math.PI;
 const ok = (p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
 
-export function angle(a, b, c) {
+const wide = (aspect) => (Number.isFinite(aspect) && aspect >= 0.2 && aspect <= 5 ? aspect : 1);
+
+export function angle(a, b, c, aspect) {
   if (!ok(a) || !ok(b) || !ok(c)) return NaN;
-  const ux = a.x - b.x, uy = a.y - b.y, vx = c.x - b.x, vy = c.y - b.y;
+  const k = wide(aspect);
+  const ux = (a.x - b.x) * k, uy = a.y - b.y, vx = (c.x - b.x) * k, vy = c.y - b.y;
   const nu = Math.hypot(ux, uy), nv = Math.hypot(vx, vy);
   if (!nu || !nv) return NaN;
   const cos = Math.min(1, Math.max(-1, (ux * vx + uy * vy) / (nu * nv)));
   return Math.acos(cos) * DEG;
 }
 
-export function dist(a, b) {
-  return ok(a) && ok(b) ? Math.hypot(a.x - b.x, a.y - b.y) : NaN;
+export function dist(a, b, aspect) {
+  return ok(a) && ok(b) ? Math.hypot((a.x - b.x) * wide(aspect), a.y - b.y) : NaN;
 }
 
 export function ema(prev, value, k) {

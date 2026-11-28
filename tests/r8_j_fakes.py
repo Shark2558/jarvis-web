@@ -275,7 +275,7 @@ class Recorder:
             tally = {**tally, "upright": 9000}
         return {"view": view, "tally": tally}
 
-    def rate(self, state: Any) -> float | None:
+    def wanted_rate(self, state: Any) -> float | None:  # R8 I1: the hook's one name (C's)
         return self.hint
 
     def kept(self, state: Any) -> Any:

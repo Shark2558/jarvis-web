@@ -42,8 +42,9 @@ CAMERA, VISION, PANEL, CSS = (
 # reports its errors): INTEGRATION-B.md, "Review follow-ups"; R8 I0 (f26e439a...0860 before)
 # added the live driver (one body at a time, the tracking target), tally, tracks and reset,
 # results only to named uses, stream's opts.rate:
-# INTEGRATION-B.md section 3, R8's contract lines
-I0_CORE_SHA256 = "184decc3bce6cd7fc49aa377e5e4b6498feb00342d9508e43983f79aa5003d41"
+# INTEGRATION-B.md section 3, R8's contract lines; R8 I1 (184decc3...3d41 before) added each
+# Result's `aspect` and live()'s `setup` (docs/plans/r8-integration/I0-SEAMS.md, I1's lines)
+I0_CORE_SHA256 = "1170f49ce7925b478afcced53e5f8a1213af7f05efd8c94b13528b217c3cb175"
 PART_B = "\n// ==== R7 Part B"
 
 

@@ -134,8 +134,8 @@ def test_another_tab_counts_only_through_the_browsers_own_storage_event() -> Non
 def test_a_use_case_receives_frozen_plain_results_only() -> None:
     out = run_dom("engine", probe={"n": 1})
     assert out["told"] == 0  # R8 I0: run() tells no use case; a live look that names it does
-    assert [g["keys"] for g in out["got"]] == [
-        ["at", "data", "device", "ms", "ok", "quality", "task", "v"]
+    assert [g["keys"] for g in out["got"]] == [  # R8 I1: + the frame's `aspect`
+        ["aspect", "at", "data", "device", "ms", "ok", "quality", "task", "v"]
     ] * 2
     for got in out["got"]:
         for kind in got["kinds"]:
@@ -320,7 +320,10 @@ def test_changing_the_task_during_a_look_drops_the_old_answer() -> None:
         {"op": "wait", "ms": 700},
     ])  # fmt: skip
     assert out["boxHidden"] is True and not out["out"].startswith("Light")
-    assert "not installed" in out["state"].lower()
+    # R8 I1 (D9): with EfficientDet not installed, `objects` tries R13's SSD-MobileNet, whose
+    # runtime this harness doesn't serve: "could not load" (a missing SSD file: "not installed")
+    state = out["state"].lower()
+    assert "not installed" in state or "could not load" in state
 
 
 def test_a_look_that_cannot_load_says_so_and_does_not_keep_the_old_result() -> None:

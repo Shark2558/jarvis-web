@@ -54,7 +54,7 @@ const WORDS = Object.freeze({
   switchedOff: 'This camera is switched off in Cameras, so the session stopped.',
   blocked: 'The camera wasn\u2019t allowed. Allow it for this site in the browser\u2019s settings, then tap Start again.',
   noPip: 'This browser can\u2019t keep a small window on top. Keep the console visible while a session runs.',
-  pipHidden: 'The camera stops if this tab is hidden; the small window keeps the count in view while the console stays visible.',
+  pipHidden: 'The camera stops if this tab is hidden, unless the small window on top is open: closing it stops the camera.',
   failed: 'That didn\u2019t work. Please try again.',
   onePerson: 'I can recognise one person only on the home camera, Sir; here I follow everyone or you. Say \u201ctrack everyone\u201d or \u201ctrack me\u201d.',
 });

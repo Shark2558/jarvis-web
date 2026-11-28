@@ -41,7 +41,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from jarvis.coach.home import Summary
+from jarvis.coach.home import Summary, aspect_of
 
 USE = "seated"
 TASKS: tuple[str, ...] = ("pose",)
@@ -137,9 +137,10 @@ MOVES: tuple[Move, ...] = (
 _PAIRS = ((11, 12), (13, 14), (15, 16), (23, 24), (25, 26), (27, 28), (29, 30), (31, 32), (7, 8))
 
 
-def near_side(points: Sequence[Mapping[str, Any]]) -> dict[int, Point]:
+def near_side(points: Sequence[Mapping[str, Any]], aspect: float = 1.0) -> dict[int, Point]:
     """The body's points on the side the camera sees better, under the left side's numbers (11,
-    13, 15, 23, 25, 27, 29, 31, 7); the far shoulder stays 12 (the twist needs both)."""
+    13, 15, 23, 25, 27, 29, 31, 7); the far shoulder stays 12 (the twist needs both). R8 I1: x is
+    scaled by the frame's `aspect` (width / height), so every angle and length is in one unit."""
 
     def seen(i: int) -> tuple[float, float, float] | None:
         if i >= len(points):
@@ -149,7 +150,8 @@ def near_side(points: Sequence[Mapping[str, Any]]) -> dict[int, Point]:
             x, y, v = float(q["x"]), float(q["y"]), float(q.get("visibility", 1.0))
         except (KeyError, TypeError, ValueError):
             return None
-        return (x, y, v) if v >= VIS_MIN and math.isfinite(x) and math.isfinite(y) else None
+        ok = v >= VIS_MIN and math.isfinite(x) and math.isfinite(y)
+        return (x * aspect, y, v) if ok else None
 
     left = [seen(a) for a, _ in _PAIRS]
     right = [seen(b) for _, b in _PAIRS]
@@ -256,7 +258,7 @@ class SeatedCoach:
         s = replace(s, at=max(s.at, at), t=t)
         data = result.get("data") if result.get("task") == "pose" else None
         points = data.get("points") if isinstance(data, Mapping) else None
-        p = near_side(points) if isinstance(points, Sequence) else {}
+        p = near_side(points, aspect_of(result)) if isinstance(points, Sequence) else {}
         if not {11, 23} <= p.keys():
             return _rested(s, t)
         torso = math.dist(p[11], p[23])

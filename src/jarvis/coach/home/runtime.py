@@ -33,8 +33,19 @@ ADR-49; builder J): the home camera's coach loop on the home laptop. Ships in th
   Frigate are never touched: this loop reads its own copy of the sub-stream.
 
 Optional hooks a home use case may have, besides the I0 protocol (`jarvis.coach.home`):
-`rate(state) -> float | None` (posture asks for 2 a second while a slouch is suspected) and
-`kept(state) -> state` (called after a 15-minute tally of an all-day coach, to start a new window).
+`wanted_rate(state) -> float | None` (posture asks for 2 a second while a slouch is suspected;
+R8 I1: C's name, the one the runtime reads) and `kept(state) -> state` (called after a 15-minute
+tally of an all-day coach, to start a new window).
+
+R8 I1 (the join, C's and the coordinator's asks):
+- **The frame's aspect** (width / height) rides on every Result (`aspect`): the points are 0..1 of
+  each side, so the rules scale x by it before any angle (`jarvis.coach.home.aspect_of`).
+- **A body's state is kept while it is out of view** for the all-day desk coaches (posture,
+  activity) when the laptop knows who it is ("me" or an enrolled `fp_` id): it is parked, not
+  ended, for up to `AWAY_KEEP_S` (activity then counts those minutes as away, posture keeps his
+  calibration); its views stop while it is away; when he comes back under a new track the same
+  state goes on. A guest's (`who` "") and the session coaches' states end after `LOST_S` as
+  before; a parked state that stays away longer ends with its tally.
 """
 
 from __future__ import annotations
@@ -85,6 +96,8 @@ ALL_DAY = frozenset({"posture", "activity"})
 VIEWS_PER_MIN = 20
 TALLIES_PER_MIN = 20
 LOST_S = 10.0  # a body not seen (or not picked) this long has left: its session ends
+AWAY_KEEP_S = 3600.0  # R8 I1: an all-day coach keeps a known body's state this long out of view
+AWAY_VIEW: dict[str, Any] = {"kind": "paused", "why": "Not in view."}  # a parked body's tally view
 REUSE_S = 60.0  # a track number is not given to another body for this long
 WHO_RETRY_S = 5.0  # an unknown body's face is looked at again this often
 WHO_RECHECK_S = 60.0  # a named body's, this often
@@ -259,8 +272,11 @@ class _Use:
     def feed(self, key: int, result: dict[str, Any], who: str, now: float, *,
              seen: bool = True) -> None:  # fmt: skip
         """One Result into one body's state. Only a pose of that body counts as seeing it (a
-        thing in view does not keep a body that left in the session)."""
+        thing in view does not make a body that left seen). R8 I1: a known body back in view under
+        a new track takes up its parked state."""
         body = self.states.get(key)
+        if body is None and seen and who:
+            body = self._resume(key, who, now)
         if body is None:
             if len(self.states) > BODIES_MAX:
                 return
@@ -272,6 +288,17 @@ class _Use:
         body.who = who
         if seen:
             body.seen = now
+
+    def _resume(self, key: int, who: str, now: float) -> _Body | None:
+        """The newest state of the same known person that was not seen in this frame, moved to
+        `key` (his new track), or None."""
+        old = [k for k, b in self.states.items() if k != key and b.who == who and b.seen < now]
+        if not old:
+            return None
+        last = max(old, key=lambda k: self.states[k].seen)
+        body = self.states.pop(last)
+        self.states[key] = body
+        return body
 
 
 def _copy(obj: Any) -> Any:
@@ -291,6 +318,7 @@ class Look:
     quality: dict[str, float]
     bodies: tuple[tuple[int, str, tuple[dict[str, float], ...]], ...]  # (track, who, points)
     objects: tuple[dict[str, Any], ...] | None
+    aspect: float | None = None  # R8 I1: the frame's width / height (never the frame)
 
 
 class _Window:
@@ -330,8 +358,10 @@ class HomeRuntime:
         mono: Callable[[], float] = time.monotonic,
         idle_s: float = IDLE_S,
         retry_s: float = RETRY_S,
+        away_s: float = AWAY_KEEP_S,
     ) -> None:
         self.camera = camera
+        self._away_s = away_s
         self._idle_s = idle_s
         self._retry_s = retry_s
         self._source = source
@@ -518,7 +548,7 @@ class HomeRuntime:
     def _rate(self) -> float:
         rates = [BY_ID[u.id].rate for u in self._uses.values()]
         for use in self._uses.values():
-            hint = getattr(use.case, "rate", None)
+            hint = getattr(use.case, "wanted_rate", None)  # R8 I1: C's hook name
             if not callable(hint):
                 continue
             for body in use.states.values():
@@ -547,7 +577,8 @@ class HomeRuntime:
             things = tuple(self._objects.objects(frame))
         quality = quality_of(frame)
         ms = int((time.perf_counter() - start) * 1000)
-        return Look(frame.at, ms, quality, bodies, things)
+        aspect = frame.width / frame.height if frame.width > 0 and frame.height > 0 else None
+        return Look(frame.at, ms, quality, bodies, things, aspect)
 
     def _name(self, frame: Frame, track: int, points: Sequence[Mapping[str, float]],
               n: int) -> str:  # fmt: skip
@@ -571,7 +602,7 @@ class HomeRuntime:
         self._looks.append(self._mono())
         self._needles = needles([pts for _, _, pts in look.bodies], look.objects or ())
         base = {"at": int(now), "ms": look.ms, "device": "home", "ok": True,
-                "quality": look.quality}  # fmt: skip
+                "quality": look.quality, "aspect": look.aspect}  # fmt: skip
         picked = [(t, w, p) for t, w, p in look.bodies if self._picks(w)]
         for use in self._uses.values():
             if "pose" in use.tasks:
@@ -589,10 +620,15 @@ class HomeRuntime:
                              seen="pose" not in use.tasks)  # fmt: skip
         for use in self._uses.values():
             for key, body in list(use.states.items()):
-                if now - body.seen > LOST_S:
+                away = now - body.seen > LOST_S
+                if away and not self._parks(use, body, now):
                     await self._end(use, key)
                     continue
-                await self._report(use, key, body, now)
+                await self._report(use, key, body, now, quiet=away)
+
+    def _parks(self, use: _Use, body: _Body, now: float) -> bool:
+        """R8 I1: an all-day coach keeps a known body's state while it is out of view."""
+        return use.id in ALL_DAY and bool(body.who) and now - body.seen <= self._away_s
 
     def _summary(self, use: _Use, body: _Body) -> Mapping[str, Any]:
         try:
@@ -602,8 +638,13 @@ class HomeRuntime:
             return {}
         return out if isinstance(out, Mapping) else {}
 
-    async def _report(self, use: _Use, key: int, body: _Body, now: float) -> None:
+    async def _report(self, use: _Use, key: int, body: _Body, now: float, *,
+                      quiet: bool = False) -> None:  # fmt: skip
+        """Its 15-minute tally (an all-day coach) and its view; `quiet`: out of view (parked), so
+        no view goes up but its tally's, which says so."""
         out = self._summary(use, body)
+        if quiet:
+            out = {**out, "view": [dict(AWAY_VIEW)]}
         if use.id in ALL_DAY and now - body.tally_at >= TALLY_EVERY_S:
             body.tally_at = now
             if await self._send(use, key, body, out, now, with_tally=True):
@@ -614,6 +655,8 @@ class HomeRuntime:
                     except Exception:  # noqa: BLE001
                         log.info("a home use case failed", extra={"use": use.id})
             return
+        if quiet:
+            return  # out of view: the pane says "Not in view" once the last view ages out
         view = clean_view(out.get("view"))
         changed = view is not None and view != body.view
         due = now - body.view_at >= (VIEW_EVERY_S if changed else VIEW_REFRESH_S)
@@ -676,6 +719,7 @@ __all__ = [
     "ALL_DAY",
     "GEOMETRY",
     "LIVE_MAX_FPS",
+    "AWAY_KEEP_S",
     "LOST_S",
     "TALLY_EVERY_S",
     "VIEWS_PER_MIN",

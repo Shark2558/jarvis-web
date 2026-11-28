@@ -36,7 +36,7 @@ ANA, BOB = "fp_aaaaaaaaaaaa", "fp_bbbbbbbbbbbb"
 def make(scenes: list[list[list[dict[str, float]]]], *, uses: tuple[str, ...] = ("posture",),
          fps: float = 1.0, leak: str = "", hint: float | None = None, faces: Any = None,
          objects: Any = None, target: str = "all", person: str | None = None,
-         loop: bool = True) -> Any:  # fmt: skip
+         loop: bool = True, away_s: float = R.AWAY_KEEP_S) -> Any:  # fmt: skip
     clock = F.FakeClock()
     src = F.FakeSource(scenes, clock, fps=fps, loop=loop)
     pose = F.FakePose(src)
@@ -46,7 +46,7 @@ def make(scenes: list[list[list[dict[str, float]]]], *, uses: tuple[str, ...] = 
     registry = {u: (lambda r=r: r) for u, r in recs.items()}
     rt = R.HomeRuntime(CAM, src, pose, sink, objects=objects, identifier=faces,
                        registry=registry, wall=clock.wall, mono=clock.mono,
-                       idle_s=0.01, retry_s=0.01)  # fmt: skip
+                       idle_s=0.01, retry_s=0.01, away_s=away_s)  # fmt: skip
     rt.apply(CoachState(rev=1, uses={CAM: uses}, target=target, person=person))  # type: ignore[arg-type]
     return types.SimpleNamespace(rt=rt, src=src, pose=pose, sink=sink, recs=recs, clock=clock)
 
@@ -197,19 +197,57 @@ async def test_only_this_cameras_home_use_cases_run() -> None:
 
 
 async def test_a_body_that_leaves_ends_its_session_with_a_tally() -> None:
+    """A session coach (seated) ends a body's session once it has left (LOST_S)."""
     there = [[F.body(0.5, seed=i)] for i in range(3)]
     gone: list[list[list[dict[str, float]]]] = [[] for _ in range(int(R.LOST_S) + 3)]
-    w = make(there + gone, loop=False)
+    w = make(there + gone, uses=("seated",), loop=False)
     await steps(w, len(there) + len(gone))
     (final,) = w.sink.tallies()
+    assert final.who == "me" and final.use == "seated"
+    assert not w.rt._uses["seated"].states  # noqa: SLF001
+
+
+async def test_an_all_day_coach_keeps_his_state_while_he_is_out_of_view() -> None:
+    """R8 I1 (C's ask): posture keeps his state (his calibration) while he is away; no view goes
+    up meanwhile; back in view (a new track) the same state goes on; away too long, it ends."""
+    there = [[F.body(0.5, seed=i)] for i in range(3)]
+    gone: list[list[list[dict[str, float]]]] = [[] for _ in range(int(R.LOST_S) + 20)]
+    back = [[F.body(0.5, seed=50 + i)] for i in range(3)]
+    w = make(there + gone + back, loop=False, away_s=60.0)
+    await steps(w, len(there) + int(R.LOST_S) + 2)
+    states = w.rt._uses["posture"].states  # noqa: SLF001
+    assert len(states) == 1 and next(iter(states.values())).who == "me"  # parked, not ended
+    assert w.sink.tallies() == []
+    sent = len(w.sink.views())
+    await steps(w, len(gone) - int(R.LOST_S) - 2)
+    assert len(w.sink.views()) == sent  # no view while he is away
+    first = next(iter(states.values()))
+    await steps(w, len(back))
+    assert list(states.values()) == [first]  # back: the same state, under whatever track
+    assert w.sink.tallies() == []
+    w2 = make(there + [[] for _ in range(80)], loop=False, away_s=60.0)
+    await steps(w2, 3 + 80)
+    (final,) = w2.sink.tallies()  # away longer than away_s: the session ends with its tally
     assert final.who == "me" and final.use == "posture"
+    assert not w2.rt._uses["posture"].states  # noqa: SLF001
+
+
+async def test_a_guest_who_leaves_ends_at_once_even_on_an_all_day_coach() -> None:
+    two = [[F.body(0.3, seed=i), F.body(0.7, seed=9 + i)] for i in range(3)]  # nobody is "me"
+    gone: list[list[list[dict[str, float]]]] = [[] for _ in range(int(R.LOST_S) + 3)]
+    w = make(two + gone, loop=False)
+    await steps(w, len(two) + len(gone))
+    assert sorted(e.who for e in w.sink.tallies()) == ["", ""]
     assert not w.rt._uses["posture"].states  # noqa: SLF001
 
 
 async def test_a_thing_in_view_never_keeps_a_body_that_left_in_its_session() -> None:
+    """Things keep coming to a parked state (activity counts those minutes as away), but only
+    until it has been away for `away_s`: a thing never makes a body that left seen."""
     there = [[F.body(0.5, seed=i)] for i in range(3)]
-    gone: list[list[list[dict[str, float]]]] = [[] for _ in range(int(R.LOST_S) + 3)]
-    w = make(there + gone, uses=("activity",), objects=F.FakeObjects("cup"), loop=False)
+    gone: list[list[list[dict[str, float]]]] = [[] for _ in range(80)]
+    w = make(there + gone, uses=("activity",), objects=F.FakeObjects("cup"), loop=False,
+             away_s=60.0)  # fmt: skip
     await steps(w, len(there) + len(gone))
     assert any(s.things for s in w.recs["activity"].seen)  # the cup kept coming
     assert [e.use for e in w.sink.tallies()] == ["activity"]  # and the session still ended

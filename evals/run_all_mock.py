@@ -141,6 +141,10 @@ SUITES = [
     # R5.2 V4: "Your voice" -- his own "Hey Jarvis": the stage 1 verifier and the stage 2 owned
     # model on a synthetic session (fake models, synthetic tones); each suite's control must fail
     ("wakeword (gated)", [sys.executable, str(HERE / "wakeword" / "run.py"), "--mock"], True),
+    # R8 I1: "Vision at the desk" -- the engine (A), camera setup and the no-cloud check (B),
+    # posture, the day strip and screen time (C), the desk coaches (D), the home laptop's loop (J),
+    # all on synthetic data; each part's negative control must fail it
+    ("r8 (gated)", [sys.executable, str(HERE / "r8" / "run.py"), "--mock"], True),
 ]
 
 

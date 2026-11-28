@@ -274,3 +274,27 @@ def test_the_kit_carries_the_four_home_rules_and_says_it_is_newer() -> None:
         assert f"JARVIS-Home/bridge-src/jarvis/coach/home/{rule}.py" in names, rule
     assert BRIDGE_VERSION == kit.KIT_VERSION == "0.3.0"
     assert kit.outdated("0.2.0")  # an R11.1 bridge is told to update its kit
+
+
+def test_the_r8_runner_passes_with_every_part_built_and_each_control_failing() -> None:
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    run = subprocess.run(
+        [sys.executable, str(root / "evals" / "r8" / "run.py"), "--mock"],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+    assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
+    report = json.loads((root / "evals" / "r8" / "report.json").read_text(encoding="utf-8"))
+    ids = {r["id"] for r in report["results"]}
+    for part in ("engine", "cameras", "desk", "coaches", "home"):
+        assert any(i.startswith(f"{part}:") for i in ids), part
+        assert report["negative_control"]["failed_cases"][part], part
+    assert report["negative_control"]["parts_not_built"] == []
+    assert "coaches:bp_reading" in ids  # the joined digits reader is measured, not skipped

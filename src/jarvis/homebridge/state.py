@@ -170,6 +170,10 @@ class BridgeStore:
             settings=new.settings
             if new.settings and (old.settings is None or new.settings.rev > old.settings.rev)
             else None,
+            # R8 J (seam S24): the coach part, by its own rev, like the others
+            coach=new.coach
+            if new.coach and (old.coach is None or new.coach.rev > old.coach.rev)
+            else None,
         )
         if any(v is not None for v in changed.model_dump().values()):
             self._state = old.merged(changed)

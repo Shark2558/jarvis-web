@@ -231,7 +231,14 @@ def test_a_session_looks_here_sends_no_picture_and_keeps_only_its_tally(
         assert post["use"] == "water" and post["who"] == "me" and post["session"].startswith("cs_")
         assert set(post["tally"]) == {"started_at", "ended_at", "sips", "glasses"}
         assert r.pictures() == [] and r.page.evaluate("window.JarvisCamera.live()") is False
-        assert "The session ended. Its counts are kept." in r.page.locator("#p-camera").inner_text()
+        until(
+            r.page,
+            lambda: (
+                "The session ended. Its counts are kept."
+                in r.page.locator("#p-camera").inner_text()
+            ),
+            "the words",
+        )
         assert r.c.errors == [] and r.c.csp_violations() == []
     finally:
         r.c.close()
@@ -367,6 +374,10 @@ def test_the_desk_pane_passes_the_visual_gate(
             Path(shots).mkdir(parents=True, exist_ok=True)
             r.page.locator("#p-camera .pbody").evaluate("(el) => { el.scrollTop = 0; }")
             r.page.screenshot(path=str(Path(shots) / f"desk-{size}-{surface}-top.png"))
+            r.page.locator("#p-camera .r8-strip").evaluate(
+                "(el) => el.scrollIntoView({ block: 'center' })"
+            )
+            r.page.screenshot(path=str(Path(shots) / f"desk-{size}-{surface}-day.png"))
             r.page.locator("#p-camera .r8-add").first.scroll_into_view_if_needed()
             r.page.screenshot(path=str(Path(shots) / f"desk-{size}-{surface}-sessions.png"))
         assert r.c.errors == [] and r.c.csp_violations() == []

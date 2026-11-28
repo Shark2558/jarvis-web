@@ -177,10 +177,11 @@ async function loadHome() {
   const el = S.el, R = await view();
   let v = null, err = null;
   try { v = await api(P + '/live?use=posture'); } catch (e) { err = e; }
-  if (err) {
+  if (err) { // no home views on this server yet (404 coach off, 501 until the home camera's part): ask nothing more
     const off = err.status === 404 ? WORDS.coachOff : WORDS.homeOff;
     R.render(el.postView, []); el.postNote.textContent = off; el.postNote.hidden = false;
     el.postChip.textContent = 'Not running'; delete el.postChip.dataset.status; el.postCard.classList.remove('r8-warn');
+    return;
   } else {
     const body = mine(v && Array.isArray(v.bodies) ? v.bodies : []);
     const widgets = body && Array.isArray(body.view) ? body.view : [];
@@ -343,32 +344,35 @@ async function paintRun(run) {
   const t = V.tally(run.id);
   R.render(S.el.liveView, t && Array.isArray(t.view) ? t.view : []);
 }
-async function keep(run) { // every body's tally: counts, times and scores only (POST /v1/coach/results)
+function tallies(run) { // every body's tally, read at once: counts, times and scores only
   const V = vis();
-  if (!V) return 0;
-  const bodies = V.tracks(run.id), list = bodies.length ? bodies : [{ track: 0, who: 'me' }];
-  let kept = 0;
-  for (const b of list.slice(0, 4)) {
+  if (!V) return [];
+  const bodies = V.tracks(run.id), list = bodies.length ? bodies : [{ track: 0, who: 'me' }]; // one state: his own laptop
+  return list.slice(0, 4).map((b) => {
     const t = V.tally(run.id, bodies.length ? b.track : undefined);
-    if (!t || !t.tally) continue;
-    try {
-      await api(P + '/results', { method: 'POST', body: { use: run.id, session: run.sid, track: b.track, who: t.who || b.who || '', tally: t.tally } });
-      kept += 1;
-    } catch (_) { /* a dropped or unreachable tally is not retried: never repaired */ }
+    return t && t.tally ? { use: run.id, session: run.sid, track: b.track, who: t.who || b.who || '', tally: t.tally } : null;
+  }).filter(Boolean);
+}
+async function post(list) { // POST /v1/coach/results; a dropped or unreachable tally is not retried (never repaired)
+  let kept = 0;
+  for (const body of list) {
+    try { await api(P + '/results', { method: 'POST', body }); kept += 1; } catch (_) { /* said by the count below */ }
   }
   return kept;
 }
+function keep(run) { return post(tallies(run)); }
 async function end(why, err) {
   const run = S.run, el = S.el;
   if (!run || run.ended) return;
   run.ended = true;
   clearInterval(run.tick); clearInterval(run.spots); clearInterval(run.keep);
   if (run.look) run.look.end();
-  const kept = await keep(run);
+  const list = tallies(run); // read before anything is cleared, then the camera stops at once
   const V = vis(); if (V) V.reset(run.id);
   const c = cam(); if (c && c.live()) c.stop('panel');
   closePip(run);
   S.run = null;
+  const kept = await post(list);
   el.live.hidden = true;
   (await view()).render(el.liveView, []);
   el.state.textContent = why === 'switched' ? WORDS.switchedOff : why === 'error' && err && err.message && err.message !== 'The camera was stopped.'

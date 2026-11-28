@@ -12,6 +12,13 @@ two local commands R7's parts register through ``JarvisVoiceCommands.register`` 
 Part B, locks this device's camera, never touches the home burglar camera; ``sos.open``: Part D,
 only OPENS the SOS screen, which still needs his hold). Nothing here turns a camera on. They are
 hints too. The single word "SOS" is understood by the router but is never a hint.
+
+R8 (docs/plans/r8-vision.md D11, ADR-54; builder B owns the reply words only): what "Jarvis,
+cameras off" says, ``CAMERAS_OFF_REPLY`` (``console-camera.js`` speaks the same words; the test
+keeps them equal). ``local`` is R7's reply, kept when the server didn't confirm "every camera off"
+(signed out, offline); ``all`` when it did; ``armed`` is added when the burglar alarm is still
+armed, which "cameras off" never changes (the Home panel, with its Disarm, opens beside it).
+``{h}`` is the honorific.
 """
 
 from __future__ import annotations
@@ -114,3 +121,10 @@ R7_PHRASES: dict[str, tuple[str, ...]] = {
     ),
 }
 COMMAND_HINTS = (*COMMAND_HINTS, *(p for phrases in R7_PHRASES.values() for p in phrases))
+
+# R8 D11 (ADR-54): the reply to "cameras off"; never a word that suggests the alarm was disarmed
+CAMERAS_OFF_REPLY: dict[str, str] = {
+    "local": "The camera on this device is off, {h}.",
+    "all": "Every camera is off, {h}: this device now, your other devices within a minute.",
+    "armed": "The burglar alarm is still armed and its camera keeps watching; Disarm is in Home.",
+}

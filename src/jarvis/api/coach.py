@@ -39,7 +39,7 @@ from jarvis.api.auth import require_auth
 from jarvis.api.body import BodyTooLarge, read_capped
 from jarvis.api.identity import current_user
 from jarvis.coach import usecases
-from jarvis.coach.bp import BpConfirm
+from jarvis.coach.bp import BpConfirm, BpReading, reading_view
 from jarvis.coach.people import GUEST, CoachOff, PeopleRefused, PeopleStore, is_who
 from jarvis.coach.ports import HomeVision
 from jarvis.coach.store import (
@@ -277,8 +277,13 @@ async def coach_bp(request: Request, uid: str = Depends(current_user)) -> JSONRe
         body = await _body(request)
         who, session = str(body.pop("who", "me")), str(body.pop("session", ""))
         confirm = BpConfirm.model_validate(body)  # only a confirmed reading is ever stored (D7)
+        earlier = await a.store.list(uid, days=a.store.keep_days, who=who)
         kept = await a.store.keep(uid, BP_USE, who, session, confirm.reading.model_dump())
-        return _answer(201, {"kept": {"id": kept["id"], "corrected": confirm.corrected}})
+        mine = [BpReading.model_validate(i["tally"]) for i in earlier if i.get("use") == BP_USE]
+        view = reading_view(confirm.reading, mine)  # I1: above 180/120, the AHA's steps first
+        return _answer(
+            201, {"kept": {"id": kept["id"], "corrected": confirm.corrected}, "view": view}
+        )
 
     return await _do(request, work)
 

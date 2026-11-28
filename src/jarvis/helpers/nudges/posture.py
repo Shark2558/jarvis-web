@@ -14,8 +14,10 @@ The cloud's coach-report handler (I1) passes each posture report to `on_report`,
   and quiet hours as for every nudge).
 
 The message is one fixed sentence (`jarvis.coach.words.POSTURE_NUDGE`). No count, angle or time
-is in any message or log line; a report about a person he enrolled (another `fp_` id) never
-nudges him. It implements `jarvis.coach.ports.PostureNudge`.
+is in any message or log line. **Only the owner is nudged** (R8 I1, the review's safety item): a
+report about "me" may nudge; a report about anyone else (a person he enrolled, `fp_`, or a body
+the camera did not know, a guest) never does, though their tallies are still kept (D6). It
+implements `jarvis.coach.ports.PostureNudge`.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ KIND: NudgeKind = "nudge_posture"
 TEXT = POSTURE_NUDGE
 HOLD_S = 60.0  # the home rule's own hold (jarvis.coach.home.posture.HOLD_S)
 USE = "posture"
+OWNER = "me"  # the only `who` a posture nudge is ever sent for (R8 I1)
 _SENT = frozenset({"rang", "silent", "held"})  # what counts toward the caps (the gate's own)
 _DELIVERED = frozenset({"rang", "silent"})
 
@@ -100,8 +103,8 @@ def _tips(view: Iterable[Mapping[str, Any]]) -> list[tuple[float, float]]:
 
 async def on_report(nudger: Any, uid: str, report: Any) -> bool:
     """A home camera's coach report (`jarvis.home.ports.CoachReport`): a posture span's nudge,
-    if its view asks for one and it is about him (or someone the camera did not know)."""
-    if getattr(report, "use", None) != USE or str(getattr(report, "who", "")).startswith("fp_"):
+    if its view asks for one and it is about him ("me"); nobody else is ever nudged."""
+    if getattr(report, "use", None) != USE or getattr(report, "who", None) != OWNER:
         return False
     sent = False
     for since, held in _tips(getattr(report, "view", ()) or ()):
@@ -109,4 +112,4 @@ async def on_report(nudger: Any, uid: str, report: Any) -> bool:
     return sent
 
 
-__all__ = ["HOLD_S", "KIND", "TEXT", "USE", "PostureNudger", "on_report"]
+__all__ = ["HOLD_S", "KIND", "OWNER", "TEXT", "USE", "PostureNudger", "on_report"]

@@ -14,3 +14,20 @@ export function proposal(lines) {
   if (!within(s, 60, 260) || !within(d, 30, 160) || !within(p, 30, 220) || d >= s) return null;
   return Object.freeze({ systolic: s, diastolic: d, pulse: p });
 }
+// R8 I1 (the review's safety items): the same words as jarvis.coach.bp (tests/test_r8_i1_safety.py holds them equal).
+// A screen the reader can't be sure of is never a guess: the pane says CANT_READ. Above 180/120 the pane shows the
+// American Heart Association's own steps, its source named, before anything else; never a diagnosis or a dose.
+export const CANT_READ = "I can't read that screen. Please type the numbers, or hold it up and retake.";
+export const SEVERE_SYSTOLIC = 180, SEVERE_DIASTOLIC = 120;
+export const SEVERE_STEPS = 'Above 180/120, the American Heart Association (Blood Pressure Categories, 2025) says: wait'
+  + ' 5 minutes and measure again. If it is still that high, contact your doctor right away. If'
+  + ' there is chest pain, shortness of breath, back pain, numbness or weakness, a change in'
+  + ' vision or difficulty speaking, call emergency services now (112 in India).';
+export function steps(reading) { // the AHA's steps for a reading above 180/120 (either number), else null
+  if (!reading || !Number.isInteger(reading.systolic) || !Number.isInteger(reading.diastolic)) return null;
+  return reading.systolic > SEVERE_SYSTOLIC || reading.diastolic > SEVERE_DIASTOLIC ? SEVERE_STEPS : null;
+}
+export function shown(lines) { // what the pane shows for the camera's lines: a proposal to confirm, or CANT_READ
+  const p = proposal(lines);
+  return Object.freeze(p ? { proposal: p, steps: steps(p), words: '' } : { proposal: null, steps: null, words: CANT_READ });
+}

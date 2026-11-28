@@ -251,12 +251,18 @@ async def test_no_count_or_angle_in_the_message_or_a_log_line(
         assert await nudger.slouched(UID, held_s=97.5, at=_ts(r)) is True
     text = r.notifier.calls[0][2]
     assert text == POSTURE_NUDGE and not any(ch.isdigit() for ch in text)
+    # R8 I1: the record's own bookkeeping (created, msecs, thread and process ids) is left out:
+    # its random digits made this check flaky; the message and every `extra` field are checked
+    std = set(vars(logging.LogRecord("x", 0, "x", 0, "x", None, None))) | {"message", "asctime"}
     for rec in caplog.records:
-        line = rec.getMessage() + json.dumps(getattr(rec, "__dict__", {}), default=str)
+        extra = {k: v for k, v in vars(rec).items() if k not in std}
+        line = rec.getMessage() + json.dumps(extra, default=str)
         assert "97" not in line and "slouch_seconds" not in line
 
 
-async def test_a_report_nudges_for_him_or_an_unknown_body_never_an_enrolled_other(rig: Any) -> None:
+async def test_a_report_nudges_only_him_never_a_guest_or_an_enrolled_other(rig: Any) -> None:
+    """R8 I1 (the review's safety item): only "me" is nudged; a guest's ("") and an enrolled
+    person's slouch are kept as tallies (D6) but never nudge anyone."""
     from r11_fakes import UID
 
     from jarvis.helpers.nudges.posture import on_report
@@ -271,10 +277,12 @@ async def test_a_report_nudges_for_him_or_an_unknown_body_never_an_enrolled_othe
                            session="cs_0123456789ab", track=1, who=who,
                            view=({"kind": "line", "text": P.SLOUCHING}, tip))  # fmt: skip
 
+    assert await on_report(nudger, UID, report("")) is False  # a guest: never nudged
     assert await on_report(nudger, UID, report("fp_0123456789ab")) is False
+    assert len(r.notifier.calls) == 0  # nobody but him was nudged, fresh span or not
     assert await on_report(nudger, UID, report("me", use="seated")) is False
     assert await on_report(nudger, UID, report("me")) is True
-    assert await on_report(nudger, UID, report("")) is False  # the same span, already nudged
+    assert await on_report(nudger, UID, report("me")) is False  # the same span, already nudged
     assert len(r.notifier.calls) == 1
 
 

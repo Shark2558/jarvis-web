@@ -244,10 +244,11 @@ async def test_248_with_no_keyring_the_water_log_is_off_never_in_clear() -> None
 # ---- row 262: the monitor's reading (D7) ------------------------------------------------------
 def test_262_the_engines_reader_reads_these_screens_right_on_95_percent_and_never_wrong() -> None:
     """D's screens are a second, independent set for the `digits` task's reader (builder A's body
-    in console-vision-r8.js): it runs as soon as that reader is on the branch (the I1 join)."""
-    out = node("bpDisplays", {"n": 240, "seed": 77})
-    if "skipped" in out:
-        pytest.skip(out["skipped"])
+    in console-vision-r8.js). R8 I1: the reader is on the branch, so this runs (never skipped):
+    300 screens, at least 95 % read right and none wrong; the rest are refused, never guessed."""
+    out = node("bpDisplays", {"n": 300, "seed": 77})
+    assert "skipped" not in out, out  # I1: the engine's reader is joined; a skip is a failure
+    assert out["n"] == 300 and out["right"] + out["wrong"] + out["none"] == 300
     assert out["right"] / out["n"] >= 0.95, out["misses"]
     assert out["wrong"] == 0, out["misses"]  # a reading it can't be sure of is no reading
 

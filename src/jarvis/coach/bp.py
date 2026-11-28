@@ -35,6 +35,19 @@ Pulse = Annotated[int, Field(ge=30, le=220, strict=True)]
 READ_MIN_SCORE = 0.8  # a line read with less confidence is not proposed
 TALK_TO_DOCTOR = "Talk to your doctor about this reading."
 NOT_MEDICAL = "Practice only, not medical advice."
+# R8 I1 (the review's safety item): when the camera's lines are not a sure reading, the pane says
+# so and asks for the numbers typed or the monitor held up again; it never guesses.
+CANT_READ = "I can't read that screen. Please type the numbers, or hold it up and retake."
+# R8 I1 (safety, must): above 180/120 the pane shows the American Heart Association's own steps,
+# its source named, before anything else. Never a diagnosis, a medicine or a dose.
+SEVERE_SYSTOLIC = 180  # a top number above this...
+SEVERE_DIASTOLIC = 120  # ...or a bottom number above this: the AHA's steps are shown
+SEVERE_STEPS = (
+    "Above 180/120, the American Heart Association (Blood Pressure Categories, 2025) says: wait"
+    " 5 minutes and measure again. If it is still that high, contact your doctor right away. If"
+    " there is chest pain, shortness of breath, back pain, numbness or weakness, a change in"
+    " vision or difficulty speaking, call emergency services now (112 in India)."
+)
 
 
 class BpProposal(BaseModel):
@@ -140,6 +153,11 @@ def category_of(reading: BpProposal) -> BpCategory | None:
     return found
 
 
+def severe(reading: BpProposal) -> bool:
+    """Above 180/120 (either number): the reading the AHA's steps are shown for."""
+    return reading.systolic > SEVERE_SYSTOLIC or reading.diastolic > SEVERE_DIASTOLIC
+
+
 def category_line(row: BpCategory, source: Source) -> str:
     """The one sentence a category is shown in: its name and its source, nothing added."""
     line = f"{row.name} (by {source.publisher}, {source.title}, {source.year})."
@@ -202,12 +220,14 @@ def trend_line(t: BpTrend) -> str:
 
 
 def reading_view(reading: BpProposal, earlier: Sequence[BpReading]) -> dict[str, str | None]:
-    """What the pane shows beside a confirmed reading: its category line (with its source) and
-    the trend of his readings, this one included when it is a stored `BpReading`."""
+    """What the pane shows beside a confirmed reading: above 180/120 the AHA's own steps first
+    (`steps`, R8 I1), then its category line (with its source) and the trend of his readings,
+    this one included when it is a stored `BpReading`."""
     row = category_of(reading)
     mine = [*earlier, reading] if isinstance(reading, BpReading) else list(earlier)
     t = trend_of(mine)
     return {
+        "steps": SEVERE_STEPS if severe(reading) else None,
         "category": category_line(row, SOURCE) if row is not None and SOURCE is not None else None,
         "trend": trend_line(t) if t is not None else None,
         "note": NOT_MEDICAL,
@@ -215,8 +235,12 @@ def reading_view(reading: BpProposal, earlier: Sequence[BpReading]) -> dict[str,
 
 
 __all__ = [
+    "CANT_READ",
     "CATEGORIES",
     "NOT_MEDICAL",
+    "SEVERE_DIASTOLIC",
+    "SEVERE_STEPS",
+    "SEVERE_SYSTOLIC",
     "SOURCE",
     "TALK_TO_DOCTOR",
     "TREND_N",
@@ -230,6 +254,7 @@ __all__ = [
     "category_of",
     "proposal_from_digits",
     "reading_view",
+    "severe",
     "trend_line",
     "trend_of",
 ]

@@ -10,8 +10,8 @@ Cases (each {"id": "coaches:<case>", "passed", "failures"}):
   reaction      row 224: >= 95 % of touches counted; every reaction time within 100 ms
   breath        row 238: the pacer exact at every rhythm; the rate within 1 a minute, 6 to 20
   water         row 248: >= 90 % of sips counted; at most 1 false sip a synthetic hour
-  bp_reading    row 262: >= 95 % of synthetic monitor screens read right by the engine's `digits`
-                reader, none wrong (it is builder A's: "bp_reading_not_on_this_branch" until I1)
+  bp_reading    row 262: >= 95 % of 300 synthetic monitor screens read right by the engine's
+                `digits` reader, none wrong (builder A's; joined at I1, so a missing reader fails)
   bp_rule       row 262: the pane's proposal rule is the server's (never a line under 0.8)
   bp_checklist  row 262: each checklist item judged right on >= 90 % of synthetic poses
   seated        row 227: reps within 1 per set of 10 for each move; the next set adapts
@@ -151,9 +151,9 @@ def water() -> Case:
 
 
 def bp_reading() -> Case:
-    out = _node("bpDisplays", {"n": 150, "seed": 91})
-    if "skipped" in out:  # the `digits` reader is the engine's (A's): it joins at I1
-        return _case("bp_reading_not_on_this_branch", [])
+    out = _node("bpDisplays", {"n": 300, "seed": 91})
+    if "skipped" in out:  # R8 I1: the engine's reader is joined; without it the case fails
+        return _case("bp_reading", [str(out["skipped"])])
     bad = [f"read right {out['right']}/{out['n']}"] if out["right"] / out["n"] < 0.95 else []
     bad += [f"read wrong {out['wrong']}: {json.dumps(out['misses'][:3])}"] if out["wrong"] else []
     return _case("bp_reading", bad)

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import hashlib
 import re
 import sys
@@ -39,7 +40,7 @@ import types
 from collections.abc import Callable, Coroutine, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 ROOT = Path(__file__).resolve().parents[2]
 for extra in (ROOT / "src", ROOT / "tests", ROOT / "evals"):
@@ -61,8 +62,11 @@ NUMBER = re.compile(r"-?\d+\.\d+")
 WORDS = ("points", "box", '"x"', '"y"', "landmark", "image", "frame", "jpeg", "crop")
 
 
+Target = Literal["all", "me", "person"]
+
+
 def _world(scenes: list[Any], uses: tuple[str, ...] = ("posture",), *, leak: dict[str, str]
-           | None = None, faces: Any = None, objects: Any = None, target: str = "all",
+           | None = None, faces: Any = None, objects: Any = None, target: Target = "all",
            person: str | None = None, loop: bool = True, fps: float = 1.0) -> Any:  # fmt: skip
     clock = F.FakeClock()
     src = F.FakeSource(scenes, clock, fps=fps, loop=loop)
@@ -146,7 +150,11 @@ async def _one_body_at_a_time() -> dict[str, Any]:
     whos = sorted(sorted({s.who for s in seen if s.track == t}) for t in tracks)
     if len(tracks) != 2 or whos != [[""], [ANA]]:
         failures.append(f"tracks {sorted(tracks)} and who {whos}: want two, one named, one guest")
-    for target, person, want in (("me", None, {"me"}), ("person", ANA, {ANA})):
+    cases: tuple[tuple[Literal["me", "person"], str | None, set[str]], ...] = (
+        ("me", None, {"me"}),
+        ("person", ANA, {ANA}),
+    )
+    for target, person, want in cases:
         lone = [[F.body(0.5, seed=i)] for i in range(2)]
         three = [[F.body(0.5, seed=9 + i), F.body(0.2, seed=20 + i), F.body(0.85, seed=30 + i)]
                  for i in range(3)]  # fmt: skip
@@ -211,7 +219,9 @@ async def _d4_model(tmp: Path) -> dict[str, Any]:
             pins[kind] = type(pin)(pin.name, hashlib.sha256(data).hexdigest(), len(data),
                                    pin.licence, pin.source)  # fmt: skip
         ticks = iter(i * per_frame for i in range(10_000))
-        pose = E.MediaPipePose(tmp, load=_fake_mediapipe, pins=pins, clock=lambda t=ticks: next(t))
+        pose = E.MediaPipePose(
+            tmp, load=_fake_mediapipe, pins=pins, clock=functools.partial(next, ticks)
+        )
         if pose.status() != E.READY or pose.model != "full":
             failures.append("the full model was not tried first")
         for _ in range(E.BENCH_FRAMES + 1):

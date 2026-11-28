@@ -70,7 +70,7 @@ def named_centres(db: Path) -> dict[str, list[float]]:
     if not db.is_file():
         return {}
     sums: dict[str, list[float]] = {}
-    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2.0)
+    con = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True, timeout=2.0)
     try:
         rows = con.execute("SELECT person, vec FROM groups WHERE person IS NOT NULL").fetchall()
     finally:

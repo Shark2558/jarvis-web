@@ -222,7 +222,7 @@ async def test_cameras_off_while_the_models_load_means_no_frame_is_read() -> Non
 
     def slow_status() -> str:
         w.rt._coach = CoachState(rev=9, all_off=True)  # noqa: SLF001 - lands mid-step
-        return real()
+        return str(real())
 
     w.pose.status = slow_status
     await steps(w, 1)
@@ -611,6 +611,7 @@ def test_every_runtime_package_is_hash_locked_in_the_bridge_image() -> None:
     df = (HOME / "bridge.Dockerfile").read_text()
     assert "libegl1 libgles2" in df and "--no-install-recommends" in df
     assert 'OPENCV_FFMPEG_CAPTURE_OPTIONS="rtsp_transport;tcp"' in df
+    assert "OPENCV_FFMPEG_LOGLEVEL=-8" in df  # FFmpeg's own lines (which may name the address)
     assert df.index("apt-get install") < df.index("USER 10001")
     assert set(HV.HOME_OBJECTS) <= set(__import__("jarvis.vision.results").vision.results
                                        .OBJECT_LABELS)  # fmt: skip

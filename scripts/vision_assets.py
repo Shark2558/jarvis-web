@@ -490,6 +490,8 @@ def stage_models(
     # every model whose licence was read, whichever release this run fetches (R8): the file's
     # bytes, and so the sum each release's manifest records for it, never depend on the order
     words.update({s.name: s.licence for s in SOURCES if s.kind == "model" and s.licence})
+    if object_licence is not None and object_licence.strip() in RECOGNISED_LICENCES:
+        words[OBJECT_MODEL] = object_licence.strip()  # pass the same --object-licence to every run
     words.update({s.name: s.licence or str(object_licence) for s in picked})
     urls = {s.name: s.url for s in SOURCES if s.kind == "model"}
     head = "".join(f"{n}: {w} (from {urls.get(n, '')})\n" for n, w in sorted(words.items()))
@@ -637,7 +639,7 @@ def _release_only(args: argparse.Namespace) -> int:
             raise SystemExit(f"{release} holds model files only: pass --models")
         old = _read_manifest(args.folder, release).get("files")
         files = {k: v for k, v in (old if isinstance(old, dict) else {}).items()}
-        writes, more = stage_models(args.folder, release, None)
+        writes, more = stage_models(args.folder, release, args.object_licence)
         files.update(more)
         print(PIN_NOTE, end="")
         write_staged(writes)

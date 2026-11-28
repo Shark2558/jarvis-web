@@ -42,7 +42,7 @@ jobs:
             rm -rf "/tmp/vision-${run}"
             cp -r src/jarvis/api/static/vendor/vision "/tmp/vision-${run}"
             python scripts/vision_assets.py fetch --models "${licence[@]}" --folder "/tmp/vision-${run}"
-            python scripts/vision_assets.py fetch --models --release r8-1 --folder "/tmp/vision-${run}"
+            python scripts/vision_assets.py fetch --models --release r8-1 "${licence[@]}" --folder "/tmp/vision-${run}"
           done
       - name: The two fetches agree, byte for byte
         run: |

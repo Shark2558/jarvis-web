@@ -10,7 +10,8 @@
 //   waterDay(o)       row 248: sips (a cup raised to the lips) and things that are not sips
 //   rehabSession(o)   row 268: open-close, finger taps, thumb to each finger; the true bend range
 //   reachSession(o)   row 276: reaches to a cup and grasps; the true reach times
-//   bpDisplay(o)      row 262: a seven-segment monitor drawn as grey pixels, read by console-coach-bp.js
+//   bpScreen(o)       row 262: a seven-segment monitor drawn as grey pixels (an independent set for the engine's reader)
+//   bpDisplays(o)     row 262: many screens through the engine's `digits` reader and the pane's proposal rule
 import * as handsFx from './hands.mjs';
 import * as posesFx from './poses.mjs';
 
@@ -391,10 +392,15 @@ export function bpScreen(o) {
   return { w, h, px: out.map((v) => Math.max(0, Math.min(255, Math.round(v)))) };
 }
 
-/** Many random screens through the module's reader and rule: how many read right, wrong, or not at all (null). */
+/** Many random screens through the ENGINE's reader (the `digits` task's body: console-vision-r8.js `readDisplay(px, w, h)
+ *  -> [{value, score}]`, builder A's) and the pane's rule (console-coach-bp.js `proposal`): how many read right, wrong,
+ *  or not at all (null). `reader` (a file path) reads them with another copy of the engine module; with no reader
+ *  exported (the I0 stub) it says so ({skipped}). */
 export async function bpDisplays(o) {
   const opt = Object.assign({ n: 200, seed: 77, w: 260, h: 220 }, o || {});
-  const mod = await import(new URL('console-coach-bp.js', opt.base ? new URL(`file://${opt.base.replace(/\/?$/, '/')}`) : STATIC).href);
+  const rule = await import(new URL('console-coach-bp.js', opt.base ? new URL(`file://${opt.base.replace(/\/?$/, '/')}`) : STATIC).href);
+  const engine = await import(opt.reader ? new URL(`file://${opt.reader}`).href : new URL('console-vision-r8.js', STATIC).href);
+  if (typeof engine.readDisplay !== 'function') return { skipped: 'the engine has no seven-segment reader on this branch' };
   const r = rng(opt.seed);
   const pick = (lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
   let right = 0, wrong = 0, none = 0;
@@ -404,7 +410,8 @@ export async function bpDisplays(o) {
     const screen = bpScreen({ w: opt.w, h: opt.h, sys, dia, pulse, seed: opt.seed * 31 + i, noise: pick(4, 18),
       slant: pick(0, 8), blur: r() < 0.5, backlit: r() < 0.2, gradient: pick(0, 30), scale: 0.9 + 0.2 * r(),
       dx: pick(-6, 6), dy: pick(-4, 4), clock: r() < 0.6, marks: r() < 0.8 });
-    const got = mod.proposal(mod.readDisplay(screen).lines);
+    const read = engine.readDisplay(Float32Array.from(screen.px), screen.w, screen.h);
+    const got = rule.proposal(Array.isArray(read) ? read : (read && read.lines) || []);
     if (!got) { none += 1; misses.push({ sys, dia, pulse, got: null }); }
     else if (got.systolic === sys && got.diastolic === dia && got.pulse === pulse) right += 1;
     else { wrong += 1; misses.push({ sys, dia, pulse, got }); }

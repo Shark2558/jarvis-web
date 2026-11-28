@@ -44,15 +44,17 @@ function begin(t, at) {
     nextAt: t + LEAD_S, prev: null, seed: 7, last: -1, cursor: [], over: false, seen: false };
 }
 
-function light(s, t) {
+function light(s, t, hands) { // the next circle: never the last one, nor one a hand is already in
   const seed = next(s.seed);
-  let idx = seed % DOTS.length;
-  if (idx === s.last) idx = (idx + 1) % DOTS.length;
+  const free = (i) => i !== s.last && !(nearest(hands, DOTS.at(i)) <= R);
+  const order = DOTS.map((_, k) => (seed + k) % DOTS.length);
+  const idx = order.find(free) !== undefined ? order.find(free) : order.find((i) => i !== s.last);
   return Object.assign({}, s, { seed, lit: idx, last: idx, litAt: t, armed: false, prev: null, n: s.n + 1 });
 }
 
 function round(s, hands, t) { // a lit circle: touched, missed, or still waiting
   const d = nearest(hands, DOTS.at(s.lit));
+  if (t - s.litAt >= TIMEOUT_S) return Object.assign({}, s, { misses: s.misses + 1, lit: -1, nextAt: t + GAP_S, prev: null });
   if (!s.armed && d <= R) return Object.assign({}, s, { prev: null }); // inside since it lit: leave it first
   if (d <= R) {
     const p = s.prev;
@@ -60,7 +62,6 @@ function round(s, hands, t) { // a lit circle: touched, missed, or still waiting
     const rt = Math.max(0, Math.round((tc - s.litAt) * 1000));
     return Object.assign({}, s, { hits: s.hits + 1, rts: s.rts.concat([rt]), lit: -1, nextAt: t + GAP_S, prev: null });
   }
-  if (t - s.litAt >= TIMEOUT_S) return Object.assign({}, s, { misses: s.misses + 1, lit: -1, nextAt: t + GAP_S, prev: null });
   return Object.assign({}, s, { armed: true, prev: Number.isFinite(d) ? { d, t } : null });
 }
 
@@ -76,7 +77,7 @@ function onResult(r, state) {
   if (s.lit >= 0) return round(s, hands, t);
   if (t < s.nextAt) return s;
   if (s.n >= ROUNDS) return Object.assign({}, s, { over: true });
-  return round(light(s, t), hands, t);
+  return round(light(s, t, hands), hands, t);
 }
 
 function score(s) {

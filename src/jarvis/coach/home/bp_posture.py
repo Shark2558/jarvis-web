@@ -72,7 +72,7 @@ HINT: Mapping[str, str] = {
     "rested": "",
     "still": "Keep still and don't talk while you wait.",
 }
-READY = "When every line says Yes, take your reading the usual way."
+READY = "When every line says Yes, measure the usual way."
 PRACTICE = "Practice only, not medical advice."
 UNSEEN = "Sit side-on to the home camera, where it sees all of you."
 

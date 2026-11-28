@@ -369,3 +369,69 @@ export async function coco() {
     -0.2, 0.1, 1.4, 0.5, 0.2, 0.2, 0.3, 0.3], 5, 0.5, 2);
   return { ids: [...m.COCO_IDS], labels: [...m.COCO_LABELS], decoded };
 }
+
+// ---- a second set, after builder D's monitor screens (tests/fixtures/r8/desk_sequences.mjs on r8-d) ------------------
+// The screen fills the pane's guide box: SYS and DIA large and close together, PUL small, right-aligned; a small clock
+// line on top, label blocks and a heart mark beside the numbers; segments drawn apart (rectangles, a thin gap between
+// each); a slant in degrees, a light gradient, noise, sometimes a blur, sometimes backlit. Drawn here, independently.
+function monitorScreen(o) {
+  const w = o.w, h = o.h, r = rng(o.seed), k = Math.tan((o.slant * Math.PI) / 180);
+  const bg = o.backlit ? 35 : 185, fg = o.backlit ? 215 : 45;
+  const px = new Float32Array(w * h).map((_, i) => bg + o.gradient * ((i % w) / w - 0.5));
+  const put = (x, y) => { if (x >= 0 && x < w && y >= 0 && y < h) px[y * w + x] = fg; };
+  const block = (x, y, bw, bh, shear, mid) => {
+    for (let yy = Math.round(y); yy < Math.round(y + bh); yy += 1) {
+      const dx = shear ? (mid - yy) * k : 0;
+      for (let xx = Math.round(x + dx); xx < Math.round(x + bw + dx); xx += 1) put(xx, yy);
+    }
+  };
+  const digit = (d, x0, y0, H) => {
+    const W = 0.55 * H, s = 0.14 * H, g = 0.035 * H, mid = y0 + H / 2;
+    const at = { a: [s + g, 0, W - 2 * s - 2 * g, s], g: [s + g, H / 2 - s / 2, W - 2 * s - 2 * g, s], d: [s + g, H - s, W - 2 * s - 2 * g, s],
+      f: [0, g, s, H / 2 - 2 * g], b: [W - s, g, s, H / 2 - 2 * g], e: [0, H / 2 + g, s, H / 2 - 2 * g], c: [W - s, H / 2 + g, s, H / 2 - 2 * g] };
+    for (const seg of ON[d]) { const [x, y, bw, bh] = at[seg]; block(x0 + x, y0 + y, bw, bh, true, mid); }
+  };
+  const number = (v, right, top, H) => [...String(v)].forEach((c, i, all) => digit(Number(c), right - (all.length - i) * 0.77 * H + 0.22 * H, top, H));
+  const big = 0.29 * h * o.scale, small = 0.15 * h * o.scale;
+  number(o.values[0], 0.94 * w + o.dx, 0.08 * h + o.dy, big);
+  number(o.values[1], 0.94 * w + o.dx, 0.43 * h + o.dy, big);
+  number(o.values[2], 0.94 * w + o.dx, 0.8 * h + o.dy, small);
+  if (o.clock) { number(10, 0.3 * w + o.dx, 0.005 * h + o.dy, 0.06 * h); number(35, 0.48 * w + o.dx, 0.005 * h + o.dy, 0.06 * h); }
+  if (o.marks) {
+    block(0.04 * w + o.dx, 0.1 * h + o.dy, 0.12 * w, 0.06 * h); block(0.04 * w + o.dx, 0.45 * h + o.dy, 0.12 * w, 0.06 * h);
+    block(0.04 * w + o.dx, 0.62 * h + o.dy, 0.14 * w, 0.05 * h);
+    const hs = 0.08 * h;
+    for (let y = 0; y < hs; y += 1) { const half = hs / 2 - Math.abs(y - hs / 2); block(0.5 * w + o.dx + hs / 2 - half, 0.83 * h + o.dy + y, 2 * half, 1); }
+  }
+  let out = Array.from(px, (v) => v + (r() - 0.5) * 2 * o.noise);
+  if (o.blur) {
+    out = out.map((_, i) => {
+      const x = i % w, y = (i - x) / w;
+      let n = 0, c = 0;
+      for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy += 1) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx += 1) { n += out[yy * w + xx]; c += 1; }
+      return n / c;
+    });
+  }
+  return Float32Array.from(out, (v) => Math.max(0, Math.min(255, Math.round(v))));
+}
+/** n monitor screens through the reader and the pane's own rule (console-coach-bp.js proposal): {n, right, wrong,
+ *  none, misses}. A wrong reading is worse than none: the rule proposes only lines read surely (0.8). */
+export async function monitors(input) {
+  const i = Object.assign({ n: 200, seed: 41, w: 260, h: 220 }, input || {});
+  const m = await import(new URL('console-vision-r8.js', STATIC).href), rule = await import(new URL('console-coach-bp.js', STATIC).href);
+  const r = rng(i.seed), pick = (lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
+  let right = 0, wrong = 0, none = 0;
+  const misses = [];
+  for (let k = 0; k < i.n; k += 1) {
+    const sys = pick(95, 199), dia = pick(55, Math.min(125, sys - 20)), pulse = pick(48, 135);
+    const px = monitorScreen({ w: i.w, h: i.h, values: [sys, dia, pulse], seed: i.seed * 31 + k, noise: pick(4, 18), slant: pick(0, 8),
+      blur: r() < 0.5, backlit: r() < 0.2, gradient: pick(0, 30), scale: 0.9 + 0.2 * r(), dx: pick(-6, 6), dy: pick(-4, 4), clock: r() < 0.6, marks: r() < 0.8 });
+    let lines = m.readDisplay(px, i.w, i.h);
+    if (i.mutate === 'last-digit') lines = lines.map((l) => ({ ...l, value: l.value - (l.value % 10) + ((l.value + 1) % 10) }));
+    const got = rule.proposal(lines);
+    if (!got) { none += 1; if (misses.length < 6) misses.push({ want: [sys, dia, pulse], got: null }); }
+    else if (got.systolic === sys && got.diastolic === dia && got.pulse === pulse) right += 1;
+    else { wrong += 1; if (misses.length < 6) misses.push({ want: [sys, dia, pulse], got }); }
+  }
+  return { n: i.n, right, wrong, none, misses };
+}

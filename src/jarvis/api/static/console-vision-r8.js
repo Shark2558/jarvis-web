@@ -221,7 +221,10 @@ const LABEL_GAP = 0.95, LABEL_DIGITS = 1.6; // the reading is one group: further
 const INNER_GAP = 0.07; // empty columns this narrow are a digit's own segment gaps
 const PIECE_GAP = 0.15; // a digit's horizontals or a left-hand stroke this near the rest of it are one digit
 const WIDE_MAX = 0.9, TOUCH = 1.3; // a wider glyph is two digits that touch (TOUCH: of the display's digit width)
-const ROW_GAP = 0.08; // empty rows this few (of the line so far) are a digit's own gaps, not between two lines
+const HOLE_MAX = 0.45; // a digit's two counters (inside its loops) are this empty at least
+const HALF_GAP = 0.35; // of the shorter: two rows of ink this near may be the halves of one line
+const HALVES = 0.65; // of the tallest row of ink: two rows both this short are halves, if they read as one line
+const SURE = 0.8; // jarvis.coach.bp.READ_MIN_SCORE: a line read at least this surely is proposed
 const THIN = 0.35, THIN_GAP = 0.3; // of the tallest row of ink: a thinner row (of segments) joins a line this near
 
 /** Otsu's threshold of values 0..255: a value v is in the lower class when (v | 0) <= the threshold. */
@@ -326,34 +329,30 @@ function runs(on, gapMax) { // [start, end] of the true stretches, a gap of at m
   });
   return out;
 }
-function bands(bin, w, h) { // the lines of digits: stretches of inked rows, labels and icons left out
+function bands(bin, w, h) { // stretches of inked rows: lines of digits, their halves, labels and icons
   const rows = new Array(h).fill(0);
   for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) rows[y] += bin[y * w + x];
   const hh = (r) => r[1] - r[0] + 1, rs = runs(rows.map((c) => c >= Math.max(2, w * 0.01)), 0);
   const tall = Math.max(0, ...rs.map(hh));
+  const bars = (r) => { // a row of segments only: every piece of it is a bar, much wider than the row is tall
+    const cols = new Array(w).fill(0);
+    for (let y = r[0]; y <= r[1]; y += 1) for (let x = 0; x < w; x += 1) cols[x] += bin[y * w + x];
+    const widths = runs(cols.map((c) => c > 0), 1).map(([p, q]) => q - p + 1);
+    return widths.length > 0 && widths.every((x) => x >= 1.2 * hh(r));
+  };
   for (let moved = true; moved;) { // a row of top or bottom segments drawn apart from its digits joins the nearer line
     moved = false;
     for (let i = 0; i < rs.length && !moved; i += 1) {
-      if (hh(rs[i]) >= THIN * tall) continue;
+      if (hh(rs[i]) >= THIN * tall || !bars(rs[i])) continue; // a clock or a date line keeps to itself
       const up = i > 0 ? rs[i][0] - rs[i - 1][1] - 1 : Infinity, down = i < rs.length - 1 ? rs[i + 1][0] - rs[i][1] - 1 : Infinity;
       const j = up <= down ? i - 1 : i + 1;
       if (Math.min(up, down) > THIN_GAP * tall) continue;
       rs.splice(Math.min(i, j), 2, [rs[Math.min(i, j)][0], rs[Math.max(i, j)][1]]); moved = true;
     }
   }
-  const merged = [];
-  rs.forEach((r) => { // a digit's own segment gaps (a line of ones has one at its middle) close again
-    const last = merged[merged.length - 1];
-    if (last && r[0] - last[1] - 1 <= ROW_GAP * (r[1] - last[0] + 1)) last[1] = r[1]; else merged.push([r[0], r[1]]);
-  });
-  const top = Math.max(0, ...merged.map(hh)), lines = [];
-  merged.forEach((r) => { // a line of ones and sevens (no middle segment) can still be two halves: they join
-    const last = lines[lines.length - 1], big = last && Math.max(hh(r), hh(last)), small = last && Math.min(hh(r), hh(last));
-    if (last && big <= 0.65 * top && big <= 1.67 * small && r[0] - last[1] - 1 <= 0.3 * small) last[1] = r[1];
-    else lines.push([r[0], r[1]]);
-  });
-  return lines.filter((r) => hh(r) >= Math.max(8, top * 0.35));
+  return rs; // a line drawn with no middle segment comes as two halves: readDisplay joins them by reading
 }
+
 function sheared(img, w, y0, y1, s) { // the band's ink with each row moved back by its slant: (x, y) -> bool
   const mid = (y0 + y1) / 2, h = img.bin.length / w;
   const where = (x, y) => { const sx = Math.round(x + s * (mid - y)); return sx >= 0 && sx < w && y >= 0 && y < h ? y * w + sx : -1; };
@@ -417,6 +416,8 @@ function digitOf(at, x0, x1, y0, y1, narrow, t) { // {digit, score}; t: the line
     return { digit: ok ? 1 : null, score: ok ? clamp01(0.4 + (Math.min(up, down) - 0.6) * 4) : 0 };
   }
   const box = t ? regions(Math.min(0.35, Math.max(0.1, t / (x1 - x0 + 1))), Math.min(0.2, Math.max(0.06, t / (y1 - y0 + 1)))) : SEGMENTS;
+  const holes = [[0.4, 0.6, 0.26, 0.34], [0.4, 0.6, 0.66, 0.74]].map((r) => fill(at, x0, x1, y0, y1, r));
+  if (holes.some((f) => f > HOLE_MAX)) return { digit: null, score: 0 }; // a block, a mark: a digit's counters are empty
   return nearest([...ORDER].map((x) => fill(at, x0, x1, y0, y1, box[x])));
 }
 function edgeInk(at, glyphs, y0, y1) { // does any wide glyph have ink across its middle in rows y0..y1 (an a or a d)?
@@ -476,8 +477,14 @@ function glyphsOf(img, w, y0, y1, s, ratio) { // one band's digits (column runs 
     return { x0, x1, top, bottom, gh: bottom - top + 1 };
   }).filter((g) => g.top >= 0 && g.gh >= GLYPH_MIN * hb); // a one drawn inset is shorter than its line
   const apart = Math.max(LABEL_GAP * hb, ratio ? LABEL_DIGITS * ratio * hb : 0); // ones stand a digit apart
+  const ink0 = glyphs.length ? [Math.min(...glyphs.map((g) => g.top)), Math.max(...glyphs.map((g) => g.bottom))] : [y0, y1];
+  const t0 = stroke(at, glyphs, [0.28, 0.72].map((v) => Math.round(ink0[0] + v * (ink0[1] - ink0[0] + 1))));
+  const digitLike = (g) => { // a one's stroke down both halves, or a glyph that reads surely as a digit
+    const d = digitOf(at, g.x0, g.x1, ink0[0], ink0[1], g.x1 - g.x0 + 1 < 0.35 * hb, t0);
+    return d.digit !== null && d.score >= SURE;
+  };
   for (let i = glyphs.length - 1; i > 0; i -= 1) { // the reading is the right-hand group: a label or icon left of it goes
-    if (glyphs[i].x0 - glyphs[i - 1].x1 > apart) { glyphs.splice(0, i); break; }
+    if (glyphs[i].x0 - glyphs[i - 1].x1 > apart && !glyphs.slice(0, i).some(digitLike)) { glyphs.splice(0, i); break; }
   }
   if (!glyphs.length) return null;
   const top = Math.min(...glyphs.map((g) => g.top)), bottom = Math.max(...glyphs.map((g) => g.bottom)), lh = bottom - top + 1;
@@ -505,7 +512,10 @@ function readLine(L, top, bottom, width, doubt) { // a band's digits in the box 
       let a = g.x0 + Math.floor((p * gw) / parts);
       const left = [0.27, 0.72].some((v) => stroked(L.at, a, a + Math.max(1, Math.round(0.2 * (b - a + 1))), top, bottom, v - 0.12, v + 0.12) > 0.6);
       if (!narrow && !left && b - a + 1 < 0.9 * wd) a = b - Math.round(wd) + 1; // no left side (a 3, a 7): a whole digit wide
-      const d = digitOf(L.at, a, b, top, bottom, narrow, L.t);
+      let d = digitOf(L.at, a, b, top, bottom, narrow, L.t);
+      if (narrow && d.digit === 1 && fill(L.at, b - Math.round(wd) + 1, a - 1, top, bottom, [0, 1, 0, 0.18]) > 0.15) {
+        d = { digit: 1, score: Math.min(d.score, 0.5) }; // ink where a seven's top would be: a one is not sure
+      }
       if (!narrow) plain = false;
       if (d.digit === null) { odd = true; continue; }
       digits += String(d.digit); score = Math.min(score, d.score);
@@ -525,7 +535,16 @@ export function readDisplay(px, w, h) {
   if (!raw) return [];
   const img = level(clean(raw, w, h), w, h);
   const mid = (xs) => { const v = xs.slice().sort((p, q) => p - q), k = v.length >> 1; return !v.length ? 0 : v.length % 2 ? v[k] : (v[k - 1] + v[k]) / 2; };
-  const lines0 = bands(img.bin, w, h), s = slant(img, w, lines0);
+  const rows = bands(img.bin, w, h), s = slant(img, w, rows), hh = (r) => r[1] - r[0] + 1;
+  const sure = (y0, y1) => { const L = glyphsOf(img, w, y0, y1, s, 0), got = L && readLine(L, L.top, L.bottom, 0, false); return !!got && got.score >= SURE; };
+  const joined = [], rowsTall = Math.max(0, ...rows.map(hh));
+  for (let i = 0; i < rows.length; i += 1) { // two halves of one line (no digit of it has a middle segment) join: they
+    const a = rows[i], b = rows[i + 1], small = b ? Math.min(hh(a), hh(b)) : 0; // read surely together, not apart
+    const halves = b && Math.max(hh(a), hh(b)) <= HALVES * rowsTall; // both much shorter than the big lines
+    if (b && b[0] - a[1] - 1 <= HALF_GAP * small && Math.max(hh(a), hh(b)) <= 1.6 * small && sure(a[0], b[1])
+      && (halves || !(sure(a[0], a[1]) && sure(b[0], b[1])))) { joined.push([a[0], b[1]]); i += 1; } else joined.push(a);
+  }
+  const tallest = Math.max(0, ...joined.map(hh)), lines0 = joined.filter((r) => hh(r) >= Math.max(8, tallest * 0.35));
   let found = lines0.map(([y0, y1]) => glyphsOf(img, w, y0, y1, s, 0)).filter(Boolean);
   const wideByTall = mid(found.flatMap((L) => L.full)); // one font: every line's digits as wide for their height
   if (wideByTall) found = lines0.map(([y0, y1]) => glyphsOf(img, w, y0, y1, s, wideByTall)).filter(Boolean);
@@ -538,8 +557,6 @@ export function readDisplay(px, w, h) {
     const grow = Math.max(0, Math.round((tall - lh) / 2));
     const sized = L.hasTop ? readLine(L, L.top, L.top + tall - 1, width, false)
       : L.hasBottom ? readLine(L, L.bottom - tall + 1, L.bottom, width, false) : readLine(L, L.top - grow, L.bottom + grow, width, false);
-    const own = readLine(L, L.top, L.bottom, width, false); // read in its own ink's height too: if they differ, it's a doubt
-    if (sized && (!own || own.value !== sized.value)) return { L, line: { ...sized, score: Math.min(sized.score, 0.7) } };
     return { L, line: sized };
   }).filter((x) => x.line);
   const kept = lines.slice().sort((p, q) => (q.L.bottom - q.L.top) - (p.L.bottom - p.L.top)).slice(0, LINES_MAX);

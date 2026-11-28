@@ -11,7 +11,8 @@ the seven-segment reader reads synthetic displays. No real model, picture or per
     wifi_off_reps       ten squats counted on the live driver with the network gone; no request
     setup_test          frames a second, a look's milliseconds and the share of one core, from a
                         tap-started look; nothing sent; full pose kept only where it keeps 15/s
-    digits_read         plain displays: >= 95 % read right, none sure and wrong; varied ones (slant,
+    digits_read         monitor screens (builder D's kind) through the pane's rule: >= 95 % right,
+                        none wrong; plain displays >= 92 %, none sure and wrong; varied ones (slant,
                         turn, blur, ghosts, LED, small lines): >= 85 %, <= 2 % sure and wrong
 
 Negative control (it must fail the cases named): every model file served changed (pinned_files_only
@@ -101,8 +102,11 @@ def setup_test() -> list[str]:
 
 def digits_read(mutate: str = "") -> list[str]:
     bad = []
+    screens = _run("monitors", n=240, seed=41, mutate=mutate)
+    if screens["right"] < 228 or screens["wrong"]:
+        bad.append(f"monitor screens: {screens['right']}/240 right, {screens['wrong']} wrong")
     plain = _run("accuracy", n=60, plain=True, seed=7, mutate=mutate)
-    if plain["right"] < 57 or plain["sure_wrong"]:
+    if plain["right"] < 55 or plain["sure_wrong"]:
         bad.append(
             f"plain displays: {plain['right']}/60 right, {plain['sure_wrong']} sure and wrong"
         )

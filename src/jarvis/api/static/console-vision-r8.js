@@ -211,17 +211,18 @@ const FILL_ON = 0.3; // a region darker than this has a segment in it (the line'
 const SEG_ON = 0.7, SEG_OFF = 0.08; // a lit segment fills its region at least this dark; an unlit one at most this
 const COST_OK = 0.12, COST_MAX = 0.5, GAP_SURE = 0.12; // a digit's match: its misfit, and its lead on the next digit
 const SHEARS = Array.from({ length: 17 }, (_, i) => (i - 4) * 0.025).sort((p, q) => Math.abs(p) - Math.abs(q)); // -0.1..0.3
-const TURNS = Array.from({ length: 29 }, (_, i) => Math.tan(((i - 14) * 0.5 * Math.PI) / 180)); // the display held at -7..7 deg
-const MIN_CONTRAST = 0.12;
-const TINY = 5; // pixels: a smaller piece of ink is a speck, never a segment
-const GLYPH_MIN = 0.5; // of a line's height: anything shorter is not a digit (a label, a dot, an icon)
-const LABEL_GAP = 0.95; // of a line's height: the reading is one group of digits; anything further left is a label
-const INNER_GAP = 0.07;
-const PIECE_GAP = 0.15; // of a line's height: a digit's horizontals this near its strokes are one digit
-const WIDE_MAX = 0.9; // ...and, once the display's digit width is known, a glyph TOUCH times as wide
-const TOUCH = 1.3; // of a line's height: a wider glyph is two digits that touch
-const ROW_GAP = 0.08;
-const THIN = 0.35, THIN_GAP = 0.3; // of the tallest row of ink: a thinner one (a row of segments) joins a line this near // of a line's height: a wider stretch of empty rows is between two lines // of a line's height: a wider gap of empty columns is between two digits
+const TURNS = Array.from({ length: 29 }, (_, i) => Math.tan(((i - 14) * 0.5 * Math.PI) / 180)) // held at -7..7 deg,
+  .sort((p, q) => Math.abs(p) - Math.abs(q)); // level first: a turn must be clearly sharper to be taken
+const MIN_CONTRAST = 0.12; // the ink's and the background's levels at least this far apart (of 255)
+const TINY = 5; // pixels: a smaller piece of ink is a speck, never a segment (a small line's segment is a dozen)
+// fractions of a line's height (or of the tallest row of ink, or of a digit's width, where said):
+const GLYPH_MIN = 0.5; // anything shorter is not a digit (a dot, an icon; a one drawn inset is about 0.6)
+const LABEL_GAP = 0.95, LABEL_DIGITS = 1.6; // the reading is one group: further left is a label (and of a digit's width)
+const INNER_GAP = 0.07; // empty columns this narrow are a digit's own segment gaps
+const PIECE_GAP = 0.15; // a digit's horizontals or a left-hand stroke this near the rest of it are one digit
+const WIDE_MAX = 0.9, TOUCH = 1.3; // a wider glyph is two digits that touch (TOUCH: of the display's digit width)
+const ROW_GAP = 0.08; // empty rows this few (of the line so far) are a digit's own gaps, not between two lines
+const THIN = 0.35, THIN_GAP = 0.3; // of the tallest row of ink: a thinner row (of segments) joins a line this near
 
 /** Otsu's threshold of values 0..255: a value v is in the lower class when (v | 0) <= the threshold. */
 export function otsu(v) {
@@ -303,7 +304,7 @@ export function level(img, w, h) {
     for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) if (img.bin[y * w + x]) rows[h + y + Math.round(k * (x - cx))] += 1;
     let score = 0;
     for (let i = 0; i < rows.length; i += 1) score += rows[i] * rows[i];
-    if (score > best.score * 1.0001) best = { k, score };
+    if (score > best.score * (best.score < 0 ? 1 : 1.003)) best = { k, score };
   });
   if (!best.k) return img;
   const bin = new Uint8Array(w * h), soft = new Float32Array(w * h);
@@ -345,8 +346,13 @@ function bands(bin, w, h) { // the lines of digits: stretches of inked rows, lab
     const last = merged[merged.length - 1];
     if (last && r[0] - last[1] - 1 <= ROW_GAP * (r[1] - last[0] + 1)) last[1] = r[1]; else merged.push([r[0], r[1]]);
   });
-  const top = Math.max(0, ...merged.map(hh));
-  return merged.filter((r) => hh(r) >= Math.max(8, top * 0.35));
+  const top = Math.max(0, ...merged.map(hh)), lines = [];
+  merged.forEach((r) => { // a line of ones and sevens (no middle segment) can still be two halves: they join
+    const last = lines[lines.length - 1], big = last && Math.max(hh(r), hh(last)), small = last && Math.min(hh(r), hh(last));
+    if (last && big <= 0.65 * top && big <= 1.67 * small && r[0] - last[1] - 1 <= 0.3 * small) last[1] = r[1];
+    else lines.push([r[0], r[1]]);
+  });
+  return lines.filter((r) => hh(r) >= Math.max(8, top * 0.35));
 }
 function sheared(img, w, y0, y1, s) { // the band's ink with each row moved back by its slant: (x, y) -> bool
   const mid = (y0 + y1) / 2, h = img.bin.length / w;
@@ -363,7 +369,7 @@ function columns(at, w, y0, y1, pad) {
 function slant(img, w, lines) { // one display, one font: the shear that stands every line's strokes upright, found on
   let best = null; //                all lines together (the sharpest column profiles; the least slant on a tie)
   SHEARS.forEach((s) => {
-    const sharp = lines.reduce((sum, [y0, y1]) => sum + columns(sheared(img, w, y0, y1, s), w, y0, y1, 0).reduce((t, c) => t + c * c, 0), 0);
+    const sharp = lines.reduce((sum, [y0, y1]) => sum + columns(sheared(img, w, y0, y1, s), w, y0, y1, 0).reduce((t, c) => t + c * c * c, 0), 0);
     if (!best || sharp > best.sharp * 1.0001) best = { s, sharp };
   });
   return best ? best.s : 0;
@@ -447,7 +453,8 @@ function pieces(sl, at, y0, y1, ew) { // the band's column runs, joined into dig
     const l = ps[i], r = ps[i + 1], gap = r.x0 - l.x1 - 1;
     if (l.x1 - l.x0 + 1 > 0.3 * hb || gap > near) continue;
     const up = stroked(at, l.x0, l.x1, y0, y1, 0.22, 0.42) > 0.6, down = stroked(at, l.x0, l.x1, y0, y1, 0.58, 0.78) > 0.6;
-    if ((up && down && gap > 1) || (!up && !down)) continue; // a one, or nothing of a digit
+    const both = r.x1 - l.x0 + 1, half = up !== down; // a lone f or e; else both halves, which a one has too:
+    if (half ? both > (ew ? TOUCH * ew : WIDE_MAX * hb) : !(up && ew && gap <= 1 && both <= 1.15 * ew)) continue; // a one
     ps.splice(i, 2, { x0: l.x0, x1: r.x1, stroke: true }); i -= 1;
   }
   return ps;
@@ -468,15 +475,16 @@ function glyphsOf(img, w, y0, y1, s, ratio) { // one band's digits (column runs 
     const [top, bottom] = extent(at, x0, x1, y0, y1);
     return { x0, x1, top, bottom, gh: bottom - top + 1 };
   }).filter((g) => g.top >= 0 && g.gh >= GLYPH_MIN * hb); // a one drawn inset is shorter than its line
+  const apart = Math.max(LABEL_GAP * hb, ratio ? LABEL_DIGITS * ratio * hb : 0); // ones stand a digit apart
   for (let i = glyphs.length - 1; i > 0; i -= 1) { // the reading is the right-hand group: a label or icon left of it goes
-    if (glyphs[i].x0 - glyphs[i - 1].x1 > LABEL_GAP * hb) { glyphs.splice(0, i); break; }
+    if (glyphs[i].x0 - glyphs[i - 1].x1 > apart) { glyphs.splice(0, i); break; }
   }
   if (!glyphs.length) return null;
   const top = Math.min(...glyphs.map((g) => g.top)), bottom = Math.max(...glyphs.map((g) => g.bottom)), lh = bottom - top + 1;
   glyphs.forEach((g) => { g.wide = g.x1 - g.x0 + 1 >= 0.35 * lh; });
   const wd = ratio ? ratio * lh : Math.max(0, ...glyphs.filter((g) => g.wide).map((g) => g.x1 - g.x0 + 1)); // a 3, a 7: no left side
   const full = glyphs.filter((g) => g.wide && [0.25, 0.75].some((v) => stroked(at, g.x0, g.x0 + Math.max(1, Math.round(0.2 * (g.x1 - g.x0 + 1))), top, bottom, v - 0.15, v + 0.15) > 0.6))
-    .map((g) => (g.x1 - g.x0 + 1) / lh); // the width of the digits drawn from their left side to their right
+    .map((g) => (g.x1 - g.x0 + 1) / lh).filter((r) => r <= 0.8); // digits drawn from their left side to their right
   const edge = Math.max(1, Math.round(0.08 * lh));
   const t = stroke(at, glyphs, [0.28, 0.72].map((v) => Math.round(top + v * lh)));
   const sides = glyphs.map((g) => { // the right-hand verticals' height, where both are lit (not a 2, a 5 or a 6)
@@ -495,7 +503,8 @@ function readLine(L, top, bottom, width, doubt) { // a band's digits in the box 
     for (let p = 0; p < parts; p += 1) {
       const b = g.x0 + Math.floor(((p + 1) * gw) / parts) - 1, narrow = parts === 1 && !g.wide && gw < 0.45 * wd;
       let a = g.x0 + Math.floor((p * gw) / parts);
-      if (!narrow && b - a + 1 < 0.9 * wd) a = b - Math.round(wd) + 1; // its box is a whole digit wide, from the right
+      const left = [0.27, 0.72].some((v) => stroked(L.at, a, a + Math.max(1, Math.round(0.2 * (b - a + 1))), top, bottom, v - 0.12, v + 0.12) > 0.6);
+      if (!narrow && !left && b - a + 1 < 0.9 * wd) a = b - Math.round(wd) + 1; // no left side (a 3, a 7): a whole digit wide
       const d = digitOf(L.at, a, b, top, bottom, narrow, L.t);
       if (!narrow) plain = false;
       if (d.digit === null) { odd = true; continue; }
@@ -526,10 +535,12 @@ export function readDisplay(px, w, h) {
     if (L.hasTop && L.hasBottom) return { L, line: readLine(L, L.top, L.bottom, 0, false) };
     if (!tallBySide || !L.side) return { L, line: readLine(L, L.top, L.bottom, 0, true) };
     const tall = Math.round(tallBySide * L.side), width = Math.round((wideByTall || 0.55) * tall), lh = L.bottom - L.top + 1;
-    if (L.hasTop) return { L, line: readLine(L, L.top, L.top + tall - 1, width, false) };
-    if (L.hasBottom) return { L, line: readLine(L, L.bottom - tall + 1, L.bottom, width, false) };
     const grow = Math.max(0, Math.round((tall - lh) / 2));
-    return { L, line: readLine(L, L.top - grow, L.bottom + grow, width, false) };
+    const sized = L.hasTop ? readLine(L, L.top, L.top + tall - 1, width, false)
+      : L.hasBottom ? readLine(L, L.bottom - tall + 1, L.bottom, width, false) : readLine(L, L.top - grow, L.bottom + grow, width, false);
+    const own = readLine(L, L.top, L.bottom, width, false); // read in its own ink's height too: if they differ, it's a doubt
+    if (sized && (!own || own.value !== sized.value)) return { L, line: { ...sized, score: Math.min(sized.score, 0.7) } };
+    return { L, line: sized };
   }).filter((x) => x.line);
   const kept = lines.slice().sort((p, q) => (q.L.bottom - q.L.top) - (p.L.bottom - p.L.top)).slice(0, LINES_MAX);
   return lines.filter((x) => kept.includes(x)).map((x) => x.line);

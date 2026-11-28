@@ -329,12 +329,14 @@ export function displays(n, seed) {
 const readRight = (lines, values) => lines.length === values.length && lines.every((l, i) => l.value === values[i] && l.score >= 0.8);
 const sureWrong = (lines, values) => lines.length === values.length && lines.every((l) => l.score >= 0.8) && lines.some((l, i) => l.value !== values[i]);
 
-/** The reader on n synthetic displays: {n, right, sure_wrong, misses: [the first few]}. `mutate` is a negative control. */
+/** The reader on n synthetic displays: {n, right, sure_wrong, misses: [the first few]}. `plain`: the default display
+ *  only (an LCD, a little slant and noise); `mutate` is a negative control (a digit changed, every score made sure). */
 export async function accuracy(input) {
   const i = input || {}, m = await import(new URL('console-vision-r8.js', STATIC).href);
   let right = 0, wrong = 0, ms = 0;
   const misses = [];
-  for (const d of displays(i.n || 100, i.seed || 11)) {
+  const set = i.plain ? displays(i.n || 100, i.seed || 11).map((d) => ({ values: d.values, opts: { seed: d.opts.seed } })) : displays(i.n || 100, i.seed || 11);
+  for (const d of set) {
     const pic = display(d.values, d.opts), g = m.grey(pic.px, pic.w, pic.h);
     const t0 = performance.now();
     let lines = m.readDisplay(g.px, g.w, g.h);
@@ -358,4 +360,12 @@ export async function digitsFrame(input) {
   }
   const r = await attempt(() => V.run('digits', frame, i.box ? { box: i.box } : {}));
   return { result: r.ok ? plainOf(r.value) : null, error: r.ok ? '' : r.error, fetches: state.fetches.length, canvases: state.canvases };
+}
+
+/** D9's fallback: SSD-MobileNet v1's COCO ids as the engine's labels, and one decoded answer. */
+export async function coco() {
+  const m = await import(new URL('console-vision-r8.js', STATIC).href);
+  const decoded = m.cocoObjects([47, 12, 44, 1, 90], [0.9, 0.99, 0.4, 0.7, 0.6], [0.1, 0.2, 0.5, 0.6, 0, 0, 1, 1, 0.3, 0.3, 0.4, 0.4,
+    -0.2, 0.1, 1.4, 0.5, 0.2, 0.2, 0.3, 0.3], 5, 0.5, 2);
+  return { ids: [...m.COCO_IDS], labels: [...m.COCO_LABELS], decoded };
 }

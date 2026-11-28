@@ -17,6 +17,10 @@
 // (which changes with what it shows), at most once per animation frame, on resize, font load and
 // theme change, so it cannot loop. Panel state stays in console-deck.js: this file reads the
 // tabs' aria-pressed and opens panels through window.JarvisDeck. No build step; CSP script-src 'self'.
+// R8 I (D13, "your bar, your way"): window.JarvisDock draws HIS layout when console-dock-edit.js
+// (which reads, edits and saves it) calls arrange(): his order, the tabs he took off the bar
+// (folded for good: More shows and lists them), the divider after the seventh item, the bar hidden.
+// With no saved layout arrange() is never called: the bar is the shipped bar, to the pixel.
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -38,11 +42,12 @@
   const shown = (el) => el.getClientRects().length > 0;
   const pressed = (tab) => tab.getAttribute('aria-pressed') === 'true';
 
-  const tabs = [...dock.querySelectorAll('.dk[data-open]')];
+  let tabs = [...dock.querySelectorAll('.dk[data-open]')]; // in the bar's order (R8 I: his, once arranged)
   const tabFor = (id) => tabs.find((t) => t.dataset.open === id) || null;
   const sep = dock.querySelector('.sep');
   // the first tab after the separator: while none of those shows, the separator is hidden too
-  const afterSep = sep ? tabs.findIndex((t) => sep.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING) : -1;
+  const sepIndex = () => (sep ? tabs.findIndex((t) => sep.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING) : -1);
+  let afterSep = sepIndex();
 
   // R7 I0 (seam 10): the More sheet's entries are built HERE from the dock, as the page had them (same
   // order, words and markup): every tab after Chat and Brief, with its own icon and name and one line
@@ -70,24 +75,29 @@
     camera: 'Look at a photo or the live picture, on this device', // R7
     calls: 'Calls JARVIS places from your phone: live captions, records, languages', // R18
   };
-  function buildSheet() {
-    const close = $('moreClose'), into = close ? close.parentNode : null;
-    if (!into) return;
-    tabs.slice(2).forEach((tab) => {
-      const id = tab.dataset.open, icon = tab.querySelector('svg'), words = DESCRIBE[id];
-      if (!words || !icon) return;
-      const item = document.createElement('button');
-      item.className = 'sheet-item'; item.type = 'button'; item.dataset.sheetOpen = id;
-      const span = document.createElement('span'), name = document.createElement('b'), small = document.createElement('small');
-      name.textContent = tab.getAttribute('aria-label') || (tab.querySelector('span') || tab).textContent.trim();
-      small.textContent = words;
-      span.append(name, small);
-      item.append(icon.cloneNode(true), span);
-      into.insertBefore(item, close);
+  // R8 I: Chat and Brief get an entry only once he moves them where they can fold (arrange)
+  const FIRST = { chat: 'Talk to JARVIS: type, speak or attach a file', brief: 'Your day at a glance, ready each morning' };
+  const close0 = $('moreClose'), entries = new Map();
+  /** One entry of the More sheet for this tab, before Close; it opens the tab's panel. */
+  function addEntry(tab) {
+    const id = tab.dataset.open, icon = tab.querySelector('svg'), words = DESCRIBE[id] || FIRST[id];
+    if (!words || !icon || !close0) return null;
+    const item = document.createElement('button');
+    item.className = 'sheet-item'; item.type = 'button'; item.dataset.sheetOpen = id;
+    const span = document.createElement('span'), name = document.createElement('b'), small = document.createElement('small');
+    name.textContent = (tab.querySelector('span') || tab).textContent.trim();
+    small.textContent = words;
+    span.append(name, small);
+    item.append(icon.cloneNode(true), span);
+    close0.parentNode.insertBefore(item, close0);
+    item.addEventListener('click', () => {
+      closeSheet();
+      if (window.JarvisDeck) window.JarvisDeck.open(id, { focus: true });
     });
+    entries.set(id, item);
+    return item;
   }
-  if (sheet) buildSheet();
-  const entries = new Map(sheet ? [...sheet.querySelectorAll('[data-sheet-open]')].map((b) => [b.dataset.sheetOpen, b]) : []);
+  if (sheet) tabs.slice(2).forEach(addEntry);
 
   if (!sheet || typeof sheet.showModal !== 'function') { // no <dialog>: nothing folds, the dock wraps
     moreBtn.hidden = true; root.classList.add('no-sheet');
@@ -141,15 +151,17 @@
   /** Which tabs show, and whether More does. Of the tabs but the EXTRA ones: those that hold their
    *  label, in order, all when they fit, else the most that fit beside More, never fewer than the
    *  pinned ones (they fit a 320 px phone with room to spare). An EXTRA tab then joins only when
-   *  none of them is folded for room and it fits beside them; More shows only for the others. */
+   *  none of them is folded for room and it fits beside them; More shows only for the others.
+   *  R8 I: a tab he took off the bar never shows, and More always does while one waits in it. */
   function choose(m) {
-    const all = m.tabs.map((_, i) => i), core = all.filter((i) => !EXTRA.has(tabs[i].dataset.open));
+    const all = m.tabs.map((_, i) => i).filter((i) => !removed.has(tabs[i].dataset.open));
+    const core = all.filter((i) => !EXTRA.has(tabs[i].dataset.open)), forced = removed.size > 0;
     const able = core.filter((i) => m.holds[i]);
     const pinned = able.filter((i) => i < PINNED).length;
     let k = able.length;
-    while (k > pinned && !fits(m, able.slice(0, k), k < core.length)) k--;
+    while (k > pinned && !fits(m, able.slice(0, k), forced || k < core.length)) k--;
     let show = able.slice(0, k);
-    const more = show.length < core.length;
+    const more = forced || show.length < core.length;
     if (show.length === able.length) {
       all.filter((i) => !core.includes(i) && m.holds[i]).forEach((i) => {
         const joined = [...show, i].sort((a, b) => a - b);
@@ -167,7 +179,10 @@
     if (sep && sep.hidden !== sepOff) sep.hidden = sepOff;
     if (moreBtn.hidden !== !more) moreBtn.hidden = !more;
     // without More no entry shows (console-deck.css reads More hidden beside a shown entry as "not fitted yet")
-    entries.forEach((b, id) => { const t = tabFor(id), off = !more || !t || !t.hidden; if (b.hidden !== off) b.hidden = off; });
+    entries.forEach((b, id) => { // R8 I: a tab taken off the bar is the editor's row (with Put back)
+      const t = tabFor(id), off = !more || !t || !t.hidden || (removed.has(id) && !!sheetHook);
+      if (b.hidden !== off) b.hidden = off;
+    });
     if (!more) closeSheet();
     carryBadge();
     rescueFocus(focused);
@@ -189,10 +204,12 @@
     carryBadge();
   }
   let raf = 0, lastWidth = -1;
+  let removed = new Set(), sheetHook = null; // R8 I: the tabs he took off the bar; the editor's sheet rows
   function fit() {
     lastWidth = root.clientWidth;
     fitHint();
     try { apply(choose(measure())); } catch (err) { unfoldAll(); throw err; } // reported, never silent
+    if (sheetHook) document.dispatchEvent(new CustomEvent('jarvis:dock')); // R8 I: the editor redraws
   }
   function schedule() { // one measure per animation frame, however many changes arrive in it
     if (raf) return;
@@ -238,9 +255,10 @@
       const t = tabFor(id);
       if (t && pressed(t)) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
     });
+    const own = sheetHook ? sheetHook(sheet) : null; // R8 I: the editor's rows, drawn as it opens
     sheet.showModal();
     moreBtn.setAttribute('aria-expanded', 'true');
-    const first = [...entries.values()].find((b) => !b.hidden);
+    const first = own || [...entries.values()].find((b) => !b.hidden);
     if (first) first.focus();
   }
   moreBtn.addEventListener('click', () => { if (sheet.open) closeSheet(); else openSheet(); });
@@ -250,10 +268,6 @@
     if ((!a || a === document.body || sheet.contains(a)) && !moreBtn.hidden) moreBtn.focus({ preventScroll: true });
   });
   sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); }); // the backdrop
-  entries.forEach((b, id) => b.addEventListener('click', () => {
-    closeSheet();
-    if (window.JarvisDeck) window.JarvisDeck.open(id, { focus: true });
-  }));
   const done = $('moreClose'); if (done) done.addEventListener('click', closeSheet);
 
   // ============================================================================== the chat box's hint
@@ -302,4 +316,52 @@
   // server, a file removed): fit it again then, as the box may be narrower (the folder button)
   document.addEventListener('jarvis:attach', fitHint);
   fit();
+
+  // ============================================================================== R8 I: his bar (D13)
+  // console-dock-edit.js reads, edits and saves the layout (console-dock-layout.js's model); this part
+  // only draws what it is given. While a saved layout waits for the editor the bar is held unseen (no
+  // flash of the shipped order); after HOLD_MS without it the shipped bar shows: nothing is ever lost.
+  const SHIPPED = Object.freeze(tabs.map((t) => t.dataset.open)), SEP_AT = 7, HOLD_MS = 3000;
+  const SLOTS = [...dock.childNodes]; // the shipped children with the text between them: the shipped bar comes back exactly
+  let holdTimer = 0;
+  const saved = (() => { try { return localStorage.getItem('jarvis_dock_layout_v1') !== null; } catch (_) { return false; } })();
+  function release() {
+    clearTimeout(holdTimer);
+    dock.style.removeProperty('visibility');
+    if (!dock.getAttribute('style')) dock.removeAttribute('style');
+  }
+  if (saved) { dock.style.visibility = 'hidden'; holdTimer = setTimeout(release, HOLD_MS); }
+  /** Draw a layout {order, more, hidden}: the tabs in his order (any the layout misses stay on the
+   *  bar), those taken off after them, folded for good; the divider after the seventh item; the
+   *  sheet's entries in the same order; the bar hidden or shown. Then fit, at once. The items fill
+   *  the shipped item places in turn, so the shipped order is the shipped markup, byte for byte;
+   *  a node already in its place is not moved (it keeps its focus). */
+  function arrange(layout) {
+    const by = new Map(tabs.map((t) => [t.dataset.open, t])), pick = (ids) => ids.map((id) => by.get(id)).filter(Boolean);
+    const bar = pick(layout.order), off = pick(layout.more).filter((t) => !bar.includes(t));
+    const shown = [...bar, ...tabs.filter((t) => !bar.includes(t) && !off.includes(t))];
+    removed = new Set(off.map((t) => t.dataset.open));
+    tabs = [...shown, ...off];
+    const items = [...shown.slice(0, SEP_AT), ...(sep ? [sep] : []), ...shown.slice(SEP_AT), ...off];
+    let k = 0;
+    SLOTS.map((n) => (n.nodeType === 1 && n !== moreBtn ? items[k++] : n)).forEach((n, i) => {
+      if (dock.childNodes[i] !== n) dock.insertBefore(n, dock.childNodes[i] || null);
+    });
+    afterSep = sepIndex();
+    tabs.forEach((t) => { // the sheet's entries in the bar's order (Chat and Brief may fold now)
+      const id = t.dataset.open, b = entries.get(id) || (id in FIRST ? addEntry(t) : null);
+      if (b) close0.parentNode.insertBefore(b, close0);
+    });
+    if (layout.hidden) { closeSheet(); dock.style.display = 'none'; } else dock.style.removeProperty('display');
+    release();
+    fit();
+  }
+  window.JarvisDock = Object.freeze({
+    shipped: () => SHIPPED.slice(),
+    arrange,
+    /** What the bar shows now: its order, the tabs shown, those taken off, whether More shows. */
+    state: () => ({ order: tabs.map((t) => t.dataset.open), shown: tabs.filter((t) => !t.hidden).map((t) => t.dataset.open),
+      removed: [...removed], more: !moreBtn.hidden, phone: isPhone(), hidden: dock.style.display === 'none' }),
+    onSheet(fn) { sheetHook = typeof fn === 'function' ? fn : null; },
+  });
 })();

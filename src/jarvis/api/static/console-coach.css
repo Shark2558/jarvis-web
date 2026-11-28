@@ -4,8 +4,7 @@
    no new colours, fonts, radii or shadows. The two night mixes for the amber card are console-deck.css's own (.spend).
    Loaded by console-r7.js. */
 
-/* the Camera panel's six tabs (Look, Results, Cameras, Wardrobe, Desk, Workout) in 3 x 2: six names don't fit one row */
-#p-camera .hp-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+/* the Camera panel's six tabs in 3 x 2: console-camera.css's own rule since the R8 I1 join (one place) */
 
 /* the promise line on every coach pane (the .bnote material, an eye like the Privacy tab's) */
 .r8-promise{display:flex;align-items:flex-start;gap:8px;margin:10px 0 0;padding:7px 10px;border-radius:var(--r-sm);

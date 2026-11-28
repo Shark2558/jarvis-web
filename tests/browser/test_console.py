@@ -80,6 +80,10 @@ class Console:
         # not_built, before the I1 join) answers the Calls panel so; the panel says it in words
         if ("501" in msg.text or "503" in msg.text) and "/v1/calls/" in url:
             return
+        # R8 I1: with no token key camera setup is off (404 cameras_off); the camera's door then
+        # reads no switches and looks as before (console-camera.js), the Cameras pane says why
+        if "404" in msg.text and url.endswith("/v1/camera/spots"):
+            return
         self.errors.append(f"console.error: {msg.text} @ {msg.location.get('url', '')}")
 
     def open(self, path: str = "/") -> None:

@@ -375,3 +375,30 @@ def test_the_cameras_pane_passes_the_visual_gate(
         assert c.errors == [] and c.csp_violations() == []
     finally:
         c.close()
+
+
+def test_the_six_tabs_are_three_by_two_and_this_device_has_one_switch(
+    browser: Any, b_url: str, token: str
+) -> None:
+    """R8 I1 (the join's visual fixes): the Camera panel's six tabs sit 3 x 2 (the mockup), and
+    once this device is in the list its row is its one switch: the panel's own "This device"
+    row (the device's lock) hides; it shows again while this device isn't listed."""
+    c = opened(browser, b_url, token)
+    try:
+        tops = c.page.evaluate(
+            "() => [...document.querySelectorAll('#p-camera .hp-tabs .hp-tab')]"
+            ".map((b) => Math.round(b.getBoundingClientRect().top))"
+        )
+        assert len(tops) == 6 and tops[0] == tops[1] == tops[2] and tops[3] == tops[4] == tops[5]
+        assert tops[3] > tops[0]
+        switches = (
+            "() => [...document.querySelectorAll('#camp-cameras button')].filter((b) =>"
+            " b.offsetParent !== null && /^(Switch off|Allow)$/.test(b.textContent.trim())).length"
+        )
+        pane(c)
+        assert c.page.evaluate(switches) == 1  # not listed yet: the panel's own row only
+        add_this(c)
+        until(c.page, lambda: c.page.evaluate(switches) == 1, "one switch for this device")
+        assert c.errors == [] and c.csp_violations() == []
+    finally:
+        c.close()

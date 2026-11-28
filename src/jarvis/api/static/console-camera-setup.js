@@ -14,6 +14,11 @@
 // Only a tap switches a camera back on; no voice does. The burglar alarm is never changed here. Nothing is recorded: no
 // picture leaves the device (the setup test looks on the device and sends three numbers). textContent only; ASCII.
 const CHECK = () => import('./console-vision-check.js');
+// R8 I1 (D4; A's choose): the pose model this device's setup test kept ('full' only where it held 15 a second), put
+// back in use when the pane mounts; the test tries the full model each time it runs
+const MODEL_KEY = 'jarvis_pose_model_v1';
+const keptModel = () => { try { return localStorage.getItem(MODEL_KEY) === 'full' ? 'full' : 'lite'; } catch (_) { return 'lite'; } };
+const keepModel = (m) => { try { if (m === 'full' || m === 'lite') localStorage.setItem(MODEL_KEY, m); } catch (_) {} };
 const STYLE = '/static/console-camera-setup.css';
 const M = window.JarvisMobile;
 const Cam = () => window.JarvisCamera || null;
@@ -101,6 +106,11 @@ async function change(fn, done) {
 }
 const setCamera = (id, over) => change((s) => Object.assign(s, { cameras: s.cameras.map((c) => (c.id === id ? Object.assign(c, over) : c)) }));
 const setRoom = (id, over) => change((s) => Object.assign(s, { rooms: s.rooms.map((r) => (r.id === id ? Object.assign(r, over) : r)) }));
+function allowOwn(id, mine, on) { // R8 I1: this device's row is its one switch (the panel's own row hides, below)
+  const C = Cam();
+  if (mine && C && C.locked()) C.unlock('panel'); // a tap: its own lock ends too
+  if (on) render(); else setCamera(id, { on: true });
+}
 function forget(id) {
   change((s) => Object.assign(s, { cameras: s.cameras.filter((c) => c.id !== id) }), () => { const C = Cam(); if (id === myId() && C) C.useSpot(''); });
 }
@@ -145,9 +155,11 @@ async function setupTest() {
   try {
     await C.start({});
     const V = window.JarvisVision, pose = V && V.tasks ? V.tasks().find((t) => t.id === 'pose') : null;
-    const r = await (await CHECK()).run([pose && !pose.why ? 'pose' : 'quality'], { seconds: TEST_SECONDS });
+    const r = await (await CHECK()).run([pose && !pose.why ? 'pose' : 'quality'], { seconds: TEST_SECONDS, model: 'full' });
     const fps = Math.round(Number(r.fps) * 10) / 10, ms = Math.round(Number(r.ms)), core = Math.round(Number(r.core) * 100);
-    S.tested = 'Done: ' + fps + ' frames a second, ' + ms + ' ms a look, ' + core + ' % of one core.';
+    keepModel(r.model);
+    S.tested = 'Done: ' + fps + ' frames a second, ' + ms + ' ms a look, ' + core + ' % of one core'
+      + (r.model ? ', the ' + r.model + ' body model.' : '.');
     await api('/v1/camera/health', { method: 'POST', body: { camera: id, fps: Math.min(120, fps), ms: Math.min(60000, ms) } }).catch(() => {});
   } catch (e) {
     const m = String((e && e.message) || '');
@@ -211,7 +223,8 @@ function cameraRow(c) {
   line.append(d, mk('span', '', words));
   txt.append(name, mk('span', 'r8-sub', where(c, mine)), line);
   const acts = mk('div', 'hp-acts');
-  acts.append(c.on ? button('Switch off', '', () => setCamera(c.id, { on: false }), 'off-' + c.id) : button('Allow', '', () => setCamera(c.id, { on: true }), 'on-' + c.id));
+  const C0 = Cam(), held = mine && !!(C0 && C0.locked()); // R8 I1: this device's own lock shows here too
+  acts.append(c.on && !held ? button('Switch off', '', () => setCamera(c.id, { on: false }), 'off-' + c.id) : button('Allow', '', () => allowOwn(c.id, mine, c.on), 'on-' + c.id));
   row.append(txt, acts);
   const why = S.view.why && S.view.why[c.id];
   const wide = mk('div', 'r8-wide');
@@ -406,6 +419,8 @@ function render() {
   }
   parts.push(checkSection());
   S.box.replaceChildren(...parts);
+  const listed = !!(S.view && myId() && (S.view.cameras || []).some((c) => c && c.id === myId())); // R8 I1: one switch
+  if (S.P && typeof S.P.deviceSwitch === 'function') S.P.deviceSwitch(!listed); // the panel's own row only when unlisted
   const again = focused && S.box.querySelector ? [...S.box.querySelectorAll('[data-k]')].find((n) => n.getAttribute('data-k') === focused) : null;
   if (again && typeof again.focus === 'function') again.focus();
 }
@@ -421,6 +436,7 @@ function style() {
 }
 function mount(el, P) {
   S.host = el; S.P = P;
+  CHECK().then((m) => (typeof m.choose === 'function' ? m.choose(keptModel()) : null)).catch(() => {}); // R8 I1
   S.box = mk('div', 'r8-setup');
   el.append(S.box);
   style();

@@ -180,7 +180,7 @@ function stopModes(but) { Object.keys(MODES).forEach((id) => { if (id !== but) {
 window.JarvisCameraModes = Object.freeze({ register(id, mode) {
   if (!MODE_IDS.includes(id) || MODES[id] || !mode || typeof mode.mount !== 'function' || typeof mode.stop !== 'function') return false;
   MODES[id] = mode;
-  try { mode.mount(panes[id], Object.freeze({ mk, button, field, say, signedIn })); } catch (_) { panes[id].replaceChildren(mk('p', 'snote', DIDNT)); }
+  try { mode.mount(panes[id], Object.freeze({ mk, button, field, say, signedIn, deviceSwitch: (on) => { camRow.hidden = !on; } })); } catch (_) { panes[id].replaceChildren(mk('p', 'snote', DIDNT)); } // R8 I1: deviceSwitch
   return true;
 } });
 document.dispatchEvent(new CustomEvent('jarvis:camera-modes'));

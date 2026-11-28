@@ -83,12 +83,17 @@
  "models": {
   "pose_landmarker_lite.task": {
    "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+   "mirror": "https://huggingface.co/litert-community/MediaPipe-PoseLandmarker-Lite/resolve/main/pose_landmarker_lite.task",
+   "page": "https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker",
    "licence": "Apache-2.0",
    "state": "not installed"
   },
   "efficientdet_lite0.tflite": {
    "url": "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite",
+   "mirror": "https://huggingface.co/litert-community/MediaPipe-ObjectDetector-EfficientDet-Lite0/resolve/main/efficientdet_lite0_int8.tflite",
+   "page": "https://developers.google.com/edge/mediapipe/solutions/vision/object_detector",
    "licence": "to be read",
+   "licence_note": "R8 A, 28 Nov 2026: the object detector page links no model card and states no licence for its model files (its content is CC BY 4.0, its code samples Apache-2.0); its download is now the Hugging Face copy, whose card could not be opened here. Until a person reads it, D9's fallback (SSD-MobileNet v1 in r13-1) serves `objects`",
    "state": "not installed"
   }
  }

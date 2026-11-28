@@ -252,6 +252,7 @@ def test_a_drop_on_more_takes_an_item_off_and_put_back_restores_the_shipped_bar(
             expect(sheet.locator("[data-sheet-open]:not([hidden])").first).to_be_focused()
             sheet.get_by_role("button", name="Close").click()
             expect(sheet).to_be_hidden()
+            expect(c.page.locator("#dockMore")).to_have_attribute("aria-expanded", "false")
         assert c.page.evaluate(BAR_JS) == before_bar
         assert c.page.evaluate("() => document.getElementById('dock').outerHTML") == before_html
         assert c.errors == [] and c.csp_violations() == []

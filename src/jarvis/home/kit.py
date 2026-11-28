@@ -8,7 +8,8 @@ beside the button, can be checked.
 
 The bridge source is found by reading the imports of `jarvis/homebridge/*.py`: every `jarvis.*`
 module they use is copied too, and the build REFUSES (`KitError`) if one is outside the kit set
-(`jarvis.home.{ports,signing,classes}`, `jarvis.faces.ports`, `jarvis.homebridge.*`) or if a file
+(`jarvis.home.{ports,signing,classes}`, `jarvis.faces.ports`, `jarvis.homebridge.*`, R8's
+`jarvis.coach.home.*`, `jarvis.coach.usecases` and `jarvis.coach.sources`) or if a file
 imports a package the bridge image doesn't install. That is the "kit rule" as code. Nothing secret
 is ever in the kit: files named like keys, tokens or data volumes are skipped, and the env file has
 blank passwords for the setup script to fill at home.
@@ -50,6 +51,9 @@ SAFE_JARVIS = (
     "jarvis.home.classes",
     "jarvis.faces.ports",
 )
+# R8 J (docs/plans/r8-vision.md 4.5a, seam S24): the home camera's use cases run on the laptop,
+# with the use-case registry and its tally models (standard library and Pydantic only)
+SAFE_COACH = ("jarvis.coach.home", "jarvis.coach.usecases", "jarvis.coach.sources")
 SKIP_NAMES = frozenset({"bridge.env", "frigate.env", "passwd", "secret.json", ".env", "state.json"})
 SKIP_PARTS = frozenset({"bridge-data", "__pycache__", ".git", "mosquitto-data"})
 SKIP_SUFFIXES = (".pem", ".key", ".pyc", ".tmp", ".log")
@@ -84,6 +88,8 @@ def _is_safe_jarvis(name: str) -> bool:
     return (
         name.startswith("jarvis.homebridge")
         or name in SAFE_JARVIS
+        or name in SAFE_COACH
+        or name.startswith("jarvis.coach.home.")
         or name
         in (
             "jarvis",

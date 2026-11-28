@@ -45,8 +45,9 @@ def test_services_and_hardening(compose: dict) -> None:
         assert not s.get("privileged"), name
     b = svc["bridge"]
     assert b["read_only"] is True and b["cap_drop"] == ["ALL"] and b["user"] == "10001:10001"
-    # R11.1 O7: 256m -> 768m, for the face reader's two models and one picture at a time
-    assert "no-new-privileges:true" in b["security_opt"] and b["mem_limit"] == "768m"
+    # R11.1 O7: 256m -> 768m, for the face reader's two models and one picture at a time;
+    # R8 J: -> 1024m, for the home camera's pose model beside them (one frame at a time)
+    assert "no-new-privileges:true" in b["security_opt"] and b["mem_limit"] == "1024m"
     assert "host.docker.internal:172.29.80.1" in b["extra_hosts"]  # review M4
     assert b["env_file"] == "bridge.env" and "./bridge-data:/data" in b["volumes"]
     assert svc["homeassistant"]["network_mode"] == "host"

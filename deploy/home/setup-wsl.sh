@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # JARVIS home kit, the Ubuntu (WSL2) half of the setup. setup-windows.ps1 runs this for you; you
-# can also run it by hand:  bash setup-wsl.sh install | configure | up | update | models | photos-dir FOLDER | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code
+# can also run it by hand:  bash setup-wsl.sh install | configure | up | update | models | photos-dir FOLDER | link CODE ADDRESS | status | camera | home-camera | passwords | ha-token | faces-code
 # Re-runnable: every step checks first and skips what is already done.
 #
 #   install    Docker Engine (from Docker's apt repository) and systemd for Ubuntu
@@ -347,6 +347,34 @@ step_status() {
   "${COMPOSE[@]}" ps
 }
 
+# ---- the home camera for the desk coaches (R8; setup-windows.ps1 -HomeCamera) ---------------
+# Its sub-stream's address with its user name and password goes into bridge.env on this laptop
+# only (the bridge reads it; JARVIS never sees it). "off" takes it out again.
+step_home_camera() {
+  cd "$HOME_DIR"
+  local url="${HOME_CAMERA_URL:-}" id="${HOME_CAMERA_ID:-}"
+  [ -n "$url" ] || fail "no camera address was given. Run setup-windows.ps1 -HomeCamera and type it."
+  if [ "$url" = "off" ]; then
+    put_env bridge.env HOMEVISION_RTSP_URL ""
+    put_env bridge.env HOMEVISION_CAMERA ""
+    restart_bridge
+    echo "The home camera's coaches are off on this laptop. The camera and the alarm are not changed."
+    return 0
+  fi
+  case "$url" in
+    rtsp://*) ;;
+    *) fail "the camera's address starts with rtsp:// (JARVIS -> Camera -> Cameras -> Check a camera shows it)." ;;
+  esac
+  case "$url" in
+    *[[:space:]\$\"\'\\]*) fail "that address has a character the settings file can't hold (a space, \$, a quote or \\). Type it again." ;;
+  esac
+  printf '%s' "$id" | grep -Eq '^[a-z0-9_]{1,24}$' || fail "the camera's id is a-z, 0-9 and _ (up to 24): the one JARVIS -> Camera -> Cameras shows."
+  put_env bridge.env HOMEVISION_RTSP_URL "$url"
+  put_env bridge.env HOMEVISION_CAMERA "$id"
+  restart_bridge
+  echo "Saved on this laptop only. The desk coaches you switch on in JARVIS now look through this camera."
+}
+
 # ---- camera, passwords ---------------------------------------------------------------------
 step_camera() {
   cd "$HOME_DIR"
@@ -377,8 +405,9 @@ case "${1:-}" in
   link) shift; step_link "$@" ;;
   status) step_status ;;
   camera) step_camera ;;
+  home-camera) step_home_camera ;;
   passwords) step_passwords ;;
   ha-token) step_ha_token ;;
   faces-code) cd "$HOME_DIR"; show_faces_code ;;
-  *) echo "Usage: bash setup-wsl.sh install | configure | up | update | models | photos-dir FOLDER | link CODE ADDRESS | status | camera | passwords | ha-token | faces-code" >&2; exit 2 ;;
+  *) echo "Usage: bash setup-wsl.sh install | configure | up | update | models | photos-dir FOLDER | link CODE ADDRESS | status | camera | home-camera | passwords | ha-token | faces-code" >&2; exit 2 ;;
 esac

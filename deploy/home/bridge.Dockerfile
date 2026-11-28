@@ -8,6 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PYTHONPATH=/
 # (the bridge itself checks every picture's size from its header before decoding it)
 ENV OPENCV_IO_MAX_IMAGE_PIXELS=50000000
 WORKDIR /app
+# R8 (the home camera's pose, mediapipe): its native library needs EGL and GLES from Debian; the
+# camera's sub-stream is read over TCP (more reliable through WSL's network than UDP), and the
+# stream reader's own log lines are off (an address with its password must never reach a log)
+RUN apt-get update && apt-get install -y --no-install-recommends libegl1 libgles2 && apt-get clean
+ENV OPENCV_FFMPEG_CAPTURE_OPTIONS="rtsp_transport;tcp" OPENCV_FFMPEG_LOGLEVEL=-8 OPENCV_LOG_LEVEL=ERROR
 # /models: the two face model files; /photos: the owner's photo folder. Both are mounted read-only.
 RUN useradd --no-create-home --uid 10001 bridge && mkdir /data /models /photos && chown 10001:10001 /data
 COPY bridge-requirements.txt ./

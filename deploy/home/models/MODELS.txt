@@ -12,3 +12,10 @@
 # sha256  size-in-bytes  licence  file  address
 ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0  229738  MIT  face_detection_yunet_2026may.onnx  https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/face_detection_yunet_2026may.onnx
 0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79  38696353  Apache-2.0  face_recognition_sface_2021dec.onnx  https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+#
+# R8 (the home camera's pose on this laptop, docs/plans/r8-vision.md 4.5a, D4): MediaPipe's pose
+# landmarker, full and lite (Apache-2.0), the same files as the browser's. Their lines are added
+# with their SHA-256 when the vision-models workflow has pinned them (ADR-50); the bridge loads
+# only a file whose SHA-256 is pinned in jarvis/coach/home/engines.py (POSE_MODELS) as well.
+#   pending  Apache-2.0  pose_landmarker_full.task  https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task
+#   pending  Apache-2.0  pose_landmarker_lite.task  https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task

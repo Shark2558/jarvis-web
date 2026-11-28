@@ -219,6 +219,17 @@ idna==3.20 \
     #   httpx
     #   httpx2
     #   requests
+# The home camera's pose on the laptop (R8 J, docs/plans/r8-vision.md 4.5a, D3 and D4; home
+# bridge only, never the cloud image): mediapipe 1.2.3 (Apache-2.0; the same release as the
+# browser's tasks-vision runtime). Installed with --no-deps like everything here: its listed
+# dependencies are not needed for the pose and object tasks (numpy, certifi and OpenCV are
+# above and below; matplotlib, imported only by its drawing helpers, is stood in for by the
+# bridge: jarvis/coach/home/engines.py). Its native library needs libEGL and libGLESv2 from the
+# base image's Debian (bridge.Dockerfile). Hashes from PyPI's JSON metadata on 28 Nov 2026, the
+# two Linux wheels (x86-64 and ARM64) only.
+mediapipe==1.2.3 \
+    --hash=sha256:1fcda646cc7b96f73453acc416ce31d0fba287d0f1fc095865272a7ea6986497 \
+    --hash=sha256:59d55f6395efbda2a053a8db18f598277e63c264f9a6f65a819c23d92b90fed8
 # The face reader for still pictures (R11.1 O7; home bridge only, never the cloud image):
 # numpy 2.5.4 (BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0) and opencv-python-headless
 # 5.0.0.93 (OpenCV: Apache-2.0; the packaging: MIT; the Linux wheel also carries FFmpeg under

@@ -9,8 +9,11 @@
 # Later, optional: the photo folder the laptop may read to find faces, or switching that off:
 #   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir "C:\Users\you\Pictures\JARVIS"
 #   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir off
+# Later, when the home camera for the desk coaches is set up in its own app (R8), or to stop that:
+#   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HomeCamera
+#   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HomeCamera -Off
 # Safe to run again: every step checks first and skips what is already done.
-param([switch]$HaToken, [switch]$Update, [string]$PhotosDir)
+param([switch]$HaToken, [switch]$Update, [string]$PhotosDir, [switch]$HomeCamera, [switch]$Off)
 $ErrorActionPreference = 'Stop'
 $Kit = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Distro = 'Ubuntu-24.04'
@@ -34,6 +37,7 @@ if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "  cd `"$Kit`""
     if ($HaToken) { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HaToken' }
     elseif ($Update) { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -Update' }
+    elseif ($HomeCamera) { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -HomeCamera' }
     elseif ($PhotosDir) { Write-Host "  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -PhotosDir `"$PhotosDir`"" }
     else { Write-Host '  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1' }
     exit 1
@@ -61,6 +65,28 @@ if ($Update) {
     $env:WSLENV = 'KIT_DIR'
     try { InWsl 'bash "$KIT_DIR/setup-wsl.sh" update' }
     finally { $env:WSLENV = $savedWslEnv; Remove-Item Env:KIT_DIR -ErrorAction SilentlyContinue }
+    exit 0
+}
+
+# Later, optional (R8): the home camera the desk coaches look through, on this laptop only --------
+if ($HomeCamera) {
+    $env:HOME_CAMERA_URL = 'off'
+    $env:HOME_CAMERA_ID = ''
+    if (-not $Off) {
+        Say 'The home camera for the desk coaches'
+        Write-Host 'Its pictures are looked at on this laptop only. Its address and password stay in bridge.env here.'
+        $addr = (Ask 'The camera''s sub-stream address (rtsp://192.168.x.x:554/..., from JARVIS -> Camera -> Cameras -> Check a camera)').Trim()
+        if (-not $addr.StartsWith('rtsp://')) { Write-Host 'The address starts with rtsp:// - nothing changed.'; exit 1 }
+        $user = (Ask 'The camera''s user name (often admin)').Trim()
+        $pass = AskSecret 'The camera''s password (some cameras print it on their label)'
+        $id = (Ask 'The camera''s id in JARVIS -> Camera -> Cameras (for example desk_camera)').Trim()
+        $env:HOME_CAMERA_URL = 'rtsp://' + [Uri]::EscapeDataString($user) + ':' + [Uri]::EscapeDataString($pass) + '@' + $addr.Substring(7)
+        $env:HOME_CAMERA_ID = $id
+    }
+    $savedWslEnv = $env:WSLENV
+    $env:WSLENV = 'HOME_CAMERA_URL:HOME_CAMERA_ID'
+    try { InWsl 'bash ~/jarvis-home/setup-wsl.sh home-camera' }
+    finally { $env:WSLENV = $savedWslEnv; Remove-Item Env:HOME_CAMERA_URL, Env:HOME_CAMERA_ID -ErrorAction SilentlyContinue }
     exit 0
 }
 

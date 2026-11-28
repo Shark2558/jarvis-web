@@ -12,7 +12,19 @@
 // stops by itself when the page is hidden (another app, the screen locks, the tab is left), and when nothing has used a
 // frame for 10 minutes. "Jarvis, cameras off" (R5's local router, so it works with the AI off) locks THIS device's
 // camera and says so; it never touches the home burglar camera (disarming stays a card with his passkey, R3 D8), and no
-// voice command can switch a camera on. Nothing here talks to the server. ASCII source; textContent only.
+// voice command can switch a camera on. ASCII source; textContent only.
+// R8 (docs/plans/r8-vision.md 4.5, D11, ADR-54; builder B): the off switches he sets in Camera, Cameras
+// (GET /v1/camera/spots: every camera, this device's own camera by its id, its room) are read when a look starts and
+// every RECHECK_MS while it runs, and at once by recheck(view) after a change on this device: a switch that reads off
+// stops the look and refuses a start in plain words (code 'switched_off'); the device's own lock above stays as it was.
+//   spot() / useSpot(id)  this device's camera id in Camera, Cameras ('' when it has none)
+//   recheck(view?)        the switches now (the view a change just answered, or a fresh read) -> Promise<words | ''>
+//   allOff(by)            "cameras off": locks THIS device at once, then POST /v1/camera/off (every other device stops
+//                         within RECHECK_MS); -> Promise<{server, armed}>. The burglar alarm is never changed.
+//   blocked()             the words of the switch that stops it now, or ''
+// While a look runs on a registered camera, its health (frames used a second, a frame's grab in ms; never a picture)
+// goes to POST /v1/camera/health after FIRST_HEALTH_MS and every HEALTH_MS (Vitals: last seen, frame rate). Nothing is
+// asked of the server before sign-in.
 const M = window.JarvisMobile;
 const KEY = 'jarvis_cam_off_v1';
 const IDLE_MS = 10 * 60 * 1000;
@@ -30,13 +42,28 @@ const err = (code, text) => { const e = new Error(text); e.code = code; return e
 const OFF_TEXT = 'The camera is switched off on this device. Tap Allow in Camera, Cameras, to switch it on.';
 const TAP_TEXT = 'The camera starts only from a tap.';
 const NONE_TEXT = 'This browser has no camera JARVIS can use.';
+const SPOT_KEY = 'jarvis_cam_spot_v1';
+const SPOT_ID = /^[a-z0-9_]{1,24}$/;
+const RECHECK_MS = 60 * 1000; // jarvis.camera.spots.RECHECK_S
+const READ_MS = 2500; // a switch read waits this long; then the last one read counts
+const FIRST_HEALTH_MS = 15 * 1000;
+const HEALTH_MS = 5 * 60 * 1000;
+const ALL_OFF_TEXT = 'Every camera is switched off. Tap Allow in Camera, Cameras, to switch them on.';
+const SPOT_OFF_TEXT = 'This camera is switched off in Camera, Cameras. Tap Allow there to switch it on.';
+// CAMERAS_OFF_REPLY (src/jarvis/voice/commands.py); tests/test_r8_b_spots.py keeps them equal. {h}: the honorific
+const OFF_SAY = Object.freeze(/*CAMERAS-OFF-SAY-BEGIN*/{
+  local: 'The camera on this device is off, {h}.',
+  all: 'Every camera is off, {h}: this device now, your other devices within a minute.',
+  armed: 'The burglar alarm is still armed and its camera keeps watching; Disarm is in Home.',
+}/*CAMERAS-OFF-SAY-END*/);
 
 function readLock() { try { return localStorage.getItem(KEY) === '1'; } catch (_) { return false; } }
 function writeLock(on) {
   try { if (on) localStorage.setItem(KEY, '1'); else localStorage.removeItem(KEY); } catch (_) { /* read back below */ }
   return readLock() === on;
 }
-const S = { locked: readLock(), streams: new Set(), facing: 'environment', used: 0, idle: 0, wake: null, waking: false, gen: 0, tapAt: 0 };
+const S = { locked: readLock(), streams: new Set(), facing: 'environment', used: 0, idle: 0, wake: null, waking: false, gen: 0, tapAt: 0,
+  blocked: '', recheck: 0, health: 0, frames: 0, grabMs: 0, since: 0 };
 const subs = new Set();
 const video = document.createElement('video');
 video.muted = true;
@@ -106,6 +133,10 @@ function stop(why) {
   canvas.height = 0;
   clearInterval(S.idle);
   S.idle = 0;
+  clearInterval(S.recheck);
+  clearTimeout(S.health);
+  S.recheck = 0;
+  S.health = 0;
   release();
   if (had) emit(why || 'stop');
 }
@@ -126,6 +157,62 @@ function unlock(by) {
   return true;
 }
 
+// ---- R8: the off switches on the server, this device's camera id, its health ------------------------------------------
+function spot() { try { const v = localStorage.getItem(SPOT_KEY) || ''; return SPOT_ID.test(v) ? v : ''; } catch (_) { return ''; } }
+function useSpot(id) {
+  try { if (!id) localStorage.removeItem(SPOT_KEY); else if (SPOT_ID.test(id)) localStorage.setItem(SPOT_KEY, id); else return false; } catch (_) { return false; }
+  return spot() === (id || '');
+}
+const signedIn = () => !!(window.JarvisConsole && typeof window.JarvisConsole.ready === 'function' && window.JarvisConsole.ready());
+function api(path, opts) {
+  const c = window.JarvisConsole;
+  if (!c || typeof c.api !== 'function') return Promise.reject(new Error('offline'));
+  return Promise.race([c.api(path, opts), new Promise((_, no) => setTimeout(() => no(new Error('slow')), READ_MS))]);
+}
+/** The words that stop this device now ('' when it may look), or null when the answer says nothing either way. */
+function judge(v) {
+  if (!v || typeof v !== 'object') return null;
+  if (v.all_off === true) return ALL_OFF_TEXT;
+  const id = spot();
+  return id && v.allowed && typeof v.allowed === 'object' && v.allowed[id] === false ? SPOT_OFF_TEXT : '';
+}
+function applySwitches(v) {
+  const words = judge(v);
+  if (words === null) return S.blocked;
+  S.blocked = words;
+  if (words && live()) stop('switch');
+  return words;
+}
+async function readSwitches() {
+  if (!signedIn()) return S.blocked;
+  try { return applySwitches(await api('/v1/camera/spots')); } catch (_) { return S.blocked; }
+}
+function recheck(view) { return view && typeof view === 'object' ? Promise.resolve(applySwitches(view)) : readSwitches(); }
+function switched() { const e = err('switched_off', S.blocked || ALL_OFF_TEXT); e.status = 409; return e; }
+function postHealth() {
+  S.health = setTimeout(postHealth, HEALTH_MS);
+  const id = spot(), secs = (Date.now() - S.since) / 1000;
+  if (!id || !signedIn() || !live() || secs <= 0) return;
+  const fps = Math.min(120, Math.round((S.frames / secs) * 10) / 10), ms = S.frames ? Math.min(60000, Math.round(S.grabMs / S.frames)) : 0;
+  S.frames = 0; S.grabMs = 0; S.since = Date.now();
+  api('/v1/camera/health', { method: 'POST', body: { camera: id, fps, ms } }).catch(() => {});
+}
+function watchServer() {
+  clearInterval(S.recheck); clearTimeout(S.health);
+  S.recheck = setInterval(readSwitches, RECHECK_MS);
+  S.frames = 0; S.grabMs = 0; S.since = Date.now();
+  S.health = setTimeout(postHealth, FIRST_HEALTH_MS);
+}
+/** "Cameras off": this device locks at once (it works with the AI off); then every other camera, through the server. */
+async function allOff(by) {
+  lock(by === 'voice' ? 'voice' : 'panel');
+  if (!signedIn()) return { server: false, armed: null };
+  try {
+    const r = await api('/v1/camera/off', { method: 'POST', body: { by: by === 'voice' ? 'voice' : 'button' } });
+    return { server: !!(r && r.all_off === true), armed: r && typeof r.alarm_armed === 'boolean' ? r.alarm_armed : null };
+  } catch (_) { return { server: false, armed: null }; }
+}
+
 function touch() { S.used = Date.now(); }
 function watchIdle() {
   clearInterval(S.idle);
@@ -137,13 +224,17 @@ async function start(opts) {
   if (!activated()) throw err('needs_tap', TAP_TEXT);
   const md = navigator.mediaDevices;
   if (!md || typeof md.getUserMedia !== 'function') throw err('unsupported', NONE_TEXT);
+  if (S.blocked && (await readSwitches())) throw switched(); // a switch read off before: read again, never ask
   const facing = FACING.includes(opts && opts.facing) ? opts.facing : S.facing;
   S.facing = facing;
   stop('restart');
   const my = S.gen;
+  const reading = readSwitches(); // R8: the switches, read while the browser asks
   const stream = await md.getUserMedia({ audio: false, video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } } });
-  if (S.locked || my !== S.gen) { // switched off (or stopped) while the browser asked: nothing stays live
+  const off = await reading;
+  if (S.locked || my !== S.gen || off) { // switched off (or stopped) while the browser asked: nothing stays live
     stream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+    if (off && !S.locked) throw switched();
     throw err(S.locked ? 'camera_off' : 'stopped', S.locked ? OFF_TEXT : 'The camera was stopped.');
   }
   S.streams.add(stream);
@@ -151,6 +242,7 @@ async function start(opts) {
   video.srcObject = stream;
   touch();
   watchIdle();
+  watchServer();
   keepAwake();
   emit('start'); // the chip shows from the moment a track exists, before play() answers
   try { await video.play(); } catch (_) { /* a muted inline video plays; the frames still arrive */ }
@@ -167,7 +259,10 @@ function frame() {
   if (canvas.height !== h) canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
+  const t0 = Date.now();
   ctx.drawImage(video, 0, 0, w, h);
+  S.frames += 1;
+  S.grabMs += Date.now() - t0;
   touch();
   return canvas;
 }
@@ -208,6 +303,7 @@ window.addEventListener('storage', (e) => {
 function honorific() {
   try { return (window.JarvisChat && window.JarvisChat.honorific && window.JarvisChat.honorific()) || 'Sir'; } catch (_) { return 'Sir'; }
 }
+function openHome() { try { if (window.JarvisDeck && typeof window.JarvisDeck.open === 'function') window.JarvisDeck.open('home'); } catch (_) {} }
 let registered = false;
 function registerVoice() {
   const C = window.JarvisVoiceCommands;
@@ -216,7 +312,12 @@ function registerVoice() {
   try {
     C.register('camera.off', {
       match: (norm) => (said.has(norm) ? {} : null),
-      run: () => { lock('voice'); return { say: 'The camera on this device is off, ' + honorific() + '.' }; },
+      run: async () => { // this device locks first (allOff), whatever the server then says
+        const r = await allOff('voice');
+        let say = (r.server ? OFF_SAY.all : OFF_SAY.local).replace('{h}', honorific());
+        if (r.server && r.armed === true) { say += ' ' + OFF_SAY.armed; openHome(); }
+        return { say };
+      },
     });
     registered = true;
   } catch (_) { registered = true; /* already registered by another copy of this page's module */ }
@@ -232,6 +333,7 @@ const api = Object.freeze({
   locked: () => S.locked, live, lock, unlock, start, stop: (why) => stop(why || 'panel'), frame, photo, onChange,
   facing: () => S.facing, useFacing: (f) => { if (FACING.includes(f)) S.facing = f; return S.facing; },
   phrases: () => OFF_PHRASES,
+  spot, useSpot, recheck, allOff, blocked: () => S.blocked,
 });
 window.JarvisCamera = api;
 if (M) M.part('camera', api);

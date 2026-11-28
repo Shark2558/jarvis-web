@@ -37,9 +37,9 @@ def _load(path: Path, name: str) -> ModuleType:
 # ---- 1 · the version and the release ------------------------------------------------------------
 def test_the_version_is_six_point_three() -> None:
     # R5.2 (18.0.0 at R18, 6.4.0 at R6.4, 6.3.2 at R6.3.1); the persona is unchanged
-    assert jarvis.__version__ == "8.0.0"  # R8 (5.2.0 at R5.2)
+    assert jarvis.__version__ == "8.1.0"  # R8.1 (8.0.0 at R8)
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R8"  # R5.2 at R5.2
+    assert plans.release_label(repo) == "R8.1"  # R8 at R8, R5.2 at R5.2
     assert plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"
 
 

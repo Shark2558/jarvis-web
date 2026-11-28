@@ -706,10 +706,10 @@ def test_the_version_is_eight_and_the_book_names_r8() -> None:
     from jarvis.buildbook.gen import plans
     from jarvis.buildbook.gen.repo import Repo
 
-    assert jarvis.__version__ == "8.0.0"  # the exact number: test_about.py
+    assert jarvis.__version__ == "8.1.0"  # R8.1 I1 (8.0.0 at R8); the exact number: test_about.py
     repo = Repo.from_git(ROOT)
     assert (
-        plans.release_label(repo) == "R8" and plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"
+        plans.release_label(repo) == "R8.1" and plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"
     )
 
 

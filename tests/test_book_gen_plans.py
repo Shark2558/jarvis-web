@@ -93,6 +93,29 @@ def test_the_release_label_is_the_highest_release_plan(repo: Repo, tmp_path: Pat
     assert plans.release_label(again) == "R12"
 
 
+def test_a_follow_up_release_with_no_plan_of_its_own_is_told_by_its_parents(
+    tmp_path: Path,
+) -> None:
+    # R8.1 I1: one plan, two pull requests (r8-vision.md covers R8 and R8.1): at 8.1.0 the parent's
+    # plan is this release's own, ahead of a newer number (R18); a release with its own plan keeps it
+    d = tmp_path / "docs" / "plans"
+    d.mkdir(parents=True)
+    (d / "r8-vision.md").write_text("# R8 and R8.1 -- Vision: the plan\n", encoding="utf-8")
+    (d / "r18-calls.md").write_text("# R18 -- Calls: the plan\n", encoding="utf-8")
+    init = tmp_path / "src" / "jarvis" / "__init__.py"
+    init.parent.mkdir(parents=True)
+    init.write_text('__version__ = "8.1.0"\n', encoding="utf-8")
+    r = Repo.from_dir(tmp_path, sha="c" * 40, committed_at=COMMIT_DATE)
+    assert plans.release_label(r) == "R8.1" and plans.own_label(r) == "R8"
+    assert plans.plan_paths(r) == ("docs/plans/r8-vision.md", "docs/plans/r18-calls.md")
+    (d / "r8-1-coach.md").write_text("# R8.1 -- its own plan\n", encoding="utf-8")
+    again = Repo.from_dir(tmp_path, sha="c" * 40, committed_at=COMMIT_DATE)
+    assert plans.own_label(again) == "R8.1" and plans.plan_paths(again)[0] == "docs/plans/r8-1-coach.md"
+    init.write_text('__version__ = "18.0.0"\n', encoding="utf-8")
+    r18 = Repo.from_dir(tmp_path, sha="c" * 40, committed_at=COMMIT_DATE)
+    assert plans.own_label(r18) == "R18" and plans.plan_paths(r18)[0] == "docs/plans/r18-calls.md"
+
+
 def test_labels_of_plan_files() -> None:
     assert plans.label_of("docs/plans/r6-build-book.md") == "R6"
     assert plans.label_of("docs/plans/r5-1-observations.md") == "R5.1"
@@ -207,8 +230,8 @@ def test_planted_personal_data_is_scrubbed_and_leaks_without_the_scrub(tmp_path:
 def test_the_real_plans_parse(tmp_path: Path) -> None:
     r = Repo.from_git(ROOT)
     read = plans.read_plans(r, default_scrubber())
-    # R7 I0 seam 2: the release is named from the repository's own version (R8: 8.0.0 -> R8;
-    # 5.2.0 -> R5.2 at R5.2, 18.0.0 -> R18 at R18) and its plan comes first, then the rest
+    # R7 I0 seam 2: the release is named from the repository's own version (R8.1: 8.1.0 -> R8.1,
+    # told by R8's plan, own_label; 8.0.0 -> R8, 18.0.0 -> R18 at R18) and its plan comes first, then the rest
     # newest first (by number: R18 first); R6's own decisions are still read
     assert read[0].path == "docs/plans/r8-vision.md" and read[0].label == "R8"
     assert [p.path for p in read[1:3]] == [
@@ -223,4 +246,4 @@ def test_the_real_plans_parse(tmp_path: Path) -> None:
     assert len(r6.decisions) == 17 and r6.decisions[0].startswith("D1 · Deterministic")
     assert any(f.release == "R6" for f in plans.fit_rows(read))
     lims = plans.limitations(read)
-    assert lims[0].release == "R8" and 0 < len(lims) <= MAX_LIMITATIONS  # this release's first
+    assert lims[0].release == "R8" and 0 < len(lims) <= MAX_LIMITATIONS  # this release's plan first

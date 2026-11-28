@@ -96,12 +96,12 @@ async def running(s: Settings) -> AsyncIterator[tuple[FastAPI, AsyncClient]]:
 # ---- 1 · the version and the book's release name -------------------------------------------------
 def test_the_version_is_fourteen() -> None:
     # R5.2 (18.0.0 at R18, 6.4.0 at R6.4, 14.0.2 at hotfix 2); nothing compares
-    assert jarvis.__version__ == "8.0.0"  # R8 (5.2.0 at R5.2)
+    assert jarvis.__version__ == "8.1.0"  # R8.1 (8.0.0 at R8)
 
 
 def test_the_real_repository_is_r14_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)  # R6.4: the release is now R6.4 (tests/test_r63_seams.py)
-    assert plans.release_label(repo) == "R8"  # R5.2 at R5.2, R18 at R18, R14 to hotfix 2
+    assert plans.release_label(repo) == "R8.1"  # R8 at R8, R18 at R18, R14 to hotfix 2
     assert plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"  # R5.2: r5-2-voice.md
     assert "docs/plans/r14-hardening.md" in plans.plan_paths(repo)
 

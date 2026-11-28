@@ -3,6 +3,8 @@
 
 - `release_label`: from the repository's own version (`src/jarvis/__init__.py`: "7.0.0" -> "R7",
   "11.1.0" -> "R11.1"; R7 I0 seam 2), else from the highest `r<N>[-<M>]-*.md` plan; "R0" with none.
+- `own_label`: the label of the plans this release calls its own: its own, or (R8.1 I1) its
+  parent's when no plan carries it ("R8.1" -> "R8": one plan, two pull requests).
 - `read_plans`: every plan, this release's first, then newest first (release plans by number,
   then phase slices by slice): the decisions and the limitations follow that order.
 - `decisions`: each plan's title and its D-headings, once each, in any of the three styles the
@@ -86,9 +88,21 @@ def release_label(repo: Repo) -> str:
     return label_of(labelled[0]) if labelled else "R0"
 
 
+def _own(ordered: tuple[str, ...], label: str) -> str:
+    if "." not in label or any(label_of(p) == label for p in ordered):
+        return label
+    return label.split(".", 1)[0]  # R8.1 with no plan of its own: R8's plan covers it
+
+
+def own_label(repo: Repo) -> str:
+    """The label of this release's own plans (`release_label`, else its parent's: R8.1 -> R8)."""
+    return _own(_by_number(repo), release_label(repo))
+
+
 def plan_paths(repo: Repo) -> tuple[str, ...]:
-    """Every plan: this release's own first, then the rest newest first."""
-    ordered, label = _by_number(repo), release_label(repo)
+    """Every plan: this release's own first (`own_label`), then the rest newest first."""
+    ordered = _by_number(repo)
+    label = _own(ordered, release_label(repo))
     return (
         *(p for p in ordered if label_of(p) == label),
         *(p for p in ordered if label_of(p) != label),
@@ -273,6 +287,7 @@ __all__ = [
     "fit_rows",
     "label_of",
     "limitations",
+    "own_label",
     "plain_md",
     "plan_paths",
     "read_plans",

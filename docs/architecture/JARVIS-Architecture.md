@@ -1,4 +1,4 @@
-Version v8.0.0 · 28 Nov 2026, 05:40 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
+Version v8.1.0 · 28 Nov 2026, 09:47 IST · Release R8.1 · Status: Current · Owner: 🛠 Mark XXVI
 
 # JARVIS Architecture & Technology Guide
 
@@ -2532,3 +2532,4 @@ Playwright, ruff, mypy and the like) are described in the technology table, sect
 | v5.2.1 | 27 Nov 2026, 18:20 IST | R5.2 | R5.2's Book refresh (after its I1 join and R18's Book work): cards C79 Laptop speech kit, C80 The kit's link and engine routing, C81 Your voice: profile and voice session, C82 Your own wake word and C83 Speaker check, with the 5 new console modules (`console-voice-session.js`, `console-wakeword-own.js`, `console-voiceprint.js`, `console-voiceprint-math.js`, `console-voiceprint-panel.js`), `config_voice.py`, the `localspeech` package and the collections `voice_profile` and `voice_session`; C05, C06, C76, C77 updated; Tailscale for the kit's settings (`arch_coverage.json`); the layers table, 2.1, 5.1, 5.2, 6.2, 6.5, 9, 10, the glossary; the roadmap's "R5.2 Voice" row removed; this edition line | 🛠 Mark XXV |
 | v5.2.2 | 27 Nov 2026, 22:20 IST | R5.2 | R5.2 combined review: C17 and C79 name Funnel's ports, one door each (the home bridge 8443, the offline brain 443, the kit 10000; the brain's scripts had taken 8443); C79's self-test times listening alone without a voice, and its blob-id pins hold only at the commit's raw-file address | 🛠 Mark XXV |
 | v8.0.0 | 28 Nov 2026, 05:40 IST | R8 | R8 I0: the version line moves to R8 (the repository is 8.0.0); nothing else changes here: R8's cards (C84 onwards) and pages come at R8's Book step | 🛠 Mark XXVI |
+| v8.1.0 | 28 Nov 2026, 09:47 IST | R8.1 | R8.1 I1: the version line moves to R8.1 (the repository is 8.1.0); nothing else changes here: R8.1's card (C90) and the workout pages come at R8.1's Book step | 🛠 Mark XXVI |

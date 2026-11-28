@@ -33,12 +33,12 @@ def _lines(path: Path) -> int:
 
 # ---- 1 · the version and the book's release name -----------------------------------------------
 def test_the_version_is_thirteen_point_one() -> None:
-    assert jarvis.__version__ == "8.0.0"  # R8 (5.2.0 at R5.2, 13.1.0 at R13.1); persona p13.0
+    assert jarvis.__version__ == "8.1.0"  # R8.1 (8.0.0 at R8, 13.1.0 at R13.1); persona p13.0
 
 
 def test_the_real_repository_is_r13_1_and_its_plan_comes_first() -> None:
     repo = Repo.from_git(ROOT)
-    assert plans.release_label(repo) == "R8"  # R5.2, R18 at R18, R6.4 (R6.3 at R6.3 I0)
+    assert plans.release_label(repo) == "R8.1"  # R8 at R8, R18 at R18 (R6.3 at R6.3 I0)
     assert plans.plan_paths(repo)[0] == "docs/plans/r8-vision.md"
     assert "docs/plans/r13-wardrobe.md" in plans.plan_paths(repo)
 

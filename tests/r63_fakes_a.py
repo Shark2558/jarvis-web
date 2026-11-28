@@ -214,9 +214,9 @@ INVENTORY_FILES: dict[str, str] = {
 
 # the plan's "The tour's facts" table, on this branch (the release's own values)
 TOUR = {
-    "release.label": "R8",  # R8 (R5.2 at R5.2, R18 at R18, R6.4 at R6.4)
-    "release.version": "v8.0.0",  # R8 (v5.2.0 at R5.2, v18.0.0 at R18, v6.4.0 at R6.4)
-    # R8: its own plan (by version); R5.2's was "Your voice: the plan"
+    "release.label": "R8.1",  # R8.1 (R8 at R8, R5.2 at R5.2, R18 at R18)
+    "release.version": "v8.1.0",  # R8.1 (v8.0.0 at R8, v5.2.0 at R5.2, v18.0.0 at R18)
+    # R8 and R8.1: their one plan (R8.1 has none of its own: own_label); R5.2's was "Your voice: the plan"
     "release.new": "Vision core, your desk camera and your workout spot: the plan",
     "cards.count": 83,  # R18: C74-C78; R5.2: C79-C83 (in Voice)
     "modules.count": 19,  # R18: Phone calls

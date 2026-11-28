@@ -100,7 +100,7 @@ def release_values(repo: Repo, scrub: Scrubber) -> dict[str, FactValue]:
     exact = _plan_with_version(repo, version) if version else None
     own = (exact,) if exact else plans.plan_paths(repo)[:1]
     title = _plan_title(repo.text(own[0]) or "") if own else ""
-    if own and title and (exact or plans.label_of(own[0]) == out["release.label"].value):
+    if own and title and (exact or plans.label_of(own[0]) == plans.own_label(repo)):
         out["release.new"] = _v(scrub.clean(title), own[0])
     return out
 

@@ -1,4 +1,4 @@
-Version v8.0.1 · 28 Nov 2026, 05:55 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
+Version v8.0.2 · 28 Nov 2026, 06:05 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
 
 # R8 and R8.1 — the I0 seams (code against these)
 
@@ -66,11 +66,12 @@ Built on `r8-i0` (from `r8-plan` @ `a17a00b`) from the plan's section 7.1, `docs
 ## Left for I1 and the Book
 
 - **I1 join:** wire `wire_r8` into the app's startup (docs, keyring, clock) and register `r8_privacy_sources` where the privacy dashboard's sources are listed and `r8_tools` with the gateway; B's `CameraHealth` and C's `ScreenTime` into `OwnSources` (Vitals); C's posture nudge on the helpers' gate; J's `CoachReport` handler on the home webhook and the coach part of the state push; the daily sweep (`coach_keep_days`); the voice router's tracking phrases (`phrase_target`) beside "cameras off"; the Faces lookup (`PeopleLookup`) for "track <name>"; the passkey path for `DELETE /v1/coach/people/{who}`; `api/vision.py` passing `served8`.
-- **The Book:** `tests/test_arch_coverage.py::test_the_real_guide_passes` fails until R8's cards (C84 onwards) name `src/jarvis/coach` and the new console modules (the Book writers' step, plan 7.3); the guide's version line moved to R8 at I0 only.
+- **The Book:** `tests/test_arch_coverage.py::test_the_real_guide_passes` fails until R8's cards (C84 onwards) name `src/jarvis/coach` and the new console modules (the Book writers' step, plan 7.3); the guide's version line moved to R8 at I0 only. Layers: `coach` L5, `config_coach` X (`buildbook/gen/layers.py`); `python -m jarvis.buildbook.gen --check` passes on this branch (R8, two builds byte-identical).
 - **Open items for the review** (ROWS.md): the workbook's row 184 check ("A family member in frame leaves no record") conflicts with D6's "save everyone's results"; row 217's "every camera light off" can't hold for the home camera while the alarm is armed (D11).
 
 ## Change log
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v8.0.2 | 28 Nov 2026, 06:05 IST | R8 | The book's layers for `coach` and `config_coach`; the generator's check passes; the facts index counts R8's two settings | 🛠 Mark XXVI |
 | v8.0.1 | 28 Nov 2026, 05:55 IST | R8 | First edition: seams S1–S28 with their files, contracts and builders; the owner's answers of 28 Nov (D3, D4, D6, D7, D13) as built; the differences from the plan; what is left for I1 and the Book | 🛠 Mark XXVI |

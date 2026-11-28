@@ -145,6 +145,13 @@ SUITES = [
     # posture, the day strip and screen time (C), the desk coaches (D), the home laptop's loop (J),
     # all on synthetic data; each part's negative control must fail it
     ("r8 (gated)", [sys.executable, str(HERE / "r8" / "run.py"), "--mock"], True),
+    # R8.1 I1: "Fitness coach at your workout spot" -- strength and form (E), flow and balance (F),
+    # the dynamic coaches (G), partner, walk, sit-to-stand and meal (H), each on synthetic sessions
+    # through the real modules; each suite's negative controls must fail it
+    ("r8_1 strength (gated)", [sys.executable, str(HERE / "r8_1" / "strength.py")], True),
+    ("r8_1 flow (gated)", [sys.executable, str(HERE / "r8_1" / "flow.py")], True),
+    ("r8_1 dynamic (gated)", [sys.executable, str(HERE / "r8_1" / "dynamic.py")], True),
+    ("r8_1 care (gated)", [sys.executable, str(HERE / "r8_1" / "care.py")], True),
 ]
 
 

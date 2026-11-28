@@ -2,8 +2,8 @@
 // exit, with a wall or a spotter only; docs/plans/r8-vision.md v8.0.4 sections 2.2 and 6.7). Use case `handstand`:
 // `pose` at up to 10 a second, one body's state at a time (D6). The phone sees him side-on.
 // SAFETY FIRST: it times nothing until he has confirmed "a wall behind me" or "a spotter with me" on the Workout pane;
-// that confirmation reaches this use case only as its first state, {setup: {support: 'wall'|'spotter', limit}} (the S2
-// contract line R8.1 asks for). Without it, it only asks for the confirmation, and if he is upside down anyway it tells
+// that confirmation reaches this use case only on its Results, r.setup = {support: 'wall'|'spotter', limit} (S2's
+// contract line from R8's join: live(..., {setup})). Without it, it only asks for the confirmation, and if he is upside down anyway it tells
 // him to come down; no hold is timed or kept. A spotter in view is another body with its own state, which never holds.
 // Upside down: the hips above the shoulders by half the torso's length, the feet above the hips, the hands below the
 // shoulders. A hold starts at the first upside-down frame and ends at the last one before half a second the right way
@@ -40,8 +40,8 @@ const seen = (p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && !(p.v
 const pointsOf = (r) => (r && r.ok && r.task === 'pose' && r.data && Array.isArray(r.data.points) && r.data.points.length === 33 ? r.data.points : null);
 const mid = (a, b) => (seen(a) && seen(b) ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : (seen(a) ? a : (seen(b) ? b : null)));
 const secs = (v) => Math.round(v * 10) / 10;
-function setupOf(state) { // the support he confirmed, else null: nothing is timed without it
-  const su = state && state.setup && typeof state.setup === 'object' ? state.setup : null;
+function setupOf(r) { // the support he confirmed (r.setup), else null: nothing is timed without it
+  const su = r && r.setup && typeof r.setup === 'object' ? r.setup : null;
   if (!su || !SUPPORTS.includes(su.support)) return null;
   const limit = Number.isFinite(su.limit) ? Math.min(LIMIT_MAX, Math.max(LIMIT_MIN, su.limit)) : LIMIT;
   return { support: su.support, limit };
@@ -84,7 +84,7 @@ function onResult(r, state) {
   const p = pointsOf(r);
   if (!p) return state;
   const t = clock(r), at = Number.isInteger(r.at) ? r.at : 0;
-  let s = state && state.support !== undefined ? state : begin(t, at, setupOf(state));
+  let s = state && state.support !== undefined ? state : begin(t, at, setupOf(r));
   s = Object.assign({}, s, { t, at: Math.max(s.at, at), seenAt: wall() });
   const u = upside(p);
   if (!s.support) return Object.assign({}, s, { blocked: !!(u && u.up) }); // no wall, no spotter: never a hold

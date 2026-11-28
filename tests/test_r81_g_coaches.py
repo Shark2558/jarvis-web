@@ -4,9 +4,10 @@
 # (console-coach-<x>.js) run in Node on the scripted sessions of
 # tests/fixtures/r8/dynamic_sequences.mjs, behind a stand-in for JarvisVision.use; the truth is
 # computed there from the continuous script, never read from a module.
-# A session's setup (the wall or spotter he confirms, the marks he taps) reaches a use case as its
-# first state {setup} -- the S2 contract line R8.1 asks for at its join. Without it, the handstand
-# coach times nothing and the agility timer asks for its marks: the safe default.
+# A session's setup (the wall or spotter he confirms, the marks he taps, his stance) rides on every
+# Result as `setup` -- S2's contract line from R8's join (live(..., {setup}) -> r.setup; the R8.1
+# join moved this part from a first state {setup} to it). Without it, the handstand coach times
+# nothing and the agility timer asks for its marks: the safe default.
 # Every tally must fit its jarvis.coach.usecases model (a tally that doesn't is dropped), every
 # view holds only the fixed widget kinds, and no view says anything medical.
 from __future__ import annotations

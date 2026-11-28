@@ -6,7 +6,7 @@
 // track; a lone body on the phone is "me", two or more are ""; hands reach every body's state), and returns what a
 // test checks: the module's tally, view and states, and the scenario's own truth (computed here from the script, never
 // read from the module). Times are seconds; `t` rides on each Result (the engine's clock stand-in) and `setup` is what
-// the Workout pane passes (a contract line for I1: live(..., {setup}) puts each use case's setup on its Results).
+// the Workout pane passes (S2's contract line from R8's join: live(..., {setup}) puts it on every Result as r.setup).
 //   partnerSession(o)  row 240: the owner lying side-on, stretched by a partner kneeling beside him
 //   partnerDriver(o)   row 240 through the REAL port core (console-vision.js in a vm, a fake camera, a fake pose task)
 //   walkSession(o)     row 263: lengths of a course seen side-on or end-on, with turns, for six minutes
@@ -179,8 +179,8 @@ export async function partnerSession(o) {
 
 /** The same session through the REAL port core: console-vision.js runs in a vm with a fake camera and a fake `pose`
  *  task that reports the scripted bodies; the use case registers with the real JarvisVision.use (a pass-through records
- *  every state it returns, and adds `setup` to its Results as I1's contract line will); a virtual clock drives the
- *  driver's own timers. -> the engine's tracks and its tally() for each track, and the partner's recorded states. */
+ *  every state it returns); the consent goes in through live(..., {setup}) as the Workout pane passes it (the R8.1
+ *  join: the real driver puts it on every Result); a virtual clock drives the driver's own timers. -> the engine's tracks and its tally() for each track, and the partner's recorded states. */
 export async function partnerDriver(o) {
   const opt = Object.assign({ seed: 3, noise: 0.002, lead: 2, partnerAt: 1.2, partner: 'wild', consent: true, rate: 10,
     stretches: [{ peak: 65, hold: 8 }] }, o || {});
@@ -214,13 +214,14 @@ export async function partnerDriver(o) {
   Object.defineProperty(globalThis, 'performance', { value: clock, configurable: true, writable: true });
   globalThis.JarvisVision = Object.freeze({ use: (u) => V.use({ id: u.id, tasks: u.tasks, summary: u.summary,
     onResult: (r, s) => {
-      const next = u.onResult(setup ? Object.freeze(Object.assign({}, r, { setup })) : r, s);
+      const next = u.onResult(r, s);
       recorded.push({ track: r.track, who: r.who, state: JSON.stringify(next === undefined ? null : next) });
       return next;
     } }) });
   await import(new URL(`console-coach-partner.js?driver=${opt.seed}`, opt.base ? new URL(`file://${opt.base.replace(/\/?$/, '/')}`) : STATIC).href);
   const errors = [];
-  const h = V.live(['pose'], { uses: ['partner-stretch'], rate: opt.rate, target: { kind: 'all' }, onError: (e) => errors.push(String(e && e.message)) });
+  const h = V.live(['pose'], { uses: ['partner-stretch'], rate: opt.rate, target: { kind: 'all' }, setup: setup || undefined,
+    onError: (e) => errors.push(String(e && e.message)) });
   while (now < (end + 1) * 1000) {
     await new Promise((r) => setImmediate(r));
     timers.sort((a, b) => a.at - b.at);

@@ -47,7 +47,7 @@ function elbow3(sh, el, wr) { // the elbow's angle in three dimensions, degrees
 }
 const torsoOf = (p) => (seen(p[11]) && seen(p[12]) && seen(p[23]) && seen(p[24])
   ? Math.hypot((p[11].x + p[12].x - p[23].x - p[24].x) / 2, (p[11].y + p[12].y - p[23].y - p[24].y) / 2) : NaN);
-const setupOf = (state) => (state && state.setup && typeof state.setup === 'object' ? state.setup : {});
+const setupOf = (r) => (r && r.setup && typeof r.setup === 'object' ? r.setup : {}); // the pane's stance, on each Result
 
 function begin(t, at, setup) {
   const arm = () => ({ guard: null, out: null, endAt: -1 });
@@ -90,7 +90,7 @@ function onResult(r, state) {
   const p = pointsOf(r);
   if (!p) return state;
   const t = clock(r), at = Number.isInteger(r.at) ? r.at : 0, tor = torsoOf(p);
-  let s = state && state.arms ? state : begin(t, at, setupOf(state));
+  let s = state && state.arms ? state : begin(t, at, setupOf(r));
   const gap = t - s.t, gaps = gap > 0 ? s.gaps.concat([gap]).slice(-GAPS_MAX) : s.gaps;
   const torso = Number.isFinite(tor) && tor > 0 ? ema(s.torso, tor, 0.1) : s.torso;
   s = Object.assign({}, s, { t, at: Math.max(s.at, at), gaps, torso });

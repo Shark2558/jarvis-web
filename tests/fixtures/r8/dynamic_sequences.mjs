@@ -6,13 +6,15 @@
 // engine's JarvisVision.use, feeds it one body's Results the way the engine's driver does (frozen plain data, a state
 // per body), and returns what a test checks: the module's tally and view, and the scenario's own truth (computed here
 // from the continuous script, never read from the module). Times are seconds; `t` rides on each Result.
-// A session's setup (the pane's taps and confirmations: the wall or spotter, the marks) reaches a use case as its
-// first state, {setup}: the S2 contract line this part asks for (docs/plans/r8-integration, the I1 join).
+// A session's setup (the pane's taps and confirmations: the wall or spotter, the marks, the stance) rides on every
+// Result as `setup`, the way the driver puts it: S2's contract line from R8's join (live(..., {setup}) -> r.setup).
 //   boxingSession(o)    row 228: jabs, crosses, hooks and uppercuts in combinations, front view
 //   agilityRun(o)       row 230: runs between the marks he tapped; the exact gate crossings
 //   jumpSession(o)      row 235: counter-movement jumps of set heights; soft, stiff and knees-in landings
 //   handstandSession(o) row 237: a kick-up, a hold, a drift past the limit, coming down; with or without support
 //   kettlebellSession(o) row 239: swings, each a hip hinge or a squat
+import { drive } from './driver.mjs';
+
 const STATIC = new URL('../../../src/jarvis/api/static/', import.meta.url);
 const BASE_AT = 1764300000; // 28 Nov 2026, unix seconds
 const LOADED = new Map();
@@ -38,13 +40,13 @@ function freeze(v) {
 }
 /** What a coach shows before any Result: its view, and no tally. */
 export async function emptySummary(file) { return plainOut((await useCase(file)).summary(undefined)); }
-/** One body's pose Result, as the driver hands it to a use case (pose v2 cut to one body). */
-export function res(points, t) {
-  return freeze({ task: 'pose', v: 2, at: BASE_AT + Math.floor(t), ms: 20, device: 'phone', ok: true,
-    data: { points }, quality: { light: 0.8, sharp: 0.8 }, track: 0, who: 'me', t });
+/** One body's pose Result, as the driver hands it to a use case (pose v2 cut to one body); the pane's setup, when
+ *  there is one, rides on it as `setup` (the driver's own rule: none for undefined or null). */
+export function res(points, t, setup) {
+  const r = { task: 'pose', v: 2, at: BASE_AT + Math.floor(t), ms: 20, device: 'phone', ok: true,
+    data: { points }, quality: { light: 0.8, sharp: 0.8 }, track: 0, who: 'me', t };
+  return freeze(setup === undefined || setup === null ? r : Object.assign(r, { setup }));
 }
-/** The first state the driver gives a use case: nothing, or the pane's setup (the proposed S2 contract line). */
-export const seed = (setup) => (setup ? freeze({ setup }) : undefined);
 export function rng(seed0) { let s = (seed0 >>> 0) || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 const lerp = (a, b, k) => a + (b - a) * k;
 const minJerk = (k) => { const c = Math.min(1, Math.max(0, k)); return c * c * c * (10 - 15 * c + 6 * c * c); };
@@ -183,7 +185,7 @@ export async function boxingSession(o) {
     }
     return g;
   };
-  let state = seed(opt.setup);
+  let state;
   const seenOut = [], combosSeen = [];
   const n = Math.round((t + 0.5) * opt.fps);
   for (let i = 0; i <= n; i += 1) {
@@ -193,7 +195,7 @@ export async function boxingSession(o) {
     const l = armAt(1, tt), rr = armAt(-1, tt);
     const b = Object.assign({}, b0, { lwr: add(b0.lsh, l.wr), lel: add(b0.lsh, l.el), rwr: add(b0.rsh, rr.wr), rel: add(b0.rsh, rr.el) });
     const was = state && state.punches !== undefined ? state.punches : 0;
-    state = uc.onResult(res(draw(b, { noise: opt.noise, zNoise: opt.zNoise, r }), tt), state);
+    state = uc.onResult(res(draw(b, { noise: opt.noise, zNoise: opt.zNoise, r }), tt, opt.setup), state);
     if (state.punches > was) {
       const typeNow = ['jabs', 'crosses', 'hooks', 'uppercuts'].find((k, idx) => state[k] > ((seenOut.counts || [0, 0, 0, 0])[idx]));
       seenOut.push({ at: tt, type: { jabs: 'jab', crosses: 'cross', hooks: 'hook', uppercuts: 'uppercut' }[typeNow] });
@@ -277,7 +279,7 @@ export async function agilityRun(o) {
     }
   }
   const given = 'setupOverride' in opt ? opt.setupOverride : (opt.noSetup ? null : { marks, radius: rad });
-  let state = seed(given);
+  let state;
   const measured = [];
   const n = Math.round(t * opt.fps);
   for (let i = 0; i <= n; i += 1) {
@@ -285,7 +287,7 @@ export async function agilityRun(o) {
     const tt = opt.phase + i / opt.fps, q = pathAt(tt);
     const stride = q.moving ? 0.12 * Math.sin(tt * 2 * Math.PI * 2.5) : 0;
     const was = state && state.runs !== undefined ? state.runs : 0;
-    state = uc.onResult(res(bodyAt(q.x, q.y, stride, r, opt.noise), tt), state);
+    state = uc.onResult(res(bodyAt(q.x, q.y, stride, r, opt.noise), tt, given), state);
     if (state.runs > was) measured.push(state.legs);
   }
   const out = uc.summary(state);
@@ -336,7 +338,7 @@ export async function handstandSession(o) {
     const u = tt - plan.at(i).up - d.at;
     return u < 0 ? 0 : d.amount * Math.min(1, u) * (u > 2.5 ? Math.max(0, 1 - (u - 2.5)) : 1);
   };
-  let state = seed(opt.setup), overAt = null, mid = null;
+  let state, overAt = null, mid = null;
   const n = Math.round((t + 0.5) * opt.fps);
   for (let i = 0; i <= n; i += 1) {
     const tt = opt.phase + i / opt.fps;
@@ -348,7 +350,7 @@ export async function handstandSession(o) {
       const inv = handstandBody(0.4, driftAt(k, tt), sw);
       b = tt < j.up ? blendBody(stand, inv, (tt - j.kick) / opt.kick) : tt < j.down ? inv : blendBody(inv, stand, (tt - j.down) / opt.kick);
     }
-    state = uc.onResult(res(draw(b, { noise: opt.noise, r, vis: opt.vis }), tt), state);
+    state = uc.onResult(res(draw(b, { noise: opt.noise, r, vis: opt.vis }), tt, opt.setup), state);
     if (overAt === null && state.over) overAt = tt;
     if (opt.viewAt && !mid && tt >= opt.viewAt) mid = uc.summary(state).view;
   }
@@ -358,6 +360,20 @@ export async function handstandSession(o) {
   const passAt = opt.drift ? plan.at(opt.drift.hold).up + opt.drift.at + Math.min(1, lim * 0.5 / opt.drift.amount) : null;
   return plainOut({ tally: out.tally, view: out.view, mid, holds: state.holds, best: state.best, last: state.last,
     drifts: state.drifts, overAt, passAt, truth: plan.map((j) => j.down - j.up) });
+}
+
+/** Row 237 through the REAL port core (driver.mjs, the R8.1 join): one hold, the wall or spotter given (or not) only
+ *  through live(..., {setup}), as the Workout pane passes it. -> drive()'s answer. */
+export async function handstandDriver(o) {
+  const opt = Object.assign({ hold: 12, seed: 4, noise: 0.003, setup: null }, o || {});
+  const r = rng(opt.seed), stand = sideBody({ ax: 0.1, arm: 5 }), kick = 0.5, up = 1.5 + kick, down = up + opt.hold;
+  const scene = (tt) => {
+    const inv = handstandBody(0.4, 0, 0.015 * Math.sin(tt * 2.1));
+    const b = tt < 1.5 ? stand : tt < up ? blendBody(stand, inv, (tt - 1.5) / kick) : tt < down ? inv
+      : tt < down + kick ? blendBody(inv, stand, (tt - down) / kick) : stand;
+    return [{ track: 0, who: '', points: draw(b, { noise: opt.noise, r, vis: 0.8 }) }];
+  };
+  return drive({ file: 'console-coach-handstand.js', id: 'handstand', scene, seconds: down + kick + 2, setup: opt.setup, rate: 10 });
 }
 
 // ---- row 239: kettlebell swings -------------------------------------------------------------------------------------

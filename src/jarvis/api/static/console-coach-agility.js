@@ -1,8 +1,8 @@
 // src/jarvis/api/static/console-coach-agility.js -- R8.1 builder G, row 230 (HF-13, the agility drill and cone-crossing
 // timer; docs/plans/r8-vision.md v8.0.4 section 2.2). Use case `agility`: `pose` at up to 15 a second, one body's state
 // at a time (D6). The marks are the ones he taps on the picture at setup (2 to 12, in the order he will run them; tap a
-// mark again for a shuttle): they reach this use case only as its first state, {setup: {marks: [{x, y}], radius}} (the
-// S2 contract line R8.1 asks for); with no marks it times nothing and says so. Each mark is a gate: a circle of
+// mark again for a shuttle): they reach this use case only on its Results, r.setup = {marks: [{x, y}], radius} (S2's
+// contract line from R8's join: live(..., {setup})); with no marks it times nothing and says so. Each mark is a gate: a circle of
 // `radius` (0.05 of the frame unless set) round the spot. His foot point (the middle of his heels and toes) standing
 // in the first gate for half a second makes him ready; the clock starts the moment it leaves that gate and each split
 // ends the moment it enters the next mark's gate, both found between two frames (so the times don't depend on the frame
@@ -37,8 +37,8 @@ function footOf(p) { // the middle of his heels and toes, else of his ankles
   const feet = [p[29], p[30], p[31], p[32]].filter(seen), use = feet.length >= 2 ? feet : [p[27], p[28]].filter(seen);
   return use.length ? { x: use.reduce((n, q) => n + q.x, 0) / use.length, y: use.reduce((n, q) => n + q.y, 0) / use.length } : null;
 }
-function setupOf(state) { // the marks and the gate's radius he set, or null
-  const su = state && state.setup && typeof state.setup === 'object' ? state.setup : null;
+function setupOf(r) { // the marks and the gate's radius he set (r.setup), or null
+  const su = r && r.setup && typeof r.setup === 'object' ? r.setup : null;
   const raw = su && Array.isArray(su.marks) ? su.marks.slice(0, MARKS_MAX) : [];
   const marks = raw.filter((m) => !!m && unit(m.x) && unit(m.y)).map((m) => ({ x: m.x, y: m.y }));
   const radius = su && Number.isFinite(su.radius) ? Math.min(R_MAX, Math.max(R_MIN, su.radius)) : R_DEFAULT;
@@ -75,7 +75,7 @@ function onResult(r, state) {
   const f = footOf(p);
   if (!f) return state;
   const t = clock(r), at = Number.isInteger(r.at) ? r.at : 0;
-  let s = state && state.phase ? state : begin(t, at, setupOf(state));
+  let s = state && state.phase ? state : begin(t, at, setupOf(r));
   s = Object.assign({}, s, { t, at: Math.max(s.at, at), foot: { x: Math.round(f.x * 100) / 100, y: Math.round(f.y * 100) / 100 } });
   if (!s.ok) return s;
   const d0 = dist(f, s.marks[0]);

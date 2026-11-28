@@ -28,6 +28,7 @@ from fastapi import FastAPI
 from jarvis.api.home_wiring import home_privacy_sources
 from jarvis.api.r6_wiring import r6_privacy_sources
 from jarvis.api.r7_wiring import mobile_privacy_sources
+from jarvis.api.r8_wiring import r8_privacy_sources
 from jarvis.api.r11_1_wiring import fix_privacy_sources
 from jarvis.api.r11_wiring import r11_privacy_sources
 from jarvis.api.r13_wiring import r13_privacy_sources
@@ -290,6 +291,7 @@ def privacy_sources(
         *r14_privacy_sources(app),  # R14: backups (A), the token ledger (C), self-health (B)
         *r13_privacy_sources(app),  # R13: the wardrobe's rows (D's, over each part's data)
         *r18_privacy_sources(app),  # R18 review: calls, their settings, the desk, the check
+        *r8_privacy_sources(app),  # R8: health and fitness (you, people, guests), camera setup
         *r52_privacy_sources(app),  # R5.2: your voice profile, recordings, wake-word files
         *home_privacy_sources(app),  # R3 I1: C's FacesPrivacy replaces the placeholder, last
     ]

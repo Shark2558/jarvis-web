@@ -298,7 +298,8 @@ async def results_only() -> list[str]:
     fails = []
     plain = ("number", "string", "boolean", "[object Object]:frozen", "[object Array]:frozen")
     for got in out["got"]:
-        if got["keys"] != ["at", "data", "device", "ms", "ok", "quality", "task", "v"]:
+        # R8 I1: + the frame's `aspect` (the engine's contract line)
+        if got["keys"] != ["aspect", "at", "data", "device", "ms", "ok", "quality", "task", "v"]:
             fails.append(f"a use case got {got['keys']}")
         fails += [f"a use case got a {k}" for k in got["kinds"] if k not in plain]
     if use_case_problems(CLEAN_USE_CASE):

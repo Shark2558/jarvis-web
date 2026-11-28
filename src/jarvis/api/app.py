@@ -1,18 +1,16 @@
 # src/jarvis/api/app.py
 """FastAPI application factory (Layer 1 surface: web/desktop clients hit this).
 
-Build with `create_app()` so tests can inject a mock provider and an in-memory store. It is a
-short list of named steps (slice 12 final review): the lifespan wires the core (`_wire_core`),
-the slice 10–12 features (`api/feature_wiring.py`: web search, attached files, Recently deleted,
-Maps + YouTube, Drive), R2's personal data (`api/personal.py`: vault, notes, things, DigiLocker
-inbox), R3's home, camera and faces (`api/home_wiring.py`; its one alert policy is wired in the
-core, before anything takes the alert sink), R4's vitals, self-health, connectors, people research
-and the one no-AI switch (`api/r4_wiring.py`), R6's build book (`api/r6_wiring.py`), R11.1's
-and R7's parts (`api/r11_1_wiring.py`, `api/r7_wiring.py`), R11's helpers (`api/r11_wiring.py`),
-R14's parts (`api/r14_wiring.py`), the gateway with the owner's rules and the Brain, then the
-privacy dashboard, the tick jobs and the one 5-minute clock (`api/tick_wiring.py`); then
-the middleware (R7's app lock inside R6's guest show lock, both inside the sign-in session), the
-error mapping and the routers. The "jarvis up" line is `api/startup_log.py`.
+Build with `create_app()` so tests can inject a mock provider and an in-memory store. A short
+list of named steps: the lifespan wires the core (`_wire_core`), slices 10–12 (web search,
+files, Recently deleted, Maps + YouTube, Drive: `api/feature_wiring.py`), R2's personal data
+(`api/personal.py`), R3's home, camera and faces (`api/home_wiring.py`; its alert policy in the
+core, before anything takes the alert sink), R4's vitals and no-AI switch (`api/r4_wiring.py`),
+then each release's own step (`api/r6_wiring.py`, `r11_1_`, `r7_`, `r11_`, `r14_`, `r13_`,
+`r18_`, R8's coaches and cameras `r8_wiring.py`), the gateway with the owner's rules and the
+Brain, the privacy dashboard, the tick jobs and the 5-minute clock (`api/tick_wiring.py`); then
+the middleware (R7's app lock inside R6's guest show lock, both inside the sign-in session),
+the error mapping and the routers. The "jarvis up" line is `api/startup_log.py`.
 """
 
 from __future__ import annotations
@@ -382,6 +380,7 @@ def _build_tool_gateway(
         r14=r14.r14_tools(app.state.r14_parts),  # R14: backups and the skill register's tools
         r13=r13.r13_tools(app.state.r13_parts),  # R13: the wardrobe's 18 tools
         r18=r18.r18_tools(app.state.r18_parts),  # R18: calls_place (R3), calls_answer_mode
+        r8=r8.coach_tools(app),  # R8: coach_results (R1, read-only)
         pictures=app_guard(lambda name: getattr(app.state, name, None)),  # R11.1 D21-D
     )
 
@@ -505,6 +504,7 @@ def _lifespan(
             stack.callback(r14.remove_log_handler, app)  # R14 I1: its errors handler comes off
             await r13.wire_r13(app, s, docs, audit)  # R13: the wardrobe (A-D), before the gateway
             await r18.wire_r18(app, s, docs, audit)  # R18: calls, before the gateway (its tools)
+            r8.join_r8(app, s, docs)  # R8 I1: coaches, cameras, the home views (its tool, rows)
             closers.register_new()
             _wire_gateway(app, s, inj, built, docs, audit)
             closers.register_new()
@@ -698,7 +698,7 @@ def _include_routers(app: FastAPI, s: Settings, verifier: GoogleOIDCVerifier | N
     r14.install_r14_routes(app)  # R14: /v1/r14, /v1/backup, /v1/selfwatch, /v1/skills
     r13.install_r13_routes(app)  # R13: /v1/r13, /v1/wardrobe, /v1/laundry, /v1/outfits
     install_calls_routes(app)  # R18: /v1/calls (501 until I1 wires the parts), its 2 sockets
-    r8.install_r8_routes(app)  # R8: /v1/coach, /v1/camera (I1 wires app.state.coach)
+    r8.install_r8_routes(app)  # R8: /v1/coach (+ /day), /v1/camera (wired at join_r8)
     _mount_scheduler(app, s, verifier)
     app.include_router(console_router)
 

@@ -430,9 +430,11 @@ def test_the_camera_reading_is_a_proposal_until_he_confirms_it() -> None:
     assert bp.proposal_from_digits([(82, 0.97), (128, 0.95), (71, 0.9)]) is None
     with pytest.raises(ValidationError):
         bp.BpConfirm.model_validate({"confirmed": False, "reading": {}})
-    # the category table ships empty: no category is shown until D fills it from a named source
-    assert bp.CATEGORIES == () and bp.SOURCE is None
-    assert bp.category_of(bp.BpProposal(systolic=128, diastolic=82, pulse=71)) is None
+    # R8 I1: D filled the table from its named source (the AHA's 2025 chart), so it is shown
+    assert bp.CATEGORIES and bp.SOURCE is not None
+    assert bp.SOURCE.publisher == "American Heart Association" and bp.SOURCE.year == 2025
+    found = bp.category_of(bp.BpProposal(systolic=128, diastolic=82, pulse=71))
+    assert found is not None and found.name.startswith("Stage 1")
     row = bp.BpCategory("Example", 120, 129, 0, 79, "and", True)
     src = bp.Source("A guideline", "A publisher", 2025, "https://example.org/guideline")
     assert bp.category_line(row, src) == (
@@ -501,24 +503,23 @@ def test_the_coach_state_rides_the_push_and_never_carries_the_alarm() -> None:
         CoachState(rev=1, uses={"desk_cam": ("posture", "activity", "seated", "bp-posture", "x")})
 
 
-async def test_the_three_r8_plugins_are_registered_stubs_that_refuse_in_plain_words() -> None:
+async def test_the_three_r8_plugins_are_registered_and_built() -> None:
+    """R8 I1: the I0 stubs are replaced by J's, C's and B's plugins, in I0's places."""
     from pathlib import Path as P
 
-    from jarvis.home.ports import HomeRefused
+    from jarvis.home.ports import CAMERA_CHECK_ROUTE, SCREENTIME_ROUTE
     from jarvis.homebridge.plugins import PLUGIN_ENV_KEYS, BridgeContext, check_routes
-    from jarvis.homebridge.r8_stub import NOT_BUILT
+    from jarvis.homebridge.r8_stub import StubPlugin
     from jarvis.homebridge.registry import PLUGINS
 
     ctx = BridgeContext(env={}, data_dir=P("/tmp"), events=None)  # type: ignore[arg-type]
     plugins = [f(ctx) for f in PLUGINS[3:]]
     assert [p.name for p in plugins] == ["homevision", "activitywatch", "camcheck"]
+    assert not any(isinstance(p, StubPlugin) for p in plugins)
     check_routes(plugins)
-    assert plugins[0].routes() == () and plugins[0].tasks() == ()  # runs nothing at I0
-    for plugin in plugins[1:]:
-        (route,) = plugin.routes()
-        with pytest.raises(HomeRefused) as refused:
-            await route.handler({}, {})
-        assert refused.value.code == "not_built" and refused.value.message == NOT_BUILT
+    assert plugins[0].routes() == () and plugins[0].tasks() == ()  # no camera set: runs nothing
+    assert [(r.method, r.path) for r in plugins[1].routes()] == [SCREENTIME_ROUTE]
+    assert [(r.method, r.path) for r in plugins[2].routes()] == [CAMERA_CHECK_ROUTE]
     assert {"HOMEVISION_RTSP_URL", "HOMEVISION_CAMERA", "AW_URL"} <= PLUGIN_ENV_KEYS
     assert "HA_TOKEN" not in PLUGIN_ENV_KEYS
 

@@ -261,6 +261,7 @@ async def test_tick_jobs_have_unique_names_none_of_the_ticks_own(on: App) -> Non
     r13 = ["wardrobe_sweep", "laundry_daily"]  # R13: A's sweep (keyring on), B's morning job
     r13 += ["seeme_daily"]  # R13.1 C: See it on me's morning job
     r18 = ["calls_retention"]  # R18 I1: the calls' 30 days (his Keep aside)
+    r18 += ["coach_sweep"]  # R8 I1: kept coach results past coach_keep_days (keyring on)
     assert names == [
         *r2,
         "vitals_poll",

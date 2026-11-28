@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from jarvis.api.book_http import setup_failure
+from jarvis.api.r8_wiring import LateCameras, LateScreen
 from jarvis.config import Settings
 from jarvis.health import probes as P
 from jarvis.health.briefing import Briefing
@@ -101,6 +102,8 @@ def vitals_sources(app: FastAPI) -> OwnSources:
         default_brain=brains.default.id,  # the brain the systems check's probe watches
         book=lambda: setup_failure(app),  # R6 review L2: read per board (R6 wires after Vitals)
         r14=lambda: getattr(st, "r14_vitals", None),  # R14 seam 7: the parts' items, read late
+        cameras=LateCameras(app),  # R8 I1: B's camera health, one line per camera (read late)
+        screen=LateScreen(app),  # R8 I1: C's screen time through the home bridge (read late)
     )
 
 

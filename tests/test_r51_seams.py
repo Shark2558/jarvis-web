@@ -53,6 +53,7 @@ def test_home_offline_idle_is_a_known_important_home_kind() -> None:
         | {"deploy_changed", "backup_problem"}
         # R13 D19: the wardrobe's three important kinds (tests/test_r13_seams.py)
         | {"outfit_ready", "outfit_changed", "laundry_overdue"}
+        | {"nudge_posture"}  # R8 S15, I0's kind (tests/test_r8_seams.py); fixed at R8 I1
     )
 
 

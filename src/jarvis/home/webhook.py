@@ -91,6 +91,13 @@ class HomeWebhook:
         self._limit = RateLimiter(per_minute, now=clock)
         self._client_limit = RateLimiter(client_per_minute, now=clock)
 
+    def join(self, handler: HomeEventHandler, source: StateSource | None = None) -> None:
+        """R8 I1: a later release's part joins after Home is wired (the coaches' reports and the
+        coach part of the state): the same dispatch, claim and state merge apply to it."""
+        self._handlers = (*self._handlers, handler)
+        if source is not None:
+            self._sources = (*self._sources, source)
+
     async def _state(self, uid: str) -> dict[str, object]:
         merged = BridgeState()
         for source in self._sources:

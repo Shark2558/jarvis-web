@@ -71,9 +71,10 @@ async def vision_status(request: Request) -> JSONResponse:
     part = part_of(request, PART)
     svc = _service(request)
     served = vision_files(assets.RELEASE)
+    served8 = vision_files(assets.R8_RELEASE)  # R8 I1: `hands` and the full pose model (r8-1)
     tasks = {
-        task: {"installed": ok, "why": assets.why(task, served)}
-        for task, ok in assets.installed(served).items()
+        task: {"installed": ok, "why": assets.why(task, served, None, served8)}
+        for task, ok in assets.installed(served, None, served8).items()
     }
     return _answer(
         200,
@@ -84,6 +85,7 @@ async def vision_status(request: Request) -> JSONResponse:
             "sealed": bool(svc and svc.store.sealed),
             "keep_days": svc.store.keep_days if svc else 0,
             "tasks": tasks,
+            "pose_model": assets.pose_model(served, served8),  # R8 I1 (D4): lite or full
         },
     )
 

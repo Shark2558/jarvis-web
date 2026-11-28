@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-BRIDGE_VERSION = "0.2.0"  # R11.1: photos, face groups and the watched folder
+BRIDGE_VERSION = "0.3.0"  # R8 I1: the home camera's coaches, screen time, the camera check
+# (0.2.0, R11.1: photos, face groups and the watched folder)
 PHOTOS_SINCE = "0.2.0"  # the first version that serves the photo and face-group routes
 SIGNED_PORT = 8099  # the signed API (Funnel proxies to it)
 LOCAL_PORT = 8098  # the local Faces page (never funnelled)

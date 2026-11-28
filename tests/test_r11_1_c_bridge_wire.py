@@ -163,8 +163,9 @@ async def test_a_signed_photo_is_read_and_a_bad_one_refused_in_a_signed_answer(
 
 
 def test_this_kit_is_version_two_and_an_older_bridge_is_out_of_date() -> None:
-    assert bridge_config.BRIDGE_VERSION == "0.2.0" == kit.KIT_VERSION
-    assert kit.outdated("0.1.0") and not kit.outdated("0.2.0")
+    # R8 I1: 0.3.0 (the home camera's coaches): a 0.2.0 bridge is now told to update its kit
+    assert bridge_config.BRIDGE_VERSION == "0.3.0" == kit.KIT_VERSION
+    assert kit.outdated("0.1.0") and kit.outdated("0.2.0") and not kit.outdated("0.3.0")
     assert bridge_config.PHOTOS_SINCE == "0.2.0"
 
 
@@ -174,8 +175,8 @@ async def test_the_health_route_says_the_version_so_the_cloud_can_tell_an_old_ki
     home = build_home(tmp_path)
     await home.link_up()
     health = await home.client.call(UID, "GET", "/bridge/v1/health")
-    assert health["version"] == "0.2.0"
-    assert json.dumps(health).count("0.2.0") == 1
+    assert health["version"] == "0.3.0"  # R8 I1
+    assert json.dumps(health).count("0.3.0") == 1
     await home.aclose()
 
 

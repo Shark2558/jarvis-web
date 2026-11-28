@@ -4,7 +4,8 @@ line to spare; docs/plans/r14-hardening.md D7, seam 7).
 
 - `tick_jobs(app)`: R2's jobs, the alert policy's, R4's vitals and health check, R6's book jobs,
   R11's helpers clock and daily jobs, R7's own two, R14's daily jobs, R13's (`wardrobe_sweep`,
-  `laundry_daily`), R18's `calls_retention` (the existing morning tick, no new Scheduler job).
+  `laundry_daily`), R18's `calls_retention`, R8's `coach_sweep` (the existing morning tick, no
+  new Scheduler job).
 - `add_clock_job(app, job)`: the 5-minute advisory jobs (the systems check, the helpers' clock,
   R7's clock) register here instead of on the home watchdog, so they also run with Home off.
 - `clock_jobs(app)` / `install_clocks(app)`: `app.state.clock_jobs`, built once: R14's 5-minute
@@ -26,6 +27,7 @@ from typing import Any
 from fastapi import FastAPI
 
 import jarvis.api.r7_wiring as r7
+import jarvis.api.r8_wiring as r8
 import jarvis.api.r13_wiring as r13
 import jarvis.api.r14_wiring as r14
 import jarvis.api.r18_wiring as r18
@@ -49,6 +51,7 @@ def tick_jobs(app: FastAPI) -> tuple[Any, ...]:
         *r14.r14_tick_jobs(app),
         *r13.r13_tick_jobs(app),  # R13: wardrobe_sweep (A), laundry_daily (B)
         *r18.r18_tick_jobs(app),  # R18: calls_retention (30 days, his Keep aside)
+        *r8.r8_tick_jobs(app),  # R8 I1: coach_sweep (kept results past coach_keep_days)
     )
     check_job_names(jobs)
     return jobs

@@ -45,6 +45,7 @@ from jarvis.api.r7_wiring import (
     install_mobile_phrases,
     mobile_brief,
 )
+from jarvis.api.r8_wiring import r8_brief
 from jarvis.api.r11_1_wiring import fix_brief, fix_clock_jobs, fix_daily_jobs, install_fix_phrases
 from jarvis.config import Settings
 from jarvis.helpers.brief import HelpersBrief
@@ -303,7 +304,10 @@ def helpers_brief(app: FastAPI) -> HelpersBrief | None:
 
     def contributors() -> list[Any]:
         # + R11.1: the parts' own lines (the plan's open check-ins), read when the brief is made
-        return [*(c for p in parts() for c in p.brief), *fix_brief(app), *mobile_brief(app)]
+        return [  # + R8 I1: the day strip's one line (C's CoachDayBrief)
+            *(c for p in parts() for c in p.brief), *fix_brief(app), *mobile_brief(app),
+            *r8_brief(app),
+        ]  # fmt: skip
 
     def pauses() -> list[Any]:
         return [x for p in parts() for x in p.paused]

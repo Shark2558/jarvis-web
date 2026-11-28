@@ -206,6 +206,49 @@ async def test_a_body_that_leaves_ends_its_session_with_a_tally() -> None:
     assert not w.rt._uses["posture"].states  # noqa: SLF001
 
 
+async def test_a_thing_in_view_never_keeps_a_body_that_left_in_its_session() -> None:
+    there = [[F.body(0.5, seed=i)] for i in range(3)]
+    gone: list[list[list[dict[str, float]]]] = [[] for _ in range(int(R.LOST_S) + 3)]
+    w = make(there + gone, uses=("activity",), objects=F.FakeObjects("cup"), loop=False)
+    await steps(w, len(there) + len(gone))
+    assert any(s.things for s in w.recs["activity"].seen)  # the cup kept coming
+    assert [e.use for e in w.sink.tallies()] == ["activity"]  # and the session still ended
+    assert not w.rt._uses["activity"].states  # noqa: SLF001
+
+
+async def test_cameras_off_while_the_models_load_means_no_frame_is_read() -> None:
+    w = make([[F.body(0.5)]])
+    real = w.pose.status
+
+    def slow_status() -> str:
+        w.rt._coach = CoachState(rev=9, all_off=True)  # noqa: SLF001 - lands mid-step
+        return real()
+
+    w.pose.status = slow_status
+    await steps(w, 1)
+    assert w.src.reads == 0
+
+
+async def test_a_decoder_or_model_fault_is_one_skipped_frame_never_the_loop() -> None:
+    w = make([[F.body(0.5)]])
+
+    def broken(until: float, stop: Any) -> Any:
+        raise ValueError("cv2.error: something native")
+
+    real_read = w.src.read
+    w.src.read = broken
+    await steps(w, 1)
+    assert w.rt.why == "the home camera's stream: unreadable" and w.src.closed == 1
+    w.src.read = real_read
+    real_bodies = w.pose.bodies
+    w.pose.bodies = lambda frame: (_ for _ in ()).throw(RuntimeError("model fault"))
+    await steps(w, 1)
+    assert w.src.reads == 1 and not w.sink.events
+    w.pose.bodies = real_bodies
+    await steps(w, 1)
+    assert w.src.reads == 2 and w.sink.events
+
+
 async def test_views_are_paced_and_all_day_coaches_keep_a_tally_every_15_minutes() -> None:
     minutes = 31
     w = make([[F.body(0.5, seed=7)]], uses=("posture", "bp-posture"), loop=True)

@@ -256,7 +256,10 @@ class _Use:
     def tasks(self) -> tuple[str, ...]:
         return tuple(getattr(self.case, "tasks", ()) or ())
 
-    def feed(self, key: int, result: dict[str, Any], who: str, now: float) -> None:
+    def feed(self, key: int, result: dict[str, Any], who: str, now: float, *,
+             seen: bool = True) -> None:  # fmt: skip
+        """One Result into one body's state. Only a pose of that body counts as seeing it (a
+        thing in view does not keep a body that left in the session)."""
         body = self.states.get(key)
         if body is None:
             if len(self.states) > BODIES_MAX:
@@ -266,7 +269,9 @@ class _Use:
             body.state = self.case.on_result(_copy(result), body.state)
         except Exception as exc:  # noqa: BLE001 - one use case's fault never stops the loop
             log.info("a home use case failed", extra={"use": self.id, "error": type(exc).__name__})
-        body.who, body.seen = who, now
+        body.who = who
+        if seen:
+            body.seen = now
 
 
 def _copy(obj: Any) -> Any:
@@ -423,18 +428,26 @@ class HomeRuntime:
             await self._pause(self._retry_s)
             return
         self._stop.clear()
+        if not self.wanted():  # "cameras off" came while the models were made ready
+            return
         try:
             frame = await self._call(self._source.read, self._next_at, self._stop)
-        except SourceDown as down:
+        except Exception as exc:  # noqa: BLE001 - SourceDown, or the decoder's own fault
+            down = str(exc) if isinstance(exc, SourceDown) else "unreadable"
             self.why = f"the home camera's stream: {down}"
-            log.warning("the home camera's stream is down", extra={"why": str(down)})
+            log.warning("the home camera's stream is down", extra={"why": down})
             await self._close_stream()
             await self._pause(self._retry_s)
             return
-        if frame is None:
+        if frame is None or not self.wanted():
+            return  # stopped, or switched off while the frame was read: it is not looked at
+        try:
+            look = await self._call(self._look, frame)
+        except Exception as exc:  # noqa: BLE001 - one frame the models couldn't look at
+            log.info("a frame could not be looked at", extra={"error": type(exc).__name__})
             return
-        look = await self._call(self._look, frame)
-        del frame  # the only picture: gone before anything is reported
+        finally:
+            del frame  # the only picture: gone before anything is reported
         await self._use(look)
         gap = max(1.0 / self._rate(), 2.0 * look.ms / 1000.0)
         self._next_at = self._mono() + gap
@@ -572,7 +585,8 @@ class HomeRuntime:
                 keys = list(use.states) if "pose" in use.tasks else [ONE]
                 for key in keys:
                     body = use.states.get(key)
-                    use.feed(key, things, body.who if body else "", now)
+                    use.feed(key, things, body.who if body else "", now,
+                             seen="pose" not in use.tasks)  # fmt: skip
         for use in self._uses.values():
             for key, body in list(use.states.items()):
                 if now - body.seen > LOST_S:

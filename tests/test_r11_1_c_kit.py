@@ -63,7 +63,8 @@ def test_the_bridge_gets_models_and_photos_read_only_and_more_memory(compose: di
     b = compose["services"]["bridge"]
     assert "./models:/models:ro" in b["volumes"]
     assert "${PHOTOS_DIR:-./photos-off}:/photos:ro" in b["volumes"]  # off: an empty folder
-    assert b["mem_limit"] == "768m" and b["read_only"] is True and b["cap_drop"] == ["ALL"]
+    # R8 J: 768m -> 1024m, for the home camera's pose model beside the face reader's two
+    assert b["mem_limit"] == "1024m" and b["read_only"] is True and b["cap_drop"] == ["ALL"]
     assert not any(
         str(v).startswith("${PHOTOS_DIR") and not str(v).endswith(":ro") for v in b["volumes"]
     )

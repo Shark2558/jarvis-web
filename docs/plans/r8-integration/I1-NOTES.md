@@ -65,7 +65,7 @@ Merges: six, in that order, each a `--no-ff` merge commit. **No textual conflict
 
 ## Checks (once, on the joined tree)
 
-Every new and touched test file, unit and browser (the R8 browser files with `JARVIS_BROWSER_TESTS=1`, and R7's and R13's camera suites after the 404 filter), `ruff` and `ruff format` on every changed file, `mypy` on the touched modules, `PYTHONPATH=src python scripts/check_doc_versions.py` (all documents pass) and `python evals/r8/run.py --mock` (41 of 41, every part's control fails it). Counts: the 25 new and touched unit test files, **727 passed**; the three R8 browser files, **28 passed**; R7's and R13's camera browser suites passed with the 404 filter (22 and 21 with the dock and desk runs); `ruff check src tests evals` clean. Open:
+Every new and touched test file, unit and browser (the R8 browser files with `JARVIS_BROWSER_TESTS=1`, and R7's and R13's camera suites after the 404 filter), `ruff` and `ruff format` on every changed file, `mypy` on the touched modules, `PYTHONPATH=src python scripts/check_doc_versions.py` (all documents pass) and `python evals/r8/run.py --mock` (41 of 41, every part's control fails it). Counts: the 25 new and touched unit test files, **727 passed**; the three R8 browser files, **28 passed**; R7's and R13's camera browser suites also pass with the 404 filter (run beside the dock and desk files: 22 and 21 passed); `ruff check src tests evals` clean. Open:
 
 - `tests/test_arch_coverage.py::test_the_real_guide_passes` fails (45 items: R8's console modules and `jarvis.coach` named by no card, the API host `storage.googleapis.com`): the Book step's.
 - `mypy` reports one error in `src/jarvis/memory/redis_store.py:67`, the same on `r8-i0` (the installed redis stubs), not R8's.

@@ -1,4 +1,4 @@
-Version v8.0.2 · 28 Nov 2026, 06:05 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
+Version v8.0.3 · 28 Nov 2026, 09:15 IST · Release R8 · Status: Current · Owner: 🛠 Mark XXVI
 
 # R8 and R8.1 — the I0 seams (code against these)
 
@@ -63,6 +63,21 @@ Built on `r8-i0` (from `r8-plan` @ `a17a00b`) from the plan's section 7.1, `docs
 | S27 | People and guests (D6) | `src/jarvis/coach/people.py` | `PeopleStore.guest_for(uid, session, track)` ("Guest N" per session), `resolve`, `rename`, `merge`, `forget`, `export`; `is_who`, `new_session` (`cs_<12 hex>`); sealed under `coach` | C, E, I1 |
 | S28 | The bar's layout (D13, frozen) | `src/jarvis/api/static/console-dock-layout.js` | `KEY` "jarvis_dock_layout_v1", `VERSION` 1, `FIXED` [chat], `parse`, `apply(defaults, saved)` (unknown ids dropped, new tabs at the end, chat stays), `isDefault`, `move`, `toMore`, `fromMore`, `hide`, `serialize` | I |
 
+## Contract lines from the I1 join (28 Nov 2026)
+
+The join (`r8-i1`, docs/plans/r8-integration/I1-NOTES.md) changed these seams; each with a test.
+
+| Seam | The change | Test |
+|---|---|---|
+| S1 (frozen) | `Result.aspect`: the frame's width / height, optional, 0.2 to 5 (an older device's Result still parses) | `tests/test_r8_i1_engine.py` |
+| S2 (frozen) | every Result carries `aspect` (from the task's decoded frame, else the camera's canvas); `live(taskIds, {…, setup})` puts `setup` (plain data, frozen once, a routine's rows up to 2,000) on every Result it hands its use cases as `r.setup` (R8.1's builder F). The pinned core hash is now `1170f49c…b175` (`tests/test_r7_b_console.py`) | `tests/test_r8_i1_engine.py`, `tests/test_r7_b_dom.py` |
+| S16 (frozen) | a mode's builders `P` gain `deviceSwitch(on)`: the Cameras pane hides the panel's own "This device" row while this device is in its list (one switch) | `tests/browser/test_r8_camera_setup.py` |
+| S20 (frozen) | `angle(a, b, c, aspect?)`, `dist(a, b, aspect?)`: x scaled by the Result's aspect (1 when not given: unchanged) | `tests/test_r8_i1_engine.py` |
+| S24 | `REGISTRY` holds the four home rules; `aspect_of(result)`; the runtime's rate hook is `wanted_rate`; an all-day coach keeps a known body's state while it is out of view (`AWAY_KEEP_S`) | `tests/test_r8_j_homevision.py`, `tests/test_r8_i1_engine.py` |
+| S25 | `phrase_target`: a name is one or two words, never one of `NOT_NAMES` ("track my parcel" stays a chat message); the console's local router holds the same lists | `tests/test_r8_i1_track.py` |
+| S26 | `SEVERE_STEPS` (the AHA's own steps above 180/120), `CANT_READ`, `severe()`; `reading_view` gives `steps` first | `tests/test_r8_i1_safety.py` |
+| S14 / S24 | `HomeWebhook.join(handler, source)`: a later part joins Home's webhook after it is wired | `tests/test_r8_i1_wiring.py` |
+
 ## Left for I1 and the Book
 
 - **I1 join:** wire `wire_r8` into the app's startup (docs, keyring, clock) and register `r8_privacy_sources` where the privacy dashboard's sources are listed and `r8_tools` with the gateway; B's `CameraHealth` and C's `ScreenTime` into `OwnSources` (Vitals); C's posture nudge on the helpers' gate; J's `CoachReport` handler on the home webhook and the coach part of the state push; the daily sweep (`coach_keep_days`); the voice router's tracking phrases (`phrase_target`) beside "cameras off"; the Faces lookup (`PeopleLookup`) for "track <name>"; the passkey path for `DELETE /v1/coach/people/{who}`; `api/vision.py` passing `served8`.
@@ -73,5 +88,6 @@ Built on `r8-i0` (from `r8-plan` @ `a17a00b`) from the plan's section 7.1, `docs
 
 | Version | Date | Release | What changed | By |
 |---|---|---|---|---|
+| v8.0.3 | 28 Nov 2026, 09:15 IST | R8 | The I1 join's contract lines (S1, S2, S16, S20, S24, S25, S26 and the webhook's `join`), each with its test | 🛠 Mark XXVI |
 | v8.0.2 | 28 Nov 2026, 06:05 IST | R8 | The book's layers for `coach` and `config_coach`; the generator's check passes; the facts index counts R8's two settings | 🛠 Mark XXVI |
 | v8.0.1 | 28 Nov 2026, 05:55 IST | R8 | First edition: seams S1–S28 with their files, contracts and builders; the owner's answers of 28 Nov (D3, D4, D6, D7, D13) as built; the differences from the plan; what is left for I1 and the Book | 🛠 Mark XXVI |

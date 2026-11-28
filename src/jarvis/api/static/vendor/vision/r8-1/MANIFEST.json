@@ -5,11 +5,15 @@
  "models": {
   "hand_landmarker.task": {
    "url": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+   "mirror": "https://huggingface.co/litert-community/MediaPipe-HandLandmarker-Full/resolve/main/hand_landmarker.task",
+   "page": "https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker",
    "licence": "Apache-2.0",
    "state": "not installed"
   },
   "pose_landmarker_full.task": {
    "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
+   "mirror": "https://huggingface.co/litert-community/MediaPipe-PoseLandmarker-Full/resolve/main/pose_landmarker_full.task",
+   "page": "https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker",
    "licence": "Apache-2.0",
    "state": "not installed"
   }

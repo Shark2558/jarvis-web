@@ -13,6 +13,10 @@
                                               model and the full pose model into r8-1 (models
                                               only: r8-1 has no library of its own)
     python scripts/vision_assets.py check --release r8-1
+    python scripts/vision_assets.py sums      R8 (builder A): the pinned models' SHA-256 into
+                                              console-vision-r8.js's SUMS8 block (the browser
+                                              compares every model's bytes with it before use);
+                                              `check` fails while the block and the manifests differ
 
 Every source is pinned before a byte is kept: an npm tarball by its registry `sha512` integrity, a
 GitHub file by a tag or commit address and its SHA-256. A model file has no recorded sum until its
@@ -30,7 +34,13 @@ MANIFEST.json (read by the route in `api/console.py`, which uses `files` only):
 
     {"release", "files": {name: {sha256, bytes, type, source, licence}},
      "licences": {LICENSE-*.txt beside the release folder: sha256},
-     "models": {name: {url, licence, state: "not installed"}}}
+     "models": {name: {url, mirror, page, licence, state: "not installed"}}}
+
+R8 (docs/plans/r8-vision.md 4.2, 4.11, 4.12; builder A): each model has the address its model page
+gave when it was confirmed (`page`, 28 Nov 2026): the pages now link Hugging Face copies, kept as
+`mirror` and fetched only when the Google storage address fails (the two CI fetches still have to
+agree byte for byte). The models' licence file lists every model whose licence was read, whichever
+release a run fetches, so pinning r7-1 and then r8-1 never changes a sum the other recorded.
 """
 
 from __future__ import annotations
@@ -62,6 +72,7 @@ from jarvis.vision.assets import (  # noqa: E402
     OBJECT_MODEL,
     POSE_FULL_MODEL,
     POSE_MODEL,
+    R8_JS,
     R8_RELEASE,
     RELEASE,
 )
@@ -100,6 +111,9 @@ class Source:
     name: str = ""
     licence: str = ""  # model: the licence a person read ("" = not read yet)
     release: str = RELEASE  # R8: the release folder a model file is pinned in
+    mirror: str = ""  # R8: the model page's own download address, tried when `url` fails
+    page: str = ""  # R8: the model page that gave the addresses (read 28 Nov 2026)
+    note: str = ""  # R8: what reading the licence found, when it is still to be read
 
 
 SOURCES: tuple[Source, ...] = (
@@ -195,6 +209,8 @@ SOURCES: tuple[Source, ...] = (
         "pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
         name=POSE_MODEL,
         licence="Apache-2.0",  # the Pose Landmarker model card [S24]
+        mirror="https://huggingface.co/litert-community/MediaPipe-PoseLandmarker-Lite/resolve/main/pose_landmarker_lite.task",
+        page="https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker",
     ),
     Source(
         "model",
@@ -202,8 +218,16 @@ SOURCES: tuple[Source, ...] = (
         "efficientdet_lite0/int8/1/efficientdet_lite0.tflite",
         name=OBJECT_MODEL,
         licence="",  # its page links no model card: a person reads the licence first (D14)
+        mirror="https://huggingface.co/litert-community/MediaPipe-ObjectDetector-EfficientDet-Lite0/resolve/main/"
+        "efficientdet_lite0_int8.tflite",
+        page="https://developers.google.com/edge/mediapipe/solutions/vision/object_detector",
+        note="R8 A, 28 Nov 2026: the object detector page links no model card and states no "
+        "licence for its model files (its content is CC BY 4.0, its code samples Apache-2.0); "
+        "its download is now the Hugging Face copy, whose card could not be opened here. Until a "
+        "person reads it, D9's fallback (SSD-MobileNet v1 in r13-1) serves `objects`",
     ),
-    # R8 (r8-1): the addresses on MediaPipe's model pages; builder A confirms them (4.2)
+    # R8 (r8-1): the addresses on MediaPipe's model pages, confirmed by builder A on 28 Nov 2026
+    # (the pages now link the Hugging Face copies, kept as mirrors; Apache-2.0 as R7 read it)
     Source(
         "model",
         url="https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
@@ -211,6 +235,8 @@ SOURCES: tuple[Source, ...] = (
         name=HAND_MODEL,
         licence="Apache-2.0",  # the Hand Landmarker model card
         release=R8_RELEASE,
+        mirror="https://huggingface.co/litert-community/MediaPipe-HandLandmarker-Full/resolve/main/hand_landmarker.task",
+        page="https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker",
     ),
     Source(
         "model",
@@ -219,6 +245,8 @@ SOURCES: tuple[Source, ...] = (
         name=POSE_FULL_MODEL,
         licence="Apache-2.0",  # the Pose Landmarker model card
         release=R8_RELEASE,
+        mirror="https://huggingface.co/litert-community/MediaPipe-PoseLandmarker-Full/resolve/main/pose_landmarker_full.task",
+        page="https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker",
     ),
 )
 LICENCE_NAMES = frozenset(
@@ -336,11 +364,17 @@ def _entry(name: str, data: bytes, source: str, licence: str) -> dict[str, objec
 
 
 def _pending_models(files: Mapping[str, object], release: str = RELEASE) -> dict[str, object]:
-    return {
-        s.name: {"url": s.url, "licence": s.licence or "to be read", "state": "not installed"}
-        for s in SOURCES
-        if s.kind == "model" and s.release == release and s.name not in files
-    }
+    out: dict[str, object] = {}
+    for s in SOURCES:
+        if s.kind != "model" or s.release != release or s.name in files:
+            continue
+        entry: dict[str, str] = {"url": s.url, "mirror": s.mirror, "page": s.page}
+        entry["licence"] = s.licence or "to be read"
+        if s.note:
+            entry["licence_note"] = s.note
+        entry["state"] = "not installed"
+        out[s.name] = entry
+    return out
 
 
 def write_manifest(folder: Path, release: str, files: Mapping[str, object]) -> None:
@@ -423,6 +457,17 @@ def _model_words(folder: Path) -> dict[str, str]:
     return {name: word for name, word in found}
 
 
+def fetch_model(src: Source, get: Fetch) -> tuple[bytes, str]:
+    """A model's bytes and the address they came from: its storage address, else (R8) the
+    address its model page gives now. A failed download is a SystemExit (`download`'s)."""
+    try:
+        return get(src.url), src.url
+    except SystemExit:
+        if not src.mirror:
+            raise
+    return get(src.mirror), src.mirror
+
+
 def stage_models(
     folder: Path, release: str, object_licence: str | None, fetch: Fetch | None = None
 ) -> Staged:
@@ -435,13 +480,16 @@ def stage_models(
     files: dict[str, object] = {}
     picked = plan_models(object_licence, release)
     for src in picked:
-        data = get(src.url)
+        data, where = fetch_model(src, get)
         before = pinned.get(src.name)
         if isinstance(before, dict) and before.get("sha256") not in (None, sha256(data)):
             raise SystemExit(f"{src.name} does not match the sum pinned before")
         writes[folder / release / src.name] = data
-        files[src.name] = _entry(src.name, data, src.url, MODELS_LICENCE)
+        files[src.name] = _entry(src.name, data, where, MODELS_LICENCE)
     words = _model_words(folder)
+    # every model whose licence was read, whichever release this run fetches (R8): the file's
+    # bytes, and so the sum each release's manifest records for it, never depend on the order
+    words.update({s.name: s.licence for s in SOURCES if s.kind == "model" and s.licence})
     words.update({s.name: s.licence or str(object_licence) for s in picked})
     urls = {s.name: s.url for s in SOURCES if s.kind == "model"}
     head = "".join(f"{n}: {w} (from {urls.get(n, '')})\n" for n, w in sorted(words.items()))
@@ -487,14 +535,72 @@ def check(folder: Path, release: str) -> list[str]:
     return problems
 
 
+SUMS_BLOCK = re.compile(r"/\*SUMS8-BEGIN\*/(.*?)/\*SUMS8-END\*/", re.S)
+SUMS_MODELS: Mapping[str, tuple[str, ...]] = {
+    RELEASE: (POSE_MODEL,),
+    R8_RELEASE: (HAND_MODEL, POSE_FULL_MODEL),
+}
+
+
+def pinned_sums(folder: Path) -> dict[str, str]:
+    """{release/name: sha256} of the models console-vision-r8.js loads, as the manifests pin
+    them (a model not pinned yet has no entry: the browser then says "not installed")."""
+    out: dict[str, str] = {}
+    for release, names in SUMS_MODELS.items():
+        files = _read_manifest(folder, release).get("files")
+        for name in names:
+            entry = files.get(name) if isinstance(files, dict) else None
+            if isinstance(entry, dict) and isinstance(entry.get("sha256"), str):
+                out[f"{release}/{name}"] = str(entry["sha256"])
+    return dict(sorted(out.items()))
+
+
+def read_sums(js: Path) -> dict[str, str] | None:
+    """The SUMS8 block of console-vision-r8.js (None: no block, or not JSON)."""
+    try:
+        found = SUMS_BLOCK.search(js.read_text(encoding="utf-8"))
+        data = json.loads(found.group(1)) if found else None
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_sums(folder: Path, js: Path) -> dict[str, str]:
+    """Write the manifests' model sums into the SUMS8 block (atomically); -> the sums."""
+    sums = pinned_sums(folder)
+    text = js.read_text(encoding="utf-8")
+    if not SUMS_BLOCK.search(text):
+        raise SystemExit(f"{js.name} has no SUMS8 block")
+    block = (
+        "/*SUMS8-BEGIN*/" + json.dumps(sums, sort_keys=True, ensure_ascii=True) + "/*SUMS8-END*/"
+    )
+    _write_atomic(js, SUMS_BLOCK.sub(lambda _m: block, text).encode("ascii"))
+    return sums
+
+
+def sums_problems(folder: Path, js: Path) -> list[str]:
+    """One line when console-vision-r8.js's SUMS8 block differs from the manifests (else none)."""
+    got = read_sums(js)
+    if got is None:
+        return [f"{js.name}: its SUMS8 block is missing or unreadable"]
+    if got != pinned_sums(folder):
+        return [f"{js.name}: its SUMS8 block differs from the manifests (run `sums`)"]
+    return []
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Fetch, verify and pin the vision files (R7 D14).")
-    ap.add_argument("command", choices=("check", "fetch"), nargs="?", default="check")
+    ap.add_argument("command", choices=("check", "fetch", "sums"), nargs="?", default="check")
     ap.add_argument("--models", action="store_true", help="also fetch MediaPipe's model files")
     ap.add_argument("--object-licence", default=None, help="the object model's licence, as read")
     ap.add_argument("--folder", type=Path, default=FOLDER)
     ap.add_argument("--release", choices=RELEASES, default=RELEASE, help="r8-1: R8's models only")
+    ap.add_argument("--js", type=Path, default=R8_JS, help="console-vision-r8.js (its SUMS8)")
     args = ap.parse_args(argv)
+    if args.command == "sums":
+        print(json.dumps(write_sums(args.folder, args.js), indent=1, sort_keys=True))
+        problems = sums_problems(args.folder, args.js)
+        return 1 if problems else 0
     if args.release != RELEASE:
         return _release_only(args)
     if args.command == "fetch":
@@ -513,6 +619,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_staged(writes)
         write_manifest(args.folder, RELEASE, files)
     problems = check(args.folder, RELEASE)
+    if args.command == "check":  # a fetch pins new sums: `sums` writes them, then `check`
+        problems += sums_problems(args.folder, args.js)
     for line in problems:
         print(line)
     shelf = args.folder / RELEASE
@@ -535,6 +643,8 @@ def _release_only(args: argparse.Namespace) -> int:
         write_staged(writes)
         write_manifest(args.folder, release, files)
     problems = check(args.folder, release)
+    if args.command == "check":
+        problems += sums_problems(args.folder, args.js)
     for line in problems:
         print(line)
     print(f"{release}: {'OK' if not problems else 'PROBLEMS'}")

@@ -21,6 +21,13 @@ Apache-2.0, fetched and hashed twice by CI (`.github/workflows/vision-models.yml
 `installed(served, served13, served8)` answers `hands` only when given the r8-1 files too, and
 `digits` (D7) needs no file at I0 (builder D's method decides; until then its body says "not
 installed"). The home laptop's pose runtime (builder J) reads the same pinned files.
+
+R8 builder A: `digits` is plain segment arithmetic in `console-vision-r8.js` (no model, so no
+licence to read): with the r8-1 files given it is installed (the browser still proves it on its
+own canvas when it loads). `pose_model(served, served8)` says which pose model a device may use
+("full" once r8-1 serves it, D4; else "lite", or "" when neither is served). `R8_JS` is the task
+module whose SUMS8 block `scripts/vision_assets.py sums` fills from the manifests: the browser
+compares every model file's bytes with it before use, as R13's phone does with SUMS13.
 """
 
 from __future__ import annotations
@@ -30,6 +37,7 @@ from pathlib import Path
 
 RELEASE = "r7-1"
 FOLDER = Path(__file__).resolve().parents[1] / "api" / "static" / "vendor" / "vision"
+R8_JS = FOLDER.parents[1] / "console-vision-r8.js"
 NOT_INSTALLED = "not installed"
 MEDIAPIPE: tuple[str, ...] = (
     "vision_bundle.mjs",
@@ -78,6 +86,7 @@ def installed(
     out = {task: all(name in served for name in files) for task, files in TASK_FILES.items()}
     if served8 is not None:
         out["hands"] = all(n in served for n in MEDIAPIPE) and HAND_MODEL in served8
+        out["digits"] = True  # segment arithmetic: no file to serve
     if served13 is None:
         return out
     for task, files in WARDROBE_FILES.items():
@@ -86,9 +95,24 @@ def installed(
     return out
 
 
-def why(task: str, served: Mapping[str, str], served13: Mapping[str, str] | None = None) -> str:
+def why(
+    task: str,
+    served: Mapping[str, str],
+    served13: Mapping[str, str] | None = None,
+    served8: Mapping[str, str] | None = None,
+) -> str:
     """The empty word when the task can run here, else the plain reason ("not installed")."""
-    return "" if installed(served, served13).get(task) else NOT_INSTALLED
+    return "" if installed(served, served13, served8).get(task) else NOT_INSTALLED
+
+
+def pose_model(served: Mapping[str, str], served8: Mapping[str, str] | None = None) -> str:
+    """D4: "full" where r8-1 serves the full pose model (a device keeps it only if its setup test
+    holds 15 frames a second), "lite" where only R7's lite one is, "" where pose can't run."""
+    if not all(name in served for name in MEDIAPIPE):
+        return ""
+    if served8 is not None and POSE_FULL_MODEL in served8:
+        return "full"
+    return "lite" if POSE_MODEL in served else ""
 
 
 __all__ = [
@@ -97,6 +121,7 @@ __all__ = [
     "FOLDER",
     "HAND_MODEL",
     "POSE_FULL_MODEL",
+    "R8_JS",
     "R8_FILES",
     "R8_RELEASE",
     "MEDIAPIPE",
@@ -108,5 +133,6 @@ __all__ = [
     "WARDROBE_FILES",
     "WARDROBE_RELEASE",
     "installed",
+    "pose_model",
     "why",
 ]

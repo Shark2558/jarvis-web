@@ -7,11 +7,16 @@
 # branch. Google publishes no hash, so the pins are "read twice" (trust on first use, R7 section 5). The object
 # model (EfficientDet-Lite0) is fetched only with its licence read and passed as OBJECT_LICENCE (a repository
 # variable; D9: else the vendored SSD-MobileNet v1 serves `objects`). No secret; contents: read only.
+# R8 builder A: a model whose Google storage address fails is fetched from the address its model page gives now
+# (the manifests' `mirror`); the two runs must still agree. The pinned sums also go into a copy of
+# console-vision-r8.js (`vision_assets.py sums`: its SUMS8 block, which the browser compares every model's bytes
+# with), checked with both manifests and uploaded with them: the Workshop copies it over the repository's file.
 name: vision-models
 on:
   workflow_dispatch:
   pull_request:
-    paths: ["src/jarvis/api/static/vendor/vision/**", ".github/workflows/vision-models.yml", "scripts/vision_assets.py"]
+    paths: ["src/jarvis/api/static/vendor/vision/**", ".github/workflows/vision-models.yml", "scripts/vision_assets.py",
+            "src/jarvis/api/static/console-vision-r8.js"]
 permissions:
   contents: read
 concurrency:
@@ -57,10 +62,16 @@ jobs:
             if [ "${a}" != "${b}" ]; then echo "::error::${f}: the two fetches differ (${a} vs ${b})"; bad=1; fi
           done
           exit "${bad}"
-      - name: Both releases check against their manifests
+      - name: The pinned sums go into the task module's SUMS8 block (a copy)
         run: |
-          python scripts/vision_assets.py check --folder /tmp/vision-one
-          python scripts/vision_assets.py check --release r8-1 --folder /tmp/vision-one
+          set -euo pipefail
+          cp src/jarvis/api/static/console-vision-r8.js /tmp/vision-one/console-vision-r8.js
+          python scripts/vision_assets.py sums --folder /tmp/vision-one --js /tmp/vision-one/console-vision-r8.js
+      - name: Both releases check against their manifests and the SUMS8 block
+        run: |
+          python scripts/vision_assets.py check --folder /tmp/vision-one --js /tmp/vision-one/console-vision-r8.js
+          python scripts/vision_assets.py check --release r8-1 --folder /tmp/vision-one \
+            --js /tmp/vision-one/console-vision-r8.js
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vision-models
@@ -72,3 +83,4 @@ jobs:
             /tmp/vision-one/r8-1/MANIFEST.json
             /tmp/vision-one/r8-1/*.task
             /tmp/vision-one/LICENSE-mediapipe-models.txt
+            /tmp/vision-one/console-vision-r8.js

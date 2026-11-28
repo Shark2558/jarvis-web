@@ -14,8 +14,10 @@ confirm." So:
    named**, and "talk to your doctor" where that category says so.
 
 `CATEGORIES` is the published table, filled by builder D **from the named source only** (its
-title, publisher, year and address recorded in `SOURCE`); it ships empty at I0, and with it empty
-`category_of` answers None (no category is shown). Never a diagnosis, never a medicine or a dose:
+title, publisher, year and address recorded in `SOURCE`: the American Heart Association's 2025
+chart "Blood Pressure Categories"); with it empty `category_of` would answer None (no category is
+shown). `trend_of` / `trend_line` give his own readings' trend in numbers, and `reading_view` the
+two lines the pane shows beside a confirmed reading. Never a diagnosis, never a medicine or a dose:
 the category's own name and its source, nothing JARVIS adds (tests/test_r8_not_medical.py).
 """
 
@@ -89,8 +91,27 @@ class Source:
     url: str
 
 
-SOURCE: Source | None = None  # builder D: the guideline the table is copied from
-CATEGORIES: tuple[BpCategory, ...] = ()
+# The published table (builder D, 28 Nov 2026): the American Heart Association's chart "Blood
+# Pressure Categories" (heart.org/bplevels, (c) 2025, WF-950650 9/25), its rows' names and numbers
+# word for word, lowest first. "and" / "or" are the chart's own; its "and/or" rows are "or" here.
+# Only the Severe Hypertension row tells the reader to call a health care professional, so only it
+# carries "talk to your doctor". The chart's last row, Hypertensive Emergency, has the same numbers
+# and is told apart only by symptoms, which JARVIS never asks about or names (the not-medical rule),
+# so it is not a row here: such a reading shows as Severe Hypertension, with "talk to your doctor".
+SOURCE: Source | None = Source(
+    title="Blood Pressure Categories",
+    publisher="American Heart Association",
+    year=2025,
+    url="https://www.heart.org/-/media/files/health-topics/high-blood-pressure/hbp-rainbow-chart-english.pdf",
+)
+CATEGORIES: tuple[BpCategory, ...] = (
+    BpCategory("Normal", 0, 119, 0, 79, "and", False),
+    BpCategory("Elevated", 120, 129, 0, 79, "and", False),
+    BpCategory("Stage 1 Hypertension (High Blood Pressure)", 130, 139, 80, 89, "or", False),
+    BpCategory("Stage 2 Hypertension (High Blood Pressure)", 140, None, 90, None, "or", False),
+    BpCategory("Severe Hypertension", 181, None, 121, None, "or", True),
+)
+TREND_N = 5  # a trend compares his last five readings with the five before them
 
 
 def proposal_from_digits(lines: Sequence[tuple[int, float]]) -> BpProposal | None:
@@ -125,17 +146,90 @@ def category_line(row: BpCategory, source: Source) -> str:
     return f"{line} {TALK_TO_DOCTOR}" if row.talk_to_doctor else line
 
 
+@dataclass(frozen=True)
+class BpTrend:
+    """His own readings over time: the mean of the last `count` (at most TREND_N) and, once there
+    are TREND_N before them, how far the means moved (positive: higher). Numbers only."""
+
+    count: int
+    systolic: int
+    diastolic: int
+    pulse: int
+    systolic_change: int | None
+    diastolic_change: int | None
+
+
+def _mean(values: Sequence[int]) -> int:
+    return round(sum(values) / len(values))
+
+
+def trend_of(readings: Sequence[BpReading]) -> BpTrend | None:
+    """The trend of his confirmed readings (any order), or None when there are none."""
+    ordered = sorted(readings, key=lambda r: r.taken_at)
+    last, before = ordered[-TREND_N:], ordered[-2 * TREND_N : -TREND_N]
+    if not last:
+        return None
+    sys_now, dia_now = _mean([r.systolic for r in last]), _mean([r.diastolic for r in last])
+    full = len(before) == TREND_N
+    return BpTrend(
+        count=len(last),
+        systolic=sys_now,
+        diastolic=dia_now,
+        pulse=_mean([r.pulse for r in last]),
+        systolic_change=sys_now - _mean([r.systolic for r in before]) if full else None,
+        diastolic_change=dia_now - _mean([r.diastolic for r in before]) if full else None,
+    )
+
+
+def _moved(change: int) -> str:
+    return (
+        "the same as"
+        if change == 0
+        else f"{abs(change)} {'higher' if change > 0 else 'lower'} than"
+    )
+
+
+def trend_line(t: BpTrend) -> str:
+    """The trend in one sentence of numbers, nothing read into them."""
+    some = "reading" if t.count == 1 else f"{t.count} readings"
+    line = f"Your last {some}: on average {t.systolic}/{t.diastolic}, pulse {t.pulse}."
+    if t.systolic_change is None or t.diastolic_change is None:
+        return line
+    return (
+        f"{line} The top number is {_moved(t.systolic_change)} the {TREND_N} before, the bottom"
+        f" number {_moved(t.diastolic_change)} them."
+    )
+
+
+def reading_view(reading: BpProposal, earlier: Sequence[BpReading]) -> dict[str, str | None]:
+    """What the pane shows beside a confirmed reading: its category line (with its source) and
+    the trend of his readings, this one included when it is a stored `BpReading`."""
+    row = category_of(reading)
+    mine = [*earlier, reading] if isinstance(reading, BpReading) else list(earlier)
+    t = trend_of(mine)
+    return {
+        "category": category_line(row, SOURCE) if row is not None and SOURCE is not None else None,
+        "trend": trend_line(t) if t is not None else None,
+        "note": NOT_MEDICAL,
+    }
+
+
 __all__ = [
     "CATEGORIES",
     "NOT_MEDICAL",
     "SOURCE",
     "TALK_TO_DOCTOR",
+    "TREND_N",
     "BpCategory",
     "BpConfirm",
     "BpProposal",
     "BpReading",
+    "BpTrend",
     "Source",
     "category_line",
     "category_of",
     "proposal_from_digits",
+    "reading_view",
+    "trend_line",
+    "trend_of",
 ]

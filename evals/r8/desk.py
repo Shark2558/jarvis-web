@@ -158,7 +158,7 @@ def _activity(
             state = coach.on_result(r, state)
     out = coach.summary(state)
     VIEWS.extend(out["view"])
-    return out, {m: c.most_common(1)[0][0] for m, c in truth.items()}
+    return dict(out), {m: c.most_common(1)[0][0] for m, c in truth.items()}
 
 
 def activity_day() -> list[str]:

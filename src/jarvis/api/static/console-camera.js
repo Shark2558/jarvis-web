@@ -164,7 +164,7 @@ function useSpot(id) {
   return spot() === (id || '');
 }
 const signedIn = () => !!(window.JarvisConsole && typeof window.JarvisConsole.ready === 'function' && window.JarvisConsole.ready());
-function api(path, opts) {
+function server(path, opts) {
   const c = window.JarvisConsole;
   if (!c || typeof c.api !== 'function') return Promise.reject(new Error('offline'));
   return Promise.race([c.api(path, opts), new Promise((_, no) => setTimeout(() => no(new Error('slow')), READ_MS))]);
@@ -185,7 +185,7 @@ function applySwitches(v) {
 }
 async function readSwitches() {
   if (!signedIn()) return S.blocked;
-  try { return applySwitches(await api('/v1/camera/spots')); } catch (_) { return S.blocked; }
+  try { return applySwitches(await server('/v1/camera/spots')); } catch (_) { return S.blocked; }
 }
 function recheck(view) { return view && typeof view === 'object' ? Promise.resolve(applySwitches(view)) : readSwitches(); }
 function switched() { const e = err('switched_off', S.blocked || ALL_OFF_TEXT); e.status = 409; return e; }
@@ -195,7 +195,7 @@ function postHealth() {
   if (!id || !signedIn() || !live() || secs <= 0) return;
   const fps = Math.min(120, Math.round((S.frames / secs) * 10) / 10), ms = S.frames ? Math.min(60000, Math.round(S.grabMs / S.frames)) : 0;
   S.frames = 0; S.grabMs = 0; S.since = Date.now();
-  api('/v1/camera/health', { method: 'POST', body: { camera: id, fps, ms } }).catch(() => {});
+  server('/v1/camera/health', { method: 'POST', body: { camera: id, fps, ms } }).catch(() => {});
 }
 function watchServer() {
   clearInterval(S.recheck); clearTimeout(S.health);
@@ -208,7 +208,7 @@ async function allOff(by) {
   lock(by === 'voice' ? 'voice' : 'panel');
   if (!signedIn()) return { server: false, armed: null };
   try {
-    const r = await api('/v1/camera/off', { method: 'POST', body: { by: by === 'voice' ? 'voice' : 'button' } });
+    const r = await server('/v1/camera/off', { method: 'POST', body: { by: by === 'voice' ? 'voice' : 'button' } });
     return { server: !!(r && r.all_off === true), armed: r && typeof r.alarm_armed === 'boolean' ? r.alarm_armed : null };
   } catch (_) { return { server: false, armed: null }; }
 }

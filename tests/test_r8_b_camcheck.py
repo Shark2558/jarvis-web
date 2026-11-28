@@ -89,7 +89,7 @@ class FakeCamera:
     # ONVIF
     def _wsse_ok(self, body: str) -> bool:
         got = {
-            k: re.search(rf"<(?:\w+:)?{k}[^>]*>([^<]*)<", body)
+            k: re.search(rf"<(?:\w+:)?{k}(?:\s[^>]*)?>([^<]*)<", body)
             for k in ("Username", "Password", "Nonce", "Created")
         }
         if not all(got.values()):

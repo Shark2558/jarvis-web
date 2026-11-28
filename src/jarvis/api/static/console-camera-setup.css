@@ -1,2 +1,58 @@
-/* src/jarvis/api/static/console-camera-setup.css -- R8 I0 stub (docs/plans/r8-vision.md v8.0.3; owner from I0 on: R8
-   builder B). Camera -> Cameras' places only: existing tokens and classes. */
+/* src/jarvis/api/static/console-camera-setup.css -- R8 builder B (docs/plans/r8-vision.md v8.0.4 4.5, 4.6). Camera ->
+   Cameras' places only: the approved mockup's new pieces (docs/plans/r8-mockups/tools/r8-common.css: the promise line,
+   camera rows, the health line, the check list), in the console's own tokens. No colour, font, radius or shadow that
+   the console doesn't already have; the rows, chips, switches, cards and the disclosure are the console's classes. */
+#p-camera .r8-setup{margin-top:4px}
+#p-camera .r8-promise{margin:12px 0 0;padding:7px 10px;border-radius:var(--r-sm);background:var(--well-2);border:1px solid var(--line-2);
+  font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+#p-camera .r8-add{margin-top:12px}
+#p-camera .r8-setup .bnote p{margin:0}
+#p-camera .r8-alloff .sacts{margin-top:8px}
+
+/* a camera: name + chip, where, the health line (a dot AND words), one action; why and more below */
+#p-camera .r8-cam{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:10px}
+#p-camera .r8-cam .hp-txt b{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+#p-camera .r8-cam .vt-chip{margin-top:0}
+#p-camera .r8-cam .hp-acts{margin-top:-2px}
+#p-camera .r8-cam .r8-wide{grid-column:1/-1}
+#p-camera .r8-cam .r8-wide .sacts{margin-top:6px}
+#p-camera .r8-cam .r8-wide .sfine{margin:6px 0 0}
+#p-camera .r8-cam .vt-why{margin:6px 0 0}
+#p-camera .r8-cam[data-status="amber"]{padding-left:10px;box-shadow:inset 2px 0 0 var(--amber)}
+#p-camera .r8-cam[data-status="amber"] .vt-why{color:var(--amber-ink)}
+#p-camera .r8-sub{display:block;margin-top:2px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+#p-camera .r8-health{display:flex;align-items:flex-start;gap:7px;margin-top:4px;font:400 12px/1.35 var(--tech);letter-spacing:.03em;color:var(--ink-2)}
+#p-camera .r8-health .dot{flex:none;width:7px;height:7px;margin-top:4px}
+#p-camera .r8-health span{min-width:0}
+
+/* adding this device's camera; rooms */
+#p-camera .r8-form{padding:10px 0 4px;border-top:1px solid var(--line-2)}
+#p-camera .r8-form .snote{margin:0}
+#p-camera .r8-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 8px}
+#p-camera .r8-setup .lrow{align-items:flex-end;margin-top:2px}
+#p-camera .r8-setup .lrow > label.hp-field{flex:1;min-width:0}
+#p-camera .r8-setup .lrow > .btn{min-height:40px}
+#p-camera .r8-never{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12.5px;line-height:1.4;color:var(--ink-2);cursor:pointer}
+#p-camera .r8-never input{flex:none;width:16px;height:16px;margin:0;accent-color:var(--accent)}
+
+/* the no-cloud check: a mark AND a word on every line, never colour alone */
+#p-camera .r8-setup .bset{margin-top:14px}
+#p-camera .r8-setup .vt-ftitle{margin:12px 0 0}
+#p-camera .r8-card{margin:12px 0 8px}
+#p-camera .r8-card .rhead{align-items:center}
+#p-camera .r8-card h4{margin:0}
+#p-camera .r8-card .sacts{margin-top:10px}
+#p-camera .r8-checks{list-style:none;margin:6px 0 0;padding:0}
+#p-camera .r8-checks li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 8px;align-items:start;padding:7px 0;border-top:1px dashed var(--line-2)}
+#p-camera .r8-checks li:first-child{border-top:0}
+#p-camera .r8-mark{font:400 14px/1.4 var(--tech);text-align:center;color:var(--ink-3)}
+#p-camera .r8-checks span{font-size:13.5px;line-height:1.4;color:var(--ink)}
+#p-camera .r8-checks small{display:block;margin-top:1px;font-size:12px;line-height:1.4;color:var(--ink-2)}
+#p-camera .r8-checks em{font:400 11px/1.5 var(--tech);font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+#p-camera .r8-checks .need .r8-mark,#p-camera .r8-checks .need em{color:var(--accent-ink)}
+#p-camera .r8-checks .ok .r8-mark,#p-camera .r8-checks .ok em{color:var(--ok-ink)}
+#p-camera .r8-checks .no .r8-mark,#p-camera .r8-checks .no em{color:var(--bad-ink)}
+
+@media (max-width:600px){
+  #p-camera .r8-cam .hp-acts .btn.sact,#p-camera .r8-setup .sacts .btn{min-height:44px}
+}

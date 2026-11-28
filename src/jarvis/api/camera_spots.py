@@ -175,14 +175,14 @@ async def _body(request: Request) -> dict[str, Any]:
 Work = Callable[[CameraSetupApp], Awaitable[JSONResponse]]
 
 
-async def _do(request: Request, work: Work) -> JSONResponse:
+async def _do(request: Request, uid: str, work: Work) -> JSONResponse:
     app = _app(request)
     if app is None:
         return _answer(404, OFF) if _wired(request) else _answer(501, NOT_BUILT)
     try:
         return await work(app)
     except StaleSpots:
-        view = await app.spots.view(current_user(request))
+        view = await app.spots.view(uid)
         return _answer(409, {"error": "stale", "detail": STALE, "spots": dict(view)})
     except UnknownCamera:
         return _answer(404, {"error": "not_his", "detail": NOT_HIS})
@@ -208,7 +208,7 @@ async def camera_spots(request: Request, uid: str = Depends(current_user)) -> JS
         view["now"] = round(time.time(), 1)
         return _answer(200, view)
 
-    return await _do(request, work)
+    return await _do(request, uid, work)
 
 
 @router.put("/spots", response_model=None)
@@ -222,7 +222,7 @@ async def camera_spots_put(request: Request, uid: str = Depends(current_user)) -
         saved = await a.spots.put(uid, new, base_rev=base)
         return _answer(200, view_of(saved))
 
-    return await _do(request, work)
+    return await _do(request, uid, work)
 
 
 async def _armed(arm: ArmReader | None, uid: str) -> bool | None:
@@ -242,7 +242,7 @@ async def camera_off(request: Request, uid: str = Depends(current_user)) -> JSON
         await a.spots.all_off(uid, by=body.by)
         return _answer(200, {"all_off": True, "alarm_armed": await _armed(a.arm, uid)})
 
-    return await _do(request, work)
+    return await _do(request, uid, work)
 
 
 @router.post("/health", response_model=None)
@@ -253,7 +253,7 @@ async def camera_health(request: Request, uid: str = Depends(current_user)) -> J
         await a.health.report(uid, body.camera, fps=body.fps, ms=body.ms, at=at)
         return _answer(200, {"ok": True})
 
-    return await _do(request, work)
+    return await _do(request, uid, work)
 
 
 @router.post("/check", response_model=None)
@@ -280,7 +280,7 @@ async def camera_check(request: Request, uid: str = Depends(current_user)) -> JS
             raise ValueError("another address")
         return _answer(200, view.model_dump(mode="json"))
 
-    return await _do(request, work)
+    return await _do(request, uid, work)
 
 
 __all__ = [

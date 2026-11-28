@@ -147,8 +147,9 @@ def home_uses(spots: Spots, wanted: Mapping[str, Sequence[str]]) -> dict[str, tu
     return out
 
 
-class StaleSpots(Exception):
-    """Another device changed the cameras since this one read them (`rev` moved on)."""
+class StaleSpots(LookupError):
+    """Another device changed the cameras since this one read them (`rev` moved on). A
+    LookupError, so the sealed document passes it on unchanged (it is not a storage failure)."""
 
 
 OnChange = Callable[[str, Spots], Awaitable[None]]
@@ -201,7 +202,8 @@ class SpotsStore:
             return None if same else fresh
 
         saved = await self._doc.update(uid, change)
-        await self._told(uid, saved)
+        if saved.rev != base_rev:  # unchanged: nothing to tell the bridge
+            await self._told(uid, saved)
         return saved
 
     async def all_off(self, uid: str, *, by: str) -> None:
@@ -209,7 +211,10 @@ class SpotsStore:
         if by not in ("voice", "button", "tool"):
             raise ValueError("by")
 
+        turned: list[bool] = []
+
         def change(cur: Spots) -> Spots | None:
+            turned[:] = [not cur.all_off]
             return (
                 None
                 if cur.all_off
@@ -218,7 +223,8 @@ class SpotsStore:
 
         saved = await self._doc.update(uid, change)
         log.info("cameras off", extra={"by": by})
-        await self._told(uid, saved)
+        if turned == [True]:
+            await self._told(uid, saved)
 
     async def wipe(self, uid: str) -> None:
         await self._doc.delete(uid)
